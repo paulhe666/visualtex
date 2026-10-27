@@ -26,6 +26,9 @@ export interface AnywhereActivation {
    * that space, in the field's text size and colour.
    */
   inputMethod?: boolean;
+  /** The display shortcut opened the formula: its row is a display row
+   * (else a new formula starts inline). */
+  display?: boolean;
   /** The field's font size in CSS pixels, when the field tells it. */
   fontSize?: number | null;
   /** The field's text colour (#rrggbbaa), when the field tells it (or as

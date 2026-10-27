@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, RotateCcw, Sigma, Trash2 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-import { configureAnywhereToggleHotkey, useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
 import {
   ANYWHERE_HOTKEY_ACTIONS,
   anywhereHotkeyChordProblem,
@@ -38,9 +38,9 @@ export function AnywhereHotkeySettingsSection() {
 
   const apply = async (id: AnywhereHotkeyAction, chord: FormulaHotkeyChord | null) => {
     const action = anywhereHotkeyDefinition(id);
-    if (action.global && chord) {
+    if (action.global) {
       try {
-        await configureAnywhereToggleHotkey(chord);
+        await configureAnywhereGlobalHotkey(id, chord);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
         return false;
@@ -80,8 +80,8 @@ export function AnywhereHotkeySettingsSection() {
       if (previous?.global) {
         setMessage(
           isEn
-            ? "This shortcut opens and closes formulas. Give that one another shortcut first."
-            : "该快捷键用于进入 / 退出公式模式，请先为那一项换一个快捷键。",
+            ? `This shortcut is “${labelOf(previous.id)}”. Give that one another shortcut first.`
+            : `该快捷键用于“${labelOf(previous.id)}”，请先为那一项换一个快捷键。`,
         );
         return;
       }
@@ -175,7 +175,7 @@ export function AnywhereHotkeySettingsSection() {
                     <RotateCcw size={14} />
                   </button>
                 )}
-                {!action.global && (chord || isCapturing) && (
+                {action.id !== "anywhere-toggle" && (chord || isCapturing) && (
                   <button
                     type="button"
                     className="icon-button compact is-danger"

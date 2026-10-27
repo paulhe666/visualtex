@@ -60,18 +60,24 @@ export const useAnywhereHotkeyStore = create<AnywhereHotkeyState>()(
   ),
 );
 
-/** Registers the system-wide shortcut with Windows (VisualTeX keeps it for
- *  the next start); throws Windows' refusal (a shortcut another program
- *  holds). */
-export async function configureAnywhereToggleHotkey(chord: FormulaHotkeyChord): Promise<string> {
+/** Registers a system-wide shortcut with Windows (VisualTeX keeps it for
+ *  the next start), or removes the display one (null); throws Windows'
+ *  refusal (a shortcut another program holds). */
+export async function configureAnywhereGlobalHotkey(
+  action: AnywhereHotkeyAction,
+  chord: FormulaHotkeyChord | null,
+): Promise<string> {
   if (!isTauri()) return "";
   return invoke<string>("anywhere_configure_hotkey", {
-    chord: {
-      code: chord.code,
-      ctrlKey: chord.ctrlKey,
-      altKey: chord.altKey,
-      shiftKey: chord.shiftKey,
-      metaKey: chord.metaKey,
-    },
+    action,
+    chord: chord
+      ? {
+          code: chord.code,
+          ctrlKey: chord.ctrlKey,
+          altKey: chord.altKey,
+          shiftKey: chord.shiftKey,
+          metaKey: chord.metaKey,
+        }
+      : null,
   });
 }

@@ -120,7 +120,7 @@ import {
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
-import { configureAnywhereToggleHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -472,15 +472,22 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  // The formula input method's system-wide shortcut (Settings > Keyboard
-  // shortcuts); VisualTeX registers the last one again at its next start.
+  // The formula input method's system-wide shortcuts (Settings > Keyboard
+  // shortcuts); VisualTeX registers the last ones again at its next start.
   const anywhereToggleChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-toggle"]);
+  const anywhereDisplayChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-open-display"]);
   useEffect(() => {
     if (!isTauriEnvironment() || !anywhereToggleChord) return;
-    void configureAnywhereToggleHotkey(anywhereToggleChord).catch((error) => {
+    void configureAnywhereGlobalHotkey("anywhere-toggle", anywhereToggleChord).catch((error) => {
       setToast(error instanceof Error ? error.message : String(error));
     });
   }, [anywhereToggleChord]);
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    void configureAnywhereGlobalHotkey("anywhere-open-display", anywhereDisplayChord).catch((error) => {
+      setToast(error instanceof Error ? error.message : String(error));
+    });
+  }, [anywhereDisplayChord]);
 
   useEffect(() => {
     if (!isTauriEnvironment()) {

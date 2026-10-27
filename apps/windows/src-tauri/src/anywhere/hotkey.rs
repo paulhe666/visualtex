@@ -1,6 +1,8 @@
-//! The system-wide shortcut that opens and closes a formula (Settings > Keyboard shortcuts >
-//! Formula input method; Ctrl+Alt+M by default): a Windows hotkey on a thread of its own, kept
-//! in app data (anywhere-hotkey.json) so it is registered before the page loads.
+//! The system-wide shortcuts that open and close a formula (Settings > Keyboard shortcuts >
+//! Formula input method): Ctrl+Alt+M starts it as an inline row, Ctrl+Alt+Shift+M as a display
+//! row (by default). Windows hotkeys on a thread of their own, kept in app data
+//! (anywhere-hotkey.json, anywhere-display-hotkey.json) so they are registered before the page
+//! loads.
 
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Sender};
@@ -13,9 +15,53 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, PostThreadMessageW, MSG, WM_APP, WM_HOTKEY};
 
-const HOTKEY_ID: i32 = 0x5641; // "VA", in RegisterHotKey's application range
 const WM_RECONFIGURE: u32 = WM_APP + 0x41;
-const CONFIG_FILE: &str = "anywhere-hotkey.json";
+
+/// The system-wide shortcuts: each opens and closes a formula, starting it as an inline or as a
+/// display row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Slot {
+    Toggle,
+    Display,
+}
+
+impl Slot {
+    const ALL: [Slot; 2] = [Slot::Toggle, Slot::Display];
+
+    /// Settings' action id (src/shortcuts/anywhereHotkeys.ts).
+    pub(crate) fn from_action(action: &str) -> Option<Self> {
+        match action {
+            "anywhere-toggle" => Some(Slot::Toggle),
+            "anywhere-open-display" => Some(Slot::Display),
+            _ => None,
+        }
+    }
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    /// "VA" and "VB", in RegisterHotKey's application range.
+    fn hotkey_id(self) -> i32 {
+        0x5641 + self.index() as i32
+    }
+
+    fn config_file(self) -> &'static str {
+        match self {
+            Slot::Toggle => "anywhere-hotkey.json",
+            Slot::Display => "anywhere-display-hotkey.json",
+        }
+    }
+
+    /// Ctrl+Alt+M; with Shift it opens a display formula ($ and $$).
+    fn default_chord(self) -> Chord {
+        Chord { code: "KeyM".to_string(), ctrl_key: true, alt_key: true, shift_key: self == Slot::Display, meta_key: false }
+    }
+
+    fn display(self) -> bool {
+        self == Slot::Display
+    }
+}
 
 /// A chord as the page describes it (DOM `code` and modifiers).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -33,10 +79,6 @@ pub(crate) struct Chord {
 }
 
 impl Chord {
-    fn default_toggle() -> Chord {
-        Chord { code: "KeyM".to_string(), ctrl_key: true, alt_key: true, shift_key: false, meta_key: false }
-    }
-
     fn modifiers(&self) -> HOT_KEY_MODIFIERS {
         let mut modifiers = MOD_NOREPEAT;
         if self.ctrl_key {
@@ -133,63 +175,78 @@ fn virtual_key(code: &str) -> Option<u32> {
     })
 }
 
+type Request = (Slot, Option<Chord>, Sender<Result<String, String>>);
+
 struct Hotkeys {
     thread: u32,
-    current: Option<Chord>,
-    request: Option<(Chord, Sender<Result<String, String>>)>,
+    /// Each slot's registered chord.
+    current: [Option<Chord>; 2],
+    request: Option<Request>,
 }
 
 static STATE: OnceLock<Mutex<Hotkeys>> = OnceLock::new();
 
 fn state() -> &'static Mutex<Hotkeys> {
-    STATE.get_or_init(|| Mutex::new(Hotkeys { thread: 0, current: None, request: None }))
+    STATE.get_or_init(|| Mutex::new(Hotkeys { thread: 0, current: [None, None], request: None }))
 }
 
-fn config_path(app: &AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_data_dir().ok().map(|directory| directory.join(CONFIG_FILE))
+fn config_path(app: &AppHandle, slot: Slot) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|directory| directory.join(slot.config_file()))
 }
 
-fn saved_chord(app: &AppHandle) -> Chord {
-    config_path(app)
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice::<Chord>(&bytes).ok())
-        .filter(|chord| virtual_key(&chord.code).is_some())
-        .unwrap_or_else(Chord::default_toggle)
+/// The slot's saved chord: the default when none was saved (or it is unreadable), none when the
+/// user cleared it ("null"; not the inline one).
+fn saved_chord(app: &AppHandle, slot: Slot) -> Option<Chord> {
+    let Some(bytes) = config_path(app, slot).and_then(|path| std::fs::read(path).ok()) else {
+        return Some(slot.default_chord());
+    };
+    match serde_json::from_slice::<Option<Chord>>(&bytes) {
+        Ok(None) if slot != Slot::Toggle => None,
+        Ok(Some(chord)) if virtual_key(&chord.code).is_some() => Some(chord),
+        _ => Some(slot.default_chord()),
+    }
 }
 
-fn register(chord: &Chord) -> Result<(), String> {
+fn register(slot: Slot, chord: &Chord) -> Result<(), String> {
     let key = virtual_key(&chord.code).ok_or_else(|| format!("{} cannot be a system-wide shortcut", chord.code))?;
-    unsafe { RegisterHotKey(None, HOTKEY_ID, chord.modifiers(), key) }.map_err(|error| {
+    unsafe { RegisterHotKey(None, slot.hotkey_id(), chord.modifiers(), key) }.map_err(|error| {
         format!("Windows refused the shortcut {} (another program may use it): {error}", chord.label())
     })
 }
 
-/// Unregisters the current chord and registers `chord`; the old one comes back on failure.
-fn set_chord(chord: Chord) -> Result<String, String> {
-    let previous = state().lock().ok().and_then(|state| state.current.clone());
+/// Unregisters the slot's chord and registers `chord` (None: none); the old one comes back on
+/// failure.
+fn set_chord(slot: Slot, chord: Option<Chord>) -> Result<String, String> {
+    let previous = state().lock().ok().and_then(|state| state.current[slot.index()].clone());
     unsafe {
-        let _ = UnregisterHotKey(None, HOTKEY_ID);
+        let _ = UnregisterHotKey(None, slot.hotkey_id());
     }
-    match register(&chord) {
+    let Some(chord) = chord else {
+        if let Ok(mut state) = state().lock() {
+            state.current[slot.index()] = None;
+        }
+        return Ok(String::new());
+    };
+    match register(slot, &chord) {
         Ok(()) => {
             let label = chord.label();
             if let Ok(mut state) = state().lock() {
-                state.current = Some(chord);
+                state.current[slot.index()] = Some(chord);
             }
             Ok(label)
         }
         Err(error) => {
             if let Some(previous) = previous {
-                let _ = register(&previous);
+                let _ = register(slot, &previous);
             }
             Err(error)
         }
     }
 }
 
-/// Registers the saved shortcut on its own thread, which then waits for it.
+/// Registers the saved shortcuts on their own thread, which then waits for them.
 pub(super) fn register_saved(app: &AppHandle) -> Result<(), String> {
-    let chord = saved_chord(app);
+    let chords = Slot::ALL.map(|slot| saved_chord(app, slot));
     let app = app.clone();
     let (ready_sender, ready) = mpsc::channel();
     std::thread::Builder::new()
@@ -198,15 +255,35 @@ pub(super) fn register_saved(app: &AppHandle) -> Result<(), String> {
             if let Ok(mut state) = state().lock() {
                 state.thread = unsafe { GetCurrentThreadId() };
             }
-            let _ = ready_sender.send(set_chord(chord));
+            let mut toggle = Ok(String::new());
+            for (slot, chord) in Slot::ALL.into_iter().zip(chords) {
+                let Some(chord) = chord else { continue };
+                let fallback = slot.default_chord();
+                let mut result = set_chord(slot, Some(chord.clone()));
+                if let (Err(error), true) = (&result, chord != fallback) {
+                    // A saved chord Windows no longer accepts: the default instead.
+                    super::log(&format!("{error}; using {}", fallback.label()));
+                    result = set_chord(slot, Some(fallback));
+                }
+                match (slot, result) {
+                    (Slot::Toggle, result) => toggle = result,
+                    (_, Ok(label)) => super::log(&format!("display shortcut {label}")),
+                    (_, Err(error)) => super::log(&error),
+                }
+            }
+            let _ = ready_sender.send(toggle);
             let mut message = MSG::default();
             while unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool() {
                 match message.message {
-                    WM_HOTKEY if message.wParam.0 == HOTKEY_ID as usize => super::toggle(&app),
+                    WM_HOTKEY => {
+                        if let Some(slot) = Slot::ALL.into_iter().find(|slot| message.wParam.0 == slot.hotkey_id() as usize) {
+                            super::toggle(&app, slot.display());
+                        }
+                    }
                     WM_RECONFIGURE => {
                         let request = state().lock().ok().and_then(|mut state| state.request.take());
-                        if let Some((chord, reply)) = request {
-                            let _ = reply.send(set_chord(chord));
+                        if let Some((slot, chord, reply)) = request {
+                            let _ = reply.send(set_chord(slot, chord));
                         }
                     }
                     _ => {}
@@ -224,21 +301,28 @@ pub(super) fn register_saved(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-/// Settings > Shortcuts: registers `chord` (now, on the hotkey thread) and keeps it.
-pub(super) fn configure(app: &AppHandle, chord: Chord) -> Result<String, String> {
-    if virtual_key(&chord.code).is_none() {
-        return Err(format!("{} cannot be a system-wide shortcut", chord.code));
-    }
-    if !(chord.ctrl_key || chord.alt_key || chord.meta_key) {
-        return Err("Add Ctrl or Alt to the shortcut".to_string());
+/// Settings > Shortcuts: registers the slot's `chord` (now, on the hotkey thread), or removes it
+/// (None, not the inline one), and keeps it.
+pub(super) fn configure(app: &AppHandle, slot: Slot, chord: Option<Chord>) -> Result<String, String> {
+    match &chord {
+        None if slot == Slot::Toggle => return Err("The shortcut that opens formulas cannot be removed".to_string()),
+        None => {}
+        Some(chord) => {
+            if virtual_key(&chord.code).is_none() {
+                return Err(format!("{} cannot be a system-wide shortcut", chord.code));
+            }
+            if !(chord.ctrl_key || chord.alt_key || chord.meta_key) {
+                return Err("Add Ctrl or Alt to the shortcut".to_string());
+            }
+        }
     }
     let (reply, answer) = mpsc::channel();
     let thread = {
         let mut state = state().lock().map_err(|_| "The formula shortcut is unavailable".to_string())?;
-        if state.current.as_ref() == Some(&chord) {
-            return Ok(chord.label());
+        if state.current[slot.index()] == chord {
+            return Ok(chord.as_ref().map(Chord::label).unwrap_or_default());
         }
-        state.request = Some((chord.clone(), reply));
+        state.request = Some((slot, chord.clone(), reply));
         state.thread
     };
     if thread == 0 {
@@ -249,18 +333,20 @@ pub(super) fn configure(app: &AppHandle, chord: Chord) -> Result<String, String>
     let label = answer
         .recv_timeout(Duration::from_secs(2))
         .map_err(|_| "The formula shortcut did not answer".to_string())??;
-    if let Some(path) = config_path(app) {
+    if let Some(path) = config_path(app, slot) {
         if let Ok(bytes) = serde_json::to_vec(&chord) {
             let _ = std::fs::write(path, bytes);
         }
     }
+    super::log(&format!("shortcut {slot:?} set to {}", if label.is_empty() { "none" } else { &label }));
     Ok(label)
 }
 
+/// The label of the chord that opens an inline formula (Ctrl+Alt+M).
 pub(super) fn shortcut_label() -> String {
     state()
         .lock()
         .ok()
-        .and_then(|state| state.current.as_ref().map(Chord::label))
+        .and_then(|state| state.current[Slot::Toggle.index()].as_ref().map(Chord::label))
         .unwrap_or_default()
 }

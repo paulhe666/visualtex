@@ -7,7 +7,8 @@ import {
 } from "./formulaHotkeys";
 
 // VisualTeX Anywhere's shortcuts (Settings > Keyboard shortcuts): the
-// system-wide one that opens and closes a formula in any application, and
+// system-wide ones that open and close a formula in any application (as an
+// inline or as a display formula), and
 // the ones that act while a formula is open (output format, the row's inline
 // or display form, screenshot OCR).
 // The input method gives the open formula every key but plain Ctrl chords
@@ -16,6 +17,7 @@ import {
 
 export type AnywhereHotkeyAction =
   | "anywhere-toggle"
+  | "anywhere-open-display"
   | "anywhere-next-output"
   | "anywhere-output-source"
   | "anywhere-output-markdown"
@@ -35,17 +37,18 @@ export interface AnywhereHotkeyDefinition {
   defaultChord: FormulaHotkeyChord | null;
 }
 
-const chord = (code: string, key: string): FormulaHotkeyChord => ({
+const chord = (code: string, key: string, shiftKey = false): FormulaHotkeyChord => ({
   code,
   key,
   ctrlKey: true,
   altKey: true,
-  shiftKey: false,
+  shiftKey,
   metaKey: false,
 });
 
 export const ANYWHERE_HOTKEY_ACTIONS: readonly AnywhereHotkeyDefinition[] = [
   { id: "anywhere-toggle", global: true, labelZh: "进入 / 退出公式模式（全局）", labelEn: "Open / close a formula (system-wide)", defaultChord: chord("KeyM", "m") },
+  { id: "anywhere-open-display", global: true, labelZh: "进入 / 退出独立公式（全局）", labelEn: "Open / close a display formula (system-wide)", defaultChord: chord("KeyM", "M", true) },
   { id: "anywhere-next-output", global: false, labelZh: "切换到下一种输出格式", labelEn: "Next output format", defaultChord: chord("KeyO", "o") },
   { id: "anywhere-output-source", global: false, labelZh: "输出格式：LaTeX", labelEn: "Output format: LaTeX", defaultChord: null },
   { id: "anywhere-output-markdown", global: false, labelZh: "输出格式：Markdown", labelEn: "Output format: Markdown", defaultChord: null },

@@ -92,6 +92,9 @@ struct Activation {
     accessibility_trusted: bool,
     resume: bool,
     input_method: bool,
+    /// The display shortcut opened the formula: its row is a display row (else a new formula
+    /// starts inline).
+    display: bool,
     font_size: Option<f64>,
     text_color: Option<String>,
     x_height: Option<f64>,
@@ -157,6 +160,8 @@ struct Session {
     reloaded_for: u64,
     /// The input method the field goes back to after the formula.
     return_to: Option<serde_json::Value>,
+    /// The display shortcut opened this session.
+    display: bool,
     awaiting_input_method: u64,
     pending_keys: Vec<serde_json::Value>,
     field_text: FieldText,
@@ -178,6 +183,7 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     draft: false,
     reloaded_for: 0,
     return_to: None,
+    display: false,
     awaiting_input_method: 0,
     pending_keys: Vec::new(),
     field_text: FieldText {
@@ -253,20 +259,21 @@ fn with_panel(app: &AppHandle, work: impl FnOnce(&tauri::WebviewWindow) + Send +
     });
 }
 
-/// The shortcut: open a formula in the field that has the keyboard, or close the open one
-/// (keeping it for the next press).
-pub(super) fn toggle(app: &AppHandle) {
+/// A shortcut: open a formula in the field that has the keyboard (`display`: its row is a display
+/// row), or close the open one (keeping it for the next press).
+pub(super) fn toggle(app: &AppHandle, display: bool) {
     if session().map(|session| session.phase != Phase::Hidden).unwrap_or(false) {
         hide(app, true, "shortcut");
         return;
     }
+    log(&format!("shortcut display={display}"));
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("visualtex-anywhere-activate".to_string())
-        .spawn(move || begin_input_method(&app));
+        .spawn(move || begin_input_method(&app, display));
 }
 
-fn begin_input_method(app: &AppHandle) {
+fn begin_input_method(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     if !ime::is_enabled() {
         log("shortcut: the input method is not installed");
@@ -282,6 +289,7 @@ fn begin_input_method(app: &AppHandle) {
         session.caret = None;
         session.inline_anchor = None;
         session.return_to = previous.clone().filter(|_| !already);
+        session.display = display;
         session.awaiting_input_method = session.generation;
         session.pending_keys.clear();
         session.field_text = FieldText::default();
@@ -398,6 +406,7 @@ fn pending_activation(session: &Session) -> Option<Activation> {
         accessibility_trusted: true,
         resume: session.draft,
         input_method: true,
+        display: session.display,
         font_size: session.field_text.font_size,
         text_color: session.field_text.text_color.clone(),
         x_height: session.field_text.x_height,
@@ -948,11 +957,22 @@ pub(crate) async fn anywhere_read_clipboard() -> Result<AnywhereClipboard, Strin
     })
 }
 
-/// Settings > Shortcuts: the global shortcut that opens and closes a formula.
+/// Settings > Shortcuts: a global shortcut that opens and closes a formula (`action`:
+/// "anywhere-toggle", the default, or "anywhere-open-display"; a null chord removes the display
+/// one).
 #[tauri::command]
-pub(crate) async fn anywhere_configure_hotkey(app: AppHandle, chord: serde_json::Value) -> Result<String, String> {
-    let chord: hotkey::Chord = serde_json::from_value(chord).map_err(|error| format!("Unreadable shortcut: {error}"))?;
-    tauri::async_runtime::spawn_blocking(move || hotkey::configure(&app, chord))
+pub(crate) async fn anywhere_configure_hotkey(
+    app: AppHandle,
+    chord: serde_json::Value,
+    action: Option<String>,
+) -> Result<String, String> {
+    let slot = match action.as_deref() {
+        None => hotkey::Slot::Toggle,
+        Some(action) => hotkey::Slot::from_action(action).ok_or_else(|| format!("Unknown shortcut {action}"))?,
+    };
+    let chord: Option<hotkey::Chord> =
+        serde_json::from_value(chord).map_err(|error| format!("Unreadable shortcut: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || hotkey::configure(&app, slot, chord))
         .await
         .map_err(|error| format!("Shortcut task failed: {error}"))?
 }
