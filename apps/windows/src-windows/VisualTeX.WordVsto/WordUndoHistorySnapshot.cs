@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.WordVsto;
 
@@ -24,6 +25,10 @@ internal sealed class WordUndoHistorySnapshot
     private const int TailSize = 4;
     private readonly string documentName;
     private readonly Boundary original;
+    // WPS keeps an undo stack but exposes no readable history list (the Undo control's
+    // List is always empty). There, recovery relies on WPS's measured record semantics
+    // instead (see UndoChanges).
+    private readonly bool hostWithoutReadableHistory;
 
     private sealed class Boundary
     {
@@ -36,6 +41,12 @@ internal sealed class WordUndoHistorySnapshot
     internal WordUndoHistorySnapshot(Document document)
     {
         documentName = document.FullName;
+        if (OfficeHostEnvironment.IsWps)
+        {
+            hostWithoutReadableHistory = true;
+            original = new Boundary();
+            return;
+        }
         original = ReadBoundary(document, originalDepth: null);
     }
 
@@ -43,6 +54,19 @@ internal sealed class WordUndoHistorySnapshot
     {
         if (!string.Equals(document.FullName, documentName, StringComparison.Ordinal))
             throw new InvalidOperationException("The document changed before undo recovery.");
+        if (hostWithoutReadableHistory)
+        {
+            // WPS (measured 12.1.0.28488): one custom UndoRecord is exactly one undo step,
+            // even when it is empty, and WordOpenXML reads, InsertXML and OLE inserts never
+            // split it. Every caller ends exactly the one record of the failed operation
+            // right before recovery, so one Undo reverts that operation and nothing older;
+            // the caller's local content verification still checks the result.
+            WordDoubleClickHook.TraceMessage("word-undo-history-recovery host=wps owned=1");
+            object one = 1;
+            if (!document.Undo(ref one))
+                throw new InvalidOperationException("WPS could not undo the failed operation.");
+            return 1;
+        }
         var current = ReadBoundary(document, original.Depth);
         var count = CountOwnedPrefixAtBoundary(original.Depth, original.Head,
             current.Depth, current.Head);

@@ -45,10 +45,13 @@ internal static class PowerPointMathClipboard
     internal static byte[] BuildEdit(string omml, double fontSize, string zone) =>
         BuildStoredZip(EditEntries(omml, fontSize, zone));
 
-    internal static List<KeyValuePair<string, string>> EditEntries(string omml, double fontSize, string zone)
+    private const string DrawingPart = "clipboard/drawings/drawing1.xml";
+
+    internal static List<KeyValuePair<string, string>> EditEntries(string omml, double fontSize, string zone,
+        string? language = null)
     {
-        const string drawingPart = "clipboard/drawings/drawing1.xml";
-        var entries = Entries(omml, fontSize, display: false);
+        const string drawingPart = DrawingPart;
+        var entries = Entries(omml, fontSize, display: false, language);
         var slot = entries.FindIndex(entry => entry.Key == drawingPart);
         var drawing = entries[slot].Value;
         var start = drawing.IndexOf("<a14:m>", StringComparison.Ordinal);
@@ -79,12 +82,19 @@ internal static class PowerPointMathClipboard
         return entries;
     }
 
-    internal static List<KeyValuePair<string, string>> Entries(string omml, double fontSize, bool display)
+    // language: the runs' language (a BCP 47 tag), as PowerPoint's own Insert
+    // Equation takes it from the text at the caret. Without it PowerPoint picks
+    // run languages itself; next to text saved by WPS it tagged digits and
+    // operators Arabic, which WPS then draws mirrored (a ≥ shows as ≤).
+    internal static List<KeyValuePair<string, string>> Entries(string omml, double fontSize, bool display,
+        string? language = null)
     {
         if (double.IsNaN(fontSize) || double.IsInfinity(fontSize) || fontSize < 1 || fontSize > 512)
             throw new InvalidDataException("Invalid native equation font size");
+        if (language is not null && (language.Length == 0 || !language.All(c => char.IsLetterOrDigit(c) || c == '-')))
+            throw new InvalidDataException("Invalid native equation language");
         var size = (long)Math.Round(fontSize * 100.0, MidpointRounding.AwayFromZero);
-        var math = Serialize(Parse(omml), size);
+        var math = Serialize(Parse(omml), size, language);
         var paragraphs = new StringBuilder("<a:p>");
         if (display) paragraphs.Append("<a:pPr algn=\"ctr\"><a:buNone/></a:pPr>");
         paragraphs.Append("<a14:m><m:oMathPara><m:oMathParaPr><m:jc m:val=\"centerGroup\"/></m:oMathParaPr>")
@@ -101,6 +111,18 @@ internal static class PowerPointMathClipboard
             new("clipboard/drawings/_rels/drawing1.xml.rels", Rels("theme", "../theme/theme1.xml")),
             new("clipboard/theme/theme1.xml", Theme()),
         };
+    }
+
+    /// <summary>
+    /// The text paragraphs of a package (its drawing part's a:p elements, the one
+    /// holding the a14:m equation), each declaring the namespaces it uses. WPS
+    /// Presentation receives them in a slide instead of the clipboard package.
+    /// </summary>
+    internal static string Paragraphs(IReadOnlyList<KeyValuePair<string, string>> entries)
+    {
+        var drawing = XElement.Parse(entries.Single(entry => entry.Key == DrawingPart).Value, LoadOptions.PreserveWhitespace);
+        return string.Concat(drawing.Descendants(XName.Get("txBody", A)).Single().Elements(XName.Get("p", A))
+            .Select(paragraph => paragraph.ToString(SaveOptions.DisableFormatting)));
     }
 
     private static string Escape(string value)
@@ -189,7 +211,7 @@ internal static class PowerPointMathClipboard
         node.Children.FirstOrDefault(child => child.Name == name)?
             .Attributes.Where(a => a.Key == key).Select(a => a.Value).FirstOrDefault();
 
-    private static string RunProperties(Node? word, long size)
+    private static string RunProperties(Node? word, long size, string? language)
     {
         var flags = new StringBuilder();
         if (word is not null)
@@ -203,7 +225,9 @@ internal static class PowerPointMathClipboard
                 flags.Append(' ').Append(a).Append("=\"").Append(enabled ? 1 : 0).Append('"');
             }
         }
-        var xml = new StringBuilder($"<a:rPr sz=\"{size}\"{flags}>");
+        var xml = new StringBuilder(language is null
+            ? $"<a:rPr sz=\"{size}\"{flags}>"
+            : $"<a:rPr lang=\"{language}\" altLang=\"{language}\" sz=\"{size}\"{flags}>");
         var color = word is null ? null : Property(word, "w:color", "w:val");
         if (color is { Length: 6 } && color.All(Uri.IsHexDigit))
             xml.Append("<a:solidFill><a:srgbClr val=\"").Append(color).Append("\"/></a:solidFill>");
@@ -232,10 +256,10 @@ internal static class PowerPointMathClipboard
         "m:subHide", "m:supHide", "m:transp", "m:wrapRight", "m:zeroAsc", "m:zeroDesc", "m:zeroWid",
     };
 
-    private static string Serialize(Node node, long size)
+    private static string Serialize(Node node, long size, string? language)
     {
         if (node.Text is not null) return Escape(node.Text);
-        if (node.Name == "w:rPr") return RunProperties(node, size);
+        if (node.Name == "w:rPr") return RunProperties(node, size, language);
         if (!node.Name.StartsWith("m:", StringComparison.Ordinal))
             throw new InvalidDataException($"Unsupported element in native math: {node.Name}");
         var xml = new StringBuilder("<").Append(node.Name);
@@ -254,10 +278,10 @@ internal static class PowerPointMathClipboard
         {
             if (node.Name == "m:r" && !inserted && child.Name != "m:rPr" && child.Text is null)
             {
-                xml.Append(RunProperties(null, size));
+                xml.Append(RunProperties(null, size, language));
                 inserted = true;
             }
-            xml.Append(Serialize(child, size));
+            xml.Append(Serialize(child, size, language));
         }
         return xml.Append("</").Append(node.Name).Append('>').ToString();
     }
@@ -265,7 +289,14 @@ internal static class PowerPointMathClipboard
     private static string Rels(string kind, string target) =>
         $"<Relationships xmlns=\"{Rel}\"><Relationship Id=\"rId1\" Type=\"{R}/{kind}\" Target=\"{target}\"/></Relationships>";
 
-    private static string Theme()
+    private static string Theme() =>
+        $"<a:clipboardTheme xmlns:a=\"{A}\">{ThemeElements()}<a:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/></a:clipboardTheme>";
+
+    /// <summary>The package's theme as a presentation theme part.</summary>
+    internal static string PresentationTheme() =>
+        $"<a:theme xmlns:a=\"{A}\" name=\"Office\">{ThemeElements()}<a:objectDefaults/><a:extraClrSchemeLst/></a:theme>";
+
+    private static string ThemeElements()
     {
         var colors = string.Concat(new[]
         {
@@ -276,7 +307,7 @@ internal static class PowerPointMathClipboard
         const string fill = "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>";
         const string fonts = "<a:latin typeface=\"Cambria Math\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/>";
         string Repeat(string value) => string.Concat(Enumerable.Repeat(value, 3));
-        return $"<a:clipboardTheme xmlns:a=\"{A}\"><a:themeElements><a:clrScheme name=\"Office\">{colors}</a:clrScheme><a:fontScheme name=\"Office\"><a:majorFont>{fonts}</a:majorFont><a:minorFont>{fonts}</a:minorFont></a:fontScheme><a:fmtScheme name=\"Office\"><a:fillStyleLst>{Repeat(fill)}</a:fillStyleLst><a:lnStyleLst>{Repeat($"<a:ln w=\"12700\">{fill}<a:prstDash val=\"solid\"/></a:ln>")}</a:lnStyleLst><a:effectStyleLst>{Repeat("<a:effectStyle><a:effectLst/></a:effectStyle>")}</a:effectStyleLst><a:bgFillStyleLst>{Repeat(fill)}</a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/></a:clipboardTheme>";
+        return $"<a:themeElements><a:clrScheme name=\"Office\">{colors}</a:clrScheme><a:fontScheme name=\"Office\"><a:majorFont>{fonts}</a:majorFont><a:minorFont>{fonts}</a:minorFont></a:fontScheme><a:fmtScheme name=\"Office\"><a:fillStyleLst>{Repeat(fill)}</a:fillStyleLst><a:lnStyleLst>{Repeat($"<a:ln w=\"12700\">{fill}<a:prstDash val=\"solid\"/></a:ln>")}</a:lnStyleLst><a:effectStyleLst>{Repeat("<a:effectStyle><a:effectLst/></a:effectStyle>")}</a:effectStyleLst><a:bgFillStyleLst>{Repeat(fill)}</a:bgFillStyleLst></a:fmtScheme></a:themeElements>";
     }
 
     // build_stored_zip: stored entries, UTF-8 names, DOS date 1980-01-01.

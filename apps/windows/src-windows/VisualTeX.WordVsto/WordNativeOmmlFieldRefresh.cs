@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -22,6 +23,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
     private readonly HashSet<string> _numberAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Field> _references = new();
     private int _insertedCount;
+    private int _earliestChange;
     internal int Count => _hosts.Count;
 
     private sealed class LiteralPrefixUpdate
@@ -259,7 +261,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
     internal static WordNativeOmmlFieldRefresh Prepare(Document document, int earliestChange, bool refreshLiteralPrefixes = false,
         IReadOnlyList<OMath>? additionalNativeHosts = null, ISet<int>? externallyRewrittenNumberStarts = null)
     {
-        var plan = new WordNativeOmmlFieldRefresh(document);
+        var plan = new WordNativeOmmlFieldRefresh(document) { _earliestChange = earliestChange };
         Range? scope = null;
         Range? search = null;
         Range? paragraph = null;
@@ -289,24 +291,33 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                 Release(paragraph); paragraph = null;
                 Release(find); find = null;
                 Release(retrieval); retrieval = null;
-                Release(search); search = scope.Duplicate;
-                search.SetRange(cursor, end);
-                retrieval = search.TextRetrievalMode;
-                retrieval.IncludeFieldCodes = true;
-                retrieval.IncludeHiddenText = true;
-                find = search.Find;
-                find.ClearFormatting();
-                find.Text = "SEQ";
-                find.Forward = true;
-                find.Wrap = WdFindWrap.wdFindStop;
-                find.Format = false;
-                find.MatchWholeWord = true;
-                find.MatchWildcards = false;
-                find.MatchCase = false;
-                find.MatchSoundsLike = false;
-                find.MatchAllWordForms = false;
-                if (!find.Execute()) break;
-                paragraph = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                Release(search); search = null;
+                if (OfficeHostEnvironment.IsWps)
+                {
+                    paragraph = WordNumberingFieldCollection.NextEquationUnit(scope, cursor, end);
+                    if (paragraph is null) break;
+                }
+                else
+                {
+                    search = scope.Duplicate;
+                    search.SetRange(cursor, end);
+                    retrieval = search.TextRetrievalMode;
+                    retrieval.IncludeFieldCodes = true;
+                    retrieval.IncludeHiddenText = true;
+                    find = search.Find;
+                    find.ClearFormatting();
+                    find.Text = "SEQ";
+                    find.Forward = true;
+                    find.Wrap = WdFindWrap.wdFindStop;
+                    find.Format = false;
+                    find.MatchWholeWord = true;
+                    find.MatchWildcards = false;
+                    find.MatchCase = false;
+                    find.MatchSoundsLike = false;
+                    find.MatchAllWordForms = false;
+                    if (!find.Execute()) break;
+                    paragraph = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                }
                 if (paragraph.End <= cursor || paragraph.Start >= end)
                     throw new InvalidDataException("Native-number search escaped or repeated its bounded suffix.");
                 // Inspect every OMath in this found paragraph before moving past
@@ -454,6 +465,11 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
         // Without any tracked change no field can be revision-deleted; skip the
         // two Revisions queries per field (about 26 ms per equation).
         var hasRevisions = WordNumberingFieldCollection.HasRevisions(_document);
+        if (OfficeHostEnvironment.IsWps)
+        {
+            ApplyInWps(hasRevisions);
+            return;
+        }
         WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-before-update");
         // A raw range starting exactly where a preceding paragraph replacement
         // ends can expand/collapse through Word's boundary gravity. Reacquire the
@@ -502,8 +518,120 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             // result is invalid in Word. Let the original REF field and its own
             // formatting switches perform the native result update instead.
             reference.Update();
+            WordEquationReferenceFields.FlattenWpsMathResult(reference);
         }
         WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-after-update");
+    }
+
+    // A WPS OMath is a tracked range, not the equation: one taken before a write at its
+    // start grows over what is written there (the equation inserted before it). The
+    // numbered equations are found again after the write, in document order, and the
+    // references to their numbers are found from the REF fields, because WPS's Find does
+    // not search field codes. Literal chapter prefixes (number refresh only, no write
+    // before the hosts) keep the hosts taken in preflight.
+    private void ApplyInWps(bool hasRevisions)
+    {
+        WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-before-update");
+        foreach (var item in _literalPrefixes)
+            item.Value.Apply(_document, item.Key);
+        var numbers = new List<(int Start, int End)>();
+        Range? scope = null;
+        try
+        {
+            scope = _document.Content;
+            var cursor = Math.Max(scope.Start, _earliestChange);
+            while (cursor < scope.End)
+            {
+                Range? unit = null;
+                OMaths? maths = null;
+                try
+                {
+                    unit = WordNumberingFieldCollection.NextEquationUnit(scope, cursor, scope.End);
+                    if (unit is null) break;
+                    maths = unit.OMaths;
+                    for (var index = 1; index <= maths.Count; index++)
+                    {
+                        OMath? math = null;
+                        Range? exact = null;
+                        try
+                        {
+                            math = maths[index];
+                            if (math.Type != WdOMathType.wdOMathDisplay) continue;
+                            exact = math.Range.Duplicate;
+                            if (exact.Start < cursor
+                                || !WordNativeOmmlNumbering.TryResolveUnownedNativeStructure(_document, exact, out _))
+                                continue;
+                            var address = new WordFormulaRangeAddress
+                            { StoryType = exact.StoryType, Start = exact.Start, End = exact.End };
+                            WordFormulaMutationTransaction.TraceBoundary(_document.Application,
+                                $"native-number-update-host start={address.Start} end={address.End}");
+                            var refreshed = WordNativeOmmlNumbering.RefreshCanonicalNativeFields(math,
+                                new WordFormulaHostDescriptor
+                                {
+                                    Kind = WordFormulaHostKind.Omml, DisplayMode = "block", Range = address,
+                                    Numbering = new WordFormulaNumberingDescriptor
+                                    {
+                                        Numbered = true, ContainerKind = WordFormulaNumberingContainerKind.CanonicalNativeOmml,
+                                        ContainerRange = address,
+                                    },
+                                },
+                                hasRevisions: hasRevisions);
+                            var number = refreshed.Numbering.NumberRange!;
+                            numbers.Add((number.Start, number.End));
+                        }
+                        finally { Release(exact); Release(math); }
+                    }
+                    // The updates may have changed the paragraph's length.
+                    if (unit.End <= cursor)
+                        throw new InvalidDataException("Native-number refresh did not advance past its paragraph.");
+                    cursor = unit.End;
+                }
+                finally { Release(maths); Release(unit); }
+            }
+        }
+        finally { Release(scope); }
+        foreach (var item in _literalPrefixes)
+            item.Value.RestoreAliases(_document, item.Key);
+        UpdateNumberReferencesInWps(numbers);
+        WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-after-update");
+    }
+
+    // Every REF whose bookmark lies inside one of the refreshed numbers.
+    private void UpdateNumberReferencesInWps(IReadOnlyList<(int Start, int End)> numbers)
+    {
+        if (numbers.Count == 0) return;
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            fields = _document.Fields;
+            bookmarks = _document.Bookmarks;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                Bookmark? bookmark = null;
+                Range? target = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (!WordEquationReferenceFields.TryReadReferenceBookmark(code.Text ?? string.Empty, out var name)
+                        || !bookmarks.Exists(name))
+                        continue;
+                    bookmark = bookmarks[name];
+                    target = bookmark.Range;
+                    if (target.StoryType != WdStoryType.wdMainTextStory
+                        || !numbers.Any(number => target.Start >= number.Start && target.End <= number.End))
+                        continue;
+                    field.Update();
+                    WordEquationReferenceFields.FlattenWpsMathResult(field);
+                }
+                finally { Release(target); Release(bookmark); Release(code); Release(field); }
+            }
+        }
+        finally { Release(bookmarks); Release(fields); }
     }
 
     internal void VerifyRollback()

@@ -1830,6 +1830,27 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         // Save/reopen correctness is a persistence invariant. Opening a document
         // must not mutate or globally "repair" OMML/VisualTeX numbering. Explicit
         // migration/refresh commands remain available for legacy documents.
+        // WPS is the exception: it damages Word's equation numbers when it reads the
+        // file (WordFieldCode.RepairWpsEquationInstructions). Restoring them is not an
+        // edit of the user's: the saved state stays and nothing is left to undo.
+        if (OfficeHostEnvironment.IsWps)
+        {
+            try
+            {
+                var saved = document.Saved;
+                var repaired = WordFieldCode.RepairWpsEquationInstructions(document);
+                if (repaired > 0)
+                {
+                    document.UndoClear();
+                    document.Saved = saved;
+                }
+                WordDoubleClickHook.TraceMessage($"wps-equation-fields open repaired={repaired}");
+            }
+            catch (Exception error)
+            {
+                WordDoubleClickHook.TraceMessage("wps-equation-fields open failed " + error.Message);
+            }
+        }
     }
 
     private void OnDocumentBeforeSave(
@@ -1839,6 +1860,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         // OMML/VisualTeX persistence is established when the mutation commits.
         // Saving a document must not enumerate or repair formula hosts.
+        // WPS: equation numbers pasted or opened before the add-in loaded still hold
+        // WPS's U+2217, which saving would write into the file for Word to read.
+        if (OfficeHostEnvironment.IsWps)
+        {
+            try
+            {
+                var repaired = WordFieldCode.RepairWpsEquationInstructions(document);
+                WordDoubleClickHook.TraceMessage($"wps-equation-fields save repaired={repaired}");
+            }
+            catch (Exception error)
+            {
+                WordDoubleClickHook.TraceMessage("wps-equation-fields save failed " + error.Message);
+            }
+        }
     }
 
     private NumberedHostDeleteViewState? CaptureNumberedHostDeleteViewState(Selection selection)

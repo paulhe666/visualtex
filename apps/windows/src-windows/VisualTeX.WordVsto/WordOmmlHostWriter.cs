@@ -1248,7 +1248,8 @@ internal static class WordOmmlHostWriter
                 .ToArray();
             if (flags.Length == 0) return false;
             foreach (var flag in flags) flag.Remove();
-            mark.InsertXML(
+            WpsXmlInsertion.Insert(
+                mark,
                 (package.Declaration?.ToString() ?? string.Empty)
                 + package.ToString(SaveOptions.DisableFormatting));
             return true;

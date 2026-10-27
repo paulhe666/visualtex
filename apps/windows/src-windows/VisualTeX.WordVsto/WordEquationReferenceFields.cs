@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -100,6 +101,7 @@ internal static partial class WordEquationReferenceFields
                     "Word created a REF field for a different equation target.");
 
             refField.ShowCodes = false;
+            FlattenWpsMathResult(refField);
             refResult = refField.Result;
             NormalizeInternalStyle(
                 refResult);
@@ -159,6 +161,11 @@ internal static partial class WordEquationReferenceFields
             throw new ArgumentException("Equation reference bookmark is required.", nameof(bookmarkName));
         if (document.ReadOnly)
             throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
+        if (OfficeHostEnvironment.IsWps)
+        {
+            InsertNavigableReferenceWps(document, selection, bookmarkName, prefix, suffix, preferredInsertionColor);
+            return;
+        }
 
         Bookmarks? bookmarks = null;
         Range? sourceFormattingRange = null;
@@ -250,9 +257,10 @@ internal static partial class WordEquationReferenceFields
             Release(goToCode);
             goToCode = goToField.Code;
             finalNestedFields = goToCode.Fields;
-            if (finalNestedFields.Count != 1)
-                throw new InvalidDataException($"Word created {finalNestedFields.Count} nested reference fields; exactly one is required.");
-            refField = finalNestedFields[1];
+            var owners = WordFieldCode.OwnerEntries(finalNestedFields, goToCode);
+            if (finalNestedFields.Count - owners != 1)
+                throw new InvalidDataException($"Word created {finalNestedFields.Count - owners} nested reference fields; exactly one is required.");
+            refField = finalNestedFields[1 + owners];
             finalRefCode = refField.Code;
             if (refField.Type != WdFieldType.wdFieldRef
                 || !TryReadVisualTeXNumberBookmark(finalRefCode.Text, out var insertedBookmark)
@@ -278,10 +286,11 @@ internal static partial class WordEquationReferenceFields
 
             finalNestedFields = goToCode.Fields;
             phase = "validate refreshed reference field tree";
-            if (finalNestedFields.Count != 1)
+            owners = WordFieldCode.OwnerEntries(finalNestedFields, goToCode);
+            if (finalNestedFields.Count - owners != 1)
                 throw new InvalidDataException(
                     "公式引用未能保留一个完整的嵌套 REF 字段。");
-            finalRefField = finalNestedFields[1];
+            finalRefField = finalNestedFields[1 + owners];
             finalRefCode = finalRefField.Code;
             NormalizeInternalStyle(finalRefCode);
             formatting.Apply(finalRefCode);
@@ -301,10 +310,11 @@ internal static partial class WordEquationReferenceFields
             Release(finalNestedFields);
             finalNestedFields = null;
             finalNestedFields = goToCode.Fields;
-            if (finalNestedFields.Count != 1)
+            owners = WordFieldCode.OwnerEntries(finalNestedFields, goToCode);
+            if (finalNestedFields.Count - owners != 1)
                 throw new InvalidDataException(
                     "公式引用在刷新后丢失了嵌套 REF 字段。");
-            finalRefField = finalNestedFields[1];
+            finalRefField = finalNestedFields[1 + owners];
             finalRefResult = finalRefField.Result;
             NormalizeInternalStyle(finalRefResult);
             formatting.Apply(finalRefResult);
@@ -360,6 +370,124 @@ internal static partial class WordEquationReferenceFields
         }
     }
 
+    // WPS: Fields.Add gives GOTOBUTTON a separator and an empty result, which WPS then
+    // displays instead of the nested REF. Insert the tree MathType itself writes,
+    // GOTOBUTTON without a result around one REF, as Word field XML (WpsFieldXml).
+    private static void InsertNavigableReferenceWps(
+        Document document,
+        Selection selection,
+        string bookmarkName,
+        string prefix,
+        string suffix,
+        WdColor? preferredInsertionColor)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? numberRange = null;
+        Range? sourceFormattingRange = null;
+        Field? goToField = null;
+        Range? goToCode = null;
+        Fields? nestedFields = null;
+        Field? refField = null;
+        Range? refCode = null;
+        Range? refResult = null;
+        Range? selectionRange = null;
+        var phase = "capture insertion formatting";
+        try
+        {
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(bookmarkName))
+                throw new InvalidDataException(
+                    $"公式引用目标书签“{bookmarkName}”已不存在。文档内容可能已发生变化。");
+            bookmark = bookmarks[bookmarkName];
+            numberRange = bookmark.Range;
+            var numberText = numberRange.Text ?? string.Empty;
+
+            sourceFormattingRange = selection.Range.Duplicate;
+            sourceFormattingRange.Collapse(WdCollapseDirection.wdCollapseStart);
+            var formatting = WordCharacterFormatting.Capture(sourceFormattingRange);
+            if (preferredInsertionColor.HasValue)
+            {
+                var requested = preferredInsertionColor.Value;
+                formatting.Color = requested == WdColor.wdColorAutomatic
+                    || (int)requested >= 0
+                        ? requested
+                        : WdColor.wdColorAutomatic;
+            }
+
+            phase = "insert reference delimiters";
+            var referenceStart = selection.Start;
+            if (!string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(suffix))
+                selection.TypeText(prefix + suffix);
+            var position = referenceStart + prefix.Length;
+
+            phase = "insert GOTOBUTTON field tree";
+            var runs = new List<System.Xml.Linq.XElement>
+            {
+                WpsFieldXml.FieldChar("begin"),
+                WpsFieldXml.Instruction(" GOTOBUTTON " + ResolveNavigationBookmark(document, bookmarkName) + " "),
+            };
+            runs.AddRange(WpsFieldXml.ComplexField(" REF " + bookmarkName + " \\* CHARFORMAT \\! ", numberText));
+            runs.Add(WpsFieldXml.FieldChar("end"));
+            WpsFieldXml.InsertRuns(document, position, runs);
+
+            phase = "validate reference field tree";
+            goToField = WpsFieldXml.FindFieldStartingAt(
+                    document,
+                    position,
+                    field => field.Type == WdFieldType.wdFieldGoToButton)
+                ?? throw new InvalidDataException("WPS did not materialize the GOTOBUTTON reference at its insertion point.");
+            goToCode = goToField.Code;
+            nestedFields = goToCode.Fields;
+            var owners = WordFieldCode.OwnerEntries(nestedFields, goToCode);
+            if (nestedFields.Count - owners != 1)
+                throw new InvalidDataException($"WPS created {nestedFields.Count - owners} nested reference fields; exactly one is required.");
+            refField = nestedFields[1 + owners];
+            refCode = refField.Code;
+            if (refField.Type != WdFieldType.wdFieldRef
+                || !TryReadVisualTeXNumberBookmark(refCode.Text, out var insertedBookmark)
+                || !string.Equals(insertedBookmark, bookmarkName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("WPS created a reference to a different bookmark.");
+
+            phase = "apply insertion formatting";
+            NormalizeInternalStyle(goToCode);
+            formatting.Apply(goToCode);
+            refResult = refField.Result;
+            NormalizeInternalStyle(refResult);
+            formatting.Apply(refResult);
+            if (!HasCurrentReferenceResult(document, bookmarkName, refResult))
+                throw new InvalidDataException("The created reference does not display its current equation number.");
+
+            phase = "restore insertion point after reference";
+            // GOTOBUTTON has no result in WPS: its end mark follows the code.
+            var after = Math.Max(
+                document.Content.Start,
+                Math.Min(goToCode.End + 1, Math.Max(document.Content.Start, document.Content.End - 1)));
+            selection.SetRange(after + suffix.Length, after + suffix.Length);
+            selectionRange = selection.Range;
+            NormalizeInternalStyle(selectionRange);
+            formatting.Apply(selectionRange);
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Could not {phase} for equation reference '{bookmarkName}'.", error);
+        }
+        finally
+        {
+            Release(selectionRange);
+            Release(refResult);
+            Release(refCode);
+            Release(refField);
+            Release(nestedFields);
+            Release(goToCode);
+            Release(goToField);
+            Release(sourceFormattingRange);
+            Release(numberRange);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+    }
+
     internal static int UpdateNavigableReferences(
         Document document,
         ISet<string>? targetBookmarkNames = null)
@@ -408,6 +536,7 @@ internal static partial class WordEquationReferenceFields
                                 WordCharacterFormatting.Capture(
                                     directResult);
                             outerField.Update();
+                            FlattenWpsMathResult(outerField);
                             Release(directResult);
                             directResult =
                                 outerField.Result;
@@ -462,6 +591,7 @@ internal static partial class WordEquationReferenceFields
                         // it directly. Never touch the target #(SEQ) field or its
                         // mathematical Field.Code.Text.
                         nestedField.Update();
+                        FlattenWpsMathResult(nestedField);
 
                         // Word may rematerialize the outer field tree after a nested
                         // update. Reacquire it before restoring the user-visible
@@ -630,8 +760,9 @@ internal static partial class WordEquationReferenceFields
             var group = match.Groups["target"];
             if (string.Equals(group.Value, target, StringComparison.OrdinalIgnoreCase)) return false;
             nested = code.Fields;
-            if (nested.Count != 1) throw new InvalidDataException("The navigable reference must contain exactly one REF.");
-            firstNested = nested[1];
+            var owners = WordFieldCode.OwnerEntries(nested, code);
+            if (nested.Count - owners != 1) throw new InvalidDataException("The navigable reference must contain exactly one REF.");
+            firstNested = nested[1 + owners];
             firstCode = firstNested.Code;
             if (firstNested.Type != WdFieldType.wdFieldRef || code.Start + group.Index + group.Length >= firstCode.Start - 1)
                 throw new InvalidDataException("The navigation token overlaps the nested reference.");
@@ -665,11 +796,47 @@ internal static partial class WordEquationReferenceFields
             // be a hidden number field with a different size or internal style.
             formatting.Apply(code);
             field.Update();
+            FlattenWpsMathResult(field);
             Release(result);
             result = field.Result;
             formatting.Apply(result);
         }
         finally { Release(result); Release(code); }
+    }
+
+    // WPS's REF evaluation copies a number that sits inside an equation as math:
+    // the reference shows as a one-character equation in the math font, where
+    // Word gives plain text in the field's character format (\* CHARFORMAT).
+    // WPS keeps text assigned to the result inside the math zone and implements
+    // no OMath.Remove, so the equation is deleted and its text written in place.
+    internal static void FlattenWpsMathResult(Field field)
+    {
+        if (!OfficeHostEnvironment.IsWps) return;
+        Range? result = null;
+        OMaths? maths = null;
+        try
+        {
+            result = field.Result;
+            maths = result.OMaths;
+            if (maths.Count == 0) return;
+            var text = new string((result.Text ?? string.Empty).Where(c => !char.IsControl(c)).ToArray());
+            for (var index = maths.Count; index >= 1; index--)
+            {
+                OMath? math = null;
+                Range? range = null;
+                try
+                {
+                    math = maths[index];
+                    range = math.Range;
+                    range.Delete();
+                }
+                finally { Release(range); Release(math); }
+            }
+            Release(result);
+            result = field.Result;
+            result.InsertAfter(text);
+        }
+        finally { Release(maths); Release(result); }
     }
 
     private static bool IsGeneratedNumberReference(Document document, Field field, string name) =>
@@ -858,6 +1025,7 @@ internal static partial class WordEquationReferenceFields
                 WordCharacterFormatting.Capture(
                     result);
             field.Update();
+            FlattenWpsMathResult(field);
 
             Release(result);
             result = field.Result.Duplicate;
@@ -1155,7 +1323,7 @@ internal static partial class WordEquationReferenceFields
                     if (outer.Type != WdFieldType.wdFieldGoToButton) continue;
                     code = outer.Code;
                     nested = code.Fields;
-                    for (var child = 1; child <= nested.Count; child++)
+                    for (var child = 1 + WordFieldCode.OwnerEntries(nested, code); child <= nested.Count; child++)
                     {
                         Field? item = null;
                         Range? childCode = null;

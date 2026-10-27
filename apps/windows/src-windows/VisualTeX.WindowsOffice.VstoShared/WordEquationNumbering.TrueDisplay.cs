@@ -4272,7 +4272,8 @@ internal static partial class WordEquationNumbering
             }
             vmlStroke.SetAttributeValue("opacity", "0");
 
-            paragraphRange.InsertXML(
+            WpsXmlInsertion.Insert(
+                paragraphRange,
                 xml.ToString(SaveOptions.DisableFormatting));
             try { document.Repaginate(); } catch { }
             if (string.Equals(

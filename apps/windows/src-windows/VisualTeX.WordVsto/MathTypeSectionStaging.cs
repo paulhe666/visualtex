@@ -35,7 +35,7 @@ internal sealed class MathTypeSectionStaging : IDisposable
             content = _staging.Content;
             insertion = content.Duplicate;
             insertion.Collapse(WdCollapseDirection.wdCollapseStart);
-            insertion.InsertXML(flatOpc);
+            WpsXmlInsertion.Insert(insertion, flatOpc);
             Release(content); content = _staging.Content;
             field = MathTypeFieldLocator.AtCodeStart(content, MathTypeFieldLocator.Section, content.Start + 1)
                 ?? throw new InvalidDataException("The prepared MathType section has no exact native macro field.");

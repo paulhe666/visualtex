@@ -845,7 +845,7 @@ internal static class MathTypeEquationReferences
                     continue;
 
                 nestedFields = outerCode.Fields;
-                for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
+                for (var nestedIndex = 1 + WordFieldCode.OwnerEntries(nestedFields, outerCode); nestedIndex <= nestedFields.Count; nestedIndex++)
                 {
                     Release(nestedResult);
                     nestedResult = null;
@@ -1017,7 +1017,7 @@ internal static class MathTypeEquationReferences
             outerCode = placeRef.Code;
             if (!IsMathTypePlaceRefCode(outerCode.Text)) return false;
             nestedFields = outerCode.Fields;
-            for (var index = 1; index <= nestedFields.Count; index++)
+            for (var index = 1 + WordFieldCode.OwnerEntries(nestedFields, outerCode); index <= nestedFields.Count; index++)
             {
                 Release(nestedCode);
                 nestedCode = null;
@@ -1065,7 +1065,9 @@ internal static class MathTypeEquationReferences
             outerCode = placeRef.Code;
             var stream = outerCode.Text ?? string.Empty;
             nestedFields = outerCode.Fields;
-            if (nestedFields.Count == 0) return string.Empty;
+            var owners = WordFieldCode.OwnerEntries(nestedFields, outerCode);
+            var nestedCount = nestedFields.Count - owners;
+            if (nestedCount == 0) return string.Empty;
 
             var hiddenControlStart = -1;
             var hiddenControlEnd = -1;
@@ -1076,12 +1078,12 @@ internal static class MathTypeEquationReferences
                 nestedOrdinal++;
                 var end = stream.IndexOf('\u0015', index + 1);
                 if (end < 0) return string.Empty;
-                if (nestedOrdinal <= nestedFields.Count)
+                if (nestedOrdinal <= nestedCount)
                 {
                     Release(nestedCode);
                     nestedCode = null;
                     Release(nested);
-                    nested = nestedFields[nestedOrdinal];
+                    nested = nestedFields[nestedOrdinal + owners];
                     nestedCode = nested.Code;
                     if (IsHiddenMathTypeEquationIncrement(nestedCode.Text))
                     {
@@ -1109,12 +1111,12 @@ internal static class MathTypeEquationReferences
                 var end = stream.IndexOf('\u0015', index + 1);
                 if (end < 0) break;
                 fieldOrdinal++;
-                if (fieldOrdinal <= nestedFields.Count)
+                if (fieldOrdinal <= nestedCount)
                 {
                     Release(nestedResult);
                     nestedResult = null;
                     Release(nested);
-                    nested = nestedFields[fieldOrdinal];
+                    nested = nestedFields[fieldOrdinal + owners];
                     nestedResult = nested.Result;
                     visible.Append(nestedResult.Text ?? string.Empty);
                 }

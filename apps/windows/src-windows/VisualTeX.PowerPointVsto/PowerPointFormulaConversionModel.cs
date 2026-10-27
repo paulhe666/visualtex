@@ -531,6 +531,13 @@ internal static class PowerPointSlideXml
         return info;
     }
 
+    // The native equations of the text shape with this id inside a group.
+    internal static int CountShapeEquations(XElement scope, int shapeId) =>
+        LiveDescendants(scope)
+            .Where(element => element.Name == P + "sp" && ShapeId(element) == shapeId)
+            .Take(1)
+            .Sum(shape => LiveDescendants(shape).Count(child => child.Name == M + "oMath" && !child.Ancestors(M + "oMath").Any()));
+
     private static int CountGroupFormulaHints(XElement group)
     {
         var count = 0;

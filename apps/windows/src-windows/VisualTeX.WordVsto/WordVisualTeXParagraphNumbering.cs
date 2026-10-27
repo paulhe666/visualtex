@@ -170,8 +170,9 @@ internal static partial class WordVisualTeXParagraphNumbering
             tabInsertion.Text = "\t";
 
             // Batch numbering copies number fields between formulas whose TAB
-            // before the number is formatted alike.
-            var copies = preparedNumberPlan?.BodyFieldCopies;
+            // before the number is formatted alike. WPS builds every number tree
+            // from Word's field XML instead (see WordVisualTeXParagraphNumbering.Wps).
+            var copies = OfficeHostEnvironment.IsWps ? null : preparedNumberPlan?.BodyFieldCopies;
             string? copyFormat = null;
             if (copies is not null)
                 using (WordOperationMetrics.Measure("Numbering.Attach.CopyFormat"))
@@ -201,7 +202,9 @@ internal static partial class WordVisualTeXParagraphNumbering
                 placeRef = copies?.TryCopy(document, copyKey!, hostRange.End + 1, IsPlaceRefCode);
                 if (placeRef is null)
                 {
-                    placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
+                    placeRef = OfficeHostEnvironment.IsWps
+                        ? CreatePlaceRefWps(document, hostRange.End + 1, numberPlan, createdFields)
+                        : CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
                     copies?.Remember(document, copyKey!, placeRef);
                 }
             }
@@ -1114,6 +1117,13 @@ internal static partial class WordVisualTeXParagraphNumbering
                     code => IsHeadingStateRestartCode(code) && IsSameInstruction(code, instruction));
                 if (field is not null)
                     return;
+                if (OfficeHostEnvironment.IsWps)
+                {
+                    // Hidden SEQ state needs no evaluation in WPS: it counts SEQ
+                    // fields from their instructions.
+                    field = InsertHiddenStateFieldWps(document, position, instruction);
+                    return;
+                }
                 insertion =
                     document.Range(
                         position,
@@ -1188,6 +1198,8 @@ internal static partial class WordVisualTeXParagraphNumbering
                     || code.Start - 1 >=
                         hostRange.Start)
                     continue;
+                // WPS: Update gives the hidden state field a separator and result.
+                if (OfficeHostEnvironment.IsWps) continue;
                 field.Update();
             }
         }
@@ -1495,6 +1507,11 @@ internal static partial class WordVisualTeXParagraphNumbering
     // numbers at less than half the cost of one Update per nested field.
     private static void UpdatePlaceRefTree(Field placeRef)
     {
+        if (OfficeHostEnvironment.IsWps)
+        {
+            UpdatePlaceRefTreeWps(placeRef);
+            return;
+        }
         placeRef.Update();
         try { placeRef.ShowCodes = false; } catch { }
     }
@@ -1523,14 +1540,20 @@ internal static partial class WordVisualTeXParagraphNumbering
                 Release(fieldCode); fieldCode = null;
                 if (instruction.StartsWith("STYLEREF ", StringComparison.OrdinalIgnoreCase))
                     headingFields.Add(field);
-                else if (instruction.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase))
+                else if (instruction.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase)
+                    // WPS: a hidden (\h) SEQ gains a separator and result when
+                    // updated; it counts from its instruction without one.
+                    && !(OfficeHostEnvironment.IsWps && IsHiddenSequenceInstruction(instruction)))
                     sequenceFields.Add(field);
                 else Release(field);
                 field = null;
             }
             foreach (var heading in headingFields) heading.Update();
             foreach (var sequence in sequenceFields) sequence.Update();
-            try { placeRef.ShowCodes = false; } catch { }
+            if (!OfficeHostEnvironment.IsWps)
+            {
+                try { placeRef.ShowCodes = false; } catch { }
+            }
         }
         finally
         {
@@ -1709,8 +1732,11 @@ internal static partial class WordVisualTeXParagraphNumbering
             if (nested.Count == 0)
                 return string.Empty;
 
+            // WPS also lists the owner itself first in Code.Fields.
+            var ownerOffset = WordFieldCode.OwnerEntries(nested, outerCode);
+
             var hiddenEnd = -1;
-            var nestedOrdinal = 0;
+            var nestedOrdinal = ownerOffset;
             for (var index = 0;
                  index < stream.Length;
                  index++)

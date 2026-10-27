@@ -47,6 +47,7 @@
       <ComponentRef Id="PowerPointComRegistration" />
       <ComponentRef Id="WordOfficeRegistration" />
       <ComponentRef Id="PowerPointOfficeRegistration" />
+      <ComponentRef Id="WpsAddinWhitelist" />
       <ComponentRef Id="ModeRegistration" />
     </Feature>
 
@@ -295,6 +296,14 @@
         <RegistryValue Name="CommandLineSafe" Type="integer" Value="0" />
         <RegistryValue Name="CodeBase" Type="string" Value="file:///[INSTALLFOLDER]VisualTeX.PowerPointVsto.dll" />
       </RegistryKey>
+    </Component>
+
+    <!-- WPS Office loads the same COM add-ins from the Office Addins keys above, but WPS
+         Presentation (and Writer in some editions) only loads add-ins named in its
+         whitelist: one empty REG_SZ per add-in ProgID. -->
+    <Component Id="WpsAddinWhitelist" Directory="INSTALLFOLDER" Guid="*" Bitness="$(var.ComponentBitness)">
+      <RegistryValue Root="HKLM" Key="Software\Kingsoft\Office\WPS\AddinsWL" Name="VisualTeX.WordVsto" Type="string" Value="" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Kingsoft\Office\WPP\AddinsWL" Name="VisualTeX.PowerPointVsto" Type="string" Value="" />
     </Component>
 
     <Component Id="ModeRegistration" Directory="INSTALLFOLDER" Guid="*" Bitness="$(var.ComponentBitness)">

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -459,7 +460,10 @@ internal static class WordNativeOmmlNumbering
 
                     if ((pass == 0 && isStyleRef)
                         || (pass == 1 && isSequence))
+                    {
+                        WordFieldCode.RepairWpsEquationInstruction(code!, ref instruction);
                         field.Update();
+                    }
                 }
             }
         }
@@ -545,6 +549,7 @@ internal static class WordNativeOmmlNumbering
                     if (sequence is not null)
                         throw new InvalidDataException(
                             "Canonical native OMML contains more than one SEQ field.");
+                    WordFieldCode.RepairWpsEquationInstruction(code!, ref instruction);
                     sequence = field;
                     field = null;
                     continue;
@@ -557,6 +562,7 @@ internal static class WordNativeOmmlNumbering
                     if (styleRef is not null)
                         throw new InvalidDataException(
                             "Canonical native OMML contains more than one STYLEREF field.");
+                    WordFieldCode.RepairWpsEquationInstruction(code!, ref instruction);
                     styleRef = field;
                     field = null;
                 }
@@ -655,6 +661,9 @@ internal static class WordNativeOmmlNumbering
 
     private static Range? TryResolveNumberContentRange(OMath math, Range equation)
     {
+        // WPS answers OMath.Functions with placeholder functions ("default" at [1,1)).
+        if (OfficeHostEnvironment.IsWps)
+            return TryResolveWpsNumberContentRange(equation);
         OMathFunctions? roots = null;
         OMathFunction? arrayFunction = null;
         OMathEqArray? array = null;
@@ -708,6 +717,54 @@ internal static class WordNativeOmmlNumbering
             Release(range); Release(number); Release(arguments); Release(delimiter);
             Release(delimiterFunction); Release(functions); Release(body); Release(entries);
             Release(array); Release(arrayFunction); Release(roots);
+        }
+    }
+
+    // WPS lays a numbered equation out as characters (measured on WPS 12.1.0.28488): "\r"
+    // (equation array), the formula, "#", "\r" (delimiter), the number argument (a literal
+    // prefix and the STYLEREF/SEQ fields), "\r" (delimiter end), "\r" (array end). The argument
+    // runs from after the "#\r" before the equation's first field to the end of its last field.
+    // No field precedes the first one, so text offsets there are character positions.
+    private static Range? TryResolveWpsNumberContentRange(Range equation)
+    {
+        Fields? fields = null;
+        Field? first = null;
+        Field? last = null;
+        Range? firstCode = null;
+        Range? lastResult = null;
+        Range? before = null;
+        Range? after = null;
+        try
+        {
+            fields = equation.Fields;
+            if (fields.Count == 0) return null;
+            first = fields[1];
+            last = fields[fields.Count];
+            firstCode = first.Code;
+            lastResult = last.Result;
+            var firstBegin = firstCode.Start - 1;
+            var argumentEnd = lastResult.End + 1;
+            if (firstBegin <= equation.Start || argumentEnd >= equation.End) return null;
+            before = equation.Duplicate;
+            before.SetRange(equation.Start, firstBegin);
+            var text = before.Text ?? string.Empty;
+            var delimiter = text.LastIndexOf('\r');
+            if (delimiter < 1 || text[delimiter - 1] != '#') return null;
+            after = equation.Duplicate;
+            after.SetRange(argumentEnd, argumentEnd + 1);
+            if (!string.Equals(after.Text, "\r", StringComparison.Ordinal)) return null;
+            var number = equation.Duplicate;
+            number.SetRange(equation.Start + delimiter + 1, argumentEnd);
+            return number;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        finally
+        {
+            Release(after); Release(before); Release(lastResult); Release(firstCode);
+            Release(last); Release(first); Release(fields);
         }
     }
 

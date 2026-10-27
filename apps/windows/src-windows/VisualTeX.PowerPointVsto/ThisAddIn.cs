@@ -969,6 +969,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
+            PowerPointDoubleClickHook.TraceMessage(
+                $"session-failed sessionId={sessionId ?? "<pending>"} error={error.GetType().FullName}: {error}");
             var failureMessage = OfficePluginLanguage.FormatOperationError(
                 error,
                 "VisualTeX PowerPoint 写入失败",

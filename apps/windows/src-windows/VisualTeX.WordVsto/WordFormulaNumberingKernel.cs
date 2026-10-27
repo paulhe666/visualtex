@@ -404,9 +404,10 @@ internal static partial class WordFormulaNumberingKernel
                 document);
         var targets =
             new List<EquationReferenceTarget>();
+        // Native equation items per SEQ series, captured when a host first needs one.
         var nativeEquationItems =
-            CaptureNativeEquationReferenceItems(
-                document);
+            new Dictionary<string, IReadOnlyDictionary<int, int>>(
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var host in index.Omml
                      .Concat(index.VisualTeX)
@@ -500,13 +501,11 @@ internal static partial class WordFormulaNumberingKernel
 
     private static IReadOnlyDictionary<int, int>
         CaptureNativeEquationReferenceItems(
-            Document document)
+            Document document,
+            string sequenceName)
     {
         var result =
             new Dictionary<int, int>();
-        var sequenceName =
-            ResolveNativeEquationSequenceName(
-                document);
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
@@ -557,10 +556,14 @@ internal static partial class WordFormulaNumberingKernel
         }
     }
 
+    // A document's equations are numbered in the series their SEQ fields name: Word writes
+    // its localized Equation caption label (the Chinese one in Chinese Word), WPS writes
+    // "Equation", and the document keeps its series wherever it is opened. An equation's
+    // item is its ordinal in its own series, not in the running application's label.
     private static int ResolveNativeEquationReferenceItem(
         Document document,
         WordFormulaHostDescriptor host,
-        IReadOnlyDictionary<int, int> nativeEquationItems)
+        Dictionary<string, IReadOnlyDictionary<int, int>> nativeEquationItems)
     {
         Range? hostRange = null;
         Fields? fields = null;
@@ -574,9 +577,6 @@ internal static partial class WordFormulaNumberingKernel
                     document,
                     host.Range);
             fields = hostRange.Fields;
-            var sequenceName =
-                ResolveNativeEquationSequenceName(
-                    document);
             var matched = 0;
             for (var index = 1;
                  index <= fields.Count;
@@ -589,14 +589,27 @@ internal static partial class WordFormulaNumberingKernel
                 Release(field);
                 field = fields[index];
                 code = field.Code.Duplicate;
-                if (!IsNativeEquationSequenceField(
-                        code.Text,
-                        sequenceName))
+                var sequenceName =
+                    NativeSequenceName(
+                        code.Text);
+                if (sequenceName is null)
                     continue;
+                if (!nativeEquationItems.TryGetValue(
+                        sequenceName,
+                        out var items))
+                {
+                    items =
+                        CaptureNativeEquationReferenceItems(
+                            document,
+                            sequenceName);
+                    nativeEquationItems.Add(
+                        sequenceName,
+                        items);
+                }
 
                 result =
                     field.Result.Duplicate;
-                if (!nativeEquationItems.TryGetValue(
+                if (!items.TryGetValue(
                         result.Start,
                         out var candidate))
                     return 0;
@@ -618,41 +631,21 @@ internal static partial class WordFormulaNumberingKernel
         }
     }
 
-    private static string ResolveNativeEquationSequenceName(
-        Document document)
-    {
-        CaptionLabels? labels = null;
-        CaptionLabel? label = null;
-        try
-        {
-            labels =
-                document.Application.CaptionLabels;
-            label =
-                labels[WdCaptionLabelID.wdCaptionEquation];
-            var name =
-                (label.Name ?? string.Empty).Trim();
-            return string.IsNullOrWhiteSpace(name)
-                ? "Equation"
-                : name;
-        }
-        catch
-        {
-            return "Equation";
-        }
-        finally
-        {
-            Release(label);
-            Release(labels);
-        }
-    }
-
     private static bool IsNativeEquationSequenceField(
         string? instruction,
-        string sequenceName)
+        string sequenceName) =>
+        !string.IsNullOrWhiteSpace(sequenceName)
+        && string.Equals(
+            NativeSequenceName(instruction),
+            sequenceName,
+            StringComparison.OrdinalIgnoreCase);
+
+    // The series a SEQ field names; null for any other field.
+    private static string? NativeSequenceName(
+        string? instruction)
     {
-        if (string.IsNullOrWhiteSpace(instruction)
-            || string.IsNullOrWhiteSpace(sequenceName))
-            return false;
+        if (string.IsNullOrWhiteSpace(instruction))
+            return null;
 
         var match =
             Regex.Match(
@@ -661,15 +654,10 @@ internal static partial class WordFormulaNumberingKernel
                 RegexOptions.IgnoreCase
                 | RegexOptions.CultureInvariant);
         if (!match.Success)
-            return false;
-        var identifier =
-            match.Groups["quoted"].Success
-                ? match.Groups["quoted"].Value
-                : match.Groups["plain"].Value;
-        return string.Equals(
-            identifier,
-            sequenceName,
-            StringComparison.OrdinalIgnoreCase);
+            return null;
+        return match.Groups["quoted"].Success
+            ? match.Groups["quoted"].Value
+            : match.Groups["plain"].Value;
     }
 
     internal static string ReferenceBookmarkName(

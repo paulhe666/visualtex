@@ -362,6 +362,36 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         finally { Release(find); Release(retrieval); Release(search); Release(revisions); }
     }
 
+    // WPS's Range.Find does not search inside equations, nor the field codes there
+    // ("SEQ", "#" are never found). Numbering discovery walks the equations instead:
+    // the search unit of the first equation that starts in [start, end), or null.
+    internal static Range? NextEquationUnit(Range scope, int start, int end)
+    {
+        Range? range = null;
+        OMaths? maths = null;
+        try
+        {
+            range = scope.Duplicate;
+            range.SetRange(start, end);
+            maths = range.OMaths;
+            for (var index = 1; index <= maths.Count; index++)
+            {
+                OMath? math = null;
+                Range? exact = null;
+                try
+                {
+                    math = maths[index];
+                    exact = math.Range;
+                    if (exact.Start < start || exact.Start >= end) continue;
+                    return CaptureSearchUnit(exact);
+                }
+                finally { Release(exact); Release(math); }
+            }
+            return null;
+        }
+        finally { Release(maths); Release(range); }
+    }
+
     internal static Range CaptureSearchUnit(Range match)
     {
         Range? unit = null;

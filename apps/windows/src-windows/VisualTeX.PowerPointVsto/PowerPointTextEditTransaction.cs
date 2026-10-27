@@ -41,6 +41,11 @@ internal static class PowerPointTextEditTransaction
             throw new InvalidOperationException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
                 "文本框内容或格式在编辑器打开后已改变，请重新选择插入位置；未写入公式。",
                 "The text box's content or formatting changed after the editor opened. Choose the insertion point again; the formula was not written."));
+        if (VisualTeX.WindowsOffice.VstoShared.OfficeHostEnvironment.IsWps)
+        {
+            ExecuteInWps(application, presentation, slideId, shapeId, expectedSource, mutate);
+            return;
+        }
         application.StartNewUndoEntry(); // Failure here must precede any mutation.
         var originalHistory = ReadHistory(application);
         try
@@ -77,6 +82,37 @@ internal static class PowerPointTextEditTransaction
                     primary, recovery);
             }
             throw;
+        }
+    }
+
+    // WPS Presentation has no readable Undo history (no Standard command bar), so
+    // a failed write cannot be undone step by step. Its writer stages everything
+    // that can fail before the text changes (WpsNativeEquations.Paste), and a
+    // failure is only reported as clean when the shape's saved text is still
+    // exactly the original.
+    private static void ExecuteInWps(Application application, Presentation presentation,
+        int slideId, int shapeId, string expectedSource, Action mutate)
+    {
+        try
+        {
+            RequireActive(application, presentation);
+            mutate();
+        }
+        catch (Exception primary)
+        {
+            bool unchanged;
+            try
+            {
+                unchanged = string.Equals(
+                    Fingerprint(PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId)),
+                    expectedSource, StringComparison.Ordinal);
+            }
+            catch { unchanged = false; }
+            if (unchanged) throw;
+            throw new AggregateException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                "WPS 公式写入失败，文本框已被部分修改；请用撤销恢复并检查。",
+                "Writing the WPS formula failed after the text box was partly changed. Use Undo to restore it and check the slide."),
+                primary);
         }
     }
 

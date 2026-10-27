@@ -1,6 +1,7 @@
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Shape = Microsoft.Office.Interop.PowerPoint.Shape;
 using Shapes = Microsoft.Office.Interop.PowerPoint.Shapes;
@@ -46,6 +47,7 @@ public sealed partial class PowerPointFormulaService
 
     private static string? HitNativeMathZone(DocumentWindow window, Slide slide, Shape shape, int x, int y)
     {
+        if (OfficeHostEnvironment.IsWps) return HitNativeMathZoneInWps(window, slide, shape, x, y);
         object? frame = null, range = null, zones = null;
         try
         {
@@ -71,6 +73,47 @@ public sealed partial class PowerPointFormulaService
             return null;
         }
         finally { Release(zones); Release(range); Release(frame); }
+    }
+
+    // A double-click on text without any structure or math letter reads no saved
+    // copy of the presentation.
+    private static string? HitNativeMathZoneInWps(DocumentWindow window, Slide slide, Shape shape, int x, int y)
+    {
+        if (shape.HasTextFrame != MsoTriState.msoTrue
+            || !WpsMathText.MayContainMath(WpsNativeEquations.LiveText(shape))) return null;
+        Presentation? presentation = null;
+        try
+        {
+            presentation = (Presentation)slide.Parent;
+            var zones = WpsNativeEquations.Locate(presentation, slide.SlideID, shape).Zones;
+            var bounds = WpsNativeEquations.Geometry(shape, zones);
+            for (var index = 0; index < zones.Count; index++)
+            {
+                var (left, top, width, height, _) = bounds[index];
+                if (x >= window.PointsToScreenPixelsX(left) && x <= window.PointsToScreenPixelsX(left + width)
+                    && y >= window.PointsToScreenPixelsY(top) && y <= window.PointsToScreenPixelsY(top + height))
+                    return $"{NativeOmmlReference(slide, shape)}:{zones[index].Start}:{zones[index].Length}";
+            }
+            return null;
+        }
+        finally { Release(presentation); }
+    }
+
+    private static (int Ordinal, int Start, int Length, int Count) ResolveNativeMathZoneInWps(
+        Presentation presentation, int slideId, Shape shape, string reference, string shapeXml)
+    {
+        var parts = reference.Substring(NativeOmmlReferencePrefix.Length).Split(':');
+        var selectedStart = parts.Length == 4 ? int.Parse(parts[2]) : 0;
+        var selectedLength = parts.Length == 4 ? int.Parse(parts[3]) : 0;
+        var zones = WpsNativeEquations.Locate(presentation, slideId, shape, shapeXml).Zones;
+        var index = selectedStart == 0
+            ? zones.Count == 1 ? 0 : -1
+            : WpsMathText.ZoneAt(zones, selectedStart, selectedLength);
+        if (index < 0)
+            throw new InvalidOperationException(Text(
+                "请把光标放入要编辑的一个原生公式中，或只选择该公式。",
+                "Place the caret inside the one native equation to edit, or select only that equation."));
+        return (index + 1, zones[index].Start, zones[index].Length, zones.Count);
     }
 
     // Math-zone offsets are transient coordinates, never persisted metadata.
@@ -119,7 +162,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            try { slide = slides.FindBySlideID(slideId); } catch { return (null, null); }
+            try { slide = FindSlideById(slides, slideId); } catch { return (null, null); }
             shapes = slide.Shapes;
             for (var index = 1; index <= shapes.Count; index++)
             {
@@ -151,14 +194,26 @@ public sealed partial class PowerPointFormulaService
             EnsureSourceDocument(presentation, selection.DocumentId);
             (slide, shape) = FindNativeOmml(presentation, slideId, shapeId);
             if (shape is null) throw new InvalidOperationException("The selected native equation no longer exists.");
-            var zone = ResolveNativeMathZone(shape, selection.ObjectId!);
-            var shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
+            string shapeXml;
+            (int Ordinal, int Start, int Length, int Count) zone;
+            if (OfficeHostEnvironment.IsWps)
+            {
+                shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
+                zone = ResolveNativeMathZoneInWps(presentation, slideId, shape, selection.ObjectId!, shapeXml);
+            }
+            else
+            {
+                zone = ResolveNativeMathZone(shape, selection.ObjectId!);
+                shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
+            }
             var omml = PowerPointNativeOmmlPackage.ReadEquation(shapeXml, zone.Ordinal, zone.Count);
             var nativeZone = PowerPointNativeOmmlPackage.ReadEquationZone(shapeXml, zone.Ordinal, zone.Count);
             var mathMl = PowerPointNativeOmmlKernel.ReadNativeMathMl(omml);
             var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The selected native equation has no recoverable source.");
-            var size = PowerPointOmmlBridge.ReadFontSize(shape) ?? 20f;
+            var size = (OfficeHostEnvironment.IsWps
+                ? PowerPointOmmlBridge.ReadFontSizeInWps(shape, (zone.Start, zone.Length))
+                : PowerPointOmmlBridge.ReadFontSize(shape)) ?? 20f;
             var now = DateTimeOffset.UtcNow.ToString("O");
             var metadata = new FormulaMetadata
             {

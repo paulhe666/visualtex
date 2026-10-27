@@ -67,7 +67,7 @@ internal static class MathTypeEquationNumbering
                     {
                         insertion = _staging.Range(index * 2, index * 2 + 1);
                         if (insertion.Text != "\uE101") throw new InvalidDataException("Prepared native field slot lost its owned boundary.");
-                        insertion.InsertXML(placeRefPlans[index].RewrittenFlatOpc);
+                        WpsXmlInsertion.Insert(insertion, placeRefPlans[index].RewrittenFlatOpc);
                         owner = _staging.Range(index * 2, index * 2 + 1);
                         owner.Expand(WdUnits.wdParagraph);
                         fields = WordFormulaHost.GetLocalFields(owner);
@@ -343,7 +343,7 @@ internal static class MathTypeEquationNumbering
                             @"^\s*MACROBUTTON\s+MTEditEquationSection2\b", RegexOptions.IgnoreCase)) continue;
                     nested = ownerCode.Fields;
                     var counters = new Dictionary<string, (int Start, string Code)>(StringComparer.OrdinalIgnoreCase);
-                    for (var childIndex = 1; childIndex <= nested.Count; childIndex++)
+                    for (var childIndex = 1 + WordFieldCode.OwnerEntries(nested, ownerCode); childIndex <= nested.Count; childIndex++)
                     {
                         Field? child = null;
                         Range? childCode = null;
@@ -1090,7 +1090,7 @@ internal static class MathTypeEquationNumbering
             insertion = stagingDocument.Range(
                 stagingContent.Start,
                 stagingContent.Start);
-            insertion.InsertXML(fieldFlatOpc);
+            WpsXmlInsertion.Insert(insertion, fieldFlatOpc);
 
             fields = stagingDocument.Fields;
             var placeRefCount = 0;

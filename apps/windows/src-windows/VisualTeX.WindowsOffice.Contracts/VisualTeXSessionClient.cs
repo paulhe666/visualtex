@@ -299,7 +299,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             while (DateTimeOffset.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (started.HasExited)
+                if (started is not null && started.HasExited)
                 {
                     diagnostic.StartedProcessExitCode = started.ExitCode;
                     diagnostic.FailureType = "ProcessExited";
@@ -1456,18 +1456,39 @@ public sealed class VisualTeXSessionClient : IDisposable
         });
     }
 
-    private Process StartVisualTeXCompanion(CompanionHealthDiagnostic diagnostic)
+    // Null when the companion was started through explorer and its process could not
+    // be identified yet; the caller then relies on the health checks alone.
+    private Process? StartVisualTeXCompanion(CompanionHealthDiagnostic diagnostic)
     {
         diagnostic.Stage = "process-start";
-        var process = Process.Start(new ProcessStartInfo(
-            _configuration.ExecutablePath,
-            "--office-background")
+        var workingDirectory = Path.GetDirectoryName(_configuration.ExecutablePath) ?? string.Empty;
+        Process? process;
+        try
         {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = Path.GetDirectoryName(_configuration.ExecutablePath) ?? string.Empty,
-        });
+            process = Process.Start(new ProcessStartInfo(
+                _configuration.ExecutablePath,
+                "--office-background")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = workingDirectory,
+            });
+        }
+        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
+        {
+            // WPS Office denies CreateProcess (and in-process ShellExecute) to the add-ins
+            // it hosts. Let the user's explorer start the companion instead.
+            diagnostic.Stage = "explorer-start";
+            var requested = DateTime.Now;
+            ExplorerShellLauncher.Start(_configuration.ExecutablePath, "--office-background", workingDirectory);
+            var started = FindStartedCompanion(requested);
+            diagnostic.StartedProcessId = started?.Id;
+            diagnostic.Message =
+                $"The host denied process creation ({error.Message.Trim()}); asked explorer to start {_configuration.ExecutablePath}"
+                + (started is null ? "." : $" (PID={started.Id}).");
+            return started;
+        }
         if (process == null)
         {
             diagnostic.FailureType = "ProcessStartReturnedNull";
@@ -1479,6 +1500,30 @@ public sealed class VisualTeXSessionClient : IDisposable
         diagnostic.Message =
             $"Started VisualTeX background process PID={process.Id} from {_configuration.ExecutablePath}.";
         return process;
+    }
+
+    // The companion explorer started for us: same executable, started after the request.
+    private Process? FindStartedCompanion(DateTime requested)
+    {
+        var name = Path.GetFileNameWithoutExtension(_configuration.ExecutablePath);
+        var deadline = DateTime.Now.AddSeconds(3);
+        while (true)
+        {
+            foreach (var candidate in Process.GetProcessesByName(name))
+            {
+                var keep = false;
+                try
+                {
+                    keep = candidate.StartTime >= requested.AddSeconds(-1)
+                        && PathsEqual(candidate.MainModule?.FileName ?? string.Empty, _configuration.ExecutablePath);
+                }
+                catch { }
+                if (keep) return candidate;
+                candidate.Dispose();
+            }
+            if (DateTime.Now >= deadline) return null;
+            Thread.Sleep(150);
+        }
     }
 
     private static bool IsCertificateInCurrentUserRoot(string thumbprint)

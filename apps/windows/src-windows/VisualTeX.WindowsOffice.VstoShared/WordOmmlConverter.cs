@@ -8,6 +8,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Application = Microsoft.Office.Interop.Word.Application;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -15,6 +16,10 @@ namespace VisualTeX.WordVsto;
 
 internal static partial class WordOmmlConverter
 {
+    // WPS turns an equation that is the only content of an imported paragraph into a
+    // display oMathPara and keeps it display after merging it into a text paragraph.
+    // An inline import there carries this trailing word joiner, removed right after.
+    private const string WpsInlineImportSentinel = "\u2060";
     private const string MathNamespace =
         "http://schemas.openxmlformats.org/officeDocument/2006/math";
     private const string WordNamespace =
@@ -418,6 +423,7 @@ internal static partial class WordOmmlConverter
                 if (!replaceTarget)
                     target.Collapse(WdCollapseDirection.wdCollapseStart);
                 var insertionStart = target.Start;
+                var wpsInlineSentinel = false;
 
                 if (_fileBacked)
                 {
@@ -432,7 +438,14 @@ internal static partial class WordOmmlConverter
                     // insertion and removes the repaint/top-flash at its source.
                     var insertionXml = entry.InsertionWordOpenXml
                         ?? entry.Omml;
-                    target.InsertXML(insertionXml);
+                    wpsInlineSentinel = OfficeHostEnvironment.IsWps
+                        && !display
+                        && entry.InsertionWordOpenXml is not null;
+                    WpsXmlInsertion.Insert(
+                        target,
+                        wpsInlineSentinel
+                            ? AppendWpsInlineSentinel(insertionXml)
+                            : insertionXml);
                 }
                 else
                 {
@@ -463,10 +476,25 @@ internal static partial class WordOmmlConverter
                         target.End)
                     ?? throw new InvalidOperationException(
                         "Word did not materialize the batch OMML equation.");
+                if (wpsInlineSentinel)
+                {
+                    RemoveWpsInlineSentinel(insertedMath);
+                    Release(insertedMath);
+                    insertedMath = null;
+                    insertedMath = FindMathAtPosition(
+                            targetDocument,
+                            insertionStart,
+                            Math.Max(insertionStart, target.End))
+                        ?? throw new InvalidOperationException(
+                            "WPS lost the batch OMML equation after removing its import separator.");
+                }
                 var targetType = display
                     ? WdOMathType.wdOMathDisplay
                     : WdOMathType.wdOMathInline;
-                if (insertedMath.Type != targetType)
+                // WPS keeps an equation alone in its paragraph display (see
+                // ReplaceWithPreparedOmmlDirect).
+                if (insertedMath.Type != targetType
+                    && (display || !OfficeHostEnvironment.IsWps))
                     insertedMath.Type = targetType;
                 result = insertedMath.Range.Duplicate;
 
@@ -1688,7 +1716,8 @@ internal static partial class WordOmmlConverter
 
             var insertionStart =
                 targetRange.Start;
-            paragraphRange.InsertXML(
+            WpsXmlInsertion.Insert(
+                paragraphRange,
                 paragraphXml.ToString(
                     SaveOptions.DisableFormatting));
 
@@ -2227,7 +2256,8 @@ internal static partial class WordOmmlConverter
                         standaloneSectionProperties);
             }
 
-            paragraphRange.InsertXML(
+            WpsXmlInsertion.Insert(
+                paragraphRange,
                 paragraphXml.ToString(
                     SaveOptions.DisableFormatting));
 
@@ -2788,13 +2818,15 @@ internal static partial class WordOmmlConverter
             ComputeOmmlFingerprint(omml),
             omml,
             31902);
+        var wpsInlineSentinel = OfficeHostEnvironment.IsWps && !display;
         string flatOpc;
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.BuildPackage"))
             flatOpc =
                 CreateSingleEquationFlatOpc(
                     entry,
                     NormalizeMathFontName(mathFontName),
-                    paragraphMarkRunProperties);
+                    paragraphMarkRunProperties,
+                    trailingWpsSentinel: wpsInlineSentinel);
 
         Range? target = null;
         Range? content = null;
@@ -2833,7 +2865,7 @@ internal static partial class WordOmmlConverter
                 && rightBoundaryBefore[0] != '\u0007';
 
             using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.InsertXml"))
-                target.InsertXML(flatOpc);
+                WpsXmlInsertion.Insert(target, flatOpc);
 
             using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.FindMath"))
                 insertedMath = FindMathAtPosition(
@@ -2842,10 +2874,25 @@ internal static partial class WordOmmlConverter
                         target.End)
                     ?? throw new InvalidOperationException(
                         "Word did not materialize the direct OMML replacement.");
+            if (wpsInlineSentinel)
+            {
+                RemoveWpsInlineSentinel(insertedMath);
+                Release(insertedMath);
+                insertedMath = null;
+                insertedMath = FindMathAtPosition(
+                        targetDocument,
+                        insertionStart,
+                        Math.Max(insertionStart, target.End))
+                    ?? throw new InvalidOperationException(
+                        "WPS lost the direct OMML replacement after removing its import separator.");
+            }
             var targetType = display
                 ? WdOMathType.wdOMathDisplay
                 : WdOMathType.wdOMathInline;
-            if (insertedMath.Type != targetType && (display || !allowWordNativeInlinePromotion))
+            // WPS keeps an equation that is alone in its paragraph display (it adds a
+            // space when forced inline); leave that to WPS, as Word's own promotion.
+            if (insertedMath.Type != targetType
+                && (display || (!allowWordNativeInlinePromotion && !OfficeHostEnvironment.IsWps)))
                 insertedMath.Type = targetType;
             // Native inline promotion controls host type, not equation parsing.
             // InsertXML has already materialized the prepared OMML structure.
@@ -3282,7 +3329,7 @@ internal static partial class WordOmmlConverter
             if (!replaceTarget)
                 target.Collapse(WdCollapseDirection.wdCollapseStart);
             var insertionStart = target.Start;
-            target.InsertXML(omml);
+            WpsXmlInsertion.Insert(target, omml);
 
             content = targetDocument.Content;
             object probeStart = Math.Max(content.Start, insertionStart - 1);
@@ -7434,8 +7481,12 @@ internal static partial class WordOmmlConverter
             @"<math xmlns=""http://www.w3.org/1998/Math/MathML"" display=""inline""><mi>x</mi></math>");
     }
 
-    private static string NormalizeMathFontName(string? mathFontName) =>
+    // WPS reports the math font of its documents as "default" and writes that into runs
+    // (Word reads it back from WPS-saved files): a placeholder, not a font. Written as a run
+    // font it makes WPS draw upright letters (\ker, \mathrm{d}) as unrelated symbols.
+    internal static string NormalizeMathFontName(string? mathFontName) =>
         string.IsNullOrWhiteSpace(mathFontName)
+        || string.Equals(mathFontName!.Trim(), "default", StringComparison.OrdinalIgnoreCase)
             ? "Cambria Math"
             : mathFontName.Trim();
 
@@ -7647,10 +7698,56 @@ internal static partial class WordOmmlConverter
         return CreateTemporaryDocumentDocx(documentXml, mathFontName);
     }
 
+    // Puts the WPS inline import separator right after the last equation of the main
+    // body's last paragraph (at its end when it has none).
+    internal static string AppendWpsInlineSentinel(string flatOpc)
+    {
+        XNamespace word = WordNamespace;
+        XNamespace math = MathNamespace;
+        var document = XDocument.Parse(flatOpc, LoadOptions.PreserveWhitespace);
+        var paragraph = WordDocumentXml.GetRequiredMainDocumentBody(document)
+            .Elements(word + "p")
+            .LastOrDefault()
+            ?? throw new InvalidDataException(
+                "The OMML insertion package has no body paragraph.");
+        var sentinel = new XElement(
+            word + "r",
+            new XElement(word + "t", WpsInlineImportSentinel));
+        var equation = paragraph
+            .Elements()
+            .LastOrDefault(element => element.Name == math + "oMath" || element.Name == math + "oMathPara");
+        if (equation is null) paragraph.Add(sentinel);
+        else equation.AddAfterSelf(sentinel);
+        return (document.Declaration?.ToString() ?? string.Empty)
+            + document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    internal static void RemoveWpsInlineSentinel(OMath math)
+    {
+        Range? equation = null;
+        Range? after = null;
+        try
+        {
+            equation = math.Range;
+            after = equation.Duplicate;
+            after.SetRange(equation.End, equation.End + 1);
+            if (!string.Equals(after.Text, WpsInlineImportSentinel, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "WPS did not keep the inline OMML import separator after the equation.");
+            after.Delete();
+        }
+        finally
+        {
+            Release(after);
+            Release(equation);
+        }
+    }
+
     private static string CreateSingleEquationFlatOpc(
         BatchEntry entry,
         string mathFontName,
-        string? paragraphMarkRunProperties = null)
+        string? paragraphMarkRunProperties = null,
+        bool trailingWpsSentinel = false)
     {
         XNamespace package =
             "http://schemas.microsoft.com/office/2006/xmlPackage";
@@ -7687,7 +7784,12 @@ internal static partial class WordOmmlConverter
                     equation,
                     new XElement(
                         word + "bookmarkEnd",
-                        new XAttribute(word + "id", entry.BookmarkId))),
+                        new XAttribute(word + "id", entry.BookmarkId)),
+                    trailingWpsSentinel
+                        ? new XElement(
+                            word + "r",
+                            new XElement(word + "t", WpsInlineImportSentinel))
+                        : null),
                 new XElement(word + "sectPr")));
         var rootRelationships = new XElement(
             relationships + "Relationships",

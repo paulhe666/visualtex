@@ -394,11 +394,12 @@ internal sealed partial class WordFormulaService
         {
             code = sectionField.Code;
             nested = code.Fields;
-            if (nested.Count != 3)
+            var owners = WordFieldCode.OwnerEntries(nested, code);
+            if (nested.Count - owners != 3)
                 throw new InvalidDataException("A prepared MathType section must own exactly three native counters.");
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var firstChildStart = int.MaxValue;
-            for (var index = 1; index <= nested.Count; index++)
+            for (var index = 1 + owners; index <= nested.Count; index++)
             {
                 Field? child = null;
                 Range? childCode = null;

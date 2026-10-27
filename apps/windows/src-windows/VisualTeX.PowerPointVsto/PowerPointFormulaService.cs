@@ -147,7 +147,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
                             object? text = null;
                             try
                             {
-                                text = ((dynamic)selection).TextRange2;
+                                text = SelectedText(selection);
                                 objectId = NativeOmmlTextReference(slide, shape, text);
                             }
                             finally { Release(text); }
@@ -177,6 +177,11 @@ public sealed partial class PowerPointFormulaService : IDisposable
             Release(presentation);
         }
     }
+
+    // The selected text range. WPS reports Selection.TextRange2 at the first
+    // character whatever is selected; its TextRange is exact.
+    private static object SelectedText(Selection selection) =>
+        OfficeHostEnvironment.IsWps ? selection.TextRange : ((dynamic)selection).TextRange2;
 
     public OfficeSelection CaptureTextInsertionTarget() =>
         CaptureTextInsertionTargetCore(requireTextSelection: true)
@@ -226,8 +231,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 throw new InvalidOperationException(Text(
                     "当前选择不是可编辑文本框。", "The current selection is not an editable text box."));
 
-            dynamic selected = selection;
-            textRange = selected.TextRange2;
+            textRange = SelectedText(selection);
             var start = Convert.ToInt32(((dynamic)textRange).Start);
             var length = Convert.ToInt32(((dynamic)textRange).Length);
             if (start < 1 || length < 0)
@@ -358,10 +362,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
             try
             {
                 selection = window.Selection;
-                dynamic selected = selection;
                 if (selection.Type == PpSelectionType.ppSelectionText)
                 {
-                    object textRange = selected.TextRange2;
+                    object textRange = SelectedText(selection);
                     try
                     {
                         font = ((dynamic)textRange).Font;
@@ -486,7 +489,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
         object? font = null;
         try
         {
-            if (!TryGetSelectedMathRange(out mathRange)) return false;
+            if (!TryGetSelectedMathRange(out mathRange, exact: true)) return false;
             StartNewUndoEntry();
             dynamic range = mathRange!;
             font = range.Font;
@@ -529,8 +532,12 @@ public sealed partial class PowerPointFormulaService : IDisposable
         }
     }
 
-    private bool TryGetSelectedMathRange(out object? mathRange)
+    // exact: the whole equation, for a change. Otherwise any of its characters
+    // will do (WPS reads ribbon state on every selection change without a
+    // saved copy of the presentation).
+    private bool TryGetSelectedMathRange(out object? mathRange, bool exact = false)
     {
+        if (OfficeHostEnvironment.IsWps) return TryGetSelectedMathRangeInWps(out mathRange, exact);
         mathRange = null;
         DocumentWindow? window = null;
         Selection? selection = null;
@@ -567,6 +574,89 @@ public sealed partial class PowerPointFormulaService : IDisposable
         finally
         {
             Release(textRange);
+            Release(selection);
+            Release(window);
+        }
+    }
+
+    private bool TryGetSelectedMathRangeInWps(out object? mathRange, bool exact)
+    {
+        mathRange = null;
+        DocumentWindow? window = null;
+        Selection? selection = null;
+        ShapeRange? shapes = null;
+        Shape? shape = null;
+        TextRange? selected = null;
+        View? view = null;
+        Slide? slide = null;
+        Presentation? presentation = null;
+        try
+        {
+            window = _application.ActiveWindow;
+            if (window is null) return false;
+            selection = window.Selection;
+            if (selection.Type != PpSelectionType.ppSelectionText) return false;
+            shapes = selection.ShapeRange;
+            if (shapes.Count != 1) return false;
+            shape = shapes[1];
+            selected = selection.TextRange;
+            int start = selected.Start, length = selected.Length;
+            var text = WpsNativeEquations.LiveText(shape);
+            if (!WpsMathText.MayContainMath(text)) return false;
+            if (!exact)
+            {
+                // A character next to the caret (or the selection's first one)
+                // drawn as math: a structure mark, a math letter or Cambria Math.
+                foreach (var position in length > 0 ? new[] { start } : new[] { start - 1, start })
+                {
+                    if (position < 1 || position > text.Length) continue;
+                    var character = text[position - 1];
+                    var math = character is WpsMathText.StructureStart or WpsMathText.ArgumentEnd or '\u210E'
+                        || character == '\uD835'
+                        || char.IsLowSurrogate(character) && position >= 2 && text[position - 2] == '\uD835';
+                    var range = WpsNativeEquations.Characters(shape, position, 1);
+                    try
+                    {
+                        if (!math)
+                        {
+                            var font = range.Font;
+                            try { math = string.Equals(font.Name, "Cambria Math", StringComparison.Ordinal); }
+                            finally { Release(font); }
+                        }
+                    }
+                    catch { math = false; }
+                    if (math)
+                    {
+                        mathRange = range;
+                        return true;
+                    }
+                    Release(range);
+                }
+                return false;
+            }
+            view = window.View;
+            slide = (Slide)view.Slide;
+            presentation = _application.ActivePresentation;
+            var zones = WpsNativeEquations.Locate(presentation, slide.SlideID, shape).Zones;
+            var index = WpsMathText.ZoneAt(zones, start, length);
+            if (index < 0) return false;
+            mathRange = WpsNativeEquations.Characters(shape, zones[index].Start, zones[index].Length);
+            return true;
+        }
+        catch
+        {
+            Release(mathRange);
+            mathRange = null;
+            return false;
+        }
+        finally
+        {
+            Release(presentation);
+            Release(slide);
+            Release(view);
+            Release(selected);
+            Release(shape);
+            Release(shapes);
             Release(selection);
             Release(window);
         }
@@ -1913,7 +2003,10 @@ public sealed partial class PowerPointFormulaService : IDisposable
     private static void Configure(Shape shape, FormulaMetadata metadata)
     {
         try { shape.LockAspectRatio = MsoTriState.msoTrue; } catch { }
-        shape.Name = $"VisualTeX_{metadata.FormulaId}";
+        // WPS Presentation refuses Shape.Name on embedded OLE objects (E_FAIL for any
+        // name). The formula keeps WPS's name and is found through its tags/metadata.
+        if (!OfficeHostEnvironment.IsWps)
+            shape.Name = $"VisualTeX_{metadata.FormulaId}";
         var encoded = FormulaMetadataCodec.Encode(metadata);
         Tags? tags = null;
         try

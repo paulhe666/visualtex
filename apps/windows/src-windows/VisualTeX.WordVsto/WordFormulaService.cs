@@ -2226,7 +2226,7 @@ internal sealed partial class WordFormulaService
             {
                 using (WordOperationMetrics.Measure(
                            "MathType.Insert.InsertXml"))
-                    insertion.InsertXML(wordOpenXml);
+                    WpsXmlInsertion.Insert(insertion, wordOpenXml);
             }
             TraceInsertPerf(useIsolatedTableBoundaryTransfer
                 ? "insert-formatted-body"
@@ -7383,7 +7383,7 @@ internal sealed partial class WordFormulaService
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=insert-rewritten-flat-opc formulaId={session.FormulaId}");
             mutationStarted = true;
-            oldRange.InsertXML(replacementWordOpenXml);
+            WpsXmlInsertion.Replace(oldRange, replacementWordOpenXml);
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=insert-rewritten-flat-opc-complete formulaId={session.FormulaId}");
 
@@ -10663,13 +10663,14 @@ internal sealed partial class WordFormulaService
         {
             sourceCode = source.Code;
             nestedFields = sourceCode.Fields;
+            var owners = WordFieldCode.OwnerEntries(nestedFields, sourceCode);
             // A native MTPlaceRef always owns at least the hidden MTEqn increment
             // plus the visible MTEqn current-value field. Heading-aware templates
             // additionally own MTChap/MTSec fields. A literal-only outer field such
             // as "(.)" is a detached/corrupt scaffold and must never be accepted as
             // a valid numbered MathType row, even if it happens to sit on the
             // requested side of the OLE object.
-            if (nestedFields.Count < 2) return false;
+            if (nestedFields.Count - owners < 2) return false;
 
             var candidate = ReadMathTypePlaceRefTemplate(document, source);
             var hasHiddenEquationIncrement = candidate.Segments.Any(segment =>
@@ -11120,7 +11121,7 @@ internal sealed partial class WordFormulaService
             stagingInsertion = stagingDocument.Range(
                 stagingDocument.Content.Start,
                 stagingDocument.Content.Start);
-            stagingInsertion.InsertXML(flatOpc);
+            WpsXmlInsertion.Insert(stagingInsertion, flatOpc);
 
             stagingShapes = stagingDocument.InlineShapes;
             if (stagingShapes.Count != 1)
@@ -12040,13 +12041,27 @@ internal sealed partial class WordFormulaService
         {
             code = outer.Code;
             fields = code.Fields;
-            for (var index = 1; index <= fields.Count; index++)
+            // WPS: never update the MACROBUTTON or a hidden SEQ (see
+            // WordFieldCode.IsHiddenSequence); the visible SEQ counts without them.
+            var wps = OfficeHostEnvironment.IsWps;
+            for (var index = 1 + WordFieldCode.OwnerEntries(fields, code); index <= fields.Count; index++)
             {
                 Release(field);
                 field = fields[index];
+                if (wps)
+                {
+                    Range? fieldCode = null;
+                    try
+                    {
+                        fieldCode = field.Code;
+                        if (WordFieldCode.IsHiddenSequence(fieldCode.Text)) continue;
+                    }
+                    finally { Release(fieldCode); }
+                }
                 try { field.Update(); } catch { }
             }
-            try { outer.Update(); } catch { }
+            if (!wps)
+                try { outer.Update(); } catch { }
         }
         finally
         {
@@ -14033,7 +14048,7 @@ internal sealed partial class WordFormulaService
                     StringComparison.Ordinal))
                 insertion.Text = string.Empty;
             insertion.SetRange(safePosition, safePosition);
-            insertion.InsertXML(wordOpenXml);
+            WpsXmlInsertion.Insert(insertion, wordOpenXml);
 
             object probeStart = Math.Max(content.Start, safePosition - 1);
             object probeEnd = Math.Min(document.Content.End, safePosition + 8);

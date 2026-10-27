@@ -61,7 +61,12 @@ internal static class WordFormulaMetadataReader
         if (shape is null || metadata is null) return;
         var encoded = FormulaMetadataCodec.Encode(metadata);
         try { shape.AlternativeText = encoded; } catch { }
-        try { shape.Title = encoded; } catch { }
+        // WPS fails InlineShape.Title with E_FAIL, and a failed call inside a custom
+        // UndoRecord makes WPS roll the whole record (the new formula) back.
+        if (!OfficeHostEnvironment.IsWps)
+        {
+            try { shape.Title = encoded; } catch { }
+        }
     }
 
     internal static string IdentityBookmarkName(string formulaId)

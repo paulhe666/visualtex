@@ -86,6 +86,7 @@ internal static class PowerPointOmmlBridge
 
     internal static float? ReadFontSize(Shape shape)
     {
+        if (VisualTeX.WindowsOffice.VstoShared.OfficeHostEnvironment.IsWps) return ReadFontSizeInWps(shape, null);
         object? range = null;
         object? mathZones = null;
         object? font = null;
@@ -111,6 +112,31 @@ internal static class PowerPointOmmlBridge
             Release(range);
             Release(textFrame);
         }
+    }
+
+    // WPS has no math zones: the size of one equation's characters (a range from
+    // WpsNativeEquations), or of the whole text of a box that holds only its
+    // equation. A mixed-size range reads its first character.
+    internal static float? ReadFontSizeInWps(Shape shape, (int Start, int Length)? zone)
+    {
+        Microsoft.Office.Interop.PowerPoint.TextRange? range = null;
+        Microsoft.Office.Interop.PowerPoint.TextRange? first = null;
+        try
+        {
+            if (shape.HasTextFrame != MsoTriState.msoTrue) return null;
+            var length = zone?.Length ?? WpsNativeEquations.LiveText(shape).Length;
+            if (length <= 0) return null;
+            range = WpsNativeEquations.Characters(shape, zone?.Start ?? 1, length);
+            var size = range.Font.Size;
+            if (!(size > 0) || size > 4000)
+            {
+                first = WpsNativeEquations.Characters(shape, zone?.Start ?? 1, 1);
+                size = first.Font.Size;
+            }
+            return FormulaFontSize.Normalize(size, 20f);
+        }
+        catch { return null; }
+        finally { Release(first); Release(range); }
     }
 
     internal static string? TryReadCurrentLatex(Shape shape)
@@ -272,6 +298,20 @@ internal static class PowerPointOmmlBridge
 
     private static void ApplyFontSize(Shape shape, float size)
     {
+        if (VisualTeX.WindowsOffice.VstoShared.OfficeHostEnvironment.IsWps)
+        {
+            // Only reached for a box proven to hold just its one equation.
+            var length = WpsNativeEquations.LiveText(shape).Length;
+            if (length <= 0) return;
+            Microsoft.Office.Interop.PowerPoint.TextRange? all = null;
+            try
+            {
+                all = WpsNativeEquations.Characters(shape, 1, length);
+                all.Font.Size = size;
+            }
+            finally { Release(all); }
+            return;
+        }
         object? range = null;
         object? mathZones = null;
         object? font = null;

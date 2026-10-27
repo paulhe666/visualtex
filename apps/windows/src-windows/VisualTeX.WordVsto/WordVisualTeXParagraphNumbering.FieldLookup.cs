@@ -347,6 +347,10 @@ internal static partial class WordVisualTeXParagraphNumbering
                     nested[index];
                 fieldCode =
                     field.Code.Duplicate;
+                // WPS also lists the owner itself in Code.Fields; its code contains
+                // the nested hidden instruction text.
+                if (fieldCode.Start <= outerCode.Start)
+                    continue;
                 if (!IsHiddenIncrement(
                         document,
                         fieldCode.Text))

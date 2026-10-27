@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -670,17 +671,27 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
             while (cursor < end)
             {
                 Release(maths); maths = null; Release(paragraph); paragraph = null;
-                Release(find); find = null; Release(retrieval); retrieval = null; Release(search); search = scope.Duplicate;
-                search.SetRange(cursor, end); retrieval = search.TextRetrievalMode;
-                retrieval.IncludeFieldCodes = true; retrieval.IncludeHiddenText = true;
-                find = search.Find; find.ClearFormatting(); find.Text = "#"; find.Forward = true;
-                find.Wrap = WdFindWrap.wdFindStop; find.Format = false; find.MatchWildcards = false;
-                find.MatchCase = false; find.MatchWholeWord = false; find.MatchSoundsLike = false; find.MatchAllWordForms = false;
-                bool found;
-                using (WordOperationMetrics.Measure("NativeNumbering.Capture.Find"))
-                    found = find.Execute();
-                if (!found) break;
-                paragraph = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                Release(find); find = null; Release(retrieval); retrieval = null; Release(search); search = null;
+                if (OfficeHostEnvironment.IsWps)
+                {
+                    // WPS's Find does not search inside equations.
+                    paragraph = WordNumberingFieldCollection.NextEquationUnit(scope, cursor, end);
+                    if (paragraph is null) break;
+                }
+                else
+                {
+                    search = scope.Duplicate;
+                    search.SetRange(cursor, end); retrieval = search.TextRetrievalMode;
+                    retrieval.IncludeFieldCodes = true; retrieval.IncludeHiddenText = true;
+                    find = search.Find; find.ClearFormatting(); find.Text = "#"; find.Forward = true;
+                    find.Wrap = WdFindWrap.wdFindStop; find.Format = false; find.MatchWildcards = false;
+                    find.MatchCase = false; find.MatchWholeWord = false; find.MatchSoundsLike = false; find.MatchAllWordForms = false;
+                    bool found;
+                    using (WordOperationMetrics.Measure("NativeNumbering.Capture.Find"))
+                        found = find.Execute();
+                    if (!found) break;
+                    paragraph = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                }
                 if (paragraph.End <= cursor || paragraph.Start >= end || !paragraph.InStory(scope))
                     throw new InvalidDataException("Native-number discovery repeated or escaped its bounded paragraph.");
                 cursor = paragraph.End; maths = paragraph.OMaths; var count = maths.Count;

@@ -48,6 +48,10 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TrueDisplay.cs" Link="WordEquationNumbering.TrueDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordEquationReferenceFields.cs" Link="WordEquationReferenceFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFieldCode.cs" Link="WordFieldCode.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WpsFieldXml.cs" Link="WpsFieldXml.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WpsXmlInsertion.cs" Link="WpsXmlInsertion.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordNumberingFieldCollection.cs" Link="WordNumberingFieldCollection.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldCodes.cs" Link="WordVisualTeXParagraphNumbering.FieldCodes.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldLookup.cs" Link="WordVisualTeXParagraphNumbering.FieldLookup.cs" />
@@ -74,6 +78,8 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
     <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointMathClipboard.cs" Link="PowerPointMathClipboard.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\WpsMathText.cs" Link="WpsMathText.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\WpsEquationSlide.cs" Link="WpsEquationSlide.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />

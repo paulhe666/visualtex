@@ -259,6 +259,14 @@ try {
     }
     Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA "VisualTeX\OfficeCatalog") -Recurse -Force -ErrorAction SilentlyContinue
 
+    # WPS Office add-in whitelist entries (the MSI removes the machine copies).
+    foreach ($whitelistEntry in @(
+        @("HKCU:\Software\Kingsoft\Office\WPS\AddinsWL", "VisualTeX.WordVsto"),
+        @("HKCU:\Software\Kingsoft\Office\WPP\AddinsWL", "VisualTeX.PowerPointVsto")
+    )) {
+        Remove-ItemProperty -LiteralPath $whitelistEntry[0] -Name $whitelistEntry[1] -Force -ErrorAction SilentlyContinue
+    }
+
     foreach ($machineKey in @(
         "HKLM:\Software\Microsoft\Office\Word\Addins\VisualTeX.WordVsto",
         "HKLM:\Software\Microsoft\Office\PowerPoint\Addins\VisualTeX.PowerPointVsto",

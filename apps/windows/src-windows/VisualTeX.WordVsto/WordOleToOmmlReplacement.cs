@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -80,7 +81,10 @@ internal static class WordOleToOmmlReplacement
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-scaffold");
                 _owner.CaptureReplacementBoundary(selected);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
-                selected.InsertXML(_fragment);
+                var wpsInline = OfficeHostEnvironment.IsWps && !_display;
+                WpsXmlInsertion.Replace(
+                    selected,
+                    wpsInline ? WordOmmlConverter.AppendWpsInlineSentinel(_fragment) : _fragment);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-import");
                 bookmarks = _document.Bookmarks;
                 if (!bookmarks.Exists(_owner.LocatorName))
@@ -91,6 +95,17 @@ internal static class WordOleToOmmlReplacement
                 if (maths.Count != 1)
                     throw new InvalidOperationException("The OLE replacement did not materialize exactly one native OMath.");
                 math = maths[1];
+                if (wpsInline)
+                {
+                    WordOmmlConverter.RemoveWpsInlineSentinel(math);
+                    Release(math); math = null;
+                    Release(maths); maths = null;
+                    Release(component); component = locator.Range;
+                    maths = component.OMaths;
+                    if (maths.Count != 1)
+                        throw new InvalidOperationException("The OLE replacement lost its native OMath in WPS.");
+                    math = maths[1];
+                }
                 // As in ordinary native OMML insertion, a lone paragraph/cell
                 // formula may be promoted to display by Word. Forcing it back
                 // to inline makes Word add a typing space and another paragraph.

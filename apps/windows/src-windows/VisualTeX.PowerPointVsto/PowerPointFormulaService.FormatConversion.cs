@@ -6,6 +6,7 @@ using System.Xml.Linq;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using GroupShapes = Microsoft.Office.Interop.PowerPoint.GroupShapes;
 using Shape = Microsoft.Office.Interop.PowerPoint.Shape;
@@ -277,7 +278,7 @@ public sealed partial class PowerPointFormulaService
         Slide? slide = null;
         try
         {
-            slide = slides.FindBySlideID(slideId);
+            slide = FindSlideById(slides, slideId);
             return slide.SlideIndex;
         }
         catch { return 0; }
@@ -311,7 +312,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            slide = slides.FindBySlideID(slideId);
+            slide = FindSlideById(slides, slideId);
             shapes = slide.Shapes;
             for (var position = 1; position <= shapes.Count; position++)
             {
@@ -326,7 +327,7 @@ public sealed partial class PowerPointFormulaService
                     {
                         case PowerPointSlideShapeKind.Group:
                         {
-                            var nested = CountGroupedFormulas(shape, request);
+                            var nested = CountGroupedFormulas(shape, request, info.Element);
                             if (nested > 0)
                                 plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.InGroup, slideIndex, nested));
                             break;
@@ -530,13 +531,13 @@ public sealed partial class PowerPointFormulaService
             }
             var live = PowerPointNativeOmmlPackage.SelectTextShape(slideXml, shape.Id);
             unit.TextFingerprint = PowerPointTextEditTransaction.Fingerprint(live.ToString(SaveOptions.DisableFormatting));
-            var zones = ReadMathZoneGeometry(shape);
+            var zones = ReadMathZoneGeometry(shape, live);
             if (zones.Count != count)
                 throw new InvalidDataException(Text(
                     "文本框中的公式数量与已保存内容不一致。",
                     "The text box's equations do not match its saved content."));
             var fallbackSize = PowerPointOmmlBridge.ReadFontSize(shape) ?? 20f;
-            var zoneColors = ReadMathZoneRunColors(shape);
+            var zoneColors = ReadMathZoneRunColors(shape, live);
             for (var ordinal = 0; ordinal < count; ordinal++)
             {
                 var equation = analysis.Equations[ordinal];
@@ -578,8 +579,31 @@ public sealed partial class PowerPointFormulaService
         }
     }
 
+    // A shape's equations as located through its saved XML (WPS has no MathZones;
+    // PowerPoint reads them live).
+    private static List<(float Left, float Top, float Width, float Height, float FontSize)> ReadMathZoneGeometry(
+        Shape shape, XElement savedShape) =>
+        OfficeHostEnvironment.IsWps
+            ? WpsNativeEquations.Geometry(shape, WpsNativeEquations.Locate(savedShape, shape))
+            : ReadMathZoneGeometry(shape);
+
+    private static List<List<(string Color, int Length)>> ReadMathZoneRunColors(Shape shape, XElement savedShape)
+    {
+        if (!OfficeHostEnvironment.IsWps) return ReadMathZoneRunColors(shape);
+        try { return WpsNativeEquations.RunColors(shape, WpsNativeEquations.Locate(savedShape, shape)); }
+        catch { return new List<List<(string Color, int Length)>>(); }
+    }
+
+    // In WPS only called for a box that holds just its one equation: its whole text.
     private static List<(float Left, float Top, float Width, float Height, float FontSize)> ReadMathZoneGeometry(Shape shape)
     {
+        if (OfficeHostEnvironment.IsWps)
+        {
+            var length = WpsNativeEquations.LiveText(shape).Length;
+            return length == 0
+                ? new List<(float Left, float Top, float Width, float Height, float FontSize)>()
+                : WpsNativeEquations.Geometry(shape, new[] { (1, length) });
+        }
         var result = new List<(float Left, float Top, float Width, float Height, float FontSize)>();
         object? frame = null, range = null, zones = null;
         try
@@ -701,7 +725,7 @@ public sealed partial class PowerPointFormulaService
         return ids;
     }
 
-    private int CountGroupedFormulas(Shape group, PowerPointConversionRequest request)
+    private int CountGroupedFormulas(Shape group, PowerPointConversionRequest request, XElement groupXml)
     {
         GroupShapes? items = null;
         var count = 0;
@@ -725,7 +749,9 @@ public sealed partial class PowerPointFormulaService
                     }
                     else if (request.Accepts(PowerPointFormulaKind.Omml) && item.HasTextFrame == MsoTriState.msoTrue)
                     {
-                        count += ReadMathZoneGeometry(item).Count;
+                        count += OfficeHostEnvironment.IsWps
+                            ? PowerPointSlideXml.CountShapeEquations(groupXml, item.Id)
+                            : ReadMathZoneGeometry(item).Count;
                     }
                 }
                 catch { }
@@ -1053,6 +1079,11 @@ public sealed partial class PowerPointFormulaService
         }
         catch { }
         finally { Release(frame); }
+        // WPS ignores TextFrame2.WordWrap (see CreateStandalone).
+        if (OfficeHostEnvironment.IsWps)
+        {
+            try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch { }
+        }
         try
         {
             shape.Left = centerX - shape.Width / 2f;
@@ -1118,7 +1149,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            try { slide = slides.FindBySlideID(unit.SlideId); }
+            try { slide = FindSlideById(slides, unit.SlideId); }
             catch (Exception error)
             {
                 return (null, null, Text("该公式所在的幻灯片已被删除或无法访问：", "The slide holding this equation was deleted or cannot be accessed: ")
@@ -1465,7 +1496,7 @@ public sealed partial class PowerPointFormulaService
             catch { }
             if (plan.OriginalSlideId == 0) return;
             slides = presentation.Slides;
-            try { slide = slides.FindBySlideID(plan.OriginalSlideId); }
+            try { slide = FindSlideById(slides, plan.OriginalSlideId); }
             catch { return; }
             view = window.View;
             try

@@ -298,7 +298,7 @@ internal sealed partial class WordFormulaService
                 smartCutPasteSuspended = true;
             }
             mutationStarted = true;
-            oldRange.InsertXML(replacementXml);
+            WpsXmlInsertion.Replace(oldRange, replacementXml);
 
             insertion = localEdit.ResolveInsertedRange();
             localEdit.RepairAndVerifyParagraph(insertion);

@@ -7,6 +7,7 @@ using PptTextFrame = Microsoft.Office.Interop.PowerPoint.TextFrame;
 using PptTextRange = Microsoft.Office.Interop.PowerPoint.TextRange;
 using Shape = Microsoft.Office.Interop.PowerPoint.Shape;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.PowerPointVsto;
 
@@ -59,6 +60,12 @@ internal static class PowerPointNativeOmmlKernel
                 Release(frame);
             }
             catch { }
+            // WPS ignores TextFrame2.WordWrap; an equation wider than its box
+            // would wrap onto a second line.
+            if (OfficeHostEnvironment.IsWps)
+            {
+                try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch { }
+            }
 
             // A new text box shows uncolored text in the slide's text color
             // (white on a dark theme). A converted equation keeps the color its
@@ -124,13 +131,24 @@ internal static class PowerPointNativeOmmlKernel
         bool display,
         float fontSize)
     {
+        string? language;
+        object? frame = null, text = null;
+        try
+        {
+            frame = TextFrameOf(shape);
+            text = ((dynamic)frame).TextRange;
+            language = ResolveTextContextLanguage(shape, text, 1, 0);
+        }
+        catch { language = null; }
+        finally { Release(text); Release(frame); }
         InsertPrepared(
             application,
             shape,
             start: 1,
             replacementLength: 0,
-            PowerPointMathClipboard.Build(ConvertMathMlToOmml(mathMl), fontSize, display),
-            display);
+            PowerPointMathClipboard.Entries(ConvertMathMlToOmml(mathMl), fontSize, display, language),
+            display,
+            fontSize);
     }
 
     // editedZone: the edited equation's native zone (its a14:m as saved). The
@@ -175,7 +193,7 @@ internal static class PowerPointNativeOmmlKernel
         object? fullRange2 = null;
         try
         {
-            frame2 = shape.TextFrame2;
+            frame2 = TextFrameOf(shape);
             fullRange2 = ((dynamic)frame2).TextRange;
             var originalLength =
                 Convert.ToInt32(((dynamic)fullRange2).Length);
@@ -194,9 +212,10 @@ internal static class PowerPointNativeOmmlKernel
                 fullRange2,
                 start,
                 length);
+            var language = ResolveTextContextLanguage(shape, fullRange2, start, length);
             var package = editedZone is null
-                ? PowerPointMathClipboard.Build(omml, contextFontSize, display)
-                : PowerPointMathClipboard.BuildEdit(omml, contextFontSize, editedZone);
+                ? PowerPointMathClipboard.Entries(omml, contextFontSize, display, language)
+                : PowerPointMathClipboard.EditEntries(omml, contextFontSize, editedZone, language);
 
             var insertionStart = start;
             var replacementLength = length;
@@ -225,23 +244,50 @@ internal static class PowerPointNativeOmmlKernel
                 replacementLength = 0;
             }
 
-            return () =>
+            string? textWithBreaks = null;
+            Action? writeBreaks = paragraphBreaks is null ? null : () =>
             {
-                if (paragraphBreaks is not null)
+                object? frame = null;
+                object? text = null;
+                object? selected = null;
+                try
                 {
-                    object? frame = null;
-                    object? text = null;
-                    object? selected = null;
-                    try
+                    frame = TextFrameOf(shape);
+                    text = ((dynamic)frame).TextRange;
+                    if (OfficeHostEnvironment.IsWps && paragraphBreaks!.Length > 1)
                     {
-                        frame = shape.TextFrame2;
-                        text = ((dynamic)frame).TextRange;
+                        // WPS turns only the last CR of an assigned string into a
+                        // paragraph break; the others stay characters inside the
+                        // paragraph. One break per assignment.
+                        for (var index = 0; index < paragraphBreaks.Length; index++)
+                        {
+                            Release(text);
+                            text = ((dynamic)frame).TextRange;
+                            selected = GetCharacterRange(text, start + index, index == 0 ? length : 0);
+                            ((dynamic)selected).Text = "\r";
+                            Release(selected);
+                            selected = null;
+                        }
+                    }
+                    else
+                    {
                         selected = GetCharacterRange(text, start, length);
                         ((dynamic)selected).Text = paragraphBreaks;
                     }
-                    finally { Release(selected); Release(text); Release(frame); }
+                    if (OfficeHostEnvironment.IsWps) textWithBreaks = WpsNativeEquations.LiveText(shape);
                 }
-                InsertPrepared(application, shape, insertionStart, replacementLength, package, display);
+                finally { Release(selected); Release(text); Release(frame); }
+            };
+            return () =>
+            {
+                try { InsertPrepared(application, shape, insertionStart, replacementLength, package, display, contextFontSize, writeBreaks); }
+                catch when (textWithBreaks is not null && length == 0)
+                {
+                    // WPS has no Undo history to roll back with: take out the breaks
+                    // a failed paste left at the caret, so the text is the original.
+                    RemoveUnusedBreaks(shape, start, paragraphBreaks!, textWithBreaks);
+                    throw;
+                }
             };
         }
         finally
@@ -250,6 +296,27 @@ internal static class PowerPointNativeOmmlKernel
             Release(frame2);
         }
     }
+
+    private static void RemoveUnusedBreaks(Shape shape, int start, string breaks, string textWithBreaks)
+    {
+        object? frame = null, text = null, inserted = null;
+        try
+        {
+            if (!string.Equals(WpsNativeEquations.LiveText(shape), textWithBreaks, StringComparison.Ordinal)) return;
+            frame = TextFrameOf(shape);
+            text = ((dynamic)frame).TextRange;
+            inserted = GetCharacterRange(text, start, breaks.Length);
+            if (Convert.ToString(((dynamic)inserted).Text) == breaks) ((dynamic)inserted).Text = string.Empty;
+        }
+        catch { }
+        finally { Release(inserted); Release(text); Release(frame); }
+    }
+
+    // The text frame insertion reads and writes through: PowerPoint's TextFrame2,
+    // and in WPS its TextFrame, whose text spells equations exactly as
+    // WpsMathText expects (WPS's TextRange2 misreports math, e.g. MathZones).
+    private static object TextFrameOf(Shape shape) =>
+        OfficeHostEnvironment.IsWps ? shape.TextFrame : shape.TextFrame2;
 
     // PowerPoint's paste of an equation also removes a space right next to it:
     // pasting at the caret in "before |after" gives "before" + equation +
@@ -261,9 +328,18 @@ internal static class PowerPointNativeOmmlKernel
     // text as VisualTeX for macOS does (VTApplyPowerPointNativeEquation): the
     // owner slide in view, the user's clipboard kept, a display equation in its
     // own centered paragraph without a bullet, and the caret after the equation.
+    // beforePaste: the text changes an insertion makes first (a display equation's
+    // paragraph breaks).
     private static void InsertPrepared(Application application, Shape shape, int start,
-        int replacementLength, byte[] package, bool display)
+        int replacementLength, IReadOnlyList<KeyValuePair<string, string>> package, bool display,
+        float fontSize, Action? beforePaste = null)
     {
+        if (OfficeHostEnvironment.IsWps)
+        {
+            InsertPreparedInWps(application, shape, start, replacementLength, package, display, fontSize, beforePaste);
+            return;
+        }
+        beforePaste?.Invoke();
         PptTextFrame? frame = null;
         PptTextRange? text = null;
         PptTextRange? pasted = null;
@@ -301,7 +377,8 @@ internal static class PowerPointNativeOmmlKernel
 
             ActivateShapeView(application, shape);
             using (PowerPointClipboard.Preserve())
-                pasted = PasteEquation(frame, start, replacementLength, original, package);
+                pasted = PasteEquation(frame, start, replacementLength, original,
+                    PowerPointMathClipboard.BuildStoredZip(package));
             int pastedStart = pasted.Start, pastedLength = pasted.Length;
             if (joined)
             {
@@ -344,6 +421,63 @@ internal static class PowerPointNativeOmmlKernel
             Release(pasted);
             Release(text);
             Release(frame);
+        }
+    }
+
+    // WPS keeps the spaces next to a pasted equation, so no joiners are needed,
+    // and it takes the equation from its own copy (WpsNativeEquations.Paste).
+    // The paste is proven by WPS's saved XML: a native equation now covers the
+    // pasted text. WPS drops the package's run sizes when it pastes into an
+    // empty box, so the equation's size is set on the pasted text.
+    private static void InsertPreparedInWps(Application application, Shape shape, int start,
+        int replacementLength, IReadOnlyList<KeyValuePair<string, string>> package, bool display,
+        float fontSize, Action? beforePaste)
+    {
+        ActivateShapeView(application, shape);
+        (int Start, int Length) pasted;
+        using (PowerPointClipboard.Preserve())
+            pasted = WpsNativeEquations.Paste(application, shape, start, replacementLength,
+                PowerPointMathClipboard.Paragraphs(package), beforePaste);
+        if (!WpsNativeEquations.Locate(shape).Any(zone =>
+                zone.Start < pasted.Start + pasted.Length && zone.Start + zone.Length > pasted.Start))
+            throw new InvalidOperationException(
+                "WPS pasted the equation package without creating a native equation.");
+
+        PptTextRange? range = null;
+        PptTextRange? caret = null;
+        try
+        {
+            range = WpsNativeEquations.Characters(shape, pasted.Start, pasted.Length);
+            try
+            {
+                var font = range.Font;
+                if (Math.Abs(font.Size - fontSize) > 0.01f) font.Size = fontSize;
+                Release(font);
+            }
+            catch { }
+            if (display)
+            {
+                try
+                {
+                    var paragraph = range.ParagraphFormat;
+                    paragraph.Alignment = PpParagraphAlignment.ppAlignCenter;
+                    paragraph.Bullet.Visible = MsoTriState.msoFalse;
+                    Release(paragraph);
+                }
+                catch { }
+            }
+            // A caret failure after a successful paste is not a failed insertion.
+            try
+            {
+                caret = WpsNativeEquations.Characters(shape, pasted.Start + pasted.Length, 0);
+                caret.Select();
+            }
+            catch { }
+        }
+        finally
+        {
+            Release(caret);
+            Release(range);
         }
     }
 
@@ -810,6 +944,69 @@ internal static class PowerPointNativeOmmlKernel
         }
 
         return 20f;
+    }
+
+    // The language PowerPoint's own Insert Equation gives an equation: that of the
+    // text at the caret (the character before it, else the one after the replaced
+    // text, else the whole text, else the presentation's default language).
+    // Right-to-left languages are left to the host.
+    private static string? ResolveTextContextLanguage(Shape shape, object fullRange, int start, int length)
+    {
+        string text;
+        int total;
+        try
+        {
+            text = Convert.ToString(((dynamic)fullRange).Text) ?? string.Empty;
+            total = Convert.ToInt32(((dynamic)fullRange).Length);
+        }
+        catch { return null; }
+        foreach (var index in new[] { start - 1, start + length })
+        {
+            if (index < 1 || index > total || index > text.Length
+                || text[index - 1] is '\r' or '\v' or WordJoiner)
+                continue;
+            object? character = null;
+            try
+            {
+                character = GetCharacterRange(fullRange, index, 1);
+                var language = LanguageTag(character);
+                if (language is not null) return language;
+            }
+            catch { }
+            finally { Release(character); }
+        }
+        return LanguageTag(fullRange) ?? PresentationLanguage(shape);
+    }
+
+    private static string? PresentationLanguage(Shape shape)
+    {
+        Slide? slide = null;
+        Presentation? presentation = null;
+        try
+        {
+            slide = shape.Parent as Slide;
+            presentation = slide?.Parent as Presentation;
+            return presentation is null ? null : LanguageTag((int)presentation.DefaultLanguageID);
+        }
+        catch { return null; }
+        finally { Release(presentation); Release(slide); }
+    }
+
+    private static string? LanguageTag(object range)
+    {
+        try { return LanguageTag(Convert.ToInt32(((dynamic)range).LanguageID)); }
+        catch { return null; }
+    }
+
+    private static string? LanguageTag(int id)
+    {
+        if (id <= 0) return null; // mixed or none
+        try
+        {
+            var culture = System.Globalization.CultureInfo.GetCultureInfo(id);
+            return string.IsNullOrEmpty(culture.Name) || culture.TextInfo.IsRightToLeft ? null : culture.Name;
+        }
+        catch { return null; }
     }
 
     private static float? TryReadPositiveFontSize(

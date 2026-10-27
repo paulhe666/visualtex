@@ -781,13 +781,14 @@ internal sealed partial class WordFormulaService
                     "The copied MathType equation has an incomplete MTPlaceRef field tree.");
             code = placeRef.Code;
             nestedFields = code.Fields;
-            var values = new string[nestedFields.Count];
-            for (var index = 1; index <= nestedFields.Count; index++)
+            var owners = WordFieldCode.OwnerEntries(nestedFields, code);
+            var values = new string[nestedFields.Count - owners];
+            for (var index = 1; index <= values.Length; index++)
             {
                 Release(result);
                 result = null;
                 Release(nested);
-                nested = nestedFields[index];
+                nested = nestedFields[index + owners];
                 result = nested.Result;
                 values[index - 1] = result.Text ?? string.Empty;
             }
@@ -833,14 +834,15 @@ internal sealed partial class WordFormulaService
                 return false;
             code = placeRef.Code;
             nestedFields = code.Fields;
-            if (nestedFields.Count != copiedFieldResults.Count)
+            var owners = WordFieldCode.OwnerEntries(nestedFields, code);
+            if (nestedFields.Count - owners != copiedFieldResults.Count)
                 return false;
-            for (var index = 1; index <= nestedFields.Count; index++)
+            for (var index = 1; index <= copiedFieldResults.Count; index++)
             {
                 Release(result);
                 result = null;
                 Release(nested);
-                nested = nestedFields[index];
+                nested = nestedFields[index + owners];
                 result = nested.Result;
                 var expected = copiedFieldResults[index - 1] ?? string.Empty;
                 if (!string.Equals(result.Text ?? string.Empty, expected, StringComparison.Ordinal))

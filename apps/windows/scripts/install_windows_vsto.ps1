@@ -1056,6 +1056,18 @@ try {
     New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeError" -PropertyType String -Value "Companion runtime verification has not started." -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "LastDiagnosticReport" -PropertyType String -Value $DiagnosticReportPath -Force | Out-Null
     Remove-ItemProperty -LiteralPath $modeKey -Name "OleManifestEnabled" -Force -ErrorAction SilentlyContinue
+    # WPS Office loads the add-ins from the Office registration above, but Presentation
+    # (and Writer in some editions) only loads add-ins in its whitelist. The MSI writes
+    # the machine list; WPS also keeps a per-user copy.
+    $wpsUserRoot = "HKCU:\Software\Kingsoft\Office"
+    if (Test-Path -LiteralPath $wpsUserRoot) {
+        foreach ($entry in @(@("WPS", "VisualTeX.WordVsto"), @("WPP", "VisualTeX.PowerPointVsto"))) {
+            $whitelist = Join-Path $wpsUserRoot ($entry[0] + "\AddinsWL")
+            if (-not (Test-Path -LiteralPath $whitelist)) { New-Item -Path $whitelist -Force | Out-Null }
+            New-ItemProperty -LiteralPath $whitelist -Name $entry[1] -PropertyType String -Value "" -Force | Out-Null
+        }
+        Add-DiagnosticCheck "WPS add-in whitelist" $true "HKCU\Software\Kingsoft\Office\WPS|WPP\AddinsWL list VisualTeX.WordVsto and VisualTeX.PowerPointVsto." "registry"
+    }
     $script:staticInstallVerified = $true
     Add-DiagnosticCheck "Static installation verification" $true "Machine-wide MSI, Program Files payload, HKLM Office registrations, managed COM classes and native OLE LocalServer passed." "static-install"
     Write-Host "Static files and registry installation verified successfully."

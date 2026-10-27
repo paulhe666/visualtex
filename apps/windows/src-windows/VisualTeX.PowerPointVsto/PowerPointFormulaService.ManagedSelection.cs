@@ -10,6 +10,28 @@ public sealed partial class PowerPointFormulaService
     private static string ManagedReference(Slide slide, Shape shape) =>
         $"{ManagedReferencePrefix}{slide.SlideID}:{shape.Id}";
 
+    // Slides.FindBySlideID returns null in WPS Presentation even for an existing slide;
+    // scan there instead. Like FindBySlideID, throws when no slide has the ID.
+    internal static Slide FindSlideById(Slides slides, int slideId)
+    {
+        var found = slides.FindBySlideID(slideId);
+        if (found is not null) return found;
+        for (var index = 1; index <= slides.Count; index++)
+        {
+            Slide? slide = null;
+            try
+            {
+                slide = slides[index];
+                if (slide.SlideID != slideId) continue;
+                var result = slide;
+                slide = null;
+                return result;
+            }
+            finally { Release(slide); }
+        }
+        throw new ArgumentException($"No slide has the ID {slideId}.", nameof(slideId));
+    }
+
     private static (Slide? Slide, Shape? Shape) FindManagedFormula(
         Presentation presentation, string reference, string formulaId)
     {
@@ -23,7 +45,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            try { slide = slides.FindBySlideID(slideId); } catch { return (null, null); }
+            try { slide = FindSlideById(slides, slideId); } catch { return (null, null); }
             shapes = slide.Shapes;
             for (var index = 1; index <= shapes.Count; index++)
             {

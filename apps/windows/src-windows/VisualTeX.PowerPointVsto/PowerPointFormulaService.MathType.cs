@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Shape = Microsoft.Office.Interop.PowerPoint.Shape;
 using Shapes = Microsoft.Office.Interop.PowerPoint.Shapes;
@@ -75,7 +76,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            slide = slides.FindBySlideID(slideId);
+            slide = FindSlideById(slides, slideId);
             shapes = slide.Shapes;
             for (var index = 1; index <= shapes.Count; index++)
             {
@@ -319,12 +320,13 @@ public sealed partial class PowerPointFormulaService
             {
                 var placeholder = PlaceholderCleanup.Capture(slide, source);
                 references = TransferMathTypeShapeReferences(slide, source, replacement);
-                replacement.Name = source.Name;
+                // WPS Presentation cannot rename an embedded OLE object (see Configure).
+                if (!OfficeHostEnvironment.IsWps) replacement.Name = source.Name;
                 source.Delete();
                 references.Commit();
                 placeholder?.RemoveRecreatedEmptyPlaceholder(slide);
             }
-            else replacement.Name = $"MathType_{session.FormulaId}";
+            else if (!OfficeHostEnvironment.IsWps) replacement.Name = $"MathType_{session.FormulaId}";
             committed = true;
             try { replacement.Select(MsoTriState.msoTrue); } catch { }
             return Result(session, presentation, MathTypeReference(slide, replacement));
