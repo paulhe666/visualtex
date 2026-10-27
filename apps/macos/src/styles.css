@@ -6840,6 +6840,14 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   gap: 8px;
 }
 
+/* The WPS add-in section's note on trusting the add-in (MacWpsIntegrationSettings). */
+.wps-addin-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .office-settings-actions .primary-button,
 .office-settings-actions .secondary-button {
   min-height: 32px;

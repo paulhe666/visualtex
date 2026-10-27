@@ -370,6 +370,11 @@ export function latexToMathMl(latex: string, displayMode = true) {
   return mathMl;
 }
 
+/** The formula's ink: the caller's colour (#rrggbb), else near-black. */
+function inkColor(options: SvgExportOptions) {
+  return options.color && /^#[0-9a-f]{6}$/i.test(options.color) ? options.color : "#111111";
+}
+
 export async function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
@@ -401,7 +406,7 @@ async function latexToEngineSvg(
   const { renderEngineSvg } = await import("./engineSvg.ts");
   const fontSizePx = fontSizePt * (96 / 72);
   // Word for Mac paints explicit black on the first frame (see forceWordCompatibleBlack)
-  const color = options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : "#111111";
+  const color = options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : inkColor(options);
   // a formula saved with its own fonts is drawn in them, with that letter
   // font's active spacing configuration (absent: the editor's chosen fonts)
   const fonts = options.formulaLetterFont || options.formulaChineseFont
@@ -529,7 +534,7 @@ function latexToMathJaxSvg(
     })
     .replace(
       /currentColor/gi,
-      options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : "#111111",
+      options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : inkColor(options),
     );
 
   const openingEnd = svg.indexOf(">");

@@ -64,6 +64,8 @@ export interface OfficeFormulaSession {
   id: string;
   mode: OfficeSessionMode;
   host: OfficeHost;
+  /** "wps" when the WPS add-in opened the Session. */
+  client?: "wps";
   operation?: "nativeToImage" | "imageToNative";
   formulaId: string;
   sourceDocumentId: string | null;

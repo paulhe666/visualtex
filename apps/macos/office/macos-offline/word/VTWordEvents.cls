@@ -41,6 +41,7 @@ Private Sub App_DocumentOpen(ByVal Doc As Word.Document)
     On Error Resume Next
     VTResetWordImageObservationCache
     VTMigrateOpenedDocumentImageMacroButtons Doc
+    VTRepairOpenedWpsDocument Doc
     VTSynchronizeWordImageTypography Doc.Content
     VTEnsureApplicationPrewarmScheduled
     VTInvalidateWordEquationNumberingFormatControl

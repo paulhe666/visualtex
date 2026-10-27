@@ -1,0 +1,79 @@
+# VisualTeX input method: pinyin in Simplified Chinese.
+# Based on luna_pinyin / luna_pinyin_simp from rime-luna-pinyin (LGPL-3.0,
+# RIME developers), without the stroke reverse lookup.
+# encoding: utf-8
+
+schema:
+  schema_id: visualtex_pinyin
+  name: VisualTeX 拼音
+  version: '1'
+  description: |
+    朙月拼音的词库与语言模型，简化字输出。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中文, 英文 ]
+  - name: full_shape
+    states: [ 半角, 全角 ]
+  - name: zh_hans
+    reset: 1
+    states: [ 繁體, 简体 ]
+  - name: ascii_punct
+    states: [ 。，, ．， ]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - script_translator
+  filters:
+    - simplifier@zh_hans
+    - uniquifier
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    __patch:
+      - pinyin:/abbreviation
+      - pinyin:/spelling_correction
+      - pinyin:/key_correction
+
+translator:
+  dictionary: luna_pinyin
+  prism: visualtex_pinyin
+  preedit_format:
+    - xform/([nl])v/$1ü/
+    - xform/([nl])ue/$1üe/
+    - xform/([jqxy])v/$1u/
+
+punctuator:
+  import_preset: symbols
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    punct: '^/([0-9]0?|[A-Za-z]+)$'
+
+zh_hans:
+  option_name: zh_hans
+  opencc_config: t2s.json
+  tips: none

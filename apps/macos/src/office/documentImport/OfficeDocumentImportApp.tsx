@@ -223,6 +223,8 @@ export function OfficeDocumentImportApp() {
   // display), otherwise the text size at the Word insertion point, unless the
   // user set a size for that formula here.
   const defaultFontSizePt = request?.defaultFontSizePt ?? 12;
+  // The application the content goes into: WPS when its add-in opened this window.
+  const office = request?.client === "wps" ? "WPS" : "Word";
   const inlineFontSizePt = request?.inlineFontSizePt ?? defaultFontSizePt;
   const displayFontSizePt = request?.displayFontSizePt ?? defaultFontSizePt;
   const conversionFontSize = useCallback(
@@ -246,14 +248,14 @@ export function OfficeDocumentImportApp() {
 
   useEffect(() => {
     if (!sessionId) {
-      setError(t("缺少 Word 文档导入会话标识。", "The Word document import session ID is missing."));
+      setError(t("缺少文档导入会话标识。", "The document import session ID is missing."));
       setLoading(false);
       return;
     }
     void getMacosDocumentImportRequest(sessionId)
       .then((value) => setRequest(value))
       .catch((reason) =>
-        setError(documentImportErrorMessage(reason, t("无法读取 Word 文档导入请求。", "Could not read the Word document import request."))),
+        setError(documentImportErrorMessage(reason, t("无法读取文档导入请求。", "Could not read the document import request."))),
       )
       .finally(() => setLoading(false));
   }, [sessionId]);
@@ -450,7 +452,7 @@ export function OfficeDocumentImportApp() {
         formulaIndex += 1;
         return prepared;
       });
-      setToast(t(`正在写入 Word：0/${items.length}`, `Writing to Word: 0/${items.length}`));
+      setToast(t(`正在写入 ${office}：0/${items.length}`, `Writing to ${office}: 0/${items.length}`));
       progressTimer = window.setInterval(() => {
         if (progressRequestInFlight) return;
         progressRequestInFlight = true;
@@ -458,8 +460,8 @@ export function OfficeDocumentImportApp() {
           .then((progress) => {
             if (progress.total > 0 && progress.stage === "inserting") {
               setToast(t(
-                `正在写入 Word：${progress.current}/${progress.total}`,
-                `Writing to Word: ${progress.current}/${progress.total}`,
+                `正在写入 ${office}：${progress.current}/${progress.total}`,
+                `Writing to ${office}: ${progress.current}/${progress.total}`,
               ));
             }
           })
@@ -478,7 +480,7 @@ export function OfficeDocumentImportApp() {
       if (importerHidden) {
         await restoreMacosDocumentImportWindow().catch(() => undefined);
       }
-      setError(documentImportErrorMessage(reason, t("无法将内容插入 Word。", "Could not insert the content into Word.")));
+      setError(documentImportErrorMessage(reason, t(`无法将内容插入 ${office}。`, `Could not insert the content into ${office}.`)));
       setToast("");
       setBusy(false);
     }
@@ -510,7 +512,7 @@ export function OfficeDocumentImportApp() {
     return (
       <main className="document-import-state">
         <LoaderCircle className="is-spinning" />
-        <span>{t("正在准备 Word 文档导入器…", "Preparing the Word document importer…")}</span>
+        <span>{t("正在准备文档导入器…", "Preparing the document importer…")}</span>
       </main>
     );
   }
@@ -520,7 +522,7 @@ export function OfficeDocumentImportApp() {
       <main className="document-import-state is-error" role="alert">
         <AlertCircle />
         <strong>{t("无法打开文档导入器", "Could not open the document importer")}</strong>
-        <p>{error || t("Word 文档导入请求不存在或已经失效。", "The Word document import request does not exist or has expired.")}</p>
+        <p>{error || t("文档导入请求不存在或已经失效。", "The document import request does not exist or has expired.")}</p>
       </main>
     );
   }
@@ -547,8 +549,8 @@ export function OfficeDocumentImportApp() {
         <div className="doc-import-title-block">
           <FileText size={20} />
           <div>
-            <strong>{t("Word 文档批量导入", "Word document import")}</strong>
-            <span>{t("左侧编辑源码，右侧实时查看并调整最终 Word 结构", "Edit the source on the left; review and adjust the final Word structure on the right")}</span>
+            <strong>{t(`${office} 文档批量导入`, `${office} document import`)}</strong>
+            <span>{t(`左侧编辑源码，右侧实时查看并调整最终 ${office} 结构`, `Edit the source on the left; review and adjust the final ${office} structure on the right`)}</span>
           </div>
         </div>
         <div className="doc-import-options">
@@ -687,7 +689,7 @@ c&=d
                 <Eye size={16} />
               </span>
               <div>
-                <strong>{t("Word 结构预览", "Word structure preview")}</strong>
+                <strong>{t(`${office} 结构预览`, `${office} structure preview`)}</strong>
                 <small>{t("公式卡片可单独调整行内/行间、编号和字号", "Adjust inline/display mode, numbering, and font size on each formula card")}</small>
               </div>
             </div>
@@ -703,7 +705,7 @@ c&=d
                 <div className="document-import-empty">
                   <FileText size={34} />
                   <strong>{t("等待文档内容", "Waiting for document content")}</strong>
-                  <span>{t("在左侧粘贴内容后，这里会实时生成 Word 结构预览。", "Paste content on the left and a live Word structure preview appears here.")}</span>
+                  <span>{t(`在左侧粘贴内容后，这里会实时生成 ${office} 结构预览。`, `Paste content on the left and a live ${office} structure preview appears here.`)}</span>
                 </div>
               ) : (
                 blocks.map((block, index) =>
@@ -808,7 +810,7 @@ c&=d
           ) : (
             <span className="ok">
               <CheckCircle2 size={15} />
-              {t("预览解析正常；点击导入后将切回 Word 并实时显示插入进度。", "Preview looks good. After you click Import, the app switches back to Word and shows insertion progress.")}
+              {t(`预览解析正常；点击导入后将切回 ${office} 并实时显示插入进度。`, `Preview looks good. After you click Import, the app switches back to ${office} and shows insertion progress.`)}
             </span>
           )}
         </div>
@@ -823,7 +825,7 @@ c&=d
             disabled={busy || !blocks.length}
           >
             {busy ? <LoaderCircle size={16} className="is-spinning" /> : <Check size={16} />}
-            {busy ? t("正在导入…", "Importing…") : t("导入到 Word", "Import to Word")}
+            {busy ? t("正在导入…", "Importing…") : t(`导入到 ${office}`, `Import to ${office}`)}
           </button>
         </div>
       </footer>

@@ -258,6 +258,10 @@ struct MacOfflineSessionRequest {
     power_point: Option<MacOfflinePowerPointRequest>,
     #[serde(default)]
     document_import: Option<MacOfflineDocumentImportRequest>,
+    /// "wps" when the WPS add-in opened the Session (office::wps); the result
+    /// then goes to that add-in instead of a Word macro.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -305,6 +309,9 @@ pub struct MacOfflineDocumentImportPublicRequest {
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     restore_targets: Option<Vec<MacOfflineFormulaRestoreTarget>>,
+    /// "wps" when the WPS add-in started the operation (the windows name WPS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1501,6 +1508,22 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         }
     }
     let operation = request.operation.as_deref().unwrap_or("formula");
+    if let Some(client) = request.client.as_deref() {
+        if client != "wps" {
+            return Err("Offline Office request client is unknown".to_string());
+        }
+        // A WPS document operation carries the same documentImport object as
+        // Word's; the checks below apply to it unchanged.
+        let document_operation = matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore");
+        if request.host != "word"
+            || !(document_operation || matches!(operation, "formula" | "nativeToImage" | "imageToNative"))
+            || request.fork_copied_formula
+            || request.power_point.is_some()
+            || request.document_import.is_some() != document_operation
+        {
+            return Err("A WPS request must be a Word formula or document request".to_string());
+        }
+    }
     if matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore") {
         if request.host != "word" || request.mode != "create" {
             return Err("Document import is supported only as a new Word operation".to_string());
@@ -2582,6 +2605,7 @@ fn import_request(
         CreateOfficeSessionInput {
             mode,
             host,
+            client: request.client.clone(),
             operation: session_operation,
             native_equation: request.native_equation,
             formula_id: Some(formula_id),
@@ -2999,6 +3023,23 @@ fn center_resident_editor_on_pointer_screen(window: &WebviewWindow) -> Result<()
     Ok(())
 }
 
+/// The resident editor stays ordered in at a near-zero alpha so WebKit keeps
+/// it running, which made Mission Control show it as an empty "VisualTeX
+/// Office Formula" tile. While it is not presented it is Transient (hidden by
+/// Mission Control and App Exposé) and left out of Cmd-` cycling; presenting
+/// it restores the default managed behaviour.
+#[cfg(target_os = "macos")]
+fn set_resident_editor_listed(native_window: &objc2_app_kit::NSWindow, listed: bool) {
+    let unlisted = NSWindowCollectionBehavior::Transient | NSWindowCollectionBehavior::IgnoresCycle;
+    let mut behavior = native_window.collectionBehavior().difference(
+        unlisted | NSWindowCollectionBehavior::Managed | NSWindowCollectionBehavior::Stationary,
+    );
+    if !listed {
+        behavior |= unlisted;
+    }
+    native_window.setCollectionBehavior(behavior);
+}
+
 #[cfg(target_os = "macos")]
 fn set_resident_editor_native_state(
     window: &WebviewWindow,
@@ -3008,6 +3049,7 @@ fn set_resident_editor_native_state(
     window
         .with_webview(move |webview| unsafe {
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            set_resident_editor_listed(native_window, !parked);
             native_window.setAlphaValue(alpha);
             native_window.setIgnoresMouseEvents(parked);
             native_window.setHidesOnDeactivate(false);
@@ -3072,6 +3114,7 @@ fn wake_resident_editor_for_hydration(window: &WebviewWindow) -> Result<(), Stri
     window
         .with_webview(move |webview| unsafe {
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            set_resident_editor_listed(native_window, false);
             native_window.setAlphaValue(1.0);
             native_window.setIgnoresMouseEvents(true);
             native_window.setLevel(objc2_app_kit::NSNormalWindowLevel);
@@ -3146,6 +3189,7 @@ fn order_resident_editor_to_front(window: &WebviewWindow) -> Result<(), String> 
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
             // The Tao window is created as an NSPanel for Office formula
             // editors. Keep its WKWebView in place for the whole lifetime.
+            set_resident_editor_listed(native_window, true);
             native_window.setAlphaValue(1.0);
             native_window.setIgnoresMouseEvents(false);
             native_window.setExcludedFromWindowsMenu(false);
@@ -3370,7 +3414,7 @@ fn clear_word_document_import_status() {
         .output();
 }
 
-fn open_document_import_window(app: &AppHandle, session_id: &str) -> Result<(), String> {
+fn open_document_import_window(app: &AppHandle, session_id: &str, office: &str) -> Result<(), String> {
     crate::office::background::activate_foreground_app(app)?;
     crate::office::background::install_application_icon(app)?;
 
@@ -3389,7 +3433,7 @@ fn open_document_import_window(app: &AppHandle, session_id: &str) -> Result<(), 
         "index.html?view=office-document-import&sessionId={session_id}&transport=tauri&theme={theme}"
     );
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
-        .title("VisualTeX Word 文档批量导入")
+        .title(format!("VisualTeX {office} 文档批量导入"))
         .inner_size(1260.0, 840.0)
         .min_inner_size(860.0, 620.0)
         .center()
@@ -3831,36 +3875,7 @@ fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String> {
         request.operation.as_deref(),
         Some("documentImport" | "latexRedraw" | "formulaRestore")
     ) {
-        for host in [OfficeHost::Word, OfficeHost::Powerpoint] {
-            if let Some(window) = app.get_webview_window(editor_window_label(host)) {
-                let _ = set_resident_editor_content_visible(&window, false);
-                if let Some(active) = clear_any_editor_session(host) {
-                    let _ = window.emit(
-                        OFFICE_EDITOR_CLEAR_EVENT,
-                        json!({
-                            "sessionId": active.session_id,
-                            "generation": active.generation,
-                        }),
-                    );
-                }
-                let _ = set_resident_editor_parked(&window, true);
-            }
-        }
-        for (label, window) in app.webview_windows() {
-            if label.starts_with("office-native-document-")
-                && label != document_import_window_label(&session_id)
-            {
-                let _ = window.destroy();
-            }
-        }
-        return if matches!(
-            request.operation.as_deref(),
-            Some("latexRedraw" | "formulaRestore")
-        ) {
-            open_word_latex_redraw_window(app, &session_id)
-        } else {
-            open_document_import_window(app, &session_id)
-        };
+        return open_document_operation_window(app, &request, &session_id);
     }
 
     let silent = matches!(
@@ -3879,6 +3894,157 @@ fn handle_open_url(app: &AppHandle, value: &str) -> Result<(), String> {
     open_editor_window(
         app,
         host,
+        &session_id,
+        received_epoch_ms,
+        received_at,
+        silent,
+    )
+}
+
+/// A document operation (import, LaTeX redraw, formula restore) runs in its own
+/// window: any formula editor Session and any other document window ends.
+fn open_document_operation_window(
+    app: &AppHandle,
+    request: &MacOfflineSessionRequest,
+    session_id: &str,
+) -> Result<(), String> {
+    for host in [OfficeHost::Word, OfficeHost::Powerpoint] {
+        if let Some(window) = app.get_webview_window(editor_window_label(host)) {
+            let _ = set_resident_editor_content_visible(&window, false);
+            if let Some(active) = clear_any_editor_session(host) {
+                let _ = window.emit(
+                    OFFICE_EDITOR_CLEAR_EVENT,
+                    json!({
+                        "sessionId": active.session_id,
+                        "generation": active.generation,
+                    }),
+                );
+            }
+            let _ = set_resident_editor_parked(&window, true);
+        }
+    }
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("office-native-document-")
+            && label != document_import_window_label(session_id)
+        {
+            let _ = window.destroy();
+        }
+    }
+    if matches!(
+        request.operation.as_deref(),
+        Some("latexRedraw" | "formulaRestore")
+    ) {
+        open_word_latex_redraw_window(app, session_id)
+    } else {
+        let office = if request.client.as_deref() == Some("wps") { "WPS" } else { "Word" };
+        open_document_import_window(app, session_id, office)
+    }
+}
+
+/// Opens a document operation for the WPS add-in (office::wps::bridge): the
+/// request and its source (the LaTeX redraw text or the formula restore
+/// manifest, as the Word add-in writes them) are stored where Word's live, so
+/// the same validation, windows and renderer run; the result goes back to the
+/// add-in (deliver_wps_document_commit).
+pub(crate) fn open_wps_document_session(
+    app: &AppHandle,
+    request: Value,
+    source: Option<String>,
+) -> Result<(), String> {
+    let request: MacOfflineSessionRequest = serde_json::from_value(request)
+        .map_err(|error| format!("The WPS document request is invalid: {error}"))?;
+    if request.client.as_deref() != Some("wps") {
+        return Err("The WPS document request is not marked as WPS".to_string());
+    }
+    let operation = request.operation.clone().unwrap_or_default();
+    if !matches!(operation.as_str(), "documentImport" | "latexRedraw" | "formulaRestore") {
+        return Err("The WPS document request has no document operation".to_string());
+    }
+    let session_id = request.session_id.clone();
+    validate_uuid(&session_id, "Request Session id")?;
+    ensure_runtime_root(OfficeHost::Word)?;
+    let directory = session_directory(OfficeHost::Word, &session_id)?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+    set_mode(&directory, 0o700)?;
+    let opened = (|| {
+        let source_path = match operation.as_str() {
+            "latexRedraw" => Some(directory.join(LATEX_REDRAW_SOURCE_FILE)),
+            "formulaRestore" => Some(formula_restore_source_path(&session_id)?),
+            _ => None,
+        };
+        match (source_path, source) {
+            (Some(path), Some(text)) => atomic_write_runtime(&path, text.as_bytes(), 0o600)?,
+            (None, None) => {}
+            (Some(_), None) => return Err("The WPS document request is missing its source".to_string()),
+            (None, Some(_)) => return Err("A WPS document import takes no source".to_string()),
+        }
+        validate_request(&request, &session_id)?;
+        let bytes = serde_json::to_vec(&request)
+            .map_err(|error| format!("Unable to encode the WPS document request: {error}"))?;
+        atomic_write_runtime(&request_path(OfficeHost::Word, &session_id)?, &bytes, 0o600)?;
+        let request = read_request(&session_id)?;
+        open_document_operation_window(app, &request, &session_id)
+    })();
+    if opened.is_err() {
+        let _ = cleanup_session_files(OfficeHost::Word, &session_id);
+    }
+    opened
+}
+
+/// Whether a document window belongs to a WPS Session: WPS, not Word, is
+/// the application to bring forward and to tell about progress.
+fn document_window_is_wps(window: &WebviewWindow) -> bool {
+    let Some(compact) = window.label().strip_prefix("office-native-document-") else {
+        return false;
+    };
+    if compact.len() != 32 || !compact.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
+    let session_id = format!(
+        "{}-{}-{}-{}-{}",
+        &compact[..8],
+        &compact[8..12],
+        &compact[12..16],
+        &compact[16..20],
+        &compact[20..]
+    );
+    read_request(&session_id)
+        .map(|request| request.client.as_deref() == Some("wps"))
+        .unwrap_or(false)
+}
+
+/// Opens a formula Session for the WPS add-in (office::wps::bridge). The
+/// request is stored where a Word request lives and then read back, so it
+/// passes the same validation, import and editor window as a Word formula.
+pub(crate) fn open_wps_session(app: &AppHandle, request: Value) -> Result<(), String> {
+    let received_at = Instant::now();
+    let received_epoch_ms = epoch_ms();
+    let request: MacOfflineSessionRequest = serde_json::from_value(request)
+        .map_err(|error| format!("The WPS formula request is invalid: {error}"))?;
+    if request.client.as_deref() != Some("wps") {
+        return Err("The WPS formula request is not marked as WPS".to_string());
+    }
+    validate_request(&request, &request.session_id)?;
+    let session_id = request.session_id.clone();
+    ensure_runtime_root(OfficeHost::Word)?;
+    let directory = session_directory(OfficeHost::Word, &session_id)?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+    set_mode(&directory, 0o700)?;
+    let bytes = serde_json::to_vec(&request)
+        .map_err(|error| format!("Unable to encode the WPS formula request: {error}"))?;
+    atomic_write_runtime(&request_path(OfficeHost::Word, &session_id)?, &bytes, 0o600)?;
+    let state = app
+        .try_state::<OfficeCompanionState>()
+        .ok_or_else(|| "VisualTeX Office state is not initialized".to_string())?;
+    let request = read_request(&session_id)?;
+    // A conversion renders in the hidden editor and commits by itself.
+    let silent = matches!(request.operation.as_deref(), Some("nativeToImage" | "imageToNative"));
+    import_request(state.inner(), request)?;
+    open_editor_window(
+        app,
+        OfficeHost::Word,
         &session_id,
         received_epoch_ms,
         received_at,
@@ -5279,7 +5445,7 @@ fn commit_word(
         initial_formula_letter_font,
         session.formula_letter_font.as_str(),
     );
-    let dispatch = dispatch_text(&[
+    let entries = vec![
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
         ("sessionId", session.id.clone()),
         ("action", "commit".to_string()),
@@ -5377,7 +5543,18 @@ fn commit_word(
                 .map(|value| format!("{value:.8}"))
                 .unwrap_or_default(),
         ),
-    ])?;
+    ];
+    if request.client.as_deref() == Some("wps") {
+        return deliver_wps_word_commit(
+            request,
+            session,
+            &entries,
+            geometry,
+            image_artifacts.as_ref(),
+            &native_document_path,
+        );
+    }
+    let dispatch = dispatch_text(&entries)?;
     atomic_write_runtime(
         &dispatch_path(OfficeHost::Word, &session.id)?,
         dispatch.as_bytes(),
@@ -5403,6 +5580,113 @@ fn commit_word(
         json!({}),
     );
     Ok(())
+}
+
+/// A Word commit for the WPS add-in: the values the Word macro would read
+/// from dispatch.txt, plus the document state it would write (office::wps).
+/// Returns once the add-in has written the document.
+fn deliver_wps_word_commit(
+    request: &MacOfflineSessionRequest,
+    session: &OfficeFormulaSession,
+    entries: &[(&str, String)],
+    geometry: WordGeometry,
+    image_artifacts: Option<&(PathBuf, PathBuf, PathBuf)>,
+    native_document_path: &Path,
+) -> Result<(), String> {
+    use super::wps::payload;
+    let value = |key: &str| {
+        entries
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| value.as_str())
+            .unwrap_or("")
+    };
+    // An edited numbered formula keeps the number it has in the document; a
+    // new one is numbered by the add-in through the bridge (office::wps::numbering).
+    let display_mode = session.display_mode.as_str();
+    let numbered = session.numbered && display_mode == "block";
+    let file_name = |suffix: &str| format!("{}-{suffix}", session.id);
+    let mut files = Vec::new();
+    let mut file_names = json!({});
+    // A picture converted to an equation has no equation number to keep: the
+    // add-in numbers the new equation through the bridge.
+    let keeps_number = numbered && request.mode == "edit" && request.operation.as_deref().unwrap_or("formula") == "formula";
+    let variables = if request.native_equation {
+        // The equation in WPS's package form (omml_write::wps_equation_docx).
+        let semantic = URL_SAFE_NO_PAD
+            .decode(value("ommlBase64"))
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| "The WPS equation has no OMML".to_string())?;
+        let font = word_equation_math_font(request);
+        let insertion = super::omml_write::insertion_omml(&semantic, font)?;
+        let equation = if keeps_number {
+            // The edited formula goes back in front of the equation's own
+            // "#" and (number), fields and bookmarks as they were.
+            let original = request
+                .native_edit_xml
+                .as_deref()
+                .ok_or_else(|| "The numbered WPS equation has no original to keep its number from".to_string())?;
+            super::omml_write::keep_equation_number(original, &insertion)?
+        } else {
+            insertion
+        };
+        let docx = super::omml_write::wps_equation_docx(&equation, font)?;
+        let native_path = native_document_path.with_extension("wps.docx");
+        atomic_write(&native_path, &docx, 0o600)?;
+        files.push((file_name("equation.docx"), native_path));
+        file_names["native"] = json!(file_name("equation.docx"));
+        None
+    } else {
+        let (svg, _, png) = image_artifacts
+            .ok_or_else(|| "The WPS image formula has no image artifacts".to_string())?;
+        files.push((file_name("formula.svg"), svg.clone()));
+        files.push((file_name("formula.png"), png.clone()));
+        file_names["image"] = json!(file_name("formula.svg"));
+        file_names["fallback"] = json!(file_name("formula.png"));
+        Some(payload::word_image_variables(&payload::WordImageState {
+            formula_id: &session.formula_id,
+            display_mode,
+            numbered,
+            latex_base64: value("latexBase64"),
+            omml_base64: value("ommlBase64"),
+            metadata: value("metadata"),
+            font_size_pt: geometry.font_size_pt,
+            reference_width_pt: geometry.reference_width_pt,
+            reference_height_pt: geometry.reference_height_pt,
+            reference_baseline_pt: geometry.reference_baseline_pt,
+            ink_center_y_ratio: value("inkCenterYRatio").parse::<f64>().ok(),
+            letter_font: value("formulaLetterFont"),
+        })?)
+    };
+    let result = json!({
+        "sessionId": session.id,
+        "mode": request.mode,
+        "formulaId": session.formula_id,
+        "displayMode": display_mode,
+        "nativeEquation": request.native_equation,
+        "numbered": numbered,
+        // What a new number needs (the bridge's numbering call): the equation
+        // body, the document's math font and the letter font of the number.
+        "ommlBase64": value("ommlBase64"),
+        "mathFont": super::omml_write::normalize_math_font_name(word_equation_math_font(request)),
+        "formulaLetterFont": value("formulaLetterFont"),
+        "metadata": value("metadata"),
+        "formulaReference": payload::formula_reference(&session.formula_id, display_mode, numbered),
+        "ownerBookmark": payload::owner_bookmark_name(&session.formula_id),
+        "widthPoints": geometry.width,
+        "heightPoints": geometry.height,
+        "fontSizePt": geometry.font_size_pt,
+        "referenceWidthPt": geometry.reference_width_pt,
+        "referenceHeightPt": geometry.reference_height_pt,
+        "referenceBaselinePt": geometry.reference_baseline_pt,
+        // Where the formula's ink is centred, from the top (0-1): a display
+        // picture is placed by it (VTExpectedImageFormulaPosition).
+        "inkCenterYRatio": value("inkCenterYRatio").parse::<f64>().ok(),
+        "variables": variables,
+        "files": file_names,
+    });
+    super::wps::bridge::deliver_commit(&session.id, result, files)
 }
 
 struct PowerPointNativeEditSource { omml: String, clipboard: Vec<u8>, #[cfg(test)] math_ml: String }
@@ -5717,6 +6001,10 @@ fn commit_powerpoint(
 }
 
 fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
+    if request.client.as_deref() == Some("wps") {
+        super::wps::bridge::deliver_cancel(&request.session_id);
+        return Ok(());
+    }
     let host = if request.host == "word" {
         OfficeHost::Word
     } else {
@@ -6224,6 +6512,7 @@ fn document_import_request_data(
         source_kind: document_import.source_kind.clone(),
         source,
         restore_targets,
+        client: request.client.clone(),
     })
 }
 
@@ -6521,6 +6810,40 @@ fn resolve_latex_redraw_font_sizes_blocking(
         }
     }
 
+    if request.client.as_deref() == Some("wps") {
+        // The WPS add-in reads each formula's size from the document as
+        // VTInheritedLatexRedrawFontSize does.
+        let ranges = input
+            .ranges
+            .iter()
+            .map(|range| {
+                json!({
+                    "sourceStart": range.source_start,
+                    "sourceEnd": range.source_end,
+                    "sourceText": range.source_text,
+                    "displayMode": range.display_mode,
+                })
+            })
+            .collect::<Vec<_>>();
+        let values = super::wps::bridge::request_font_sizes(&session_id, Value::Array(ranges))?;
+        if values.len() != input.ranges.len()
+            || values
+                .iter()
+                .any(|value| !value.is_finite() || !(MIN_WORD_FONT_SIZE_PT..=MAX_WORD_FONT_SIZE_PT).contains(value))
+        {
+            return Err("WPS returned invalid LaTeX redraw font sizes".to_string());
+        }
+        queue_editor_performance(
+            OfficeHost::Word,
+            &session_id,
+            "latex-redraw-font-backend-complete",
+            preflight_started.elapsed().as_secs_f64() * 1000.0,
+            None,
+            json!({ "itemCount": values.len() }),
+        );
+        return Ok(values);
+    }
+
     let manifest_path = latex_redraw_preflight_manifest_path(&session_id)?;
     let result_path = latex_redraw_font_sizes_path(&session_id)?;
     let mut entries = vec![
@@ -6616,6 +6939,11 @@ fn commit_document_import_blocking(
     let is_redraw = public_request.operation == "latexRedraw";
     let is_formula_restore = public_request.operation == "formulaRestore";
     let is_range_replace = is_redraw || is_formula_restore;
+    // A WPS operation hands the add-in each item with its own files instead of
+    // Word's manifest and shared staging documents.
+    let wps = request.client.as_deref() == Some("wps");
+    let mut wps_items: Vec<Value> = Vec::new();
+    let mut wps_files: Vec<(String, PathBuf)> = Vec::new();
     if is_redraw {
         queue_editor_performance(
             OfficeHost::Word,
@@ -6782,12 +7110,12 @@ fn commit_document_import_blocking(
     }
     // Import and redraw use the same shared drawing carrier. Opening a separate
     // hidden Word document for every imported image dominates batch latency.
-    let redraw_vector_batch_path = if input.output_kind == "image" {
+    let redraw_vector_batch_path = if input.output_kind == "image" && !wps {
         Some(latex_redraw_vector_batch_path(&session_id)?)
     } else {
         None
     };
-    let native_batch_document_path = if input.output_kind == "omml" {
+    let native_batch_document_path = if input.output_kind == "omml" && !wps {
         Some(document_native_batch_path(&session_id)?)
     } else {
         None
@@ -6888,6 +7216,16 @@ fn commit_document_import_blocking(
                     ));
                 }
                 append_document_paragraph_entries(&mut entries, &prefix, paragraph.as_ref());
+                if wps {
+                    wps_items.push(json!({
+                        "kind": "text",
+                        "text": text,
+                        "sourceStart": source_start,
+                        "sourceEnd": source_end,
+                        "sourceText": source_text,
+                        "paragraph": paragraph.as_ref().map(wps_paragraph),
+                    }));
+                }
                 if paragraph.as_ref().is_some_and(|value| value.end) {
                     active_paragraph_id = None;
                 }
@@ -7131,6 +7469,82 @@ fn commit_document_import_blocking(
                         .and_then(|targets| targets.get(index))
                         .and_then(|target| target.formula_id.as_deref())
                         == Some(formula_id.as_str());
+                if wps {
+                    let latex_base64 = URL_SAFE_NO_PAD.encode(canonical_latex.as_bytes());
+                    let ink_center = ink_center_y_ratio
+                        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+                    let mut files = json!({});
+                    if input.output_kind == "omml" {
+                        // The equation in WPS's package form (omml_write::wps_equation_docx).
+                        let equation = match shared_word_equation.as_ref() {
+                            Some(artifacts) => artifacts.insertion_omml.clone(),
+                            None => String::from_utf8(
+                                URL_SAFE_NO_PAD
+                                    .decode(omml_base64)
+                                    .map_err(|_| "Document formula OMML payload is not valid Base64URL".to_string())?,
+                            )
+                            .map_err(|_| "Document formula OMML payload is not UTF-8".to_string())?,
+                        };
+                        let docx = super::omml_write::wps_equation_docx(&equation, word_equation_math_font(&request))?;
+                        let path = session_directory(OfficeHost::Word, &session_id)?
+                            .join(format!("document-formula-{formula_id}-wps.docx"));
+                        atomic_write(&path, &docx, 0o600)?;
+                        let native_name = format!("{session_id}-{index}.docx");
+                        wps_files.push((native_name.clone(), path));
+                        files["native"] = json!(native_name);
+                    }
+                    let variables = if document_output_requires_image_artifacts(&input.output_kind) {
+                        let svg_name = format!("{session_id}-{index}.svg");
+                        let png_name = format!("{session_id}-{index}.png");
+                        wps_files.push((svg_name.clone(), PathBuf::from(&image_path)));
+                        wps_files.push((png_name.clone(), PathBuf::from(&fallback_image_path)));
+                        files["image"] = json!(svg_name);
+                        files["fallback"] = json!(png_name);
+                        Some(super::wps::payload::word_image_variables(&super::wps::payload::WordImageState {
+                            formula_id,
+                            display_mode,
+                            numbered: *numbered,
+                            latex_base64: &latex_base64,
+                            omml_base64,
+                            metadata: &encoded_metadata,
+                            font_size_pt: *font_size_pt,
+                            reference_width_pt: geometry.reference_width_pt,
+                            reference_height_pt: geometry.reference_height_pt,
+                            reference_baseline_pt: geometry.reference_baseline_pt,
+                            ink_center_y_ratio: ink_center,
+                            letter_font: item_letter_font.as_deref().unwrap_or(""),
+                        })?)
+                    } else {
+                        None
+                    };
+                    // A numbered formula is written without its number and numbered
+                    // with the others once all are in place (office::wps::numbering).
+                    wps_items.push(json!({
+                        "kind": "formula",
+                        "formulaId": formula_id,
+                        "preserveIdentity": preserve_formula_identity,
+                        "displayMode": display_mode,
+                        "numbered": numbered,
+                        "nativeEquation": input.output_kind == "omml",
+                        "fontSizePt": font_size_pt,
+                        "metadata": encoded_metadata,
+                        "formulaReference": super::wps::payload::formula_reference(formula_id, display_mode, false),
+                        "ownerBookmark": super::wps::payload::owner_bookmark_name(formula_id),
+                        "formulaLetterFont": item_letter_font,
+                        "widthPoints": geometry.width,
+                        "heightPoints": geometry.height,
+                        "referenceWidthPt": geometry.reference_width_pt,
+                        "referenceHeightPt": geometry.reference_height_pt,
+                        "referenceBaselinePt": geometry.reference_baseline_pt,
+                        "inkCenterYRatio": ink_center,
+                        "sourceStart": source_start,
+                        "sourceEnd": source_end,
+                        "sourceText": source_text,
+                        "paragraph": paragraph.as_ref().map(wps_paragraph),
+                        "files": files,
+                        "variables": variables,
+                    }));
+                }
                 entries.push((format!("{prefix}kind"), "formula".to_string()));
                 entries.push((format!("{prefix}formulaId"), formula_id.clone()));
                 entries.push((
@@ -7238,6 +7652,26 @@ fn commit_document_import_blocking(
     if formula_count == 0 && text_bytes == 0 {
         return Err("Document import contains no visible content".to_string());
     }
+    if wps {
+        write_document_progress(&session_id, 0, input.items.len(), "inserting")?;
+        let payload = json!({
+            "operation": public_request.operation,
+            "outputKind": input.output_kind,
+            "sourceKind": public_request.source_kind,
+            "redrawScope": public_request.redraw_scope,
+            "bookmarkName": public_request.bookmark_name,
+            "sourceDocumentId": public_request.source_document_id,
+            "mathFont": super::omml_write::normalize_math_font_name(word_equation_math_font(&request)),
+            "items": wps_items,
+        });
+        super::wps::bridge::deliver_document_commit(&session_id, payload, wps_files, input.items.len())?;
+        for metadata in metadata_to_cache {
+            let formula_id = metadata.formula_id.clone();
+            let _ = state.formula_cache.put(&formula_id, metadata);
+        }
+        let _ = cleanup_session_files(OfficeHost::Word, &session_id);
+        return Ok(());
+    }
     if let Some(batch_path) = redraw_vector_batch_path.as_ref() {
         if !redraw_vector_entries.is_empty() {
             let package = build_word_svg_batch_docx(&redraw_vector_entries)?;
@@ -7341,9 +7775,47 @@ fn commit_document_import_blocking(
     Ok(())
 }
 
+/// The import window's progress (get_macos_offline_document_import_progress),
+/// written for an operation the WPS add-in carries out.
+pub(crate) fn write_document_progress(
+    session_id: &str,
+    current: usize,
+    total: usize,
+    stage: &str,
+) -> Result<(), String> {
+    validate_uuid(session_id, "Session id")?;
+    if current > total || total > 2048 || !matches!(stage, "preparing" | "inserting" | "complete" | "error") {
+        return Err("Document operation progress is invalid".to_string());
+    }
+    let path = session_directory(OfficeHost::Word, session_id)?.join(DOCUMENT_IMPORT_PROGRESS_FILE);
+    atomic_write_runtime(
+        &path,
+        format!("current={current}\ntotal={total}\nstage={stage}\n").as_bytes(),
+        0o600,
+    )
+}
+
+fn wps_paragraph(paragraph: &DocumentParagraphTransfer) -> Value {
+    json!({
+        "id": paragraph.id,
+        "style": paragraph.style,
+        "alignment": paragraph.alignment,
+        "listKind": paragraph.list_kind,
+        "listLevel": paragraph.list_level,
+        "start": paragraph.start,
+        "end": paragraph.end,
+    })
+}
+
 fn cancel_document_import_blocking(session_id: String) -> Result<(), String> {
     validate_uuid(&session_id, "Session id")?;
     let request = read_request(&session_id)?;
+    if request.client.as_deref() == Some("wps") {
+        // The add-in removes its VT_D_ anchor when it sees the cancel.
+        super::wps::bridge::deliver_cancel(&session_id);
+        let _ = cleanup_session_files(OfficeHost::Word, &session_id);
+        return Ok(());
+    }
     let public_request = document_import_request_data(&request)?;
     let dispatch = dispatch_text(&[
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
@@ -7627,6 +8099,18 @@ pub fn focus_macos_offline_document_import_target(
     ) {
         return Err("Word document operation is invalid".to_string());
     }
+    // Telling Word would start Word for a WPS user: WPS comes forward instead,
+    // after the import window (a redraw's window is never shown).
+    if document_window_is_wps(&window) {
+        let shown = window.is_visible().unwrap_or(false);
+        window
+            .hide()
+            .map_err(|error| format!("Unable to hide the VisualTeX document importer: {error}"))?;
+        if shown {
+            super::wps::installer::activate_running_wps();
+        }
+        return Ok(());
+    }
     set_word_document_operation_preparing_status(&operation)?;
     window
         .hide()
@@ -7638,7 +8122,9 @@ pub fn restore_macos_offline_document_import_window(window: WebviewWindow) -> Re
     if !window.label().starts_with("office-native-document-") {
         return Err("Only the VisualTeX document importer can restore itself".to_string());
     }
-    clear_word_document_import_status();
+    if !document_window_is_wps(&window) {
+        clear_word_document_import_status();
+    }
     let app = window.app_handle().clone();
     crate::office::background::activate_foreground_app(&app)?;
     window.show().map_err(|error| error.to_string())?;
@@ -7926,6 +8412,112 @@ pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wps_request(changes: Value) -> MacOfflineSessionRequest {
+        let session_id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let mut request = json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": session_id,
+            "host": "word",
+            "client": "wps",
+            "mode": "create",
+            "operation": "formula",
+            "displayMode": "inline",
+            "numbered": false,
+            "nativeEquation": false,
+            "sourceDocumentId": "wps:/Users/a/doc.docx",
+            "pendingMarker": format!("{PENDING_PREFIX}{session_id}"),
+            "fontSizePt": 12.0,
+        });
+        for (key, value) in changes.as_object().unwrap() {
+            if value.is_null() {
+                request.as_object_mut().unwrap().remove(key);
+            } else {
+                request[key] = value.clone();
+            }
+        }
+        serde_json::from_value(request).unwrap()
+    }
+
+    #[test]
+    fn wps_requests_pass_the_word_rules() {
+        let id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        validate_request(&wps_request(json!({})), id).unwrap();
+        let image_edit = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "visualtex:formula-ref:v1:5028ce4b-71c7-4d06-a165-61151fd64183:inline:0",
+            "encodedMetadata": "visualtex:v1:deflate:abc",
+        }));
+        validate_request(&image_edit, id).unwrap();
+        let equation_edit = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "nativeEquation": true,
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "VT_E_0f8fad5bd9cb469fa165",
+            "nativeEditXml": "<pkg:package/>",
+        }));
+        assert!(is_untagged_word_edit(&equation_edit));
+        validate_request(&equation_edit, id).unwrap();
+        assert!(cancel_needs_host_callback(&equation_edit));
+        // A numbered formula is edited in WPS and keeps its number.
+        let numbered_image_edit = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "displayMode": "block",
+            "numbered": true,
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "visualtex:formula-ref:v1:5028ce4b-71c7-4d06-a165-61151fd64183:block:1",
+            "encodedMetadata": "visualtex:v1:deflate:abc",
+        }));
+        validate_request(&numbered_image_edit, id).unwrap();
+        let numbered_equation_edit = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "displayMode": "block",
+            "numbered": true,
+            "nativeEquation": true,
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "VT_E_0f8fad5bd9cb469fa165",
+            "nativeEditXml": "<pkg:package/>",
+        }));
+        validate_request(&numbered_equation_edit, id).unwrap();
+        // WPS numbers new display formulas too.
+        validate_request(&wps_request(json!({ "numbered": true, "displayMode": "block" })), id).unwrap();
+        // The ribbon's conversions run as hidden edits of the selected formula.
+        let to_image = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "operation": "nativeToImage",
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "VT_E_0f8fad5bd9cb469fa165",
+            "nativeEditXml": "<pkg:package/>",
+        }));
+        validate_request(&to_image, id).unwrap();
+        let to_equation = wps_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "operation": "imageToNative",
+            "nativeEquation": true,
+            "formulaId": "5028ce4b-71c7-4d06-a165-61151fd64183",
+            "sourceObjectId": "visualtex:formula-ref:v1:5028ce4b-71c7-4d06-a165-61151fd64183:inline:0",
+            "encodedMetadata": "visualtex:v1:deflate:abc",
+        }));
+        validate_request(&to_equation, id).unwrap();
+        for rejected in [
+            json!({ "numbered": true, "displayMode": "inline" }),
+            json!({ "client": "other" }),
+            json!({ "operation": "nativeToImage" }),
+        ] {
+            assert!(validate_request(&wps_request(rejected.clone()), id).is_err(), "{rejected}");
+        }
+        // The stored request round-trips through the strict reader.
+        let bytes = serde_json::to_vec(&image_edit).unwrap();
+        let reread: MacOfflineSessionRequest = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(reread.client.as_deref(), Some("wps"));
+    }
 
     #[test]
     fn unmanaged_numbered_omml_restores_as_a_new_numbered_formula() {
@@ -8519,6 +9111,7 @@ mod tests {
                 output_kind: Some("image".to_string()),
                 source_kind: None,
             }),
+            client: None,
         };
         assert!(validate_request(&request, &session_id)
             .unwrap_err()
@@ -9040,6 +9633,7 @@ mod tests {
             word_document_math_font_name: None,
             power_point: None,
             document_import: None,
+            client: None,
         };
         let json = serde_json::to_vec(&request).expect("UTF-8 request should encode");
         let decoded: MacOfflineSessionRequest =
@@ -9366,6 +9960,7 @@ mod tests {
             word_document_math_font_name: None,
             power_point: None,
             document_import: None,
+            client: None,
         };
 
         assert!(validate_request(&request, &session_id)
@@ -9413,6 +10008,7 @@ mod tests {
             word_document_math_font_name: None,
             power_point: None,
             document_import: None,
+            client: None,
         };
 
         validate_request(&request, &session_id)
@@ -9710,6 +10306,7 @@ c &= e
             id: "32345678-1234-4234-9234-123456789abc".to_string(),
             mode: OfficeSessionMode::Edit,
             host: OfficeHost::Powerpoint,
+            client: None,
             operation: None,
             native_equation: false,
             formula_id: "12345678-1234-4234-9234-123456789abc".to_string(),
@@ -9842,6 +10439,7 @@ c &= e
             word_document_math_font_name: None,
             power_point: None,
             document_import: None,
+            client: None,
         };
         let mut word_session = session.clone();
         word_session.host = OfficeHost::Word;

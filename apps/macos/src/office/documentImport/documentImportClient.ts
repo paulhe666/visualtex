@@ -44,6 +44,8 @@ export interface MacosDocumentImportRequest {
   sourceKind?: "omml" | "image";
   source?: string;
   restoreTargets?: MacosFormulaRestoreTarget[];
+  /** "wps" when the WPS add-in started the operation. */
+  client?: "wps";
 }
 
 export interface DocumentImportParagraphCommitMetadata {

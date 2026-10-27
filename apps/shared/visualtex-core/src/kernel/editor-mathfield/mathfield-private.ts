@@ -783,6 +783,11 @@ If you are using Vue, this may be because you are using the runtime-only build o
   dispose(): void {
     if (!isValidMathfield(this)) return;
 
+    // VisualTeX: a field removed while it has the focus is never blurred;
+    // the next field to take the focus must not blur a disposed one.
+    if (_Mathfield._globallyFocusedMathfield === this)
+      _Mathfield._globallyFocusedMathfield = undefined;
+
     this.keyboardDelegate.dispose();
     (this as any).keyboardDelegate = undefined;
     this.eventController.abort();
@@ -1421,6 +1426,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
     if (
       previouslyFocusedMathfield &&
       previouslyFocusedMathfield !== this &&
+      isValidMathfield(previouslyFocusedMathfield) &&
       !previouslyFocusedMathfield.disabled &&
       previouslyFocusedMathfield.hasFocus()
     ) {

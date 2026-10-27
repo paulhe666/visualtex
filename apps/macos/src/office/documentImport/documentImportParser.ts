@@ -1489,12 +1489,12 @@ function emitParagraph(
   if (!content.length) return;
   normalizeInlineFormulaBoundarySpacing(content);
 
-  const firstText = content.find((block): block is DocumentTextBlock => block.kind === "text");
-  const lastText = [...content]
-    .reverse()
-    .find((block): block is DocumentTextBlock => block.kind === "text");
-  if (firstText) firstText.text = firstText.text.replace(/^\s+/, "");
-  if (lastText) lastText.text = lastText.text.replace(/\s+$/, "");
+  // Only the paragraph's own edges are trimmed: the space between text and a
+  // formula at the start or end of the paragraph stays.
+  const first = content[0];
+  const last = content[content.length - 1];
+  if (first.kind === "text") first.text = first.text.replace(/^\s+/, "");
+  if (last.kind === "text") last.text = last.text.replace(/\s+$/, "");
 
   const visible = content.filter((block) => block.kind === "formula" || block.text.length > 0);
   visible.forEach((block, index) => {

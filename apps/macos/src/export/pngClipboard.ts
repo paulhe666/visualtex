@@ -14,6 +14,8 @@ export interface FormulaPngRenderPreferences {
   background: PngExportBackground;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** The formula's ink (#rrggbb); near-black when absent. */
+  color?: string;
 }
 
 export async function renderFormulaDocumentPng(
@@ -34,6 +36,7 @@ export async function renderFormulaDocumentPng(
     background: "transparent",
     formulaLetterFont: preferences.formulaLetterFont,
     formulaChineseFont: preferences.formulaChineseFont,
+    color: preferences.color,
   });
   return svgToPng(svg, {
     scale: 3,

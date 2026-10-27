@@ -276,6 +276,10 @@ export interface MathEditorHandle {
     target?: MathEditorSelectionTarget | null,
   ) => boolean;
   refreshLayout: () => void;
+  /** Makes the active row inline or display ("toggle": the other one), as
+   *  its $ / $$ marker does; false when the row cannot (a multi-line row
+   *  stays display). */
+  setActiveLineMode: (mode: "inline" | "display" | "toggle") => boolean;
 }
 
 interface Props {
@@ -289,6 +293,9 @@ interface Props {
   readOnly?: boolean;
   previewOnly?: boolean;
   showLineModeControls?: boolean;
+  /** The row hotkeys (new inline / display row, switch the row's mode)
+   *  without the rows' $ / $$ markers; defaults to showLineModeControls. */
+  rowModeHotkeys?: boolean;
   onPreviewActivate?: () => void;
   draftError?: string;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
@@ -2007,6 +2014,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       readOnly = false,
       previewOnly = false,
       showLineModeControls = true,
+      rowModeHotkeys = showLineModeControls,
       onPreviewActivate,
       draftError,
       onPasteImage,
@@ -3598,7 +3606,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       // row). Switching works like the row's $ / $$ marker: a multi-line row
       // stays display and no row is split.
       const rowHotkey =
-        showLineModeControls && !rawLatexInputActive
+        rowModeHotkeys && !rawLatexInputActive
           ? matchFormulaRowHotkey(event, formulaRowHotkeyBindings)
           : null;
       if (rowHotkey === "row-toggle-mode") {
@@ -4317,6 +4325,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       captureSelectionTarget,
       captureInsertionTarget,
       applySelectionStyle,
+      setActiveLineMode: (mode) => {
+        const state = useEditorStore.getState();
+        const line = state.lines.find((item) => item.id === state.activeLineId) ?? state.lines[0];
+        if (!line || /^\\begin\{(?:aligned|gathered)\}/.test(line.latex.trim())) return false;
+        const next = mode === "toggle" ? (line.mode === "inline" ? "display" : "inline") : mode;
+        setFormulaLineMode(line.id, next);
+        return true;
+      },
       refreshLayout: () => {
         flushSync(() => {
           setFieldRenderEpoch((epoch) => epoch + 1);

@@ -11,6 +11,7 @@ const OFFICE_HOSTS = ["word", "powerpoint"] as const;
 const DISPLAY_MODES = ["inline", "block"] as const;
 const INLINE_IMAGE_MATH_STYLES = ["text", "display"] as const;
 const OPERATIONS = ["nativeToImage", "imageToNative"] as const;
+const CLIENTS = ["wps"] as const;
 const SESSION_STATUSES = [
   "created",
   "editing",
@@ -162,6 +163,7 @@ export function decodeOfficeFormulaSession(
   nonEmptyString(session.id, "session.id");
   enumValue(session.mode, "session.mode", SESSION_MODES);
   enumValue(session.host, "session.host", OFFICE_HOSTS);
+  optionalEnum(session.client, "session.client", CLIENTS);
   optionalEnum(session.operation, "session.operation", OPERATIONS);
   nonEmptyString(session.formulaId, "session.formulaId");
   nullableString(session.sourceDocumentId, "session.sourceDocumentId");

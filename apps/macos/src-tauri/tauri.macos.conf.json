@@ -14,7 +14,8 @@
       "../office/macos-offline/resources/README.md": "office/macos-offline/resources/README.md",
       "../office/macos-offline/resources/VisualTeX.dotm": "office/macos-offline/resources/VisualTeX.dotm",
       "../office/macos-offline/resources/VisualTeX.ppam": "office/macos-offline/resources/VisualTeX.ppam",
-      "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json"
+      "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json",
+      "../input-method/build/VisualTeX Input.app/": "input-method/VisualTeX Input.app/"
     }
   }
 }

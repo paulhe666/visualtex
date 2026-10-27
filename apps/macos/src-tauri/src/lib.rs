@@ -15,6 +15,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod ocr_offline;
 mod ocr_provider;
+mod anywhere;
 mod office;
 mod quick_ocr;
 mod svg_font_stabilizer;
@@ -2104,12 +2105,24 @@ pub fn run() {
                     }
                     #[cfg(target_os = "macos")]
                     office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
+                    #[cfg(target_os = "macos")]
+                    {
+                        office::wps::bridge::start(
+                            app.handle().clone(),
+                            office_state.install_token.as_str().to_string(),
+                            office::wps::installer::addin_log_path(&office_state),
+                        );
+                        office::wps::installer::auto_install_in_background(office_state.clone());
+                    }
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())
                     {
                         // Prewarming is an optimization. handle_open_url still creates
                         // the fixed host window lazily if WebKit was unavailable here.
                         eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
+                    }
+                    if let Err(error) = anywhere::initialize(app.handle()) {
+                        eprintln!("VisualTeX Anywhere initialization warning: {error}");
                     }
                     #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
@@ -2146,6 +2159,18 @@ pub fn run() {
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,
             office::hotkeys::configure_office_hotkeys,
+            anywhere::anywhere_ready,
+            anywhere::anywhere_layout,
+            anywhere::anywhere_commit,
+            anywhere::anywhere_commit_image,
+            anywhere::anywhere_configure_hotkey,
+            anywhere::anywhere_capture_screenshot,
+            anywhere::anywhere_read_clipboard,
+            anywhere::anywhere_dismiss,
+            anywhere::anywhere_marked,
+            anywhere::anywhere_mode,
+            anywhere::anywhere_status,
+            anywhere::anywhere_log,
             set_app_theme,
             get_app_window_configuration,
             apply_app_window_configuration,
@@ -2195,6 +2220,10 @@ pub fn run() {
             office::macos_offline_installer::install_macos_offline_office_addins,
             office::macos_offline_installer::repair_macos_offline_office_addins,
             office::macos_offline_installer::uninstall_macos_offline_office_addins,
+            office::wps::installer::get_wps_addin_status,
+            office::wps::installer::install_wps_addin,
+            office::wps::installer::uninstall_wps_addin,
+            office::wps::installer::open_wps_office,
             office::macos_offline_installer::get_macos_office_hosts_running,
             office::macos_offline_installer::register_macos_powerpoint_addin,
             office::macos_offline_installer::request_quit_macos_office_hosts_for_addin_update,

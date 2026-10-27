@@ -66,7 +66,7 @@ export function showSuggestionPopover(
 
     template += `<li role="button" data-command="${escapeHtmlAttr(command)}" ${
       i === mf.suggestionIndex ? 'class=ML__popover__current' : ''
-    }>${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">${escapeHtmlAttr(info.command)}${info.label ? ' · ' + escapeHtmlAttr(info.label) : ''}</span><span class="ML__popover__command">${commandMarkup}</span>`;
+    }>${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">${escapeHtmlAttr(info.command)}${info.label ? '<span class="ML__popover__label"> · ' + escapeHtmlAttr(info.label) + '</span>' : ''}</span><span class="ML__popover__command">${commandMarkup}</span>`;
 
     if (keybinding)
       template += `<span class="ML__popover__keybinding">${keybinding}</span>`;

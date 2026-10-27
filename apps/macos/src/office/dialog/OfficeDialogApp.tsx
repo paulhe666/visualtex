@@ -858,6 +858,8 @@ export function OfficeDialogApp() {
     setInlineImageMathStyle(loadedInlineImageMathStyle);
     const sessionNumbered =
       session.displayMode === "block" && Boolean(session.numbered);
+    // A formula edited in WPS keeps the number it has (office::wps); a new one
+    // follows the same "Add equation number" preference as in Word.
     const loadedNumbered =
       session.host === "word" &&
       session.mode === "create" &&
@@ -2326,7 +2328,9 @@ export function OfficeDialogApp() {
           </optgroup>
         </select>
       </label>
-      {session.host === "word" && displayMode === "block" ? (
+      {session.host === "word" &&
+      !(session.client === "wps" && session.mode === "edit") &&
+      displayMode === "block" ? (
         <label className="office-auto-commit-setting is-numbering-setting">
           <input
             type="checkbox"

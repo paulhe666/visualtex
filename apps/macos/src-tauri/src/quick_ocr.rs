@@ -84,7 +84,7 @@ fn capture_path() -> PathBuf {
     ))
 }
 
-fn capture_selection_png() -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn capture_selection_png() -> Result<Option<Vec<u8>>, String> {
     #[cfg(target_os = "macos")]
     {
         let path = capture_path();

@@ -128,6 +128,9 @@ export function decodeMacosDocumentImportRequest(
     sourceKind(request.sourceKind, "documentImportRequest.sourceKind");
   }
   optionalString(request.source, "documentImportRequest.source");
+  if (request.client !== undefined && request.client !== "wps") {
+    invalid("documentImportRequest.client", '"wps"');
+  }
   if (request.restoreTargets !== undefined) {
     if (!Array.isArray(request.restoreTargets)) {
       invalid("documentImportRequest.restoreTargets", "an array");

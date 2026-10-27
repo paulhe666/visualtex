@@ -99,7 +99,7 @@ function officeErrorSummary(raw: string, isEn: boolean) {
     : "Office 插件操作失败。请查看下方错误详情，处理后再重试。";
 }
 
-function StatusLine({
+export function StatusLine({
   ok,
   pending = false,
   children,

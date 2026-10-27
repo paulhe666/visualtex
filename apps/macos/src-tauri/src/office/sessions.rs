@@ -172,6 +172,9 @@ pub struct OfficeFormulaSession {
     pub id: String,
     pub mode: OfficeSessionMode,
     pub host: OfficeHost,
+    /// "wps" when the WPS add-in opened the Session (office::wps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
     #[serde(default)]
@@ -214,6 +217,8 @@ pub struct OfficeFormulaSession {
 pub struct CreateOfficeSessionInput {
     pub mode: OfficeSessionMode,
     pub host: OfficeHost,
+    #[serde(default)]
+    pub client: Option<String>,
     #[serde(default)]
     pub operation: Option<String>,
     #[serde(default)]
@@ -583,6 +588,7 @@ impl SessionStore {
             id,
             mode: input.mode,
             host: input.host,
+            client: input.client,
             operation: input.operation,
             native_equation: input.native_equation,
             formula_id,
@@ -882,6 +888,7 @@ mod tests {
         CreateOfficeSessionInput {
             mode: OfficeSessionMode::Create,
             host: OfficeHost::Word,
+            client: None,
             operation: None,
             native_equation: false,
             formula_id: None,

@@ -49,6 +49,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         officeNativeDialog: "office-native-dialog.html",
+        anywhere: "anywhere.html",
       },
     },
   },

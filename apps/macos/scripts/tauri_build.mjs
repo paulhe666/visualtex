@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 function runStatus(command, args, env = process.env) {
   const isWindowsCmd =
@@ -114,7 +114,13 @@ function prepareMacosSigningIdentity() {
   const workDirectory = mkdtempSync(join(tmpdir(), "visualtex-signing-"));
   const keychain = join(workDirectory, "signing.keychain-db");
   const keychainPassword = randomBytes(24).toString("hex");
-  const searchList = userKeychainSearchList();
+  // A build that was killed leaves its keychain in the search list, locked, with a password
+  // nobody knows: codesign then finds the identity there first and asks for that password.
+  const searchList = userKeychainSearchList().filter((path) => {
+    if (!/[\\/]visualtex-signing-[^\\/]+[\\/]signing\.keychain-db$/.test(path)) return true;
+    rmSync(dirname(path), { recursive: true, force: true });
+    return false;
+  });
   const cleanup = () => {
     try {
       security(["list-keychains", "-d", "user", "-s", ...searchList]);
@@ -129,7 +135,8 @@ function prepareMacosSigningIdentity() {
   };
   try {
     security(["create-keychain", "-p", keychainPassword, keychain]);
-    security(["set-keychain-settings", "-t", "3600", "-u", keychain]);
+    // No lock timeout: a long build signs late.
+    security(["set-keychain-settings", keychain]);
     security(["unlock-keychain", "-p", keychainPassword, keychain]);
     security([
       "import", identityFile, "-k", keychain, "-f", "pkcs12",
@@ -146,6 +153,12 @@ function prepareMacosSigningIdentity() {
       .match(/\b([0-9A-F]{40})\s+"VisualTeX Code Signing"/)?.[1];
     if (!identity) throw new Error(`${identityFile} holds no "VisualTeX Code Signing" identity.`);
     process.stdout.write(`Signing with the VisualTeX identity ${identity}.\n`);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+      process.once(signal, () => {
+        cleanup();
+        process.exit(1);
+      });
+    }
     return { identity, cleanup };
   } catch (error) {
     cleanup();

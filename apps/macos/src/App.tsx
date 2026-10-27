@@ -105,6 +105,7 @@ import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
+import { configureAnywhereToggleHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
@@ -584,6 +585,16 @@ function App() {
     );
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  // The formula input method's system-wide shortcut (Settings > Keyboard
+  // shortcuts); macOS keeps the last one registered across restarts.
+  const anywhereToggleChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-toggle"]);
+  useEffect(() => {
+    if (!isTauri() || !anywhereToggleChord) return;
+    void configureAnywhereToggleHotkey(anywhereToggleChord).catch((error) => {
+      setToast(error instanceof Error ? error.message : String(error));
+    });
+  }, [anywhereToggleChord]);
 
   useEffect(() => {
     if (!isTauri()) return;

@@ -38,6 +38,13 @@ assert.match(
   /动量满足.*这是行内公式。.*结尾文字。/s,
 );
 
+// A space between text and a formula at the paragraph's start or end stays.
+const edgeBlocks = parseLatexMarkdownDocument("- item one $x^2$\n\n$y$ and more", "markdown", 12);
+assert.deepEqual(
+  edgeBlocks.map((block) => (block.kind === "text" ? block.text : `[${block.latex}]`)),
+  ["item one ", "[x^2]", "[y]", " and more"],
+);
+
 const latex = String.raw`\documentclass{article}
 \begin{document}
 \section{测试}

@@ -258,6 +258,7 @@ Public Sub VisualTeX_InitializeWordHost()
     ' Word open with no document until the user double-clicks the file again.
     VTEnsureApplicationPrewarmScheduled
     VisualTeX_MigrateImageMacroButtons
+    VTRepairOpenedWpsDocuments
     VTEnsureOrphanWatchScheduled
     If Documents.Count > 0 Then _
         VTSynchronizeWordImageTypography ActiveDocument.Content
@@ -4633,6 +4634,7 @@ Public Sub VTWordRibbonOnLoad(ByVal ribbon As IRibbonUI)
     VTInitializeWordEvents
     VTEnsureApplicationPrewarmScheduled
     VisualTeX_MigrateImageMacroButtons
+    VTRepairOpenedWpsDocuments
     VTEnsureOrphanWatchScheduled
     VTEnsureImageSizeWatchScheduled
     VTInvalidateWordImageFontSizeControl
@@ -5653,6 +5655,82 @@ Public Sub VTMigrateOpenedDocumentImageMacroButtons( _
 
     If documentObject Is Nothing Or VTWordVbeBuildTemplateActive() Then Exit Sub
     VTMigrateDocumentImageMacroButtons documentObject
+End Sub
+
+' WPS turns every "*" in equation text into U+2217 ASTERISK OPERATOR when it
+' opens a document, the field instructions inside numbered equations included,
+' and saves them that way. Word then reads "SEQ Equation \s 1 \<U+2217> ARABIC"
+' as a SEQ with a bookmark argument and the number shows "Error! Bookmark not
+' defined.". Word makes the same substitution in a field code typed into an
+' equation, so the number is rebuilt instead: such an equation still counts as
+' numbered (VTV2NumberedEquationEntry) and its number is not in the document's
+' style, so VTV2RestyleNumbers writes it again from the shared builder.
+Private Function VTIsWpsDamagedNumberInstruction(ByVal instruction As String) As Boolean
+    VTIsWpsDamagedNumberInstruction = _
+        InStr(1, instruction, "\" & ChrW(&H2217), vbBinaryCompare) > 0
+End Function
+
+Private Function VTHasWpsDamagedEquationNumber(ByVal documentObject As Document) As Boolean
+    Dim candidate As Field
+    Dim fieldType As Long
+
+    If documentObject.OMaths.Count = 0 Then Exit Function
+    For Each candidate In documentObject.Fields
+        fieldType = candidate.Type
+        If fieldType = wdFieldSequence Or fieldType = wdFieldStyleRef Then
+            If VTIsWpsDamagedNumberInstruction(candidate.Code.Text) Then
+                VTHasWpsDamagedEquationNumber = True
+                Exit Function
+            End If
+        End If
+    Next candidate
+End Function
+
+' Opening a document WPS has saved (it records its build in the custom
+' property KSOProductBuildVer, which Word keeps): rebuild the equation numbers
+' WPS damaged before they are read. Other documents are left alone without
+' scanning their fields.
+Public Sub VTRepairOpenedWpsDocument(ByVal documentObject As Word.Document)
+    Dim savedByWps As Boolean
+    Dim mutationStarted As Boolean
+    Dim previousScreenUpdating As Boolean
+
+    If documentObject Is Nothing Or VTWordVbeBuildTemplateActive() Then Exit Sub
+    If VT_WORD_NUMBER_UPDATE_RUNNING Then Exit Sub
+    On Error Resume Next
+    savedByWps = Len(CStr(documentObject.CustomDocumentProperties( _
+        "KSOProductBuildVer").Value)) > 0
+    On Error GoTo Finished
+    If Not savedByWps Then Exit Sub
+    If documentObject.ProtectionType <> wdNoProtection Then Exit Sub
+    If documentObject.ReadOnly Then Exit Sub
+    If Not VTHasWpsDamagedEquationNumber(documentObject) Then Exit Sub
+    previousScreenUpdating = Application.ScreenUpdating
+    VT_WORD_NUMBER_UPDATE_RUNNING = True
+    VTBeginWordInternalMutation
+    mutationStarted = True
+    Application.ScreenUpdating = False
+    VTV2RestyleNumbers documentObject
+
+Finished:
+    If mutationStarted Then
+        Application.ScreenUpdating = previousScreenUpdating
+        VTEndWordInternalMutation
+        VT_WORD_NUMBER_UPDATE_RUNNING = False
+    End If
+End Sub
+
+' Documents opened before the add-in's event sink existed (the one Word was
+' launched with) get the same repair when the Ribbon loads.
+Private Sub VTRepairOpenedWpsDocuments()
+    Dim documentObject As Document
+
+    On Error Resume Next
+    For Each documentObject In Documents
+        VTRepairOpenedWpsDocument documentObject
+        Err.Clear
+    Next documentObject
+    On Error GoTo 0
 End Sub
 
 Public Sub VisualTeX_EditSelected()
@@ -13043,6 +13121,9 @@ Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
 
     pendingMarker = VTDispatchOptional(dispatch, "pendingMarker")
     sourceDocumentId = VTDispatchOptional(dispatch, "sourceDocumentId")
+    ' The document was closed while its editor was open: nothing is left to
+    ' clean up, and Word has no ActiveDocument (error 4248).
+    If Documents.Count = 0 Then Exit Sub
     If Len(sourceDocumentId) > 0 And sourceDocumentId <> VTWordDocumentIdentity() Then Exit Sub
     If Len(pendingMarker) > 0 Then
         On Error Resume Next
@@ -13793,6 +13874,8 @@ Private Function VTRefreshFormattedSequenceBookmark( _
         Set prefixRange = documentObject.Range( _
             Start:=formulaContainerRange.End, End:=fieldStart)
         prefixRange.Text = vbTab & "(" & prefixText
+        VTUnbiasNumberSeparators documentObject, prefixRange.Start, _
+            prefixRange.Start + Len(vbTab & "(" & prefixText)
         Set helperParagraph = documentObject.Range( _
             Start:=helperStart, End:=helperStart).Paragraphs(1).Range.Duplicate
         Set sequenceField = VTFindEquationSequenceField(helperParagraph)
@@ -13872,6 +13955,8 @@ Private Function VTRefreshFormattedSequenceBookmark( _
         Set prefixRange = documentObject.Range( _
             Start:=helperParagraph.Start, End:=helperParagraph.Start)
         prefixRange.Text = prefixText
+        VTUnbiasNumberSeparators documentObject, _
+            helperParagraph.Start, helperParagraph.Start + Len(prefixText)
         Set helperParagraph = documentObject.Range( _
             Start:=helperStart, End:=helperStart).Paragraphs(1).Range.Duplicate
         Set sequenceField = helperParagraph.Fields(1)
@@ -15088,6 +15173,70 @@ Private Sub VTApplyStaticImageEquationNumberFormatting( _
         If Abs(.Size - numberSize) > 0.1 Then .Size = numberSize
     End With
 End Sub
+
+' Word for Mac biases text the object model inserts towards East Asian
+' (w:hint="eastAsia") when the text holds the U+2010 separator and a Chinese
+' input source is selected. Word then draws the separator in the East Asian
+' font, full width when that is SimSun (every document WPS makes): "(0 - 1)".
+' NameFarEast cannot help, Word for Mac refuses a Latin East Asian font (error
+' 5844). InsertSymbol with the default font bias writes the same character as
+' ordinary text, so the number writers put every separator they wrote back
+' that way, in the font of the character before it. Only where Word edits
+' in place: in plain text, or inside a MACROBUTTON whose code is shown (with
+' the code hidden Word inserts the symbol at the field start instead). With
+' Track Changes on the replaced character would stay as a deletion.
+Private Sub VTUnbiasNumberSeparators( _
+    ByVal documentObject As Document, _
+    ByVal startPosition As Long, _
+    ByVal endPosition As Long)
+
+    Dim position As Long
+    Dim character As Range
+    Dim fontName As String
+    Dim contentEnd As Long
+
+    If documentObject.TrackRevisions Then Exit Sub
+    If startPosition < 1 Then startPosition = 1
+    For position = startPosition To endPosition - 1
+        Set character = documentObject.Range(position, position + 1)
+        If character.Text = ChrW(8208) Then
+            fontName = documentObject.Range(position - 1, position).Font.Name
+            contentEnd = documentObject.Content.End
+            If Len(fontName) > 0 And Left$(fontName, 1) <> "+" Then
+                character.InsertSymbol CharacterNumber:=8208, Font:=fontName, _
+                    Unicode:=True, Bias:=wdFontBiasDefault
+            Else
+                character.InsertSymbol CharacterNumber:=8208, _
+                    Unicode:=True, Bias:=wdFontBiasDefault
+            End If
+            If documentObject.Content.End <> contentEnd Or _
+               documentObject.Range(position, position + 1).Text <> ChrW(8208) Then
+                Err.Raise vbObjectError + 7566, "VisualTeX", _
+                    "Word did not rewrite the Equation number separator in place."
+            End If
+        End If
+    Next position
+End Sub
+
+' True when a number prefix ends in a separator Word draws in the East Asian
+' font (see VTUnbiasNumberSeparators): Font.Name is the font Word draws a
+' character in, here neither the separator's own Latin font nor the digit's.
+Private Function VTNumberSeparatorIsBiased(ByVal prefixRange As Range) As Boolean
+    Dim documentObject As Document
+    Dim separator As Range
+    Dim drawnFont As String
+
+    If prefixRange.End - prefixRange.Start < 2 Then Exit Function
+    Set documentObject = prefixRange.Document
+    If documentObject.TrackRevisions Then Exit Function
+    Set separator = documentObject.Range(prefixRange.End - 1, prefixRange.End)
+    If separator.Text <> ChrW(8208) Then Exit Function
+    drawnFont = separator.Font.Name
+    VTNumberSeparatorIsBiased = _
+        drawnFont <> documentObject.Range( _
+            prefixRange.End - 2, prefixRange.End - 1).Font.Name And _
+        drawnFont <> separator.Font.NameOther
+End Function
 
 Private Function VTNumberedImageInkCenterYRatio( _
     ByVal formulaShape As InlineShape) As Double
@@ -24658,6 +24807,9 @@ Private Function VTImagePlaceRefIsCanonical( _
     prefixRange.TextRetrievalMode.IncludeFieldCodes = False
     If StrComp(prefixRange.Text, expectedPrefixText, _
        vbBinaryCompare) <> 0 Then Exit Function
+    ' Update Numbers and format changes rewrite a number whose separator Word
+    ' draws in the East Asian font (written before VTUnbiasNumberSeparators).
+    If VTNumberSeparatorIsBiased(prefixRange) Then Exit Function
     VTImagePlaceRefIsCanonical = True
 End Function
 
@@ -24710,6 +24862,8 @@ Private Function VTCreateCanonicalImagePlaceRef( _
     If Len(prefixText) > 0 Then
         Set insertion = documentObject.Range(insertionPosition, insertionPosition)
         insertion.Text = prefixText
+        VTUnbiasNumberSeparators documentObject, _
+            insertionPosition, insertionPosition + Len(prefixText)
     End If
     Set insertion = documentObject.Range(insertionPosition, insertionPosition)
     insertion.Text = "("
@@ -26203,8 +26357,15 @@ Private Function VTV2NumberedEquationEntry(ByVal exact As Range) As Variant
     Next candidate
     number.TextRetrievalMode.IncludeFieldCodes = False
     visible = Trim$(number.Text)
-    If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then Exit Function
     instruction = numberField.Code.Text
+    If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then
+        ' A number WPS damaged shows a field error: still numbered, so the
+        ' restyle rebuilds it (VTIsWpsDamagedNumberInstruction).
+        If Not VTIsWpsDamagedNumberInstruction(instruction) Then Exit Function
+        prefix = ""
+        separator = ""
+        ordinal = 0
+    End If
     VTV2NumberedEquationEntry = Array(exact.Start, VTV2SequenceName(instruction), _
         instruction, prefix, separator, ordinal, VTV2RestartValue(instruction), _
         automatic, exact.End)
@@ -29006,12 +29167,14 @@ Private Function VTDisplayNumberingWriteEquation( _
     If exact.OMaths.Count < 1 Then GoTo Moved
     Set exact = VTNativeMathRoot(exact.OMaths(1)).Range.Duplicate
     If exact.Start <> target(0) Or exact.End <> target(1) Then GoTo Moved
-    ' On Word for Mac the OMath Range of a display equation takes in its
+    ' On Word for Mac the OMath Range of a display equation can take in its
     ' paragraph mark. Replace the equation only: a replaced mark becomes a line
     ' break inside the numbered equation and joins the next paragraph to it.
-    If exact.End > exact.Start Then
-        If doc.Range(exact.End - 1, exact.End).Text = vbCr Then exact.End = exact.End - 1
-    End If
+    ' The paragraph's end tells: Range.Text also reads the end of a structure
+    ' that closes the equation (a fraction, a sum) as a CR, and a range that
+    ' cuts the structure cannot be replaced (error 6028).
+    If exact.End > exact.Start And _
+       exact.End = exact.Paragraphs(1).Range.End Then exact.End = exact.End - 1
     VT_WORD_DISPLAY_NUMBERING_WROTE = True
     exact.FormattedText = source.FormattedText
     ' Word for Mac can leave an empty OMath beside the replacement.
