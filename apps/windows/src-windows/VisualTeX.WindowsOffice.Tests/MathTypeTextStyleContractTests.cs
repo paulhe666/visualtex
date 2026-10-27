@@ -64,6 +64,23 @@ public sealed class MathTypeTextStyleContractTests
         Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(read));
     }
 
+    // Issue #35: \text{ } between operators reaches the codec as an mtext NBSP.
+    // MathType's renderer drew a Text-face U+00A0 as a wide "?" over the next
+    // operator; MathType itself stores text word spaces as U+0020.
+    [Theory]
+    [InlineData("<math><msub><mi mathvariant='normal'>q</mi><mstyle mathcolor='#FF0000'><mn>0</mn></mstyle></msub><mstyle mathcolor='#FF0000'><mtext>&#xA0;</mtext></mstyle><mstyle mathcolor='#FF0000'><mo>&#x2212;</mo></mstyle><mstyle mathcolor='#FF0000'><mtext>&#xA0;</mtext></mstyle><mi>b</mi></math>")]
+    [InlineData("<math><mi>q</mi><mtext>a&#xA0;b</mtext><mo>=</mo><mtext>&#xA0;</mtext><mn>1</mn></math>")]
+    public void TextNoBreakSpacesAreStoredAsMathTypeTextSpaces(string source)
+    {
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        var structure = native.Mtef.AsSpan(native.StructureOffset);
+        Assert.True(structure.IndexOf(new byte[] { 2, 0, 129, 0xA0, 0 }) < 0, "A Text-face U+00A0 renders as '?'.");
+        Assert.True(structure.IndexOf(new byte[] { 2, 0, 129, 0x20, 0 }) >= 0);
+        var read = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(read));
+        Assert.Equal(native.Mtef, MathTypeMtefCodec.RewriteEquationNative(native.EquationNative, read, false).Mtef);
+    }
+
     [Fact]
     public void ATextSpaceMustNotHideDifferentWesternAndFarEastStyles()
     {

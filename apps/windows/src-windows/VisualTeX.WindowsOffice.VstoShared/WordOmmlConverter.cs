@@ -5571,10 +5571,18 @@ internal static partial class WordOmmlConverter
             if (identifiers.Length == 0 || identifiers.Any(identifier =>
                     MathMlTokenStyleContract.ResolveEffectiveVariant(identifier) != "normal"))
                 continue;
+            // The joined identifier keeps the run's color (issue #35: a red
+            // \mathrm{M}_{...} lost its red); differently colored parts stay apart.
+            var color = MathMlColorContract.Effective(identifiers[0]);
+            if (identifiers.Any(identifier => MathMlColorContract.Effective(identifier) != color))
+                continue;
             projectedBase.ReplaceWith(
                 new XElement(
                     mathMl + "mi",
                     new XAttribute("mathvariant", "normal"),
+                    color is not null && color != MathMlColorContract.Effective(target)
+                        ? new XAttribute("mathcolor", color)
+                        : null,
                     baseText));
         }
     }

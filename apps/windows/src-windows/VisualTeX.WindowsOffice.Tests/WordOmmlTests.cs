@@ -67,6 +67,29 @@ public sealed class WordOmmlTests
         Assert.Contains("error node", error.Message, StringComparison.Ordinal);
     }
 
+    // Issue #35: joining an upright script base run (\mathrm{M}, \mathrm{Na})
+    // into one identifier dropped the run's color.
+    [Theory]
+    [InlineData("M")]
+    [InlineData("Na")]
+    public void UprightScriptBaseKeepsItsRunColor(string baseText)
+    {
+        const string red = "<w:rPr><w:color w:val=\"FF0000\"/></w:rPr>";
+        var omml =
+            "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\""
+            + " xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+            + "<m:sSub><m:e><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr>" + red + "<m:t>" + baseText + "</m:t></m:r></m:e>"
+            + "<m:sub><m:r>" + red + "<m:t>0</m:t></m:r></m:sub></m:sSub>"
+            + "<m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:oMath>";
+
+        var document = XDocument.Parse(WordOmmlConverter.TransformOmmlToMathMl(omml, display: false));
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var scriptBase = document.Descendants(presentationMath + "msub").Single().Elements().First();
+
+        Assert.Equal(baseText, scriptBase.Value);
+        Assert.Equal("#FF0000", MathMlColorContract.Effective(scriptBase.DescendantsAndSelf().Last()));
+    }
+
     [Fact]
     public void OmmlRoundTripKeepsOrdinaryEulerLettersAsMathIdentifiers()
     {

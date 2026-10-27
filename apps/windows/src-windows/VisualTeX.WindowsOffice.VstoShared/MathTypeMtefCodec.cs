@@ -534,6 +534,9 @@ internal static partial class MathTypeMtefCodec
             if (token.Value.Any(FarEastGlyphSubstitutes.ContainsKey))
                 token.Value = new string(token.Value
                     .Select(c => FarEastGlyphSubstitutes.TryGetValue(c, out var covered) ? covered : c).ToArray());
+            // A no-break space of text is stored as MathType's text space U+0020.
+            if (token.Name.LocalName == "mtext" && token.Value.Contains(' '))
+                token.Value = token.Value.Replace(' ', ' ');
             var value = token.Value.Trim();
             if (token.Name.LocalName != "mtext" && value.Length == 1 && IsFarEastTextScalar(value[0]))
             {
@@ -7428,8 +7431,13 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
         {
             // MathType keeps the word spaces of text in the Text face, where
             // they have the font's width; in its space face they have none.
-            if (IsWhiteSpaceScalar(scalar)
-                && !(typeface == TypefaceText && scalar is 0x20 or 0xA0))
+            // It stores them as U+0020 (as its own TeX import of \text{a b}
+            // does): its renderer writes a Text-face U+00A0 into the preview
+            // WMF as byte 0xA0, which Word draws as a wide "?" (issue #35).
+            if (typeface == TypefaceText && scalar == 0xA0)
+                EmitScalar(0x20, typeface, output);
+            else if (IsWhiteSpaceScalar(scalar)
+                && !(typeface == TypefaceText && scalar == 0x20))
                 EmitScalar(scalar, TypefaceSpace, output);
             else EmitScalar(
                 scalar,

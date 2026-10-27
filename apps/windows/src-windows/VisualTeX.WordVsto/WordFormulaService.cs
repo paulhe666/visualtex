@@ -2444,10 +2444,26 @@ internal sealed partial class WordFormulaService
                 {
                     var refreshedRange = FindMathTypeHostRangeByIdentityBookmark(
                         document,
-                        batchIdentityBookmarkName!);
+                        batchIdentityBookmarkName!,
+                        out var bookmarkFailure);
+                    if (refreshedRange is null)
+                    {
+                        // Merging the split paragraph can cost the locator
+                        // bookmark in some documents (issue #35) although the
+                        // OLE stays where it was inserted: the repair only
+                        // removes the paragraph mark after it. Take it from the
+                        // bounded insertion window, which must hold exactly
+                        // that one MathType OLE, and restore the bookmark.
+                        refreshedRange = RecoverMathTypeHostRangeAtInsertion(
+                            document,
+                            batchIdentityBookmarkName!,
+                            insertionStart);
+                        WordDoubleClickHook.TraceMessage(
+                            $"mathtype-insert-bookmark-lost-after-repair formula={metadata.FormulaId} reason={bookmarkFailure} recovered={refreshedRange is not null}");
+                    }
                     if (refreshedRange is null)
                         throw new InvalidOperationException(
-                            "Word retained the MathType OLE but lost its exact batch identity range after paragraph repair.");
+                            $"Word retained the MathType OLE but lost its exact batch identity range after paragraph repair ({bookmarkFailure}).");
                     Release(batchHostRange);
                     batchHostRange = refreshedRange;
                 }
@@ -8317,8 +8333,54 @@ internal sealed partial class WordFormulaService
 
     private static Range? FindMathTypeHostRangeByIdentityBookmark(
         Document document,
-        string bookmarkName)
+        string bookmarkName) =>
+        FindMathTypeHostRangeByIdentityBookmark(document, bookmarkName, out _);
+
+    // The single MathType OLE in the bounded insertion window, with the
+    // identity bookmark set on it again; null unless there is exactly one.
+    private static Range? RecoverMathTypeHostRangeAtInsertion(
+        Document document,
+        string bookmarkName,
+        int insertionStart)
     {
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? restored = null;
+        try
+        {
+            shape = FindSingleInlineShapeInInsertionWindow(document, insertionStart);
+            if (shape is null || !MathTypeOleInterop.IsMathTypeOle(shape))
+                return null;
+            shapeRange = shape.Range;
+            bookmarks = document.Bookmarks;
+            if (bookmarks.Exists(bookmarkName))
+                bookmarks[bookmarkName].Delete();
+            restored = bookmarks.Add(bookmarkName, shapeRange);
+            // The shape range is the host the resolver above also accepts when
+            // an insertion has no bookmark at all.
+            return FindMathTypeHostRangeByIdentityBookmark(document, bookmarkName)
+                ?? shapeRange.Duplicate;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Release(restored);
+            Release(bookmarks);
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
+    private static Range? FindMathTypeHostRangeByIdentityBookmark(
+        Document document,
+        string bookmarkName,
+        out string failure)
+    {
+        failure = "missing";
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
         Range? range = null;
@@ -8329,33 +8391,51 @@ internal sealed partial class WordFormulaService
         try
         {
             bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(bookmarkName))
+                return null;
             bookmark = bookmarks[bookmarkName];
             range = bookmark.Range.Duplicate;
             fields = range.Fields;
             if (fields.Count != 1)
+            {
+                failure = $"fields={fields.Count} range={range.Start}-{range.End}";
                 return null;
+            }
             field = fields[1];
             if (field.Type != WdFieldType.wdFieldEmbed)
+            {
+                failure = "field-type=" + field.Type;
                 return null;
+            }
             code = field.Code;
             var codeText = (code.Text ?? string.Empty).Trim();
             if (!codeText.StartsWith(
                     "EMBED Equation.DSMT4",
                     StringComparison.OrdinalIgnoreCase))
+            {
+                failure = "field-code";
                 return null;
+            }
             result = field.Result;
             var resultText = result.Text ?? string.Empty;
             if (!string.Equals(resultText, "\u0001", StringComparison.Ordinal)
                 && !string.Equals(resultText, "\uFFFC", StringComparison.Ordinal))
+            {
+                failure = "field-result-length=" + resultText.Length;
                 return null;
+            }
             if (result.Start < range.Start || result.End > range.End)
+            {
+                failure = $"result={result.Start}-{result.End} outside {range.Start}-{range.End}";
                 return null;
+            }
             var resolved = range;
             range = null;
             return resolved;
         }
-        catch
+        catch (Exception error)
         {
+            failure = error.GetType().Name;
             return null;
         }
         finally
