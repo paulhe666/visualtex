@@ -5,7 +5,7 @@ import { useEditorStore } from "../stores/editorStore";
 
 // Settings → Office integration → AI agents (MCP): docs/office-mcp/DESIGN.md §9.3, §10.
 
-type McpMode = "readOnly" | "ask" | "allow";
+type McpMode = "readOnly" | "allow";
 
 type McpStatus = {
   settings: { enabled: boolean; mode: McpMode };
@@ -99,7 +99,7 @@ export function OfficeMcpSettings() {
   };
 
   const enabled = Boolean(status?.settings.enabled);
-  const mode = status?.settings.mode ?? "ask";
+  const mode = status?.settings.mode ?? "allow";
   const launcher = status?.launcherPath ?? "";
   const quoted = `"${launcher}"`;
   const clientConfigs: { key: string; label: string; text: string }[] = [
@@ -158,9 +158,8 @@ export function OfficeMcpSettings() {
               disabled={busy}
               onChange={(event) => void save(true, event.target.value as McpMode)}
             >
+              <option value="allow">{isEn ? "Read and change" : "读取和修改"}</option>
               <option value="readOnly">{isEn ? "Read only" : "只读"}</option>
-              <option value="ask">{isEn ? "Ask before changes" : "修改前询问"}</option>
-              <option value="allow">{isEn ? "Allow changes" : "允许修改"}</option>
             </select>
           </div>
 

@@ -9,11 +9,16 @@ internal sealed class WordAutomationHost : IOfficeAutomationHost
 {
     private readonly Application _application;
     private readonly WordFormulaService _service;
+    private readonly Func<string, JsonElement, Task<object?>?> _writes;
 
-    internal WordAutomationHost(Application application, WordFormulaService service)
+    internal WordAutomationHost(
+        Application application,
+        WordFormulaService service,
+        Func<string, JsonElement, Task<object?>?> writes)
     {
         _application = application;
         _service = service;
+        _writes = writes;
     }
 
     public string App => "word";
@@ -32,7 +37,10 @@ internal sealed class WordAutomationHost : IOfficeAutomationHost
         }
     }
 
-    public IReadOnlyList<string> Capabilities { get; } = new[] { "read" };
+    public IReadOnlyList<string> Capabilities { get; } = new[] { "read", "write" };
+
+    public Task<object?>? ExecuteWriteAsync(string operation, JsonElement arguments) =>
+        _writes(operation, arguments);
 
     public object? Execute(string operation, JsonElement arguments) => operation switch
     {

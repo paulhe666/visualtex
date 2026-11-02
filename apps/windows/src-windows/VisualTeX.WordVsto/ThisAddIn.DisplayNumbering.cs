@@ -59,7 +59,7 @@ public sealed partial class ThisAddIn
             {
                 if (plan.Count == 0)
                 {
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         T(
                             $"{scopeText}中没有需要编号的行间公式。" + details,
                             $"There is no unnumbered display equation in {scopeText}." + details),
@@ -73,7 +73,7 @@ public sealed partial class ThisAddIn
                         "1",
                         StringComparison.Ordinal))
                     return true;
-                return System.Windows.Forms.MessageBox.Show(
+                return AutomationMessageBox.Show(
                         T(
                             $"将为{scopeText}中 {plan.Count} 个未编号的行间公式添加编号"
                             + $"（VisualTeX {plan.VisualTeX.Count} 个，OMML {plan.Omml.Count} 个，MathType {plan.MathType.Count} 个），"

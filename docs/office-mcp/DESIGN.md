@@ -1,6 +1,6 @@
 # VisualTeX for AI agents: an MCP server for Word, PowerPoint and WPS on Windows
 
-Status: phases 0–1 (read tools) built on Windows, 2026-11-01; see §14. Writes (phase 2 on) are design only. The
+Status: built on Windows, 2026-11-01 (reads and writes); see §14 for what was built and how it differs. The
 architecture this design starts from is mapped
 with file:line references in `~/claude/visualtex-office-mcp/research/addin-architecture.md` (VPS); the facts used
 below are summarised in §2.
@@ -373,7 +373,7 @@ always ask, even in "Allow changes", unless the user ticked "don't ask again for
 
 ## 14. Implementation status (2026-11-01)
 
-Built (phases 0–1, read only):
+Built:
 
 | Part | Where |
 |---|---|
@@ -388,9 +388,19 @@ Built (phases 0–1, read only):
 | PowerPoint / WPS Presentation reads (one `SaveCopyAs` snapshot per call) | `PowerPointFormulaService.Automation.cs`, `PowerPointAutomationHost.cs` |
 | Settings page "AI agents (MCP)" | `src/components/OfficeMcpSettings.tsx` |
 | §9.2: the install token is no longer in the `/dialog` HTML; VisualTeX's own Office windows get it from an initialization script limited to the companion's origin | `server.rs` `office_install_token_script` |
+| Writes: the add-ins' own commands run without their dialogs (questions answered yes, messages and errors returned to the agent) | `ThisAddIn.Automation.cs` in both add-ins; `OfficeAutomationRun`, `AutomationMessageBox` in `OfficeAutomationAgent.cs` |
 
-Decisions taken (§13 recommendations): "Ask before changes" is the default mode; only the stdio launcher is
-advertised; reads never change a document (no stable ids without a write); the other points concern writes.
+Write tools: `insert_formula`, `update_formula` (LaTeX and/or format), `delete_formula`, `select_formula`,
+`set_formula_font_size`, `convert_formulas`, `latex_text_to_formulas`, `formulas_to_latex_text`; Word also
+`insert_rich_text` (bulk import), `insert_equation_reference`, `number_display_formulas`, `update_equation_numbers`,
+`set_equation_number_format`. Each one places the target (activates the document, moves the selection) and runs the
+Ribbon's command: Word inserts and edits go through a conversion-only Session in the hidden converter, conversions
+through the format-conversion command, LaTeX text through LaTeX redraw, rich text through bulk import with the
+agent's text instead of the import window.
+
+Decisions (the user, 2026-11-01: "the agent calls the interface directly"): no consent window; two modes, "Read and
+change" (default when turned on) and "Read only"; every write is an Office undo step and is in the activity log.
+Only the stdio launcher is advertised; reads never change a document.
 
 Differences from the sections above:
 - `/mcp` answers each request with JSON only (no server-sent event stream yet): no progress or list-changed
@@ -401,8 +411,19 @@ Differences from the sections above:
 - Scope: Word's main story only (no headers, footnotes, text boxes); PowerPoint top-level shapes only (no groups or
   table cells yet).
 - Context text shows other equations as `[formula]`.
-- The modes are stored but have no effect until write tools exist; `IOperationUi` comes with the writes.
+- No `IOperationUi` refactor: the dialogs are answered at one point (`AutomationMessageBox`), the two pickers
+  (LaTeX redraw options, reference target) take the agent's arguments.
+- PowerPoint inserts place a new object on a slide (`left_pt`/`top_pt`, else centred) or, for a native equation,
+  at the user's text caret.
 - The token file keeps the profile's default ACL.
+
+Writes verified the same way (scripts `mcp-write.mjs`, `e2e-word.ps1`/`e2e-ppt.ps1 -Driver write`): Word inserts
+(native, VisualTeX inline after an equation, two-row numbered), LaTeX edits, format changes (to MathType, to VisualTeX
+with new LaTeX), LaTeX text to equations, Markdown import, numbering, references, font size, delete, conversions; the
+document checked in screenshots. PowerPoint inserts in all four formats, edits, conversions, delete, formulas to
+LaTeX text; the slides checked in a PDF export. Found while testing, already in the add-in before this work: batch
+numbering fails on an unnumbered VisualTeX OLE display formula ("VisualTeXPlaceRef has an invalid outer field
+boundary"); converting a two-row VisualTeX formula to a Word equation joins the rows.
 
 Verified on the dev PC with an isolated source companion (port 43129) and the dev add-ins loaded through a
 temporary HKCU class override: PowerPoint (native equations inline and display, MathType objects, two decks) and

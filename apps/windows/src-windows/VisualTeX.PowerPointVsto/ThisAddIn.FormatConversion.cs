@@ -176,7 +176,7 @@ public sealed partial class ThisAddIn
                     progress = null;
                     var message = ConfirmationMessage(plan, targetLabel, english);
                     var confirmed = await dispatcher.InvokeAsync(() =>
-                            MessageBox.Show(new WindowOwner(owner), message, title, MessageBoxButtons.YesNo,
+                            AutomationMessageBox.Show(new WindowOwner(owner), message, title, MessageBoxButtons.YesNo,
                                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
                         .ConfigureAwait(false);
                     if (!confirmed)
@@ -595,7 +595,7 @@ public sealed partial class ThisAddIn
         }
         return dispatcher.InvokeAsync(() =>
         {
-            MessageBox.Show(new WindowOwner(owner), message, title, MessageBoxButtons.OK, icon);
+            AutomationMessageBox.Show(new WindowOwner(owner), message, title, MessageBoxButtons.OK, icon);
             return true;
         });
     }

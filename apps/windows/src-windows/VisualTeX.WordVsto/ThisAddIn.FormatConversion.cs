@@ -161,7 +161,7 @@ public sealed partial class ThisAddIn
             {
                 progress.Dispose();
                 var confirmed = await dispatcher.InvokeAsync(() =>
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         progress.Owner,
                         T(
                             $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
@@ -576,7 +576,7 @@ public sealed partial class ThisAddIn
                     var report = BuildFormatConversionFailureReport(skipped, totalTargets, null, documentChanged: true);
                     await dispatcher.InvokeAsync(() =>
                     {
-                        System.Windows.Forms.MessageBox.Show(
+                        AutomationMessageBox.Show(
                             report,
                             ConversionTitle,
                             System.Windows.Forms.MessageBoxButtons.OK,
@@ -628,7 +628,7 @@ public sealed partial class ThisAddIn
                 {
                     await dispatcher.InvokeAsync(() =>
                     {
-                        System.Windows.Forms.MessageBox.Show(
+                        AutomationMessageBox.Show(
                             failureMessage,
                             ConversionTitle,
                             System.Windows.Forms.MessageBoxButtons.OK,

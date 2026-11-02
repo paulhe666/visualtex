@@ -476,7 +476,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var dispatcher = _dispatcher;
         _automationAgent = new OfficeAutomationAgent(
             _sessionClient,
-            new WordAutomationHost(_application, _formulaService),
+            new WordAutomationHost(_application, _formulaService, ExecuteAutomationWrite),
             operation => dispatcher.InvokeAsync(operation),
             WordDoubleClickHook.TraceMessage);
         _automationAgent.Start();
@@ -970,10 +970,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-failed requested={value} error={error}");
-            SetStatus(OfficePluginLanguage.FormatOperationError(
+            var message = OfficePluginLanguage.FormatOperationError(
                 error,
                 "无法设置公式字号",
-                "Unable to set formula font size"));
+                "Unable to set formula font size");
+            OfficeAutomationRun.Current?.Fail(message);
+            SetStatus(message);
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -3007,13 +3009,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string? requestedObjectMode,
         OfficeSelection? capturedSelection,
         bool conversionOnly,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AutomationSessionInput? automation = null)
     {
         var lifetimeCancellationToken = cancellationToken;
         var operationGateAcquired = await _operationGate.WaitAsync(
                 TimeSpan.FromSeconds(2),
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!operationGateAcquired && automation is not null)
+        {
+            OfficeAutomationRun.Current?.Fail(T("VisualTeX 正在执行其他 Word 操作。", "VisualTeX is busy with another Word operation."));
+            return;
+        }
         if (!operationGateAcquired)
         {
             operationGateAcquired = await TryRecoverBusySessionAsync(cancellationToken)
@@ -3085,11 +3093,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     selection.ObjectMode,
                     targetObjectMode,
                     StringComparison.Ordinal);
-            var lines = metadata?.Lines ?? new List<FormulaLine>
-            {
-                new() { Id = Guid.NewGuid().ToString(), Latex = string.Empty },
-            };
-            var fontSizePt = metadata?.FontSizePt
+            var lines = automation?.Lines is { Count: > 0 } automationLines
+                ? automationLines.Select(latex => new FormulaLine { Id = Guid.NewGuid().ToString(), Latex = latex }).ToList()
+                : metadata?.Lines ?? new List<FormulaLine>
+                {
+                    new() { Id = Guid.NewGuid().ToString(), Latex = string.Empty },
+                };
+            var fontSizePt = automation?.FontSizePt
+                ?? metadata?.FontSizePt
                 ?? await dispatcher.InvokeAsync(service.ReadCurrentTypingFontSize)
                     .ConfigureAwait(false);
             var effectiveDisplayMode =
@@ -3124,9 +3135,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 DisplayMode = effectiveDisplayMode,
                 ObjectMode = targetObjectMode,
                 Numbered = effectiveDisplayMode == "block"
-                    && (mode == "create"
-                        ? WordEquationNumbering.GetDefaultDisplayEquationNumbered()
-                        : metadata?.Numbered ?? false),
+                    && (automation?.Numbered
+                        ?? (mode == "create"
+                            ? WordEquationNumbering.GetDefaultDisplayEquationNumbered()
+                            : metadata?.Numbered ?? false)),
                 MathTypeNumberPosition = mathTypeNumberPosition,
                 FontSizePt = FormulaFontSize.Normalize(fontSizePt),
                 OriginalMetadata = metadata,
@@ -3155,9 +3167,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 session.Id,
                 TimeSpan.FromMinutes(30),
                 cancellationToken).ConfigureAwait(false);
-            if (session.Mode == "create" && session.DisplayMode == "block")
+            // an agent's choices do not become the user's defaults
+            if (automation is null && session.Mode == "create" && session.DisplayMode == "block")
                 WordEquationNumbering.SetDefaultDisplayEquationNumbered(session.Numbered);
-            if (session.Mode == "create"
+            if (automation is null
+                && session.Mode == "create"
                 && (string.Equals(
                         session.ObjectMode,
                         FormulaOleContract.NativeOleMode,
@@ -3167,7 +3181,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal)))
                 WordEquationNumbering.SetDefaultCreateObjectMode(session.ObjectMode);
-            if (session.Mode == "create"
+            if (automation is null
+                && session.Mode == "create"
                 && session.Numbered
                 && string.Equals(session.DisplayMode, "block", StringComparison.Ordinal)
                 && string.Equals(
@@ -3179,6 +3194,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
                 SetStatus(T("已取消，Word 文档未修改。", "Cancelled. The Word document was not changed."));
+                OfficeAutomationRun.Current?.Fail(T("已取消，Word 文档未修改。", "Cancelled. The Word document was not changed."));
                 return;
             }
             if (session.Status == "failed")
@@ -3188,6 +3204,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             "VisualTeX reported that this formula failed but gave no reason.")
                         : OfficeErrorText.DescribeItemError(session.Error));
             if (session.Mode == "edit"
+                && automation?.Lines is null
                 && !session.Dirty
                 && (!requiresObjectModeChange || session.ExportResult is null))
             {
@@ -3282,7 +3299,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             BeginFormulaFormatMutation();
             try
             {
-                await dispatcher.InvokeAsync(() =>
+                var applied = await dispatcher.InvokeAsync(() =>
                 {
                     var activeDocumentId = service.ReadActiveDocumentId();
                 if (!string.Equals(
@@ -3373,6 +3390,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ? service.Replace(session, imagePath)
                         : service.Insert(session, imagePath);
                 }).ConfigureAwait(false);
+                if (OfficeAutomationRun.Current is { } automationRun) automationRun.Result = applied;
             }
             finally
             {
@@ -3413,6 +3431,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             // Only Word closing or this operation's own cancellation is
             // "cancelled"; any other OperationCanceledException is an error.
+            OfficeAutomationRun.Current?.Fail(T("VisualTeX 操作已取消。", "The VisualTeX operation was cancelled."));
             if (lifetimeCancellationToken.IsCancellationRequested)
                 SetStatus(T("VisualTeX 操作已取消。", "The VisualTeX operation was cancelled."));
             else
@@ -3428,6 +3447,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 error,
                 "VisualTeX Word 写入失败",
                 "VisualTeX Word formula write failed");
+            OfficeAutomationRun.Current?.Fail(failureMessage);
             if (sessionId is not null && _sessionClient is not null)
             {
                 try
@@ -3600,7 +3620,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 && acceptanceMode
                 && IsEnabledEnvironmentOption(
                     "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
-            if (!acceptanceMode)
+            if (OfficeAutomationRun.Current is { } automationRun)
+            {
+                // an agent chose the options with its request
+                numberDisplayFormulas = allowRedrawNumbering && automationRun.NumberDisplayFormulas;
+            }
+            else if (!acceptanceMode)
             {
                 // Capture has finished. Waiting for the user's choice is not
                 // scanning, and its dialog must not compete with an owned HUD.
@@ -4518,7 +4543,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 {
                     await dispatcher.InvokeAsync(() =>
                     {
-                        System.Windows.Forms.MessageBox.Show(
+                        AutomationMessageBox.Show(
                             reportText,
                             RedrawTitle,
                             System.Windows.Forms.MessageBoxButtons.OK,
@@ -4569,7 +4594,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             await dispatcher.InvokeAsync(() =>
             {
-                System.Windows.Forms.MessageBox.Show(
+                AutomationMessageBox.Show(
                     message,
                     RedrawTitle,
                     System.Windows.Forms.MessageBoxButtons.OK,
@@ -4730,7 +4755,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 progress.Dispose();
                 var confirmed = await dispatcher.InvokeAsync(() =>
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         progress.Owner,
                         T(
                             $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
@@ -4792,7 +4817,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 {
                     await dispatcher.InvokeAsync(() =>
                     {
-                        System.Windows.Forms.MessageBox.Show(
+                        AutomationMessageBox.Show(
                             failureMessage,
                             T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                             System.Windows.Forms.MessageBoxButtons.OK,
@@ -5248,7 +5273,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             await dispatcher.InvokeAsync(() =>
             {
-                System.Windows.Forms.MessageBox.Show(
+                AutomationMessageBox.Show(
                     OfficePluginLanguage.SafeUserMessage(
                         message,
                         warning ? "The VisualTeX bulk import could not continue." : "The VisualTeX bulk import failed."),
@@ -5273,6 +5298,25 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Action<string> sessionCreated,
             CancellationToken cancellationToken)
     {
+        if (OfficeAutomationRun.Current is { BulkSource: { } agentSource } agentRun)
+        {
+            // an agent's text instead of the import window
+            var agentFormat = agentRun.BulkSourceFormat switch
+            {
+                "markdown" => WordBulkSourceFormat.Markdown,
+                "latex" => WordBulkSourceFormat.Latex,
+                _ => WordBulkSourceFormat.Auto,
+            };
+            var agentMode = agentRun.BulkObjectMode ?? WordEquationNumbering.GetDefaultCreateObjectMode();
+            var agentObjectMode = agentMode == FormulaOleContract.NativeOleMode
+                ? WordBulkFormulaObjectMode.Ole
+                : agentMode == FormulaOleContract.MathTypeOleMode
+                    ? WordBulkFormulaObjectMode.MathType
+                    : WordBulkFormulaObjectMode.Omml;
+            var agentDocument = WordBulkImportParser.Parse(agentSource, agentFormat, agentObjectMode);
+            agentDocument.NumberDisplayFormulas = agentRun.NumberDisplayFormulas;
+            return (agentDocument, null);
+        }
         if (string.Equals(
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                 "1",
@@ -5756,7 +5800,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 if (report.TotalRepairCount == 0)
                 {
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         T(
                             $"扫描完成。已检查 {report.ScannedOleCount} 个行内对象，无需调整公式位置。{report.SkippedCount} 个对象缺少可确定的基线信息，未作推测性修改。",
                             $"Scan complete. {report.ScannedOleCount} inline objects were checked; no position change is needed. {report.SkippedCount} objects without a determinable baseline were left unchanged."),
@@ -5766,7 +5810,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     return 0;
                 }
 
-                var answer = System.Windows.Forms.MessageBox.Show(
+                var answer = AutomationMessageBox.Show(
                     T(
                         $"需要调整 {report.TotalRepairCount} 个行内公式的位置（VisualTeX {report.VisualTeXRepairCount}，MathType {report.MathTypeRepairCount}）。\r\n\r\n"
                         + "按当前段落的字符对齐规则校正公式：普通基线段落使用公式渲染基线，字符中心对齐段落不重复下移。只调整公式对象字符的位置，不重绘、不改字号或对象尺寸，不改段落格式、编号和引用。\r\n\r\n"
@@ -5879,7 +5923,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 if (report.Targets.Count == 0)
                 {
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         T(
                             $"扫描完成。已检查 {report.MathTypeCount} 个 MathType 公式，它们的显示图像与 MathType 自身的排版一致，无需修复。" + unreadable,
                             $"Scan complete. {report.MathTypeCount} MathType equations were checked; their pictures already match MathType's own layout." + unreadable),
@@ -5889,7 +5933,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     return 0;
                 }
 
-                var answer = System.Windows.Forms.MessageBox.Show(
+                var answer = AutomationMessageBox.Show(
                     T(
                         $"{report.Targets.Count} 个 MathType 公式的显示图像与 MathType 自身的排版不一致（例如缺少 MathType 字体时生成的错误符号）。\r\n\r\n"
                         + "将用 VisualTeX 内置的 MathType 排版服务按公式原有数据重新生成这些图像。只替换显示图像并按 MathType 基线重新对齐，公式数据、编号和引用保持不变；每个公式可单独撤销。"
@@ -5993,7 +6037,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 if (report.Total == 0)
                 {
                     WriteRedrawAcceptanceLog("equation-format-update-current");
-                    System.Windows.Forms.MessageBox.Show(
+                    AutomationMessageBox.Show(
                         T("本文档的公式已经是当前格式，无需更新。",
                           "The equations in this document already use the current format."),
                         title,
@@ -6039,7 +6083,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 zh += "\r\n公式内容和类型不变。是否继续？";
                 en += "\r\nEquation content and kinds do not change. Continue?";
-                return System.Windows.Forms.MessageBox.Show(
+                return AutomationMessageBox.Show(
                     T(zh, en),
                     title,
                     System.Windows.Forms.MessageBoxButtons.YesNo,
@@ -6148,7 +6192,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         && wordOmmlTargets.Length == 0
                         && mathTypeTargets.Count == 0)
                     {
-                        System.Windows.Forms.MessageBox.Show(
+                        AutomationMessageBox.Show(
                             T(
                                 "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX、Word OMML 或 MathType 行间公式。",
                                 "The current document has no numbered equations to reference. Insert a numbered VisualTeX, Word OMML, or MathType display equation first."),
@@ -6299,7 +6343,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 {
                     window = _application?.ActiveWindow
                         ?? throw new InvalidOperationException("Word's error-reporting window is unavailable.");
-                    System.Windows.Forms.MessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
+                    AutomationMessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
                         userMessage,
                         OfficePluginLanguage.IsEnglish ? "VisualTeX Word" : "VisualTeX " + operation,
                         System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
@@ -6325,19 +6369,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             await dispatcher.InvokeAsync(service.DeleteSelectedFormula).ConfigureAwait(false);
-            SetStatus("Word 公式已删除。");
+            SetStatus(T("Word 公式已删除。", "The Word formula was deleted."));
         }
         catch (Exception error)
         {
-            SetStatus(OfficePluginLanguage.FormatOperationError(
+            var message = OfficePluginLanguage.FormatOperationError(
                 error,
                 "删除 Word 公式失败",
-                "Failed to delete the Word formula"));
+                "Failed to delete the Word formula");
+            OfficeAutomationRun.Current?.Fail(message);
+            SetStatus(message);
         }
     }
 
     private void SetStatus(string message)
     {
+        OfficeAutomationRun.Current?.Status(message);
         _operationProgress?.Report(OfficePluginLanguage.SafeStatusMessage(message));
         var dispatcher = _dispatcher;
         var application = _application;

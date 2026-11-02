@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
@@ -146,6 +147,197 @@ internal sealed partial class WordFormulaService
             var formula = ResolveAutomationFormula(document, formulaId);
             return DescribeAutomationFormula(document, formula, 120, full: true);
         }
+        finally { Release(document); }
+    }
+
+    // Writes: placing the target, then the add-in's own command does the work.
+
+    /// Brings the document's window to the front: the add-in's commands work on
+    /// the active document and its selection.
+    internal void AutomationActivate(string? key)
+    {
+        Document? document = null;
+        try
+        {
+            document = FindAutomationDocument(key);
+            if (document.ReadOnly)
+                throw new OfficeAutomationException("document_read_only", "The document is read-only.");
+            document.Activate();
+        }
+        finally { Release(document); }
+    }
+
+    /// Selects a formula (as a click would) and returns it.
+    internal object AutomationSelectFormula(string key, string formulaId)
+    {
+        Document? document = null;
+        Range? range = null;
+        try
+        {
+            document = FindAutomationDocument(key);
+            document.Activate();
+            var formula = ResolveAutomationFormula(document, formulaId);
+            range = WordFormulaHostSemanticReader.CreateRange(document, formula.Host.Range);
+            range.Select();
+            return DescribeAutomationFormula(document, formula, 40, full: false);
+        }
+        finally
+        {
+            Release(range);
+            Release(document);
+        }
+    }
+
+    /// Puts the caret where a new formula goes and captures that insertion point.
+    /// location: "cursor" (default), "document_end", or an object with
+    /// after_formula / before_formula (a formula id) or paragraph_end (a paragraph number).
+    internal OfficeSelection AutomationPlaceInsertion(string? key, JsonElement location)
+    {
+        Document? document = null;
+        Range? target = null;
+        try
+        {
+            document = FindAutomationDocument(key);
+            if (document.ReadOnly)
+                throw new OfficeAutomationException("document_read_only", "The document is read-only.");
+            document.Activate();
+            var where = location.ValueKind == JsonValueKind.String ? location.GetString() : null;
+            if (location.ValueKind == JsonValueKind.Object)
+            {
+                if (OfficeAutomationText.String(location, "after_formula") is { Length: > 0 } after)
+                {
+                    var formula = ResolveAutomationFormula(document, after);
+                    target = WordFormulaHostSemanticReader.CreateRange(document, formula.Host.Range);
+                    target.Collapse(WdCollapseDirection.wdCollapseEnd);
+                    LeaveMathZone(target, forward: true);
+                }
+                else if (OfficeAutomationText.String(location, "before_formula") is { Length: > 0 } before)
+                {
+                    var formula = ResolveAutomationFormula(document, before);
+                    target = WordFormulaHostSemanticReader.CreateRange(document, formula.Host.Range);
+                    target.Collapse(WdCollapseDirection.wdCollapseStart);
+                    LeaveMathZone(target, forward: false);
+                }
+                else if (OfficeAutomationText.Number(location, "paragraph_end") is { } number)
+                {
+                    Paragraphs? paragraphs = null;
+                    Paragraph? paragraph = null;
+                    try
+                    {
+                        paragraphs = document.Paragraphs;
+                        var index = (int)number;
+                        if (index < 1 || index > paragraphs.Count)
+                            throw new OfficeAutomationException("invalid_arguments", $"The document has {paragraphs.Count} paragraphs.");
+                        paragraph = paragraphs[index];
+                        target = paragraph.Range.Duplicate;
+                        target.MoveEnd(WdUnits.wdCharacter, -1);
+                        target.Collapse(WdCollapseDirection.wdCollapseEnd);
+                    }
+                    finally { Release(paragraph); Release(paragraphs); }
+                }
+                else where = OfficeAutomationText.String(location, "kind");
+            }
+            if (target is null && where == "document_end")
+            {
+                target = document.Content;
+                target.MoveEnd(WdUnits.wdCharacter, -1);
+                target.Collapse(WdCollapseDirection.wdCollapseEnd);
+            }
+            else if (target is null && where is not (null or "" or "cursor"))
+            {
+                throw new OfficeAutomationException("invalid_arguments", $"Unknown location {where}.");
+            }
+            target?.Select();
+            return ReadCreateSelection();
+        }
+        finally
+        {
+            Release(target);
+            Release(document);
+        }
+    }
+
+    /// A caret at a native equation's edge is still inside its math zone, where a new
+    /// object would become part of that equation: step out of the zone.
+    private static void LeaveMathZone(Range caret, bool forward)
+    {
+        for (var step = 0; step < 2; step++)
+        {
+            OMaths? maths = null;
+            try
+            {
+                maths = caret.OMaths;
+                if (maths.Count == 0) return;
+            }
+            finally { Release(maths); }
+            caret.Move(WdUnits.wdCharacter, forward ? 1 : -1);
+        }
+    }
+
+    /// The formula at the user's selection (after a conversion of the selection).
+    internal object? AutomationDescribeSelected()
+    {
+        Document? document = null;
+        Selection? selection = null;
+        Range? range = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            selection = _application.Selection;
+            range = selection.Range;
+            var found = TryResolveAutomationFormula(document, range);
+            if (found is null && range.Start == range.End)
+            {
+                Release(range);
+                range = document.Range(Math.Max(0, selection.Start - 1), selection.Start);
+                found = TryResolveAutomationFormula(document, range);
+            }
+            return found is null ? null : DescribeAutomationFormula(document, found, 40, full: true);
+        }
+        catch { return null; }
+        finally
+        {
+            Release(range);
+            Release(selection);
+            Release(document);
+        }
+    }
+
+    /// The formula a write produced: by its VisualTeX id, else the formula just
+    /// before the caret (a write leaves the caret after it).
+    private AutomationFormula? FindWritten(Document document, OfficeObjectResult? written)
+    {
+        if (written?.FormulaId is { Length: > 0 } id)
+        {
+            try { return ResolveAutomationFormula(document, "vtx:" + id); }
+            catch (OfficeAutomationException) { }
+        }
+        Selection? selection = null;
+        Range? probe = null;
+        try
+        {
+            selection = _application.Selection;
+            var caret = selection.Start;
+            probe = document.Range(Math.Max(0, caret - 1), caret);
+            return TryResolveAutomationFormula(document, probe);
+        }
+        finally
+        {
+            Release(probe);
+            Release(selection);
+        }
+    }
+
+    internal object? AutomationDescribeWritten(OfficeObjectResult? written)
+    {
+        Document? document = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            var formula = FindWritten(document, written);
+            return formula is null ? null : DescribeAutomationFormula(document, formula, 40, full: true);
+        }
+        catch { return null; }
         finally { Release(document); }
     }
 

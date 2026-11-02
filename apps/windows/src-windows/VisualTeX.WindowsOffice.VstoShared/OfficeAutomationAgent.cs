@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Forms;
 using VisualTeX.WindowsOffice.Contracts;
 
 namespace VisualTeX.WindowsOffice.VstoShared;
@@ -17,7 +18,11 @@ internal interface IOfficeAutomationHost
     string App { get; }
     string ProductVersion { get; }
     IReadOnlyList<string> Capabilities { get; }
+    // reads: run on the Office UI thread
     object? Execute(string operation, JsonElement arguments);
+    // writes: the add-in's own commands, started from a background thread;
+    // null when the operation is not a write
+    Task<object?>? ExecuteWriteAsync(string operation, JsonElement arguments);
 }
 
 internal sealed class OfficeAutomationException : Exception
@@ -197,6 +202,13 @@ internal sealed class OfficeAutomationAgent : IDisposable
         var abandoned = 0;
         try
         {
+            var write = _host.ExecuteWriteAsync(operation, arguments);
+            if (write is not null)
+            {
+                var written = await write.ConfigureAwait(false);
+                result = JsonSerializer.Serialize(new { ok = true, data = written }, ResultJson);
+                goto Post;
+            }
             var work = _invokeOnUi(() =>
             {
                 // never start late: the agent has already been told it failed
@@ -233,6 +245,7 @@ internal sealed class OfficeAutomationAgent : IDisposable
                 ResultJson);
         }
 
+    Post:
         if (hostId is null || cancellation.IsCancellationRequested) return;
         try
         {
@@ -363,6 +376,54 @@ internal static class OfficeAutomationText
         return kinds;
     }
 
+    internal static bool? Bool(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object
+        && arguments.TryGetProperty(name, out var value)
+        && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+
+    internal static double? Number(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object
+        && arguments.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Number
+            ? value.GetDouble()
+            : null;
+
+    internal static JsonElement Element(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty(name, out var value)
+            ? value
+            : default;
+
+    /// The formula's rows: "lines" (one row each) or "latex".
+    internal static List<string>? Lines(JsonElement arguments)
+    {
+        var lines = new List<string>();
+        var array = Element(arguments, "lines");
+        if (array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var line in array.EnumerateArray())
+                if (line.ValueKind == JsonValueKind.String) lines.Add(line.GetString()!);
+        }
+        else if (String(arguments, "latex") is { } latex)
+        {
+            lines.Add(latex);
+        }
+        lines = lines.Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
+        return lines.Count == 0 ? null : lines;
+    }
+
+    /// Agent format names → the add-ins' object modes.
+    internal static string? ObjectMode(string? format) => format switch
+    {
+        null or "" => null,
+        "visualtex_ole" => FormulaOleContract.NativeOleMode,
+        "office_equation" => FormulaOleContract.WordOmmlMode,
+        "mathtype" => FormulaOleContract.MathTypeOleMode,
+        "picture" => FormulaOleContract.CrossPlatformPictureMode,
+        _ => throw new OfficeAutomationException("invalid_arguments", $"Unknown format {format}: use visualtex_ole, office_equation, mathtype or picture."),
+    };
+
     internal static OfficeAutomationException DocumentNotFound() =>
         new("document_not_found", "The document is no longer open, or it was saved under another name; call list_documents again.");
 
@@ -390,4 +451,139 @@ internal static class OfficeAutomationText
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}
+
+/// <summary>
+/// One agent write running the add-in's own command. While it runs, the command's
+/// questions are answered "yes" (the agent asked for the operation), its messages
+/// and errors are collected for the result instead of shown, and its status-bar
+/// text becomes the result message.
+/// </summary>
+internal sealed class OfficeAutomationRun : IDisposable
+{
+    private static OfficeAutomationRun? _current;
+    private readonly object _gate = new();
+    private readonly List<string> _messages = new();
+    private readonly List<string> _warnings = new();
+    private readonly List<string> _errors = new();
+
+    internal static OfficeAutomationRun? Current => Volatile.Read(ref _current);
+
+    internal static OfficeAutomationRun Begin()
+    {
+        var run = new OfficeAutomationRun();
+        if (Interlocked.CompareExchange(ref _current, run, null) is not null)
+            throw new OfficeAutomationException("host_busy", "Another agent command is running in this Office application.");
+        return run;
+    }
+
+    internal object? Result { get; set; }
+    internal bool NumberDisplayFormulas { get; set; }
+    internal string? BulkSource { get; set; }
+    internal string BulkSourceFormat { get; set; } = "auto";
+    internal string? BulkObjectMode { get; set; }
+
+    internal void Status(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+        lock (_gate) _messages.Add(message.Trim());
+    }
+
+    internal void Warn(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+        lock (_gate) _warnings.Add(message.Trim());
+    }
+
+    internal void Fail(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+        lock (_gate) _errors.Add(message.Trim());
+    }
+
+    /// Stops a multi-step command after a failed step.
+    internal void ThrowIfFailed()
+    {
+        lock (_gate)
+        {
+            if (_errors.Count > 0)
+                throw new OfficeAutomationException("operation_failed", string.Join("\n", _errors.Distinct()));
+        }
+    }
+
+    internal string? LastMessage
+    {
+        get { lock (_gate) return _messages.Count == 0 ? null : _messages[_messages.Count - 1]; }
+    }
+
+    /// The command's outcome: its errors as one failure, else its last message and warnings.
+    internal Dictionary<string, object?> Finish(object? data = null)
+    {
+        lock (_gate)
+        {
+            if (_errors.Count > 0)
+                throw new OfficeAutomationException(
+                    "operation_failed",
+                    string.Join("\n", _errors.Distinct()),
+                    _warnings.Count == 0 ? null : new { warnings = _warnings.Distinct().ToList() });
+            var result = new Dictionary<string, object?>
+            {
+                ["message"] = _messages.Count == 0 ? null : _messages[_messages.Count - 1],
+            };
+            if (_warnings.Count > 0) result["warnings"] = _warnings.Distinct().ToList();
+            if (data is not null) result["result"] = data;
+            return result;
+        }
+    }
+
+    public void Dispose() => Interlocked.CompareExchange(ref _current, null, this);
+}
+
+/// <summary>
+/// The add-ins' message boxes. During an agent command a question is answered with
+/// its first button (the add-ins ask "Continue?" with Yes first), and the text is
+/// collected: errors fail the command, warnings and notes come back with it.
+/// </summary>
+internal static class AutomationMessageBox
+{
+    private static DialogResult Answer(string text, MessageBoxButtons buttons, MessageBoxIcon icon)
+    {
+        var run = OfficeAutomationRun.Current!;
+        switch (icon)
+        {
+            case MessageBoxIcon.Error:
+                run.Fail(text);
+                break;
+            case MessageBoxIcon.Warning:
+                run.Warn(text);
+                break;
+            default:
+                if (buttons == MessageBoxButtons.OK) run.Status(text);
+                break;
+        }
+        return buttons switch
+        {
+            MessageBoxButtons.YesNo or MessageBoxButtons.YesNoCancel => DialogResult.Yes,
+            MessageBoxButtons.RetryCancel => DialogResult.Cancel,
+            MessageBoxButtons.AbortRetryIgnore => DialogResult.Abort,
+            _ => DialogResult.OK,
+        };
+    }
+
+    internal static DialogResult Show(string text, string caption, MessageBoxButtons buttons, MessageBoxIcon icon) =>
+        OfficeAutomationRun.Current is null ? MessageBox.Show(text, caption, buttons, icon) : Answer(text, buttons, icon);
+
+    internal static DialogResult Show(string text, string caption, MessageBoxButtons buttons, MessageBoxIcon icon,
+        MessageBoxDefaultButton defaultButton) =>
+        OfficeAutomationRun.Current is null ? MessageBox.Show(text, caption, buttons, icon, defaultButton) : Answer(text, buttons, icon);
+
+    internal static DialogResult Show(IWin32Window owner, string text, string caption, MessageBoxButtons buttons,
+        MessageBoxIcon icon) =>
+        OfficeAutomationRun.Current is null ? MessageBox.Show(owner, text, caption, buttons, icon) : Answer(text, buttons, icon);
+
+    internal static DialogResult Show(IWin32Window owner, string text, string caption, MessageBoxButtons buttons,
+        MessageBoxIcon icon, MessageBoxDefaultButton defaultButton) =>
+        OfficeAutomationRun.Current is null
+            ? MessageBox.Show(owner, text, caption, buttons, icon, defaultButton)
+            : Answer(text, buttons, icon);
 }

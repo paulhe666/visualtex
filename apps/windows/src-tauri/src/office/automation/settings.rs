@@ -9,7 +9,8 @@ use std::sync::{Mutex, OnceLock};
 #[serde(rename_all = "camelCase")]
 pub enum McpMode {
     ReadOnly,
-    Ask,
+    // an earlier "ask before changes" setting means changes are allowed
+    #[serde(alias = "ask")]
     Allow,
 }
 
@@ -22,7 +23,7 @@ pub struct McpSettings {
 
 impl Default for McpSettings {
     fn default() -> Self {
-        Self { enabled: false, mode: McpMode::Ask }
+        Self { enabled: false, mode: McpMode::Allow }
     }
 }
 

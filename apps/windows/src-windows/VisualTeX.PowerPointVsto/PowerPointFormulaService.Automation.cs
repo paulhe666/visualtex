@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
@@ -214,6 +215,203 @@ public sealed partial class PowerPointFormulaService
             Release(view);
             Release(selection);
             Release(window);
+            Release(presentation);
+        }
+    }
+
+    // Writes: placing the target, then the add-in's own command does the work.
+
+    /// Brings the presentation's window to the front: the add-in's commands work
+    /// on the active window and its selection.
+    internal DocumentWindow AutomationActivate(string? key)
+    {
+        Presentation? presentation = null;
+        try
+        {
+            presentation = FindAutomationPresentation(key);
+            if (presentation.ReadOnly == MsoTriState.msoTrue)
+                throw new OfficeAutomationException("document_read_only", "The presentation is read-only.");
+            var window = FirstWindow(presentation)
+                ?? throw new OfficeAutomationException("document_not_found", "The presentation has no window.");
+            window.Activate();
+            return window;
+        }
+        finally { Release(presentation); }
+    }
+
+    /// Shows a formula's slide and selects the formula (its text for an equation in a text box).
+    internal object AutomationSelectFormula(string key, string formulaId)
+    {
+        Presentation? presentation = null;
+        DocumentWindow? window = null;
+        View? view = null;
+        Slides? slides = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        try
+        {
+            window = AutomationActivate(key);
+            presentation = FindAutomationPresentation(key);
+            int? slideFilter = formulaId.StartsWith("ppt:", StringComparison.Ordinal)
+                && formulaId.Split(':') is { Length: >= 3 } parts && int.TryParse(parts[1], out var parsed)
+                ? parsed : null;
+            var formula = ScanAutomationFormulas(presentation, new HashSet<string>(), 40, slideFilter)
+                .FirstOrDefault(candidate => candidate.Id == formulaId)
+                ?? throw new OfficeAutomationException("formula_not_found", "No formula in this presentation has that id; call list_formulas again.");
+            view = window.View;
+            view.GotoSlide(formula.SlideIndex);
+            slides = presentation.Slides;
+            slide = FindSlideById(slides, formula.SlideId);
+            shapes = slide.Shapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Shape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    if (shape.Id != formula.ShapeId) continue;
+                    if (formula.Ordinal > 0 && !OfficeHostEnvironment.IsWps)
+                    {
+                        object? frame = null, range = null, zone = null;
+                        try
+                        {
+                            frame = shape.TextFrame2;
+                            range = ((dynamic)frame).TextRange;
+                            zone = ((dynamic)range).MathZones(formula.Ordinal, 1);
+                            ((dynamic)zone).Select();
+                        }
+                        finally { Release(zone); Release(range); Release(frame); }
+                    }
+                    else shape.Select();
+                    return DescribeAutomationFormula(formula, full: false);
+                }
+                finally { Release(shape); }
+            }
+            throw new OfficeAutomationException("formula_not_found", "The formula's shape no longer exists.");
+        }
+        finally
+        {
+            Release(shapes);
+            Release(slide);
+            Release(slides);
+            Release(view);
+            Release(window);
+            Release(presentation);
+        }
+    }
+
+    internal sealed class AutomationInsertion
+    {
+        internal bool AtCursor { get; set; }
+        internal int SlideId { get; set; }
+        internal HashSet<int> ShapeIds { get; } = new();
+        internal float? Left { get; set; }
+        internal float? Top { get; set; }
+    }
+
+    /// Shows the slide a new formula goes on ({"slide": n, "left_pt": x, "top_pt": y});
+    /// "cursor" keeps the user's place (a text caret receives a native equation).
+    internal AutomationInsertion AutomationPlaceInsertion(string? key, JsonElement location)
+    {
+        DocumentWindow? window = null;
+        View? view = null;
+        Selection? selection = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        try
+        {
+            window = AutomationActivate(key);
+            var insertion = new AutomationInsertion();
+            var slideNumber = location.ValueKind == JsonValueKind.Object
+                ? OfficeAutomationText.Number(location, "slide")
+                : null;
+            if (location.ValueKind == JsonValueKind.Object)
+            {
+                insertion.Left = (float?)OfficeAutomationText.Number(location, "left_pt");
+                insertion.Top = (float?)OfficeAutomationText.Number(location, "top_pt");
+            }
+            view = window.View;
+            if (slideNumber is null)
+            {
+                if (location.ValueKind == JsonValueKind.String && location.GetString() is not (null or "" or "cursor"))
+                    throw new OfficeAutomationException("invalid_arguments", "location is \"cursor\" or {\"slide\": n, \"left_pt\": x, \"top_pt\": y}.");
+                insertion.AtCursor = true;
+            }
+            else
+            {
+                view.GotoSlide((int)slideNumber.Value);
+                selection = window.Selection;
+                try { selection.Unselect(); } catch { }
+            }
+            slide = (Slide)view.Slide;
+            insertion.SlideId = slide.SlideID;
+            shapes = slide.Shapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Shape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    insertion.ShapeIds.Add(shape.Id);
+                }
+                finally { Release(shape); }
+            }
+            return insertion;
+        }
+        catch (System.Runtime.InteropServices.COMException error)
+        {
+            throw new OfficeAutomationException("invalid_arguments", "That slide does not exist: " + error.Message);
+        }
+        finally
+        {
+            Release(shapes);
+            Release(slide);
+            Release(selection);
+            Release(view);
+            Release(window);
+        }
+    }
+
+    /// The formula an insertion added (a shape that was not on the slide before),
+    /// moved to the requested position.
+    internal object? AutomationDescribeInserted(string? key, AutomationInsertion insertion)
+    {
+        Presentation? presentation = null;
+        Slides? slides = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        try
+        {
+            presentation = FindAutomationPresentation(key);
+            slides = presentation.Slides;
+            slide = FindSlideById(slides, insertion.SlideId);
+            shapes = slide.Shapes;
+            var added = new List<int>();
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Shape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    if (insertion.ShapeIds.Contains(shape.Id)) continue;
+                    added.Add(shape.Id);
+                    if (insertion.Left is { } left) shape.Left = left;
+                    if (insertion.Top is { } top) shape.Top = top;
+                }
+                finally { Release(shape); }
+            }
+            var formulas = ScanAutomationFormulas(presentation, new HashSet<string>(), 40, insertion.SlideId)
+                .Where(formula => added.Contains(formula.ShapeId))
+                .Select(formula => DescribeAutomationFormula(formula, full: true))
+                .ToList();
+            return formulas.Count == 1 ? formulas[0] : formulas.Count == 0 ? null : formulas;
+        }
+        catch { return null; }
+        finally
+        {
+            Release(shapes);
+            Release(slide);
+            Release(slides);
             Release(presentation);
         }
     }

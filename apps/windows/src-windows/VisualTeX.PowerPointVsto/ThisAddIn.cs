@@ -311,7 +311,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var dispatcher = _dispatcher;
         _automationAgent = new OfficeAutomationAgent(
             _sessionClient,
-            new PowerPointAutomationHost(_application, _formulaService),
+            new PowerPointAutomationHost(_application, _formulaService, ExecuteAutomationWrite),
             operation => dispatcher.InvokeAsync(operation),
             PowerPointDoubleClickHook.TraceMessage);
         _automationAgent.Start();
@@ -760,12 +760,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         OfficeSelection? capturedSelection,
         bool conversionOnly,
         string? requestedDisplayMode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AutomationSessionInput? automation = null)
     {
         if (!await _operationGate.WaitAsync(
                 TimeSpan.FromSeconds(2),
                 cancellationToken).ConfigureAwait(false))
         {
+            if (automation is not null)
+            {
+                OfficeAutomationRun.Current?.Fail(T("VisualTeX 正在执行其他 PowerPoint 操作。", "VisualTeX is busy with another PowerPoint operation."));
+                return;
+            }
             var activeSessionId = Volatile.Read(ref _activeSessionId);
             if (!string.IsNullOrWhiteSpace(activeSessionId) && _sessionClient is not null)
             {
@@ -847,11 +853,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var targetDisplayMode = requestedDisplayMode
                 ?? metadata?.DisplayMode
                 ?? "block";
-            var lines = metadata?.Lines ?? new List<FormulaLine>
-            {
-                new() { Id = Guid.NewGuid().ToString(), Latex = string.Empty },
-            };
-            var fontSizePt = metadata?.FontSizePt
+            var lines = automation?.Lines is { Count: > 0 } automationLines
+                ? automationLines.Select(latex => new FormulaLine { Id = Guid.NewGuid().ToString(), Latex = latex }).ToList()
+                : metadata?.Lines ?? new List<FormulaLine>
+                {
+                    new() { Id = Guid.NewGuid().ToString(), Latex = string.Empty },
+                };
+            var fontSizePt = automation?.FontSizePt
+                ?? metadata?.FontSizePt
                 ?? await dispatcher.InvokeAsync(service.ReadCurrentTypingFontSize)
                     .ConfigureAwait(false);
             var request = new CreateVstoSessionRequest
@@ -911,6 +920,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
                 SetStatus(T("已取消，PowerPoint 未修改。", "Cancelled. PowerPoint was not changed."));
+                OfficeAutomationRun.Current?.Fail(T("已取消，PowerPoint 未修改。", "Cancelled. PowerPoint was not changed."));
                 return;
             }
             if (session.Status == "failed")
@@ -920,6 +930,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ? T("VisualTeX 编辑会话失败，但没有给出原因。", "The VisualTeX editing session failed without giving a reason.")
                         : session.Error!);
             if (session.Mode == "edit"
+                && automation?.Lines is null
                 && !session.Dirty
                 && (!requiresObjectModeChange || session.ExportResult is null))
             {
@@ -1016,6 +1027,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // only the add-in's own cancellation; a timed-out or interrupted
             // request is reported as the error it is
             SetStatus(T("VisualTeX 操作已取消。", "The VisualTeX Office operation was cancelled."));
+            OfficeAutomationRun.Current?.Fail(T("VisualTeX 操作已取消。", "The VisualTeX Office operation was cancelled."));
         }
         catch (Exception error)
         {
@@ -1082,6 +1094,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void SetStatus(string message)
     {
+        OfficeAutomationRun.Current?.Status(message);
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
@@ -1105,6 +1118,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         DiagnosticLastError = message;
         var userMessage = OfficePluginLanguage.SafeErrorMessage(message);
+        if (OfficeAutomationRun.Current is { } automationRun)
+        {
+            // an agent's command: the error goes back to the agent, not into a message box
+            automationRun.Fail(userMessage);
+            return;
+        }
         SetStatus(userMessage);
         if (string.Equals(
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
@@ -1117,7 +1136,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try
             {
-                System.Windows.Forms.MessageBox.Show(
+                AutomationMessageBox.Show(
                     userMessage,
                     "VisualTeX PowerPoint",
                     System.Windows.Forms.MessageBoxButtons.OK,

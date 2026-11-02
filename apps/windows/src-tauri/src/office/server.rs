@@ -3858,7 +3858,7 @@ mod tests {
 
         settings::update(&state.paths.root, settings::McpSettings {
             enabled: true,
-            mode: settings::McpMode::Ask,
+            mode: settings::McpMode::Allow,
         })
         .unwrap();
         let token = fs::read_to_string(settings::token_path(&state.paths.root)).unwrap();
@@ -3878,13 +3878,37 @@ mod tests {
         let list = serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
         let (status, _, reply) = mcp_call(&router, &token, Some(&session), list.clone()).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(
+            reply["result"]["tools"].as_array().unwrap().len(),
+            7 + crate::office::automation::mcp::WRITE_TOOLS.len()
+        );
 
         let call = serde_json::json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "visualtex_status", "arguments": {} } });
         let (_, _, reply) = mcp_call(&router, &token, Some(&session), call).await;
         assert_eq!(reply["result"]["isError"], false);
-        assert_eq!(reply["result"]["structuredContent"]["permission_mode"], "ask_before_changes");
+        assert_eq!(reply["result"]["structuredContent"]["permission_mode"], "allow_changes");
+
+        // writes need a connected Office host
+        let call = serde_json::json!({ "jsonrpc": "2.0", "id": 6, "method": "tools/call",
+            "params": { "name": "insert_formula", "arguments": { "document_id": "h0:x", "latex": "x" } } });
+        let (_, _, reply) = mcp_call(&router, &token, Some(&session), call).await;
+        assert_eq!(reply["result"]["isError"], true);
+        assert!(reply["result"]["content"][0]["text"].as_str().unwrap().contains("document_not_found"));
+        settings::update(&state.paths.root, settings::McpSettings {
+            enabled: true,
+            mode: settings::McpMode::ReadOnly,
+        })
+        .unwrap();
+        let call = serde_json::json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "params": { "name": "delete_formula", "arguments": { "document_id": "h0:x", "formula_id": "f" } } });
+        let (_, _, reply) = mcp_call(&router, &token, Some(&session), call).await;
+        assert!(reply["result"]["content"][0]["text"].as_str().unwrap().contains("permission_denied"));
+        settings::update(&state.paths.root, settings::McpSettings {
+            enabled: true,
+            mode: settings::McpMode::Allow,
+        })
+        .unwrap();
 
         let call = serde_json::json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
             "params": { "name": "read_formula", "arguments": { "document_id": "h0:x", "formula_id": "f" } } });
