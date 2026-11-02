@@ -22,10 +22,43 @@ export interface EditingHost {
   /** Up/Down found nothing to move to inside the formula: the app may move to the previous/next row. */
   verticalExit?(direction: -1 | 1): boolean;
   /**
+   * Left/Right found no stop left inside the formula (the caret is at its start/end), or Tab found nothing
+   * further at the formula's top level (direction 1): the app may leave the formula, e.g. a document puts the
+   * text caret before/after it. False (or no handler): the caret stays.
+   */
+  horizontalExit?(direction: -1 | 1): boolean;
+  /**
    * The app's key commands (rows, hotkeys, history, ...), in order. The field's key entry offers each keydown to
    * them before the kernel handles it; a command returns true when it handled the key and ended its propagation.
    */
   keyCommands?: readonly ((event: KeyboardEvent) => boolean)[];
+  /** Dragging the formula's selection (DESIGN §6.12): the app's other formulas it may land in. */
+  selectionDrag?: SelectionDragHost;
+}
+
+/** Where a dragged formula selection may land outside its formula (another formula row). */
+export interface SelectionDragHost {
+  /**
+   * Where a page point lands: a formula field (this one too) and a caret stop in it; null: nowhere
+   * (the last place stays, as AxMath's caret does below every row); undefined: not the app's (the
+   * formula decides, as on its own).
+   */
+  target?(clientX: number, clientY: number): { field: Element; stop: number } | null | undefined;
+  /** The editor's area: let go outside it, nothing is dropped (AxMath). */
+  area?(): { left: number; top: number; right: number; bottom: number } | null;
+  /** Containers that scroll near their edges while dragging. */
+  scrollers?(): HTMLElement[];
+  /** Let go in another formula: move (or copy) the selection [start, end] of `source` (its LaTeX `latex`) there. */
+  drop?(source: Element, start: number, end: number, latex: string, target: { field: Element; stop: number }, copy: boolean): void;
+  /**
+   * The pointer is outside the formula at a page point the app takes the selection (stops [start, end]) to, a place
+   * of its own (a document's text); it marks the place itself. False: not there.
+   */
+  outside?(clientX: number, clientY: number, source: Element, start: number, end: number): boolean;
+  /** Let go at that place: move (or copy) the selection there. */
+  dropOutside?(source: Element, start: number, end: number, latex: string, copy: boolean): void;
+  /** The drag is over (dropped or not). */
+  end?(): void;
 }
 
 export interface NavigationContext {
@@ -84,7 +117,7 @@ function plonk(model: CoreModel): boolean {
 
 // ------------------------------------------------------------- Left/Right --
 
-export function moveHorizontal(model: CoreModel, direction: Direction): boolean {
+export function moveHorizontal(model: CoreModel, direction: Direction, host?: EditingHost): boolean {
   // A range collapses to its edge first (an empty slot is not a range).
   if (!model.selectionIsCollapsed && !model.selectionIsPlaceholder) {
     const edge = originStop(model, direction);
@@ -93,7 +126,10 @@ export function moveHorizontal(model: CoreModel, direction: Direction): boolean 
   const stops = allowedStops(model);
   const from = originStop(model, direction);
   const next = direction > 0 ? stops.find((s) => s > from) : [...stops].reverse().find((s) => s < from);
-  return next === undefined ? plonk(model) : goTo(model, next);
+  if (next !== undefined) return goTo(model, next);
+  // At the formula's edge: the host may leave the formula (a document's inline formula).
+  if (host?.horizontalExit?.(direction)) return true;
+  return plonk(model);
 }
 
 // --------------------------------------------------------------- Home/End --
@@ -192,8 +228,12 @@ export function tab(model: CoreModel, direction: Direction, context: NavigationC
   if (inLastCell && structure.environmentName !== "lines") {
     if (kernel.addRowAfter()) return true;
   }
-  // 4. Out of the structure, one level. The top level has nowhere to go.
-  if (!structure.parent || structure.type === "root") return plonk(model);
+  // 4. Out of the structure, one level. At the top level the host may leave the formula forward (a
+  // document's formula, as Mathcha's Tab does); otherwise there is nowhere to go.
+  if (!structure.parent || structure.type === "root") {
+    if (direction > 0 && context.host?.horizontalExit?.(1)) return true;
+    return plonk(model);
+  }
   // (after it; a placeholder right after it is selected by goTo)
   if (direction > 0) return goTo(model, model.offsetOf(structure));
   const before = structure.leftSibling;

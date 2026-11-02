@@ -32,6 +32,12 @@ pub(crate) fn transform_mathml_to_omml(mathml: &str) -> Result<String, String> {
     )
 }
 
+/// PowerPointCellMath.Prepare: MathML for an equation PowerPoint writes into a
+/// table cell through its linear format (letter styles spelled into characters).
+pub(crate) fn prepare_mathml_for_table_cell(mathml: &str) -> Result<String, String> {
+    prep::cell_math::prepare(mathml)
+}
+
 /// WordOmmlConverter.BuildWordNativeNumberedOmml.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_word_native_numbered_omml(

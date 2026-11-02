@@ -123,7 +123,7 @@ async function prepareFormulaArtifactCommitItem(
 ): Promise<DocumentImportCommitItem> {
   const formulaId = createUuid();
   const line = { id: createUuid(), latex: block.latex.trim() };
-  if (!line.latex) throw new Error(t("存在空公式，请填写或删除后再插入。", "There is an empty formula. Fill it in or delete it before inserting."));
+  if (!line.latex) throw new Error(t("存在空公式。", "There is an empty formula."));
   const editorDocument = normalizeFormulaEditorDocument([line], "raw");
   const { formulaLetterFont, formulaChineseFont } = useEditorStore.getState();
   const artifacts = await renderOfficeFormulaArtifacts({
@@ -394,14 +394,14 @@ export function OfficeDocumentImportApp() {
   const commit = async () => {
     if (!request || busy) return;
     if (!blocks.length || blocks.every((block) => block.kind === "text" && !block.text.trim())) {
-      setError(t("请先粘贴包含文字或公式的 LaTeX/Markdown 内容。", "Paste LaTeX or Markdown that contains text or formulas first."));
+      setError(t("没有可导入的文字或公式。", "No text or formulas to import."));
       return;
     }
     const formulas = blocks.filter(
       (block): block is DocumentFormulaBlock => block.kind === "formula",
     );
     if (formulas.some((block) => !block.latex.trim())) {
-      setError(t("存在空公式，请填写公式内容后再插入。", "There is an empty formula. Fill it in before inserting."));
+      setError(t("存在空公式。", "There is an empty formula."));
       return;
     }
 
@@ -550,7 +550,6 @@ export function OfficeDocumentImportApp() {
           <FileText size={20} />
           <div>
             <strong>{t(`${office} 文档批量导入`, `${office} document import`)}</strong>
-            <span>{t(`左侧编辑源码，右侧实时查看并调整最终 ${office} 结构`, `Edit the source on the left; review and adjust the final ${office} structure on the right`)}</span>
           </div>
         </div>
         <div className="doc-import-options">
@@ -583,7 +582,7 @@ export function OfficeDocumentImportApp() {
           </label>
           <label
             className="doc-import-global-number-toggle"
-            title={t("统一设置当前所有行间公式的编号", "Set numbering for all display formulas at once")}
+            title={t("行间公式全部编号", "Number all display formulas")}
           >
             <input
               type="checkbox"
@@ -601,7 +600,7 @@ export function OfficeDocumentImportApp() {
             className="doc-import-secondary doc-import-file-button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy}
-            title={t("导入单个 LaTeX 或 Markdown 文件", "Import a single LaTeX or Markdown file")}
+            title={t("导入 LaTeX 或 Markdown 文件", "Import a LaTeX or Markdown file")}
           >
             <Upload size={16} />
             {t("导入 .tex / .md", "Import .tex / .md")}
@@ -626,7 +625,6 @@ export function OfficeDocumentImportApp() {
               </span>
               <div>
                 <strong>{t("LaTeX / Markdown 源码", "LaTeX / Markdown source")}</strong>
-                <small>{t("支持正文、标题、列表、定理、引用、代码块和混合公式", "Supports body text, headings, lists, theorems, quotes, code blocks, and mixed formulas")}</small>
               </div>
             </div>
             <div className="doc-import-source-meta">
@@ -637,10 +635,10 @@ export function OfficeDocumentImportApp() {
                 >
                   <FileText size={12} />
                   <span>{importedFile.name}</span>
-                  <small>
+                  <span>
                     {importedFile.encoding}
                     {importedFile.modified ? t(" · 已编辑", " · edited") : ""}
-                  </small>
+                  </span>
                 </span>
               ) : null}
               <span className="doc-import-pane-stat">
@@ -652,28 +650,7 @@ export function OfficeDocumentImportApp() {
             ref={sourceRef}
             value={source}
             onChange={(event) => handleSourceChange(event.target.value)}
-            placeholder={t(
-              String.raw`在这里粘贴 LaTeX 或 Markdown，例如：
-
-正文中的行内公式 $E=mc^2$。
-
-\begin{equation}
-\begin{aligned}
-a&=b\\
-c&=d
-\end{aligned}
-\end{equation}`,
-              String.raw`Paste LaTeX or Markdown here, for example:
-
-An inline formula in body text: $E=mc^2$.
-
-\begin{equation}
-\begin{aligned}
-a&=b\\
-c&=d
-\end{aligned}
-\end{equation}`,
-            )}
+            placeholder={t("LaTeX 或 Markdown", "LaTeX or Markdown")}
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
@@ -690,7 +667,6 @@ c&=d
               </span>
               <div>
                 <strong>{t(`${office} 结构预览`, `${office} structure preview`)}</strong>
-                <small>{t("公式卡片可单独调整行内/行间、编号和字号", "Adjust inline/display mode, numbering, and font size on each formula card")}</small>
               </div>
             </div>
             <div className="doc-import-preview-counts" aria-label={t("预览统计", "Preview statistics")}>
@@ -704,8 +680,7 @@ c&=d
               {!blocks.length ? (
                 <div className="document-import-empty">
                   <FileText size={34} />
-                  <strong>{t("等待文档内容", "Waiting for document content")}</strong>
-                  <span>{t(`在左侧粘贴内容后，这里会实时生成 ${office} 结构预览。`, `Paste content on the left and a live ${office} structure preview appears here.`)}</span>
+                  <strong>{t("无内容", "No content")}</strong>
                 </div>
               ) : (
                 blocks.map((block, index) =>
@@ -781,7 +756,7 @@ c&=d
                         </div>
                       </header>
                       <div className="document-import-formula-preview">
-                        <FormulaPreviewBoundary message={t("公式暂时无法预览，请检查 LaTeX。", "The formula cannot be previewed right now. Check the LaTeX.")}>
+                        <FormulaPreviewBoundary message={t("无法预览公式", "Cannot preview formula")}>
                           <MathPreview latex={block.latex || "\\placeholder{}"} />
                         </FormulaPreviewBoundary>
                       </div>
@@ -810,7 +785,7 @@ c&=d
           ) : (
             <span className="ok">
               <CheckCircle2 size={15} />
-              {t(`预览解析正常；点击导入后将切回 ${office} 并实时显示插入进度。`, `Preview looks good. After you click Import, the app switches back to ${office} and shows insertion progress.`)}
+              {t("解析正常", "Parsed")}
             </span>
           )}
         </div>

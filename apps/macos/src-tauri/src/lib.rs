@@ -2178,6 +2178,7 @@ pub fn run() {
             set_main_window_keypad_mode,
             minimize_visualtex_main_window,
             system_math_glyphs::probe_macos_math_fonts,
+            system_math_glyphs::list_system_font_families,
             system_math_glyphs::extract_macos_math_glyph,
             get_ocr_provider_configuration,
             save_ocr_provider_configuration,

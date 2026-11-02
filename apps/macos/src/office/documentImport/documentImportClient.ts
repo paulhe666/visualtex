@@ -27,10 +27,18 @@ export interface MacosFormulaRestoreTarget {
   latex?: string;
 }
 
+/** Where one text box's text is in a presentation redraw's source. */
+export interface MacosPresentationSegment {
+  start: number;
+  end: number;
+  /** The box's whole text: a picture formula may replace the box. */
+  whole: boolean;
+}
+
 export interface MacosDocumentImportRequest {
   protocolVersion: number;
   sessionId: string;
-  host: "word";
+  host: "word" | "powerpoint";
   sourceDocumentId: string;
   bookmarkName: string;
   defaultFontSizePt: number;
@@ -46,6 +54,8 @@ export interface MacosDocumentImportRequest {
   restoreTargets?: MacosFormulaRestoreTarget[];
   /** "wps" when the WPS add-in started the operation. */
   client?: "wps";
+  /** A presentation's text boxes in `source`, each searched on its own. */
+  segments?: MacosPresentationSegment[];
 }
 
 export interface DocumentImportParagraphCommitMetadata {

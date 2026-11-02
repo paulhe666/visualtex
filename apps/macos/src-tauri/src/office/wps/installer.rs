@@ -1,9 +1,11 @@
-//! Installs the VisualTeX add-in into WPS Office for Mac.
+//! Installs the VisualTeX add-ins into WPS Office for Mac: one for WPS Writer
+//! and one for WPS Presentation.
 //!
 //! WPS loads JS add-ins listed in `publish.xml` inside its sandbox container
-//! (`.kingsoft/wps/jsaddons`). The add-in installed there is a small bootstrap
-//! that loads its logic from the running VisualTeX (bridge.rs), so it rarely
-//! changes; WPS asks the user to trust an add-in again whenever its files do.
+//! (`.kingsoft/wps/jsaddons`); each entry names the kind of document it is
+//! for. Each add-in installed there is a small bootstrap that loads its logic
+//! from the running VisualTeX (bridge.rs), so it rarely changes; WPS asks the
+//! user to trust an add-in again whenever its files do.
 
 use super::bridge::{self, WPS_BRIDGE_PORT};
 use crate::office::state::OfficeCompanionState;
@@ -18,10 +20,22 @@ use std::time::Duration;
 /// macOS refused the WPS container (App Data protection); the Settings page
 /// recognizes this text and shows the Full Disk Access steps.
 pub(crate) const WPS_FOLDER_ACCESS_DENIED: &str = "macOS denied VisualTeX access to the WPS add-in folder";
-const ADDIN_NAME: &str = "VisualTeX";
-/// The bootstrap's version; it names the add-in folder (WPS requires
-/// `name_version`). Bump it only when the installed files change.
-const ADDIN_VERSION: &str = "1";
+
+/// An add-in VisualTeX installs into WPS.
+struct WpsAddin {
+    /// The name in publish.xml and authaddin.json.
+    name: &'static str,
+    /// The bootstrap's version; with the name it names the add-in folder (WPS
+    /// requires `name_version`). Bump it only when the installed files change.
+    version: &'static str,
+    /// The kind of document WPS loads the add-in for: "wps" (Writer) or "wpp"
+    /// (Presentation).
+    kind: &'static str,
+}
+
+const WRITER: WpsAddin = WpsAddin { name: "VisualTeX", version: "1", kind: "wps" };
+const PRESENTATION: WpsAddin = WpsAddin { name: "VisualTeXSlides", version: "1", kind: "wpp" };
+const ADDINS: [&WpsAddin; 2] = [&WRITER, &PRESENTATION];
 const WPS_BUNDLE_IDS: [&str; 2] = ["com.kingsoft.wpsoffice.mac", "com.kingsoft.wpsoffice.mac.global"];
 const WPS_APPLICATIONS: [&str; 2] = ["/Applications/WPS Office.app", "/Applications/wpsoffice.app"];
 const AUTO_INSTALL_DISABLED_FILE: &str = "auto-install-disabled";
@@ -30,6 +44,8 @@ const FILESYSTEM_TIMEOUT: Duration = Duration::from_secs(15);
 const INDEX_HTML: &str = include_str!("../../../../office/wps/addin/index.html");
 const MAIN_JS: &str = include_str!("../../../../office/wps/addin/main.js");
 const RIBBON_XML: &str = include_str!("../../../../office/wps/addin/ribbon.xml");
+const SLIDES_MAIN_JS: &str = include_str!("../../../../office/wps/addin-wpp/main.js");
+const SLIDES_RIBBON_XML: &str = include_str!("../../../../office/wps/addin-wpp/ribbon.xml");
 const IMAGES: [(&str, &[u8]); 17] = [
     ("vtxImageInline.svg", include_bytes!("../../../../office/wps/addin/images/vtxImageInline.svg")),
     ("vtxImageDisplay.svg", include_bytes!("../../../../office/wps/addin/images/vtxImageDisplay.svg")),
@@ -49,6 +65,18 @@ const IMAGES: [(&str, &[u8]); 17] = [
     ("vtxOpen.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/open-visualtex.svg")),
     ("vtxRedrawSelection.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-selection.svg")),
     ("vtxRedrawDocument.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-document.svg")),
+];
+/// The Presentation add-in's buttons, drawn like the Writer add-in's.
+const SLIDES_IMAGES: [(&str, &[u8]); 9] = [
+    ("vtxRedrawOmml.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-selection.svg")),
+    ("vtxRedrawImage.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-document.svg")),
+    ("vtxToLatex.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/document-import.svg")),
+    ("vtxOmmlInline.svg", include_bytes!("../../../../office/wps/addin/images/vtxOmmlInline.svg")),
+    ("vtxOmmlDisplay.svg", include_bytes!("../../../../office/wps/addin/images/vtxOmmlDisplay.svg")),
+    ("vtxNewFormula.svg", include_bytes!("../../../../office/wps/addin/images/vtxImageDisplay.svg")),
+    ("vtxEditSelected.svg", include_bytes!("../../../../office/wps/addin/images/vtxEditSelected.svg")),
+    ("vtxDeleteSelected.svg", include_bytes!("../../../../office/wps/addin-wpp/images/vtxDeleteSelected.svg")),
+    ("vtxOpen.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/open-visualtex.svg")),
 ];
 const WORD_ICON_CONVERT_OMML: &[u8] = include_bytes!("../../../../office/macos-offline/word/ribbon-icons/convert-omml.svg");
 const WORD_ICON_NUMBERING_FORMAT: &[u8] =
@@ -112,12 +140,61 @@ fn jsaddons_roots(home: &Path) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
-fn addin_folder_name() -> String {
-    format!("{ADDIN_NAME}_{ADDIN_VERSION}")
-}
+impl WpsAddin {
+    fn folder_name(&self) -> String {
+        format!("{}_{}", self.name, self.version)
+    }
 
-fn publish_entry() -> String {
-    format!(r#"<jsplugin name="{ADDIN_NAME}" enable="enable" url="file://" type="wps" version="{ADDIN_VERSION}"/>"#)
+    /// Folders of this add-in's other versions start with this.
+    fn folder_prefix(&self) -> String {
+        format!("{}_", self.name)
+    }
+
+    fn publish_entry(&self) -> String {
+        format!(
+            r#"<jsplugin name="{}" enable="enable" url="file://" type="{}" version="{}"/>"#,
+            self.name, self.kind, self.version
+        )
+    }
+
+    fn files(&self, token: &str) -> Vec<(String, Vec<u8>)> {
+        let (main_js, ribbon_xml, images): (&str, &str, &[(&str, &[u8])]) = if self.kind == "wpp" {
+            (SLIDES_MAIN_JS, SLIDES_RIBBON_XML, &SLIDES_IMAGES)
+        } else {
+            (MAIN_JS, RIBBON_XML, &IMAGES)
+        };
+        let mut files = vec![
+            ("index.html".to_string(), INDEX_HTML.as_bytes().to_vec()),
+            ("main.js".to_string(), main_js.as_bytes().to_vec()),
+            ("ribbon.xml".to_string(), ribbon_xml.as_bytes().to_vec()),
+            ("config.js".to_string(), config_js(token).into_bytes()),
+        ];
+        for (name, bytes) in images {
+            files.push((format!("images/{name}"), bytes.to_vec()));
+        }
+        files
+    }
+
+    /// `name="VisualTeX"` does not match `name="VisualTeXSlides"`.
+    fn is_publish_line(&self, line: &str) -> bool {
+        line.contains(&format!(r#"name="{}""#, self.name))
+    }
+
+    /// The entry as WPS keeps it. Once the user allows the add-in, WPS
+    /// rewrites publish.xml (attribute order, indentation) and turns
+    /// enable="enable" into "enable_dev", so the entry is matched by its
+    /// attributes, not its text.
+    fn publish_line<'a>(&self, text: &'a str) -> Option<&'a str> {
+        text.lines().find(|line| self.is_publish_line(line))
+    }
+
+    fn publish_line_is_current(&self, line: &str) -> bool {
+        let version = format!(r#"version="{}""#, self.version);
+        let kind = format!(r#"type="{}""#, self.kind);
+        [version.as_str(), r#"url="file://""#, kind.as_str()]
+            .iter()
+            .all(|attribute| line.contains(attribute))
+    }
 }
 
 fn config_js(token: &str) -> String {
@@ -125,80 +202,50 @@ fn config_js(token: &str) -> String {
     format!("window.VISUALTEX_WPS_CONFIG = {config};\n")
 }
 
-fn addin_files(token: &str) -> Vec<(String, Vec<u8>)> {
-    let mut files = vec![
-        ("index.html".to_string(), INDEX_HTML.as_bytes().to_vec()),
-        ("main.js".to_string(), MAIN_JS.as_bytes().to_vec()),
-        ("ribbon.xml".to_string(), RIBBON_XML.as_bytes().to_vec()),
-        ("config.js".to_string(), config_js(token).into_bytes()),
-    ];
-    for (name, bytes) in IMAGES {
-        files.push((format!("images/{name}"), bytes.to_vec()));
-    }
-    files
-}
-
-fn is_our_publish_line(line: &str) -> bool {
-    line.contains(&format!(r#"name="{ADDIN_NAME}""#))
-}
-
-/// Our entry as WPS keeps it. Once the user allows the add-in, WPS rewrites
-/// publish.xml (attribute order, indentation) and turns enable="enable" into
-/// "enable_dev", so the entry is matched by its attributes, not its text.
-fn our_publish_line(text: &str) -> Option<&str> {
-    text.lines().find(|line| is_our_publish_line(line))
-}
-
-fn publish_line_is_current(line: &str) -> bool {
-    let version = format!(r#"version="{ADDIN_VERSION}""#);
-    [version.as_str(), r#"url="file://""#, r#"type="wps""#]
-        .iter()
-        .all(|attribute| line.contains(attribute))
-}
-
 fn publish_line_is_enabled(line: &str) -> bool {
     line.contains(r#"enable="enable""#) || line.contains(r#"enable="enable_dev""#)
 }
 
-/// `publish.xml` with our entry added or replaced and other add-ins' entries
-/// kept, or None when it already lists this add-in version. Rewriting a
-/// listed entry would make WPS ask the user to allow the add-in again, so an
-/// entry turned off in WPS is only replaced when `reenable` (Install button).
-fn updated_publish_xml(existing: Option<&str>, reenable: bool) -> Option<String> {
-    let entry = publish_entry();
+/// `publish.xml` with the add-in's entry added or replaced and other
+/// add-ins' entries kept, or None when it already lists this add-in version.
+/// Rewriting a listed entry would make WPS ask the user to allow the add-in
+/// again, so an entry turned off in WPS is only replaced when `reenable`
+/// (Install button).
+fn updated_publish_xml(addin: &WpsAddin, existing: Option<&str>, reenable: bool) -> Option<String> {
+    let entry = addin.publish_entry();
     match existing.filter(|text| text.contains("</jsplugins>")) {
         Some(text) => {
-            if our_publish_line(text)
-                .is_some_and(|line| publish_line_is_current(line) && (!reenable || publish_line_is_enabled(line)))
-            {
+            if addin.publish_line(text).is_some_and(|line| {
+                addin.publish_line_is_current(line) && (!reenable || publish_line_is_enabled(line))
+            }) {
                 return None;
             }
-            let kept: Vec<&str> = text.lines().filter(|line| !is_our_publish_line(line)).collect();
+            let kept: Vec<&str> = text.lines().filter(|line| !addin.is_publish_line(line)).collect();
             Some(kept.join("\n").replacen("</jsplugins>", &format!("  {entry}\n</jsplugins>"), 1))
         }
         None => Some(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<jsplugins>\n  {entry}\n</jsplugins>\n")),
     }
 }
 
-fn publish_xml_without_us(existing: &str) -> String {
+fn publish_xml_without(addin: &WpsAddin, existing: &str) -> String {
     existing
         .lines()
-        .filter(|line| !is_our_publish_line(line))
+        .filter(|line| !addin.is_publish_line(line))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 /// WPS records each trusted add-in in authaddin.json with a signature of its
 /// files; a stale record makes WPS skip the add-in silently. Returns the file
-/// without VisualTeX's records, or None when there is nothing to remove.
-fn authaddin_without_us(text: &str) -> Option<String> {
+/// without the add-in's records, or None when there is nothing to remove.
+fn authaddin_without(addin: &WpsAddin, text: &str) -> Option<String> {
     let mut json: Value = serde_json::from_str(text).ok()?;
     let mut changed = false;
     for (_, group) in json.as_object_mut()?.iter_mut() {
         let Some(group) = group.as_object_mut() else { continue };
         let ours: Vec<String> = group
             .iter()
-            .filter(|(_, entry)| entry.get("name").and_then(Value::as_str) == Some(ADDIN_NAME))
+            .filter(|(_, entry)| entry.get("name").and_then(Value::as_str) == Some(addin.name))
             .map(|(key, _)| key.clone())
             .collect();
         for key in &ours {
@@ -226,26 +273,38 @@ fn access_error(error: std::io::Error, path: &Path) -> String {
     }
 }
 
-fn addin_is_current(jsaddons: &Path, token: &str) -> bool {
-    let folder = jsaddons.join(addin_folder_name());
-    let files_match = addin_files(token)
+fn addin_is_current(addin: &WpsAddin, jsaddons: &Path, token: &str) -> bool {
+    let folder = jsaddons.join(addin.folder_name());
+    let files_match = addin
+        .files(token)
         .iter()
         .all(|(name, bytes)| fs::read(folder.join(name)).map(|actual| &actual == bytes).unwrap_or(false));
     let listed = fs::read_to_string(jsaddons.join("publish.xml"))
-        .map(|text| our_publish_line(&text).is_some_and(publish_line_is_current))
+        .map(|text| addin.publish_line(&text).is_some_and(|line| addin.publish_line_is_current(line)))
         .unwrap_or(false);
     files_match && listed
 }
 
-/// Writes the add-in and lists it in publish.xml. WPS keeps a trust record
-/// with a signature of the add-in's files; it is dropped when the files
+fn addins_are_current(jsaddons: &Path, token: &str) -> bool {
+    ADDINS.iter().all(|addin| addin_is_current(addin, jsaddons, token))
+}
+
+/// Writes the add-ins and lists them in publish.xml. WPS keeps a trust record
+/// with a signature of each add-in's files; it is dropped when the files
 /// change (a stale record makes WPS skip the add-in silently) or when the
 /// user re-enables the add-in, so WPS asks again instead.
 fn install_into(jsaddons: &Path, token: &str, reenable: bool) -> Result<(), String> {
     fs::create_dir_all(jsaddons).map_err(|error| access_error(error, jsaddons))?;
-    let folder = jsaddons.join(addin_folder_name());
+    for addin in ADDINS {
+        install_addin(addin, jsaddons, token, reenable)?;
+    }
+    Ok(())
+}
+
+fn install_addin(addin: &WpsAddin, jsaddons: &Path, token: &str, reenable: bool) -> Result<(), String> {
+    let folder = jsaddons.join(addin.folder_name());
     let mut files_changed = false;
-    for (name, bytes) in addin_files(token) {
+    for (name, bytes) in addin.files(token) {
         let path = folder.join(&name);
         if fs::read(&path).map(|actual| actual == bytes).unwrap_or(false) {
             continue;
@@ -260,7 +319,7 @@ fn install_into(jsaddons: &Path, token: &str, reenable: bool) -> Result<(), Stri
     if let Ok(entries) = fs::read_dir(jsaddons) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(&format!("{ADDIN_NAME}_")) && name != addin_folder_name() {
+            if name.starts_with(&addin.folder_prefix()) && name != addin.folder_name() {
                 let _ = fs::remove_dir_all(entry.path());
             }
         }
@@ -268,13 +327,13 @@ fn install_into(jsaddons: &Path, token: &str, reenable: bool) -> Result<(), Stri
     let publish = jsaddons.join("publish.xml");
     let existing = fs::read_to_string(&publish).ok();
     let mut relisted = false;
-    if let Some(updated) = updated_publish_xml(existing.as_deref(), reenable) {
+    if let Some(updated) = updated_publish_xml(addin, existing.as_deref(), reenable) {
         fs::write(&publish, updated).map_err(|error| access_error(error, &publish))?;
         relisted = true;
     }
     if files_changed || (reenable && relisted) {
         let auth = jsaddons.join("authaddin.json");
-        if let Some(updated) = fs::read_to_string(&auth).ok().as_deref().and_then(authaddin_without_us) {
+        if let Some(updated) = fs::read_to_string(&auth).ok().as_deref().and_then(|text| authaddin_without(addin, text)) {
             fs::write(&auth, updated).map_err(|error| access_error(error, &auth))?;
         }
     }
@@ -282,22 +341,25 @@ fn install_into(jsaddons: &Path, token: &str, reenable: bool) -> Result<(), Stri
 }
 
 fn uninstall_from(jsaddons: &Path) -> Result<(), String> {
-    if let Ok(entries) = fs::read_dir(jsaddons) {
-        for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().starts_with(&format!("{ADDIN_NAME}_")) {
-                fs::remove_dir_all(entry.path()).map_err(|error| access_error(error, &entry.path()))?;
+    for addin in ADDINS {
+        if let Ok(entries) = fs::read_dir(jsaddons) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with(&addin.folder_prefix()) {
+                    fs::remove_dir_all(entry.path()).map_err(|error| access_error(error, &entry.path()))?;
+                }
             }
         }
-    }
-    let publish = jsaddons.join("publish.xml");
-    if let Ok(text) = fs::read_to_string(&publish) {
-        if text.lines().any(is_our_publish_line) {
-            fs::write(&publish, publish_xml_without_us(&text)).map_err(|error| access_error(error, &publish))?;
+        let publish = jsaddons.join("publish.xml");
+        if let Ok(text) = fs::read_to_string(&publish) {
+            if text.lines().any(|line| addin.is_publish_line(line)) {
+                fs::write(&publish, publish_xml_without(addin, &text))
+                    .map_err(|error| access_error(error, &publish))?;
+            }
         }
-    }
-    let auth = jsaddons.join("authaddin.json");
-    if let Some(updated) = fs::read_to_string(&auth).ok().as_deref().and_then(authaddin_without_us) {
-        fs::write(&auth, updated).map_err(|error| access_error(error, &auth))?;
+        let auth = jsaddons.join("authaddin.json");
+        if let Some(updated) = fs::read_to_string(&auth).ok().as_deref().and_then(|text| authaddin_without(addin, text)) {
+            fs::write(&auth, updated).map_err(|error| access_error(error, &auth))?;
+        }
     }
     Ok(())
 }
@@ -346,9 +408,11 @@ fn status_of(state: &OfficeCompanionState, errors: &[(String, String)]) -> Resul
         roots
             .into_iter()
             .map(|(bundle_id, jsaddons)| WpsContainerStatus {
-                installed: jsaddons.join(addin_folder_name()).join("main.js").is_file(),
-                current: addin_is_current(&jsaddons, &token),
-                addin_path: jsaddons.join(addin_folder_name()).display().to_string(),
+                installed: ADDINS
+                    .iter()
+                    .all(|addin| jsaddons.join(addin.folder_name()).join("main.js").is_file()),
+                current: addins_are_current(&jsaddons, &token),
+                addin_path: jsaddons.join(WRITER.folder_name()).display().to_string(),
                 bundle_id,
                 error: None,
             })
@@ -463,41 +527,76 @@ mod tests {
     #[test]
     fn publish_xml_keeps_other_add_ins_and_replaces_ours() {
         let existing = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<jsplugins>\n  <jsplugin name=\"Zotero\" enable=\"enable_dev\" url=\"file://\" type=\"wps\" version=\"2\"/>\n  <jsplugin name=\"VisualTeX\" enable=\"enable\" url=\"file://\" type=\"wps\" version=\"0\"/>\n</jsplugins>";
-        let merged = updated_publish_xml(Some(existing), false).unwrap();
+        let merged = updated_publish_xml(&WRITER, Some(existing), false).unwrap();
         assert!(merged.contains("name=\"Zotero\""));
         assert_eq!(merged.matches("name=\"VisualTeX\"").count(), 1);
-        assert!(merged.contains(&publish_entry()));
+        assert!(merged.contains(&WRITER.publish_entry()));
         assert!(merged.trim_end().ends_with("</jsplugins>"));
-        assert!(updated_publish_xml(Some(&merged), false).is_none());
-        let fresh = updated_publish_xml(None, false).unwrap();
+        assert!(updated_publish_xml(&WRITER, Some(&merged), false).is_none());
+        let fresh = updated_publish_xml(&WRITER, None, false).unwrap();
         assert!(fresh.starts_with("<?xml"));
-        assert!(fresh.contains(&publish_entry()));
-        let removed = publish_xml_without_us(&merged);
+        assert!(fresh.contains(&WRITER.publish_entry()));
+        let removed = publish_xml_without(&WRITER, &merged);
         assert!(!removed.contains("VisualTeX"));
         assert!(removed.contains("Zotero"));
     }
 
     #[test]
+    fn the_presentation_add_in_has_its_own_entry() {
+        assert_eq!(
+            PRESENTATION.publish_entry(),
+            r#"<jsplugin name="VisualTeXSlides" enable="enable" url="file://" type="wpp" version="1"/>"#
+        );
+        let writer_only = updated_publish_xml(&WRITER, None, false).unwrap();
+        // The Writer entry is not the Presentation add-in's, and the other way round.
+        assert!(PRESENTATION.publish_line(&writer_only).is_none());
+        let both = updated_publish_xml(&PRESENTATION, Some(&writer_only), false).unwrap();
+        assert!(WRITER.publish_line(&both).is_some_and(|line| WRITER.publish_line_is_current(line)));
+        assert!(PRESENTATION.publish_line(&both).is_some_and(|line| PRESENTATION.publish_line_is_current(line)));
+        assert!(updated_publish_xml(&WRITER, Some(&both), false).is_none());
+        // A Writer-typed entry under the Presentation name is not current.
+        let wrong_kind = both.replace(r#"type="wpp""#, r#"type="wps""#);
+        assert!(updated_publish_xml(&PRESENTATION, Some(&wrong_kind), false).is_some());
+        let without_slides = publish_xml_without(&PRESENTATION, &both);
+        assert!(without_slides.contains(r#"name="VisualTeX""#) && !without_slides.contains("VisualTeXSlides"));
+        assert!(!PRESENTATION.folder_name().starts_with(&WRITER.folder_prefix()));
+        let names: Vec<String> = PRESENTATION.files("t").into_iter().map(|(name, _)| name).collect();
+        for expected in ["index.html", "main.js", "ribbon.xml", "config.js", "images/vtxNewFormula.svg", "images/vtxDeleteSelected.svg"] {
+            assert!(names.iter().any(|name| name == expected), "{expected}");
+        }
+        let ribbon = String::from_utf8(PRESENTATION.files("t").into_iter().find(|(name, _)| name == "ribbon.xml").unwrap().1).unwrap();
+        assert!(ribbon.contains("vtxNewFormula") && ribbon.contains("vtxOmmlDisplay") && !ribbon.contains("vtxConvertNative"));
+        for (name, _) in SLIDES_IMAGES {
+            let id = name.trim_end_matches(".svg");
+            assert!(ribbon.contains(&format!("id=\"{id}\"")), "{id} has a button");
+        }
+    }
+
+    #[test]
     fn the_entry_wps_rewrote_after_the_user_allowed_it_is_kept() {
         let allowed = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<jsplugins>\n    <jsplugin url=\"file://\" name=\"VisualTeX\" version=\"1\" type=\"wps\" enable=\"enable_dev\"/>\n</jsplugins>\n";
-        assert!(updated_publish_xml(Some(allowed), false).is_none());
-        assert!(updated_publish_xml(Some(allowed), true).is_none());
+        assert!(updated_publish_xml(&WRITER, Some(allowed), false).is_none());
+        assert!(updated_publish_xml(&WRITER, Some(allowed), true).is_none());
         let turned_off = allowed.replace("enable_dev", "disable");
-        assert!(updated_publish_xml(Some(&turned_off), false).is_none());
-        let relisted = updated_publish_xml(Some(&turned_off), true).unwrap();
-        assert!(relisted.contains(&publish_entry()) && !relisted.contains("disable"));
+        assert!(updated_publish_xml(&WRITER, Some(&turned_off), false).is_none());
+        let relisted = updated_publish_xml(&WRITER, Some(&turned_off), true).unwrap();
+        assert!(relisted.contains(&WRITER.publish_entry()) && !relisted.contains("disable"));
     }
 
     #[test]
     fn only_our_trust_records_are_removed() {
-        let auth = r#"{"wps":{"aa":{"name":"VisualTeX","md5":"x"},"bb":{"name":"Zotero","md5":"y"},"namelist":"aa;bb"},"wpp":{"cc":{"name":"Other"},"namelist":"cc"}}"#;
-        let updated: Value = serde_json::from_str(&authaddin_without_us(auth).unwrap()).unwrap();
+        let auth = r#"{"wps":{"aa":{"name":"VisualTeX","md5":"x"},"bb":{"name":"Zotero","md5":"y"},"namelist":"aa;bb"},"wpp":{"cc":{"name":"Other"},"dd":{"name":"VisualTeXSlides"},"namelist":"cc;dd"}}"#;
+        let updated: Value = serde_json::from_str(&authaddin_without(&WRITER, auth).unwrap()).unwrap();
         assert!(updated["wps"].get("aa").is_none());
         assert_eq!(updated["wps"]["bb"]["name"], "Zotero");
         assert_eq!(updated["wps"]["namelist"], "bb");
+        assert_eq!(updated["wpp"]["namelist"], "cc;dd");
+        let updated: Value = serde_json::from_str(&authaddin_without(&PRESENTATION, auth).unwrap()).unwrap();
+        assert!(updated["wpp"].get("dd").is_none());
         assert_eq!(updated["wpp"]["namelist"], "cc");
-        assert!(authaddin_without_us(r#"{"wps":{"bb":{"name":"Zotero"},"namelist":"bb"}}"#).is_none());
-        assert!(authaddin_without_us("not json").is_none());
+        assert_eq!(updated["wps"]["namelist"], "aa;bb");
+        assert!(authaddin_without(&WRITER, r#"{"wps":{"bb":{"name":"Zotero"},"namelist":"bb"}}"#).is_none());
+        assert!(authaddin_without(&WRITER, "not json").is_none());
     }
 
     #[test]
@@ -509,39 +608,71 @@ mod tests {
         fs::write(jsaddons.join("publish.xml"), "<jsplugins>\n  <jsplugin name=\"Zotero\" url=\"file://\" type=\"wps\" version=\"2\"/>\n</jsplugins>").unwrap();
         fs::write(jsaddons.join("authaddin.json"), r#"{"wps":{"aa":{"name":"VisualTeX"},"bb":{"name":"Zotero"},"namelist":"aa;bb"}}"#).unwrap();
         install_into(&jsaddons, "token-1", false).unwrap();
-        assert!(addin_is_current(&jsaddons, "token-1"));
-        assert!(!addin_is_current(&jsaddons, "token-2"));
+        assert!(addins_are_current(&jsaddons, "token-1"));
+        assert!(!addins_are_current(&jsaddons, "token-2"));
         assert!(!jsaddons.join("VisualTeX_0").exists());
         assert!(jsaddons.join("Zotero_2").exists());
-        let config = fs::read_to_string(jsaddons.join("VisualTeX_1/config.js")).unwrap();
-        assert!(config.contains("\"token\":\"token-1\"") && config.contains("43129"));
+        for folder in ["VisualTeX_1", "VisualTeXSlides_1"] {
+            let config = fs::read_to_string(jsaddons.join(folder).join("config.js")).unwrap();
+            assert!(config.contains("\"token\":\"token-1\"") && config.contains("43129"), "{folder}");
+        }
+        let slides_main = fs::read_to_string(jsaddons.join("VisualTeXSlides_1/main.js")).unwrap();
+        assert!(slides_main.contains("host=wpp"));
         let auth = fs::read_to_string(jsaddons.join("authaddin.json")).unwrap();
         assert!(!auth.contains("VisualTeX") && auth.contains("Zotero"));
 
-        // The user allowed the add-in: WPS rewrote our entry and trusts the
-        // files. Neither a restart nor the Install button may undo that.
-        let publish = fs::read_to_string(jsaddons.join("publish.xml")).unwrap().replace(
-            &publish_entry(),
-            r#"<jsplugin url="file://" name="VisualTeX" version="1" type="wps" enable="enable_dev"/>"#,
-        );
+        // The user allowed both add-ins: WPS rewrote the entries and trusts
+        // the files. Neither a restart nor the Install button may undo that.
+        let publish = fs::read_to_string(jsaddons.join("publish.xml"))
+            .unwrap()
+            .replace(
+                &WRITER.publish_entry(),
+                r#"<jsplugin url="file://" name="VisualTeX" version="1" type="wps" enable="enable_dev"/>"#,
+            )
+            .replace(
+                &PRESENTATION.publish_entry(),
+                r#"<jsplugin url="file://" name="VisualTeXSlides" version="1" type="wpp" enable="enable_dev"/>"#,
+            );
         fs::write(jsaddons.join("publish.xml"), &publish).unwrap();
-        let trusted = r#"{"wps":{"cc":{"name":"VisualTeX","md5":"x"},"bb":{"name":"Zotero"},"namelist":"cc;bb"}}"#;
+        let trusted = r#"{"wps":{"cc":{"name":"VisualTeX","md5":"x"},"bb":{"name":"Zotero"},"namelist":"cc;bb"},"wpp":{"dd":{"name":"VisualTeXSlides","md5":"y"},"namelist":"dd"}}"#;
         fs::write(jsaddons.join("authaddin.json"), trusted).unwrap();
         for reenable in [false, true] {
             install_into(&jsaddons, "token-1", reenable).unwrap();
             assert_eq!(fs::read_to_string(jsaddons.join("publish.xml")).unwrap(), publish);
             assert_eq!(fs::read_to_string(jsaddons.join("authaddin.json")).unwrap(), trusted);
         }
-        assert!(addin_is_current(&jsaddons, "token-1"));
+        assert!(addins_are_current(&jsaddons, "token-1"));
 
-        // New files (another token) invalidate WPS's trust record.
+        // New files (another token) invalidate WPS's trust records.
         install_into(&jsaddons, "token-2", false).unwrap();
         assert!(!fs::read_to_string(jsaddons.join("authaddin.json")).unwrap().contains("VisualTeX"));
         assert_eq!(fs::read_to_string(jsaddons.join("publish.xml")).unwrap(), publish);
 
         uninstall_from(&jsaddons).unwrap();
         assert!(!jsaddons.join("VisualTeX_1").exists());
+        assert!(!jsaddons.join("VisualTeXSlides_1").exists());
         let publish = fs::read_to_string(jsaddons.join("publish.xml")).unwrap();
         assert!(!publish.contains("VisualTeX") && publish.contains("Zotero"));
+    }
+
+    #[test]
+    fn an_existing_writer_install_gains_the_presentation_add_in_and_keeps_its_trust() {
+        let temp = TempDir::new().unwrap();
+        let jsaddons = temp.path().join("jsaddons");
+        fs::create_dir_all(&jsaddons).unwrap();
+        install_addin(&WRITER, &jsaddons, "token-1", false).unwrap();
+        let publish = fs::read_to_string(jsaddons.join("publish.xml")).unwrap().replace(
+            &WRITER.publish_entry(),
+            r#"<jsplugin url="file://" name="VisualTeX" version="1" type="wps" enable="enable_dev"/>"#,
+        );
+        fs::write(jsaddons.join("publish.xml"), &publish).unwrap();
+        let trusted = r#"{"wps":{"cc":{"name":"VisualTeX","md5":"x"},"namelist":"cc"}}"#;
+        fs::write(jsaddons.join("authaddin.json"), trusted).unwrap();
+        install_into(&jsaddons, "token-1", false).unwrap();
+        let updated = fs::read_to_string(jsaddons.join("publish.xml")).unwrap();
+        assert!(updated.contains(r#"<jsplugin url="file://" name="VisualTeX" version="1" type="wps" enable="enable_dev"/>"#));
+        assert!(updated.contains(&PRESENTATION.publish_entry()));
+        assert_eq!(fs::read_to_string(jsaddons.join("authaddin.json")).unwrap(), trusted);
+        assert!(addins_are_current(&jsaddons, "token-1"));
     }
 }

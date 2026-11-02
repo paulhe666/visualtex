@@ -1,12 +1,36 @@
 {
   "schemaVersion": 1,
-  "pluginVersion": "1.2.10",
+  "pluginVersion": "1.3.0",
   "files": {
     "VisualTeX.dotm": {
-      "sha256": "fb08beb8db7ba1eeb02d6ac322a8033493b2dc2d8dc30517d73dca2e13a0c5db"
+      "sha256": "f3011654c65dd4c6435b5b8e9a282ecebf88875f53c4d9fb6fd865c7b88ebc3a"
     },
     "VisualTeX.ppam": {
-      "sha256": "ac7e5da1a70a092cc5721f05cb4dfdf19a0e5b4fbd4b5ac6cca4277972a378d8"
+      "sha256": "b540e515e943ce9a0dc496599fe2fdc91821c1ffd829993b99537cf0b60e434b"
+    },
+    "fonts/VisualTeXLatinModernMath.ttf": {
+      "sha256": "bb3646f9296c10c9b5ccd95bf5680297a4e35b3bc25ea5f4f7593a9c405e0c93"
+    },
+    "fonts/VisualTeXTeXGyreTermesMath.ttf": {
+      "sha256": "9f58ad9c3c92d18bb439ff31535fba7a8038624e5e5e7605e2681ffdb9c8b1ee"
+    },
+    "fonts/STIXTwoMath-Regular.ttf": {
+      "sha256": "49b22767985171bce579307b21d98f4d35012fa39e316acc4ffcab8644dfb69b"
+    },
+    "fonts/README-VisualTeX-Latin-Modern-Math.txt": {
+      "sha256": "20184970e8e9a64f3007b5cd0f69a00e2a1836c98ba4403d9afa63de66b45e73"
+    },
+    "fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt": {
+      "sha256": "9f4d903593d9ed9408511cb631349ce2e2edd8ef8ea37f56e477b9a804a8b7c3"
+    },
+    "fonts/README-STIX-Two-Math.txt": {
+      "sha256": "0548406a0b8bb152b9f375b064297f9f6defc74275184bd516013fd48d6a6b71"
+    },
+    "fonts/GUST-FONT-LICENSE.txt": {
+      "sha256": "2bd69affc3da00715116f713f57eab9707e96daf3562ad0215987b15b9c16f73"
+    },
+    "fonts/STIX-Two-Math-OFL.txt": {
+      "sha256": "0c8825913b60d858aacdb33c4ca6660a7d64b0d6464702efbb19313f5765861a"
     }
   }
 }

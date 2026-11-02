@@ -14,6 +14,16 @@ import type { PathGlyphSet } from "../../../shared/tex-layout/src/path-font.ts";
 import type { NativeMeasure } from "../../../shared/tex-layout/src/native-font.ts";
 import { gunzipSync, strFromU8 } from "fflate";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../math/rareIntegralGlyphs.generatedData";
+import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
+
+/** A custom operator's italic correction, by the class of its box (editor and export classes). */
+function customSymbolOperatorItalic(className: string) {
+  if (!className.startsWith("visualtex-custom-symbol-")) return null;
+  const symbol = getActiveCustomSymbols().find(
+    (item) => customSymbolCssClass(item) === className || customSymbolSvgMarkerClass(item) === className,
+  );
+  return symbol?.role === "operator" ? symbol.italicCorrectionEm ?? null : null;
+}
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -62,6 +72,26 @@ export function subscribeFormulaFontRevision(listener: () => void): () => void {
 /** The editing core: the editor's caret, movement and geometry (docs/editing-core/DESIGN.md). */
 export const visualTexEditingCore = createEditingCore();
 
+// VisualTeX Anywhere draws the caret as tall as the host field's line (setFormulaCaretBand);
+// everywhere else formulas have the profile's caret.
+let caretBand: { up: number; down: number } | null = null;
+
+/**
+ * The caret of this page's formulas: from the baseline `up` and `down`, in em of the formula's
+ * font at text size (null: the profile's caret). Open formulas are drawn again.
+ */
+export function setFormulaCaretBand(band: { up: number; down: number } | null): void {
+  const same =
+    band === caretBand ||
+    (band !== null && caretBand !== null && Math.abs(band.up - caretBand.up) < 1e-3 && Math.abs(band.down - caretBand.down) < 1e-3);
+  if (same) return;
+  caretBand = band;
+  if (typeof document === "undefined") return;
+  document.querySelectorAll<HTMLElement>("math-field").forEach((field) => {
+    (field as unknown as { visualTexRender?: () => void }).visualTexRender?.();
+  });
+}
+
 type CoreMathfield = Parameters<typeof visualTexEditingCore.hitTest>[0];
 
 /** The editing model of a field, for the core's decisions (null before the field mounts). */
@@ -69,12 +99,19 @@ export function editingModelOf(field: HTMLElement): CoreMathfield["model"] | nul
   return (field as unknown as { _mathfield?: CoreMathfield })._mathfield?.model ?? null;
 }
 
-/** Put a field's caret at the stop a page point means (clicks the app receives for a row). */
+/**
+ * Put a field's caret at the stop a page point means (clicks the app receives
+ * for a row) and draw it there: a field that already has the focus is not
+ * drawn again by focusing it.
+ */
 export function placeCaretAtPoint(field: HTMLElement, clientX: number, clientY: number): boolean {
   const mathfield = (field as unknown as { _mathfield?: CoreMathfield })._mathfield;
   if (!mathfield) return false;
   const stop = visualTexEditingCore.hitTest(mathfield, clientX, clientY);
-  if (stop === null || !visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
+  if (stop === null) return false;
+  const drawn = field as unknown as { visualTexGoToStop?: (stop: number) => boolean };
+  if (drawn.visualTexGoToStop) return drawn.visualTexGoToStop(stop);
+  if (!visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
   // goToStop moves the model only. A click beside the formula then left the
   // caret painted where it was (WebKit no longer refocuses, which used to
   // repaint): the element's position setter requests the render.
@@ -241,6 +278,8 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
         caretState: visualTexEditingCore.caretState,
         letterFamilies: currentLetterFamilies,
         spacing: currentSpacing,
+        classOperatorItalic: customSymbolOperatorItalic,
+        caretBand: () => caretBand,
       });
       engines.set(p, e);
     }

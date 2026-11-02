@@ -119,7 +119,7 @@
                   image="VisualTeXWordNumberingFormat"
                   onAction="VTWordRibbonUpdateEquationFormat"
                   screentip="更新公式格式"
-                  supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式（与 Windows 版相同）。公式内容不变，可一步撤销。"/>
+                  supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式（与 Windows 版相同），并应用“OMML 字体”的选择，让所有 OMML 公式统一使用文档数学字体。公式内容不变，可一步撤销。"/>
           <button id="VisualTeX.Mac.Word.DocumentImport"
                   label="批量导入"
                   size="large"
@@ -213,6 +213,34 @@
                     onAction="VTWordRibbonApplyConversionFontSize"
                     screentip="行间公式字号"
                     supertip="选择字号后，当前文档中所有行间公式（VisualTeX 图片公式和 Word 公式）立即改为这个字号，可以撤销。之后 LaTeX 重绘、批量导入和格式转换生成的行间公式也使用这个字号。选“跟随正文”不改动现有公式。"/>
+          <menu id="VisualTeX.Mac.Word.OmmlFont"
+                label="OMML 字体"
+                screentip="OMML 公式字体"
+                supertip="选择 Word 原生公式（OMML）使用的数学字体。选择后当前文档的数学字体立即改为这个字体，现有 OMML 公式一起改用它，可一步撤销；之后 VisualTeX 写入的 OMML 公式也使用它。设置对所有文档生效。选“跟随文档”不改动文档。STIX Two Math、Latin Modern Math 和 TeX Gyre Termes Math 随 VisualTeX Office 插件安装，新装后重新启动 Word 即可选择。">
+            <toggleButton id="VisualTeX.Mac.Word.OmmlFont.Follow"
+                          label="跟随文档（不更改）"
+                          getPressed="VTWordRibbonGetOmmlFontPressed"
+                          onAction="VTWordRibbonSelectOmmlFont"/>
+            <toggleButton id="VisualTeX.Mac.Word.OmmlFont.Cambria"
+                          label="Cambria Math"
+                          getPressed="VTWordRibbonGetOmmlFontPressed"
+                          onAction="VTWordRibbonSelectOmmlFont"/>
+            <toggleButton id="VisualTeX.Mac.Word.OmmlFont.Stix"
+                          getLabel="VTWordRibbonGetOmmlFontLabel"
+                          getEnabled="VTWordRibbonGetOmmlFontEnabled"
+                          getPressed="VTWordRibbonGetOmmlFontPressed"
+                          onAction="VTWordRibbonSelectOmmlFont"/>
+            <toggleButton id="VisualTeX.Mac.Word.OmmlFont.LatinModern"
+                          getLabel="VTWordRibbonGetOmmlFontLabel"
+                          getEnabled="VTWordRibbonGetOmmlFontEnabled"
+                          getPressed="VTWordRibbonGetOmmlFontPressed"
+                          onAction="VTWordRibbonSelectOmmlFont"/>
+            <toggleButton id="VisualTeX.Mac.Word.OmmlFont.Termes"
+                          getLabel="VTWordRibbonGetOmmlFontLabel"
+                          getEnabled="VTWordRibbonGetOmmlFontEnabled"
+                          getPressed="VTWordRibbonGetOmmlFontPressed"
+                          onAction="VTWordRibbonSelectOmmlFont"/>
+          </menu>
         </group>
       </tab>
     </tabs>

@@ -111,9 +111,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       <header className="formula-hotkey-section-heading">
         {host === "word" ? <FileText size={16} /> : <Presentation size={16} />}
         <strong>{title}</strong>
-        <span>
-          {isEn ? "Matches the installed Ribbon buttons" : "与已安装的 Ribbon 按钮一致"}
-        </span>
       </header>
       <div className="office-hotkey-action-list">
         {OFFICE_HOTKEY_ACTIONS.filter((action) => action.host === host).map(
@@ -196,11 +193,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       <header className="formula-hotkey-section-heading">
         <Rows3 size={16} />
         <strong>{isEn ? "Formula rows" : "公式行"}</strong>
-        <span>
-          {isEn
-            ? "Inline and display rows in the formula editor"
-            : "编辑区中的行内 / 行间公式行"}
-        </span>
       </header>
       <div className="office-hotkey-action-list">
         {FORMULA_ROW_HOTKEY_ACTIONS.map((action) => {
@@ -220,7 +212,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               </div>
               <div className="formula-hotkey-binding-copy">
                 <strong>{label}</strong>
-                <span>{isEn ? action.descriptionEn : action.descriptionZh}</span>
               </div>
               {chord ? (
                 <kbd>{formatFormulaHotkeyChord(chord)}</kbd>
@@ -308,7 +299,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               type="button"
               className="icon-button"
               onClick={onClose}
-              aria-label={isEn ? "Close hotkey settings" : "关闭快捷键设置"}
+              aria-label={isEn ? "Close" : "关闭"}
             >
               <X size={18} />
             </button>
@@ -322,11 +313,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                   {sortedBindings.length + officeBindings.length + assignedRowCount}{" "}
                   {isEn ? "assigned" : "项已设置"}
                 </strong>
-                <small>
-                  {isEn
-                    ? "Office actions are global; editor shortcuts remain scoped to the formula editor."
-                    : "Office 动作为全局快捷键；公式输入快捷键仍仅作用于公式编辑区。"}
-                </small>
               </span>
             </div>
           </div>
@@ -342,21 +328,11 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               <header className="formula-hotkey-section-heading">
                 <Keyboard size={16} />
                 <strong>{isEn ? "Formula editor" : "公式编辑器"}</strong>
-                <span>
-                  {isEn
-                    ? "Right-click a formula tool or tile to add more"
-                    : "右键公式工具或磁贴可继续添加"}
-                </span>
               </header>
             {sortedBindings.length === 0 ? (
               <div className="formula-hotkey-empty-state">
                 <Keyboard size={28} />
-                <strong>{isEn ? "No formula hotkeys yet" : "还没有设置公式快捷键"}</strong>
-                <span>
-                  {isEn
-                    ? "Close this window, then right-click any formula tool, common tile or custom tile."
-                    : "关闭此窗口后，右键任意公式工具、常用磁贴或自定义磁贴即可设置。"}
-                </span>
+                <strong>{isEn ? "No formula hotkeys" : "未设置公式快捷键"}</strong>
               </div>
             ) : (
               <div className="formula-hotkey-binding-list">
@@ -412,11 +388,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           </div>
 
           <footer className="dialog-footer">
-            <span>
-              {isEn
-                ? "Office hotkeys run only while the matching Office app is frontmost."
-                : "Office 快捷键仅在对应 Office 应用位于前台时执行。"}
-            </span>
+            <span />
             <button type="button" className="primary-button" onClick={onClose}>
               {isEn ? "Done" : "完成"}
             </button>

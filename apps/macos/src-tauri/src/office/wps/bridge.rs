@@ -1,10 +1,11 @@
-//! Local HTTP channel between the WPS add-in and VisualTeX (127.0.0.1 only).
+//! Local HTTP channel between the WPS add-ins and VisualTeX (127.0.0.1 only).
 //!
 //! WPS for Mac cannot be scripted from outside and its add-ins cannot start an
-//! app, so the add-in talks to the running VisualTeX instead: it opens a
+//! app, so the add-ins talk to the running VisualTeX instead: an add-in opens a
 //! formula Session here, polls it, and writes the result the editor produced
 //! into the document. Apply in the editor waits until the add-in reports the
-//! document written, as a Word Apply waits for the Word macro.
+//! document written, as a Word Apply waits for the Word macro. The Writer
+//! add-in sends Word requests, the Presentation add-in PowerPoint requests.
 
 use super::numbering::{
     image_current_instruction, image_increment_instruction, numbering_style, plan_equation, plan_image,
@@ -21,7 +22,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -41,6 +42,13 @@ const MAX_DOCUMENT_BODY_BYTES: usize = 24 * 1024 * 1024;
 const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_LOG_BYTES: u64 = 512 * 1024;
 const MODULE_JS: &str = include_str!("../../../../office/wps/module.js");
+/// The WPS Presentation add-in's logic (office/wps/module-wpp.js).
+const MODULE_WPP_JS: &str = include_str!("../../../../office/wps/module-wpp.js");
+/// How long the Presentation add-in may wait for an event before it asks again.
+const MAX_EVENT_WAIT_SECONDS: u64 = 25;
+/// A double-click the add-in hears about later than this is not acted on.
+const EVENT_LIFETIME: Duration = Duration::from_secs(2);
+const MAX_PENDING_EVENTS: usize = 16;
 /// A Session the add-in never finished (WPS quit while editing) is forgotten
 /// when a new one opens after this long.
 const STALE_SESSION_AGE: Duration = Duration::from_secs(12 * 60 * 60);
@@ -76,6 +84,39 @@ struct Bridge {
     entries: Mutex<HashMap<String, Entry>>,
     changed: Condvar,
     status: Mutex<BridgeStatus>,
+    events: Mutex<EventLog>,
+}
+
+/// What the add-ins learn from VisualTeX rather than from WPS: WPS
+/// Presentation raises no double-click event, so the Office double-click
+/// monitor (office::powerpoint_native) reports double-clicks in WPS here.
+#[derive(Default)]
+struct EventLog {
+    sequence: u64,
+    recent: VecDeque<(u64, Instant, Value)>,
+}
+
+impl EventLog {
+    fn push(&mut self, event: Value) {
+        self.sequence += 1;
+        self.recent.push_back((self.sequence, Instant::now(), event));
+        while self.recent.len() > MAX_PENDING_EVENTS {
+            self.recent.pop_front();
+        }
+    }
+
+    /// The events after `after` that are recent enough to act on.
+    fn since(&self, after: u64) -> Vec<Value> {
+        self.recent
+            .iter()
+            .filter(|(sequence, at, _)| *sequence > after && at.elapsed() < EVENT_LIFETIME)
+            .map(|(sequence, _, event)| {
+                let mut event = event.clone();
+                event["sequence"] = json!(sequence);
+                event
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -95,6 +136,7 @@ pub(crate) fn start(app: AppHandle, token: String, log_path: PathBuf) {
         entries: Mutex::new(HashMap::new()),
         changed: Condvar::new(),
         status: Mutex::new(BridgeStatus::default()),
+        events: Mutex::new(EventLog::default()),
     });
     if BRIDGE.set(bridge.clone()).is_err() {
         return;
@@ -276,6 +318,20 @@ pub(crate) fn request_font_sizes(session_id: &str, ranges: Value) -> Result<Vec<
     }
 }
 
+/// A double-click in WPS, at a point in the screen coordinates Office uses
+/// (top-left origin, points). The Presentation add-in decides whether it hit
+/// a VisualTeX formula.
+pub(crate) fn notify_double_click(x: f64, y: f64) {
+    if !x.is_finite() || !y.is_finite() {
+        return;
+    }
+    if let Some(bridge) = BRIDGE.get() {
+        if let Ok(mut events) = bridge.events.lock() {
+            events.push(json!({ "kind": "doubleClick", "x": x, "y": y }));
+        }
+    }
+}
+
 /// Tells the add-in the formula was cancelled, so it removes its placeholder.
 pub(crate) fn deliver_cancel(session_id: &str) {
     if let Some(bridge) = BRIDGE.get() {
@@ -309,6 +365,8 @@ fn router(bridge: Arc<Bridge>) -> Router {
         )
         .route("/wps/v1/sessions/{id}/font-sizes", post(font_sizes))
         .route("/wps/v1/sessions/{id}/progress", post(progress))
+        .route("/wps/v1/events", get(events))
+        .route("/wps/v1/presentation/equations", post(presentation_equations))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(middleware::from_fn_with_state(bridge.clone(), cors_and_token))
         .with_state(bridge)
@@ -349,42 +407,101 @@ async fn cors_and_token(State(bridge): State<Arc<Bridge>>, request: Request, nex
     response
 }
 
-/// Identifies the served module.js, so an add-in still running an older
-/// one (VisualTeX was updated while WPS stayed open) reloads it.
-fn module_version() -> &'static str {
-    static VERSION: OnceLock<String> = OnceLock::new();
-    VERSION.get_or_init(|| {
-        use sha2::{Digest, Sha256};
-        Sha256::digest(MODULE_JS.as_bytes())
-            .iter()
-            .take(8)
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    })
+#[derive(Debug, Deserialize)]
+struct ModuleQuery {
+    /// "wpp" for the Presentation add-in; the Writer add-in sends none.
+    #[serde(default)]
+    host: Option<String>,
 }
 
-async fn hello() -> Json<Value> {
+fn for_presentation(query: &ModuleQuery) -> bool {
+    query.host.as_deref() == Some("wpp")
+}
+
+/// The logic an add-in loads: the Writer add-in's or the Presentation add-in's.
+fn module_source(query: &ModuleQuery) -> &'static str {
+    if for_presentation(query) {
+        MODULE_WPP_JS
+    } else {
+        MODULE_JS
+    }
+}
+
+fn short_hash(source: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(source.as_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Identifies the served module, so an add-in still running an older one
+/// (VisualTeX was updated while WPS stayed open) reloads it.
+fn module_version(query: &ModuleQuery) -> &'static str {
+    static WRITER: OnceLock<String> = OnceLock::new();
+    static PRESENTATION: OnceLock<String> = OnceLock::new();
+    let version = if for_presentation(query) { &PRESENTATION } else { &WRITER };
+    version.get_or_init(|| short_hash(module_source(query)))
+}
+
+async fn hello(Query(query): Query<ModuleQuery>) -> Json<Value> {
     Json(json!({
         "ok": true,
         "app": "VisualTeX",
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": 1,
-        "module": module_version(),
+        "module": module_version(&query),
     }))
 }
 
-async fn module_js() -> Response {
+async fn module_js(Query(query): Query<ModuleQuery>) -> Response {
     (
         [(header::CONTENT_TYPE, HeaderValue::from_static("text/javascript; charset=utf-8"))],
-        MODULE_JS,
+        module_source(&query),
     )
         .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct EventsQuery {
+    /// The last event the add-in has seen; none asks only for the sequence.
+    #[serde(default)]
+    after: Option<u64>,
+    #[serde(default)]
+    wait: Option<u64>,
+}
+
+/// The Presentation add-in waits here for double-clicks (notify_double_click).
+async fn events(State(bridge): State<Arc<Bridge>>, Query(query): Query<EventsQuery>) -> Response {
+    let read = |bridge: &Bridge| {
+        bridge
+            .events
+            .lock()
+            .map(|events| {
+                // A sequence ahead of ours is from before VisualTeX restarted.
+                let after = query.after.map(|after| if after > events.sequence { 0 } else { after });
+                (events.sequence, after.map(|after| events.since(after)).unwrap_or_default())
+            })
+            .unwrap_or_default()
+    };
+    let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(MAX_EVENT_WAIT_SECONDS));
+    loop {
+        let (sequence, events) = read(&bridge);
+        if !events.is_empty() || query.after.is_none() || Instant::now() >= deadline {
+            return Json(json!({ "sequence": sequence, "events": events })).into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateSessionBody {
     session_id: String,
+    /// "powerpoint" from the Presentation add-in; the Writer add-in sends none.
+    #[serde(default)]
+    host: Option<String>,
     mode: String,
     display_mode: String,
     #[serde(default)]
@@ -407,19 +524,36 @@ struct CreateSessionBody {
     /// selected formula (the ribbon's 转为图片公式 / 转为 Word OMML).
     #[serde(default)]
     operation: Option<String>,
+    /// A Presentation formula's slide shape, as the PowerPoint add-in
+    /// describes it (VTPowerPointGeometryJson).
+    #[serde(default)]
+    power_point: Option<Value>,
+    /// A pasted copy of a Presentation formula gets its own identity
+    /// (VTShouldForkPowerPointFormulaCopy).
+    #[serde(default)]
+    fork_copied_formula: bool,
 }
 
 fn bad_request(message: impl Into<String>) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": message.into() }))).into_response()
 }
 
-/// The offline request the Word-for-Mac add-in would write, marked as WPS.
+/// The offline request the Word-for-Mac add-in would write, marked as WPS
+/// (or the PowerPoint add-in's, for the Presentation add-in).
 fn session_request(body: &CreateSessionBody) -> Result<Value, String> {
     let session_id = Uuid::parse_str(&body.session_id)
         .map_err(|_| "The WPS session id is not a UUID".to_string())?
         .to_string();
     if session_id != body.session_id {
         return Err("The WPS session id must be a lowercase UUID".to_string());
+    }
+    match body.host.as_deref().unwrap_or("word") {
+        "word" => {}
+        "powerpoint" => return presentation_session_request(body, &session_id),
+        _ => return Err("Unknown WPS formula host".to_string()),
+    }
+    if body.power_point.is_some() || body.fork_copied_formula {
+        return Err("A WPS Writer formula has no slide shape".to_string());
     }
     let operation = body.operation.as_deref().unwrap_or("formula");
     if !matches!(operation, "formula" | "nativeToImage" | "imageToNative") {
@@ -453,6 +587,94 @@ fn session_request(body: &CreateSessionBody) -> Result<Value, String> {
     }
     if let Some(size) = body.font_size_pt {
         object.insert("fontSizePt".into(), json!(size));
+    }
+    Ok(request)
+}
+
+/// The request the PowerPoint-for-Mac add-in writes, marked as WPS: for a
+/// picture formula (VisualTeX_NewFormula, VTPowerPointEditShape) a display
+/// formula sized and placed by the slide shape it replaces; for a native
+/// equation (VTNativeCreateRequest, VTNativeEditRequest) the text it goes into
+/// or replaces, or the slide it gets a new text box on.
+fn presentation_session_request(body: &CreateSessionBody, session_id: &str) -> Result<Value, String> {
+    if body.operation.as_deref().unwrap_or("formula") != "formula" || body.numbered || body.font_size_pt.is_some() {
+        return Err("WPS Presentation formulas are sized by their slide shape and have no number".to_string());
+    }
+    let power_point = body
+        .power_point
+        .as_ref()
+        .filter(|value| value.is_object())
+        .ok_or_else(|| "The WPS Presentation formula has no slide shape".to_string())?;
+    if body.native_equation {
+        return native_presentation_request(body, session_id, power_point);
+    }
+    if body.native_edit_xml.is_some() {
+        return Err("A WPS Presentation picture formula has no native equation".to_string());
+    }
+    let mut request = json!({
+        "protocolVersion": 1,
+        "sessionId": session_id,
+        "host": "powerpoint",
+        "client": "wps",
+        "mode": body.mode,
+        "operation": "formula",
+        "displayMode": "block",
+        "numbered": false,
+        "nativeEquation": false,
+        "sourceDocumentId": body.source_document_id,
+        "powerPoint": power_point,
+        "forkCopiedFormula": body.fork_copied_formula,
+    });
+    let object = request.as_object_mut().expect("request is an object");
+    if body.mode == "create" {
+        // The placeholder shape carries the same marker (VTPendingMarker).
+        let formula_id = body
+            .formula_id
+            .as_deref()
+            .ok_or_else(|| "A new WPS Presentation formula needs its formula id".to_string())?;
+        object.insert("pendingMarker".into(), json!(format!("visualtex:pending:v1:{session_id}:{formula_id}")));
+    }
+    for (key, value) in [
+        ("formulaId", &body.formula_id),
+        ("sourceObjectId", &body.source_object_id),
+        ("encodedMetadata", &body.encoded_metadata),
+    ] {
+        if let Some(value) = value {
+            object.insert(key.into(), json!(value));
+        }
+    }
+    Ok(request)
+}
+
+fn native_presentation_request(body: &CreateSessionBody, session_id: &str, power_point: &Value) -> Result<Value, String> {
+    let target = body.source_object_id.as_deref().unwrap_or_default();
+    if !(target.starts_with("visualtex-ppt-native-text:") || target.starts_with("visualtex-ppt-native-slide:"))
+        || body.encoded_metadata.is_some()
+        || body.fork_copied_formula
+        || !matches!(body.display_mode.as_str(), "inline" | "block")
+    {
+        return Err("A WPS Presentation native equation needs its text or slide".to_string());
+    }
+    // An edit carries the equation as WPS saved it (presentation::Zone).
+    if (body.mode == "edit") != body.native_edit_xml.is_some() {
+        return Err("A WPS Presentation native equation edit needs the equation it replaces".to_string());
+    }
+    let mut request = json!({
+        "protocolVersion": 1,
+        "sessionId": session_id,
+        "host": "powerpoint",
+        "client": "wps",
+        "mode": body.mode,
+        "operation": "formula",
+        "displayMode": body.display_mode,
+        "numbered": false,
+        "nativeEquation": true,
+        "sourceDocumentId": body.source_document_id,
+        "sourceObjectId": target,
+        "powerPoint": power_point,
+    });
+    if let Some(xml) = &body.native_edit_xml {
+        request["nativeEditXml"] = json!(xml);
     }
     Ok(request)
 }
@@ -512,6 +734,10 @@ fn forget_finished(bridge: &Bridge) {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateDocumentBody {
     session_id: String,
+    /// "powerpoint" from the Presentation add-in (a LaTeX redraw or a formula
+    /// restore); the Writer add-in sends none.
+    #[serde(default)]
+    host: Option<String>,
     /// "documentImport", "latexRedraw" or "formulaRestore".
     operation: String,
     source_document_id: String,
@@ -543,6 +769,11 @@ fn document_request(body: &CreateDocumentBody) -> Result<Value, String> {
     }
     if !matches!(body.operation.as_str(), "documentImport" | "latexRedraw" | "formulaRestore") {
         return Err("Unknown WPS document operation".to_string());
+    }
+    match body.host.as_deref().unwrap_or("word") {
+        "word" => {}
+        "powerpoint" => return presentation_document_request(body, &session_id),
+        _ => return Err("Unknown WPS document host".to_string()),
     }
     let mut document_import = json!({
         "bookmarkName": body.bookmark_name,
@@ -589,6 +820,47 @@ fn document_request(body: &CreateDocumentBody) -> Result<Value, String> {
         request["wordDocumentMathFontName"] = json!(font);
     }
     Ok(request)
+}
+
+/// A WPS Presentation LaTeX redraw or formula restore: the request the
+/// PowerPoint add-in writes (office::macos_offline::presentation_redraw). Its
+/// source is the text boxes' text, or the formulas to restore, as JSON.
+fn presentation_document_request(body: &CreateDocumentBody, session_id: &str) -> Result<Value, String> {
+    if !matches!(body.operation.as_str(), "latexRedraw" | "formulaRestore") || body.source.is_none() || body.math_font.is_some() {
+        return Err("WPS Presentation redraws LaTeX and restores formulas only".to_string());
+    }
+    let mut document_import = json!({
+        "bookmarkName": body.bookmark_name,
+        "defaultFontSizePt": body.default_font_size_pt,
+    });
+    let fields = document_import.as_object_mut().expect("documentImport is an object");
+    for (key, value) in [
+        ("redrawScope", &body.redraw_scope),
+        ("outputKind", &body.output_kind),
+        ("sourceKind", &body.source_kind),
+    ] {
+        if let Some(value) = value {
+            fields.insert(key.into(), json!(value));
+        }
+    }
+    Ok(json!({
+        "protocolVersion": 1,
+        "sessionId": session_id,
+        "host": "powerpoint",
+        "client": "wps",
+        "mode": "create",
+        "operation": body.operation,
+        "formulaId": null,
+        "displayMode": "inline",
+        "numbered": false,
+        "nativeEquation": false,
+        "sourceDocumentId": body.source_document_id,
+        "sourceObjectId": null,
+        "encodedMetadata": null,
+        "pendingMarker": null,
+        "powerPoint": null,
+        "documentImport": document_import,
+    }))
 }
 
 fn open_document_on_main_thread(app: &AppHandle, request: Value, source: Option<String>) -> Result<(), String> {
@@ -1237,6 +1509,72 @@ async fn write_numbering_preference(Json(body): Json<PreferenceBody>) -> Respons
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeText {
+    slide_id: u32,
+    shape_id: u32,
+    /// The shape's text as WPS gives it now.
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EquationsBody {
+    /// A copy of the presentation WPS saved (Presentation.SaveCopyAs).
+    path: String,
+    /// One shape, answered with its zones...
+    #[serde(default)]
+    slide_id: Option<u32>,
+    #[serde(default)]
+    shape_id: Option<u32>,
+    #[serde(default)]
+    text: Option<String>,
+    /// ...or several (a formula restore), each answered on its own.
+    #[serde(default)]
+    shapes: Option<Vec<ShapeText>>,
+}
+
+/// Where the native equations of text boxes are, from a copy WPS saved:
+/// WPS's object model has no equations (super::presentation). The copy is
+/// read once and deleted.
+async fn presentation_equations(Json(body): Json<EquationsBody>) -> Response {
+    let found = tokio::task::spawn_blocking(move || {
+        let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Unable to resolve the home folder")?;
+        let path = super::presentation::saved_copy_path(&body.path, &home)?;
+        let answer = match (&body.shapes, body.slide_id, body.shape_id, &body.text) {
+            (Some(shapes), None, None, None) if !shapes.is_empty() && shapes.len() <= 4096 => {
+                let list: Vec<(u32, u32, String)> =
+                    shapes.iter().map(|shape| (shape.slide_id, shape.shape_id, shape.text.clone())).collect();
+                super::presentation::saved_shapes_equations(&path, &list).map(|results| {
+                    let shapes: Vec<Value> = list
+                        .iter()
+                        .zip(results)
+                        .map(|((slide_id, shape_id, _), result)| match result {
+                            Ok(zones) => json!({ "slideId": slide_id, "shapeId": shape_id, "zones": zones }),
+                            Err(error) => json!({ "slideId": slide_id, "shapeId": shape_id, "error": error }),
+                        })
+                        .collect();
+                    json!({ "shapes": shapes })
+                })
+            }
+            (None, Some(slide_id), Some(shape_id), Some(text)) => {
+                super::presentation::saved_shape_equations(&path, slide_id, shape_id, text).map(|zones| json!({ "zones": zones }))
+            }
+            _ => Err("Name one text box, or 1 to 4096 of them".to_string()),
+        };
+        let _ = std::fs::remove_file(&path);
+        answer
+    })
+    .await
+    .map_err(|error| format!("Reading WPS's saved copy failed: {error}"))
+    .and_then(|result| result);
+    match found {
+        Ok(answer) => Json(answer).into_response(),
+        Err(error) => bad_request(error),
+    }
+}
+
 /// The ribbon's "Open VisualTeX" (VTWordRibbonOpen): shows the main window.
 async fn open_app(State(bridge): State<Arc<Bridge>>) -> Response {
     match crate::office::background::reveal_main_window(&bridge.app) {
@@ -1252,6 +1590,7 @@ mod tests {
     fn body(mode: &str) -> CreateSessionBody {
         CreateSessionBody {
             session_id: "0f8fad5b-d9cb-469f-a165-70867728950e".to_string(),
+            host: None,
             mode: mode.to_string(),
             display_mode: "inline".to_string(),
             native_equation: false,
@@ -1263,7 +1602,29 @@ mod tests {
             native_edit_xml: None,
             font_size_pt: Some(12.0),
             operation: None,
+            power_point: None,
+            fork_copied_formula: false,
         }
+    }
+
+    fn slide_shape() -> Value {
+        json!({
+            "presentationIdentity": "Deck.pptx", "slideIndex": 1, "slideId": 256, "shapeIndex": 2,
+            "shapeId": 5, "shapeName": "VisualTeX_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "left": 100.0, "top": 80.0, "width": 180.0, "height": 42.0, "rotation": 0.0, "zOrder": 2,
+            "fontSizePt": 18.0, "referenceWidthPt": null, "referenceHeightPt": null
+        })
+    }
+
+    fn presentation_body(mode: &str) -> CreateSessionBody {
+        let mut body = body(mode);
+        body.host = Some("powerpoint".to_string());
+        body.display_mode = "block".to_string();
+        body.font_size_pt = None;
+        body.formula_id = Some("7c9e6679-7425-40de-944b-e07fc1f90ae7".to_string());
+        body.source_document_id = "Deck.pptx".to_string();
+        body.power_point = Some(slide_shape());
+        body
     }
 
     #[test]
@@ -1289,6 +1650,84 @@ mod tests {
     }
 
     #[test]
+    fn presentation_requests_are_powerpoint_picture_formulas() {
+        let create = session_request(&presentation_body("create")).unwrap();
+        assert_eq!(create["host"], "powerpoint");
+        assert_eq!(create["client"], "wps");
+        assert_eq!(create["displayMode"], "block");
+        assert_eq!(create["nativeEquation"], false);
+        assert_eq!(create["powerPoint"]["slideId"], 256);
+        assert_eq!(
+            create["pendingMarker"],
+            "visualtex:pending:v1:0f8fad5b-d9cb-469f-a165-70867728950e:7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        );
+        assert!(create.get("fontSizePt").is_none());
+        let mut edit = presentation_body("edit");
+        edit.encoded_metadata = Some("visualtex:v1:deflate:abc".to_string());
+        edit.fork_copied_formula = true;
+        let edit = session_request(&edit).unwrap();
+        assert!(edit.get("pendingMarker").is_none());
+        assert_eq!(edit["encodedMetadata"], "visualtex:v1:deflate:abc");
+        assert_eq!(edit["forkCopiedFormula"], true);
+
+        let mut no_shape = presentation_body("create");
+        no_shape.power_point = None;
+        assert!(session_request(&no_shape).is_err());
+        let mut no_id = presentation_body("create");
+        no_id.formula_id = None;
+        assert!(session_request(&no_id).is_err());
+        let mut sized = presentation_body("create");
+        sized.font_size_pt = Some(18.0);
+        assert!(session_request(&sized).is_err());
+        // A native equation names its text or slide, not a picture.
+        let mut native = presentation_body("create");
+        native.native_equation = true;
+        assert!(session_request(&native).is_err());
+        native.source_object_id = Some("visualtex-ppt-native-text:256:5:3:0".to_string());
+        native.display_mode = "inline".to_string();
+        let request = session_request(&native).unwrap();
+        assert_eq!(request["nativeEquation"], true);
+        assert_eq!(request["displayMode"], "inline");
+        assert!(request.get("pendingMarker").is_none() && request.get("formulaId").is_none());
+        let mut edit = native;
+        edit.mode = "edit".to_string();
+        assert!(session_request(&edit).is_err(), "an edit without its equation");
+        edit.native_edit_xml = Some("<a14:m/>".to_string());
+        assert_eq!(session_request(&edit).unwrap()["nativeEditXml"], "<a14:m/>");
+        let mut picture_with_equation = presentation_body("edit");
+        picture_with_equation.native_edit_xml = Some("<a14:m/>".to_string());
+        assert!(session_request(&picture_with_equation).is_err());
+        let mut writer_with_shape = body("create");
+        writer_with_shape.power_point = Some(slide_shape());
+        assert!(session_request(&writer_with_shape).is_err());
+        let mut unknown = body("create");
+        unknown.host = Some("excel".to_string());
+        assert!(session_request(&unknown).is_err());
+    }
+
+    #[test]
+    fn double_clicks_are_reported_once_and_only_while_fresh() {
+        let mut log = EventLog::default();
+        assert!(log.since(0).is_empty());
+        log.push(json!({ "kind": "doubleClick", "x": 1.0, "y": 2.0 }));
+        log.push(json!({ "kind": "doubleClick", "x": 3.0, "y": 4.0 }));
+        let all = log.since(0);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1]["sequence"], 2);
+        assert_eq!(all[1]["x"], 3.0);
+        assert_eq!(log.since(2).len(), 0);
+        for index in 0..40 {
+            log.push(json!({ "kind": "doubleClick", "x": index, "y": 0 }));
+        }
+        assert_eq!(log.recent.len(), MAX_PENDING_EVENTS);
+        assert_eq!(log.since(0).len(), MAX_PENDING_EVENTS);
+        if let Some(oldest) = log.recent.front_mut() {
+            oldest.1 = Instant::now() - EVENT_LIFETIME;
+        }
+        assert_eq!(log.since(0).len(), MAX_PENDING_EVENTS - 1);
+    }
+
+    #[test]
     fn session_ids_must_be_canonical() {
         let mut upper = body("create");
         upper.session_id = upper.session_id.to_uppercase();
@@ -1300,10 +1739,16 @@ mod tests {
 
     #[test]
     fn module_version_is_a_short_stable_hash() {
-        let version = module_version();
+        let writer = ModuleQuery { host: None };
+        let presentation = ModuleQuery { host: Some("wpp".to_string()) };
+        let version = module_version(&writer);
         assert_eq!(version.len(), 16);
         assert!(version.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(version, module_version());
+        assert_eq!(version, module_version(&writer));
+        assert_eq!(module_version(&presentation), short_hash(MODULE_WPP_JS));
+        assert_ne!(module_version(&presentation), version);
+        assert_eq!(module_source(&presentation), MODULE_WPP_JS);
+        assert_eq!(module_source(&writer), MODULE_JS);
     }
 
     #[test]

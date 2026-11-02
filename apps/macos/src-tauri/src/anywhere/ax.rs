@@ -241,11 +241,12 @@ fn bounds_for_range(element: &Owned, range: CFRange) -> Option<ScreenRect> {
 }
 
 /// Some applications answer an empty range with a zero rectangle, or with the
-/// whole document.
+/// whole document; a rectangle shorter than a line of text (a hidden caret)
+/// is no caret either.
 fn is_plausible_line(rect: &ScreenRect) -> bool {
     [rect.x, rect.y, rect.width, rect.height].iter().all(|value| value.is_finite())
         && rect.width >= 0.0
-        && (4.0..=320.0).contains(&rect.height)
+        && (super::MIN_TEXT_HEIGHT..=320.0).contains(&rect.height)
         && !(rect.x == 0.0 && rect.y == 0.0)
 }
 

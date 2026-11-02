@@ -164,7 +164,7 @@ Word explicit host initialization / Ribbon loading and PowerPoint `Auto_Open` at
 ```json
 {
   "loaded": true,
-  "pluginVersion": "1.2.10",
+  "pluginVersion": "1.3.0",
   "host": "word",
   "timestamp": "2026-07-15T00:00:00Z"
 }

@@ -89,7 +89,9 @@ export function decodeMacosDocumentImportRequest(
   if (!SESSION_ID_PATTERN.test(sessionId)) {
     invalid("documentImportRequest.sessionId", "a VisualTeX UUID session id");
   }
-  if (request.host !== "word") invalid("documentImportRequest.host", '"word"');
+  if (request.host !== "word" && request.host !== "powerpoint") {
+    invalid("documentImportRequest.host", '"word" or "powerpoint"');
+  }
   stringValue(request.sourceDocumentId, "documentImportRequest.sourceDocumentId");
   nonEmptyString(request.bookmarkName, "documentImportRequest.bookmarkName");
   fontSize(request.defaultFontSizePt, "documentImportRequest.defaultFontSizePt");
@@ -130,6 +132,21 @@ export function decodeMacosDocumentImportRequest(
   optionalString(request.source, "documentImportRequest.source");
   if (request.client !== undefined && request.client !== "wps") {
     invalid("documentImportRequest.client", '"wps"');
+  }
+  if (request.segments !== undefined) {
+    if (request.host !== "powerpoint" || !Array.isArray(request.segments)) {
+      invalid("documentImportRequest.segments", "a presentation's array of text boxes");
+    }
+    let previousEnd = 0;
+    request.segments.forEach((entry, index) => {
+      const path = `documentImportRequest.segments[${index}]`;
+      const segment = record(entry, path);
+      const start = nonNegativeInteger(segment.start, `${path}.start`);
+      const end = nonNegativeInteger(segment.end, `${path}.end`);
+      if (start < previousEnd || end <= start) invalid(path, "ordered, non-empty text box bounds");
+      if (typeof segment.whole !== "boolean") invalid(`${path}.whole`, "a boolean");
+      previousEnd = end;
+    });
   }
   if (request.restoreTargets !== undefined) {
     if (!Array.isArray(request.restoreTargets)) {

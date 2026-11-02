@@ -330,8 +330,8 @@ async function waitForOfficeCommitResult(
       throw new Error(
         current.error ||
           (isEn
-            ? `${hostLabel} could not write the formula and gave no reason.`
-            : `${hostLabel} 公式写入失败，但没有给出原因。`),
+            ? `${hostLabel} could not write the formula.`
+            : `${hostLabel} 公式写入失败。`),
       );
     }
     if (current.status === "cancelled" || current.explicitCancel) {
@@ -342,8 +342,8 @@ async function waitForOfficeCommitResult(
   const seconds = Math.round(OFFICE_COMMIT_RESULT_TIMEOUT_MS / 1000);
   throw new Error(
     isEn
-      ? `${hostLabel} did not confirm writing the formula within ${seconds} seconds. Try again.`
-      : `${hostLabel} 在 ${seconds} 秒内没有确认写入公式，请重试。`,
+      ? `${hostLabel} did not confirm the formula within ${seconds} seconds.`
+      : `${hostLabel} 在 ${seconds} 秒内未确认写入公式。`,
   );
 }
 
@@ -994,8 +994,8 @@ export function OfficeDialogApp() {
         readyReportedSessionKeyRef.current = "";
         setToast(
           isEn
-            ? "The formula editor did not finish mounting in time."
-            : "公式编辑器未能及时完成挂载。",
+            ? "The formula editor timed out while loading."
+            : "公式编辑器加载超时。",
         );
         return;
       }
@@ -1671,8 +1671,8 @@ export function OfficeDialogApp() {
           setOcrOpen(true);
           throw new Error(
             isEn
-              ? "Install the OCR runtime before pasting an image"
-              : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
+              ? "OCR runtime not installed"
+              : "未安装 OCR 运行环境",
           );
         }
 
@@ -1680,8 +1680,8 @@ export function OfficeDialogApp() {
           setOcrOpen(true);
           throw new Error(
             isEn
-              ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
-              : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
+              ? `${selectedOcrModel.labelEn} not installed`
+              : `未安装${selectedOcrModel.labelZh}模型`,
           );
         }
       } else {
@@ -1690,8 +1690,8 @@ export function OfficeDialogApp() {
             ? {
                 ...current,
                 message: isEn
-                  ? "Sending the image to the configured OCR API…"
-                  : "正在将图片发送到已配置的 OCR API…",
+                  ? "Sending the image to the OCR API…"
+                  : "正在将图片发送到 OCR API…",
               }
             : current,
         );
@@ -1732,8 +1732,8 @@ export function OfficeDialogApp() {
       if (!inserted) {
         throw new Error(
           isEn
-            ? "The original formula line no longer exists; the OCR result was not inserted"
-            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+            ? "The formula line was deleted; nothing was inserted"
+            : "原公式行已删除，未插入",
         );
       }
 
@@ -1741,16 +1741,16 @@ export function OfficeDialogApp() {
         status: "success",
         message: result.backgroundInverted
           ? isEn
-            ? "Recognized and inserted · dark background inverted"
-            : "识别完成并已插入 · 已自动反色"
+            ? "Inserted (inverted)"
+            : "已插入（已反色）"
           : isEn
-            ? "Recognized and inserted at the saved cursor"
-            : "识别完成，已插入原光标位置",
+            ? "Inserted"
+            : "已插入",
         seconds: current?.seconds ?? 0,
         model: ocrModel,
       }));
       setToast(
-        isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX",
+        isEn ? "Converted to LaTeX" : "已转换为 LaTeX",
       );
       scheduleInlineOcrClear(1800);
     } catch (reason) {
@@ -1813,8 +1813,8 @@ export function OfficeDialogApp() {
           pngError?.svgBase64 === exportResult.svgBase64
             ? pngError.message
             : isEn
-              ? "The PNG image of the formula is missing (it was not generated)."
-              : "缺少公式的 PNG 图片（没有生成）。",
+              ? "The PNG image of the formula was not generated."
+              : "未生成公式的 PNG 图片。",
         );
       }
       return {
@@ -1928,8 +1928,8 @@ export function OfficeDialogApp() {
           );
           setToast(
             isEn
-              ? `The formula was inserted, but the editor could not close: ${detail}`
-              : `公式已经插入，但编辑窗口无法自动关闭：${detail}`,
+              ? `Formula inserted; the editor could not close: ${detail}`
+              : `公式已插入，编辑窗口无法关闭：${detail}`,
           );
         }
         return true;
@@ -2159,7 +2159,7 @@ export function OfficeDialogApp() {
     }
     const target = editorRef.current?.captureInsertionTarget();
     if (!target) {
-      setToast(isEn ? "Click a formula field before quick OCR" : "请先点击一个公式框，再使用快捷 OCR");
+      setToast(isEn ? "Select a formula field first" : "请先选择公式框");
       return;
     }
     setQuickOcrCaptureBusy(true);
@@ -2260,8 +2260,8 @@ export function OfficeDialogApp() {
           className="office-font-size-setting"
           title={
             isEn
-              ? "Choose compact text-style or expanded display-style rendering while keeping the formula inline"
-              : "公式仍保持行内图片，仅切换紧凑 Text style 或展开 Display style 排版"
+              ? "Inline style"
+              : "行内排版"
           }
         >
           <span>{isEn ? "Inline style" : "行内样式"}</span>
@@ -2290,8 +2290,8 @@ export function OfficeDialogApp() {
         title={
           session.host === "word" && session.mode === "create"
             ? isEn
-              ? "Starts from the current Word paragraph font size"
-              : "默认读取当前 Word 段落正文的字号"
+              ? "Font size"
+              : "字号"
             : isEn
               ? "Formula font size"
               : "公式字号"
@@ -2302,7 +2302,7 @@ export function OfficeDialogApp() {
           value={officeFontSizePt}
           data-office-font-size
           disabled={Boolean(session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:"))}
-          title={session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:") ? (isEn ? "Inherited from the PowerPoint text insertion position" : "使用 PowerPoint 文本插入位置的字号") : undefined}
+          title={session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:") ? (isEn ? "Font size (from PowerPoint text)" : "字号（取自 PowerPoint 文本）") : undefined}
           aria-label={isEn ? "Formula font size" : "公式字号"}
           onChange={(event) =>
             setOfficeFontSizePt(

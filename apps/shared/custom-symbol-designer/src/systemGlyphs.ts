@@ -1,10 +1,39 @@
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
-import type { CustomSymbolTextShape } from "./customSymbolTypes";
-import {
-  compileNativeSystemMathGlyphAsset,
-  probeNativeSystemMathFonts,
-  systemFontFamilyList,
-} from "./systemMathGlyphLibrary";
+import type { CustomSymbolGlyphAsset } from "./designerTypes.ts";
+import type { CustomSymbolTextShape } from "./symbolTypes.ts";
+
+export interface NativeSystemMathFontProbe {
+  requestedFamily: string;
+  resolvedFamily: string;
+  available: boolean;
+}
+
+export interface NativeSystemMathGlyphAsset {
+  asset: CustomSymbolGlyphAsset;
+  requestedFamily: string;
+  resolvedFamily: string;
+  fallbackUsed: boolean;
+  glyphId: number;
+}
+
+/** The application's font service (Core Text on macOS, DirectWrite on
+ *  Windows): which math fonts exist, and a character's outline in one. Both
+ *  answer null where there is no native side (a browser). */
+export interface SystemGlyphNative {
+  probe(fontFamilies: readonly string[]): Promise<NativeSystemMathFontProbe[] | null>;
+  extract(character: string, fontFamilies: readonly string[]): Promise<NativeSystemMathGlyphAsset | null>;
+}
+
+export function systemFontFamilyList(value: string) {
+  const result: string[] = [];
+  for (const candidate of value.split(",")) {
+    const family = candidate.trim().replace(/^['"]|['"]$/g, "");
+    if (!family || family.toLocaleLowerCase() === "serif") continue;
+    if (!result.some((item) => item.toLocaleLowerCase() === family.toLocaleLowerCase())) {
+      result.push(family);
+    }
+  }
+  return result;
+}
 
 export type SystemMathFontId =
   | "cambria-math"
@@ -232,9 +261,9 @@ function quoteCanvasFamily(family: string) {
     .join(", ");
 }
 
-export async function detectSystemMathFontAvailability() {
+export async function detectSystemMathFontAvailability(native: SystemGlyphNative) {
   const result = {} as Record<SystemMathFontId, boolean>;
-  const nativeProbes = await probeNativeSystemMathFonts(
+  const nativeProbes = await native.probe(
     SYSTEM_MATH_FONT_PRESETS.map((preset) => preset.primaryFamily),
   ).catch(() => null);
   if (nativeProbes) {
@@ -368,14 +397,12 @@ function applySyntheticMathItalic(asset: CustomSymbolGlyphAsset) {
 
 export async function createSystemFontGlyphAssetAsync(
   options: CreateSystemFontGlyphAssetOptions,
+  service: SystemGlyphNative,
 ): Promise<CreatedSystemFontGlyphAsset> {
   const requestedFamily = options.font.primaryFamily;
   const fontFamilies = systemFontFamilyList(options.font.family);
   try {
-    const native = await compileNativeSystemMathGlyphAsset(
-      options.character,
-      fontFamilies,
-    );
+    const native = await service.extract(options.character, fontFamilies);
     if (native) {
       const asset =
         options.italic && !characterEncodesMathematicalStyle(options.character)

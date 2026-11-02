@@ -362,9 +362,143 @@ Public Sub VTNativeAcceptanceApply()
     VisualTeX_ApplyPendingResult
 End Sub
 
+Public Sub VTNativeAcceptanceCopyEditSource()
+    ' Resolve the callback in THIS compiled project, not the installed PPAM.
+    VisualTeX_CopyPowerPointNativeEditSource
+End Sub
+
+Public Sub VTNativeAcceptanceCopyContext()
+    ' Resolve the callback in THIS compiled project, not the installed PPAM.
+    VisualTeX_CopyNativeParagraphContext
+End Sub
+
 Public Sub VTNativeAcceptanceSave()
     Dim p As Presentation
     Set p = Presentations("NativeOmmlAcceptance.pptm")
     If InStr(p.FullName, "/visualtexmac/apps/macos/build-logs/powerpoint-native-omml/") = 0 Then Err.Raise 5
     p.Save
+End Sub
+
+' Table cells: a new slide with a 3x3 table, (1,1)-(1,2) merged holding "merged" and
+' "before after" in (2,2). cell_inline: the caret between the words of (2,2);
+' cell_display: the empty (3,1); cell_merged: inside the merged cell's text. The
+' capture's create request goes to native-request.json.
+Public Sub VTNativeCellPrepare(ByVal caseName As String, ByVal sessionId As String)
+    Dim p As Presentation
+    Dim s As Slide
+    Dim tableShape As Shape
+    Dim target As VTPowerPointNativeTarget
+    Dim row As Long, column As Long, start As Long
+    Dim report As String
+    On Error GoTo Failed
+    Set p = Presentations("NativeOmmlAcceptance.pptm")
+    If InStr(p.FullName, "/visualtexmac/apps/macos/build-logs/powerpoint-native-omml/") = 0 Then Err.Raise 5, , "Not the owned acceptance presentation."
+    p.Windows(1).Activate
+    Set s = p.Slides.Add(p.Slides.Count + 1, ppLayoutBlank)
+    p.Windows(1).View.GotoSlide s.SlideIndex
+    Set tableShape = s.Shapes.AddTable(3, 3, 60!, 60!, 600!, 240!)
+    tableShape.Name = "Cells_" & caseName
+    tableShape.Table.Cell(1, 1).Merge tableShape.Table.Cell(1, 2)
+    tableShape.Table.Cell(1, 1).Shape.TextFrame.TextRange.Text = "merged"
+    tableShape.Table.Cell(2, 2).Shape.TextFrame.TextRange.Text = "before after"
+    tableShape.Table.Cell(2, 2).Shape.TextFrame.TextRange.Characters(1, 6).Font.Bold = msoTrue
+    Select Case caseName
+        Case "cell_inline": row = 2: column = 2: start = 8
+        Case "cell_display": row = 3: column = 1: start = 1
+        Case "cell_merged": row = 1: column = 1: start = 4
+        Case Else: Err.Raise 5, , "Unknown cell case " & caseName
+    End Select
+    tableShape.Table.Cell(row, column).Shape.TextFrame.TextRange.Characters(start, 0).Select
+    Set target = VTNativeCaptureTarget(sessionId)
+    If target.TableShape Is Nothing Then Err.Raise 5, , "The caret's table cell was not captured."
+    If target.CellRow <> row Or target.CellColumn <> column Then Err.Raise 5, , "Captured cell " & target.CellRow & "," & target.CellColumn
+    If target.TextStart <> start Or target.TextLength <> 0 Then Err.Raise 5, , "Unexpected caret " & target.TextStart & ":" & target.TextLength
+    If target.PrefixBreak Or target.SuffixBreak Then Err.Raise 5, , "A table cell target asked for paragraph context."
+    VTWriteTextAtomic VTSessionDirectory(sessionId) & "/native-request.json", _
+        VTNativeCreateRequest(target, IIf(caseName = "cell_display", "block", "inline"))
+    report = "ok"
+Finished:
+    VTWriteTextAtomic VTSessionDirectory(sessionId) & "/native-prepare.txt", report
+    Exit Sub
+Failed:
+    report = "error " & CStr(Err.Number) & ": " & Err.Description
+    Resume Finished
+End Sub
+
+' The last slide's table: slide|shapes|r,c=text#zones for every cell.
+Public Sub VTNativeCellReport(ByVal sessionId As String)
+    Dim p As Presentation
+    Dim s As Slide
+    Dim tableShape As Shape
+    Dim r As Long, c As Long
+    Dim cellShape As Shape
+    Dim summary As String
+    Set p = Presentations("NativeOmmlAcceptance.pptm")
+    If InStr(p.FullName, "/visualtexmac/apps/macos/build-logs/powerpoint-native-omml/") = 0 Then Err.Raise 5
+    Set s = p.Slides(p.Slides.Count)
+    summary = CStr(s.SlideIndex) & "|" & CStr(s.Shapes.Count)
+    For Each tableShape In s.Shapes
+        If tableShape.HasTable = msoTrue Then
+            For r = 1 To tableShape.Table.Rows.Count
+                For c = 1 To tableShape.Table.Columns.Count
+                    Set cellShape = tableShape.Table.Cell(r, c).Shape
+                    summary = summary & "|" & CStr(r) & "," & CStr(c) & "=" & _
+                        Replace(cellShape.TextFrame.TextRange.Text, vbCr, "<CR>") & "#" & _
+                        CStr(cellShape.TextFrame2.TextRange.MathZones.Count)
+                Next c
+            Next r
+        End If
+    Next tableShape
+    VTWriteTextAtomic VTSessionDirectory(sessionId) & "/acceptance-report.txt", summary
+End Sub
+
+' The last slide's table after cell_inline: the caret inside the (2,2) equation, or
+' (mode "point") the screen point at its center; resolved, captured and its edit
+' request written as the double-click and Edit Selected commands do.
+Public Sub VTNativeCellEditPrepare(ByVal mode As String, ByVal sessionId As String)
+    Dim p As Presentation
+    Dim s As Slide
+    Dim tableShape As Shape
+    Dim cellShape As Shape
+    Dim zone As Object
+    Dim resolved As Object
+    Dim resolvedShape As Shape
+    Dim target As VTPowerPointNativeTarget
+    Dim usePoint As Boolean
+    Dim x As Double, y As Double
+    Dim report As String
+    On Error GoTo Failed
+    Set p = Presentations("NativeOmmlAcceptance.pptm")
+    If InStr(p.FullName, "/visualtexmac/apps/macos/build-logs/powerpoint-native-omml/") = 0 Then Err.Raise 5, , "Not the owned test project."
+    p.Windows(1).Activate
+    Set s = p.Slides(p.Slides.Count)
+    p.Windows(1).View.GotoSlide s.SlideIndex
+    Set tableShape = s.Shapes(1)
+    Set cellShape = tableShape.Table.Cell(2, 2).Shape
+    Set zone = cellShape.TextFrame2.TextRange.MathZones(1, 1)
+    report = "zone=" & CStr(zone.Start) & ":" & CStr(zone.Length) & vbLf & _
+        "bounds=" & CStr(zone.BoundLeft) & ":" & CStr(zone.BoundTop) & ":" & CStr(zone.BoundWidth) & ":" & CStr(zone.BoundHeight) & vbLf & _
+        "cell=" & CStr(cellShape.Left) & ":" & CStr(cellShape.Top) & ":" & CStr(cellShape.Width) & ":" & CStr(cellShape.Height) & vbLf & _
+        "table=" & CStr(tableShape.Left) & ":" & CStr(tableShape.Top) & vbLf
+    cellShape.TextFrame.TextRange.Characters(zone.Start + 1, 0).Select
+    If mode = "point" Then
+        usePoint = True
+        x = p.Windows(1).PointsToScreenPixelsX(tableShape.Left + zone.BoundLeft + zone.BoundWidth / 2#)
+        y = p.Windows(1).PointsToScreenPixelsY(tableShape.Top + zone.BoundTop + zone.BoundHeight / 2#)
+    End If
+    If VTTryResolveNativeMathZone(ActiveWindow.Selection, resolvedShape, resolved, usePoint, x, y) Then
+        report = report & "resolved=" & CStr(resolved.Start) & ":" & CStr(resolved.Length) & vbLf
+        Set target = VTNativeCaptureEditTarget(sessionId, resolvedShape, resolved)
+        If target.TableShape Is Nothing Then Err.Raise 5, , "The edit target lost its table cell."
+        report = report & "cell=" & CStr(target.CellRow) & "," & CStr(target.CellColumn) & vbLf
+        VTWriteRequest sessionId, VTNativeEditRequest(target)
+    Else
+        report = report & "resolved=none" & vbLf
+    End If
+Finished:
+    VTWriteTextAtomic VTSessionDirectory(sessionId) & "/native-edit-prepare.txt", report
+    Exit Sub
+Failed:
+    report = report & "error=" & CStr(Err.Number) & ":" & Err.Description
+    Resume Finished
 End Sub

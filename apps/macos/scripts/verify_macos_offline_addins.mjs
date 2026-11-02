@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,6 +61,47 @@ if (manifest.pluginVersion !== packageVersion) {
   );
 }
 
+// The OMML math fonts the installer copies into ~/Library/Fonts, with their
+// notices: exactly these files, pinned in addins.json and unchanged.
+const BUNDLED_FONT_FILES = [
+  "fonts/VisualTeXLatinModernMath.ttf",
+  "fonts/VisualTeXTeXGyreTermesMath.ttf",
+  "fonts/STIXTwoMath-Regular.ttf",
+  "fonts/README-VisualTeX-Latin-Modern-Math.txt",
+  "fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt",
+  "fonts/README-STIX-Two-Math.txt",
+  "fonts/GUST-FONT-LICENSE.txt",
+  "fonts/STIX-Two-Math-OFL.txt",
+];
+const pinnedFontFiles = Object.keys(manifest.files ?? {}).filter((name) =>
+  name.startsWith("fonts/"),
+);
+if (
+  pinnedFontFiles.length !== BUNDLED_FONT_FILES.length ||
+  BUNDLED_FONT_FILES.some((name) => !pinnedFontFiles.includes(name))
+) {
+  throw new Error(
+    `addins.json must pin exactly the bundled font files: ${BUNDLED_FONT_FILES.join(", ")}`,
+  );
+}
+for (const name of BUNDLED_FONT_FILES) {
+  const path = join(offlineRoot, name);
+  const expectedHash = manifest.files[name]?.sha256;
+  if (
+    !existsSync(path) ||
+    typeof expectedHash !== "string" ||
+    expectedHash.toLowerCase() !== sha256(path)
+  ) {
+    throw new Error(`${name} does not match office/macos-offline/resources/addins.json`);
+  }
+  if (
+    name.endsWith(".ttf") &&
+    !readFileSync(path).subarray(0, 4).equals(Buffer.from([0, 1, 0, 0]))
+  ) {
+    throw new Error(`${name} is not a TrueType font`);
+  }
+}
+
 inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   packageVersion,
   "VTWordAdapter",
@@ -76,6 +117,8 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "VTTraceWordDoubleClick",
   "VTWordRibbonApplyImageFontSizePreset",
   "VTWordRibbonApplyConversionFontSize",
+  "VTOmmlFontChoiceKey",
+  "VTOmmlFontNameForChoice",
   "VTWordRibbonNumberDisplayFormulasDocument",
   "VisualTeX_NumberDisplayFormulasDocument",
   "VisualTeX_EditImageField",
@@ -108,6 +151,10 @@ inspectAddin("VisualTeX.ppam", "ppt/vbaProject.bin", [
   "VTPowerPointNativeMath", "VTPowerPointNativeTarget",
   "VisualTeX_NewInlineNativeEquation", "VisualTeX_NewDisplayNativeEquation",
   "VisualTeX_CopyNativeParagraphContext", "VTDispatchPowerPointNativeEquation",
+  "VTPowerPointRedraw", "VisualTeX_ApplyPresentationItem", "VisualTeX_CopyPresentationEquation",
+  "VTPowerPointRibbonRedrawOmmlSelection",
 ]);
 
-process.stdout.write("VisualTeX compiled macOS Office add-ins: PASS\n");
+process.stdout.write(
+  `VisualTeX compiled macOS Office add-ins and ${BUNDLED_FONT_FILES.length} math font files: PASS\n`,
+);

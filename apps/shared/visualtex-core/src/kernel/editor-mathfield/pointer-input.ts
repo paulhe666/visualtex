@@ -3,6 +3,7 @@ import { horizontalScrollingAncestor, requestUpdate } from './render';
 import { acceptCommandSuggestion } from './autocomplete';
 import { visualTexEditingCore } from './visualtex-hooks';
 import type { Offset } from '../public/core-types';
+import { pointOnSelection, startFieldSelectionDrag } from './selection-drag';
 
 let gLastTap: { x: number; y: number; time: number } | null = null;
 let gTapCount = 0;
@@ -148,17 +149,23 @@ export function onPointerDown(mathfield: _Mathfield, evt: PointerEvent): void {
       endPointerTracking();
       return;
     }
+    // AxMath selects on a move only while the left button is held: a release
+    // the tracker never saw (outside the window, a lost capture) ends it here,
+    // so a free mouse never drags the selection along
+    if ((evt.type === 'pointermove' || evt.type === 'mousemove') && !(evt.buttons & 1)) {
+      endPointerTracking();
+      return;
+    }
 
     const x = evt.clientX;
     const y = evt.clientY;
-    // Ignore events that are within small spatial and temporal bounds
-    // of the pointer down
-    const hysteresis =
-      isPointerEvent(evt) && evt.pointerType === 'touch' ? 20 : 5;
+    // A finger's touch wobbles: moves near the touch point stay a tap. A mouse
+    // has no such zone (AxMath): the selection changes when an end of it does.
     if (
+      isPointerEvent(evt) && evt.pointerType === 'touch' &&
       Date.now() < anchorTime + 500 &&
-      Math.abs(anchorX - x) < hysteresis &&
-      Math.abs(anchorY - y) < hysteresis
+      Math.abs(anchorX - x) < 20 &&
+      Math.abs(anchorY - y) < 20
     ) {
       evt.preventDefault();
       evt.stopPropagation();
@@ -200,6 +207,17 @@ export function onPointerDown(mathfield: _Mathfield, evt: PointerEvent): void {
   if (inside) {
     // Clear out any inline shortcut buffer
     mathfield.flushInlineShortcutBuffer();
+
+    // AxMath: a press on the selection's highlight drags the selection (this
+    // comes before Shift is looked at); a double or triple click selects as
+    // anywhere else (DESIGN §6.12)
+    if (gTapCount === 1 && evt.button === 0 && mathfield.isSelectionEditable && pointOnSelection(mathfield, anchorX, anchorY)) {
+      clearInterval(scrollInterval);
+      mathfield.stopCoalescingUndo();
+      startFieldSelectionDrag(mathfield, evt);
+      evt.preventDefault();
+      return;
+    }
 
     const stop = core.hitTest(mathfield, anchorX, anchorY);
     if (stop !== null) {

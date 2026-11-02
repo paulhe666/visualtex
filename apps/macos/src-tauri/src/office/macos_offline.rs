@@ -42,6 +42,9 @@ use tauri::{
 };
 use uuid::Uuid;
 
+#[path = "presentation_redraw.rs"]
+mod presentation_redraw;
+
 const OFFLINE_PROTOCOL_VERSION: u32 = 1;
 const REQUEST_FILE: &str = "request.json";
 const DISPATCH_FILE: &str = "dispatch.txt";
@@ -188,6 +191,10 @@ struct MacOfflinePowerPointRequest {
     reference_width_pt: Option<f64>,
     #[serde(default)]
     reference_height_pt: Option<f64>,
+    /// WPS Presentation: the Office language id of the text at the caret, for
+    /// a native equation's runs (wps::presentation::language_tag).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -197,6 +204,10 @@ struct MacOfflineNativeTextTarget {
     range_length: u32,
     leading_paragraph: bool,
     trailing_paragraph: bool,
+    // The text is a table cell's: PowerPoint takes the equation there only
+    // through its linear format (VTWriteCellEquation).
+    #[serde(default)]
+    table_cell: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -258,8 +269,8 @@ struct MacOfflineSessionRequest {
     power_point: Option<MacOfflinePowerPointRequest>,
     #[serde(default)]
     document_import: Option<MacOfflineDocumentImportRequest>,
-    /// "wps" when the WPS add-in opened the Session (office::wps); the result
-    /// then goes to that add-in instead of a Word macro.
+    /// "wps" when a WPS add-in opened the Session (office::wps); the result
+    /// then goes to that add-in instead of a Word or PowerPoint macro.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client: Option<String>,
 }
@@ -312,6 +323,10 @@ pub struct MacOfflineDocumentImportPublicRequest {
     /// "wps" when the WPS add-in started the operation (the windows name WPS).
     #[serde(skip_serializing_if = "Option::is_none")]
     client: Option<String>,
+    /// A presentation's text boxes in `source`: each is searched for LaTeX on
+    /// its own (presentation_redraw).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    segments: Option<Vec<presentation_redraw::PresentationSegment>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1502,10 +1517,18 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     if !matches!(request.mode.as_str(), "create" | "edit") {
         return Err("Offline Office request mode must be create or edit".to_string());
     }
+    // WPS Presentation sends the edited equation as WPS saved it: its
+    // object model has no equations to read (wps::presentation).
+    let wps_native_edit = request.client.as_deref() == Some("wps")
+        && request.host == "powerpoint"
+        && request.native_equation
+        && request.mode == "edit";
     if let Some(xml) = request.native_edit_xml.as_deref() {
-        if !is_untagged_word_edit(request) || xml.is_empty() || xml.len() > MAX_OMML_BYTES {
+        if !(is_untagged_word_edit(request) || wps_native_edit) || xml.is_empty() || xml.len() > MAX_OMML_BYTES {
             return Err("An inline native Word snapshot requires an explicit native edit target and valid size".into());
         }
+    } else if wps_native_edit {
+        return Err("A WPS Presentation equation edit needs the equation it replaces".into());
     }
     let operation = request.operation.as_deref().unwrap_or("formula");
     if let Some(client) = request.client.as_deref() {
@@ -1515,14 +1538,26 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         // A WPS document operation carries the same documentImport object as
         // Word's; the checks below apply to it unchanged.
         let document_operation = matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore");
-        if request.host != "word"
-            || !(document_operation || matches!(operation, "formula" | "nativeToImage" | "imageToNative"))
-            || request.fork_copied_formula
-            || request.power_point.is_some()
-            || request.document_import.is_some() != document_operation
-        {
-            return Err("A WPS request must be a Word formula or document request".to_string());
+        let writer_request = request.host == "word"
+            && (document_operation || matches!(operation, "formula" | "nativeToImage" | "imageToNative"))
+            && !request.fork_copied_formula
+            && request.power_point.is_none()
+            && request.document_import.is_some() == document_operation;
+        // WPS Presentation writes the PowerPoint add-in's picture formulas and
+        // native equations, and redraws and restores formulas; the PowerPoint
+        // checks below apply to its requests.
+        let presentation_request = request.host == "powerpoint"
+            && ((operation == "formula" && request.document_import.is_none())
+                || (matches!(operation, "latexRedraw" | "formulaRestore") && request.document_import.is_some()));
+        if !(writer_request || presentation_request) {
+            return Err(
+                "A WPS request must be a Word formula or document request, or a PowerPoint picture formula"
+                    .to_string(),
+            );
         }
+    }
+    if request.host == "powerpoint" && matches!(operation, "latexRedraw" | "formulaRestore") {
+        return presentation_redraw::validate(request);
     }
     if matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore") {
         if request.host != "word" || request.mode != "create" {
@@ -2518,9 +2553,23 @@ fn import_request(
         _ => return Err("Offline Office request mode is invalid".to_string()),
     };
     let native_edit_source = if host == OfficeHost::Powerpoint && request.native_equation && mode == OfficeSessionMode::Edit {
-        let source = capture_powerpoint_native_edit_source(state.app.as_ref(), &request.session_id, false)?
-            .ok_or("The native equation edit session has already completed")?;
-        Some(super::powerpoint_omml::to_latex::from_omml(&source.omml)?)
+        let omml = if request.client.as_deref() == Some("wps") {
+            // The equation as WPS saved it; kept as the snapshot an unchanged
+            // edit is recognized by (native_powerpoint_edit_source_changed).
+            let zone = request.native_edit_xml.as_deref().ok_or("The WPS equation edit has no equation")?;
+            let omml = super::wps::presentation::zone_equation(zone)?;
+            atomic_write_runtime(
+                &session_directory(OfficeHost::Powerpoint, &request.session_id)?.join("native-edit-original.omml"),
+                omml.as_bytes(),
+                0o600,
+            )?;
+            omml
+        } else {
+            capture_powerpoint_native_edit_source(state.app.as_ref(), &request.session_id, false)?
+                .ok_or("The native equation edit session has already completed")?
+                .omml
+        };
+        Some(super::powerpoint_omml::to_latex::from_omml(&omml)?)
     } else if is_untagged_word_edit(&request) {
         Some(word_native_edit_source(&request)?)
     } else { None };
@@ -3934,6 +3983,21 @@ fn open_document_operation_window(
         request.operation.as_deref(),
         Some("latexRedraw" | "formulaRestore")
     ) {
+        if presentation_redraw::needs_copied_equations(request) {
+            // PowerPoint copies the equations to restore first, off the main
+            // thread; the window opens when they are there (or with the reason
+            // they are not).
+            let app = app.clone();
+            let session_id = session_id.to_string();
+            std::thread::spawn(move || {
+                let _ = presentation_redraw::copy_powerpoint_equations(&session_id);
+                let opener = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    let _ = open_word_latex_redraw_window(&opener, &session_id);
+                });
+            });
+            return Ok(());
+        }
         open_word_latex_redraw_window(app, session_id)
     } else {
         let office = if request.client.as_deref() == Some("wps") { "WPS" } else { "Word" };
@@ -3962,15 +4026,20 @@ pub(crate) fn open_wps_document_session(
     }
     let session_id = request.session_id.clone();
     validate_uuid(&session_id, "Request Session id")?;
-    ensure_runtime_root(OfficeHost::Word)?;
-    let directory = session_directory(OfficeHost::Word, &session_id)?;
+    // WPS Writer's operations live where Word's do, WPS Presentation's where
+    // PowerPoint's do.
+    let host = host_from_request_name(&request.host)?;
+    ensure_runtime_root(host)?;
+    let directory = session_directory(host, &session_id)?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
     set_mode(&directory, 0o700)?;
     let opened = (|| {
-        let source_path = match operation.as_str() {
-            "latexRedraw" => Some(directory.join(LATEX_REDRAW_SOURCE_FILE)),
-            "formulaRestore" => Some(formula_restore_source_path(&session_id)?),
+        let source_path = match (host, operation.as_str()) {
+            (OfficeHost::Word, "latexRedraw") => Some(directory.join(LATEX_REDRAW_SOURCE_FILE)),
+            (OfficeHost::Word, "formulaRestore") => Some(formula_restore_source_path(&session_id)?),
+            (OfficeHost::Powerpoint, "latexRedraw") => Some(directory.join(presentation_redraw::REDRAW_SOURCE_FILE)),
+            (OfficeHost::Powerpoint, "formulaRestore") => Some(directory.join(presentation_redraw::RESTORE_SOURCE_FILE)),
             _ => None,
         };
         match (source_path, source) {
@@ -3982,24 +4051,21 @@ pub(crate) fn open_wps_document_session(
         validate_request(&request, &session_id)?;
         let bytes = serde_json::to_vec(&request)
             .map_err(|error| format!("Unable to encode the WPS document request: {error}"))?;
-        atomic_write_runtime(&request_path(OfficeHost::Word, &session_id)?, &bytes, 0o600)?;
+        atomic_write_runtime(&request_path(host, &session_id)?, &bytes, 0o600)?;
         let request = read_request(&session_id)?;
         open_document_operation_window(app, &request, &session_id)
     })();
     if opened.is_err() {
-        let _ = cleanup_session_files(OfficeHost::Word, &session_id);
+        let _ = cleanup_session_files(host, &session_id);
     }
     opened
 }
 
-/// Whether a document window belongs to a WPS Session: WPS, not Word, is
-/// the application to bring forward and to tell about progress.
-fn document_window_is_wps(window: &WebviewWindow) -> bool {
-    let Some(compact) = window.label().strip_prefix("office-native-document-") else {
-        return false;
-    };
+/// The request of a document window's Session.
+fn document_window_request(window: &WebviewWindow) -> Option<MacOfflineSessionRequest> {
+    let compact = window.label().strip_prefix("office-native-document-")?;
     if compact.len() != 32 || !compact.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return false;
+        return None;
     }
     let session_id = format!(
         "{}-{}-{}-{}-{}",
@@ -4009,14 +4075,25 @@ fn document_window_is_wps(window: &WebviewWindow) -> bool {
         &compact[16..20],
         &compact[20..]
     );
-    read_request(&session_id)
-        .map(|request| request.client.as_deref() == Some("wps"))
-        .unwrap_or(false)
+    read_request(&session_id).ok()
 }
 
-/// Opens a formula Session for the WPS add-in (office::wps::bridge). The
-/// request is stored where a Word request lives and then read back, so it
-/// passes the same validation, import and editor window as a Word formula.
+/// Whether a document window belongs to a WPS Session: WPS, not Word, is
+/// the application to bring forward and to tell about progress.
+fn document_window_is_wps(window: &WebviewWindow) -> bool {
+    document_window_request(window).is_some_and(|request| request.client.as_deref() == Some("wps"))
+}
+
+/// Whether a document window belongs to a PowerPoint (not WPS) Session.
+fn document_window_is_powerpoint(window: &WebviewWindow) -> bool {
+    document_window_request(window)
+        .is_some_and(|request| request.host == "powerpoint" && request.client.as_deref() != Some("wps"))
+}
+
+/// Opens a formula Session for a WPS add-in (office::wps::bridge). The
+/// request is stored where a Word (or, from WPS Presentation, a PowerPoint)
+/// request lives and then read back, so it passes the same validation,
+/// import and editor window as a Word or PowerPoint formula.
 pub(crate) fn open_wps_session(app: &AppHandle, request: Value) -> Result<(), String> {
     let received_at = Instant::now();
     let received_epoch_ms = epoch_ms();
@@ -4026,15 +4103,16 @@ pub(crate) fn open_wps_session(app: &AppHandle, request: Value) -> Result<(), St
         return Err("The WPS formula request is not marked as WPS".to_string());
     }
     validate_request(&request, &request.session_id)?;
+    let host = host_from_request_name(&request.host)?;
     let session_id = request.session_id.clone();
-    ensure_runtime_root(OfficeHost::Word)?;
-    let directory = session_directory(OfficeHost::Word, &session_id)?;
+    ensure_runtime_root(host)?;
+    let directory = session_directory(host, &session_id)?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
     set_mode(&directory, 0o700)?;
     let bytes = serde_json::to_vec(&request)
         .map_err(|error| format!("Unable to encode the WPS formula request: {error}"))?;
-    atomic_write_runtime(&request_path(OfficeHost::Word, &session_id)?, &bytes, 0o600)?;
+    atomic_write_runtime(&request_path(host, &session_id)?, &bytes, 0o600)?;
     let state = app
         .try_state::<OfficeCompanionState>()
         .ok_or_else(|| "VisualTeX Office state is not initialized".to_string())?;
@@ -4044,7 +4122,7 @@ pub(crate) fn open_wps_session(app: &AppHandle, request: Value) -> Result<(), St
     import_request(state.inner(), request)?;
     open_editor_window(
         app,
-        OfficeHost::Word,
+        host,
         &session_id,
         received_epoch_ms,
         received_at,
@@ -5813,15 +5891,21 @@ end if"#.replace("__CONTEXT_PATH__", &quoted_path);
 fn commit_powerpoint_native(
     app: Option<&AppHandle>, request: &MacOfflineSessionRequest, session: &OfficeFormulaSession,
 ) -> Result<(), String> {
-    let edit_source = if request.mode == "edit" {
+    let wps = request.client.as_deref() == Some("wps");
+    // WPS Presentation checks the equation's text itself when it writes.
+    let edit_source = if request.mode == "edit" && !wps {
         let Some(source)=capture_powerpoint_native_edit_source(app,&session.id,true)? else {return Ok(());};
         Some(source)
     }else{None};
     let export = session.export_result.as_ref().ok_or("Native PowerPoint equation has no export")?;
+    let table_cell = request.power_point.as_ref()
+        .and_then(|ppt| ppt.native_text_target.as_ref()).is_some_and(|target| target.table_cell);
     // The equation comes from the shared writer, as Word's does: Windows'
     // MathML -> OMML (office::omml_write). The editor's own OMML remains the
     // fallback for an export that carries no MathML.
     let omml = match export.word_math_ml.as_deref() {
+        Some(mathml) if table_cell => super::omml_write::transform_mathml_to_omml(
+            &super::omml_write::prepare_mathml_for_table_cell(mathml)?)?,
         Some(mathml) => super::omml_write::transform_mathml_to_omml(mathml)?,
         None => {
             let encoded = export.omml_base64.as_deref().ok_or("Native PowerPoint equation has no OMML export")?;
@@ -5835,10 +5919,15 @@ fn commit_powerpoint_native(
     let in_text = request.source_object_id.as_deref().is_some_and(|id| id.starts_with("visualtex-ppt-native-text:"));
     let font_size = if in_text { ppt.font_size_pt } else { session.font_size_pt.or(ppt.font_size_pt) }.unwrap_or(DEFAULT_POWERPOINT_FONT_SIZE_PT);
     let display = session.display_mode == "block";
+    if wps {
+        return deliver_wps_powerpoint_native_commit(app, request, session, omml, font_size, display);
+    }
     let leading = display && ppt.native_text_target.as_ref().is_some_and(|t| t.leading_paragraph);
     let trailing = display && ppt.native_text_target.as_ref().is_some_and(|t| t.trailing_paragraph);
     let generated = super::powerpoint_omml::clipboard_entries(omml, font_size, display && request.mode != "edit", leading, trailing)?;
-    let entries = if let Some(source)=edit_source {
+    // A table cell's equation is rebuilt from its linear format: the edited
+    // equation's own context does not carry over (the source check above still ran).
+    let entries = if let Some(source)=edit_source.filter(|_| !table_cell) {
         super::powerpoint_omml::replace_native_edit_context(generated,&source.clipboard)?
     } else if leading {
         let Some((context,index)) = capture_powerpoint_native_paragraph(app,&session.id)? else { return Ok(()); };
@@ -5921,7 +6010,7 @@ fn commit_powerpoint(
         .ok_or_else(|| "PowerPoint request geometry is missing".to_string())?;
     let image_path = materialize_powerpoint_svg(session)?;
     let fallback_image_path = materialize_result_png(session).ok();
-    let dispatch = dispatch_text(&[
+    let entries = [
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
         ("sessionId", session.id.clone()),
         ("action", "commit".to_string()),
@@ -5972,7 +6061,11 @@ fn commit_powerpoint(
         ),
         ("slideIndex", powerpoint.slide_index.to_string()),
         ("slideId", powerpoint.slide_id.to_string()),
-    ])?;
+    ];
+    if request.client.as_deref() == Some("wps") {
+        return deliver_wps_powerpoint_commit(session, &entries, &image_path, fallback_image_path.as_deref());
+    }
+    let dispatch = dispatch_text(&entries)?;
     atomic_write_runtime(
         &dispatch_path(OfficeHost::Powerpoint, &session.id)?,
         dispatch.as_bytes(),
@@ -5998,6 +6091,91 @@ fn commit_powerpoint(
         json!({}),
     );
     Ok(())
+}
+
+/// A native equation for the WPS Presentation add-in: a one-slide presentation
+/// holding the equation's paragraph (powerpoint_omml::wps_equation_slide_entries)
+/// for WPS to import and paste, and where it goes. An edit keeps its zone
+/// (native_edit_paragraph). The add-in writes a display equation's paragraph
+/// breaks itself, as WPS turns only the last CR of a string into a break.
+/// The clipboard the add-in pastes through gets its contents back.
+fn deliver_wps_powerpoint_native_commit(
+    app: Option<&AppHandle>,
+    request: &MacOfflineSessionRequest,
+    session: &OfficeFormulaSession,
+    omml: &str,
+    font_size: f64,
+    display: bool,
+) -> Result<(), String> {
+    let ppt = request.power_point.as_ref().ok_or("Missing PowerPoint target")?;
+    let language = ppt.language_id.and_then(super::wps::presentation::language_tag);
+    let paragraph = if request.mode == "edit" {
+        let zone = request.native_edit_xml.as_deref().ok_or("The WPS equation edit has no equation")?;
+        super::powerpoint_omml::native_edit_paragraph(omml, font_size, zone, language)?
+    } else {
+        super::powerpoint_omml::native_paragraphs(omml, font_size, display, false, false, language)?
+    };
+    let package = build_stored_zip(&super::powerpoint_omml::wps_equation_slide_entries(&paragraph))?;
+    let path = session_directory(OfficeHost::Powerpoint, &session.id)?.join("wps-equation.pptx");
+    atomic_write_runtime(&path, &package, 0o600)?;
+    let name = format!("{}-equation.pptx", session.id);
+    let target = ppt.native_text_target.as_ref();
+    let payload = json!({
+        "sessionId": session.id,
+        "mode": request.mode,
+        "nativeEquation": true,
+        "displayMode": session.display_mode,
+        "fontSizePt": font_size,
+        "sourceObjectId": request.source_object_id,
+        "presentationIdentity": ppt.presentation_identity,
+        "slideIndex": ppt.slide_index,
+        "slideId": ppt.slide_id,
+        "shapeId": ppt.shape_id,
+        "standalone": target.is_none(),
+        "rangeStart": target.map(|target| target.range_start),
+        "rangeLength": target.map(|target| target.range_length),
+        "files": { "slide": name },
+    });
+    #[cfg(target_os = "macos")]
+    return super::wps::pasteboard::kept(app, || super::wps::bridge::deliver_commit(&session.id, payload, vec![(name, path)]));
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        super::wps::bridge::deliver_commit(&session.id, payload, vec![(name, path)])
+    }
+}
+
+/// A PowerPoint commit for the WPS Presentation add-in: the values the
+/// PowerPoint macro reads from dispatch.txt (VTFinalizePowerPointDispatch),
+/// the formula reference the macro would write as the picture's Title, and
+/// the pictures to download in place of the local paths. Returns once the
+/// add-in has written the slide.
+fn deliver_wps_powerpoint_commit(
+    session: &OfficeFormulaSession,
+    entries: &[(&str, String)],
+    image_path: &Path,
+    fallback_image_path: Option<&Path>,
+) -> Result<(), String> {
+    let mut result = serde_json::Map::new();
+    for (key, value) in entries {
+        if !matches!(*key, "imagePath" | "fallbackImagePath" | "protocolVersion" | "action" | "host") {
+            result.insert((*key).to_string(), json!(value));
+        }
+    }
+    result.insert(
+        "formulaReference".to_string(),
+        json!(super::wps::payload::formula_reference(&session.formula_id, "block", false)),
+    );
+    let image = format!("{}-formula.svg", session.id);
+    let mut files = vec![(image.clone(), image_path.to_path_buf())];
+    let mut names = json!({ "image": image });
+    if let Some(path) = fallback_image_path {
+        let fallback = format!("{}-formula.png", session.id);
+        files.push((fallback.clone(), path.to_path_buf()));
+        names["fallback"] = json!(fallback);
+    }
+    result.insert("files".to_string(), names);
+    super::wps::bridge::deliver_commit(&session.id, Value::Object(result), files)
 }
 
 fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
@@ -6465,6 +6643,9 @@ fn document_import_request_data(
     request: &MacOfflineSessionRequest,
 ) -> Result<MacOfflineDocumentImportPublicRequest, String> {
     let operation = request.operation.as_deref().unwrap_or("");
+    if request.host == "powerpoint" && matches!(operation, "latexRedraw" | "formulaRestore") {
+        return presentation_redraw::public_request(request);
+    }
     if !matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore")
         || request.host != "word"
     {
@@ -6513,6 +6694,7 @@ fn document_import_request_data(
         source,
         restore_targets,
         client: request.client.clone(),
+        segments: None,
     })
 }
 
@@ -6787,6 +6969,9 @@ fn resolve_latex_redraw_font_sizes_blocking(
         return Err("LaTeX redraw font preflight must contain 1 to 1000 ranges".to_string());
     }
     let request = read_request(&session_id)?;
+    if request.host == "powerpoint" && request.operation.as_deref() == Some("latexRedraw") {
+        return presentation_redraw::font_sizes(&request, &input);
+    }
     let public_request = document_import_request_data(&request)?;
     if public_request.operation != "latexRedraw" {
         return Err("Only a Word LaTeX redraw session can resolve source font sizes".to_string());
@@ -6935,6 +7120,12 @@ fn commit_document_import_blocking(
     let commit_started = Instant::now();
     validate_uuid(&session_id, "Session id")?;
     let request = read_request(&session_id)?;
+    if request.host == "powerpoint" {
+        let committed = presentation_redraw::commit(&state, &request, input);
+        presentation_redraw::remove_files(&session_id);
+        let _ = cleanup_session_files(OfficeHost::Powerpoint, &session_id);
+        return committed;
+    }
     let public_request = document_import_request_data(&request)?;
     let is_redraw = public_request.operation == "latexRedraw";
     let is_formula_restore = public_request.operation == "formulaRestore";
@@ -7787,7 +7978,11 @@ pub(crate) fn write_document_progress(
     if current > total || total > 2048 || !matches!(stage, "preparing" | "inserting" | "complete" | "error") {
         return Err("Document operation progress is invalid".to_string());
     }
-    let path = session_directory(OfficeHost::Word, session_id)?.join(DOCUMENT_IMPORT_PROGRESS_FILE);
+    let host = read_request(session_id)
+        .ok()
+        .and_then(|request| host_from_request_name(&request.host).ok())
+        .unwrap_or(OfficeHost::Word);
+    let path = session_directory(host, session_id)?.join(DOCUMENT_IMPORT_PROGRESS_FILE);
     atomic_write_runtime(
         &path,
         format!("current={current}\ntotal={total}\nstage={stage}\n").as_bytes(),
@@ -7810,6 +8005,15 @@ fn wps_paragraph(paragraph: &DocumentParagraphTransfer) -> Value {
 fn cancel_document_import_blocking(session_id: String) -> Result<(), String> {
     validate_uuid(&session_id, "Session id")?;
     let request = read_request(&session_id)?;
+    if request.host == "powerpoint" {
+        // A presentation operation changes nothing before its result arrives.
+        if request.client.as_deref() == Some("wps") {
+            super::wps::bridge::deliver_cancel(&session_id);
+        }
+        presentation_redraw::remove_files(&session_id);
+        let _ = cleanup_session_files(OfficeHost::Powerpoint, &session_id);
+        return Ok(());
+    }
     if request.client.as_deref() == Some("wps") {
         // The add-in removes its VT_D_ anchor when it sees the cancel.
         super::wps::bridge::deliver_cancel(&session_id);
@@ -8111,6 +8315,15 @@ pub fn focus_macos_offline_document_import_target(
         }
         return Ok(());
     }
+    if document_window_is_powerpoint(&window) {
+        window
+            .hide()
+            .map_err(|error| format!("Unable to hide the VisualTeX document importer: {error}"))?;
+        let _ = Command::new("/usr/bin/osascript")
+            .args(["-e", "tell application \"Microsoft PowerPoint\" to activate"])
+            .output();
+        return Ok(());
+    }
     set_word_document_operation_preparing_status(&operation)?;
     window
         .hide()
@@ -8122,7 +8335,7 @@ pub fn restore_macos_offline_document_import_window(window: WebviewWindow) -> Re
     if !window.label().starts_with("office-native-document-") {
         return Err("Only the VisualTeX document importer can restore itself".to_string());
     }
-    if !document_window_is_wps(&window) {
+    if !document_window_is_wps(&window) && !document_window_is_powerpoint(&window) {
         clear_word_document_import_status();
     }
     let app = window.app_handle().clone();
@@ -8137,8 +8350,11 @@ pub fn get_macos_offline_document_import_progress(
     session_id: String,
 ) -> Result<MacOfflineDocumentImportProgress, String> {
     validate_uuid(&session_id, "Session id")?;
-    let path =
-        session_directory(OfficeHost::Word, &session_id)?.join(DOCUMENT_IMPORT_PROGRESS_FILE);
+    let host = read_request(&session_id)
+        .ok()
+        .and_then(|request| host_from_request_name(&request.host).ok())
+        .unwrap_or(OfficeHost::Word);
+    let path = session_directory(host, &session_id)?.join(DOCUMENT_IMPORT_PROGRESS_FILE);
     let source = match fs::read_to_string(path) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -8517,6 +8733,76 @@ mod tests {
         let bytes = serde_json::to_vec(&image_edit).unwrap();
         let reread: MacOfflineSessionRequest = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(reread.client.as_deref(), Some("wps"));
+    }
+
+    /// What office::wps::bridge sends for the WPS Presentation add-in.
+    fn wps_presentation_request(changes: Value) -> MacOfflineSessionRequest {
+        let session_id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let formula_id = "5028ce4b-71c7-4d06-a165-61151fd64183";
+        let mut request = json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": session_id,
+            "host": "powerpoint",
+            "client": "wps",
+            "mode": "create",
+            "operation": "formula",
+            "displayMode": "block",
+            "numbered": false,
+            "nativeEquation": false,
+            "sourceDocumentId": "/Users/a/Deck.pptx",
+            "forkCopiedFormula": false,
+            "formulaId": formula_id,
+            "sourceObjectId": format!("VisualTeX_{formula_id}"),
+            "pendingMarker": format!("{PENDING_PREFIX}{session_id}:{formula_id}"),
+            "powerPoint": {
+                "presentationIdentity": "/Users/a/Deck.pptx", "slideIndex": 2, "slideId": 257,
+                "shapeIndex": 3, "shapeId": 6, "shapeName": format!("VisualTeX_{formula_id}"),
+                "left": 390.0, "top": 249.0, "width": 180.0, "height": 42.0, "rotation": 0.0,
+                "zOrder": 3, "fontSizePt": 18.0, "referenceWidthPt": null, "referenceHeightPt": null
+            },
+        });
+        for (key, value) in changes.as_object().unwrap() {
+            if value.is_null() {
+                request.as_object_mut().unwrap().remove(key);
+            } else {
+                request[key] = value.clone();
+            }
+        }
+        serde_json::from_value(request).unwrap()
+    }
+
+    #[test]
+    fn wps_presentation_requests_pass_the_powerpoint_rules() {
+        let id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let create = wps_presentation_request(json!({}));
+        validate_request(&create, id).unwrap();
+        assert!(cancel_needs_host_callback(&create));
+        let edit = wps_presentation_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "encodedMetadata": "visualtex:v1:deflate:abc",
+        }));
+        validate_request(&edit, id).unwrap();
+        assert!(!cancel_needs_host_callback(&edit));
+        // A pasted copy is edited as a new formula, as in PowerPoint.
+        let copy = wps_presentation_request(json!({
+            "mode": "edit",
+            "pendingMarker": null,
+            "encodedMetadata": "visualtex:v1:deflate:abc",
+            "forkCopiedFormula": true,
+        }));
+        validate_request(&copy, id).unwrap();
+        for rejected in [
+            json!({ "nativeEquation": true }),
+            json!({ "operation": "nativeToImage" }),
+            json!({ "powerPoint": null }),
+            json!({ "fontSizePt": 18.0 }),
+            json!({ "numbered": true }),
+            json!({ "client": "other" }),
+        ] {
+            assert!(validate_request(&wps_presentation_request(rejected.clone()), id).is_err(), "{rejected}");
+        }
+        assert_eq!(host_from_request_name(&create.host).unwrap(), OfficeHost::Powerpoint);
     }
 
     #[test]
@@ -9560,6 +9846,24 @@ mod tests {
     }
 
     #[test]
+    fn native_powerpoint_table_cell_target_is_explicit() {
+        let mut value = serde_json::to_value(native_powerpoint_request_fixture()).unwrap();
+        let target = &mut value["powerPoint"]["nativeTextTarget"];
+        assert_eq!(target["tableCell"], json!(false));
+        target["tableCell"] = json!(true);
+        target["leadingParagraph"] = json!(false);
+        target["trailingParagraph"] = json!(false);
+        let request: MacOfflineSessionRequest = serde_json::from_value(value).unwrap();
+        validate_request(&request, &request.session_id).unwrap();
+        assert!(request.power_point.unwrap().native_text_target.unwrap().table_cell);
+        // The add-in leaves the field out for text boxes.
+        let mut value = serde_json::to_value(native_powerpoint_request_fixture()).unwrap();
+        value["powerPoint"]["nativeTextTarget"].as_object_mut().unwrap().remove("tableCell");
+        let request: MacOfflineSessionRequest = serde_json::from_value(value).unwrap();
+        assert!(!request.power_point.unwrap().native_text_target.unwrap().table_cell);
+    }
+
+    #[test]
     fn native_powerpoint_edit_uses_only_current_office_range_not_formula_identity() {
         let mut request=native_powerpoint_request_fixture();
         request.mode="edit".into();
@@ -10286,6 +10590,7 @@ c &= e
 
         let request = MacOfflinePowerPointRequest {
             native_text_target: None,
+            language_id: None,
             presentation_identity: "Deck".to_string(),
             slide_index: 1,
             slide_id: 2,

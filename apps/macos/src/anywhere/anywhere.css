@@ -21,7 +21,8 @@ body.anywhere-page #root {
   /* PANEL_MARGIN in AnywhereApp.tsx: room for the shadow */
   position: absolute;
   left: 8px;
-  top: 8px;
+  /* lower while the candidate bar is over the formula (AnywhereApp.tsx) */
+  top: var(--anywhere-strip-top, 8px);
   width: max-content;
   display: flex;
   flex-direction: row;

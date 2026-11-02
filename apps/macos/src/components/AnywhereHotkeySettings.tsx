@@ -75,8 +75,8 @@ export function AnywhereHotkeySettingsSection() {
           const label = officeHotkeyActionLabel(officeHotkeyAction(office.actionId), isEn ? "en" : "cn");
           setMessage(
             isEn
-              ? `This shortcut is the Office global shortcut “${label}”. Change that one first.`
-              : `该快捷键已用作 Office 全局快捷键“${label}”，请先修改那一项。`,
+              ? `Already used by the Office global shortcut “${label}”.`
+              : `已被 Office 全局快捷键“${label}”占用。`,
           );
           return;
         }
@@ -87,8 +87,8 @@ export function AnywhereHotkeySettingsSection() {
       if (previous?.global) {
         setMessage(
           isEn
-            ? `This shortcut is “${labelOf(previous.id)}”. Give that one another shortcut first.`
-            : `该快捷键用于“${labelOf(previous.id)}”，请先为那一项换一个快捷键。`,
+            ? `Already used by “${labelOf(previous.id)}”.`
+            : `已被“${labelOf(previous.id)}”占用。`,
         );
         return;
       }
@@ -112,11 +112,6 @@ export function AnywhereHotkeySettingsSection() {
       <header className="formula-hotkey-section-heading">
         <Sigma size={16} />
         <strong>{isEn ? "Formula input method" : "公式输入法"}</strong>
-        <span>
-          {isEn
-            ? "VisualTeX Anywhere: type a formula in any application. Click the pencil and press the keys (Esc cancels)."
-            : "VisualTeX Anywhere：在任意应用中输入公式。点击铅笔后按下组合键（Esc 取消）。"}
-        </span>
       </header>
       {message && (
         <p className="formula-hotkey-recorder-note" data-anywhere-shortcut-message role="status">
@@ -190,7 +185,7 @@ export function AnywhereHotkeySettingsSection() {
                       void apply(action.id, null);
                     }}
                     aria-label={isEn ? `Clear the shortcut of ${label}` : `清除“${label}”的快捷键`}
-                    title={isEn ? "Set to none" : "设为未设置"}
+                    title={isEn ? "Clear shortcut" : "清除快捷键"}
                   >
                     <Trash2 size={14} />
                   </button>

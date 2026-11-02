@@ -50,7 +50,7 @@ export function PowerPointAddinGuide({ language, compact = false, loaded = false
             </span>
           ) : (
             <span className="powerpoint-addins-empty-copy">
-              <strong>{isEn ? "VisualTeX is not listed yet" : "此时列表中没有 VisualTeX 是正常的"}</strong>
+              <strong>{isEn ? "VisualTeX not listed" : "未列出 VisualTeX"}</strong>
             </span>
           )}
         </div>
@@ -63,8 +63,8 @@ export function PowerPointAddinGuide({ language, compact = false, loaded = false
 
       <div className="powerpoint-guide-steps">
         <span><b>1</b>{isEn ? "Open Tools → PowerPoint Add-ins" : "打开“工具 → PowerPoint 加载项”"}</span>
-        <span><b>2</b><Plus size={13} />{isEn ? "Click +. VisualTeX will not be in the list before this step" : "点击＋；执行这一步前，列表里不会出现 VisualTeX"}</span>
-        <span><b>3</b><Check size={13} />{isEn ? "Keep VisualTeX checked, then restart PowerPoint" : "保持 VisualTeX 勾选，然后重启 PowerPoint"}</span>
+        <span><b>2</b><Plus size={13} />{isEn ? "Click +" : "点击＋"}</span>
+        <span><b>3</b><Check size={13} />{isEn ? "Check VisualTeX and restart PowerPoint" : "勾选 VisualTeX 并重启 PowerPoint"}</span>
         <span className="powerpoint-guide-path"><FolderOpen size={13} />~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeAddins/VisualTeX.ppam</span>
       </div>
     </div>

@@ -127,8 +127,8 @@ export function UpdateDialog({
         : "正在检查更新"
       : error
         ? isEn
-          ? "Unable to check"
-          : "暂时无法检查更新"
+          ? "Unable to check for updates"
+          : "无法检查更新"
         : updateAvailable
           ? isEn
             ? "A new version is available"
@@ -166,46 +166,32 @@ export function UpdateDialog({
             </span>
             <div>
               <h2 id="update-dialog-title">{title}</h2>
-              <span>{isEn ? "Application update" : "应用更新"}</span>
             </div>
           </div>
           <button
             type="button"
             className="icon-button"
             onClick={onClose}
-            aria-label={isEn ? "Close update dialog" : "关闭更新弹窗"}
+            aria-label={isEn ? "Close" : "关闭"}
           >
             <X size={18} />
           </button>
         </header>
 
         <div className="update-dialog-content">
-          {checking ? (
-            <p>
-              {isEn
-                ? "Connecting to the VisualTeX release server…"
-                : "正在连接 VisualTeX 发布服务器…"}
-            </p>
-          ) : error ? (
-            <>
-              <p>
-                {isEn
-                  ? "Check your network connection and try again."
-                  : "请检查网络连接后重试。"}
-              </p>
-              <code>{error}</code>
-            </>
+          {checking ? null : error ? (
+            <code>{error}</code>
           ) : result ? (
             <>
               {!releaseWelcome && (
                 <div className="update-version-row">
                   <span>
-                    <small>{isEn ? "Installed" : "当前版本"}</small>
+                    <span>{isEn ? "Installed" : "当前版本"}</span>
                     <strong>v{result.currentVersion}</strong>
                   </span>
                   <RefreshCw size={16} aria-hidden="true" />
                   <span>
-                    <small>{isEn ? "Latest" : "最新版本"}</small>
+                    <span>{isEn ? "Latest" : "最新版本"}</span>
                     <strong>v{result.latestVersion}</strong>
                   </span>
                 </div>
@@ -216,9 +202,9 @@ export function UpdateDialog({
                   <div className="update-release-heading">
                     <strong>{result.releaseName}</strong>
                     {publishedDate && (
-                      <small>
+                      <span>
                         {isEn ? `Published ${publishedDate}` : `发布于 ${publishedDate}`}
-                      </small>
+                      </span>
                     )}
                   </div>
 
@@ -264,8 +250,8 @@ export function UpdateDialog({
                   ) : (
                     <p>
                       {isEn
-                        ? "Open GitHub Releases to view the complete update details and download the installer for your platform."
-                        : "前往 GitHub Releases 查看完整更新说明，并下载适合当前平台的安装包。"}
+                        ? "Release notes and installers: GitHub Releases."
+                        : "更新说明与安装包：GitHub Releases。"}
                     </p>
                   )}
 
@@ -273,8 +259,8 @@ export function UpdateDialog({
               ) : (
                 <p>
                   {isEn
-                    ? "You are using the latest stable version."
-                    : "你正在使用最新的稳定版本。"}
+                    ? "Up to date."
+                    : "已是最新版本。"}
                 </p>
               )}
 
@@ -282,7 +268,7 @@ export function UpdateDialog({
                 <div className="update-project-author">
                   <UserRound size={15} aria-hidden="true" />
                   <span>
-                    <small>{isEn ? "Author" : "作者"}</small>
+                    <span>{isEn ? "Author" : "作者"}</span>
                     <strong>paulhe666</strong>
                   </span>
                 </div>
@@ -315,13 +301,8 @@ export function UpdateDialog({
                     <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
                     <p className="update-community-disclaimer">
                       {isEn
-                        ? "If you are financially comfortable and enjoy VisualTeX, you are welcome to support the author. Tipping is completely optional and never affects any feature or normal use."
-                        : "有经济能力并且觉得产品不错的可以支持一下作者呀！打赏完全自愿，不影响 VisualTeX 的任何功能和正常使用。"}
-                    </p>
-                    <p className="update-community-hint">
-                      {isEn
-                        ? "Use WeChat Pay or Alipay only if you would like to support development. Scan the QQ code to join the community."
-                        : "如愿意支持开发，可使用微信或支付宝打赏；QQ群二维码用于加入交流群。"}
+                        ? "Tips via WeChat Pay and Alipay are voluntary and do not affect any feature. QQ group for discussion."
+                        : "微信、支付宝打赏完全自愿，不影响任何功能；QQ 群用于交流。"}
                     </p>
                     <span className="update-community-number">
                       {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>

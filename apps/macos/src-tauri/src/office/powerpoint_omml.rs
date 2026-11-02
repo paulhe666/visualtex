@@ -77,7 +77,7 @@ fn parse(xml: &str) -> Result<Node, String> {
 fn property<'a>(node: &'a Node, name: &str, key: &str) -> Option<&'a str> {
     node.children.iter().find(|n| n.name == name)?.attrs.iter().find(|(k,_)| k == key).map(|(_,v)| v.as_str())
 }
-fn run_properties(word: Option<&Node>, size: i64) -> String {
+fn run_properties(word: Option<&Node>, size: i64, language: Option<&str>) -> String {
     let mut flags = String::new();
     if let Some(word) = word {
         for (w,a) in [("w:b","b"),("w:i","i")] {
@@ -87,7 +87,10 @@ fn run_properties(word: Option<&Node>, size: i64) -> String {
             }
         }
     }
-    let mut xml = format!("<a:rPr sz=\"{size}\"{flags}>");
+    let mut xml = match language {
+        Some(language) => format!("<a:rPr lang=\"{language}\" altLang=\"{language}\" sz=\"{size}\"{flags}>"),
+        None => format!("<a:rPr sz=\"{size}\"{flags}>"),
+    };
     if let Some(color) = word.and_then(|n| property(n,"w:color","w:val")) {
         if color.len() == 6 && color.bytes().all(|b| b.is_ascii_hexdigit()) {
             xml.push_str(&format!("<a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"));
@@ -110,9 +113,9 @@ const ON_OFF: [&str; 30] = [
     "m:plcHide", "m:show", "m:smallFrac", "m:strikeBLTR", "m:strikeH", "m:strikeTLBR", "m:strikeV",
     "m:subHide", "m:supHide", "m:transp", "m:wrapRight", "m:zeroAsc", "m:zeroDesc", "m:zeroWid",
 ];
-fn serialize(node: &Node, size: i64) -> Result<String, String> {
+fn serialize(node: &Node, size: i64, language: Option<&str>) -> Result<String, String> {
     if let Some(text) = &node.text { return Ok(escape(text)); }
-    if node.name == "w:rPr" { return Ok(run_properties(Some(node), size)); }
+    if node.name == "w:rPr" { return Ok(run_properties(Some(node), size, language)); }
     if !node.name.starts_with("m:") { return Err(format!("Unsupported element in native math: {}", node.name)); }
     let mut xml = format!("<{}", node.name);
     for (k,v) in &node.attrs {
@@ -127,20 +130,153 @@ fn serialize(node: &Node, size: i64) -> Result<String, String> {
     let mut inserted = node.children.iter().any(|n| n.name == "w:rPr");
     for child in &node.children {
         if node.name == "m:r" && !inserted && child.name != "m:rPr" && child.text.is_none() {
-            xml.push_str(&run_properties(None, size)); inserted = true;
+            xml.push_str(&run_properties(None, size, language)); inserted = true;
         }
-        xml.push_str(&serialize(child, size)?);
+        xml.push_str(&serialize(child, size, language)?);
     }
     xml.push_str(&format!("</{}>", node.name)); Ok(xml)
 }
 fn rels(kind: &str, target: &str) -> String {
     format!("<Relationships xmlns=\"{REL}\"><Relationship Id=\"rId1\" Type=\"{R}/{kind}\" Target=\"{target}\"/></Relationships>")
 }
-fn theme() -> String {
+fn theme_elements() -> String {
     let colors = [("dk1","000000"),("lt1","FFFFFF"),("dk2","44546A"),("lt2","E7E6E6"),("accent1","4472C4"),("accent2","ED7D31"),("accent3","A5A5A5"),("accent4","FFC000"),("accent5","5B9BD5"),("accent6","70AD47"),("hlink","0563C1"),("folHlink","954F72")].iter().map(|(k,v)| format!("<a:{k}><a:srgbClr val=\"{v}\"/></a:{k}>")).collect::<String>();
     let fill = "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>";
     let fonts = "<a:latin typeface=\"Cambria Math\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/>";
-    format!("<a:clipboardTheme xmlns:a=\"{A}\"><a:themeElements><a:clrScheme name=\"Office\">{colors}</a:clrScheme><a:fontScheme name=\"Office\"><a:majorFont>{fonts}</a:majorFont><a:minorFont>{fonts}</a:minorFont></a:fontScheme><a:fmtScheme name=\"Office\"><a:fillStyleLst>{}</a:fillStyleLst><a:lnStyleLst>{}</a:lnStyleLst><a:effectStyleLst>{}</a:effectStyleLst><a:bgFillStyleLst>{}</a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/></a:clipboardTheme>", fill.repeat(3), format!("<a:ln w=\"12700\">{fill}<a:prstDash val=\"solid\"/></a:ln>").repeat(3), "<a:effectStyle><a:effectLst/></a:effectStyle>".repeat(3), fill.repeat(3))
+    format!("<a:themeElements><a:clrScheme name=\"Office\">{colors}</a:clrScheme><a:fontScheme name=\"Office\"><a:majorFont>{fonts}</a:majorFont><a:minorFont>{fonts}</a:minorFont></a:fontScheme><a:fmtScheme name=\"Office\"><a:fillStyleLst>{}</a:fillStyleLst><a:lnStyleLst>{}</a:lnStyleLst><a:effectStyleLst>{}</a:effectStyleLst><a:bgFillStyleLst>{}</a:bgFillStyleLst></a:fmtScheme></a:themeElements>", fill.repeat(3), format!("<a:ln w=\"12700\">{fill}<a:prstDash val=\"solid\"/></a:ln>").repeat(3), "<a:effectStyle><a:effectLst/></a:effectStyle>".repeat(3), fill.repeat(3))
+}
+fn theme() -> String {
+    format!("<a:clipboardTheme xmlns:a=\"{A}\">{}<a:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/></a:clipboardTheme>", theme_elements())
+}
+/// The package's theme as a presentation theme part (WPS's equation slide).
+fn presentation_theme() -> String {
+    format!("<a:theme xmlns:a=\"{A}\" name=\"Office\">{}<a:objectDefaults/><a:extraClrSchemeLst/></a:theme>", theme_elements())
+}
+
+/// The equation's text paragraphs, as the clipboard package and WPS's equation
+/// slide carry them: the a14:m paragraph (centered for a display equation) and
+/// the empty paragraphs a display equation needs around it. Their a:, a14: and
+/// m: prefixes are declared by the element that holds them. `language` is the
+/// runs' language (a BCP 47 tag) from the text at the caret: next to WPS text,
+/// runs without one got digits and operators tagged Arabic, which WPS draws
+/// mirrored (VisualTeX for Windows' PowerPointMathClipboard.Entries).
+pub(super) fn native_paragraphs(
+    omml: &str, font_size: f64, display: bool, leading_paragraph: bool, trailing_paragraph: bool, language: Option<&str>,
+) -> Result<String, String> {
+    if !font_size.is_finite() || !(1.0..=512.0).contains(&font_size) { return Err("Invalid native equation font size".into()); }
+    if !display && (leading_paragraph || trailing_paragraph) { return Err("Inline math must not introduce paragraphs".into()); }
+    if language.is_some_and(|tag| tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')) {
+        return Err("Invalid native equation language".into());
+    }
+    let size = (font_size * 100.0).round() as i64;
+    let math = serialize(&parse(omml)?,size,language)?;
+    let mut paragraphs = String::new();
+    if leading_paragraph { paragraphs.push_str("<a:p/>"); }
+    paragraphs.push_str("<a:p>");
+    if display { paragraphs.push_str("<a:pPr algn=\"ctr\"><a:buNone/></a:pPr>"); }
+    paragraphs.push_str(&format!("<a14:m><m:oMathPara><m:oMathParaPr><m:jc m:val=\"centerGroup\"/></m:oMathParaPr>{math}</m:oMathPara></a14:m><a:endParaRPr sz=\"{size}\"/></a:p>"));
+    if trailing_paragraph { paragraphs.push_str("<a:p/>"); }
+    Ok(paragraphs)
+}
+
+/// An edit's paragraph for WPS: the edited equation's own zone (`zone`, its
+/// a14:m element as WPS saved it) with the new equation in place of its own,
+/// so it keeps its justification and inline or display form (VisualTeX for
+/// Windows' PowerPointMathClipboard.EditEntries).
+pub(super) fn native_edit_paragraph(omml: &str, font_size: f64, zone: &str, language: Option<&str>) -> Result<String, String> {
+    let generated = parse_node(&format!(
+        "<a:p xmlns:a=\"{A}\" xmlns:a14=\"{A14}\" xmlns:m=\"{M}\">{}</a:p>",
+        native_paragraphs(omml, font_size, false, false, false, language)?
+            .strip_prefix("<a:p>").and_then(|rest| rest.strip_suffix("</a:p>")).ok_or("Unexpected native paragraph")?
+    ))?;
+    let math = first_node(&generated, "m:oMath").ok_or("New native equation is missing")?.clone();
+    let mut original = parse_node(zone).map_err(|_| "The edited native equation's zone is not valid XML".to_string())?;
+    if original.name != "a14:m" { return Err("The edited equation is not inside a native math zone".into()); }
+    fn count(node: &Node) -> usize {
+        usize::from(node.name == "m:oMath") + node.children.iter().map(count).sum::<usize>()
+    }
+    if count(&original) != 1 { return Err("The edited native math zone does not hold exactly one equation".into()); }
+    *first_node_mut(&mut original, "m:oMath").expect("counted above") = math;
+    for (key, value) in [("xmlns:a", A), ("xmlns:a14", A14), ("xmlns:m", M)] {
+        if !original.attrs.iter().any(|(k, _)| k == key) { original.attrs.push((key.into(), value.into())); }
+    }
+    let size = (font_size * 100.0).round() as i64;
+    Ok(format!("<a:p>{}<a:endParaRPr sz=\"{size}\"/></a:p>", serialize_raw(&original)))
+}
+
+/// A one-slide presentation whose only text box holds `paragraphs`. WPS
+/// Presentation pastes nothing from PowerPoint's equation clipboard, but
+/// Slides.InsertFromFile imports a14:m equations from a presentation file as
+/// native equations, and its own copy of that text pastes them anywhere
+/// (VisualTeX for Windows' WpsEquationSlide).
+pub(super) fn wps_equation_slide_entries(paragraphs: &str) -> Vec<(String, String)> {
+    wps_equation_slide_boxes(&[paragraphs.to_string()])
+}
+
+/// The one-slide presentation with one text box per equation (a redraw writes
+/// them all from one import): box n holds `boxes[n - 1]`.
+pub(super) fn wps_equation_slide_boxes(boxes: &[String]) -> Vec<(String, String)> {
+    const P: &str = "http://schemas.openxmlformats.org/presentationml/2006/main";
+    const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+    const DECLARATION: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
+    const COLOR_MAP: &str = "<p:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/>";
+    const EMPTY_TREE: &str = "<p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>";
+    const SLIDE_TYPE: &str = "application/vnd.openxmlformats-officedocument.presentationml";
+    let relationships = |items: &[(&str, &str, &str)]| {
+        format!(
+            "{DECLARATION}<Relationships xmlns=\"{REL}\">{}</Relationships>",
+            items.iter().map(|(id, kind, target)| format!("<Relationship Id=\"{id}\" Type=\"{R}/{kind}\" Target=\"{target}\"/>")).collect::<String>()
+        )
+    };
+    // The math shape is written the way PowerPoint saves one: under an a14
+    // choice. The box only carries the text; WPS takes its own layout.
+    let shapes: String = boxes
+        .iter()
+        .enumerate()
+        .map(|(index, paragraphs)| {
+            let id = index + 2;
+            let y = 914400 * (1 + index % 5);
+            format!(
+                "<mc:AlternateContent xmlns:mc=\"{MC}\"><mc:Choice Requires=\"a14\"><p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"VisualTeX Equation {}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr>\
+<p:spPr><a:xfrm><a:off x=\"914400\" y=\"{y}\"/><a:ext cx=\"9144000\" cy=\"914400\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>\
+<p:txBody><a:bodyPr wrap=\"none\"><a:spAutoFit/></a:bodyPr><a:lstStyle/>{paragraphs}</p:txBody></p:sp></mc:Choice></mc:AlternateContent>",
+                index + 1
+            )
+        })
+        .collect();
+    let slide = format!(
+        "{DECLARATION}<p:sld xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\" xmlns:a14=\"{A14}\" xmlns:m=\"{M}\"><p:cSld><p:spTree>{EMPTY_TREE}{shapes}\
+</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"
+    );
+    vec![
+        ("[Content_Types].xml".into(), format!(
+            "{DECLARATION}<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>\
+<Override PartName=\"/ppt/presentation.xml\" ContentType=\"{SLIDE_TYPE}.presentation.main+xml\"/>\
+<Override PartName=\"/ppt/slides/slide1.xml\" ContentType=\"{SLIDE_TYPE}.slide+xml\"/>\
+<Override PartName=\"/ppt/slideLayouts/slideLayout1.xml\" ContentType=\"{SLIDE_TYPE}.slideLayout+xml\"/>\
+<Override PartName=\"/ppt/slideMasters/slideMaster1.xml\" ContentType=\"{SLIDE_TYPE}.slideMaster+xml\"/>\
+<Override PartName=\"/ppt/theme/theme1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.theme+xml\"/></Types>")),
+        ("_rels/.rels".into(), relationships(&[("rId1", "officeDocument", "ppt/presentation.xml")])),
+        ("ppt/presentation.xml".into(), format!(
+            "{DECLARATION}<p:presentation xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\"><p:sldMasterIdLst><p:sldMasterId id=\"2147483648\" r:id=\"rId1\"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id=\"256\" r:id=\"rId2\"/></p:sldIdLst><p:sldSz cx=\"12192000\" cy=\"6858000\"/><p:notesSz cx=\"6858000\" cy=\"9144000\"/></p:presentation>")),
+        ("ppt/_rels/presentation.xml.rels".into(), relationships(&[
+            ("rId1", "slideMaster", "slideMasters/slideMaster1.xml"),
+            ("rId2", "slide", "slides/slide1.xml"),
+            ("rId3", "theme", "theme/theme1.xml"),
+        ])),
+        ("ppt/slideMasters/slideMaster1.xml".into(), format!(
+            "{DECLARATION}<p:sldMaster xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\"><p:cSld><p:spTree>{EMPTY_TREE}</p:spTree></p:cSld>{COLOR_MAP}<p:sldLayoutIdLst><p:sldLayoutId id=\"2147483649\" r:id=\"rId1\"/></p:sldLayoutIdLst></p:sldMaster>")),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels".into(), relationships(&[
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rId2", "theme", "../theme/theme1.xml"),
+        ])),
+        ("ppt/slideLayouts/slideLayout1.xml".into(), format!(
+            "{DECLARATION}<p:sldLayout xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\" type=\"blank\"><p:cSld name=\"Blank\"><p:spTree>{EMPTY_TREE}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>")),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels".into(), relationships(&[("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")])),
+        ("ppt/slides/slide1.xml".into(), slide),
+        ("ppt/slides/_rels/slide1.xml.rels".into(), relationships(&[("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")])),
+        ("ppt/theme/theme1.xml".into(), format!("{DECLARATION}{}", presentation_theme())),
+    ]
 }
 
 /// Native Art--Text-ClipFormat contains a DrawingML text fragment. Empty boundary
@@ -149,16 +285,7 @@ fn theme() -> String {
 pub(super) fn clipboard_entries(
     omml: &str, font_size: f64, display: bool, leading_paragraph: bool, trailing_paragraph: bool,
 ) -> Result<Vec<(String, String)>, String> {
-    if !font_size.is_finite() || !(1.0..=512.0).contains(&font_size) { return Err("Invalid native equation font size".into()); }
-    if !display && (leading_paragraph || trailing_paragraph) { return Err("Inline math must not introduce paragraphs".into()); }
-    let size = (font_size * 100.0).round() as i64;
-    let math = serialize(&parse(omml)?,size)?;
-    let mut paragraphs = String::new();
-    if leading_paragraph { paragraphs.push_str("<a:p/>"); }
-    paragraphs.push_str("<a:p>");
-    if display { paragraphs.push_str("<a:pPr algn=\"ctr\"><a:buNone/></a:pPr>"); }
-    paragraphs.push_str(&format!("<a14:m><m:oMathPara><m:oMathParaPr><m:jc m:val=\"centerGroup\"/></m:oMathParaPr>{math}</m:oMathPara></a14:m><a:endParaRPr sz=\"{size}\"/></a:p>"));
-    if trailing_paragraph { paragraphs.push_str("<a:p/>"); }
+    let paragraphs = native_paragraphs(omml, font_size, display, leading_paragraph, trailing_paragraph, None)?;
     let xfrm = "<a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>";
     let drawing = format!("<a:graphic xmlns:a=\"{A}\" xmlns:a14=\"{A14}\" xmlns:m=\"{M}\"><a:graphicData uri=\"{LC}\"><lc:lockedCanvas xmlns:lc=\"{LC}\"><a:nvGrpSpPr><a:cNvPr id=\"0\" name=\"\"/><a:cNvGrpSpPr/></a:nvGrpSpPr><a:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></a:grpSpPr><a:sp><a:nvSpPr><a:cNvPr id=\"0\" name=\"\"/><a:cNvSpPr/></a:nvSpPr><a:spPr>{xfrm}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></a:spPr><a:txSp><a:txBody><a:bodyPr><a:noAutofit/></a:bodyPr><a:lstStyle/>{paragraphs}</a:txBody>{xfrm}</a:txSp></a:sp></lc:lockedCanvas></a:graphicData></a:graphic>");
     Ok(vec![
@@ -426,7 +553,7 @@ mod tests {
     }
     #[test] fn preserves_math_structure_fonts_and_escaped_symbols() {
         let source=sample().replace("<m:t>x+1</m:t>","<w:rPr><w:rFonts w:ascii=\"Times New Roman\"/><w:b/><w:color w:val=\"123ABC\"/></w:rPr><m:t>α &amp; β &amp;amp;</m:t>");
-        let xml=serialize(&parse(&source).unwrap(),1800).unwrap();
+        let xml=serialize(&parse(&source).unwrap(),1800,None).unwrap();
         assert!(xml.contains("typeface=\"Times New Roman\"")); assert!(xml.contains("b=\"1\""));
         assert!(xml.contains("α &amp; β &amp;amp;")); assert!(xml.contains("<m:f>"));
     }
@@ -440,6 +567,66 @@ mod tests {
         assert!(!xml.contains("PRIVATE_ORIGINAL_TEXT")); assert_eq!(xml.matches("<m:oMath ").count(),1);
         assert!(xml.contains("algn=\"r\"")); assert!(xml.contains("val=\"1100\"")); assert!(xml.contains("arabicPeriod"));
         assert!(preserve_leading_paragraph(clipboard_entries(&sample(),24.0,true,true,true).unwrap(),b"invalid",1).is_err());
+    }
+    #[test] fn wps_equation_slide_is_a_one_slide_presentation_with_the_paragraphs() {
+        let paragraphs = native_paragraphs(&sample(), 20.0, true, false, false, None).unwrap();
+        assert!(paragraphs.starts_with("<a:p><a:pPr algn=\"ctr\">"));
+        let entries = wps_equation_slide_entries(&paragraphs);
+        let bytes = super::super::macos_offline::build_stored_zip(&entries).unwrap();
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        for index in 0..archive.len() {
+            let mut part = archive.by_index(index).unwrap();
+            let mut xml = String::new();
+            part.read_to_string(&mut xml).unwrap();
+            // Every part is well-formed XML.
+            let mut reader = Reader::from_str(&xml);
+            loop {
+                match reader.read_event() {
+                    Ok(Event::Eof) => break,
+                    Ok(_) => {}
+                    Err(error) => panic!("{}: {error}", part.name()),
+                }
+            }
+            if part.name() == "ppt/slides/slide1.xml" {
+                assert_eq!(xml.matches("<p:sp>").count(), 1);
+                assert!(xml.contains("name=\"VisualTeX Equation 1\""));
+                assert!(xml.contains("<mc:Choice Requires=\"a14\">") && xml.contains("<m:oMathPara>"));
+                assert!(xml.contains("algn=\"ctr\"") && xml.contains("<m:t>x+1</m:t>"));
+            }
+            if part.name() == "ppt/theme/theme1.xml" {
+                assert!(xml.contains("<a:theme ") && xml.contains("<a:objectDefaults/>"));
+            }
+        }
+        assert_eq!(archive.len(), 11);
+    }
+    #[test] fn a_redraw_slide_has_one_box_per_equation() {
+        let first = native_paragraphs(&sample(), 20.0, false, false, false, None).unwrap();
+        let second = native_paragraphs(&sample(), 28.0, true, false, false, None).unwrap();
+        let entries = wps_equation_slide_boxes(&[first, second]);
+        let slide = &entries.iter().find(|(name, _)| name == "ppt/slides/slide1.xml").unwrap().1;
+        assert_eq!(slide.matches("<p:sp>").count(), 2);
+        assert!(slide.contains("<p:cNvPr id=\"2\" name=\"VisualTeX Equation 1\"/>"));
+        assert!(slide.contains("<p:cNvPr id=\"3\" name=\"VisualTeX Equation 2\"/>"));
+        assert!(slide.find("sz=\"2000\"").unwrap() < slide.find("sz=\"2800\"").unwrap());
+    }
+    #[test] fn runs_carry_the_text_language_when_given() {
+        let omml = format!("<m:oMath xmlns:m=\"{M}\"><m:r><m:t>a</m:t></m:r><m:r><m:t>&gt;</m:t></m:r></m:oMath>");
+        let tagged = native_paragraphs(&omml, 18.0, false, false, false, Some("en-US")).unwrap();
+        assert_eq!(tagged.matches("<a:rPr lang=\"en-US\" altLang=\"en-US\" sz=\"1800\">").count(), 2);
+        assert!(!native_paragraphs(&omml, 18.0, false, false, false, None).unwrap().contains("lang="));
+        assert!(native_paragraphs(&omml, 18.0, false, false, false, Some("en\"US")).is_err());
+    }
+    #[test] fn an_edit_keeps_its_zone_and_replaces_only_the_equation() {
+        let zone = format!("<a14:m xmlns:a14=\"{A14}\" xmlns:m=\"{M}\" xmlns:a=\"{A}\"><m:oMathPara><m:oMathParaPr><m:jc m:val=\"left\"/></m:oMathParaPr><m:oMath><m:r><m:t>old</m:t></m:r></m:oMath></m:oMathPara></a14:m>");
+        let paragraph = native_edit_paragraph(&sample(), 18.0, &zone, None).unwrap();
+        assert!(paragraph.starts_with("<a:p><a14:m "), "{paragraph}");
+        assert!(paragraph.ends_with("<a:endParaRPr sz=\"1800\"/></a:p>"), "{paragraph}");
+        assert!(paragraph.contains("<m:jc m:val=\"left\">") && paragraph.contains("<m:t>x+1</m:t>") && !paragraph.contains("old"));
+        assert!(!paragraph.contains("algn="));
+        let two = zone.replace("</m:oMathPara>", "<m:oMath><m:r><m:t>b</m:t></m:r></m:oMath></m:oMathPara>");
+        assert!(native_edit_paragraph(&sample(), 18.0, &two, None).is_err());
+        assert!(native_edit_paragraph(&sample(), 18.0, &format!("<m:oMath xmlns:m=\"{M}\"/>"), None).is_err());
+        assert!(native_edit_paragraph(&sample(), 18.0, "<a14:m", None).is_err());
     }
     #[test] fn style_owned_ui_fixture_when_requested() {
         if let Ok(input)=std::env::var("VISUALTEX_PPT_CONTEXT_FIXTURE_IN") {

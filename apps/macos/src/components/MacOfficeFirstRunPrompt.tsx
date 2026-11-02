@@ -199,8 +199,8 @@ export function MacOfficeFirstRunPrompt({
       }
       throw new Error(
         isEn
-          ? "Timed out waiting for Word and PowerPoint to quit. Finish any Save prompts, then try again."
-          : "等待 Word 和 PowerPoint 退出超时。请先处理 Office 的保存提示，然后重试。",
+          ? "Timed out waiting for Word and PowerPoint to quit."
+          : "等待 Word 和 PowerPoint 退出超时。",
       );
     } catch (reason) {
       setError(
@@ -262,19 +262,6 @@ export function MacOfficeFirstRunPrompt({
                     ? "Set up VisualTeX for Word and PowerPoint"
                     : "配置 Word 与 PowerPoint 的 VisualTeX 插件"}
             </strong>
-            <p>
-              {mode === "update"
-                ? isEn
-                  ? "The installed DOTM or PPAM belongs to an older VisualTeX build. You do not need to delete it manually; VisualTeX will replace the old add-ins with the versions bundled in this app."
-                  : "检测到已安装的 DOTM 或 PPAM 属于旧版 VisualTeX。无需手动删除旧文件，VisualTeX 会直接用当前应用内置版本覆盖更新。"
-                : mode === "repair"
-                  ? isEn
-                    ? "VisualTeX detected a missing or incomplete Office add-in installation. It will restore the required DOTM/PPAM files without asking you to re-register an already configured PowerPoint add-in."
-                    : "检测到 Office 插件文件缺失或安装不完整。VisualTeX 会恢复所需 DOTM/PPAM；已经配置过的 PowerPoint 加载项不会因此要求重新登记。"
-                  : isEn
-                    ? "VisualTeX installs a Word DOTM template and a PowerPoint PPAM add-in. Both run locally and open the desktop formula editor when needed."
-                    : "VisualTeX 会安装 Word DOTM 模板和 PowerPoint PPAM 加载项；两者都在本机运行，并在需要时打开桌面公式编辑器。"}
-            </p>
           </div>
         </header>
 
@@ -283,7 +270,7 @@ export function MacOfficeFirstRunPrompt({
             <FileText size={20} />
             <div>
               <strong>Microsoft Word · DOTM</strong>
-              <small>
+              <span>
                 {!status?.word.applicationInstalled
                   ? isEn ? "Word not detected" : "未检测到 Word"
                   : status.word.filesInstalled && status.word.loaded
@@ -293,7 +280,7 @@ export function MacOfficeFirstRunPrompt({
                       : status.word.filesPresent
                         ? isEn ? "Older add-in detected; update required" : "检测到旧插件，需要更新"
                         : isEn ? "Not installed" : "尚未安装"}
-              </small>
+              </span>
             </div>
             {status?.word.filesInstalled && status.word.loaded ? <CheckCircle2 size={17} /> : status?.word.filesInstalled ? <ShieldAlert size={17} /> : null}
           </article>
@@ -301,19 +288,19 @@ export function MacOfficeFirstRunPrompt({
             <Presentation size={20} />
             <div>
               <strong>Microsoft PowerPoint · PPAM</strong>
-              <small>
+              <span>
                 {!status?.powerpoint.applicationInstalled
                   ? isEn ? "PowerPoint not detected" : "未检测到 PowerPoint"
                   : status.powerpoint.filesInstalled && status.powerpoint.loaded
                     ? isEn ? "Installed and loaded" : "已安装并加载"
                     : status.powerpoint.filesInstalled
                       ? powerpointRegistrationRequired
-                        ? isEn ? "Installed; register once" : "已安装，需要登记一次"
-                        : isEn ? "Installed; registration is preserved" : "已安装，原有登记保持不变"
+                        ? isEn ? "Installed; not registered" : "已安装，未登记"
+                        : isEn ? "Installed" : "已安装"
                       : status.powerpoint.filesPresent
                         ? isEn ? "Older add-in detected; update required" : "检测到旧插件，需要更新"
                         : isEn ? "Not installed" : "尚未安装"}
-              </small>
+              </span>
             </div>
             {status?.powerpoint.filesInstalled && status.powerpoint.loaded ? <CheckCircle2 size={17} /> : status?.powerpoint.filesInstalled ? <ShieldAlert size={17} /> : null}
           </article>
@@ -324,8 +311,8 @@ export function MacOfficeFirstRunPrompt({
             <div className="office-first-run-note is-important">
               <p>
                 {isEn
-                  ? "The PPAM file is ready, but PowerPoint has not registered it. Not seeing VisualTeX in the Add-ins list yet is expected. Click + first, then choose the PPAM file."
-                  : "PPAM 文件已经准备好，但 PowerPoint 尚未登记它。此时在加载项列表里看不到 VisualTeX 是正常的；必须先点击左下角＋，再选择 PPAM 文件。"}
+                  ? "PowerPoint has not registered the PPAM."
+                  : "PowerPoint 尚未登记 PPAM。"}
               </p>
             </div>
             <PowerPointAddinGuide language={language} compact loaded={false} />
@@ -380,44 +367,38 @@ export function MacOfficeFirstRunPrompt({
           <div className="office-first-run-note">
             <p>
               {mode === "update"
-                ? isEn
-                  ? "VisualTeX updates the existing DOTM and PPAM in place. PowerPoint keeps the same registered PPAM path, so an update does not require registering the add-in again."
-                  : "VisualTeX 会在原路径直接覆盖旧 DOTM 和 PPAM。PowerPoint 会继续使用原先登记的 PPAM 路径，版本更新不需要重新登记加载项。"
+                ? isEn ? "Updates the installed DOTM and PPAM." : "将更新已安装的 DOTM 和 PPAM。"
                 : mode === "repair"
-                  ? isEn
-                    ? "VisualTeX will restore the missing Office files. Any PowerPoint PPAM that was already registered keeps the same path and does not need to be registered again."
-                    : "VisualTeX 会恢复缺失的 Office 插件文件。已经登记过的 PowerPoint PPAM 路径保持不变，不需要重新登记。"
+                  ? isEn ? "Restores missing DOTM and PPAM files." : "将恢复缺失的 DOTM 和 PPAM 文件。"
                   : powerpointRegistrationRequired
                     ? isEn
-                      ? "Word loads VisualTeX automatically from its Startup folder after Word restarts. PowerPoint needs one manual registration through Tools → PowerPoint Add-ins; later updates keep the same PPAM path."
-                      : "Word 重启后会从 Startup 目录自动加载 VisualTeX。PowerPoint 首次安装需要在“工具 → PowerPoint 加载项”中登记一次；后续更新不会要求重新登记。"
-                    : isEn
-                      ? "VisualTeX will install the required Office files. Existing PowerPoint registration is preserved."
-                      : "VisualTeX 会安装所需 Office 插件文件；已有的 PowerPoint 登记状态会保留。"}
+                      ? "PowerPoint requires one registration in Tools → PowerPoint Add-ins."
+                      : "PowerPoint 需在“工具 → PowerPoint 加载项”中登记一次。"
+                    : isEn ? "Installs the DOTM and PPAM." : "将安装 DOTM 和 PPAM。"}
             </p>
             {mode !== "setup" && updateRequired && officeHostsRunning && (
               <p className="is-warning">
                 {isEn
-                  ? "Save your Office documents first. VisualTeX must let Word and PowerPoint quit normally before replacing loaded VBA add-ins. Click the update button below; any unsaved Office document will still receive its normal Save prompt."
-                  : "请先保存 Office 文档。已加载的 VBA 插件必须在 Word 和 PowerPoint 正常退出后才能替换。点击下方更新按钮即可；如有未保存文档，Office 仍会正常弹出保存提示。"}
+                  ? "Save your Office documents first. Updating quits Word and PowerPoint."
+                  : "请先保存 Office 文档。更新时将退出 Word 和 PowerPoint。"}
               </p>
             )}
             {!officeDetected && status && (
               <p className="is-warning">
                 {isEn
-                  ? "Word or PowerPoint was not found. Open the Office application once, then return to Settings to install the native add-ins."
-                  : "未检测到 Word 或 PowerPoint。请先打开一次对应 Office 应用，再回到设置中安装原生加载项。"}
+                  ? "Word or PowerPoint not found."
+                  : "未检测到 Word 或 PowerPoint。"}
               </p>
             )}
             {nativeFilesReady && (
               <p className="is-warning">
                 {powerpointRegistrationRequired
                   ? isEn
-                    ? "The files are installed. Restart Word, then register the PowerPoint PPAM once to finish first-time setup."
-                    : "插件文件已安装。请重新打开 Word，并完成一次 PowerPoint PPAM 登记以结束首次配置。"
+                    ? "Add-in files installed. Restart Word and register the PowerPoint PPAM."
+                    : "插件文件已安装。请重启 Word 并登记 PowerPoint PPAM。"
                   : isEn
-                    ? "The current add-in files are ready. Reopen Word or PowerPoint so Office loads the repaired/updated files."
-                    : "当前插件文件已就绪。重新打开 Word 或 PowerPoint 后，Office 会加载修复/更新后的插件。"}
+                    ? "Add-in files ready. Reopen Word or PowerPoint."
+                    : "插件文件已就绪。请重新打开 Word 或 PowerPoint。"}
               </p>
             )}
             {error && <p className="is-warning" role="alert">{error}</p>}

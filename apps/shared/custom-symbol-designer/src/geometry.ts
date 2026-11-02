@@ -1,13 +1,13 @@
-import { createUuid } from "../runtime/browserCompatibility";
+import { createDesignerId as createUuid } from "./ids.ts";
 import type {
   CustomSymbolDesignerBounds,
   CustomSymbolDesignerGeometryLayer,
   CustomSymbolDesignerGlyphLayer,
   CustomSymbolGeometryPreset,
-} from "./customSymbolDesignerTypes";
-import type { CustomSymbolMetrics, CustomSymbolVectorShape } from "./customSymbolTypes";
+} from "./designerTypes.ts";
+import type { CustomSymbolMetrics, CustomSymbolVectorShape } from "./symbolTypes.ts";
 
-export type { CustomSymbolGeometryPreset } from "./customSymbolDesignerTypes";
+export type { CustomSymbolGeometryPreset } from "./designerTypes.ts";
 
 export const CUSTOM_SYMBOL_GEOMETRY_PRESETS: readonly Exclude<
   CustomSymbolGeometryPreset,

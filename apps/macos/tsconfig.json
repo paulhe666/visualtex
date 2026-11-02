@@ -19,6 +19,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "lucide-react": ["./node_modules/lucide-react"],
+      "prosemirror-*": ["./node_modules/prosemirror-*"],
+      "markdown-it": ["./node_modules/@types/markdown-it"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }

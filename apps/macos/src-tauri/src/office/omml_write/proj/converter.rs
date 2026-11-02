@@ -699,20 +699,14 @@ pub fn normalize_display_nary_omml(omml: &str, display: bool) -> Result<String, 
             }
         };
 
-        // Only display equations force a growing integral/sum; empty limits
-        // are hidden for both inline and display OMML.
-        let grow = doc.element(properties, M, "grow");
-        if display {
-            let grow = match grow {
-                Some(grow) => grow,
-                None => {
-                    let grow = new_element(&mut doc, M, "grow");
-                    doc.append(properties, grow);
-                    grow
-                }
-            };
-            doc.set_attr_ns(grow, M, "val", Some("1"));
-        } else if let Some(grow) = grow {
+        // A sum or integral keeps its size, as in LaTeX: Word already draws it
+        // large in a display equation. With m:grow it stretched to its
+        // operand's height, so beside a fraction, brackets or a matrix the sign
+        // became huge while its limits stayed script size (as on Windows,
+        // WordOmmlConverter.NormalizeDisplayNaryOmml). Empty limits are hidden
+        // for both inline and display OMML.
+        let _ = display;
+        if let Some(grow) = doc.element(properties, M, "grow") {
             doc.detach(grow);
         }
 

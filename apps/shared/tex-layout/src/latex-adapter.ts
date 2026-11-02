@@ -273,6 +273,9 @@ interface Ctx {
 
 const BASE_CTX: Ctx = { fam: -1, bold: false, operator: false, display: false };
 
+/** bm.sty's poor man's bold step: \mkern.4mu (mu glue widths are in sp of mu). */
+const PMB_STEP = Math.round(0.4 * 65536);
+
 /** amsmath arrow fills: [left piece, repeated piece, right piece] */
 type ArrowFill = [string, string, string];
 const FILL = {
@@ -344,6 +347,12 @@ export class LatexAdapter {
   /** NFSS defaults of the profile (\text) */
   readonly text: ProfileData["text"] & { bold: string };
   native: NativeFonts | null = null;
+  /**
+   * The italic correction (em) of the character a \class{...} box stands for,
+   * when it is the nucleus of \mathop (custom symbols drawn on a large
+   * operator; LayoutOptions.classOperatorItalic).
+   */
+  classOperatorItalic: ((className: string) => number | null | undefined) | null = null;
   /** operators drawn from outlines: command -> character code in FAM.paths */
   pathOps = new Map<string, number>();
   /** atoms drawn with a contour oval over their integral signs (\oiiint), filled by each layout */
@@ -565,6 +574,14 @@ export class LatexAdapter {
     else if (bold === "\\bm") inner = { ...inner, bold: true };
     const items: MItem[] = [];
     for (const a of run) this.atom(a, inner, items);
+    // bm.sty sets each symbol of \bm{...} in its bold font with its own math
+    // class, without a group: a bold run keeps the spacing of the same run in
+    // normal weight (a + b stays a binary operation); the alphabet and colour
+    // commands make a math group
+    if (bold === "\\bm" && !alphabet && !color) {
+      out.push(...items);
+      return;
+    }
     out.push(this.groupNoad(items, runTag(run)));
   }
 
@@ -581,9 +598,16 @@ export class LatexAdapter {
       case "space":
         out.push(...this.controlSpace(a));
         break;
-      case "macro":
-        out.push(...this.macro(a, ctx));
+      case "macro": {
+        const items = this.macro(a, ctx);
+        // \limits / \nolimits typed after a macro that ends in an operator (a custom symbol), as after \int
+        const last = items[items.length - 1] as Noad | undefined;
+        if (a.explicitSubsupPlacement && last?.type === OP_NOAD) {
+          last.subtype = a.subsupPlacement === "over-under" ? LIMITS : a.subsupPlacement === "adjacent" ? NO_LIMITS : NORMAL;
+        }
+        out.push(...items);
         break;
+      }
       case "macro-argument":
         out.push(...this.list(a.branch("body"), ctx));
         break;
@@ -761,6 +785,12 @@ export class LatexAdapter {
       if (cmd === "\\mathop" && a.explicitSubsupPlacement) {
         n.subtype = a.subsupPlacement === "over-under" ? LIMITS : a.subsupPlacement === "adjacent" ? NO_LIMITS : NORMAL;
       }
+      if (cmd === "\\mathop" && this.classOperatorItalic) {
+        const body = (a.branch("body") ?? []).filter((x) => x.type !== "first");
+        const className = body.length === 1 && /^\\(?:class|htmlClass)$/.test(body[0].command ?? "") ? this.classOf(body[0]) : null;
+        const italic = className ? this.classOperatorItalic(className) : null;
+        if (italic && italic > 0) n.italicEm = italic;
+      }
       out.push(n);
       return true;
     }
@@ -814,6 +844,12 @@ export class LatexAdapter {
       return true;
     }
     return false;
+  }
+
+  /** The class name of a \class / \htmlClass atom. */
+  private classOf(a: AtomLike): string | null {
+    const c = (a as { args?: unknown[] }).args?.[0];
+    return typeof c === "string" && c ? c : null;
   }
 
   /** Control space "\ ": inter-word glue of the current text font. */
@@ -872,6 +908,7 @@ export class LatexAdapter {
     if (ctx.bold) {
       const b = this.boldFamily(fam);
       if (b === fam && this.boldEnv && this.data.profile?.boldmath?.[fam]) return this.boldmathChar(cls, fam, ch, tag);
+      if (b === fam) return this.poorMansBoldChar(cls, fam, ch, tag);
       fam = b;
     }
     const n = newNoad(ORD_NOAD + cls, tag);
@@ -899,6 +936,41 @@ export class LatexAdapter {
       tag,
     };
     return choice as unknown as Noad;
+  }
+
+  /**
+   * bm.sty for a character that has no bold font at all, not even in
+   * \boldmath (the large symbols, the AMS symbols): poor man's bold
+   * (\bm@pmb@@): the character three times, the second raised, each .4mu right
+   * of the one before, in a \mathchoice so that each style sets its own size
+   * (a large operator keeps its display size). The class stays: an operator
+   * keeps its limits, a relation its spacing.
+   */
+  private poorMansBoldChar(cls: number, fam: number, ch: number, tag: Tag): Noad {
+    const box = (style: number): MItem[] => {
+      const k = this.mathBox([{ type: STYLE_NODE, style, tag }, this.muKern(PMB_STEP, tag)], TEXT_STYLE, tag).width;
+      const copy = () => {
+        const n = newNoad(ORD_NOAD + cls, tag);
+        n.nucleus = charField(fam, ch);
+        return this.mathBox([{ type: STYLE_NODE, style, tag }, n], TEXT_STYLE, tag);
+      };
+      const first = copy();
+      const raised = copy();
+      raised.shift = -Math.round(1.5 * k);
+      const w = first.width;
+      return [this.boxNoad(hpack([first, newKern(k - w, tag), raised, newKern(k - w, tag), copy()], 0, undefined, tag), tag)];
+    };
+    const choice: ChoiceItem = {
+      type: CHOICE_NODE,
+      display: box(DISPLAY_STYLE),
+      text: box(TEXT_STYLE),
+      script: box(SCRIPT_STYLE),
+      scriptScript: box(SCRIPT_SCRIPT_STYLE),
+      tag,
+    };
+    const n = newNoad(ORD_NOAD + (cls === 7 ? 0 : cls), tag);
+    n.nucleus = mlistField([choice as unknown as MItem]);
+    return n;
   }
 
   /**
@@ -974,6 +1046,28 @@ export class LatexAdapter {
     return !!this.data.templates[cmd] || this.mathCodeOf(cmd, BASE_CTX) !== null;
   }
 
+  /**
+   * A symbol LaTeX defines as a macro (\sum is \DOTSB\sum@\slimits@) set inside
+   * \bm: bm.sty reaches the math characters it expands to, each in its bold
+   * family, or in poor man's bold when it has none; the class and the limits stay.
+   */
+  private emboldened(items: MItem[] | null, ctx: Ctx): MItem[] | null {
+    if (!items || !ctx.bold) return items;
+    return items.map((item) => {
+      const n = item as Noad;
+      if (!(n.type >= ORD_NOAD && n.type < LEFT_NOAD) || n.nucleus?.mathType !== MATH_CHAR) return item;
+      const { fam, char } = n.nucleus as { fam: number; char: number };
+      const bold = this.boldFamily(fam);
+      if (bold !== fam) {
+        n.nucleus = this.letterField(bold, char) ?? charField(bold, char);
+        return item;
+      }
+      const pmb = this.poorMansBoldChar(n.type - ORD_NOAD, fam, char, n.tag);
+      pmb.subtype = n.subtype;
+      return pmb as MItem;
+    });
+  }
+
   private template(key: string, tag: Tag): MItem[] | null {
     const t = this.data.templates[key];
     if (!t) return null;
@@ -987,7 +1081,7 @@ export class LatexAdapter {
     for (const key of keys) {
       const mc = this.mathCodeOf(key, ctx);
       if (mc !== null) return [this.mathChar(mc, ctx, a)];
-      const tpl = this.template(key, a);
+      const tpl = this.emboldened(this.template(key, a), ctx);
       if (tpl) return tpl;
     }
     return this.unknownSymbol(a, ctx);
@@ -1230,7 +1324,7 @@ export class LatexAdapter {
     } else {
       const mc = this.mathCodeOf(cmd, ctx);
       if (mc !== null) items = [this.mathChar(mc, ctx, a)];
-      else items = this.template(cmd, a);
+      else items = this.emboldened(this.template(cmd, a), ctx);
     }
     if (!items || items.length === 0) items = this.unknownSymbol(a, ctx);
     // \limits / \nolimits typed explicitly by the user

@@ -230,14 +230,9 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
               <strong>
-                {isEn ? "Press a shortcut now" : "现在按下需要绑定的快捷键"}
+                {isEn ? "Press a shortcut" : "请按快捷键"}
               </strong>
             )}
-            <span>
-              {isEn
-                ? "Include Ctrl, Option/Alt or Command. Press Esc to cancel."
-                : "请加入 Ctrl、Option/Alt 或 Command；按 Esc 取消。"}
-            </span>
           </div>
 
           {capturedChord && !hasModifier && (
@@ -245,8 +240,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? "This would interfere with normal formula input. Add Ctrl, Option/Alt or Command; Shift can be used in addition."
-                  : "该组合会影响正常公式输入，请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。"}
+                  ? "Requires Ctrl, Alt or Command."
+                  : "须包含 Ctrl、Alt 或 Command。"}
               </span>
             </div>
           )}
@@ -256,8 +251,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `This shortcut is reserved for ${protectedAction} and cannot be overridden.`
-                  : `该快捷键已保留用于“${protectedAction}”，不能被公式快捷键覆盖。`}
+                  ? `Reserved for ${protectedAction}.`
+                  : `已保留给“${protectedAction}”。`}
               </span>
             </div>
           )}
@@ -267,8 +262,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”.`
+                  : `已分配给“${conflictLabel}”。`}
               </span>
             </div>
           )}
@@ -278,8 +273,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <Check size={16} />
               <span>
                 {isEn
-                  ? "Available in the visual formula editor."
-                  : "该快捷键可在可视化公式编辑区使用。"}
+                  ? "Available"
+                  : "可用"}
               </span>
             </div>
           )}
@@ -298,8 +293,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
                 ? `Current: ${formatFormulaHotkeyChord(existingBinding.chord)}`
                 : `当前：${formatFormulaHotkeyChord(existingBinding.chord)}`
               : isEn
-                ? "No hotkey assigned"
-                : "尚未设置快捷键"}
+                ? "Not set"
+                : "未设置"}
           </span>
           <div>
             <button type="button" className="secondary-button" onClick={onClose}>

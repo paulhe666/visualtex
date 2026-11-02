@@ -63,3 +63,24 @@ export function findWindowsWordLatexRedrawSpans(source: string): WordLatexRedraw
     displayMode: span.displayMode,
   }));
 }
+
+/**
+ * A presentation's source holds its text boxes one after another; a formula
+ * never runs from one box into the next, so each box is searched on its own.
+ * PowerPoint's soft line break (U+000B) reads as a line break.
+ */
+export function findPresentationLatexRedrawSpans(
+  source: string,
+  segments: readonly { start: number; end: number }[],
+): WordLatexRedrawSpan[] {
+  return segments.flatMap((segment) =>
+    findWindowsWordLatexRedrawSpans(
+      source.slice(segment.start, segment.end).replace(/\u000b/g, "\n"),
+    ).map((span) => ({
+      ...span,
+      start: span.start + segment.start,
+      end: span.end + segment.start,
+      sourceText: source.slice(span.start + segment.start, span.end + segment.start),
+    })),
+  );
+}

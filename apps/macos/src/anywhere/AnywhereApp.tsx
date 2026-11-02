@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
 import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
-import { editingModelOf, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
+import { editingModelOf, setFormulaCaretBand, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
 import { useHistoryManager } from "../history/EditorSession";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import { useEditorStore } from "../stores/editorStore";
@@ -81,6 +81,11 @@ const FORMULA_X_HEIGHT = 0.431;
 /** The field's font when it does not tell (system UI fonts). */
 const FIELD_X_HEIGHT = 0.52;
 
+/** The smallest formula, CSS pixels: the native side sizes it from believable
+ * reports only (else from the system's text size), so this only keeps a very
+ * small field's formula legible. */
+const FORMULA_MIN_PX = 12;
+
 /** The formula reads as part of the host's text: at the field's font size
  * when it tells it (the formula is drawn in its line), scaled so that its
  * letters are as tall as the field's (TeX's fonts have a smaller x-height
@@ -89,11 +94,31 @@ function formulaZoom(caretHeight: number, fontSize?: number | null, xHeight?: nu
   if (fontSize && Number.isFinite(fontSize) && fontSize > 0) {
     const fieldX = xHeight && Number.isFinite(xHeight) && xHeight > 0 ? xHeight : FIELD_X_HEIGHT;
     const scale = Math.min(1.35, Math.max(1, fieldX / FORMULA_X_HEIGHT));
-    return Math.min(56, Math.max(9, fontSize * scale)) / EDITOR_BASE_FONT_PX;
+    return Math.min(56, Math.max(FORMULA_MIN_PX, fontSize * scale)) / EDITOR_BASE_FONT_PX;
   }
   const height = Number.isFinite(caretHeight) && caretHeight > 0 ? caretHeight : 18;
-  const fontPx = Math.min(40, Math.max(12, height * 0.92));
+  const fontPx = Math.min(40, Math.max(FORMULA_MIN_PX, height * 0.92));
   return fontPx / EDITOR_BASE_FONT_PX;
+}
+
+/** The host field's line (its caret) in CSS pixels, and how far it reaches
+ * below the baseline. */
+type FieldLine = { height: number; descent: number };
+
+function fieldLineOf(height?: number | null, descent?: number | null): FieldLine | null {
+  if (!height || !Number.isFinite(height) || height <= 0) return null;
+  const below = descent && Number.isFinite(descent) && descent > 0 && descent < height ? descent : height * 0.22;
+  return { height, descent: below };
+}
+
+/** The formula's caret as tall as the host field's line, standing on the
+ * formula's baseline as the field's caret stands on its own: in em of the
+ * formula's font (the engine scales it in scripts). Null: the editor's caret. */
+function caretBandFor(line: FieldLine | null, formulaPx: number) {
+  if (!line || !(formulaPx > 0)) return null;
+  const up = (line.height - line.descent) / formulaPx;
+  const down = line.descent / formulaPx;
+  return up > 0.3 && up < 2.5 && down >= 0 && down < 1 ? { up, down } : null;
 }
 
 /** The text colour of the system's appearance, for a field that does not
@@ -195,22 +220,59 @@ function suggestionsVisible() {
   );
 }
 
+/** The strip's offset from the panel's top (anywhere.css: --anywhere-strip-top):
+ * more than PANEL_MARGIN while the candidate bar sits above the formula. */
+function setStripTop(strip: HTMLElement, top: number) {
+  const value = top > PANEL_MARGIN ? `${top}px` : "";
+  if (strip.style.getPropertyValue("--anywhere-strip-top") !== value) {
+    if (value) strip.style.setProperty("--anywhere-strip-top", value);
+    else strip.style.removeProperty("--anywhere-strip-top");
+  }
+}
+
 /** Places the candidate bar under the formula (anywhere.css reads the
- * position; the kernel's own, centred on the caret, is for a list) and
+ * position; the kernel's own, centred on the caret, is for a list), or over
+ * it when the screen has no room below the line (the strip then moves down
+ * by the bar, and the panel up, so the formula stays on its line), and
  * returns where its far edges are, for the panel's size. */
-function placeCandidateBar(strip: DOMRect) {
+function placeCandidateBar(stripElement: HTMLElement) {
   const popover = document.getElementById("mathlive-suggestion-popover");
   if (!popover) return null;
   const root = stripField()?.shadowRoot;
   const typed = root?.querySelector(".ML__raw-latex")?.getBoundingClientRect();
   // Right under the formula's ink (its depth included), not the strip's
   // line box, as an input method's bar sits under the line.
-  const drawn = root?.querySelector(".ML__latex")?.getBoundingClientRect();
-  let left = Math.max(0, Math.round((typed && typed.height > 0 ? typed.left : strip.left) - CANDIDATE_INSET));
-  const top = Math.round((drawn && drawn.height > 0 ? drawn.bottom : strip.bottom) + CANDIDATE_GAP);
+  const inkOf = () => {
+    const drawn = root?.querySelector(".ML__latex")?.getBoundingClientRect();
+    return drawn && drawn.height > 0 ? drawn : stripElement.getBoundingClientRect();
+  };
+  let ink = inkOf();
+  let left = Math.max(0, Math.round((typed && typed.height > 0 ? typed.left : ink.left) - CANDIDATE_INSET));
   popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
-  popover.style.setProperty("--anywhere-candidates-top", `${top}px`);
   const box = popover.getBoundingClientRect();
+  // The bar's room under the line, on the screen: the same whichever side
+  // the bar is on (the panel moves with the strip).
+  const screenWithTop = window.screen as Screen & { availTop?: number };
+  const screenBottom = (screenWithTop.availTop ?? 0) + window.screen.availHeight;
+  const roomBelow = screenBottom - (window.screenY + ink.bottom + CANDIDATE_GAP);
+  const above = box.height + CANDIDATE_MARGIN > roomBelow;
+  const stripTop = parseFloat(stripElement.style.getPropertyValue("--anywhere-strip-top")) || PANEL_MARGIN;
+  // Over the formula: the bar from the panel's margin, the formula's ink
+  // (the strip's box, when it has one) under it.
+  const boxed = !stripElement.classList.contains("is-input-method");
+  const upperEdge = () => (boxed ? stripElement.getBoundingClientRect().top : ink.top);
+  const edgeFromStrip = upperEdge() - stripElement.getBoundingClientRect().top;
+  const wantedStripTop = above
+    ? Math.max(PANEL_MARGIN, Math.ceil(PANEL_MARGIN + box.height + CANDIDATE_GAP - edgeFromStrip))
+    : PANEL_MARGIN;
+  if (wantedStripTop !== stripTop) {
+    setStripTop(stripElement, wantedStripTop);
+    ink = inkOf();
+  }
+  const top = above
+    ? Math.round(upperEdge() - CANDIDATE_GAP - box.height)
+    : Math.round(ink.bottom + CANDIDATE_GAP);
+  popover.style.setProperty("--anywhere-candidates-top", `${top}px`);
   // Kept on the screen when the formula is near its right edge.
   const screenLeft = (window.screen as Screen & { availLeft?: number }).availLeft ?? 0;
   const roomRight = screenLeft + window.screen.availWidth - window.screenX - CANDIDATE_MARGIN;
@@ -405,6 +467,9 @@ export function AnywhereApp() {
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const [zoom, setZoom] = useState(() => formulaZoom(18));
+  /** The host field's line: the formula's caret is as tall. */
+  const [fieldLine, setFieldLine] = useState<FieldLine | null>(null);
+  const lastSizeLogRef = useRef("");
   const [notice, setNotice] = useState<string | null>(null);
   const [outputMode, setOutputMode] = useState<AnywhereOutputMode>("source");
   /** The output mode's tag under the formula (with a preview of the output),
@@ -529,7 +594,7 @@ export function AnywhereApp() {
   const runOcr = useCallback(
     () =>
       withOcr(async (target, generation) => {
-        ocrStatus("请框选要识别的公式区域（Esc 取消）");
+        ocrStatus("框选公式区域（Esc 取消）");
         const data = await captureAnywhereScreenshot();
         if (!data || generationRef.current !== generation) {
           ocrStatus(null);
@@ -636,6 +701,9 @@ export function AnywhereApp() {
     const generation = generationRef.current;
     const strip = stripRef.current;
     if (!generation || !strip) return;
+    // The candidate bar first: over the formula it moves the strip down.
+    const candidates = suggestionsVisible() ? placeCandidateBar(strip) : null;
+    if (!candidates) setStripTop(strip, PANEL_MARGIN);
     const rect = strip.getBoundingClientRect();
     // The layout is the page's answer to an activation: a strip not laid out
     // yet still answers (the native side drops a session that gets none).
@@ -646,7 +714,6 @@ export function AnywhereApp() {
       const caret = mathfield ? visualTexEditingCore.caretRect(mathfield) : null;
       if (caret && Number.isFinite(caret.left)) formulaStartRef.current = caret.left;
     }
-    const candidates = suggestionsVisible() ? placeCandidateBar(rect) : null;
     const tag = candidates ? null : placeModeTag(rect);
     // In the field's line the formula's origin sits at the space the field
     // holds for it, on the line's baseline; on the caret line (pasting) the
@@ -690,6 +757,14 @@ export function AnywhereApp() {
       setInputMethod(Boolean(activation.inputMethod));
       applySystemAppearance();
       const kept = activation.resume && hasFormula() ? currentDocument() : null;
+      // The size first: a size the field reports while the settings are read
+      // (the anchor's) comes after this one and must stay.
+      setZoom(formulaZoom(
+        activation.caretHeight,
+        activation.inputMethod ? activation.fontSize : null,
+        activation.xHeight,
+      ));
+      setFieldLine(fieldLineOf(activation.lineHeight ?? activation.caretHeight, activation.lineDescent));
       // The main window's settings (fonts, symbols, copy format) as of now;
       // this window keeps its own formula (editorPersistenceStorage).
       const started = performance.now();
@@ -717,11 +792,6 @@ export function AnywhereApp() {
             : kept,
         );
       } else startNewFormula(activation.display ? "display" : "inline");
-      setZoom(formulaZoom(
-        activation.caretHeight,
-        activation.inputMethod ? activation.fontSize : null,
-        activation.xHeight,
-      ));
       fieldInkRef.current = activation.inputMethod ? opaqueHex(activation.textColor) : null;
       fieldBackgroundRef.current = activation.inputMethod ? opaqueHex(activation.backgroundColor) : null;
       setTextColor(activation.inputMethod ? cssColor(activation.textColor) ?? systemTextColor() : null);
@@ -831,6 +901,7 @@ export function AnywhereApp() {
       listenAnywhere(ANYWHERE_STYLE_EVENT, isAnywhereStyle, (style) => {
         if (style.generation !== generationRef.current || !inputMethodRef.current) return;
         if (style.fontSize) setZoom(formulaZoom(0, style.fontSize, style.xHeight));
+        if (style.lineHeight) setFieldLine(fieldLineOf(style.lineHeight, style.lineDescent));
         if (style.textColor) {
           setTextColor(cssColor(style.textColor));
           fieldInkRef.current = opaqueHex(style.textColor) ?? fieldInkRef.current;
@@ -871,6 +942,21 @@ export function AnywhereApp() {
       window.clearTimeout(timer);
     };
   }, [startNewFormula]);
+
+  // The formula's caret as tall as the host field's line, set before the
+  // panel measures the strip (a taller caret makes the strip taller).
+  useLayoutEffect(() => {
+    const formulaPx = EDITOR_BASE_FONT_PX * zoom;
+    const band = caretBandFor(fieldLine, formulaPx);
+    setFormulaCaretBand(band);
+    if (!session) return;
+    const line =
+      `size gen=${generationRef.current} formula=${formulaPx.toFixed(1)}px line=${fieldLine ? fieldLine.height.toFixed(1) : "-"}px ` +
+      `caret=${band ? `${((band.up + band.down) * formulaPx).toFixed(1)}px` : "editor"}`;
+    if (line === lastSizeLogRef.current) return;
+    lastSizeLogRef.current = line;
+    void logAnywhere(line);
+  }, [session, zoom, fieldLine]);
 
   // A new session: put the caret in the formula and place the panel. The
   // layout report is the page's answer to the activation (the native side

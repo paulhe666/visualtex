@@ -110,6 +110,12 @@ const VERBATIM_ARGUMENT_COMMANDS = new Set([
   "url", "begin", "end", "placeholder",
 ]);
 
+// Commands whose first argument is a name, not math (\class{visualtex-align-marker}{…}): that argument is copied
+// verbatim, the others are math.
+const NAME_ARGUMENT_COMMANDS = new Set([
+  "class", "cssId", "htmlClass", "htmlId", "htmlStyle", "htmlData", "data",
+]);
+
 const SPACE_COMMANDS = new Set([
   " ", ",", ":", ";", "quad", "qquad", "enspace", "thinspace", "medspace",
   "thickspace",
@@ -299,9 +305,10 @@ function tokenize(source: string): Item[] {
       if (source[argumentStart] !== "{") break;
       const group = readBraced(source, argumentStart);
       if (!group) break;
+      const nameArgument = firstArgument === undefined && NAME_ARGUMENT_COMMANDS.has(name);
       firstArgument ??= group.content;
       parts.push(source.slice(index, argumentStart));
-      if (verbatim) parts.push(source.slice(argumentStart, group.end));
+      if (verbatim || nameArgument) parts.push(source.slice(argumentStart, group.end));
       else parts.push("{", { content: group.content, child: {} }, "}");
       index = group.end;
     }
@@ -429,17 +436,22 @@ function chainName(candidate: string, context: RuleContext) {
 
 /**
  * A typed word made of names from its start, each right after the previous
- * one, plus an argument: sintheta -> \sin\theta, pir -> \pi r. A name in the
- * middle of other letters (spin, point, number) is never recognized.
+ * one, plus an argument: sintheta -> \sin\theta, pir -> \pi r. A Greek or
+ * symbol name in the middle of other letters (spin, point, number) is never
+ * recognized; function names anywhere in a word are functionWordLatex's.
  */
 function chainLatex(word: string, context: RuleContext) {
   const parts: string[] = [];
+  const spans = escapeNameSpans(word);
   let position = 0;
   let lastTakesArgument = false;
   while (position < word.length) {
     let match: { length: number; latex: string; takesArgument: boolean } | null = null;
     for (let end = word.length; end >= position + 2; end -= 1) {
-      const name = chainName(word.slice(position, end), context);
+      const candidate = word.slice(position, end);
+      // infty is the symbol's name, not \inf and ty.
+      if (FIXED_FUNCTIONS.has(candidate) && withinSpans(spans, position, end)) continue;
+      const name = chainName(candidate, context);
       if (name) {
         match = { length: end - position, ...name };
         break;
@@ -454,8 +466,73 @@ function chainLatex(word: string, context: RuleContext) {
   if (parts.length === 0 || (parts.length === 1 && !rest)) return null;
   if (rest && !lastTakesArgument && rest.length > 1) return null;
   if (rest) parts.push(rest);
+  return joinNameParts(parts);
+}
+
+/** Joins names and letters; a control word must not swallow the letter after it. */
+function joinNameParts(parts: string[]) {
   return parts.reduce((latex, part) =>
     /\\[A-Za-z]+$/.test(latex) && /^[A-Za-z]/.test(part) ? `${latex} ${part}` : latex + part);
+}
+
+const LONGEST_FUNCTION_NAME = Math.max(...[...FIXED_FUNCTIONS.keys()].map((name) => name.length));
+
+// Quick-escape names with a function name inside (infty, setminus, widetilde, degree): their letters are
+// the symbol's name waiting for the confirm-escape key, never a function and some letters (\inf ty).
+const SHADOWING_ESCAPE_NAMES = [
+  ...Object.keys(GREEK_WORDS), ...Object.keys(SYMBOL_WORDS), ...Object.keys(TEMPLATE_WORDS),
+  ...Object.keys(AFTER_NUMBER_WORDS),
+].filter((name) =>
+  [...FIXED_FUNCTIONS].some(([fn, entry]) => entry.certain && fn !== name && name.includes(fn)));
+
+/** Where such escape names are in a typed word. */
+function escapeNameSpans(word: string) {
+  const spans: Array<[number, number]> = [];
+  for (const name of SHADOWING_ESCAPE_NAMES) {
+    for (let at = word.indexOf(name); at >= 0; at = word.indexOf(name, at + 1)) spans.push([at, at + name.length]);
+  }
+  return spans;
+}
+
+const withinSpans = (spans: Array<[number, number]>, start: number, end: number) =>
+  spans.some(([from, to]) => from <= start && end <= to);
+
+/**
+ * A typed word with certain function names anywhere in it, the letters around them variables and
+ * arguments: asin -> a\sin, nlogn -> n\log n, dsintheta -> d\sin theta, sinxcosx -> \sin x\cos x.
+ * In math the letters before a function are its coefficient (A sin wt, mg sin theta, k ln W), and the
+ * space typed between them is no separator, so the name is found wherever it is. At each place the
+ * longest name wins (arcsin, not arc\sin; sinh, not \sin h). Ambiguous names (lg = l g) stay whole
+ * words before an argument, and Greek and symbol names are quick escapes of the confirm-escape key,
+ * so spin, point and number keep their letters.
+ */
+function functionWordLatex(word: string) {
+  const parts: string[] = [];
+  const spans = escapeNameSpans(word);
+  let letters = "";
+  let position = 0;
+  while (position < word.length) {
+    let name: { length: number; latex: string } | null = null;
+    for (let end = Math.min(word.length, position + LONGEST_FUNCTION_NAME); end >= position + 2; end -= 1) {
+      const fixed = FIXED_FUNCTIONS.get(word.slice(position, end));
+      if (fixed?.certain && !withinSpans(spans, position, end)) {
+        name = { length: end - position, latex: fixed.latex };
+        break;
+      }
+    }
+    if (!name) {
+      letters += word[position];
+      position += 1;
+      continue;
+    }
+    if (letters) parts.push(letters);
+    letters = "";
+    parts.push(name.latex);
+    position += name.length;
+  }
+  if (parts.length === 0) return null;
+  if (letters) parts.push(letters);
+  return joinNameParts(parts);
 }
 
 function classify(items: Item[], context: RuleContext) {
@@ -601,9 +678,13 @@ function classify(items: Item[], context: RuleContext) {
       continue;
     }
 
-    // Names chained from the start of a typed word: sintheta, pir, intx.
+    // Names chained from the start of a typed word (sintheta, pir, intx), and function names anywhere in
+    // it (asin, nlogn, sinxcosx). A subscript word is a label (x_{kmax}): there only names at its start.
     if (context.typed) {
-      const chain = chainLatex(text, context);
+      const escapeChain = context.escapes ? chainLatex(text, context) : null;
+      const chain = escapeChain ?? (context.inSubscript || !context.upright
+        ? chainLatex(text, context)
+        : functionWordLatex(text));
       if (chain) convert(index, chain);
     }
   }
@@ -664,7 +745,14 @@ export function applyInputJudgment(
     revert: Boolean(options.revert),
   };
   if (!context.upright && !context.escapes) return source;
-  const letters = processBranch(source, context);
+  let letters = processBranch(source, context);
+  // A typed word split around a function name leaves new words to judge (e^{isinx} -> e^{i\sin x}:
+  // that i is the imaginary unit), so a typed judgment runs until nothing changes.
+  for (let pass = 0; context.typed && !context.revert && pass < 3; pass += 1) {
+    const again = processBranch(letters, context);
+    if (again === letters) break;
+    letters = again;
+  }
   if (!context.upright) return letters;
   differentialReplacement = context.revert ? "\\mathit{d}" : "\\mathrm{d}";
   try {

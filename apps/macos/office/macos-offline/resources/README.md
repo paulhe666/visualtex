@@ -17,3 +17,5 @@ node scripts/package_macos_offline_addins.mjs \
 ```
 
 The packager rejects containers without a real `vbaProject.bin`, rejects missing VisualTeX module names, injects the reviewed `customUI14.xml`, preserves the fixed filenames, and writes SHA-256 metadata. The VisualTeX installer remains disabled until both validated artifacts exist.
+
+`addins.json` also pins the SHA-256 of every file in `../fonts`: the TrueType math fonts of Word's OMML font menu, which the installer copies into `~/Library/Fonts`, and their notices. They are fixed files; the packager keeps their pins and refuses a font that no longer matches.

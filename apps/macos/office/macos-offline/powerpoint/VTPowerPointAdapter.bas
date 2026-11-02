@@ -158,10 +158,21 @@ Failed:
 End Sub
 
 Public Sub VisualTeX_DoubleClickEditSelected()
-    ' Invoked by the native macOS double-click monitor. Let VBA errors return
-    ' to the monitor instead of displaying a modal message for ordinary shapes.
+    ' Invoked by the native macOS double-click monitor for a shape named like a
+    ' VisualTeX formula. An error leaving this macro makes PowerPoint show its
+    ' run-time error box, so a shape that is not a VisualTeX formula keeps
+    ' PowerPoint's own double-click and other failures read as the ribbon's.
+    Dim selectedShape As Shape
+
+    On Error GoTo Failed
     VTRequireWritablePowerPointPresentation
-    VTPowerPointEditShape VTSelectedSingleShape()
+    Set selectedShape = VTSelectedSingleShape()
+    If Not VTIsVisualTeXPowerPointShape(selectedShape) Then Exit Sub
+    VTPowerPointEditShape selectedShape
+    Exit Sub
+
+Failed:
+    VTShowError "PowerPoint edit", Err.Number, Err.Description
 End Sub
 
 Public Sub VisualTeX_EditShape(ByVal selectedShape As Shape)
@@ -179,13 +190,26 @@ Public Function VTIsVisualTeXPowerPointShape(ByVal selectedShape As Shape) As Bo
     Dim parsedFormulaId As String
     Dim displayMode As String
     Dim numbered As Boolean
+    Dim taggedReference As String
 
     On Error GoTo InvalidShape
     If selectedShape Is Nothing Then Exit Function
     formulaId = VTShapeFormulaId(selectedShape)
     encodedMetadata = VTShapeMetadata(selectedShape)
     If Not VTIsCanonicalUuid(formulaId) Or Not VTIsEncodedMetadata(encodedMetadata) Then Exit Function
-    If Not VTTryParseFormulaReference(selectedShape.Title, parsedFormulaId, displayMode, numbered) Then Exit Function
+    If Not VTTryParseFormulaReference(selectedShape.Title, parsedFormulaId, displayMode, numbered) Then
+        ' WPS Presentation cannot set a shape's Title: the formulas it makes
+        ' keep the reference in a tag, and their id (name or tag) and metadata
+        ' identify them where WPS dropped tags too. VisualTeX checks that the
+        ' id and the metadata agree when the editor opens.
+        On Error Resume Next
+        taggedReference = selectedShape.Tags("VisualTeXFormulaReference")
+        Err.Clear
+        On Error GoTo InvalidShape
+        If Not VTTryParseFormulaReference(taggedReference, parsedFormulaId, displayMode, numbered) Then
+            parsedFormulaId = formulaId
+        End If
+    End If
     If parsedFormulaId <> formulaId Then Exit Function
     VTIsVisualTeXPowerPointShape = True
     Exit Function
@@ -193,7 +217,7 @@ InvalidShape:
     VTIsVisualTeXPowerPointShape = False
 End Function
 
-Private Function VTPowerPointShapeObjectIdentity( _
+Public Function VTPowerPointShapeObjectIdentity( _
     ByVal currentSlide As Slide, _
     ByVal target As Shape) As String
 
@@ -217,7 +241,7 @@ Private Function VTPowerPointShapeCollectionIndex( _
     Next shapeIndex
 End Function
 
-Private Function VTFindPowerPointShapeById( _
+Public Function VTFindPowerPointShapeById( _
     ByVal currentSlide As Slide, _
     ByVal shapeId As Long) As Shape
 
@@ -1004,7 +1028,7 @@ Private Function VTSelectedSingleShape() As Shape
     Set VTSelectedSingleShape = ActiveWindow.Selection.ShapeRange(1)
 End Function
 
-Private Function VTShapeFormulaId(ByVal target As Shape) As String
+Public Function VTShapeFormulaId(ByVal target As Shape) As String
     Dim value As String
     On Error Resume Next
     value = target.Tags("VisualTeXFormulaId")
@@ -1015,7 +1039,7 @@ Private Function VTShapeFormulaId(ByVal target As Shape) As String
     If VTIsCanonicalUuid(value) Then VTShapeFormulaId = value
 End Function
 
-Private Function VTShapeMetadata(ByVal target As Shape) As String
+Public Function VTShapeMetadata(ByVal target As Shape) As String
     Dim value As String
     On Error Resume Next
     value = target.Tags("VisualTeXMetadata")
@@ -1080,7 +1104,7 @@ InvalidValue:
     Err.Clear
 End Function
 
-Private Sub VTSetPowerPointFormulaScaleState( _
+Public Sub VTSetPowerPointFormulaScaleState( _
     ByVal target As Shape, _
     ByVal fontSizePt As Double, _
     ByVal referenceWidthPt As Double, _
@@ -1539,7 +1563,7 @@ Private Function VTPresentationIdentity() As String
     VTPresentationIdentity = VTPresentationIdentityFor(ActivePresentation)
 End Function
 
-Private Function VTFindPowerPointPresentation( _
+Public Function VTFindPowerPointPresentation( _
     ByVal expectedIdentity As String) As Presentation
 
     Dim candidatePresentation As Presentation
@@ -1593,7 +1617,7 @@ Public Sub VTRequireWritablePowerPointPresentation()
     End If
 End Sub
 
-Private Sub VTSetShapeTag(ByVal target As Shape, ByVal key As String, ByVal value As String)
+Public Sub VTSetShapeTag(ByVal target As Shape, ByVal key As String, ByVal value As String)
     On Error Resume Next
     target.Tags.Delete key
     Err.Clear
@@ -1604,7 +1628,7 @@ Failed:
     Err.Raise vbObjectError + 7513, "VisualTeX", "PowerPoint could not persist VisualTeX tag " & key & "."
 End Sub
 
-Private Sub VTRestoreZOrder(ByVal target As Shape, ByVal expectedPosition As Long)
+Public Sub VTRestoreZOrder(ByVal target As Shape, ByVal expectedPosition As Long)
     Dim guard As Long
     Dim currentPosition As Long
     Dim shapeCount As Long

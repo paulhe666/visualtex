@@ -131,6 +131,11 @@ for relative in \
   resources/VisualTeX.dotm \
   resources/VisualTeX.ppam \
   resources/addins.json \
+  fonts/VisualTeXLatinModernMath.ttf \
+  fonts/VisualTeXTeXGyreTermesMath.ttf \
+  fonts/STIXTwoMath-Regular.ttf \
+  fonts/GUST-FONT-LICENSE.txt \
+  fonts/STIX-Two-Math-OFL.txt \
   word/VisualTeXWord.scpt \
   word/VTWordAdapter.bas \
   word/customUI14.xml \

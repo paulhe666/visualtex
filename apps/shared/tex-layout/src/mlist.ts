@@ -129,6 +129,14 @@ export interface Noad {
   tag?: Tag;
   /** tag for the script boxes (the editor atom that owns the scripts) */
   scriptTag?: Tag;
+  /**
+   * An operator whose nucleus is a box that stands for one character (a
+   * custom symbol drawn on a large operator): that character's italic
+   * correction, in em of the current size. makeOp then sets scripts and
+   * limits as for the character (tex.web 749-750); the box's width already
+   * includes it, as a character's clean box does.
+   */
+  italicEm?: number;
 }
 
 export interface StyleItem {
@@ -1008,6 +1016,16 @@ export class MathTypesetter {
       if (q.sub.mathType !== EMPTY && q.subtype !== LIMITS) x.width -= delta;
       x.shift = half(x.height - x.depth) - this.axisHeight(this.curSize);
       q.nucleus = { mathType: SUB_BOX, box: x };
+    } else if (q.italicEm) {
+      // a box standing for a character: placed as drawn (no centring on the axis)
+      delta = Math.round(q.italicEm * this.mathQuad(this.curSize));
+      const x = this.cleanBox(q.nucleus, this.curStyle);
+      // as width(x) := width(x) - delta for a character, but the box keeps its
+      // size (its artwork is painted into it): a kern takes the delta back
+      q.nucleus = {
+        mathType: SUB_BOX,
+        box: q.sub.mathType !== EMPTY && q.subtype !== LIMITS ? hpack([x, newKern(-delta, this.curTag)], 0, undefined, this.curTag) : x,
+      };
     } else delta = 0;
     if (q.subtype === LIMITS) {
       let x = this.cleanBox(q.sup, supStyle(this.curStyle));

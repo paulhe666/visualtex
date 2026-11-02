@@ -3,13 +3,14 @@ import type {
   CustomSymbolMetrics,
   CustomSymbolVectorShape,
   CustomSymbolVectorTransform,
-} from "./customSymbolTypes";
-import { createCustomSymbolDesignerSourceArchive } from "./customSymbolDesignerArchive";
+} from "./symbolTypes.ts";
+import { createCustomSymbolDesignerSourceArchive } from "./archive.ts";
+import { baseLayerOf, computeSymbolBox, type CustomSymbolBox, type ItalicLookup } from "./symbolBox.ts";
 import type {
   CustomSymbolDesignerDocument,
   CustomSymbolDesignerGlyphLayer,
   CustomSymbolDesignerLayer,
-} from "./customSymbolDesignerTypes";
+} from "./designerTypes.ts";
 
 function compactTransform(
   transform: CustomSymbolVectorTransform,
@@ -131,15 +132,19 @@ export function customSymbolDesignerLayerLocalShapes(
   return [...extrusion, ...frontShapes];
 }
 
+/** One layer's shapes as the registered symbol stores them (layer transform merged in). */
+export function compileCustomSymbolDesignerLayer(layer: CustomSymbolDesignerLayer) {
+  return customSymbolDesignerLayerLocalShapes(layer).map((shape) =>
+    compileLayerShape(shape, layer),
+  );
+}
+
 export function compileCustomSymbolDesignerArtwork(
   document: CustomSymbolDesignerDocument,
 ) {
-  return document.layers.flatMap((layer) => {
-    if (!layer.visible) return [];
-    return customSymbolDesignerLayerLocalShapes(layer).map((shape) =>
-      compileLayerShape(shape, layer),
-    );
-  });
+  return document.layers.flatMap((layer) =>
+    layer.visible ? compileCustomSymbolDesignerLayer(layer) : [],
+  );
 }
 
 const svgNamespace = "http://www.w3.org/2000/svg";
@@ -430,36 +435,24 @@ export function fitCustomSymbolDesignerDocumentToArtwork(
   };
 }
 
-function autoCropRegisteredArtwork(
-  artwork: CustomSymbolVectorShape[],
-  designerMetrics: CustomSymbolMetrics,
-) {
-  const measured = measureArtworkBounds(artwork, designerMetrics);
-  if (!measured) {
-    return { artwork, metrics: { ...designerMetrics } };
-  }
-  const baseline = designerMetrics.ascentEm * 1000;
-  const left = measured.left - registrationPaddingUnits;
-  const right = measured.right + registrationPaddingUnits;
-  const top = Math.min(
-    measured.top - registrationPaddingUnits,
-    baseline - 20,
-  );
-  const bottom = Math.max(
-    measured.bottom + registrationPaddingUnits,
-    baseline,
-  );
-  const width = Math.max(20, right - left);
-  const height = Math.max(20, bottom - top);
-  const normalizedBaseline = baseline - top;
-  return {
-    artwork: shiftArtwork(artwork, -left, -top),
-    metrics: {
-      widthEm: Number((width / 1000).toFixed(6)),
-      ascentEm: Number((normalizedBaseline / 1000).toFixed(6)),
-      descentEm: Number(((height - normalizedBaseline) / 1000).toFixed(6)),
-    },
-  };
+/**
+ * The registered symbol's box (symbolBox.ts) for the document as drawn now:
+ * null when nothing visible is painted (or there is no DOM to measure in).
+ */
+export function measureCustomSymbolBox(
+  document: CustomSymbolDesignerDocument,
+  italicOf?: ItalicLookup,
+): CustomSymbolBox | null {
+  const measured = measureArtworkBounds(compileCustomSymbolDesignerArtwork(document), document.metrics);
+  if (!measured) return null;
+  const base = baseLayerOf(document);
+  const others = base
+    ? measureArtworkBounds(
+        compileCustomSymbolDesignerArtwork({ ...document, layers: document.layers.filter((layer) => layer.id !== base.id) }),
+        document.metrics,
+      )
+    : null;
+  return computeSymbolBox(document, measured, italicOf, others);
 }
 
 export function customSymbolDefinitionFromDesignerDocument(
@@ -468,21 +461,25 @@ export function customSymbolDefinitionFromDesignerDocument(
     id: string;
     createdAt?: number;
     updatedAt?: number;
+    /** the materials' italic corrections (an operator's limits sit by its base's) */
+    italicOf?: ItalicLookup;
   },
 ): CustomSymbolDefinition {
   const now = Date.now();
   const compiledArtwork = compileCustomSymbolDesignerArtwork(document);
-  const cropped = autoCropRegisteredArtwork(compiledArtwork, document.metrics);
+  const box = measureCustomSymbolBox(document, options.italicOf);
   return {
     id: options.id,
     command: document.command.trim().replace(/^\\/, ""),
     name: document.name.trim(),
     role: document.role,
     limitsBehavior: document.limitsBehavior,
-    metrics: cropped.metrics,
+    metrics: box ? box.metrics : { ...document.metrics },
     artwork: {
-      shapes: cropped.artwork,
+      shapes: box ? shiftArtwork(compiledArtwork, -box.left, -box.top) : compiledArtwork,
     },
+    ...(box && box.italicEm > 0 ? { italicCorrectionEm: box.italicEm } : {}),
+    ...(box?.artworkBounds ? { artworkBounds: box.artworkBounds } : {}),
     ommlFallback: document.ommlFallback?.trim() || null,
     designerSource: createCustomSymbolDesignerSourceArchive(document),
     createdAt: options.createdAt ?? now,

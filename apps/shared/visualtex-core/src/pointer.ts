@@ -32,7 +32,7 @@ const isLeaf = (atom: CoreAtom) => slotOrder(atom).length === 0;
  * An atom's box for hit testing: it ends where its scripts (a subsup right
  * after it) begin, also where TeX boxed them with it (an accented letter).
  */
-function regionOf(geometry: EditorGeometry, atom: CoreAtom): Box | undefined {
+export function regionOf(geometry: EditorGeometry, atom: CoreAtom): Box | undefined {
   const r: Box | undefined = geometry.regions.get(atom as never);
   const next = atom.rightSibling;
   const scripts: Box | undefined = next?.type === "subsup" ? geometry.regions.get(next as never) : undefined;

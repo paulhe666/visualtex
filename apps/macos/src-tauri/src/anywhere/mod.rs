@@ -65,6 +65,25 @@ const MAX_PENDING_KEYS: usize = 256;
 /// the keyboard is never shown.
 #[cfg(target_os = "macos")]
 const PAGE_ANSWER_WAIT: Duration = Duration::from_millis(600);
+/// What a line of the field's text is to its font size (Chrome reports the line box).
+#[cfg(target_os = "macos")]
+const LINE_TO_FONT: f64 = 1.19;
+/// The shortest believable line of a field's text, points (a 9 pt font's): a
+/// shorter rectangle is not the text's and does not size the formula.
+#[cfg(target_os = "macos")]
+pub(super) const MIN_TEXT_HEIGHT: f64 = 11.0;
+/// The tallest, points.
+#[cfg(target_os = "macos")]
+const MAX_TEXT_HEIGHT: f64 = 96.0;
+/// How far the anchor's height may be from the field's first report and
+/// still size the formula (an empty line first reports its whole line box,
+/// taller than its text); outside this only its place is used.
+#[cfg(target_os = "macos")]
+const ANCHOR_RATIO: std::ops::RangeInclusive<f64> = 0.6..=1.6;
+/// The system's text size (NSFont.systemFontSize), points: what the formula
+/// is sized from when the field tells nothing believable.
+#[cfg(target_os = "macos")]
+const SYSTEM_TEXT_SIZE: f64 = 13.0;
 
 /// A rectangle in global screen coordinates as Accessibility and Quartz
 /// report them: points, origin at the top left of the main display, y down.
@@ -225,6 +244,10 @@ struct Session {
     pending_keys: Vec<serde_json::Value>,
     /// The field's text style where the formula goes.
     field_text: FieldText,
+    /// The height of the field's text (points) that sized this formula first:
+    /// the anchor's height is checked against it. None: the field told
+    /// nothing believable (the system's text size is used until it does).
+    reference_height: Option<f64>,
     /// Where the formula is drawn in the field's line: x at the formula's
     /// start (the input method's marked text), y on the line's baseline.
     inline_anchor: Option<ScreenRect>,
@@ -281,6 +304,7 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
         line_descent: None,
         background_color: None,
     },
+    reference_height: None,
     inline_anchor: None,
     color_read: 0,
     color_from_screen: 0,
@@ -416,6 +440,7 @@ fn activate(app: &AppHandle, display: bool) {
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
         session.field_text = FieldText::default();
+        session.reference_height = None;
         session.inline_anchor = None;
         (pending_activation(&session, trusted), session.ready)
     };
@@ -466,6 +491,7 @@ fn begin_input_method(app: &AppHandle, display: bool) {
         session.awaiting_input_method = session.generation;
         session.pending_keys.clear();
         session.field_text = FieldText::default();
+        session.reference_height = None;
         session.inline_anchor = None;
         session.generation
     };
@@ -546,7 +572,14 @@ struct FieldGeometry {
     caret: ScreenRect,
     /// The line's baseline, Quartz y.
     baseline: f64,
+    /// How the field's text looks (its size fields None when the report is
+    /// not believable).
     text: FieldText,
+    /// The height of the field's text in points, when believable (a line of
+    /// text tall: MIN_TEXT_HEIGHT, MAX_TEXT_HEIGHT).
+    measured: Option<f64>,
+    /// The report, for anywhere.log.
+    report: String,
 }
 
 /// A rectangle from the input method (AppKit screen coordinates, y up) in
@@ -586,11 +619,16 @@ fn input_method_geometry(message: &serde_json::Value) -> Option<FieldGeometry> {
             _ => height,
         }
     };
-    let font_size = if field_tells_font {
-        reported_size
-    } else {
-        Some((text_height / 1.19).clamp(6.0, 64.0))
-    };
+    // A rectangle shorter or taller than a line of text places the formula
+    // without sizing it.
+    let measured = (MIN_TEXT_HEIGHT..=MAX_TEXT_HEIGHT).contains(&text_height).then_some(text_height);
+    let font_size = measured.and_then(|_| {
+        if field_tells_font {
+            reported_size
+        } else {
+            Some((text_height / LINE_TO_FONT).clamp(9.0, 64.0))
+        }
+    });
     let scale = match (font_size, reported_size) {
         (Some(size), Some(reported)) if reported > 0.0 => size / reported,
         _ => 1.0,
@@ -619,11 +657,64 @@ fn input_method_geometry(message: &serde_json::Value) -> Option<FieldGeometry> {
                 .filter(|color| color.len() == 9 && color.starts_with('#'))
                 .map(str::to_string),
             x_height: number("xHeight").filter(|ratio| (0.3..=0.8).contains(ratio)),
-            line_height: Some(text_height.clamp(10.0, 64.0)),
-            line_descent: Some(descent),
+            line_height: measured,
+            line_descent: measured.map(|_| descent),
             background_color: None,
         },
+        measured,
+        report: format!(
+            "caret={x:.0},{y:.0},{height:.0} font={} fieldFont={field_tells_font} textBefore={} learnt={} text={text_height:.1}pt",
+            reported_size.map(|value| format!("{value:.1}")).unwrap_or_else(|| "-".to_string()),
+            message.get("textBefore").and_then(|value| value.as_bool()).unwrap_or(true),
+            number("textHeight").map(|value| format!("{value:.0}")).unwrap_or_else(|| "-".to_string())
+        ),
     })
+}
+
+/// How text whose line (its caret) is `line` points tall looks: its font
+/// size, the line and how far it reaches below the baseline.
+#[cfg(target_os = "macos")]
+fn text_of_line(line: f64) -> FieldText {
+    FieldText {
+        font_size: Some((line / LINE_TO_FONT).clamp(9.0, 64.0)),
+        line_height: Some(line),
+        line_descent: Some(line * 0.22),
+        ..FieldText::default()
+    }
+}
+
+/// The field's text where the formula opens: as the field tells it when the
+/// report is believable, else the system's text size in the field's colour.
+#[cfg(target_os = "macos")]
+fn opening_text(geometry: &FieldGeometry) -> FieldText {
+    if geometry.measured.is_some() {
+        return geometry.text.clone();
+    }
+    FieldText {
+        text_color: geometry.text.text_color.clone(),
+        x_height: geometry.text.x_height,
+        ..text_of_line(SYSTEM_TEXT_SIZE * LINE_TO_FONT)
+    }
+}
+
+/// Whether the anchor's height (points, None: not believable) sizes the
+/// formula, given the height that sized it first (None: the system's).
+#[cfg(target_os = "macos")]
+fn anchor_sizes(measured: Option<f64>, reference: Option<f64>) -> bool {
+    match (measured, reference) {
+        (Some(height), Some(reference)) => ANCHOR_RATIO.contains(&(height / reference)),
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn describe_text(text: &FieldText) -> String {
+    format!(
+        "font={} line={}",
+        text.font_size.map(|value| format!("{value:.1}")).unwrap_or_else(|| "-".to_string()),
+        text.line_height.map(|value| format!("{value:.1}")).unwrap_or_else(|| "-".to_string())
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -688,11 +779,14 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
 fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
     let geometry = input_method_geometry(message);
     let client = message.get("client").and_then(|value| value.as_str()).unwrap_or("").to_string();
+    let kind = message.get("t").and_then(|value| value.as_str()).unwrap_or("");
     enum Next {
         Open(Option<Activation>, bool),
         Follow(ScreenRect, PanelLayout, Option<(u64, FieldText)>),
         Nothing,
     }
+    // what the report did to the formula's size, for anywhere.log (written after the lock)
+    let mut sizing: Option<String> = None;
     let next = {
         let Ok(mut session) = session() else { return };
         if session.delivery != Delivery::InputMethod {
@@ -703,7 +797,17 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
                 .as_ref()
                 .map(|geometry| geometry.caret)
                 .unwrap_or_else(|| ax::capture_target(ax::is_trusted()).anchor);
-            session.field_text = geometry.as_ref().map(|geometry| geometry.text.clone()).unwrap_or_default();
+            session.field_text = geometry.as_ref().map(opening_text).unwrap_or_default();
+            session.reference_height = geometry.as_ref().and_then(|geometry| geometry.measured);
+            if let Some(geometry) = geometry.as_ref() {
+                sizing = Some(format!(
+                    "size gen={} {kind} {} -> {} ({})",
+                    session.generation,
+                    geometry.report,
+                    describe_text(&session.field_text),
+                    if geometry.measured.is_some() { "field" } else { "not believable: system text size" }
+                ));
+            }
             session.inline_anchor = geometry.as_ref().map(inline_anchor);
             session.target = Some(Target {
                 app_name: client.clone(),
@@ -718,17 +822,35 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
             let anchor = inline_anchor(geometry);
             session.inline_anchor = Some(anchor);
             // A style the field tells only now (its font with the marked text).
+            // The anchor's height sizes the formula only when it is believable
+            // and near the height that sized it first.
+            let sizes = anchor_sizes(geometry.measured, session.reference_height);
             let mut text = session.field_text.clone();
             let reported = &geometry.text;
-            text.font_size = reported.font_size.or(text.font_size);
+            if sizes {
+                session.reference_height = session.reference_height.or(geometry.measured);
+                text.font_size = reported.font_size.or(text.font_size);
+                text.x_height = reported.x_height.or(text.x_height);
+                text.line_height = reported.line_height.or(text.line_height);
+                text.line_descent = reported.line_descent.or(text.line_descent);
+            }
             if session.color_from_screen != session.generation {
                 text.text_color = reported.text_color.clone().or(text.text_color);
             }
-            text.x_height = reported.x_height.or(text.x_height);
-            text.line_height = reported.line_height.or(text.line_height);
-            text.line_descent = reported.line_descent.or(text.line_descent);
             text.background_color = reported.background_color.clone().or(text.background_color);
             let restyle = (text != session.field_text).then(|| (session.generation, text.clone()));
+            sizing = Some(format!(
+                "size gen={} anchor {} reference={} -> {}{}",
+                session.generation,
+                geometry.report,
+                session.reference_height.map(|value| format!("{value:.1}pt")).unwrap_or_else(|| "-".to_string()),
+                if sizes { "sizes" } else { "places only" },
+                restyle
+                    .as_ref()
+                    .filter(|(_, new)| new.font_size != session.field_text.font_size || new.line_height != session.field_text.line_height)
+                    .map(|(_, new)| format!(", {} -> {}", describe_text(&session.field_text), describe_text(new)))
+                    .unwrap_or_default()
+            ));
             // The formula's colour from the field's background, once the
             // formula's place is known (if it was not read when it showed).
             let read_color = (session.color_read != session.generation && session.phase == Phase::Presented)
@@ -749,6 +871,9 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
             Next::Nothing
         }
     };
+    if let Some(line) = sizing {
+        log(&line);
+    }
     match next {
         Next::Open(activation, ready) => {
             ime::send(serde_json::json!({ "t": "session", "on": true }));
@@ -837,7 +962,8 @@ fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
         session.display = false;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
-        session.field_text = geometry.as_ref().map(|geometry| geometry.text.clone()).unwrap_or_default();
+        session.field_text = geometry.as_ref().map(opening_text).unwrap_or_default();
+        session.reference_height = geometry.as_ref().and_then(|geometry| geometry.measured);
         session.inline_anchor = geometry.as_ref().map(inline_anchor);
         session.target = Some(Target {
             app_name: client,
@@ -1435,5 +1561,19 @@ mod tests {
         layout = PanelLayout::EMPTY;
         layout.width = 8.0;
         assert!(!layout.is_valid());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn the_anchor_sizes_only_near_the_first_report() {
+        assert!(anchor_sizes(Some(18.0), Some(19.0)));
+        // an empty line's line box first, the text's height on the anchor
+        assert!(anchor_sizes(Some(16.0), Some(24.0)));
+        // a made-up rectangle much shorter or taller than the field's text
+        assert!(!anchor_sizes(Some(11.0), Some(20.0)));
+        assert!(!anchor_sizes(Some(40.0), Some(20.0)));
+        assert!(!anchor_sizes(None, Some(20.0)));
+        // the first believable report sizes a formula opened at the system's size
+        assert!(anchor_sizes(Some(14.0), None));
     }
 }

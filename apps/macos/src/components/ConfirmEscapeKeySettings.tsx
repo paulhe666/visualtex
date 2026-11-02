@@ -41,9 +41,6 @@ function copy(isEn: boolean) {
   return {
     section: isEn ? "Input" : "输入",
     label: isEn ? "Confirm escape" : "确认转义",
-    description: isEn
-      ? "Turns only the name right before the caret into its symbol (alpha → α); Backspace right after undoes it."
-      : "只把光标前的命令名转成符号（alpha → α）；紧接着按 Backspace 可撤销。",
   };
 }
 
@@ -63,7 +60,6 @@ export function ConfirmEscapeKeySettingsSection() {
       <header className="formula-hotkey-section-heading">
         <CornerDownLeft size={16} />
         <strong>{text.section}</strong>
-        <span>{isEn ? "Typing in the formula editor" : "在公式编辑区中输入"}</span>
       </header>
       <div className="office-hotkey-action-list">
         <article className="office-hotkey-action-row" data-confirm-escape-key-row>
@@ -72,7 +68,6 @@ export function ConfirmEscapeKeySettingsSection() {
           </div>
           <div className="formula-hotkey-binding-copy">
             <strong>{text.label}</strong>
-            <span>{text.description}</span>
           </div>
           {chord ? (
             <kbd>{formatFormulaHotkeyChord(chord)}</kbd>
@@ -251,7 +246,6 @@ function ConfirmEscapeKeyRecorderDialog({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <strong>{text.label}</strong>
-              <span>{text.description}</span>
               <code>
                 {isEn ? "Default: " : "默认："}
                 {formatFormulaHotkeyChord(DEFAULT_CONFIRM_ESCAPE_CHORD)}
@@ -264,13 +258,8 @@ function ConfirmEscapeKeyRecorderDialog({ onClose }: { onClose: () => void }) {
             {capturedChord ? (
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
-              <strong>{isEn ? "Press a key now" : "现在按下需要使用的按键"}</strong>
+              <strong>{isEn ? "Press a key" : "请按键"}</strong>
             )}
-            <span>
-              {isEn
-                ? "A plain key such as Space works. When nothing can be escaped, the key does its usual job."
-                : "可以是 Space 这样的单键；光标前没有可转义的命令时，该键照常起作用。"}
-            </span>
           </div>
 
           {problem && (
@@ -284,15 +273,15 @@ function ConfirmEscapeKeyRecorderDialog({ onClose }: { onClose: () => void }) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”.`
+                  : `已分配给“${conflictLabel}”。`}
               </span>
             </div>
           )}
           {capturedChord && canSave && !conflictLabel && (
             <div className="formula-hotkey-message is-success">
               <Check size={16} />
-              <span>{isEn ? "Available." : "可以使用。"}</span>
+              <span>{isEn ? "Available" : "可用"}</span>
             </div>
           )}
         </div>
@@ -304,7 +293,7 @@ function ConfirmEscapeKeyRecorderDialog({ onClose }: { onClose: () => void }) {
                 ? `Current: ${formatFormulaHotkeyChord(existingChord)}`
                 : `当前：${formatFormulaHotkeyChord(existingChord)}`
               : isEn
-                ? "Quick escape is off"
+                ? "Confirm escape is off"
                 : "确认转义已关闭"}
           </span>
           <div>

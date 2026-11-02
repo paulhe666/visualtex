@@ -1141,6 +1141,10 @@ function verifyBuiltVba(path) {
     "App_WindowSelectionChange",
     "VTWordRibbonApplyImageFontSizePreset",
     "VTWordRibbonApplyConversionFontSize",
+    "VTWordRibbonSelectOmmlFont",
+    "VTOmmlFontChoiceKey",
+    "VTOmmlFontNameForChoice",
+    "VTV2MathFontRepairs",
     "VTRefreshNumberedImageFormulaFontLayout",
     "VisualTeX_EditImageField",
     "VisualTeX_EditSelectedImageFromNativeMonitor",
@@ -1148,7 +1152,7 @@ function verifyBuiltVba(path) {
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
     "word-office-performance-20260801-r130",
-    "1.2.10",
+    "1.3.0",
   ];
   for (const value of required) {
     const utf8 = Buffer.from(value, "utf8");

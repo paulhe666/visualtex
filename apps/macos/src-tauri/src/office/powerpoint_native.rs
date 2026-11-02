@@ -10,6 +10,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const POWERPOINT_BUNDLE_ID: &str = "com.microsoft.Powerpoint";
 const WORD_BUNDLE_ID: &str = "com.microsoft.Word";
+/// WPS Office from the Mac App Store and the international build.
+const WPS_BUNDLE_IDS: [&str; 2] = ["com.kingsoft.wpsoffice.mac", "com.kingsoft.wpsoffice.mac.global"];
 const SHAPE_PREFIX: &str = "VisualTeX_";
 const WORD_METADATA_PREFIX: &str = "visualtex:v1:deflate:";
 const WORD_SELECTION_FIELD_SEPARATOR: &str = "<VISUALTEX_WORD_FIELD>";
@@ -1110,6 +1112,14 @@ pub fn start_double_click_monitor(
         let powerpoint_screen_y = MainThreadMarker::new().and_then(|main| {
             NSScreen::screens(main).firstObject().map(|screen| screen.frame().size.height - click_y)
         });
+        if frontmost.as_deref().is_some_and(|bundle_id| WPS_BUNDLE_IDS.contains(&bundle_id)) {
+            // WPS Presentation raises no double-click event: its add-in hears
+            // about the click from VisualTeX and checks what it hit.
+            if let Some(y) = powerpoint_screen_y {
+                crate::office::wps::bridge::notify_double_click(click_x, y);
+            }
+            return;
+        }
         let app = app.clone();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {

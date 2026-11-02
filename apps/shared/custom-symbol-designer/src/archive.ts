@@ -3,13 +3,13 @@ import type {
   CustomSymbolDesignerSourceArchive,
   CustomSymbolDesignerSourceAsset,
   CustomSymbolDesignerSourceLayer,
-} from "./customSymbolTypes";
+} from "./symbolTypes.ts";
 import type {
   CustomSymbolDesignerDocument,
   CustomSymbolDesignerGeometryLayer,
   CustomSymbolDesignerGlyphLayer,
   CustomSymbolDesignerLayer,
-} from "./customSymbolDesignerTypes";
+} from "./designerTypes.ts";
 
 function deepClone<T>(value: T): T {
   if (typeof structuredClone === "function") return structuredClone(value);
@@ -70,7 +70,13 @@ export function createCustomSymbolDesignerSourceArchive(
       bounds: deepClone(layer.bounds),
     });
   }
-  return { version: 1, metrics: deepClone(document.metrics), assets, layers };
+  return {
+    version: 1,
+    metrics: deepClone(document.metrics),
+    ...(document.baseLayerId !== undefined ? { baseLayerId: document.baseLayerId } : {}),
+    assets,
+    layers,
+  };
 }
 
 export function restoreCustomSymbolDesignerDocument(
@@ -126,6 +132,7 @@ export function restoreCustomSymbolDesignerDocument(
         metrics: deepClone(archive.metrics ?? symbol.metrics),
         ommlFallback: symbol.ommlFallback ?? null,
         layers,
+        ...(archive.baseLayerId !== undefined ? { baseLayerId: archive.baseLayerId } : {}),
       },
       sourceMode: "editable",
     };

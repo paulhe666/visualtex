@@ -27,3 +27,7 @@ Public IsEdit As Boolean
 Public Completed As Boolean
 Public PrefixBreak As Boolean
 Public SuffixBreak As Boolean
+' An equation in a table cell: the table, and the cell whose text shape is TargetShape.
+Public TableShape As PowerPoint.Shape
+Public CellRow As Long
+Public CellColumn As Long

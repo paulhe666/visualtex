@@ -129,7 +129,7 @@ export function decodeDocumentImportBytes(bytes: Uint8Array): {
           source = new TextDecoder("gb18030", { fatal: true }).decode(bytes);
           encoding = "GB18030";
         } catch {
-          throw new Error("无法识别文件编码。请将文件保存为 UTF-8、UTF-16 或 GB18030 后重试。");
+          throw new Error("无法识别文件编码（支持 UTF-8、UTF-16、GB18030）。");
         }
       }
     }

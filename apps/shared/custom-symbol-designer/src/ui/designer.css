@@ -1,0 +1,1264 @@
+/* Custom symbol designer (shared by macOS and Windows). Uses the app's theme variables. */
+
+.csd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 2200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(15, 20, 26, 0.38);
+}
+
+.csd-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1480px, 100%);
+  height: min(940px, 100%);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+}
+
+.csd-dialog button {
+  font: inherit;
+  color: inherit;
+}
+
+.csd-dialog button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.csd-dialog input,
+.csd-dialog select {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.csd-dialog input:focus-visible,
+.csd-dialog select:focus-visible,
+.csd-dialog button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* header */
+
+.csd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 46px;
+  padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.csd-header > strong {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.csd-doc-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csd-doc-title em {
+  font-family: inherit;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.csd-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.csd-header-actions > button,
+.csd-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.csd-header-actions > button:hover:not(:disabled),
+.csd-icon-button:hover {
+  background: var(--surface-hover);
+}
+
+.csd-icon-button.is-active {
+  color: var(--accent);
+}
+
+.csd-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.csd-library {
+  position: relative;
+}
+
+.csd-library-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.csd-library-button b {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.csd-library-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: 320px;
+  max-height: min(420px, 60vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.csd-library-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.csd-library-item.is-active {
+  background: var(--accent-soft);
+}
+
+.csd-library-item > button {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.csd-library-item > button:hover {
+  background: var(--surface-hover);
+}
+
+.csd-library-item > .csd-library-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: auto;
+  padding: 5px 6px;
+  text-align: left;
+}
+
+.csd-library-open > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.csd-library-open strong,
+.csd-library-open code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csd-library-open code {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.csd-library-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-sunken);
+}
+
+.csd-library-item .is-danger:hover,
+.csd-library-item .is-confirm {
+  color: var(--danger);
+}
+
+/* body */
+
+.csd-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(212px, 252px) minmax(0, 1fr) minmax(244px, 288px);
+  grid-template-areas: "materials stage side";
+  min-height: 0;
+}
+
+.csd-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-elevated);
+}
+
+.csd-materials {
+  grid-area: materials;
+  border-right: 1px solid var(--border);
+}
+
+.csd-side {
+  grid-area: side;
+  border-left: 1px solid var(--border);
+}
+
+.csd-stage {
+  grid-area: stage;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.csd-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.csd-tabs > button {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csd-tabs > button.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.csd-tabs.is-inline {
+  padding: 0;
+  border: 0;
+}
+
+.csd-tabs.is-inline > button {
+  flex: 0 0 auto;
+}
+
+.csd-materials-body,
+.csd-side-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+.csd-source-row {
+  display: flex;
+  gap: 6px;
+}
+
+.csd-source-row input {
+  flex: 1;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.csd-source-row button,
+.csd-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.csd-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-faint);
+}
+
+.csd-dialog .csd-search input {
+  flex: 1;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+.csd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.csd-chips > button {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.csd-chips > button.is-active,
+.csd-chips > button:active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.csd-chips.is-tight > button {
+  border-radius: 6px;
+}
+
+.csd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 4px;
+  align-content: start;
+}
+
+.csd-grid > button {
+  display: grid;
+  place-items: center;
+  height: 42px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.csd-grid > button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.csd-grid > button > * {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.csd-grid.is-text > button {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.csd-segmented {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-sunken);
+}
+
+.csd-segmented > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 30px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.csd-segmented > button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.csd-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+
+.csd-shape-grid > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.csd-shape-grid > button:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.csd-shape-icon {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.csd-shape-icon::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 2px solid currentColor;
+}
+
+.csd-shape-icon.is-line::before {
+  inset: 8px 1px auto;
+  height: 0;
+  border-width: 2px 0 0;
+}
+
+.csd-shape-icon.is-circle::before,
+.csd-shape-icon.is-arc::before {
+  border-radius: 50%;
+}
+
+.csd-shape-icon.is-arc::before {
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  transform: rotate(-45deg);
+}
+
+.csd-shape-icon.is-ellipse::before {
+  inset: 4px 1px;
+  border-radius: 50%;
+}
+
+.csd-shape-icon.is-rect::before {
+  inset: 3px;
+  border-radius: 2px;
+}
+
+.csd-shape-icon.is-triangle::before {
+  inset: 2px;
+  border: 0;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%, 50% 0, 50% 22%, 16% 88%, 84% 88%, 50% 22%);
+}
+
+.csd-shape-icon.is-arrow::before {
+  inset: 8px 2px auto 1px;
+  height: 0;
+  border-width: 2px 0 0;
+}
+
+.csd-shape-icon.is-arrow::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 2px 2px 0 0;
+  transform: rotate(45deg);
+}
+
+.csd-shape-icon.is-eraser::before {
+  border-style: dashed;
+  border-radius: 50%;
+}
+
+.csd-hint,
+.csd-empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.csd-empty {
+  padding: 8px 2px;
+}
+
+.csd-message {
+  margin: 0 10px 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.csd-message.is-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.csd-message.is-success {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.csd-side-body .csd-message,
+.csd-library-menu .csd-message {
+  margin: 0;
+}
+
+.csd-spin {
+  animation: csd-spin 0.9s linear infinite;
+}
+
+@keyframes csd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* stage */
+
+.csd-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 42px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.csd-toolbar-spacer {
+  flex: 1;
+}
+
+.csd-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.csd-dialog .csd-inline-field input[type="range"] {
+  width: 110px;
+  height: auto;
+  padding: 0;
+  border: 0;
+}
+
+.csd-inline-field output {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
+.csd-canvas-shell {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.csd-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--text);
+  outline: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.csd-canvas.is-pan-tool {
+  cursor: grab;
+}
+
+.csd-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.csd-canvas.is-erasing {
+  cursor: none;
+}
+
+.csd-paper {
+  fill: var(--formula-surface, var(--surface));
+}
+
+.csd-gridline.is-minor,
+.csd-gridline.is-major {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-gridline.is-minor {
+  stroke: color-mix(in srgb, var(--border) 55%, transparent);
+  stroke-width: 0.6;
+}
+
+.csd-gridline.is-major {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.csd-guide line {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1;
+}
+
+.csd-guide text {
+  fill: var(--text-faint);
+  font-family: system-ui, sans-serif;
+}
+
+.csd-guide.is-baseline line {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+
+.csd-guide.is-baseline text {
+  fill: var(--accent);
+}
+
+.csd-guide.is-axis line {
+  stroke: var(--accent);
+  stroke-dasharray: 6 4;
+  opacity: 0.55;
+}
+
+.csd-guide.is-minor line {
+  stroke: var(--border-strong);
+  stroke-dasharray: 2 4;
+}
+
+.csd-guide.is-origin {
+  stroke: var(--border-strong);
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-crop rect {
+  fill: color-mix(in srgb, var(--accent) 5%, transparent);
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-crop text {
+  fill: var(--accent);
+  font-family: system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.csd-reference {
+  color: var(--text-faint);
+  opacity: 0.55;
+}
+
+.csd-hit {
+  fill: transparent;
+  cursor: move;
+}
+
+.csd-selection {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-selection.is-eraser {
+  stroke-dasharray: 4 3;
+}
+
+.csd-resize-handle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-resize-handle.is-nw,
+.csd-resize-handle.is-se {
+  cursor: nwse-resize;
+}
+
+.csd-resize-handle.is-ne,
+.csd-resize-handle.is-sw {
+  cursor: nesw-resize;
+}
+
+.csd-resize-handle.is-n,
+.csd-resize-handle.is-s {
+  cursor: ns-resize;
+}
+
+.csd-resize-handle.is-e,
+.csd-resize-handle.is-w {
+  cursor: ew-resize;
+}
+
+.csd-rotate-stem {
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-rotate-handle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  cursor: grab;
+}
+
+.csd-eraser-cursor {
+  fill: color-mix(in srgb, var(--danger) 10%, transparent);
+  stroke: var(--danger);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.csd-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.csd-zoom > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.csd-zoom > button:hover {
+  background: var(--surface-hover);
+}
+
+.csd-zoom > span {
+  min-width: 46px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* code */
+
+.csd-code {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.csd-code header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 38px;
+  padding: 4px 8px 4px 10px;
+}
+
+.csd-code-note {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csd-code-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.csd-code pre {
+  height: clamp(84px, 18vh, 180px);
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre;
+  user-select: text;
+}
+
+.csd-code-omissions {
+  margin: -2px 10px 8px;
+  color: var(--warning);
+  font-size: 12px;
+}
+
+/* properties */
+
+.csd-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.csd-layer-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.csd-layer-title input {
+  flex: 1;
+  font-weight: 600;
+}
+
+.csd-tag {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.csd-section {
+  border-top: 1px solid var(--border);
+}
+
+.csd-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.csd-section-title svg {
+  color: var(--text-faint);
+  transition: transform 0.12s;
+}
+
+.csd-section.is-open .csd-section-title svg {
+  transform: rotate(90deg);
+}
+
+.csd-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.csd-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.csd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.csd-field-input {
+  position: relative;
+  display: flex;
+}
+
+.csd-field-input input {
+  flex: 1;
+  width: 100%;
+  padding-right: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.csd-field-input em {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-style: normal;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.csd-icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.csd-icon-row > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.csd-icon-row > button:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.csd-icon-row > button.is-active {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.csd-icon-row > button.is-danger:hover {
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.csd-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.csd-dialog .csd-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+/* layers */
+
+.csd-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.csd-layer-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.csd-layer-list li:hover {
+  background: var(--surface-hover);
+}
+
+.csd-layer-list li.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.csd-layer-list li.is-hidden .csd-layer-thumb,
+.csd-layer-list li.is-hidden .csd-layer-name {
+  opacity: 0.45;
+}
+
+.csd-layer-thumb {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.csd-layer-thumb > * {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.csd-layer-name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.csd-layer-name strong,
+.csd-layer-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csd-layer-name small {
+  color: var(--text-faint);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.csd-layer-list li > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.csd-layer-list li > button:hover {
+  background: var(--surface);
+}
+
+/* registration */
+
+.csd-registration {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.csd-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.csd-form-field input[data-csd-command],
+.csd-form-field input[data-csd-fallback] {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.csd-form-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.csd-field-error {
+  margin: -6px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.csd-primary {
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--primary-foreground) !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.csd-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* narrower windows: materials and the side panel share the left column */
+
+@media (max-width: 1079px) {
+  .csd-body {
+    grid-template-columns: minmax(214px, 264px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "materials stage"
+      "side stage";
+  }
+
+  .csd-side {
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+/* narrow windows: one column that scrolls, the canvas first */
+
+@media (max-width: 759px) {
+  .csd-backdrop {
+    padding: 6px;
+  }
+
+  .csd-body {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .csd-stage {
+    flex: 0 0 auto;
+    order: 0;
+  }
+
+  .csd-canvas-shell {
+    flex: 0 0 auto;
+    height: max(300px, 52vh);
+  }
+
+  .csd-materials,
+  .csd-side {
+    flex: 0 0 auto;
+    min-height: 320px;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .csd-materials {
+    order: 1;
+  }
+
+  .csd-side {
+    order: 2;
+  }
+
+  .csd-library-menu {
+    position: fixed;
+    top: 60px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+@media (max-height: 560px) {
+  .csd-code pre {
+    height: 84px;
+  }
+}

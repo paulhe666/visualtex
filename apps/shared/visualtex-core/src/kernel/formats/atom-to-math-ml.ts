@@ -42,6 +42,25 @@ function makeID(id: string | undefined, options: MathMLOptions): string {
   return ` extid="${id}"`;
 }
 
+/**
+ * VisualTeX: symbol-wide bold (\bm: no variant, variantStyle bold) as the
+ * explicit style each glyph has in it: a letter that is italic by default in
+ * bold italic, anything else in bold.
+ */
+function visualTexEffectiveVariant(atom: Atom): { variant?: string; variantStyle?: string } {
+  const variant = atom.style?.variant;
+  const variantStyle = atom.style?.variantStyle;
+  if (variant !== undefined || variantStyle !== 'bold') return { variant, variantStyle };
+  const value = typeof atom.value === 'string' ? atom.value : '';
+  const italic = /^[A-Za-z]$/.test(value) || /^[\u03b1-\u03c9\u03d1\u03d5\u03d6\u03f0\u03f1\u03f5]$/.test(value);
+  return italic ? { variant: 'normal', variantStyle: 'bolditalic' } : { variant: 'normal', variantStyle: 'bold' };
+}
+
+/** VisualTeX: mathvariant="bold" for a bold operator or number (MathLive writes their weight nowhere). */
+function visualTexBoldProp(atom: Atom | undefined): string {
+  return atom && atom.mode === 'math' && (atom.style?.variantStyle ?? '').includes('bold') ? ' mathvariant="bold"' : '';
+}
+
 function scanIdentifier(stream: MathMLStream, final: number, options: MathMLOptions) {
   let result = false;
   final = final ?? stream.atoms.length;
@@ -49,8 +68,7 @@ function scanIdentifier(stream: MathMLStream, final: number, options: MathMLOpti
   let body = '';
   let atom: Atom = stream.atoms[stream.index];
 
-  const variant = atom.style?.variant;
-  const variantStyle = atom.style?.variantStyle;
+  const { variant, variantStyle } = visualTexEffectiveVariant(atom);
   let variantProp = '';
   if (atom.value && (variant || variantStyle)) {
     const unicodeVariant =
@@ -72,6 +90,7 @@ function scanIdentifier(stream: MathMLStream, final: number, options: MathMLOpti
         'boldnormal': 'bold',
         'italicmain': 'italic',
         'bolditalicmain': 'bold-italic',
+        'bolditalicnormal': 'bold-italic',
         'updouble-struck': 'double-struck',
         'double-struck': 'double-struck',
         'boldfraktur': 'bold-fraktur',
@@ -148,8 +167,8 @@ function scanIdentifier(stream: MathMLStream, final: number, options: MathMLOpti
         stream.index < final &&
         (atom.type === 'mord' || atom.type === 'macro') &&
         !atom.isDigit() &&
-        variant === (atom.style?.variant ?? '') &&
-        variantStyle === (atom.style?.variantStyle ?? '')
+        (variant ?? '') === (visualTexEffectiveVariant(atom).variant ?? '') &&
+        (variantStyle ?? '') === (visualTexEffectiveVariant(atom).variantStyle ?? '')
       ) {
         body += toString([atom]);
         stream.index += 1;
@@ -310,7 +329,7 @@ function scanNumber(stream: MathMLStream, final: number, options: MathMLOptions)
   if (mathML.length <= 0) return false;
 
   mathML =
-    '<mn' + makeID(stream.atoms[initial].id, options) + '>' + mathML + '</mn>';
+    '<mn' + makeID(stream.atoms[initial].id, options) + visualTexBoldProp(stream.atoms[initial]) + '>' + mathML + '</mn>';
 
   if (superscript < 0 && isSuperscriptAtom(stream)) {
     superscript = stream.index;
@@ -422,7 +441,7 @@ function scanOperator(stream: MathMLStream, final: number, options: MathMLOption
 
   if (SPECIAL_OPERATORS[atom.command]) {
     stream.index += 1;
-    const mathML = `<mo${makeID(atom.id, options)}>${
+    const mathML = `<mo${makeID(atom.id, options)}${visualTexBoldProp(atom)}>${
       SPECIAL_OPERATORS[atom.command]
     }</mo>`;
     if (!parseSubsup(mathML, stream, options)) {
@@ -587,7 +606,7 @@ export function toMathML(
 function toMo(atom: Atom, options: MathMLOptions) {
   let result = '';
   const body = toString(atom.value);
-  if (body) result = '<mo' + makeID(atom.id, options) + '>' + body + '</mo>';
+  if (body) result = '<mo' + makeID(atom.id, options) + visualTexBoldProp(atom) + '>' + body + '</mo>';
 
   return result;
 }
@@ -1013,7 +1032,7 @@ function atomToMathML(atom: Atom, options: MathMLOptions): string {
     case 'extensible-symbol':
       if (atom.value !== '\u200B') {
         // Not ZERO-WIDTH
-        result = '<mo' + makeID(atom.id, options) + '>';
+        result = '<mo' + makeID(atom.id, options) + visualTexBoldProp(atom) + '>';
         result +=
           command === '\\operatorname' ? atom.body : command || atom.body;
         result += '</mo>';

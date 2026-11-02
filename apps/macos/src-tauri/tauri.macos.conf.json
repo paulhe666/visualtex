@@ -15,6 +15,14 @@
       "../office/macos-offline/resources/VisualTeX.dotm": "office/macos-offline/resources/VisualTeX.dotm",
       "../office/macos-offline/resources/VisualTeX.ppam": "office/macos-offline/resources/VisualTeX.ppam",
       "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json",
+      "../office/macos-offline/fonts/VisualTeXLatinModernMath.ttf": "office/macos-offline/fonts/VisualTeXLatinModernMath.ttf",
+      "../office/macos-offline/fonts/VisualTeXTeXGyreTermesMath.ttf": "office/macos-offline/fonts/VisualTeXTeXGyreTermesMath.ttf",
+      "../office/macos-offline/fonts/STIXTwoMath-Regular.ttf": "office/macos-offline/fonts/STIXTwoMath-Regular.ttf",
+      "../office/macos-offline/fonts/README-VisualTeX-Latin-Modern-Math.txt": "office/macos-offline/fonts/README-VisualTeX-Latin-Modern-Math.txt",
+      "../office/macos-offline/fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt": "office/macos-offline/fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt",
+      "../office/macos-offline/fonts/README-STIX-Two-Math.txt": "office/macos-offline/fonts/README-STIX-Two-Math.txt",
+      "../office/macos-offline/fonts/GUST-FONT-LICENSE.txt": "office/macos-offline/fonts/GUST-FONT-LICENSE.txt",
+      "../office/macos-offline/fonts/STIX-Two-Math-OFL.txt": "office/macos-offline/fonts/STIX-Two-Math-OFL.txt",
       "../input-method/build/VisualTeX Input.app/": "input-method/VisualTeX Input.app/"
     }
   }

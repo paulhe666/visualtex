@@ -225,8 +225,8 @@ export function ExportDialog({
 
       onNotify(
         isEn
-          ? `${definition.labelEn} exported successfully`
-          : `${definition.labelZh} 已成功导出`,
+          ? `${definition.labelEn} exported`
+          : `已导出 ${definition.labelZh}`,
       );
       onClose();
     } catch (cause) {
@@ -342,7 +342,6 @@ export function ExportDialog({
               value={path}
               disabled={busy}
               onChange={(event) => setPath(event.target.value)}
-              placeholder={`/Users/name/Documents/${suggestedFilename}`}
               spellCheck={false}
               autoComplete="off"
             />

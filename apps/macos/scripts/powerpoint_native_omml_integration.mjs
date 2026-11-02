@@ -33,7 +33,8 @@ function captureContext(destination){return as([
  "repeat with sourceItem in pb's pasteboardItems()", "set newItem to current application's NSPasteboardItem's alloc()'s init()",
  "repeat with t in sourceItem's types()", "newItem's setData:(sourceItem's dataForType:t) forType:t",'end repeat',"saved's addObject:newItem",'end repeat',
  "set ownedCount to (pb's changeCount()) as integer",'try',
- 'tell application "Microsoft PowerPoint" to run VB macro macro name "VisualTeX_CopyNativeParagraphContext" list of parameters {}',
+ // The acceptance project's own callback: the installed add-in has one of the same name.
+ 'tell application "Microsoft PowerPoint" to run VB macro macro name "VTNativeAcceptanceCopyContext" list of parameters {}',
  "set ownedCount to (pb's changeCount()) as integer",'set payload to pb\'s dataForType:"com.microsoft.Art--GVML-ClipFormat"',
  'if payload is missing value then error "Missing native paragraph data"',`set wrote to payload's writeToFile:${JSON.stringify(destination)} atomically:true`,
  'if wrote is false then error "Cannot preserve native paragraph"',

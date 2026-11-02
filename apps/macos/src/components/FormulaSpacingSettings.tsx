@@ -31,11 +31,11 @@ export function FormulaSpacingSettings({ isEn }: { isEn: boolean }) {
           <strong id="formula-spacing-customization-title">
             {isEn ? "Formula spacing" : "公式间距"}
           </strong>
-          <small data-formula-spacing-summary>
+          <span className="setting-value" data-formula-spacing-summary>
             {isEn
               ? `${fontLabel} · ${configName} · ${adjusted ? `${adjusted} adjusted` : "LaTeX's spacing"}`
               : `${fontLabel} · ${configName} · ${adjusted ? `已调整 ${adjusted} 项` : "LaTeX 标准间距"}`}
-          </small>
+          </span>
         </div>
         <button
           type="button"
@@ -56,12 +56,7 @@ export function FormulaSpacingSettings({ isEn }: { isEn: boolean }) {
       >
         <Ruler size={18} />
         <span>
-          <strong>{isEn ? "Adjust spacing on a specimen" : "在样张上调整间距"}</strong>
-          <small>
-            {isEn
-              ? "Scripts, fractions, radicals, limits, operators, matrices and multi-line formulas"
-              : "上下标、分式、根号、上下限、运算符、矩阵与多行公式"}
-          </small>
+          <strong>{isEn ? "Spacing specimen" : "间距样张"}</strong>
         </span>
         <ChevronRight size={18} aria-hidden="true" />
       </button>

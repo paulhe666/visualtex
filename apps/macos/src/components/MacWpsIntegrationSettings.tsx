@@ -130,21 +130,21 @@ export function MacWpsIntegrationSettings() {
               <StatusLine ok={status.wpsInstalled}>
                 {status.wpsInstalled
                   ? isEn ? "WPS Office is installed" : "WPS Office 已安装"
-                  : isEn ? "WPS Office was not found (open it once after installing)" : "未找到 WPS Office（安装后请先打开一次）"}
+                  : isEn ? "WPS Office not found" : "未找到 WPS Office"}
               </StatusLine>
               <StatusLine ok={container.current}>
                 {container.current
-                  ? isEn ? "The VisualTeX add-in is installed" : "VisualTeX 加载项已安装"
+                  ? isEn ? "VisualTeX add-in installed" : "VisualTeX 加载项已安装"
                   : container.installed
-                    ? isEn ? "The add-in needs to be updated" : "加载项需要更新"
-                    : isEn ? "The add-in is not installed" : "加载项未安装"}
+                    ? isEn ? "Add-in update required" : "加载项需要更新"
+                    : isEn ? "Add-in not installed" : "加载项未安装"}
               </StatusLine>
               <StatusLine ok={status.bridgeRunning}>
                 {status.bridgeRunning
                   ? isEn
-                    ? `Connected to WPS on port ${status.port}`
-                    : `已准备好与 WPS 连接（端口 ${status.port}）`
-                  : isEn ? "VisualTeX is not listening for WPS" : "VisualTeX 未能开启与 WPS 的连接"}
+                    ? `WPS connection ready (port ${status.port})`
+                    : `WPS 连接已就绪（端口 ${status.port}）`
+                  : isEn ? "WPS connection not running" : "WPS 连接未开启"}
               </StatusLine>
               {container.addinPath && (
                 <details className="office-install-paths">
@@ -157,12 +157,6 @@ export function MacWpsIntegrationSettings() {
         </div>
       )}
 
-      <p className="wps-addin-note">
-        {isEn
-          ? "The VisualTeX tab appears in WPS Writer. The first time WPS loads the add-in it asks twice: choose Allow, then OK. Keep VisualTeX running while you use the tab."
-          : "VisualTeX 选项卡会出现在 WPS 文字中。WPS 第一次加载这个加载项时会先后询问两次，请先选择「允许」，再选择「确定」。使用时请保持 VisualTeX 处于打开状态。"}
-      </p>
-
       {error && (
         <div className="office-settings-warning" role="alert" aria-live="assertive">
           <ShieldAlert size={15} />
@@ -170,8 +164,8 @@ export function MacWpsIntegrationSettings() {
             <strong>
               {accessDenied
                 ? isEn
-                  ? "macOS blocked VisualTeX from the folder where WPS keeps its add-ins. To let VisualTeX install the add-in, turn on Full Disk Access for VisualTeX:"
-                  : "macOS 阻止了 VisualTeX 访问 WPS 存放加载项的文件夹。要让 VisualTeX 安装加载项，请为 VisualTeX 打开「完全磁盘访问权限」："
+                  ? "macOS denied access to the WPS add-in folder. Turn on Full Disk Access for VisualTeX:"
+                  : "macOS 拒绝访问 WPS 加载项文件夹。请为 VisualTeX 开启「完全磁盘访问权限」："
                 : isEn
                   ? "The WPS add-in operation failed."
                   : "WPS 加载项操作失败。"}

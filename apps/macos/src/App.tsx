@@ -1,9 +1,28 @@
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { useDocumentModeStore } from "./stores/documentModeStore";
+import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
+import {
+  DOCUMENT_COPY_LATEX_EVENT,
+  DOCUMENT_COPY_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_LATEX_EVENT,
+  DOCUMENT_EXPORT_MARKDOWN_EVENT,
+  DOCUMENT_NEW_REQUEST_EVENT,
+  DOCUMENT_OPEN_REQUEST_EVENT,
+  DOCUMENT_SAVE_REQUEST_EVENT,
+} from "./document/documentEvents";
+import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
+
+// The custom symbol designer, loaded the first time it is opened.
+const LazyCustomSymbolDesignerDialog = lazy(async () => {
+  const module = await import("./components/CustomSymbolDesignerDialog");
+  return { default: module.CustomSymbolDesignerDialog };
+});
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BookOpenText,
   Check,
+  ClipboardCopy,
   Code2,
   FileDown,
   FilePlus2,
@@ -228,6 +247,7 @@ function App() {
   const theme = useEditorStore((state) => state.theme);
   const synchronizedThemeRef = useRef(theme);
   const language = useEditorStore((state) => state.language);
+  const customSymbolDesigner = useCustomSymbolDesignerStore();
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
@@ -342,11 +362,11 @@ function App() {
         setToast(
           updating
             ? english()
-              ? "Office add-ins updated to this VisualTeX version"
-              : "Office 插件已更新到当前 VisualTeX 版本"
+              ? "Office add-ins updated"
+              : "Office 插件已更新"
             : english()
-              ? "VisualTeX installed its Word and PowerPoint add-ins. They load the next time you open Word or PowerPoint."
-              : "VisualTeX 已安装 Word 与 PowerPoint 插件，下次打开 Word 或 PowerPoint 时自动加载。",
+              ? "Word and PowerPoint add-ins installed"
+              : "已安装 Word 与 PowerPoint 插件",
         );
       } catch (reason) {
         if (!cancelled) showPrompt(status, macOfficeAutoInstallErrorText(reason, english()));
@@ -359,11 +379,11 @@ function App() {
       setToast(
         english()
           ? updating
-            ? "VisualTeX will update its Office add-ins after you quit Word and PowerPoint."
-            : "VisualTeX will install its Office add-ins after you quit Word and PowerPoint."
+            ? "Office add-ins will be updated after Word and PowerPoint quit"
+            : "Office add-ins will be installed after Word and PowerPoint quit"
           : updating
-            ? "退出 Word 和 PowerPoint 后，VisualTeX 会自动更新 Office 插件。"
-            : "退出 Word 和 PowerPoint 后，VisualTeX 会自动安装 Office 插件。",
+            ? "Word 和 PowerPoint 退出后更新 Office 插件"
+            : "Word 和 PowerPoint 退出后安装 Office 插件",
       );
       const poll = () => {
         void invoke<{ word: boolean; powerpoint: boolean }>("get_macos_office_hosts_running")
@@ -500,8 +520,8 @@ function App() {
         } else if (result.outcome === "pending") {
           setToast(
             english()
-              ? "PowerPoint is asking about the VisualTeX add-in. Enable its macros to finish."
-              : "PowerPoint 正在询问 VisualTeX 加载项，请启用宏以完成加载。",
+              ? "Enable macros for the VisualTeX add-in in PowerPoint"
+              : "请在 PowerPoint 中启用 VisualTeX 加载项的宏",
           );
         }
       } catch {
@@ -840,7 +860,7 @@ function App() {
       return;
     }
     if (!isTauriEnvironment()) {
-      setToast(isEn ? "Image OCR is available in the desktop app" : "图片 OCR 只能在桌面应用中使用");
+      setToast(isEn ? "OCR is available in the desktop app" : "OCR 仅在桌面应用中可用");
       return;
     }
 
@@ -915,8 +935,8 @@ function App() {
       if (!inserted) {
         throw new Error(
           isEn
-            ? "The original formula line no longer exists; the OCR result was not inserted"
-            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+            ? "The formula line was deleted; nothing was inserted"
+            : "原公式行已删除，未插入",
         );
       }
 
@@ -924,11 +944,11 @@ function App() {
         status: "success",
         message: result.backgroundInverted
           ? isEn
-            ? "Recognized and inserted · dark background inverted"
-            : "识别完成并已插入 · 已自动反色"
+            ? "Inserted (background inverted)"
+            : "已插入（已反色）"
           : isEn
-            ? "Recognized and inserted at the saved cursor"
-            : "识别完成，已插入原光标位置",
+            ? "Inserted"
+            : "已插入",
         seconds: current?.seconds ?? 0,
         model: ocrModel,
         sourceLabel: current?.sourceLabel,
@@ -991,15 +1011,15 @@ function App() {
 
   const handleQuickOcr = async () => {
     if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
-      setToast(isEn ? "OCR is already running" : "另一个 OCR 任务正在进行");
+      setToast(isEn ? "OCR is running" : "OCR 正在进行");
       return;
     }
     const target = editorRef.current?.captureInsertionTarget();
     if (!target) {
       setToast(
         isEn
-          ? "Click a formula field before quick OCR"
-          : "请先点击一个公式框，再使用快捷 OCR",
+          ? "Select a formula row first"
+          : "请先选择公式行",
       );
       return;
     }
@@ -1011,11 +1031,11 @@ function App() {
       setToast(
         waitingForSystemScreenshot
           ? isEn
-            ? "VisualTeX will minimize. Switch to the target page and take a macOS screenshot within 60 seconds."
-            : "VisualTeX 将最小化；请切到目标页面，并在 60 秒内使用 macOS 系统截图键截图"
+            ? "Take a screenshot within 60 seconds"
+            : "请在 60 秒内截图"
           : isEn
-            ? "Select a formula area to capture"
-            : "请框选要识别的公式区域",
+            ? "Select the formula"
+            : "框选公式",
       );
       let capture: Awaited<ReturnType<typeof captureQuickOcrScreenshot>> = null;
       try {
@@ -1029,8 +1049,8 @@ function App() {
         setToast(
           waitingForSystemScreenshot
             ? isEn
-              ? "No system screenshot was detected within 60 seconds"
-              : "60 秒内未检测到新的系统截图"
+              ? "No screenshot within 60 seconds"
+              : "60 秒内未收到系统截图"
             : isEn
               ? "Screenshot cancelled"
               : "已取消截图",
@@ -1060,11 +1080,11 @@ function App() {
     setToast(
       mode === "system-screenshot"
         ? isEn
-          ? "Quick OCR mode: wait for macOS screenshot"
-          : "快捷 OCR 已切换为：等待系统截图"
+          ? "Quick OCR: wait for a screenshot"
+          : "快捷 OCR：等待系统截图"
         : isEn
-          ? "Quick OCR mode: immediate selection"
-          : "快捷 OCR 已切换为：立即框选",
+          ? "Quick OCR: select at once"
+          : "快捷 OCR：立即框选",
     );
   };
 
@@ -1074,8 +1094,8 @@ function App() {
     setToast(
       enabled
         ? isEn
-          ? `Silent OCR enabled · ${silentOcrShortcut}`
-          : `静默 OCR 已开启 · ${silentOcrShortcut}`
+          ? `Background OCR on (${silentOcrShortcut})`
+          : `后台识别已开启（${silentOcrShortcut}）`
         : isEn
           ? "Silent OCR disabled"
           : "静默 OCR 已关闭",
@@ -1144,8 +1164,8 @@ function App() {
       addHistory(latex);
       setToast(
         isEn
-          ? `Copied · ${latexProfileSummary}`
-          : `已复制 · ${latexProfileSummary}`,
+          ? `Copied (${latexProfileSummary})`
+          : `已复制（${latexProfileSummary}）`,
       );
       return true;
     } catch (reason) {
@@ -1166,8 +1186,8 @@ function App() {
     } catch {
       setToast(
         isEn
-          ? "LaTeX copied, but VisualTeX could not be minimized."
-          : "LaTeX 已复制，但 VisualTeX 最小化失败。",
+          ? "Copied; the window could not be minimized."
+          : "已复制；窗口最小化失败。",
       );
     }
   };
@@ -1270,8 +1290,8 @@ function App() {
     if (!currentLines.some((line) => line.latex.trim())) return true;
     if (documentContentKey() === savedContentRef.current) return true;
     const message = isEn
-      ? "The current formula document has not been saved. Create a new one anyway? (Cmd+Z brings it back.)"
-      : "当前公式文档还没有保存。仍要新建吗？（新建后可以按 ⌘Z 找回）";
+      ? "The current formula is not saved. Create a new one?"
+      : "当前公式未保存。是否新建？";
     if (!isTauriEnvironment()) return window.confirm(message);
     return ask(message, {
       title: "VisualTeX",
@@ -1319,14 +1339,14 @@ function App() {
       installed
         ? macOfficePromptMode === "update"
           ? isEn
-            ? "Office add-ins updated to this VisualTeX version"
-            : "Office 插件已更新到当前 VisualTeX 版本"
+            ? "Office add-ins updated"
+            : "Office 插件已更新"
           : isEn
             ? "Office add-ins are ready"
             : "Office 插件已就绪"
         : isEn
-          ? "You can install the Office add-ins later in Settings"
-          : "之后可在设置中安装 Office 插件",
+          ? "Office add-ins not installed"
+          : "未安装 Office 插件",
     );
   }, [isEn, macOfficePromptMode]);
 
@@ -1416,6 +1436,24 @@ function App() {
       const target = event.target instanceof Element ? event.target : null;
       const focusedElement =
         document.activeElement instanceof Element ? document.activeElement : null;
+      // Document mode: the document has its own history and file actions.
+      if (useDocumentModeStore.getState().content === "document") {
+        const documentKey = event.key.toLowerCase();
+        const primary = (event.metaKey || event.ctrlKey) && !event.altKey;
+        if (primary && ["z", "y", "n", "o", "s"].includes(documentKey)) {
+          if (documentKey === "s") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT));
+          } else if (documentKey === "o") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT));
+          } else if (documentKey === "n") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT));
+          }
+          return;
+        }
+      }
       const inCodeMirror = Boolean(
         target?.closest(".cm-editor") || focusedElement?.closest(".cm-editor"),
       );
@@ -1496,11 +1534,6 @@ function App() {
           <span className="copy-menu-label">
             {isEn ? "Universal LaTeX format" : "通用 LaTeX 格式"}
           </span>
-          <small>
-            {isEn
-              ? "One persistent profile for inline, display and multi-line formulas"
-              : "一套持久化规则同时控制行内、行间与多行公式"}
-          </small>
         </div>
 
         <div className="latex-profile-options">
@@ -1714,8 +1747,8 @@ function App() {
         aria-controls="copy-format-menu"
         title={
           isEn
-            ? `Current profile: ${latexProfileSummary}`
-            : `当前格式配置：${latexProfileSummary}`
+            ? `LaTeX format: ${latexProfileSummary}`
+            : `LaTeX 格式：${latexProfileSummary}`
         }
         onClick={() => {
           setMenuOpen(false);
@@ -1738,17 +1771,20 @@ function App() {
       title={
         keypadMode
           ? isEn
-            ? "Exit keypad mode · Cmd/Ctrl+Shift+K"
-            : "退出小键盘模式 · ⌘/Ctrl+Shift+K"
+            ? "Exit keypad (Ctrl+Shift+K)"
+            : "退出小键盘（Ctrl+Shift+K）"
           : isEn
-            ? "Enter keypad mode · Cmd/Ctrl+Shift+K"
-            : "进入小键盘模式 · ⌘/Ctrl+Shift+K"
+            ? "Keypad (Ctrl+Shift+K)"
+            : "小键盘（Ctrl+Shift+K）"
       }
       onClick={() => void handleKeypadModeToggle()}
     >
       <Keyboard size={17} />
     </button>
   );
+
+  const workspaceContent = useDocumentModeStore((state) => state.content);
+  const setWorkspaceContent = useDocumentModeStore((state) => state.setContent);
 
   const desktopHeaderControls = (
     <>
@@ -1819,6 +1855,26 @@ function App() {
               )}
             </button>
           ) : null}
+          <div className="workspace-content-switch" role="tablist" aria-label={isEn ? "Workspace" : "工作区"}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceContent === "formula"}
+              className={workspaceContent === "formula" ? "is-active" : ""}
+              onClick={() => setWorkspaceContent("formula")}
+            >
+              {isEn ? "Formulas" : "公式"}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceContent === "document"}
+              className={workspaceContent === "document" ? "is-active" : ""}
+              onClick={() => setWorkspaceContent("document")}
+            >
+              {isEn ? "Document" : "文档"}
+            </button>
+          </div>
 
           {menuOpen && (
             <div
@@ -1830,8 +1886,47 @@ function App() {
             >
               <div className="app-menu-heading">
                 <strong>VisualTeX</strong>
-                <span>{isEn ? "Formula workspace" : "公式工作区"}</span>
+                <span>
+                  {workspaceContent === "document"
+                    ? isEn ? "Document" : "文档"
+                    : isEn ? "Formula workspace" : "公式工作区"}
+                </span>
               </div>
+              {workspaceContent === "document" ? (<>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT)))}>
+                <FilePlus2 size={16} />
+                <span>{isEn ? "New document" : "新建文档"}</span>
+                <kbd>Ctrl+N</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT)))}>
+                <FolderOpen size={16} />
+                <span>{isEn ? "Open document" : "打开文档"}</span>
+                <kbd>Ctrl+O</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT)))}>
+                <Save size={16} />
+                <span>{isEn ? "Save document" : "保存文档"}</span>
+                <kbd>Ctrl+S</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_LATEX_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export LaTeX" : "导出 LaTeX"}</span>
+                <kbd>.tex</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_LATEX_EVENT)))}>
+                <ClipboardCopy size={16} />
+                <span>{isEn ? "Copy as LaTeX" : "复制为 LaTeX"}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_MARKDOWN_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
+                <kbd>.md</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_MARKDOWN_EVENT)))}>
+                <ClipboardCopy size={16} />
+                <span>{isEn ? "Copy as Markdown" : "复制为 Markdown"}</span>
+              </button>
+              </>) : (<>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
@@ -1862,6 +1957,7 @@ function App() {
                 <span>{isEn ? "Export…" : "导出…"}</span>
                 <kbd>MD/SVG/PNG</kbd>
               </button>
+              </>)}
               <div className="app-menu-divider" />
               <button
                 type="button"
@@ -1935,6 +2031,8 @@ function App() {
         </div>
 
         <div className="document-title-area">
+          {workspaceContent === "document" && <DocumentInputModeSwitch isEn={isEn} />}
+          {workspaceContent === "formula" && (<>
           <input
             value={title}
             onChange={(event) => handleTitleChange(event.target.value)}
@@ -1948,17 +2046,24 @@ function App() {
           >
             <Check size={13} />
           </span>
+          </>)}
         </div>
 
         <div className="header-actions">
+          {workspaceContent === "document" && (
+          <div className="action-group edit-actions">
+            <DocumentHistoryButtons isEn={isEn} />
+          </div>
+          )}
+          {workspaceContent === "formula" && (<>
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · Ctrl+N" : "新建 · Ctrl+N"}>
+            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? "New (Ctrl+N)" : "新建 (Ctrl+N)"}>
               <FilePlus2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · Ctrl+O" : "打开 · Ctrl+O"}>
+            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open (Ctrl+O)" : "打开 (Ctrl+O)"}>
               <FolderOpen size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · Ctrl+S" : "保存到本地 · Ctrl+S"}>
+            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save (Ctrl+S)" : "保存 (Ctrl+S)"}>
               <Save size={17} />
             </button>
           </div>
@@ -1972,7 +2077,7 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Undo" : "撤销"}
-              title={isEn ? "Undo · Ctrl+Z" : "撤销 · Ctrl+Z"}
+              title={isEn ? "Undo (Ctrl+Z)" : "撤销 (Ctrl+Z)"}
             >
               <Undo2 size={17} />
             </button>
@@ -1985,21 +2090,24 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Redo" : "重做"}
-              title={isEn ? "Redo · Ctrl+Y / Ctrl+Shift+Z" : "重做 · Ctrl+Y / Ctrl+Shift+Z"}
+              title={isEn ? "Redo (Ctrl+Y / Ctrl+Shift+Z)" : "重做 (Ctrl+Y / Ctrl+Shift+Z)"}
             >
               <Redo2 size={17} />
             </button>
           </div>
+          </>)}
+          {workspaceContent === "formula" && (
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
+          )}
           <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
             <ScanLine size={17} />
           </button>
-          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · Ctrl+," : "设置 · Ctrl+,"}>
+          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings (Ctrl+,)" : "设置 (Ctrl+,)"}>
             <Settings2 size={17} />
           </button>
-          {codeFormatControl}
+          {workspaceContent === "formula" && codeFormatControl}
           <div
             ref={setDesktopTopToolsMount}
             className="desktop-top-tools-mount"
@@ -2234,6 +2342,15 @@ function App() {
       {historyOpen && (
         <div className="panel-backdrop" onClick={() => setHistoryOpen(false)} />
       )}
+      {customSymbolDesigner.activated ? (
+        <Suspense fallback={null}>
+          <LazyCustomSymbolDesignerDialog
+            open={customSymbolDesigner.open}
+            language={language}
+            onClose={customSymbolDesigner.closeDesigner}
+          />
+        </Suspense>
+      ) : null}
       {toast && (
         <div className="toast">
           <Check size={15} />

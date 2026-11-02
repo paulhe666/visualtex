@@ -12,7 +12,11 @@ import {
   type MacosFormulaRestoreTarget,
 } from "../documentImport/documentImportClient";
 import { documentImportErrorMessage } from "../documentImport/documentImportErrors";
-import { findWindowsWordLatexRedrawSpans } from "./wordLatexRedrawParser";
+import {
+  findPresentationLatexRedrawSpans,
+  findWindowsWordLatexRedrawSpans,
+  type WordLatexRedrawSpan,
+} from "./wordLatexRedrawParser";
 import {
   prepareWindowsStyleWordLatexRedrawItems,
   type WordLatexRedrawFailure,
@@ -25,8 +29,10 @@ import { OfficeConversionError, describeConversionFailure } from "../shared/conv
 const isEnglish = () => useEditorStore.getState().language === "en";
 const t = (zh: string, en: string) => (isEnglish() ? en : zh);
 // The application the formulas are in: WPS when its add-in started the
-// operation (set once the request is read).
+// operation, PowerPoint for a presentation (set once the request is read).
 let office = "Word";
+// What the document is called in messages.
+let documentNoun = { zh: "文档", en: "document" };
 
 function excerpt(latex: string, limit = 80) {
   const text = latex.replace(/\s+/g, " ").trim();
@@ -91,14 +97,16 @@ export function WordLatexRedrawApp() {
         ).catch(() => undefined);
       try {
         const request = await getMacosDocumentImportRequest(sessionId);
-        office = request.client === "wps" ? "WPS" : "Word";
+        const presentation = request.host === "powerpoint";
+        office = request.client === "wps" ? "WPS" : presentation ? "PowerPoint" : "Word";
+        documentNoun = presentation ? { zh: "演示文稿", en: "presentation" } : { zh: "文档", en: "document" };
         if (request.operation === "formulaRestore") {
           const targets = request.restoreTargets ?? [];
           const outputKind = request.outputKind;
           if (!targets.length) {
             throw new OfficeConversionError(
               request.redrawScope === "document"
-                ? t(`${office} 文档中没有找到匹配的公式。`, `No matching formulas were found in the ${office} document.`)
+                ? t(`${office} ${documentNoun.zh}中没有找到匹配的公式。`, `No matching formulas were found in the ${office} ${documentNoun.en}.`)
                 : t(`所选 ${office} 内容中没有找到匹配的公式。`, `No matching formula was found in the ${office} selection.`),
             );
           }
@@ -187,14 +195,45 @@ export function WordLatexRedrawApp() {
           );
         }
 
-        const spans = findWindowsWordLatexRedrawSpans(source);
-        await reportStage("latex-redraw-parse-complete", spans.length);
-        if (!spans.length) {
+        const segments = request.segments;
+        const found = segments
+          ? findPresentationLatexRedrawSpans(source, segments)
+          : findWindowsWordLatexRedrawSpans(source);
+        await reportStage("latex-redraw-parse-complete", found.length);
+        if (!found.length) {
           throw new OfficeConversionError(
             request.redrawScope === "document"
-              ? t(`当前 ${office} 文档中没有找到可重绘的完整 LaTeX 公式。`, `No complete LaTeX formulas to redraw were found in the current ${office} document.`)
+              ? t(`当前 ${office} ${documentNoun.zh}中没有找到可重绘的完整 LaTeX 公式。`, `No complete LaTeX formulas to redraw were found in the current ${office} ${documentNoun.en}.`)
               : t("所选内容中没有找到可重绘的完整 LaTeX 公式。", "No complete LaTeX formulas to redraw were found in the current selection."),
           );
+        }
+        // A slide picture cannot sit inside a line of text: a picture formula
+        // replaces a text box that holds just that formula; the others stay.
+        const skippedInText: WordLatexRedrawFailure[] = [];
+        let spans: WordLatexRedrawSpan[] = found;
+        if (segments && outputKind === "image") {
+          spans = found.filter((span) => {
+            const segment = segments.find((entry) => span.start >= entry.start && span.end <= entry.end);
+            const alone = !!segment && segment.whole && source.slice(segment.start, segment.end).trim() === span.sourceText;
+            if (!alone) {
+              skippedInText.push({
+                latex: span.latex,
+                sourceStart: span.start,
+                reason: t(
+                  "公式位于文字中间，无法替换为图片。",
+                  "Formula is inside text; cannot be replaced with a picture.",
+                ),
+              });
+            }
+            return alone;
+          });
+          if (!spans.length) {
+            setStatus("");
+            setSkipped({ written: 0, failures: skippedInText });
+            await restoreMacosDocumentImportWindow().catch(() => undefined);
+            await cancelMacosDocumentImport(sessionId).catch(() => undefined);
+            return;
+          }
         }
 
         await focusMacosDocumentImportTarget("latexRedraw");
@@ -222,11 +261,14 @@ export function WordLatexRedrawApp() {
           fontSizePt: fontSizes[index],
         }));
         setStatus(t(`正在渲染公式 0/${targets.length}…`, `Rendering 0/${targets.length} formulas…`));
-        const { items, failures } = await prepareWindowsStyleWordLatexRedrawItems(
+        const rendered = await prepareWindowsStyleWordLatexRedrawItems(
           targets,
           outputKind,
           (current, total) => setStatus(t(`正在渲染公式 ${current}/${total}…`, `Rendering ${current}/${total} formulas…`)),
+          presentation ? "powerpoint" : "word",
         );
+        const items = rendered.items;
+        const failures = [...rendered.failures, ...skippedInText].sort((left, right) => left.sourceStart - right.sourceStart);
         await reportStage("latex-redraw-render-complete", items.length);
         if (!items.length) throw allFormulasFailed(failures);
         setStatus(t(`正在把 ${items.length} 个公式写回 ${office}…`, `Writing ${items.length} formulas back to ${office}…`));
@@ -246,7 +288,7 @@ export function WordLatexRedrawApp() {
             ? reason.message
             : documentImportErrorMessage(
                 describeConversionFailure(reason, isEnglish()),
-                t(`${office} 公式操作失败，但没有给出原因。`, `The ${office} formula operation failed without giving a reason.`),
+                t(`${office} 公式操作失败（原因未知）。`, `The ${office} formula operation failed (unknown reason).`),
               ),
         );
         setStatus("");
@@ -257,7 +299,7 @@ export function WordLatexRedrawApp() {
     function allFormulasFailed(failures: WordLatexRedrawFailure[]) {
       const first = failures[0];
       return new OfficeConversionError(
-        t(`${failures.length} 个公式都无法渲染，没有公式被修改。第一个：${excerpt(first?.latex ?? "")} — ${first?.reason ?? ""}`, `None of the ${failures.length} formula(s) could be rendered, so nothing was changed. First: ${excerpt(first?.latex ?? "")} — ${first?.reason ?? ""}`),
+        t(`${failures.length} 个公式均无法渲染，未作修改。第一个：${excerpt(first?.latex ?? "")} — ${first?.reason ?? ""}`, `None of the ${failures.length} formula(s) could be rendered; nothing was changed. First: ${excerpt(first?.latex ?? "")} — ${first?.reason ?? ""}`),
       );
     }
 

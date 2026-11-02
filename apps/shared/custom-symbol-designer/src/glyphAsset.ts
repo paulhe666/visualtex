@@ -1,10 +1,66 @@
-import { latexToSvg } from "../export/runtime.ts";
 import type {
   CustomSymbolMetrics,
   CustomSymbolVectorMatrix,
   CustomSymbolVectorShape,
-} from "./customSymbolTypes.ts";
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes.ts";
+} from "./symbolTypes.ts";
+import type { CustomSymbolGlyphAsset } from "./designerTypes.ts";
+
+/**
+ * One formula drawn by the editor's layout engine (tex-layout's SvgFormula):
+ * its drawing with the reference point (left end of the baseline) at (0, 0)
+ * and how far it reaches from there. Drawn at 1000 px per em, its numbers are
+ * the designer's units (1000 per em).
+ */
+export interface EngineGlyphDrawing {
+  body: string;
+  left: number;
+  right: number;
+  ascent: number;
+  descent: number;
+}
+
+/** The size the designer asks the engine to draw materials at. */
+export const DESIGNER_UNITS_PER_EM = 1000;
+
+/** Large operators (\int, \sum, ...) in a style of their own: TeX takes their limits from the font. */
+export function isLargeOperatorMaterial(sourceLatex: string) {
+  return /^\\(?:display|text)style\s*\\(?:int|iint|iiint|oint|oiint|oiiint|sum|prod|coprod|bigcup|bigcap|bigvee|bigwedge|bigoplus|bigotimes|bigodot|biguplus|bigsqcup)$/.test(
+    sourceLatex.trim(),
+  );
+}
+
+/** A display-size operator material in its text size (\displaystyle\int -> \textstyle\int); null for others. */
+export function textStyleVariant(sourceLatex: string) {
+  const source = sourceLatex.trim();
+  return isLargeOperatorMaterial(source) && source.startsWith("\\displaystyle")
+    ? source.replace(/^\\displaystyle/, "\\textstyle")
+    : null;
+}
+
+/**
+ * The italic correction of a material (em), as TeX uses it for scripts: the
+ * engine sets a rule as superscript and one as subscript, and the
+ * superscript is that much further right. 0 for materials of several
+ * characters (TeX uses none there).
+ */
+export async function measureMaterialItalic(
+  draw: (latex: string) => Promise<EngineGlyphDrawing>,
+  sourceLatex: string,
+): Promise<number> {
+  const marker = "\\rule{0.1em}{0.1em}";
+  const source = sourceLatex.trim();
+  const limits = isLargeOperatorMaterial(source) ? "\\nolimits" : "";
+  // unbraced: a braced nucleus has no italic correction
+  const drawing = await draw(`${source}${limits}^{${marker}}_{${marker}}`);
+  const xs = [...drawing.body.matchAll(/<rect\b[^>]*\bx="(-?[\d.]+)"[^>]*\by="(-?[\d.]+)"/g)].map((match) => ({
+    x: Number(match[1]),
+    y: Number(match[2]),
+  }));
+  if (xs.length < 2) return 0;
+  const sup = xs.reduce((a, b) => (b.y < a.y ? b : a));
+  const sub = xs.reduce((a, b) => (b.y > a.y ? b : a));
+  return Math.max(0, Number(((sup.x - sub.x) / DESIGNER_UNITS_PER_EM).toFixed(5)));
+}
 
 type Matrix = CustomSymbolVectorMatrix;
 
@@ -335,7 +391,15 @@ function flattenSvg(
   return result;
 }
 
-export async function compileLatexGlyphAsset(sourceLatex: string): Promise<CustomSymbolGlyphAsset> {
+/**
+ * A material's editable outlines: `drawing` is the engine's layout of
+ * `sourceLatex` at 1000 px per em. The asset's box is the drawing's box (its
+ * top left at (0, 0), the baseline at ascent), so the box fits the glyph.
+ */
+export function glyphAssetFromEngineDrawing(
+  sourceLatex: string,
+  drawing: EngineGlyphDrawing,
+): CustomSymbolGlyphAsset {
   const source = sourceLatex.trim();
   if (!source || source.length > maximumGlyphSourceLength) {
     throw new Error("LaTeX symbol material is empty or too large.");
@@ -343,16 +407,17 @@ export async function compileLatexGlyphAsset(sourceLatex: string): Promise<Custo
   if (typeof DOMParser === "undefined") {
     throw new Error("LaTeX glyph compilation requires the VisualTeX browser runtime.");
   }
-  const rendered = await latexToSvg(source, {
-    displayMode: false,
-    fontSizePt: 12,
-    paddingPx: 0,
-    background: "transparent",
-  });
-  const documentNode = new DOMParser().parseFromString(
-    rendered.svg,
-    "image/svg+xml",
-  );
+  // The box starts at the reference point (x = 0), where TeX places the
+  // material's box: the TeX code puts a node there.
+  const width = Math.max(1, drawing.right);
+  const height = Math.max(1, drawing.ascent + drawing.descent);
+  if (/<text[\s>]/.test(drawing.body)) {
+    throw new Error("Text in a system font (Chinese) cannot become an editable vector glyph; use the system font characters instead.");
+  }
+  const markup =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+    `viewBox="0 ${-drawing.ascent} ${width} ${height}">${drawing.body}</svg>`;
+  const documentNode = new DOMParser().parseFromString(markup, "image/svg+xml");
   if (documentNode.querySelector("parsererror")) {
     throw new Error("VisualTeX core produced SVG that could not be parsed for editing.");
   }

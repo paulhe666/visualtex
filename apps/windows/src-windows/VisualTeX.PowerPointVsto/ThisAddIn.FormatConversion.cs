@@ -702,8 +702,8 @@ public sealed partial class ThisAddIn
             RenderFontSizePt = formula.RenderFontSizePt,
             FormulaLetterFont = item.SourceMetadata?.FormulaLetterFont,
             FormulaChineseFont = item.SourceMetadata?.FormulaChineseFont,
-            CreatedWithVersion = "1.2.10",
-            UpdatedWithVersion = "1.2.10",
+            CreatedWithVersion = "1.3.0",
+            UpdatedWithVersion = "1.3.0",
             CreatedAt = now,
             UpdatedAt = now,
         };

@@ -495,11 +495,42 @@ export function visualTexAtomFont(atom: Atom, mathfield: _Mathfield): VisualTexF
     italic: style.fontShape === "it" || style.fontShape === "sl"
   };
   const variant = style.variant || "normal";
+  // symbol-wide bold (\bm: no variant, variantStyle bold) keeps the letter's own slant
+  const symbolBold = style.variant === undefined && style.variantStyle === "bold";
   return {
     bold: (style.variantStyle || "").includes("bold"),
     italic: (style.variantStyle || "").includes("italic") ||
-      (!style.variantStyle && variant === "normal" && visualTexDefaultItalic(atom, mathfield))
+      ((!style.variantStyle || symbolBold) && variant === "normal" && visualTexDefaultItalic(atom, mathfield))
   };
+}
+/**
+ * A math glyph's style for a font (bold, italic). Bold with the glyph's own
+ * slant is symbol-wide bold (\bm, as bm.sty sets it): letters, Greek, digits
+ * and symbols each in their bold font, keeping their math class and spacing.
+ * Bold with a slant the glyph does not have by default is the alphabet
+ * (\mathbf upright, \mathbfit italic), which only letters and digits have.
+ */
+function visualTexMathFontStyle(atom: Atom, mathfield: _Mathfield, style: VisualTexStyleRecord, font: VisualTexFont): void {
+  const variant = style.variant || "normal";
+  if (!["normal", "main", "ams"].includes(variant as string)) {
+    // Preserve a selected alphabet (mathbb, mathfrak, etc.).
+    style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
+      (font.italic ? "italic" : undefined);
+    return;
+  }
+  const ownSlant = font.italic === visualTexDefaultItalic(atom, mathfield);
+  if (font.bold && ownSlant) {
+    style.variant = undefined;
+    style.variantStyle = "bold";
+    return;
+  }
+  style.variant = font.italic ? "main" : "normal";
+  style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
+    (font.italic ? "italic" : "up");
+  if (!font.bold && ownSlant) {
+    style.variant = "normal";
+    style.variantStyle = undefined;
+  }
 }
 export const VISUALTEX_PERSISTENT_STYLE_KEYS = [
   "variant",
@@ -598,19 +629,7 @@ export function visualTexApplyPersistentFontStyle(
     if (persistent.bold) style.fontSeries = font.bold ? "b" : "m";
     if (persistent.italic !== null) style.fontShape = font.italic ? "it" : "n";
   } else if (atom.mode === "math") {
-    const variant = style.variant || "normal";
-    if (!["normal", "main", "ams"].includes(variant)) {
-      style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
-        (font.italic ? "italic" : undefined);
-    } else {
-      style.variant = font.italic ? "main" : "normal";
-      style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
-        (font.italic ? "italic" : "up");
-      if (!font.bold && font.italic === visualTexDefaultItalic(atom, mathfield)) {
-        style.variant = "normal";
-        style.variantStyle = undefined;
-      }
-    }
+    visualTexMathFontStyle(atom, mathfield, style as VisualTexStyleRecord, font);
   }
   atom.style = style;
   atom.isDirty = true;
@@ -656,6 +675,17 @@ export function visualTexApplyPersistentTypingStyle(mathfield: _Mathfield, atoms
     }
   }
 }
+/** Whether every glyph of a selection is bold (italic); null when it holds no glyph. */
+export function visualTexSelectionFont(model: _Model, requestedSelection: Selection): VisualTexFont | null {
+  const selection = model.normalizeSelection(requestedSelection);
+  if (!selection || selection.ranges.every(([start, end]) => start === end)) return null;
+  const atoms: Atom[] = [...new Set<Atom>(model.getAtoms(selection, { includeChildren: true }))];
+  const glyphs = atoms.filter(atom => atom.type !== "first" && atom.value &&
+    atom.type !== "placeholder" && atom.type !== "prompt");
+  if (!glyphs.length) return null;
+  const fonts = glyphs.map(atom => visualTexAtomFont(atom, model.mathfield));
+  return { bold: fonts.every(font => font.bold), italic: fonts.every(font => font.italic) };
+}
 export function visualTexToggleSelectionStyle(
   model: _Model,
   kind: string,
@@ -694,20 +724,7 @@ export function visualTexToggleSelectionStyle(
         style.fontSeries = font.bold ? "b" : "m";
         style.fontShape = font.italic ? "it" : "n";
       } else {
-        const variant = style.variant || "normal";
-        if (!["normal", "main", "ams"].includes(variant)) {
-          // Preserve a selected alphabet (mathbb, mathfrak, etc.).
-          style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
-            (font.italic ? "italic" : undefined);
-        } else {
-          style.variant = font.italic ? "main" : "normal";
-          style.variantStyle = font.bold ? (font.italic ? "bolditalic" : "bold") :
-            (font.italic ? "italic" : "up");
-          if (!font.bold && font.italic === visualTexDefaultItalic(atom, mathfield)) {
-            style.variant = "normal";
-            style.variantStyle = undefined;
-          }
-        }
+        visualTexMathFontStyle(atom, mathfield, style as VisualTexStyleRecord, font);
       }
       atom.style = style;
       atom.isDirty = true;

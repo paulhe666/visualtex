@@ -200,6 +200,19 @@ export interface LayoutOptions {
   letterFamilies?: () => { upright: string; italic: string } | null;
   /** the user's spacing adjustments (spacing.ts), read at every layout; null or absent: LaTeX's */
   spacing?: () => Spacing | null;
+  /**
+   * The italic correction (em) of the character a \class{name}{...} box stands
+   * for as the nucleus of \mathop: custom symbols drawn on a large operator
+   * then take scripts and limits as that operator does.
+   */
+  classOperatorItalic?: (className: string) => number | null | undefined;
+  /**
+   * The editor's caret band, from the baseline `up` and `down` in em of the formula's font at
+   * text size (a script's caret is the script's size, as the profile's is). VisualTeX Anywhere
+   * draws the caret as tall as the host field's line; null or absent: the profile's caret.
+   * Empty-slot markers span the same band, so typing into a slot never changes the caret.
+   */
+  caretBand?: () => { up: number; down: number } | null;
 }
 
 /** Chinese, Japanese and Korean characters: they stay in the formula's Chinese font. */
@@ -220,6 +233,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     return d;
   }, data.profile);
   const adapter = new LatexAdapter(data, cache);
+  if (options.classOperatorItalic) adapter.classOperatorItalic = options.classOperatorItalic;
   const nativeCache = new Map<string, NativeFont>();
   if (options.measureNative) {
     const measure = options.measureNative;
@@ -441,7 +455,12 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     // explicit alignment markers on the main row (the editor aligns rows on them)
     const markerAtoms = atoms.filter((a) => htmlClassOf(a as KernelAtom) === "visualtex-align-marker") as KernelAtom[];
     const alignMarkers = markerAtoms.map((a) => regions.get(a)?.x0 ?? 0);
-    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, caret);
+    const band = options.caretBand?.();
+    const fieldCaret =
+      band && Number.isFinite(band.up) && Number.isFinite(band.down) && band.up > 0 && band.down >= 0
+        ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
+        : caret;
+    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret);
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
 
