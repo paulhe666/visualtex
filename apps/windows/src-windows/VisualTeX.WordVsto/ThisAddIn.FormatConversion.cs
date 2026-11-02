@@ -266,7 +266,8 @@ public sealed partial class ThisAddIn
                 if (!pendingKeys.Add(key)) continue;
 
                 var request = CreateBulkFormulaConversionRequest(
-                    run, targetMode, plan.DocumentId, target.FontSizePt);
+                    run, targetMode, plan.DocumentId, target.FontSizePt,
+                    rows: target.Metadata?.Lines?.Select(line => line.Latex).ToList());
                 pending.Add((key, run, target, request));
             }
 

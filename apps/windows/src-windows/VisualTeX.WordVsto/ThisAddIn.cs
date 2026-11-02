@@ -5462,7 +5462,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private static CreateVstoSessionRequest CreateBulkFormulaConversionRequest(
         WordBulkRun run, string objectMode, string? sourceDocumentId, double fontSizePt,
-        string? formulaLetterFont = null, string? formulaChineseFont = null)
+        string? formulaLetterFont = null, string? formulaChineseFont = null,
+        IReadOnlyList<string>? rows = null)
     {
         var formulaId = Guid.NewGuid().ToString("D");
         var line = new FormulaLine
@@ -5470,6 +5471,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             Id = Guid.NewGuid().ToString("D"),
             Latex = OfficeSessionDocument.SanitizeFormulaBoundaryArtifacts(run.Latex),
         };
+        // A multi-row VisualTeX formula renders row by row, as its editor shows it;
+        // its LaTeX joined by newlines would render as one row.
+        var lines = rows is { Count: > 1 }
+            ? rows.Select(row => new FormulaLine
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    Latex = OfficeSessionDocument.SanitizeFormulaBoundaryArtifacts(row),
+                }).ToList()
+            : new List<FormulaLine> { line };
         var originalMetadata = CreateBulkFormulaMetadata(
             formulaId,
             line,
@@ -5484,8 +5494,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 FormulaId = formulaId,
                 SourceDocumentId = sourceDocumentId,
                 Title = "Bulk imported Word formula",
-                Lines = new List<FormulaLine> { line },
-                ActiveLineId = line.Id,
+                Lines = lines,
+                ActiveLineId = lines[0].Id,
                 CodeFormat = "latex",
                 DisplayMode = run.DisplayMode,
                 ObjectMode = objectMode,

@@ -525,7 +525,7 @@ internal sealed partial class WordFormulaService
                     Latex = metadata.Latex,
                     Lines = lines.Count > 0 ? lines : new List<string> { metadata.Latex },
                     Display = host.DisplayMode,
-                    Numbered = host.Numbering.Numbered || metadata.Numbered,
+                    Numbered = host.Display && AutomationVisualTeXNumbered(document, host, metadata),
                     FontSizePt = metadata.FontSizePt > 0 ? metadata.FontSizePt : null,
                 };
             }
@@ -545,6 +545,13 @@ internal sealed partial class WordFormulaService
                 };
             }
         }
+    }
+
+    /// The number scaffold in the document decides (the copy of the metadata Word keeps can be older).
+    private static bool AutomationVisualTeXNumbered(Document document, WordFormulaHostDescriptor host, FormulaMetadata metadata)
+    {
+        try { return WordFormulaNumberingResolver.ResolveLocal(document, host).Numbered; }
+        catch { return host.Numbering.Numbered || metadata.Numbered; }
     }
 
     private static AutomationSemantic ReadAutomationOmml(Document document, WordFormulaHostDescriptor host)

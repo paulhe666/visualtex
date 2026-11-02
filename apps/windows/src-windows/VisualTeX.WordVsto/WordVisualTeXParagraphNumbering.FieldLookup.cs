@@ -444,7 +444,16 @@ internal static partial class WordVisualTeXParagraphNumbering
                 == '\u0015')
             return result.End + 1;
         throw new InvalidDataException(
-            $"VisualTeXPlaceRef has an invalid outer field boundary at code={code.End}, result={result.End}.");
+            $"VisualTeXPlaceRef has an invalid outer field boundary at code={code.Start}-{code.End}, result={result.Start}-{result.End} "
+            + $"(characters {DescribeCharacters(document, code.Start - 1, result.End + 3)}).");
+    }
+
+    private static string DescribeCharacters(Document document, int start, int end)
+    {
+        var parts = new List<string>();
+        for (var position = Math.Max(0, start); position < end && parts.Count < 80; position++)
+            parts.Add($"{position}:{(int)ReadCharacter(document, position):X}");
+        return string.Join(" ", parts);
     }
 
     private static char ReadCharacter(
@@ -463,6 +472,11 @@ internal static partial class WordVisualTeXParagraphNumbering
                 document.Range(
                     position,
                     position + 1);
+            // A field's marks are text only with field codes included: a field
+            // whose code is not shown (a new hidden SEQ in batch numbering) reads
+            // as nothing at its end mark otherwise.
+            probe.TextRetrievalMode.IncludeFieldCodes = true;
+            probe.TextRetrievalMode.IncludeHiddenText = true;
             var text =
                 probe.Text
                 ?? string.Empty;
