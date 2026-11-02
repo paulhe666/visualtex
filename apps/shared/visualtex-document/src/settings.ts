@@ -10,26 +10,6 @@ export type EquationNumbering = "1" | "1.1" | "1-1";
 export type EquationBrackets = "()" | "[]";
 /** Section numbers: "1." / "1.1." (default), "1" / "1.1", or none. */
 export type HeadingNumbering = "1." | "1" | "none";
-export type HeadingAlign = "left" | "center" | "right";
-
-/**
- * How the document's headings of one level look (a Word heading style): null takes the body's font, the default
- * size (1.2 / 1.1 / 1 x the body size), the default spacing (half the heading's size above and below).
- */
-export interface HeadingStyle {
-  cjkFont: string | null;
-  latinFont: string | null;
-  /** points */
-  size: number | null;
-  bold: boolean;
-  italic: boolean;
-  /** #rrggbb */
-  color: string | null;
-  align: HeadingAlign | null;
-  /** points */
-  spaceBefore: number | null;
-  spaceAfter: number | null;
-}
 
 /** Paper sizes in millimetres (portrait). B5 is the JIS size Word and WPS call B5. */
 export const PAPER_SIZES: Record<PaperName, { width: number; height: number; label: string }> = {
@@ -57,24 +37,7 @@ export interface DocumentSettings {
   equationNumbering: EquationNumbering;
   equationBrackets: EquationBrackets;
   headingNumbering: HeadingNumbering;
-  /** levels 1, 2, 3 */
-  headingStyles: [HeadingStyle, HeadingStyle, HeadingStyle];
 }
-
-export const DEFAULT_HEADING_STYLE: HeadingStyle = {
-  cjkFont: null,
-  latinFont: null,
-  size: null,
-  bold: true,
-  italic: false,
-  color: null,
-  align: null,
-  spaceBefore: null,
-  spaceAfter: null,
-};
-
-/** The default heading sizes as multiples of the body size (levels 1-3). */
-export const DEFAULT_HEADING_SCALE = [1.2, 1.1, 1] as const;
 
 /** The defaults: A4 with Word's margins (2.54 cm, 3.18 cm), 五号 (10.5 pt), SimSun and Times New Roman. */
 export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettings = {
@@ -90,7 +53,6 @@ export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettings = {
   equationNumbering: "1",
   equationBrackets: "()",
   headingNumbering: "1.",
-  headingStyles: [DEFAULT_HEADING_STYLE, DEFAULT_HEADING_STYLE, DEFAULT_HEADING_STYLE],
 };
 
 export type MarginName = "marginTop" | "marginBottom" | "marginLeft" | "marginRight";
@@ -161,7 +123,6 @@ export const DOCUMENT_SETTING_ATTRS: Record<keyof DocumentSettings, { default: n
   equationNumbering: { default: null },
   equationBrackets: { default: null },
   headingNumbering: { default: null },
-  headingStyles: { default: null },
 };
 
 const finite = (value: unknown, min: number, max: number): number | null =>
@@ -187,88 +148,6 @@ export function documentSettings(doc: Node): DocumentSettings {
     equationNumbering: a.equationNumbering === "1.1" || a.equationNumbering === "1-1" ? a.equationNumbering : d.equationNumbering,
     equationBrackets: a.equationBrackets === "[]" ? "[]" : d.equationBrackets,
     headingNumbering: a.headingNumbering === "1" || a.headingNumbering === "none" ? a.headingNumbering : d.headingNumbering,
-    headingStyles: [0, 1, 2].map((level) =>
-      readHeadingStyle(Array.isArray(a.headingStyles) ? a.headingStyles[level] : null),
-    ) as DocumentSettings["headingStyles"],
-  };
-}
-
-const COLOR = /^#[0-9a-f]{6}$/i;
-
-/** One level's stored style, each value checked (an invalid one is the default). */
-function readHeadingStyle(value: unknown): HeadingStyle {
-  const v = (value && typeof value === "object" ? value : {}) as Partial<Record<keyof HeadingStyle, unknown>>;
-  const d = DEFAULT_HEADING_STYLE;
-  return {
-    cjkFont: family(v.cjkFont),
-    latinFont: family(v.latinFont),
-    size: finite(v.size, 4, 96),
-    bold: typeof v.bold === "boolean" ? v.bold : d.bold,
-    italic: typeof v.italic === "boolean" ? v.italic : d.italic,
-    color: typeof v.color === "string" && COLOR.test(v.color) ? v.color.toLowerCase() : null,
-    align: v.align === "left" || v.align === "center" || v.align === "right" ? v.align : null,
-    spaceBefore: finite(v.spaceBefore, 0, 144),
-    spaceAfter: finite(v.spaceAfter, 0, 144),
-  };
-}
-
-function sameHeadingStyle(a: HeadingStyle, b: HeadingStyle): boolean {
-  return (Object.keys(DEFAULT_HEADING_STYLE) as (keyof HeadingStyle)[]).every((key) => a[key] === b[key]);
-}
-
-/** A heading level's size in points. */
-export function headingSize(settings: DocumentSettings, level: number): number {
-  const index = Math.min(3, Math.max(1, level)) - 1;
-  return settings.headingStyles[index].size ?? Math.round(settings.fontSize * DEFAULT_HEADING_SCALE[index] * 10) / 10;
-}
-
-/** The spacing above / below a heading level in points. */
-export function headingSpace(settings: DocumentSettings, level: number, side: "before" | "after"): number {
-  const style = settings.headingStyles[Math.min(3, Math.max(1, level)) - 1];
-  const chosen = side === "before" ? style.spaceBefore : style.spaceAfter;
-  return chosen ?? Math.round(headingSize(settings, level) * 0.5 * 10) / 10;
-}
-
-/** The sheet's CSS variables for the heading styles (document.css reads them). */
-export function headingStyleVars(settings: DocumentSettings): Record<string, string> {
-  const vars: Record<string, string> = {};
-  settings.headingStyles.forEach((style, index) => {
-    // default levels use document.css's fallbacks
-    if (sameHeadingStyle(style, DEFAULT_HEADING_STYLE)) return;
-    const level = index + 1;
-    const size = headingSize(settings, level);
-    const prefix = `--vtx-h${level}`;
-    vars[`${prefix}-size`] = `${Math.round((size / settings.fontSize) * 10000) / 10000}em`;
-    vars[`${prefix}-weight`] = style.bold ? "bold" : "normal";
-    vars[`${prefix}-style`] = style.italic ? "italic" : "normal";
-    if (style.color) vars[`${prefix}-color`] = style.color;
-    if (style.align) vars[`${prefix}-align`] = style.align;
-    vars[`${prefix}-before`] = `${Math.round((headingSpace(settings, level, "before") / size) * 10000) / 10000}em`;
-    vars[`${prefix}-after`] = `${Math.round((headingSpace(settings, level, "after") / size) * 10000) / 10000}em`;
-    if (style.cjkFont || style.latinFont)
-      vars[`${prefix}-font`] = bodyFontFamily({
-        ...settings,
-        cjkFont: style.cjkFont ?? settings.cjkFont,
-        latinFont: style.latinFont ?? settings.latinFont,
-      });
-  });
-  return vars;
-}
-
-/** Change one heading level's style (one undo step); null resets every level. */
-export function setHeadingStyle(level: number | null, patch: Partial<HeadingStyle> | null): Command {
-  return (state, dispatch) => {
-    const current = documentSettings(state.doc).headingStyles;
-    let next: HeadingStyle[] | null;
-    if (level === null) next = null;
-    else {
-      next = current.map((style, index) => (index === level - 1 ? { ...style, ...(patch ?? DEFAULT_HEADING_STYLE) } : style));
-      if (patch === null) next[level - 1] = { ...DEFAULT_HEADING_STYLE };
-      if (next.every((style) => sameHeadingStyle(style, DEFAULT_HEADING_STYLE))) next = null;
-    }
-    if (JSON.stringify(next) === JSON.stringify(state.doc.attrs.headingStyles ?? null)) return false;
-    if (dispatch) dispatch(state.tr.setDocAttribute("headingStyles", next));
-    return true;
   };
 }
 
@@ -380,41 +259,8 @@ export function settingsPreamble(
   if (settings.headingNumbering === "none") lines.push("\\setcounter{secnumdepth}{0}");
   const latinFont = chosen.has("latinFont");
   const cjkFont = cjk && chosen.has("cjkFont");
-  const headingFonts =
-    chosen.has("headingStyles") && settings.headingStyles.some((style) => style.latinFont || (cjk && style.cjkFont));
-  if ((latinFont || headingFonts) && !cjk) lines.push("\\usepackage{fontspec}");
+  if (latinFont && !cjk) lines.push("\\usepackage{fontspec}");
   if (latinFont) lines.push(`\\setmainfont{${settings.latinFont}}`);
   if (cjkFont) lines.push(`\\setCJKmainfont{${settings.cjkFont}}`);
-  if (chosen.has("headingStyles")) lines.push(...headingStylePreamble(settings, cjk));
-  return { classOptions, lines, xelatex: cjk || latinFont || headingFonts };
-}
-
-const latexPt = (pt: number) => `${Math.round(pt * 10) / 10}pt`;
-
-/** The heading styles as titlesec formats (sizes, weight, shape, colour, alignment, fonts, spacing). */
-function headingStylePreamble(settings: DocumentSettings, cjk: boolean): string[] {
-  const lines = ["\\usepackage{titlesec}"];
-  if (settings.headingStyles.some((style) => style.color)) lines.push("\\usepackage{xcolor}");
-  const commands = ["section", "subsection", "subsubsection"];
-  settings.headingStyles.forEach((style, index) => {
-    // levels left at the default keep the document class's own heading format
-    if (sameHeadingStyle(style, DEFAULT_HEADING_STYLE)) return;
-    const level = index + 1;
-    const size = headingSize(settings, level);
-    const format = [
-      "\\normalfont",
-      `\\fontsize{${latexPt(size)}}{${latexPt(size * 1.3)}}\\selectfont`,
-      style.bold ? "\\bfseries" : "",
-      style.italic ? "\\itshape" : "",
-      style.color ? `\\color[HTML]{${style.color.slice(1).toUpperCase()}}` : "",
-      style.latinFont ? `\\fontspec{${style.latinFont}}` : "",
-      cjk && style.cjkFont ? `\\CJKfontspec{${style.cjkFont}}` : "",
-      style.align === "center" ? "\\filcenter" : style.align === "right" ? "\\filleft" : "",
-    ].join("");
-    lines.push(`\\titleformat{\\${commands[index]}}{${format}}{\\the${commands[index]}}{1em}{}`);
-    lines.push(
-      `\\titlespacing*{\\${commands[index]}}{0pt}{${latexPt(headingSpace(settings, level, "before"))}}{${latexPt(headingSpace(settings, level, "after"))}}`,
-    );
-  });
-  return lines;
+  return { classOptions, lines, xelatex: cjk || latinFont };
 }

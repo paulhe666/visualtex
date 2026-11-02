@@ -28,7 +28,6 @@ import {
   splitInlineMath,
   bodyFontFamily,
   documentSettings,
-  headingStyleVars,
   FOOTNOTE_EDIT_EVENT,
   CITATION_REQUEST_EVENT,
   PAPER_SIZES,
@@ -102,6 +101,17 @@ export interface DocumentEditorHandle {
 interface Props {
   initialJson?: unknown;
   onChange?: (doc: Node) => void;
+  /** An image pasted or dropped into the text (a screenshot of a formula): the app recognises it (OCR) and puts the
+   *  formula at the caret (the drop point for a drop). */
+  onImage?: (file: File) => void;
+}
+
+/** The image a paste or drop carries, unless it also carries text (then the text is pasted). */
+function imageOf(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  const image = [...data.files].find((file) => file.type.startsWith("image/"));
+  if (!image) return null;
+  return data.getData("text/plain").trim() ? null : image;
 }
 
 function createFormulaHost(mathSize: () => number): FormulaHost {
@@ -189,7 +199,7 @@ function emptyDoc(): Node {
   return documentSchema.nodes.doc.create(null, documentSchema.nodes.paragraph.create());
 }
 
-export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function DocumentEditor({ initialJson, onChange }, ref) {
+export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function DocumentEditor({ initialJson, onChange, onImage }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
@@ -242,6 +252,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
   }, []);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onImageRef = useRef(onImage);
+  onImageRef.current = onImage;
   const language = useEditorStore((state) => state.language);
   const lang = language === "en" ? "en" : "zh";
 
@@ -279,6 +291,23 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     const view = new EditorView(host, {
       state: makeState(doc),
       attributes: { class: "vtx-document", spellcheck: "false" },
+      handlePaste(_view, event) {
+        const image = onImageRef.current && imageOf(event.clipboardData);
+        if (!image) return false;
+        event.preventDefault();
+        onImageRef.current?.(image);
+        return true;
+      },
+      handleDrop(dropView, event) {
+        const image = onImageRef.current && imageOf((event as DragEvent).dataTransfer);
+        if (!image) return false;
+        event.preventDefault();
+        const at = dropView.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY });
+        if (at) dropView.dispatch(dropView.state.tr.setSelection(TextSelection.near(dropView.state.doc.resolve(at.pos))));
+        dropView.focus();
+        onImageRef.current?.(image);
+        return true;
+      },
       dispatchTransaction(tr) {
         const next = view.state.apply(tr);
         // Selecting a display formula (to open it) puts the browser's selection around the whole line; in a
@@ -488,7 +517,6 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-line-height" as string]: String(SINGLE_LINE_HEIGHT * settings.lineSpacing),
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
-      ...headingStyleVars(settings),
     } as CSSProperties;
   }, [settings, zoom, lang]);
 
@@ -513,14 +541,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       <div className="mc-body">
         <div className="mc-canvas is-paged" ref={setFrame} onContextMenu={onContextMenu} onMouseDown={onCanvasMouseDown}>
           <div
-            className={
-              "mc-page vtx-sheet" +
-              (settings?.headingNumbering === "1" ? " is-headings-plain" : settings?.headingNumbering === "none" ? " is-headings-none" : "") +
-              // centred and right-aligned heading styles (document.css places their numbers before the text)
-              (settings?.headingStyles ?? [])
-                .map((style, index) => (style.align === "center" || style.align === "right" ? ` is-h${index + 1}-${style.align}` : ""))
-                .join("")
-            }
+            className={"mc-page vtx-sheet" + (settings?.headingNumbering === "1" ? " is-headings-plain" : settings?.headingNumbering === "none" ? " is-headings-none" : "")}
             style={sheetStyle}
             ref={setSheet}
           >

@@ -117,6 +117,7 @@ class LatexWriter {
   readonly packages = new Set<string>(["amsmath", "amssymb"]);
   hasCjk = false;
   private listDepth = 0;
+  private titled = false;
 
   constructor(
     private options: LatexExportOptions,
@@ -199,6 +200,14 @@ class LatexWriter {
         if (node.attrs.align === "center") return `\\begin{center}\n${indented}\n\\end{center}\n`;
         if (node.attrs.align === "right") return `\\begin{flushright}\n${indented}\n\\end{flushright}\n`;
         return indented + "\n";
+      }
+      case "title": {
+        // the first is the document's title; any other a centred large line
+        const text = this.inline(node).trim();
+        if (!text) return "";
+        if (this.titled) return `\\begin{center}\n{\\LARGE ${text}\\par}\n\\end{center}\n`;
+        this.titled = true;
+        return `\\title{${text}}\n\\author{}\n\\date{}\n\\maketitle\n`;
       }
       case "heading": {
         const command = ["section", "subsection", "subsubsection"][Math.min(3, Math.max(1, node.attrs.level)) - 1];

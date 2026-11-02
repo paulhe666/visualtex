@@ -56,6 +56,16 @@ const nodes: Record<string, NodeSpec> = {
     toDOM: (node): DOMOutputSpec => ["h" + node.attrs.level, { ...withId(node.attrs), ...styleOf(node.attrs) }, 0],
   },
 
+  /** The document's title (LaTeX's \title + \maketitle): centred, unnumbered, at the top. */
+  title: {
+    group: "block",
+    content: "inline*",
+    defining: true,
+    attrs: id,
+    parseDOM: [{ tag: "p.vtx-title", priority: 60, getAttrs: idFrom }],
+    toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), class: "vtx-title" }, 0],
+  },
+
   blockquote: {
     group: "block",
     content: "block+",

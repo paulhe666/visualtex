@@ -1113,7 +1113,7 @@ export function EditorWorkspace({
         <section className="editor-surface document-editor-surface">
           {/* The document's own buttons sit above it; the formula tools stay in the bottom dock. */}
           <DocumentTextToolbar />
-          <DocumentWorkspace editorRef={editorRef} />
+          <DocumentWorkspace editorRef={editorRef} onPasteImage={showOcrActions ? onPasteImage : undefined} />
         </section>
       );
     }

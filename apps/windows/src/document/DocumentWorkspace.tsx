@@ -136,9 +136,11 @@ function createDocumentEditorAdapter(document: () => DocumentEditorHandle | null
 interface Props {
   /** The workspace's editor handle: formula commands from the app insert through it. */
   editorRef: RefObject<MathEditorHandle | null>;
+  /** An image pasted or dropped into the document: the app's OCR, the formula going in at `target`. */
+  onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
 }
 
-export function DocumentWorkspace({ editorRef }: Props) {
+export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const documentRef = useRef<DocumentEditorHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const language = useEditorStore((state) => state.language);
@@ -147,8 +149,10 @@ export function DocumentWorkspace({ editorRef }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef(0);
 
+  const adapterRef = useRef<MathEditorHandle | null>(null);
   useEffect(() => {
     const adapter = createDocumentEditorAdapter(() => documentRef.current);
+    adapterRef.current = adapter;
     editorRef.current = adapter;
     // The headless tests drive the handle the way the app's tools and OCR do.
     if (import.meta.env.DEV) (window as unknown as { __documentAdapter?: MathEditorHandle }).__documentAdapter = adapter;
@@ -253,7 +257,19 @@ export function DocumentWorkspace({ editorRef }: Props) {
 
   return (
     <section className="vtx-document-workspace" aria-label={isEn ? "Document" : "文档"}>
-      <DocumentEditor ref={documentRef} initialJson={initial} onChange={onChange} />
+      <DocumentEditor
+        ref={documentRef}
+        initialJson={initial}
+        onChange={onChange}
+        onImage={
+          onPasteImage
+            ? (file) => {
+                const target = adapterRef.current?.captureInsertionTarget();
+                if (target) onPasteImage(file, target);
+              }
+            : undefined
+        }
+      />
       {notice && <div className="mc-notice" role="status">{notice}</div>}
       <input
         ref={fileRef}
