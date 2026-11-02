@@ -4,8 +4,9 @@
 // the formula out; the kernel and the app ask this module instead of
 // measuring the drawn page.
 import type { CaretState, EditorGeometry, GeometryRect } from "../../tex-layout/src/index.ts";
-import { enterSlot, firstEmptySlotStop, goToStop, moveHorizontal, moveToSlotEdge, space, tab, vertical, type EditingHost, type SpaceKernel, type TabKernel } from "./navigation.ts";
-import { hitTest, itemAt, type FormulaPoint } from "./pointer.ts";
+import { enterSlot, firstEmptySlotStop, goToStop, moveHorizontal, moveToSlotEdge, space, tab, vertical, type EditingHost, type SelectionDragHost, type SpaceKernel, type TabKernel } from "./navigation.ts";
+import { itemAt, type FormulaPoint } from "./pointer.ts";
+import { rectHitTest, type RectHitView } from "./rectHit.ts";
 import { extend, extendTo, select, selectGroup, selectItem, selectSlot } from "./selection.ts";
 import { caretMode, inTextRun } from "./text.ts";
 import { ampersandAction, collapseToEnd, enterAction, escapeAction, type AmpersandAction, type EnterAction, type EscapeAction, type KeyModifiers } from "./keys.ts";
@@ -13,7 +14,7 @@ import { captureCaret, restoreCaret, type CaretSnapshot } from "./restore.ts";
 import { allowedStops, isAllowedStop, type CoreModel } from "./stops.ts";
 import { slotOrder, type CoreAtom, type FractionOrder, type Slot, type SlotKey } from "./structures.ts";
 
-export type { EditingHost, SpaceKernel, TabKernel } from "./navigation.ts";
+export type { EditingHost, SelectionDragHost, SpaceKernel, TabKernel } from "./navigation.ts";
 export type { AmpersandAction, EnterAction, EscapeAction, KeyModifiers } from "./keys.ts";
 export type { CaretSnapshot } from "./restore.ts";
 export type { CoreAtom, SlotKey } from "./structures.ts";
@@ -59,6 +60,10 @@ export interface EditingCore {
   atomBounds(mathfield: KernelMathfield, atom: unknown): ClientRect | null;
   /** The page rectangle of the caret bar's boundary (zero width), or null. */
   caretRect(mathfield: KernelMathfield): ClientRect | null;
+  /** The page rectangle of a caret stop (zero width; an empty slot's marker edge), or null: a drop caret. */
+  stopRect(mathfield: KernelMathfield, offset: number): ClientRect | null;
+  /** The app's side of dragging a field's selection (EditingHost.selectionDrag), if any. */
+  selectionDragHost(field: Element | undefined): SelectionDragHost | undefined;
   /** The caret point popovers and menus anchor to: right/bottom of the caret. */
   caretPoint(mathfield: KernelMathfield): { x: number; y: number; height: number } | null;
   /** Where text input lands (the IME candidate window opens beside it): the caret, or a selection's moving end. */
@@ -168,6 +173,32 @@ function fromClient(frame: Frame, clientX: number, clientY: number): FormulaPoin
   return { x: (clientX - frame.left - shift) / frame.px, y };
 }
 
+/**
+ * What the rectangle hit test (rectHit.ts) reads of a field: its geometry in
+ * page pixels, the row it stands in (the field's box: a formula row, an inline
+ * formula's line) and the pixels and font size it is drawn with.
+ */
+function rectHitView(mathfield: KernelMathfield): RectHitView | null {
+  const geometry = mathfield.visualTexGeometry;
+  const frame = geometry && frameOf(mathfield, geometry);
+  const row = (mathfield.host ?? mathfield.field) as HTMLElement | null | undefined;
+  if (!geometry || !frame || !row) return null;
+  const band = row.getBoundingClientRect();
+  return {
+    model: mathfield.model,
+    geometry,
+    toPage: (box) => ({
+      left: frame.left + box.x0 * frame.px + frame.align(box.x0),
+      right: frame.left + box.x1 * frame.px + frame.align(box.x0),
+      top: frame.baselineTop + box.y0 * frame.px,
+      bottom: frame.baselineTop + box.y1 * frame.px,
+    }),
+    band: { top: band.top, bottom: band.bottom },
+    scale: globalThis.devicePixelRatio || 1,
+    fontPx: frame.px * TEN_PT,
+  };
+}
+
 export function createEditingCore(): EditingCore {
   const hosts = new WeakMap<Element, EditingHost>();
   const pointOf = (mathfield: KernelMathfield, clientX: number, clientY: number) => {
@@ -212,6 +243,23 @@ export function createEditingCore(): EditingCore {
       return region ? core.toClient(mathfield, region) : null;
     },
 
+    stopRect(mathfield, offset) {
+      const geometry = core.geometry(mathfield);
+      if (!geometry) return null;
+      const atom = mathfield.model.at(offset + 1) as { type?: string; leftSibling?: unknown } | undefined;
+      // the stop of an empty slot is the one before its placeholder: the caret touches the marker
+      if (atom && (atom.type === "placeholder" || atom.type === "prompt")) {
+        const m = geometry.markers.get(atom as never);
+        if (m) return core.toClient(mathfield, { x0: m.x0, x1: m.x0, y0: m.y0, y1: m.y1 });
+      }
+      const c = geometry.stops[offset];
+      return c ? core.toClient(mathfield, { x0: c.x, x1: c.x, y0: c.top, y1: c.bottom }) : null;
+    },
+
+    selectionDragHost(field) {
+      return field ? hosts.get(field)?.selectionDrag : undefined;
+    },
+
     caretRect(mathfield) {
       const geometry = core.geometry(mathfield);
       if (!geometry) return null;
@@ -240,8 +288,8 @@ export function createEditingCore(): EditingCore {
     },
 
     hitTest(mathfield, clientX, clientY) {
-      const at = pointOf(mathfield, clientX, clientY);
-      return at ? hitTest(mathfield.model, at.geometry, at.point) : null;
+      const view = rectHitView(mathfield);
+      return view ? rectHitTest(view, clientX, clientY) : null;
     },
     select,
     extend,
@@ -260,7 +308,9 @@ export function createEditingCore(): EditingCore {
     slotOrder,
     isAllowedStop,
     allowedStops,
-    moveHorizontal,
+    moveHorizontal(model, direction) {
+      return moveHorizontal(model, direction, hostOf(model));
+    },
     moveToSlotEdge,
     tab(model, direction, fractionOrder, kernel) {
       return tab(model, direction, { fractionOrder, host: hostOf(model) }, kernel);

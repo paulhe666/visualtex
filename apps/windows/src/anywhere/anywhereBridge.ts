@@ -7,6 +7,7 @@ export const ANYWHERE_SUSPEND_EVENT = "visualtex-anywhere-suspend";
 export const ANYWHERE_KEY_EVENT = "visualtex-anywhere-key";
 export const ANYWHERE_STYLE_EVENT = "visualtex-anywhere-style";
 export const ANYWHERE_COMPOSE_EVENT = "visualtex-anywhere-compose";
+export const ANYWHERE_SHORTCUT_EVENT = "visualtex-anywhere-shortcut";
 
 export type AnywhereAnchorSource = "caret" | "field" | "pointer";
 
@@ -97,6 +98,20 @@ export interface AnywhereSuspension {
   keepDraft: boolean;
 }
 
+/** A shortcut of the open formula pressed in the host application (registered
+ * with Windows while a formula is open: some applications keep modifier
+ * chords from the input method). */
+export interface AnywhereShortcut {
+  generation: number;
+  action: string;
+}
+
+export function isAnywhereShortcut(value: unknown): value is AnywhereShortcut {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AnywhereShortcut>;
+  return typeof candidate.generation === "number" && typeof candidate.action === "string";
+}
+
 /**
  * The panel's size and the point of the strip that sits on the host's caret
  * line (where the formula starts, at its vertical centre), in CSS pixels
@@ -185,6 +200,12 @@ export const reportAnywhereMarked = (generation: number, text: string, width: nu
 /** The formula's caret is in text (\text{}): the input method spells pinyin there. */
 export const reportAnywhereMode = (generation: number, text: boolean) =>
   invoke<void>("anywhere_mode", { generation, text });
+
+/** The shortcuts that act while a formula is open, for Windows to give them
+ * to this page whatever the host application does with modifier chords. */
+export const reportAnywhereFormulaShortcuts = (
+  shortcuts: { action: string; chord: { code: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean } }[],
+) => invoke<void>("anywhere_formula_shortcuts", { shortcuts });
 
 /** A line in the native anywhere.log (no formula text). */
 export const logAnywhere = (line: string) =>

@@ -23,6 +23,12 @@ export const version = {
 };
 
 export { setVisualTexLayoutEngine, setVisualTexEditingCore } from './editor-mathfield/visualtex-hooks';
+export {
+  EdgeScroller as VisualTexEdgeScroller,
+  runAppDrag as visualTexRunSelectionDrag,
+  type AppDragDriver as VisualTexDragDriver,
+  type AppDragTarget as VisualTexDragTarget,
+} from './editor-mathfield/selection-drag';
 
 /** Every command the parser knows, with its number of required and optional arguments (for the LaTeX source editor's completion). */
 export function visualTexLatexCommandSignatures(): [string, number, number][] {

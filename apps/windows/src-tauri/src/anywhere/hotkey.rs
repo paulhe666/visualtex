@@ -3,6 +3,10 @@
 //! row (by default). Windows hotkeys on a thread of their own, kept in app data
 //! (anywhere-hotkey.json, anywhere-display-hotkey.json) so they are registered before the page
 //! loads.
+//!
+//! The shortcuts that act while a formula is open (output format, row form, OCR) are registered
+//! with Windows too, but only while one is: some applications keep modifier chords from the input
+//! method (Chrome never passes them on), so the input method alone cannot be relied on for them.
 
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Sender};
@@ -16,6 +20,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, PostThreadMessageW, MSG, WM_APP, WM_HOTKEY};
 
 const WM_RECONFIGURE: u32 = WM_APP + 0x41;
+/// Registers (or gives back) the shortcuts that act while a formula is open.
+const WM_FORMULA_SHORTCUTS: u32 = WM_APP + 0x42;
+/// RegisterHotKey's id of the first of those ("VP"), the others after it.
+const FORMULA_HOTKEY_BASE: i32 = 0x5650;
+const MAX_FORMULA_SHORTCUTS: usize = 16;
 
 /// The system-wide shortcuts: each opens and closes a formula, starting it as an inline or as a
 /// display row.
@@ -177,17 +186,35 @@ fn virtual_key(code: &str) -> Option<u32> {
 
 type Request = (Slot, Option<Chord>, Sender<Result<String, String>>);
 
+/// A shortcut that acts while a formula is open: the page's action id (src/shortcuts/anywhereHotkeys.ts)
+/// and its chord.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FormulaShortcut {
+    pub(crate) action: String,
+    pub(crate) chord: Chord,
+}
+
 struct Hotkeys {
     thread: u32,
     /// Each slot's registered chord.
     current: [Option<Chord>; 2],
     request: Option<Request>,
+    /// The formula's shortcuts as the page last gave them.
+    formula: Vec<FormulaShortcut>,
+    /// Registered now (a formula is open): the action of each id from FORMULA_HOTKEY_BASE (empty:
+    /// Windows refused that chord).
+    armed: Option<Vec<String>>,
+    /// Register (true) or give back the formula's shortcuts, and who waits for it.
+    formula_request: Option<(bool, Sender<()>)>,
 }
 
 static STATE: OnceLock<Mutex<Hotkeys>> = OnceLock::new();
 
 fn state() -> &'static Mutex<Hotkeys> {
-    STATE.get_or_init(|| Mutex::new(Hotkeys { thread: 0, current: [None, None], request: None }))
+    STATE.get_or_init(|| {
+        Mutex::new(Hotkeys { thread: 0, current: [None, None], request: None, formula: Vec::new(), armed: None, formula_request: None })
+    })
 }
 
 fn config_path(app: &AppHandle, slot: Slot) -> Option<std::path::PathBuf> {
@@ -278,12 +305,29 @@ pub(super) fn register_saved(app: &AppHandle) -> Result<(), String> {
                     WM_HOTKEY => {
                         if let Some(slot) = Slot::ALL.into_iter().find(|slot| message.wParam.0 == slot.hotkey_id() as usize) {
                             super::toggle(&app, slot.display());
+                        } else if let Some(index) = message.wParam.0.checked_sub(FORMULA_HOTKEY_BASE as usize) {
+                            // a shortcut of the open formula
+                            let action = state()
+                                .lock()
+                                .ok()
+                                .and_then(|state| state.armed.as_ref().and_then(|armed| armed.get(index).cloned()))
+                                .filter(|action| !action.is_empty());
+                            if let Some(action) = action {
+                                super::formula_shortcut(&app, &action);
+                            }
                         }
                     }
                     WM_RECONFIGURE => {
                         let request = state().lock().ok().and_then(|mut state| state.request.take());
                         if let Some((slot, chord, reply)) = request {
                             let _ = reply.send(set_chord(slot, chord));
+                        }
+                    }
+                    WM_FORMULA_SHORTCUTS => {
+                        let request = state().lock().ok().and_then(|mut state| state.formula_request.take());
+                        if let Some((on, reply)) = request {
+                            arm_formula_shortcuts(on);
+                            let _ = reply.send(());
                         }
                     }
                     _ => {}
@@ -340,6 +384,91 @@ pub(super) fn configure(app: &AppHandle, slot: Slot, chord: Option<Chord>) -> Re
     }
     super::log(&format!("shortcut {slot:?} set to {}", if label.is_empty() { "none" } else { &label }));
     Ok(label)
+}
+
+/// On the hotkey thread: gives back the formula's shortcuts and, `on`, registers them again (as the
+/// page has them now).
+fn arm_formula_shortcuts(on: bool) {
+    let (previous, wanted) = match state().lock() {
+        Ok(mut state) => (state.armed.take(), on.then(|| state.formula.clone())),
+        Err(_) => return,
+    };
+    for index in 0..previous.map(|armed| armed.len()).unwrap_or(0) {
+        unsafe {
+            let _ = UnregisterHotKey(None, FORMULA_HOTKEY_BASE + index as i32);
+        }
+    }
+    let Some(wanted) = wanted else { return };
+    let mut armed = Vec::with_capacity(wanted.len());
+    for (index, shortcut) in wanted.iter().enumerate() {
+        let registered = virtual_key(&shortcut.chord.code)
+            .ok_or_else(|| format!("{} cannot be a system-wide shortcut", shortcut.chord.code))
+            .and_then(|key| {
+                unsafe { RegisterHotKey(None, FORMULA_HOTKEY_BASE + index as i32, shortcut.chord.modifiers(), key) }
+                    .map_err(|error| error.to_string())
+            });
+        match registered {
+            Ok(()) => armed.push(shortcut.action.clone()),
+            Err(error) => {
+                super::log(&format!("formula shortcut {} ({}) not registered: {error}", shortcut.chord.label(), shortcut.action));
+                armed.push(String::new());
+            }
+        }
+    }
+    if let Ok(mut state) = state().lock() {
+        state.armed = Some(armed);
+    }
+}
+
+/// Asks the hotkey thread to register the formula's shortcuts (`on`) or give them back, and waits
+/// for it (the silent OCR shortcut may take the same chord right after).
+fn request_formula_shortcuts(on: bool) {
+    let (reply, answer) = mpsc::channel();
+    let thread = match state().lock() {
+        Ok(mut state) => {
+            state.formula_request = Some((on, reply));
+            state.thread
+        }
+        Err(_) => return,
+    };
+    if thread == 0 {
+        return;
+    }
+    if unsafe { PostThreadMessageW(thread, WM_FORMULA_SHORTCUTS, Default::default(), Default::default()) }.is_ok() {
+        let _ = answer.recv_timeout(Duration::from_secs(1));
+    }
+}
+
+/// A formula opened (`on`) or closed: its shortcuts are registered with Windows while it is open.
+pub(super) fn formula_shortcuts(on: bool) {
+    request_formula_shortcuts(on);
+}
+
+/// The page's shortcuts that act while a formula is open; registered again at once while one is.
+pub(super) fn set_formula_shortcuts(shortcuts: Vec<FormulaShortcut>) {
+    let shortcuts: Vec<FormulaShortcut> = shortcuts
+        .into_iter()
+        .filter(|shortcut| {
+            virtual_key(&shortcut.chord.code).is_some()
+                && (shortcut.chord.ctrl_key || shortcut.chord.alt_key)
+                && !shortcut.chord.meta_key
+                && !shortcut.action.is_empty()
+        })
+        .take(MAX_FORMULA_SHORTCUTS)
+        .collect();
+    let rearm = match state().lock() {
+        Ok(mut state) => {
+            if state.formula == shortcuts {
+                return;
+            }
+            state.formula = shortcuts;
+            state.armed.is_some()
+        }
+        Err(_) => return,
+    };
+    if rearm {
+        request_formula_shortcuts(true);
+    }
 }
 
 /// The label of the chord that opens an inline formula (Ctrl+Alt+M).

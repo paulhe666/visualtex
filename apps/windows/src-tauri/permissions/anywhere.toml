@@ -13,5 +13,6 @@ commands.allow = [
   "anywhere_capture_screenshot",
   "anywhere_read_clipboard",
   "anywhere_configure_hotkey",
+  "anywhere_formula_shortcuts",
   "anywhere_status"
 ]

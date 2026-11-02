@@ -684,11 +684,27 @@ function Get-PortOwner([int]$Port, [int]$PathRetryMilliseconds = 3000) {
     } catch { }
 
     if ($null -eq $processId) {
+        # Get-NetTCPConnection is unavailable on some machines (a broken NetTCPIP
+        # module, or a PSModulePath inherited from PowerShell 7). Ask CIM directly.
         try {
-            foreach ($line in (& netstat.exe -ano -p tcp 2>$null)) {
-                if ($line -notmatch 'LISTENING') { continue }
+            $connection = Get-CimInstance -Namespace root/StandardCimv2 -ClassName MSFT_NetTCPConnection -Filter "LocalPort = $Port AND State = 2" -ErrorAction Stop |
+                Select-Object -First 1
+            if ($null -ne $connection) {
+                $processId = [int]$connection.OwningProcess
+                $source = "MSFT_NetTCPConnection"
+            }
+        } catch { }
+    }
+
+    if ($null -eq $processId) {
+        try {
+            # Full path (PATH may lack System32), and no state text: netstat
+            # localizes it. A listener has no remote endpoint (0.0.0.0:0 / [::]:0).
+            $netstat = Join-Path $env:SystemRoot "System32\netstat.exe"
+            foreach ($line in (& $netstat -ano -p tcp 2>$null)) {
                 $columns = @($line.Trim() -split '\s+')
-                if ($columns.Count -lt 5 -or $columns[1] -notmatch ":$Port$") { continue }
+                if ($columns.Count -lt 5 -or $columns[0] -ne 'TCP' -or $columns[1] -notmatch ":$Port$") { continue }
+                if ($columns[2] -notmatch '^(0\.0\.0\.0|\[::\]):0$' -and $line -notmatch 'LISTENING') { continue }
                 $processId = [int]$columns[-1]
                 $source = "netstat"
                 break
@@ -893,6 +909,21 @@ function Test-CompanionRuntime {
             [void]$errors.Add("Port $port is owned by '$($portOwner.processPath)' PID=$($portOwner.processId), not by '$executable'.")
         } elseif ($null -eq $matchingProcess -and $null -ne $portOwner.processId) {
             $matchingProcess = Get-Process -Id ([int]$portOwner.processId) -ErrorAction SilentlyContinue
+        }
+    }
+    if ($portListening -and $null -eq $matchingProcess) {
+        # Windows did not name the port's owner: find the running VisualTeX by path.
+        foreach ($process in @(Get-Process -Name visualtex -ErrorAction SilentlyContinue)) {
+            $processPath = $null
+            try { $processPath = $process.Path } catch { continue }
+            if (-not [string]::IsNullOrWhiteSpace([string]$processPath) -and
+                [string]::Equals(
+                    [IO.Path]::GetFullPath([string]$processPath),
+                    [IO.Path]::GetFullPath($executable),
+                    [StringComparison]::OrdinalIgnoreCase)) {
+                $matchingProcess = $process
+                break
+            }
         }
     }
     if ($null -ne $matchingProcess -and -not $matchingProcess.HasExited) {
@@ -1356,11 +1387,20 @@ try {
         $null -ne $companionState.portOwner.processId -and
         [int]$companionState.processId -eq [int]$companionState.portOwner.processId -and
         [bool]$companionState.processRunning
+    # The server presenting VisualTeX's own certificate and protocol over HTTPS is
+    # VisualTeX, even when Windows will not name the port's owner process.
+    $companionProvenByCertificate =
+        [bool]$companionState.portListening -and
+        $null -eq $companionState.portOwner.processId -and
+        [bool]$companionState.httpsHealthy -and
+        [bool]$companionState.certificateMatches -and
+        [bool]$companionState.protocolMatches
     $portOwnedByVisualTeX =
         [bool]$companionState.portListening -and
-        ($portOwnerPathMatches -or $portOwnerPidMatchesVerifiedProcess)
-    Add-Check "Companion process" ([bool]$companionState.processRunning) "Executable=$($companionState.executable); PID=$($companionState.processId); StartedPID=$($companionState.startedProcessId); ExitCode=$($companionState.startedProcessExitCode); AppDataRoot=$($companionState.appDataRoot)"
-    Add-Check "Companion TCP port" $portOwnedByVisualTeX "127.0.0.1:$($companionState.port); Owner=$($companionState.portOwner.processName) PID=$($companionState.portOwner.processId) Path=$($companionState.portOwner.processPath)"
+        ($portOwnerPathMatches -or $portOwnerPidMatchesVerifiedProcess -or $companionProvenByCertificate)
+    $processVerified = [bool]$companionState.processRunning -or $companionProvenByCertificate
+    Add-Check "Companion process" $processVerified "Executable=$($companionState.executable); PID=$($companionState.processId); StartedPID=$($companionState.startedProcessId); ExitCode=$($companionState.startedProcessExitCode); AppDataRoot=$($companionState.appDataRoot)$(if ($companionProvenByCertificate -and -not $companionState.processRunning) { '; process not visible to this session, verified by its HTTPS certificate' })"
+    Add-Check "Companion TCP port" $portOwnedByVisualTeX "127.0.0.1:$($companionState.port); Owner=$($companionState.portOwner.processName) PID=$($companionState.portOwner.processId) Path=$($companionState.portOwner.processPath)$(if ($companionProvenByCertificate) { '; owner lookup unavailable, VisualTeX verified by its HTTPS certificate and protocol' })"
     Add-Check "Companion HTTPS health" ([bool]$companionState.httpsHealthy) $(if ($companionState.httpsHealthy) { "ok=true; Raw=$($companionState.healthRaw)" } else { "Stage=$($companionState.stage); Errors=$($companionState.errors -join '; '); TLS=$($companionState.tlsPolicyErrors); Exceptions=$($companionState.exceptionChain | ConvertTo-Json -Depth 5 -Compress)" })
     if ([string]$companionState.stage -eq "port-conflict") {
         Write-Host "[SKIP] Companion certificate and protocol - port ownership must be corrected before TLS validation."
@@ -1454,12 +1494,12 @@ try {
         New-ItemProperty -LiteralPath $modeKey -Name "PowerPointConnected" -PropertyType DWord -Value ([int][bool]$powerPointResult.connected) -Force | Out-Null
     }
     $companionVerified =
-        [bool]$companionState.processRunning -and
+        [bool]$processVerified -and
         [bool]$companionState.portListening -and
         [bool]$companionState.httpsHealthy -and
         [bool]$companionState.certificateMatches -and
         [bool]$companionState.protocolMatches
-    New-ItemProperty -LiteralPath $modeKey -Name "CompanionProcessRunning" -PropertyType DWord -Value ([int][bool]$companionState.processRunning) -Force | Out-Null
+    New-ItemProperty -LiteralPath $modeKey -Name "CompanionProcessRunning" -PropertyType DWord -Value ([int][bool]$processVerified) -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "CompanionPortListening" -PropertyType DWord -Value ([int][bool]$companionState.portListening) -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "CompanionHttpsHealthy" -PropertyType DWord -Value ([int][bool]$companionState.httpsHealthy) -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "CompanionCertificateMatches" -PropertyType DWord -Value ([int][bool]$companionState.certificateMatches) -Force | Out-Null

@@ -162,6 +162,10 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
     "    ; legacy MathType process-path guard; removing the service-owned Session 0",
     "    ; tree prevents that old guard from encountering inaccessible private PIDs.",
     "    Call VisualTeXEnsureNativeRendererStopped",
+    "    ; The previous uninstaller inherits this: its input-method step leaves the",
+    "    ; machine-wide input method and the user's keyboard for this installation,",
+    "    ; instead of removing them (a UAC prompt) for the install step to add again.",
+    "    System::Call 'kernel32::SetEnvironmentVariable(t \"VISUALTEX_REINSTALL\", t \"1\")'",
     "    HideWindow",
     "    ClearErrors",
   ].join("\n");

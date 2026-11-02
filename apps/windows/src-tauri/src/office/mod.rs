@@ -19,5 +19,7 @@ pub mod state;
 pub mod word_native;
 pub mod windows_backend;
 pub mod windows_pipe;
+#[cfg(target_os = "windows")]
+pub mod wps_mathtype_template;
 
 pub use lifecycle::{bootstrap_configuration, initialize, start};

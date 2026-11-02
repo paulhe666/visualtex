@@ -398,49 +398,59 @@ pub fn set_app_editor_preferences(
             )?;
         }
 
-        let word_pointer = "/settings/wordFormulaShortcuts";
-        if let Some(shortcuts) = preferences
-            .pointer(word_pointer)
-            .filter(|value| value.is_object())
-            .filter(|shortcuts| previous.pointer(word_pointer) != Some(*shortcuts))
-        {
-            let inline = shortcuts.pointer("/inline").ok_or_else(|| {
-                "Missing inline Word formula shortcut setting".to_string()
-            })?;
-            let display = shortcuts.pointer("/display").ok_or_else(|| {
-                "Missing display Word formula shortcut setting".to_string()
-            })?;
-            crate::office::windows_backend::set_word_formula_shortcuts(
+        // Word and WPS Writer: inline and display shortcuts with their formats.
+        type DocumentShortcuts = fn(Option<&str>, &str, Option<&str>, &str) -> Result<(), String>;
+        let document_hosts: [(&str, &str, DocumentShortcuts); 2] = [
+            ("/settings/wordFormulaShortcuts", "Word", crate::office::windows_backend::set_word_formula_shortcuts),
+            ("/settings/wpsWriterFormulaShortcuts", "WPS Writer", crate::office::windows_backend::set_wps_writer_formula_shortcuts),
+        ];
+        for (pointer, host, apply) in document_hosts {
+            let Some(shortcuts) = preferences
+                .pointer(pointer)
+                .filter(|value| value.is_object())
+                .filter(|shortcuts| previous.pointer(pointer) != Some(*shortcuts))
+            else {
+                continue;
+            };
+            let inline = shortcuts
+                .pointer("/inline")
+                .ok_or_else(|| format!("Missing inline {host} formula shortcut setting"))?;
+            let display = shortcuts
+                .pointer("/display")
+                .ok_or_else(|| format!("Missing display {host} formula shortcut setting"))?;
+            apply(
                 inline.pointer("/shortcut").and_then(serde_json::Value::as_str),
                 inline
                     .pointer("/format")
                     .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "Missing inline Word formula format".to_string())?,
-                display
-                    .pointer("/shortcut")
-                    .and_then(serde_json::Value::as_str),
+                    .ok_or_else(|| format!("Missing inline {host} formula format"))?,
+                display.pointer("/shortcut").and_then(serde_json::Value::as_str),
                 display
                     .pointer("/format")
                     .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "Missing display Word formula format".to_string())?,
+                    .ok_or_else(|| format!("Missing display {host} formula format"))?,
             )?;
         }
 
-        let powerpoint_pointer = "/settings/powerPointFormulaShortcuts";
-        if let Some(shortcuts) = preferences
-            .pointer(powerpoint_pointer)
-            .filter(|value| value.is_object())
-            .filter(|shortcuts| previous.pointer(powerpoint_pointer) != Some(*shortcuts))
-        {
-            crate::office::windows_backend::set_powerpoint_formula_shortcuts(
+        // PowerPoint and WPS Presentation: one shortcut per formula action.
+        type SlideShortcuts = fn(Option<&str>, Option<&str>, Option<&str>, Option<&str>) -> Result<(), String>;
+        let slide_hosts: [(&str, SlideShortcuts); 2] = [
+            ("/settings/powerPointFormulaShortcuts", crate::office::windows_backend::set_powerpoint_formula_shortcuts),
+            ("/settings/wpsPresentationFormulaShortcuts", crate::office::windows_backend::set_wps_presentation_formula_shortcuts),
+        ];
+        for (pointer, apply) in slide_hosts {
+            let Some(shortcuts) = preferences
+                .pointer(pointer)
+                .filter(|value| value.is_object())
+                .filter(|shortcuts| previous.pointer(pointer) != Some(*shortcuts))
+            else {
+                continue;
+            };
+            apply(
                 shortcuts.pointer("/svg").and_then(serde_json::Value::as_str),
                 shortcuts.pointer("/ole").and_then(serde_json::Value::as_str),
-                shortcuts
-                    .pointer("/inlineOmml")
-                    .and_then(serde_json::Value::as_str),
-                shortcuts
-                    .pointer("/displayOmml")
-                    .and_then(serde_json::Value::as_str),
+                shortcuts.pointer("/inlineOmml").and_then(serde_json::Value::as_str),
+                shortcuts.pointer("/displayOmml").and_then(serde_json::Value::as_str),
             )?;
         }
     }

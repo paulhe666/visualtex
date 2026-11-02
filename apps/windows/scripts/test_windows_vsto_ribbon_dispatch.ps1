@@ -204,8 +204,8 @@ function Test-RibbonComDispatch(
                 $requestType = $assembly.GetType('VisualTeX.PowerPointVsto.PowerPointConversionRequest', $true)
                 $tryParse = $requestType.GetMethod('TryParse', [Reflection.BindingFlags]'Static,NonPublic,Public')
                 $conversionButtons = @($parsed.SelectNodes('//*[@onAction="OnConvertFormulaFormat"]'))
-                if ($conversionButtons.Count -ne 24) {
-                    throw "$ClassName $constName exposes $($conversionButtons.Count) format conversion buttons; expected 18 directional and 6 unify buttons."
+                if ($conversionButtons.Count -ne 45) {
+                    throw "$ClassName $constName exposes $($conversionButtons.Count) format conversion buttons; expected 18 directional, 6 unify, 9 LaTeX redraw and 12 LaTeX code buttons."
                 }
                 foreach ($button in $conversionButtons) {
                     $parseArguments = @($button.GetAttribute('tag'), 'nativeOle', $null)
@@ -213,7 +213,9 @@ function Test-RibbonComDispatch(
                         throw "$ClassName $constName conversion button $($button.GetAttribute('id')) has an invalid tag '$($button.GetAttribute('tag'))'."
                     }
                 }
-                foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX')) {
+                foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX',
+                        'LatexToOmml', 'LatexToVisualTeX', 'LatexToMathType',
+                        'AnyToLatex', 'VisualTeXToLatex', 'MathTypeToLatex', 'OmmlToLatex')) {
                     foreach ($scope in @('Selection', 'Slide', 'All')) {
                         if ($null -eq $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.$row$scope']")) {
                             throw "$ClassName $constName has no $scope button for $row."
@@ -296,7 +298,11 @@ Test-RibbonComDispatch `
         "OnConvertOmmlToVisualTeXSelection",
         "OnConvertOmmlToVisualTeXDocument",
         "OnNumberDisplayFormulasSelection",
-        "OnNumberDisplayFormulasDocument"
+        "OnNumberDisplayFormulasDocument",
+        "GetOmmlMathFontPressed",
+        "OnOmmlMathFontChanged",
+        "GetOmmlMathFontEnabled",
+        "GetOmmlMathFontLabel"
     )
 
 Test-RibbonComDispatch `

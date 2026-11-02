@@ -6,12 +6,16 @@ import {
   visualTexKernelHost,
   visualTexKernelSsrEntry,
 } from "./vite.visualtexKernelHost";
+import { sharedPackageDedupe } from "./vite.sharedPackages";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [visualTexKernelHost(), react()],
   resolve: {
+    // Shared code in apps/shared (the custom symbol designer) uses the app's
+    // own copies of these packages.
+    dedupe: sharedPackageDedupe,
     alias: [
       // the editing kernel (apps/shared/visualtex-core/src/kernel)
       {

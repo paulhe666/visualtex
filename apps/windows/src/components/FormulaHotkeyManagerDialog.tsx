@@ -140,9 +140,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                       </div>
                       <div className="formula-hotkey-binding-copy">
                         <strong>{label}</strong>
-                        <span>
-                          {isEn ? action.descriptionEn : action.descriptionZh}
-                        </span>
                       </div>
                       {chord ? (
                         <kbd>{formatFormulaHotkeyChord(chord)}</kbd>

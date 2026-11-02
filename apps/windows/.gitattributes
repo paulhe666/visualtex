@@ -1,0 +1,3 @@
+# The Office math fonts and their READMEs/licenses are pinned by SHA-256 (build and MSI
+# checks): never convert their line endings.
+src-windows/office-fonts/** -text

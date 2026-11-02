@@ -88,7 +88,8 @@ internal static partial class Program
             var assembly = typeof(PowerPointFormulaService).Assembly;
             var transaction = assembly.GetType("VisualTeX.PowerPointVsto.PowerPointTextEditTransaction", true)!;
             var package = assembly.GetType("VisualTeX.PowerPointVsto.PowerPointNativeOmmlPackage", true)!;
-            string ShapeXml() => (string)package.GetMethod("ReadTextShapeXml", flags)!.Invoke(null,
+            string ShapeXml() => (string)package.GetMethod("ReadTextShapeXml", flags, null,
+                new[] { typeof(PowerPoint.Presentation), typeof(int), typeof(int) }, null)!.Invoke(null,
                 new object[] { presentation, slide.SlideID, shape.Id })!;
             string Hash(string xml) => (string)transaction.GetMethod("Fingerprint", flags)!.Invoke(null, new object[] { xml })!;
             // Independent test oracle retains all text, geometry and authored

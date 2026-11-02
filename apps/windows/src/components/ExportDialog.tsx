@@ -46,16 +46,16 @@ const EXPORT_FORMATS: Record<ExportFormat, ExportFormatDefinition> = {
     mime: "text/markdown;charset=utf-8",
     labelZh: "Markdown",
     labelEn: "Markdown",
-    descriptionZh: "按行导出为独立的块级 LaTeX 公式",
-    descriptionEn: "Export every line as a separate display LaTeX block",
+    descriptionZh: "每行一个行间 LaTeX 公式",
+    descriptionEn: "One display LaTeX block per line",
   },
   svg: {
     extension: "svg",
     mime: "image/svg+xml;charset=utf-8",
     labelZh: "SVG",
     labelEn: "SVG",
-    descriptionZh: "自包含矢量图，适合排版和继续缩放",
-    descriptionEn: "Self-contained vector artwork for publishing and scaling",
+    descriptionZh: "矢量图",
+    descriptionEn: "Vector image",
   },
   png: {
     extension: "png",
@@ -271,11 +271,6 @@ export function ExportDialog({
         <header>
           <div>
             <strong id="export-dialog-title">{isEn ? "Export formula" : "导出公式"}</strong>
-            <span>
-              {isEn
-                ? "Choose a format and enter an exact destination path."
-                : "选择导出格式，并输入准确的保存路径。"}
-            </span>
           </div>
           <button
             type="button"
@@ -349,11 +344,6 @@ export function ExportDialog({
               value={path}
               disabled={busy}
               onChange={(event) => setPath(event.target.value)}
-              placeholder={
-                isEn
-                  ? `For example: C:\\Users\\Name\\Documents\\${suggestedFilename}`
-                  : `例如：C:\\Users\\用户名\\Documents\\${suggestedFilename}`
-              }
               spellCheck={false}
               autoComplete="off"
             />
@@ -367,11 +357,6 @@ export function ExportDialog({
               {isEn ? "Browse" : "浏览"}
             </button>
           </div>
-          <small>
-            {isEn
-              ? `The filename will use .${definition.extension}. Missing folders are created automatically.`
-              : `文件将使用 .${definition.extension} 扩展名；不存在的文件夹会自动创建。`}
-          </small>
         </label>
 
         {error && <div className="export-error" role="alert">{error}</div>}

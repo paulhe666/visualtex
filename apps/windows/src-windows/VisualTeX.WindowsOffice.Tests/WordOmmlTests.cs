@@ -1097,7 +1097,27 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
-    public void BareDisplayIntegralUsesGrowingNativeNaryLayoutWithoutPlaceholderLimit()
+    public void DisplaySumBesideAFractionKeepsItsSize()
+    {
+        // \sum_{n=1}^{\infty}\frac{1}{n^2}: with m:grow the sign stretched to the
+        // fraction's height while its limits stayed script size.
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
+            + "<munderover><mo data-mjx-texclass=\"OP\">&#x2211;</mo>"
+            + "<mrow><mi>n</mi><mo>=</mo><mn>1</mn></mrow><mi mathvariant=\"normal\">&#x221E;</mi></munderover>"
+            + "<mfrac><mn>1</mn><msup><mi>n</mi><mn>2</mn></msup></mfrac></math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var nary = document.Descendants(math + "nary").Single();
+
+        Assert.Null(nary.Element(math + "naryPr")?.Element(math + "grow"));
+        Assert.NotNull(nary.Element(math + "e")?.Descendants(math + "f").SingleOrDefault());
+    }
+
+    [Fact]
+    public void BareDisplayIntegralUsesFixedSizeNativeNaryLayoutWithoutPlaceholderLimit()
     {
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
@@ -1110,7 +1130,7 @@ public sealed class WordOmmlTests
 
         Assert.True(nary is not null, $"Bare display integral was not converted to m:nary: {omml}");
         var properties = nary!.Element(math + "naryPr");
-        Assert.Equal("1", properties?.Element(math + "grow")?.Attribute(math + "val")?.Value);
+        Assert.Null(properties?.Element(math + "grow"));
         Assert.Equal("1", properties?.Element(math + "subHide")?.Attribute(math + "val")?.Value);
         Assert.Equal("1", properties?.Element(math + "supHide")?.Attribute(math + "val")?.Value);
         Assert.True(nary.Element(math + "e")?.Elements().Any() == true);

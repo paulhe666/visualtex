@@ -200,8 +200,8 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”; saving replaces it.`
+                  : `已分配给“${conflictLabel}”，保存后替换。`}
               </span>
             </div>
           )}

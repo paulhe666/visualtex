@@ -249,6 +249,25 @@ foreach ($architecture in $architectures) {
             readmeFile = "README-VisualTeX-Latin-Modern-Math.txt"
             readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-VisualTeX-Latin-Modern-Math.txt") -Algorithm SHA256).Hash
         }
+        # The OMML Font menu's other bundled faces (office-fonts/README-*.txt).
+        officeMathBundledFonts = @(
+            [ordered]@{
+                family = "VisualTeX TeX Gyre Termes Math"
+                file = "VisualTeXTeXGyreTermesMath.ttf"
+                sha256 = (Get-FileHash (Join-Path $wordOutputDirectory "VisualTeXTeXGyreTermesMath.ttf") -Algorithm SHA256).Hash
+                readmeFile = "README-VisualTeX-TeX-Gyre-Termes-Math.txt"
+                readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-VisualTeX-TeX-Gyre-Termes-Math.txt") -Algorithm SHA256).Hash
+            },
+            [ordered]@{
+                family = "STIX Two Math"
+                file = "STIXTwoMath-Regular.ttf"
+                sha256 = (Get-FileHash (Join-Path $wordOutputDirectory "STIXTwoMath-Regular.ttf") -Algorithm SHA256).Hash
+                readmeFile = "README-STIX-Two-Math.txt"
+                readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-STIX-Two-Math.txt") -Algorithm SHA256).Hash
+                licenseFile = "STIX-Two-Math-OFL.txt"
+                licenseSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "STIX-Two-Math-OFL.txt") -Algorithm SHA256).Hash
+            }
+        )
     }
     $manifestFileName = "VisualTeX-WindowsOffice-VSTO-$packagePlatform.sha256.json"
     $hashManifest | ConvertTo-Json -Depth 4 | Set-Content `

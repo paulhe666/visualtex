@@ -150,24 +150,41 @@ const settingsUi = readSource("src/components/OfficeFormulaShortcutSettings.tsx"
 const lifecycle = readSource("src-tauri/src/office/lifecycle.rs");
 const windowsBackend = readSource("src-tauri/src/office/windows_backend.rs");
 
+const wordAddIn = readSource("src-windows/VisualTeX.WordVsto/ThisAddIn.cs");
+const wordPolicy = readSource("src-windows/VisualTeX.WordVsto/WordFormulaShortcutPolicy.cs");
+
+// Each host reads its own registry values: Word, PowerPoint, WPS Writer, WPS Presentation.
 assert.match(sharedHook, /PowerPoint,/);
-assert.match(sharedHook, /: "PowerPoint";/);
+assert.match(sharedHook, /OfficeFormulaShortcutHost\.Word => "Word"/);
+assert.match(sharedHook, /OfficeFormulaShortcutHost\.WpsWriter => "WpsWriter"/);
+assert.match(sharedHook, /OfficeFormulaShortcutHost\.WpsPresentation => "WpsPresentation"/);
+assert.match(sharedHook, /_ => "PowerPoint"/);
 assert.match(sharedHook, /valuePrefix \+ "SvgFormulaShortcut"/);
 assert.match(sharedHook, /valuePrefix \+ "InlineOmmlFormulaShortcut"/);
 assert.match(powerPointAddIn, /OnPowerPointFormulaShortcut/);
-assert.match(powerPointAddIn, /OfficeFormulaShortcutHost\.PowerPoint/);
+assert.match(powerPointAddIn, /OfficeHostEnvironment\.IsWps \? OfficeFormulaShortcutHost\.WpsPresentation : OfficeFormulaShortcutHost\.PowerPoint/);
 assert.match(powerPointAddIn, /PowerPointSvg/);
 assert.match(powerPointAddIn, /OnNewSvgFormula\(this\)/);
-assert.match(settingsUi, /host: "word"/);
-assert.match(settingsUi, /host: "powerPoint"/);
+assert.match(wordAddIn, /OfficeHostEnvironment\.IsWps \? OfficeFormulaShortcutHost\.WpsWriter : OfficeFormulaShortcutHost\.Word/);
+// WPS Writer's FindKey fails (E_FAIL) for a free key: there that means free, not unknown.
+assert.match(wordPolicy, /CanExecuteWithWpsBindings/);
+assert.match(wordPolicy, /catch \(COMException\)/);
+assert.match(settingsUi, /documentHostSection\("word"\)/);
+assert.match(settingsUi, /slideHostSection\("powerPoint"\)/);
+assert.match(settingsUi, /documentHostSection\("wpsWriter"\)/);
+assert.match(settingsUi, /slideHostSection\("wpsPresentation"\)/);
 assert.match(settingsUi, /action: "svg"/);
 assert.match(settingsUi, /action: "ole"/);
 assert.match(settingsUi, /action: "inlineOmml"/);
 assert.match(settingsUi, /action: "displayOmml"/);
 assert.match(lifecycle, /\/settings\/powerPointFormulaShortcuts/);
-assert.match(windowsBackend, /PowerPointSvgFormulaShortcut/);
-assert.match(windowsBackend, /PowerPointOleFormulaShortcut/);
-assert.match(windowsBackend, /PowerPointInlineOmmlFormulaShortcut/);
-assert.match(windowsBackend, /PowerPointDisplayOmmlFormulaShortcut/);
+assert.match(lifecycle, /\/settings\/wpsWriterFormulaShortcuts/);
+assert.match(lifecycle, /\/settings\/wpsPresentationFormulaShortcuts/);
+assert.match(windowsBackend, /set_slide_formula_shortcuts\("PowerPoint"/);
+assert.match(windowsBackend, /set_slide_formula_shortcuts\("WpsPresentation"/);
+assert.match(windowsBackend, /set_document_formula_shortcuts\("Word"/);
+assert.match(windowsBackend, /set_document_formula_shortcuts\("WpsWriter"/);
+assert.match(windowsBackend, /\["Svg", "Ole", "InlineOmml", "DisplayOmml"\]/);
+assert.match(windowsBackend, /\{prefix\}\{name\}FormulaShortcut/);
 
 console.log("Office formula shortcut regression passed.");

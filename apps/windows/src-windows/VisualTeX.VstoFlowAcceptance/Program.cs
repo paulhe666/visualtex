@@ -592,6 +592,17 @@ internal static partial class Program
             }
         }
 
+        if (string.Equals(mode, "powerpoint-table-cells", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointTableCellAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+
         if (string.Equals(mode, "powerpoint-native-edit-entry", StringComparison.OrdinalIgnoreCase))
         {
             try

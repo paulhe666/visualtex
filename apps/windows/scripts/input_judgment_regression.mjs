@@ -55,6 +55,29 @@ const BOTH_ON = [
   ["lnx", String.raw`\ln x`],
   ["sup", String.raw`\sup`],
   ["int<Space>sinxdx", String.raw`\int \sin x\mathrm{d}x`],
+  // A function name after other letters (its coefficient) or before its argument letters, wherever
+  // it is in the typed word; the longest name at each place.
+  ["asin<Space>", String.raw`a\sin`],
+  ["asin", String.raw`a\sin`],
+  ["asinx", String.raw`a\sin x`],
+  ["a<Space>sin<Space>x", String.raw`a\ \sin x`],
+  ["nlogn", String.raw`n\log n`],
+  ["xlnx+1", String.raw`x\ln x+1`],
+  ["2xsinx", String.raw`2x\sin x`],
+  ["dsintheta<Space>", String.raw`d\sin\theta`],
+  ["mgsintheta<Space>", String.raw`mg\sin\theta`],
+  ["Asin(wt)", String.raw`A\sin\left(wt\right)`],
+  ["sinxcosx", String.raw`\sin x\cos x`],
+  ["xarcsin<Space>", String.raw`x\arcsin`],
+  ["asinh", String.raw`a\sinh`],
+  ["klnW", String.raw`k\ln W`],
+  ["supp", String.raw`\operatorname{supp}`],
+  ["coker", String.raw`\operatorname{coker}`],
+  // Ambiguous names stay whole words; escape names keep their letters until the confirm-escape key.
+  ["xlg", "xlg"],
+  ["infty+", "infty+"],
+  ["infty<Space>", String.raw`\infty`],
+  ["setminus+", "setminus+"],
   // Templates: the caret goes into the first slot.
   ["frac<Space>a<Tab>b", String.raw`\frac{a}{b}`],
   ["sqrt<Space>x", String.raw`\sqrt{x}`],
@@ -90,10 +113,14 @@ const SUBSCRIPTS = [
   ["x_alpha<Space>", String.raw`x_{\alpha}`],
   ["x_alpha<Space><Backspace>", String.raw`x_{alpha}`],
   ["x_thetaalpha<Space>", String.raw`x_{theta\alpha}`],
+  // A word in a subscript is a label: only names at its start are functions.
+  ["x_kmax", String.raw`x_{kmax}`],
+  ["x_sinx", String.raw`x_{\sin x}`],
 ];
 
 const UPRIGHT_OFF = [
   ["sinx+", "sinx+"],
+  ["asin+", "asin+"],
   ["km/h+", "km/h+"],
   ["int<Space>xdx", String.raw`\int xdx`],
   ["dx", "dx"],
@@ -109,6 +136,7 @@ const ESCAPES_OFF = [
   ["sinx+", String.raw`\sin x+`],
   ["km/h+", String.raw`\mathrm{km}/\mathrm{h}+`],
   ["sintheta+", String.raw`\sin theta+`],
+  ["asin+", String.raw`a\sin+`],
 ];
 
 const BOTH_OFF = [
@@ -233,7 +261,22 @@ try {
   };
   const FIELD = `document.querySelector("math-field.visual-mathfield")`;
 
+  // The app may still be starting when the settings are written and then persist its own: check that
+  // the reloaded page kept them, and load again if not (slow machines).
   const load = async (behavior, escapeChord) => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await loadOnce(behavior, escapeChord);
+      const kept = await evaluate(`(() => {
+        const state = JSON.parse(localStorage.getItem("visualtex-editor") || "{}").state || {};
+        const expected = ${JSON.stringify(behavior)};
+        return Boolean(${FIELD}) && Object.keys(expected).every((key) => (state.inputBehavior || {})[key] === expected[key]);
+      })()`);
+      if (kept) return;
+      console.log(`  (settings not kept on load ${attempt + 1}; loading again)`);
+    }
+    throw new Error(`the page did not keep the settings ${JSON.stringify(behavior)}`);
+  };
+  const loadOnce = async (behavior, escapeChord) => {
     await client.send("Page.navigate", { url: baseUrl });
     for (let i = 0; i < 100; i++) {
       try {
@@ -266,6 +309,7 @@ try {
   };
 
   const runCase = async (keys) => {
+    for (let i = 0; i < 200 && !(await evaluate(`Boolean(${FIELD})`)); i += 1) await sleep(50);
     await evaluate(`(() => { const f = ${FIELD};
       f.setValue("", { mode: "math", format: "latex", insertionMode: "replaceAll", selectionMode: "after", silenceNotifications: true });
       f.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText" }));

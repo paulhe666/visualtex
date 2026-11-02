@@ -108,11 +108,6 @@ export function AnywhereHotkeySettingsSection() {
           <h3>{isEn ? "Formula input method" : "公式输入法"}</h3>
         </div>
       </div>
-      <p className="office-formula-shortcut-help">
-        {isEn
-          ? "VisualTeX Anywhere: type a formula in any application. Click the pencil and press the keys (Esc cancels)."
-          : "VisualTeX Anywhere：在任意应用中输入公式。点击铅笔后按下组合键（Esc 取消）。"}
-      </p>
       {message && (
         <p className="office-formula-shortcut-help" data-anywhere-shortcut-message role="status">
           {message}

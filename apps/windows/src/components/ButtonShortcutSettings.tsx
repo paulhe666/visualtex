@@ -101,11 +101,6 @@ export function ButtonShortcutSettingsSection() {
           <h3>{isEn ? "Buttons" : "常用按钮"}</h3>
         </div>
       </div>
-      <p className="office-formula-shortcut-help">
-        {isEn
-          ? "Give the buttons you use often a shortcut. None is set at first; click a shortcut box and press the keys (Esc cancels)."
-          : "为常用按钮设置快捷键。初始均为“无”；点击快捷键框后按下组合键即可（Esc 取消）。"}
-      </p>
       {message && (
         <p className="office-formula-shortcut-help" data-button-shortcut-message role="status">
           {message}

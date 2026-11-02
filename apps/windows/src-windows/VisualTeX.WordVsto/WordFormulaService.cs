@@ -8954,51 +8954,12 @@ internal sealed partial class WordFormulaService
     // Word exposes one native OpenType MATH face per document. This is intentionally
     // document-scoped: changing it reflows every existing OMath in the document; it is
     // not a per-formula font override and must never be emulated with m:nor/run splitting.
+    // The string overload (WordFormulaService.OmmlMathFont.cs) is the OMML Font
+    // menu's document-font applier.
     private static void ApplyDocumentOmmlMathFont(
         Document document,
-        FormulaMetadata metadata)
-    {
-        var requested = ResolveDocumentOmmlMathFont(metadata.FormulaLetterFont);
-        if (string.Equals(
-                requested,
-                WordOfficeMathFontLoader.LatinModernMathFamily,
-                StringComparison.OrdinalIgnoreCase))
-            WordOfficeMathFontLoader.EnsureLoaded();
-
-        string current;
-        try { current = document.OMathFontName ?? string.Empty; }
-        catch (COMException error)
-        {
-            throw new InvalidOperationException(
-                "Word could not read this document's native Office Math font setting.",
-                error);
-        }
-        if (string.Equals(current, requested, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        try { document.OMathFontName = requested; }
-        catch (COMException error)
-        {
-            throw new InvalidOperationException(
-                $"Word could not set this document's native Office Math font to '{requested}'.",
-                error);
-        }
-
-        string applied;
-        try { applied = document.OMathFontName ?? string.Empty; }
-        catch (COMException error)
-        {
-            throw new InvalidOperationException(
-                "Word could not verify the document-level Office Math font after applying it.",
-                error);
-        }
-        if (!string.Equals(applied, requested, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                $"Word rejected '{requested}' as the document's native Office Math font. "
-                + "Install a valid OpenType math font or repair the VisualTeX Office integration.");
-        }
-    }
+        FormulaMetadata metadata) =>
+        ApplyDocumentOmmlMathFont(document, ResolveDocumentOmmlMathFont(metadata.FormulaLetterFont));
 
     private static string ResolveDocumentOmmlMathFont(string? preference)
     {

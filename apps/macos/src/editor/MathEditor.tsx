@@ -4366,6 +4366,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           return;
         }
 
+        // a press on the formula's own selection: the formula drags it (the
+        // kernel's selection drag, DESIGN 6.12); no session of the rows
+        if (!documentSelectionRef.current && !readOnly &&
+            entry[1].visualTexPointOnSelection(event.clientX, event.clientY)) return;
         clearDocumentSelection();
         // A press in the row space beside the formula never reaches the
         // field's own drag tracker, so this session selects within the row too.

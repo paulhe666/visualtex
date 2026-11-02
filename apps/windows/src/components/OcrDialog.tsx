@@ -354,7 +354,7 @@ export function OcrDialog({
           defaultModel: "PP-FormulaNet_plus-M",
           message: isEn
             ? "OCR is available in the VisualTeX desktop app, not in the browser preview."
-            : "OCR 只能在 VisualTeX 桌面应用中运行，浏览器预览无法调用本地模型。",
+            : "OCR 仅在桌面应用中可用。",
         });
       }
       return;
@@ -874,8 +874,8 @@ export function OcrDialog({
           : "正在启动 OCR 安装",
       detail: isWindows
         ? isEn
-          ? "Python 3.12 is preferred. Python 3.13 is incompatible with tokenizers 0.19.1 and will not be selected."
-          : "优先使用 Python 3.12；Python 3.13 与 tokenizers 0.19.1 不兼容，不会被选择。"
+          ? ""
+          : ""
         : null,
       error: null,
       logPath: installStatus?.logPath ?? null,
@@ -946,11 +946,11 @@ export function OcrDialog({
       const confirmed = window.confirm(
         isEn
           ? hasExistingData
-            ? `VisualTeX will create or use a VisualTeX-OCR folder under:\n${selected}\n\nThe current private Python environment, dependencies, models, resumable downloads, caches, and logs will be deleted. If the destination contains an incomplete VisualTeX OCR environment, that incomplete data will also be reset. VisualTeX will then switch to the new location and reinstall the OCR runtime there. Models must be downloaded or imported again. Continue?`
-            : `VisualTeX will create or use a VisualTeX-OCR folder under:\n${selected}\n\nThe OCR runtime and all future models, downloads, caches, and logs will use this location. It will be preserved after uninstall. Continue?`
+            ? `Move OCR data to:\n${selected}\n\nThe current runtime, models, downloads, caches and logs will be deleted; the runtime will be reinstalled there and models must be downloaded or imported again.`
+            : `Store OCR data in:\n${selected}`
           : hasExistingData
-            ? `VisualTeX 将在下面的位置创建或使用 VisualTeX-OCR 文件夹：\n${selected}\n\n当前私有 Python 环境、全部依赖、模型、断点下载、缓存和日志都会被删除；如果目标位置存在不完整的 VisualTeX OCR 环境，也会一并安全重置。随后会切换到新位置并重新安装 OCR 环境，模型需要重新下载或导入。是否继续？`
-            : `VisualTeX 将在下面的位置创建或使用 VisualTeX-OCR 文件夹：\n${selected}\n\nOCR 环境以及以后安装的模型、下载、缓存和日志都会写入该位置，卸载软件后仍会保留。是否继续？`,
+            ? `将 OCR 数据迁移到：\n${selected}\n\n当前运行环境、模型、下载、缓存和日志将被删除，并在新位置重新安装运行环境；模型需重新下载或导入。`
+            : `将 OCR 数据存储在：\n${selected}`,
       );
       if (!confirmed) return;
 
@@ -976,7 +976,7 @@ export function OcrDialog({
             : "正在新的存储位置重新安装 OCR 环境",
           detail: isEn
             ? "The previous environment was reset. Models are installed separately."
-            : "旧环境已重置；识别模型需要单独重新安装。",
+            : "环境已重置，需重新安装模型。",
           error: null,
           logPath: null,
         });
@@ -1038,8 +1038,8 @@ export function OcrDialog({
     if (!selectedCatalogEntry || modelBusy || modelDownloadActive) return;
     const confirmed = window.confirm(
       isEn
-        ? `Download ${selectedModel.labelEn}? Expected download: ${readableBytes(selectedCatalogEntry.size)}. VisualTeX will keep a .part file for resume and verify SHA-256 before activation.`
-        : `确定下载${selectedModel.labelZh}吗？预计下载量：${readableBytes(selectedCatalogEntry.size)}。VisualTeX 会保留 .part 文件用于断点续传，并在激活前校验 SHA-256。`,
+        ? `Download ${selectedModel.labelEn} (${readableBytes(selectedCatalogEntry.size)})?`
+        : `下载${selectedModel.labelZh}（${readableBytes(selectedCatalogEntry.size)}）？`,
     );
     if (!confirmed) return;
     modelCancelRequestedRef.current = false;
@@ -1068,8 +1068,8 @@ export function OcrDialog({
             speedBytesPerSecond: 0,
             etaSeconds: null,
             message: isEn
-              ? "OCR model download cancelled immediately; the .part file was kept for resume"
-              : "OCR 模型下载已立即取消，.part 文件已保留以便续传",
+              ? "Download cancelled"
+              : "下载已取消",
             error: null,
           }
         : current,
@@ -1086,8 +1086,8 @@ export function OcrDialog({
     if (!selectedModelInstalled || modelBusy || modelDownloadActive) return;
     const confirmed = window.confirm(
       isEn
-        ? `Remove the installed ${selectedModel.labelEn} model? The OCR runtime and other models will be kept.`
-        : `确定删除已安装的${selectedModel.labelZh}吗？OCR 运行环境和其他模型会保留。`,
+        ? `Remove ${selectedModel.labelEn}?`
+        : `删除${selectedModel.labelZh}？`,
     );
     if (!confirmed) return;
     setModelBusy(true);
@@ -1116,8 +1116,8 @@ export function OcrDialog({
     if (providerDirty) {
       setError(
         isEn
-          ? "Save the OCR provider configuration before recognition."
-          : "请先保存 OCR 提供器配置，再开始识别。",
+          ? "Save the provider configuration first."
+          : "请先保存提供器配置。",
       );
       return;
     }
@@ -1128,8 +1128,8 @@ export function OcrDialog({
     if (usingLocalProvider && !selectedModelInstalled) {
       setError(
         isEn
-          ? "Import or explicitly download the selected OCR model first."
-          : "请先导入或明确下载当前选择的 OCR 模型。",
+          ? "Import or download the selected model first."
+          : "请先导入或下载所选模型。",
       );
       return;
     }
@@ -1293,8 +1293,8 @@ export function OcrDialog({
   const handleResetRuntime = async () => {
     const confirmed = window.confirm(
       isEn
-        ? "Remove the OCR runtime and its installed packages?"
-        : "确定删除 OCR 运行环境和已经安装的依赖吗？",
+        ? "Remove the OCR runtime?"
+        : "删除 OCR 运行环境？",
     );
     if (!confirmed) return;
 
@@ -1399,15 +1399,14 @@ export function OcrDialog({
                   <span className="ocr-drop-icon">
                     <ImagePlus size={28} />
                   </span>
-                  <strong>{isEn ? "Drop a formula image here" : "将公式图片拖到这里"}</strong>
-                  <span>{isEn ? "Choose a file or paste an image" : "选择文件，或直接粘贴剪贴板图片"}</span>
+                  <strong>{isEn ? "Drop an image" : "拖入图片"}</strong>
                   <button type="button" onClick={() => fileInputRef.current?.click()}>
                     <Upload size={15} />
                     {isEn ? "Choose image" : "选择图片"}
                   </button>
                   <small>
                     <ClipboardPaste size={13} />
-                    {isEn ? "Paste with ⌘V while this dialog is open" : "窗口打开时可直接按 ⌘V 粘贴"}
+                    {isEn ? "Paste (Ctrl+V)" : "粘贴（Ctrl+V）"}
                   </small>
                 </div>
               )}
@@ -1572,11 +1571,6 @@ export function OcrDialog({
                       }
                     />
                   </label>
-                  <small className="ocr-provider-protocol-note">
-                    {isEn
-                      ? 'VisualTeX sends the image as a data URL and expects {"formulas":[{"latex":"..."}]}; structured-output requests automatically fall back for compatible servers that do not implement JSON Schema.'
-                      : 'VisualTeX 会以 data URL 发送图片，并统一接收 {"formulas":[{"latex":"..."}]}；若兼容服务器不支持 JSON Schema，会自动退回普通 JSON 响应。'}
-                  </small>
                 </div>
               )}
 
@@ -1603,7 +1597,6 @@ export function OcrDialog({
                       value={providerConfiguration.ollama.model}
                       disabled={recognizing || savingProvider}
                       spellCheck={false}
-                      placeholder={isEn ? "For example, a locally installed vision model" : "例如本机已安装的视觉模型名称"}
                       onChange={(event) =>
                         updateProviderConfiguration((current) => ({
                           ...current,
@@ -1626,11 +1619,6 @@ export function OcrDialog({
                       }
                     />
                   </label>
-                  <small className="ocr-provider-protocol-note">
-                    {isEn
-                      ? "Uses Ollama /api/chat with a base64 image, stream=false, and a JSON result schema."
-                      : "使用 Ollama /api/chat，以 base64 图片、stream=false 和 JSON 结果结构调用。"}
-                  </small>
                 </div>
               )}
 
@@ -1706,11 +1694,6 @@ export function OcrDialog({
                       <span>{isEn ? "Remove the saved app_key" : "删除已保存的 app_key"}</span>
                     </label>
                   )}
-                  <small className="ocr-provider-protocol-note">
-                    {isEn
-                      ? "Uses POST /v3/text with a base64 data URL, reads latex_styled first and then text, disables improve_mathpix, and enforces Mathpix's 2 MB base64-image limit before sending."
-                      : "使用 POST /v3/text 和 base64 data URL，优先读取 latex_styled，缺失时读取 text；默认关闭 improve_mathpix，并在发送前执行 Mathpix 的 2 MB base64 图片限制。"}
-                  </small>
                 </div>
               )}
 
@@ -1783,11 +1766,6 @@ export function OcrDialog({
                       <span>{isEn ? "Remove the saved access token" : "删除已保存的访问令牌"}</span>
                     </label>
                   )}
-                  <small className="ocr-provider-protocol-note">
-                    {isEn
-                      ? "Uses PaddleOCR-VL-1.6 for reliable formula recognition. VisualTeX allows the normal asynchronous queue to finish, with 20-second submission, 8-second status, 20-second result-download, and 120-second total timeouts."
-                      : "使用 PaddleOCR-VL-1.6，以公式识别可靠性为优先。VisualTeX 会正常等待异步任务：提交 20 秒、状态请求 8 秒、结果下载 20 秒、总任务 120 秒超时。"}
-                  </small>
                 </div>
               )}
 
@@ -1812,11 +1790,11 @@ export function OcrDialog({
                         <option key={candidate} value={candidate}>
                           {candidate === "standard"
                             ? isEn
-                              ? "Standard · best accuracy"
-                              : "标准模型 · 识别优先"
+                              ? "Standard"
+                              : "标准"
                             : isEn
-                              ? "Turbo · lower latency"
-                              : "轻量模型 · 速度优先"}
+                              ? "Turbo"
+                              : "轻量"}
                         </option>
                       ))}
                     </select>
@@ -1866,28 +1844,16 @@ export function OcrDialog({
                       </span>
                     </label>
                   )}
-                  <small className="ocr-provider-protocol-note">
-                    {isEn
-                      ? "Uploads one image with multipart/form-data to SimpleTex V2.5 and reads res.latex. The standard model prioritizes accuracy; Turbo prioritizes latency. Requests time out after 45 seconds."
-                      : "以 multipart/form-data 向 SimpleTex V2.5 上传单张图片并读取 res.latex。标准模型优先识别效果，轻量模型优先速度；单次请求 45 秒超时。"}
-                  </small>
                 </div>
               )}
 
-              {usingLocalProvider && (
-                <small className="ocr-provider-protocol-note">
-                  {isEn
-                    ? "All recognition stays on this computer and uses the verified PP-FormulaNet model selected below."
-                    : "所有识别均留在本机，并使用下方选择的已校验 PP-FormulaNet 模型。"}
-                </small>
-              )}
 
               <div className="ocr-provider-actions">
                 <span>
                   <KeyRound size={13} />
                   {isEn
-                    ? "Secrets are encrypted for the current Windows user and never exposed to the web UI after saving."
-                    : "密钥按当前 Windows 用户加密保存，保存后不会重新暴露给网页界面。"}
+                    ? ""
+                    : ""}
                 </span>
                 <button
                   type="button"
@@ -1967,20 +1933,20 @@ export function OcrDialog({
                 <span>
                   {selectedModelInstalled
                     ? isEn
-                      ? "Recognition and warmup use only this verified local model_dir."
-                      : "识别和预热只会使用这个已校验的本地 model_dir。"
+                      ? ""
+                      : ""
                     : isEn
-                      ? "Import a verified .vtxocrmodel package, or explicitly confirm the catalog download."
-                      : "请导入经过校验的 .vtxocrmodel 包，或明确确认 catalog 下载。"}
+                      ? "Import or download a model."
+                      : "请导入或下载模型。"}
                 </span>
                 <small className="ocr-model-drop-hint">
                   {modelPackageDragging
                     ? isEn
-                      ? "Release to verify and import this model package"
-                      : "松开鼠标即可校验并导入这个模型包"
+                      ? "Release to import"
+                      : "松开以导入"
                     : isEn
-                      ? "You can also drag one .vtxocrmodel package directly into this area."
-                      : "也可以把一个 .vtxocrmodel 模型包直接拖到这个区域。"}
+                      ? ""
+                      : ""}
                 </small>
                 {modelDownload?.model === model && (
                   <>
@@ -2052,34 +2018,16 @@ export function OcrDialog({
                 {!selectedCatalogEntry && !selectedModelInstalled && isTauriEnvironment() && (
                   <small>
                     {isEn
-                      ? "This build has no verified online catalog entry for the selected model; use manual import."
-                      : "当前构建没有该模型的已校验联网 catalog 条目，请使用手动导入。"}
+                      ? "No download available for this model. Import it manually."
+                      : "此模型无法联网下载，请手动导入。"}
                   </small>
                 )}
               </div>
             </div>
 
-            {model === "PP-FormulaNet_plus-L" && (
-              <div className="ocr-model-warning" role="note">
-                <AlertCircle size={15} />
-                <span>
-                  {isEn
-                    ? "The L model occupies about 698 MB and can use several GB of memory. Use M unless L accuracy is necessary."
-                    : "L 模型约占 698 MB，并可能占用数 GB 内存；没有明确精度需求时建议使用 M 模型。"}
-                </span>
-              </div>
-            )}
               </>
             )}
-
-            <div className="ocr-input-tip">
-              <AlertCircle size={14} />
-              <span>
-                {isEn
-                  ? "Use a tight crop around one formula. Avoid blur, shadows, and perspective distortion."
-                  : "建议只截取一条公式并尽量裁紧，避免模糊、阴影和明显透视变形。"}
-              </span>
-            </div>
+
           </div>
 
           <div className="ocr-output-column">
@@ -2128,8 +2076,8 @@ export function OcrDialog({
                   <span>
                     {changingStorage
                       ? isEn
-                        ? "The displayed path and installation state will update after the disk operation completes."
-                        : "磁盘操作完成后会更新显示路径和安装状态。"
+                        ? ""
+                        : ""
                       : installing || installFailed
                         ? installStatus?.message ?? installProgress?.message
                         : runtime?.message ?? (isEn ? "Checking runtime…" : "正在检查运行环境…")}
@@ -2180,8 +2128,8 @@ export function OcrDialog({
                   {storageLowForInitialInstall && (
                     <small className="ocr-storage-space-warning">
                       {isEn
-                        ? "Less than 2 GB is available. Choose another disk before installing the OCR runtime."
-                        : "当前可用空间不足 2 GB，请先更换到空间充足的磁盘再安装 OCR 环境。"}
+                        ? "Less than 2 GB free."
+                        : "可用空间不足 2 GB。"}
                     </small>
                   )}
                   {isTauriEnvironment() && (
@@ -2311,15 +2259,6 @@ export function OcrDialog({
                     </>
                   ) : (
                     <>
-                      <p>
-                        {isWindows
-                          ? isEn
-                            ? "VisualTeX installs the bundled private Python 3.12.10 x64 and fixed wheelhouse with --no-index and --find-links. PyPI, system Python, and user site-packages are never used. Models are managed separately."
-                            : "VisualTeX 会使用安装包内置的私有 Python 3.12.10 x64 和固定 wheelhouse，通过 --no-index、--find-links 完全离线安装；不会访问 PyPI、系统 Python或用户 site-packages，模型另行管理。"
-                          : isEn
-                            ? "VisualTeX verifies and installs the bundled offline OCR runtime. Recognition models are managed separately."
-                            : "VisualTeX 会校验并安装应用内置的离线 OCR 运行环境；识别模型单独管理。"}
-                      </p>
                       <div className="ocr-install-actions">
                         <button
                           type="button"
@@ -2372,11 +2311,11 @@ export function OcrDialog({
                     <span>
                       {providerDirty
                         ? isEn
-                          ? "Save the provider configuration before recognition so every VisualTeX and Office OCR entry point uses the same settings."
-                          : "请先保存提供器配置；保存后 VisualTeX 与 Office 的所有 OCR 入口会统一使用这套设置。"
+                          ? "Configuration not saved"
+                          : "配置未保存"
                         : isEn
-                          ? "The local PP-FormulaNet runtime is not required while this provider is active."
-                          : "启用此提供器时无需安装本地 PP-FormulaNet 运行环境。"}
+                          ? ""
+                          : ""}
                     </span>
                   </div>
                 </div>
@@ -2429,11 +2368,6 @@ export function OcrDialog({
                     </>
                   )}
                 </div>
-                <small className="ocr-api-privacy-note">
-                  {isEn
-                    ? "The selected image is sent only to the configured endpoint. API credentials remain in the native Windows backend. Plain HTTP with a secret is rejected unless the endpoint is loopback."
-                    : "所选图片只会发送到已配置的接口；API 凭据仅保留在 Windows 原生后端。除本机回环地址外，携带密钥的明文 HTTP 会被拒绝。"}
-                </small>
               </section>
             )}
 
@@ -2447,8 +2381,8 @@ export function OcrDialog({
                   <span>
                     {result.backgroundInverted
                       ? isEn
-                        ? "Dark background normalized · "
-                        : "已自动反色 · "
+                        ? "Background inverted · "
+                        : "已反色 · "
                       : ""}
                     {providerLabel(result.provider as OcrProviderId, isEn)} · {result.elapsedMs} ms
                     {result.processedWidth > 0 && result.processedHeight > 0
@@ -2474,15 +2408,6 @@ export function OcrDialog({
                         ? `${activeProviderLabel} · ${recognitionSeconds}s elapsed`
                         : `${activeProviderLabel} · 已等待 ${recognitionSeconds} 秒`}
                   </span>
-                  <small className="ocr-recognition-meta">
-                    {usingLocalProvider
-                      ? isEn
-                        ? "Recognition uses only the verified local model_dir. It will never download a model in the background."
-                        : "识别只会使用已校验的本地 model_dir，过程中绝不会后台下载模型。"
-                      : isEn
-                        ? "The image is being sent to the saved endpoint; the response is normalized to the same VisualTeX LaTeX result format."
-                        : "图片正发送到已保存的接口；返回内容会统一转换为 VisualTeX 的 LaTeX 结果格式。"}
-                  </small>
                 </div>
               ) : latex ? (
                 <>
@@ -2499,8 +2424,8 @@ export function OcrDialog({
                   <ScanLine size={24} />
                   <span>
                     {isEn
-                      ? "Choose an image and run recognition."
-                      : "选择图片并开始识别后，结果会显示在这里。"}
+                      ? ""
+                      : ""}
                   </span>
                 </div>
               )}

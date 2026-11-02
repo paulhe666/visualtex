@@ -7,6 +7,7 @@ import {
   visualTexKernelHost,
   visualTexKernelSsrEntry,
 } from "./vite.visualtexKernelHost";
+import { sharedPackageDedupe } from "./vite.sharedPackages";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
@@ -34,6 +35,8 @@ export default defineConfig({
     rejectLegacyOfficeJsImports,
   ],
   resolve: {
+    // Shared code (apps/shared) uses this app's copies of its packages.
+    dedupe: sharedPackageDedupe,
     alias: [
       // the editing kernel (apps/shared/visualtex-core/src/kernel)
       {

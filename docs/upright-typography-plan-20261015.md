@@ -28,7 +28,7 @@
 5. 仅键入时：`30 deg`→30°；`ee ii jj`→常数；项首的 `dx`、`dt`、`dθ`→正体 d。
 6. 完整的词是名字（键入时）：alpha、infty、in、frac……
 7. 函数名：确定的总是正体；歧义的（lg、Re、Im、tr）只在后面跟参数时（`lg(x)`、`lg x`）。
-8. 名字链（键入时）：从词首开始的名字，一个接一个，再加参数：`sintheta`→sin θ、`pir`→π r、`intx`→∫ x。词中间的名字永远不识别：`spin`、`point`、`for`、`number` 保持原样。
+8. 名字链（键入时）：从词首开始的名字，一个接一个，再加参数：`sintheta`→sin θ、`pir`→π r、`intx`→∫ x。确定的函数名在词里任何位置都识别（2026-11-01）：前面的字母是系数，后面的字母是参数，每处取最长的名字：`asin`→a sin、`nlogn`→n log n、`mgsintheta`→mg sin theta、`sinxcosx`→sin x cos x、`xarcsin`→x arcsin。希腊字母和符号词在词中间不识别：`spin`、`point`、`for`、`number` 保持原样；含函数名的转义名（`infty`、`setminus`、`widetilde`、`degree`）不拆出函数，等确认转义键。下标里的词是标签，只认词首的名字（`x_{kmax}` 保持）。
 9. 常数：e 作为指数函数的底且指数含变量/i/负号（`e^{-t}`；`e^2` 保持斜体）；i 在 e 的指数里、`\exp(i…)`、`3+4i`。
 10. 微分 d：导数分式、商、积分测度（积分里 `xdx` 的 d 也识别）。
 

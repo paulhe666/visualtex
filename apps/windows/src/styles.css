@@ -10146,3 +10146,40 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
     justify-content: flex-end;
   }
 }
+
+/* a setting's current value beside its control: text at the label's size, not small print */
+.setting-value {
+  font-size: inherit;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* No small print: secondary text is set at the size of the text it goes with (the onboarding's scaled-down
+   demos and previews keep their miniature sizes). */
+small:not(:is([class*="-demo"], [class*="-preview"]) small) {
+  font-size: inherit !important;
+}
+
+/* Office integration in Settings: its text at the 12 px of the other settings, not smaller. */
+.office-integration-section :is(strong, span, button, small, p, dt, dd, li, label, code) {
+  font-size: 12px !important;
+}
+
+/* The shortcut settings: no text under 12 px. */
+.formula-hotkey-manager-dialog :is(strong, span, kbd, code, button, small, p, label):not(.eyebrow) {
+  font-size: 12px !important;
+}
+
+/* The OCR and export dialogs: no text under 12 px. */
+.ocr-drop-empty :is(span, button, small),
+.ocr-provider-heading :is(strong, span),
+.ocr-provider-field > :is(span, select),
+.ocr-model-drop-zone :is(strong, span, button, small),
+.ocr-install-actions button,
+.ocr-runtime-summary span,
+.ocr-storage-location :is(strong, span, code, button, small),
+.ocr-model-field :is(span, small),
+.export-dialog :is(.export-copy-png-row, .export-path-field) :is(span, button, small),
+.update-dialog-content :is(p, .update-community-number) {
+  font-size: 12px !important;
+}

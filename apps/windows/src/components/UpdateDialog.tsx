@@ -259,16 +259,16 @@ export function UpdateDialog({
                   ) : (
                     <p>
                       {isEn
-                        ? "Open GitHub Releases to view the complete update details and download the installer for your platform."
-                        : "前往 GitHub Releases 查看完整更新说明，并下载适合当前平台的安装包。"}
+                        ? "Release notes and installers: GitHub Releases."
+                        : "更新说明与安装包：GitHub Releases。"}
                     </p>
                   )}
                 </>
               ) : (
                 <p>
                   {isEn
-                    ? "You are using the latest stable version."
-                    : "你正在使用最新的稳定版本。"}
+                    ? "Up to date."
+                    : "已是最新版本。"}
                 </p>
               )}
             </>
@@ -311,8 +311,8 @@ export function UpdateDialog({
                 <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
                 <p>
                   {isEn
-                    ? "WeChat Pay and Alipay are optional tip channels. Tipping is entirely voluntary and never affects access to any VisualTeX feature. The QQ code is for community discussion."
-                    : "微信和支付宝为自愿打赏通道，是否打赏完全不影响 VisualTeX 的任何功能和正常使用；QQ群二维码用于交流讨论。"}
+                    ? "Tips via WeChat Pay and Alipay are voluntary and do not affect any feature. QQ group for discussion."
+                    : "微信、支付宝打赏完全自愿，不影响任何功能；QQ 群用于交流。"}
                 </p>
                 <span className="update-community-number">
                   {isEn ? "QQ group: " : "QQ群号："}
@@ -368,15 +368,6 @@ export function UpdateDialog({
                     ? "Check automatically on startup"
                     : "启动时自动检查更新"}
               </strong>
-              <small>
-                {automaticPrompt
-                  ? isEn
-                    ? "Automatic update notifications will stay off. You can turn them back on in Settings."
-                    : "以后不会再主动弹出更新提示，可在设置中重新开启。"
-                  : isEn
-                    ? "When disabled, VisualTeX will not make automatic update requests or show update notifications."
-                    : "关闭后不会自动联网检查，也不会主动显示更新弹窗。"}
-              </small>
             </span>
           </label>
         </div>

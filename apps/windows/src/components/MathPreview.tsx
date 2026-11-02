@@ -33,7 +33,7 @@ const visiblePlaceholderLatex =
 const mathPreviewMarkupCache = new Map<string, string>();
 const mathPreviewMarkupCacheLimit = 1024;
 
-function cachedPreviewMarkup(latex: string, customSymbolRevision: number, fontRevision: number) {
+export function cachedPreviewMarkup(latex: string, customSymbolRevision: number, fontRevision: number) {
   const cacheKey = `${customSymbolRevision}\u0000${fontRevision}\u0000${latex}`;
   const cached = mathPreviewMarkupCache.get(cacheKey);
   if (cached !== undefined) return cached;

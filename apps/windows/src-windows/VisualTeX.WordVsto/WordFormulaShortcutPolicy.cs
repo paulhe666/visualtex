@@ -46,10 +46,52 @@ internal static class WordFormulaShortcutPolicy
         if (application is null) return false;
         try
         {
-            return CanExecuteWithWordBindings(application, shortcut, previous,
-                HasDocumentInputFocus(application), out conflict);
+            var focused = HasDocumentInputFocus(application);
+            return OfficeHostEnvironment.IsWps
+                ? CanExecuteWithWpsBindings(application, shortcut, previous, focused, out conflict)
+                : CanExecuteWithWordBindings(application, shortcut, previous, focused, out conflict);
         }
         catch { return false; }
+    }
+
+    /// <summary>
+    /// WPS Writer answers FindKey only for the keys it binds (its own commands, from the active
+    /// context); for a free key the call fails with E_FAIL. So there a failed lookup means free,
+    /// where Word's rule would leave every free key to WPS and no shortcut could fire.
+    /// </summary>
+    internal static bool CanExecuteWithWpsBindings(Application application,
+        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
+        bool documentInputFocused, out WordShortcutConflict? conflict)
+    {
+        conflict = null;
+        if (!documentInputFocused || !shortcut.Ctrl) return false;
+        if (!TryGetWpsBinding(application, shortcut, out var category, out var command)) return false;
+        if (category != WdKeyCategory.wdKeyCategoryNil)
+        {
+            conflict = new WordShortcutConflict(shortcut, category, command);
+            return false;
+        }
+        if (previous.HasValue
+            && TryGetWpsBinding(application, previous.Value, out var previousCategory, out _)
+            && previousCategory == WdKeyCategory.wdKeyCategoryPrefix)
+            return false;
+        return true;
+    }
+
+    /// <summary>False only for keys FindKey cannot name; a COM failure is WPS's "not bound".</summary>
+    private static bool TryGetWpsBinding(Application application,
+        OfficeFormulaShortcut shortcut, out WdKeyCategory category, out string? command)
+    {
+        try
+        {
+            return TryGetBinding(application, shortcut, out category, out command);
+        }
+        catch (COMException)
+        {
+            category = WdKeyCategory.wdKeyCategoryNil;
+            command = null;
+            return true;
+        }
     }
 
     internal static bool CanExecuteWithWordBindings(Application application,

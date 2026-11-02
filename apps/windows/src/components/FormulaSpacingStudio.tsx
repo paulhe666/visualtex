@@ -238,7 +238,7 @@ export function FormulaSpacingStudio({ isEn, onClose }: { isEn: boolean; onClose
             <span className="eyebrow">SPACING</span>
             <h2 id="formula-spacing-studio-title">
               {isEn ? "Formula spacing" : "公式间距"}
-              <small>{isEn ? `${fontLabel} · percentages of LaTeX's spacing` : `${fontLabel} · 以 LaTeX 标准间距为 100%`}</small>
+              <small>{isEn ? `${fontLabel} · % of LaTeX spacing` : `${fontLabel} · 相对 LaTeX 标准间距（%）`}</small>
             </h2>
           </div>
           <button
@@ -407,11 +407,7 @@ export function FormulaSpacingStudio({ isEn, onClose }: { isEn: boolean; onClose
         </div>
 
         <footer className="dialog-footer">
-          <span>
-            {isEn
-              ? "Applies at once to the editor, previews, exported and copied images and the Office window."
-              : "修改立即作用于编辑器、预览、导出与复制的图片以及 Office 窗口。"}
-          </span>
+          <span />
           <button type="button" className="primary-button" onClick={onClose}>
             {isEn ? "Done" : "完成"}
           </button>

@@ -21,7 +21,8 @@ body.anywhere-page #root {
   /* PANEL_MARGIN in AnywhereApp.tsx: room for the shadow */
   position: absolute;
   left: 8px;
-  top: 8px;
+  /* lower while the candidate bar is over the formula (AnywhereApp.tsx) */
+  top: var(--anywhere-strip-top, 8px);
   width: max-content;
   display: flex;
   flex-direction: row;
@@ -97,6 +98,19 @@ body.anywhere-page #root {
    lines between the columns. Only the page of nine that holds the highlighted
    candidate; the panel grows to the table, so nothing scrolls or is cut.
    (html:root: above the main window's popover rules in styles.css.) */
+/* The main window shows a copy of the kernel's list (mathLiveKernelCommands:
+   #visualtex-native-input-suggestion-popover) and hides the kernel's own; here
+   the kernel's own list is the table (the panel is sized from it), the copy
+   never shows. */
+html:root body.anywhere-page #visualtex-native-input-suggestion-popover {
+  display: none !important;
+}
+
+html:root body.anywhere-page #mathlive-suggestion-popover[data-visualtex-input-popover-source="true"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
 html:root body.anywhere-page #mathlive-suggestion-popover {
   --candidate-head: #62390f;
   --candidate-head-current: #b0661d;

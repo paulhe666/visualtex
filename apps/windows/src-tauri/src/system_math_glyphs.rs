@@ -44,6 +44,18 @@ pub(crate) struct SystemFontAsset {
     weight: u16,
 }
 
+/// A font family installed on the system, for the document's body font menus.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SystemFontFamily {
+    /// the family name fonts are asked for by (English when the font has one)
+    family: String,
+    /// the family's Chinese (or Japanese / Korean) name, when the font has one
+    localized: Option<String>,
+    /// the family has Chinese characters
+    cjk: bool,
+}
+
 const DEFAULT_MATH_FONT_FALLBACKS: &[&str] = &[
     "Cambria Math",
     "STIX Two Math",
@@ -106,6 +118,12 @@ mod windows {
         display_family: String,
         italic: bool,
         weight: u16,
+        /// the name the family is listed under (typographic family, English when there is one)
+        list_family: Option<String>,
+        /// its Chinese (else Japanese or Korean) name
+        localized_family: Option<String>,
+        /// has Chinese characters
+        cjk: bool,
     }
 
     static FONT_CATALOG: OnceLock<Vec<FontFaceEntry>> = OnceLock::new();
@@ -160,6 +178,50 @@ mod windows {
         names
     }
 
+    /// The family's English name and its East Asian name from the Windows name records (typographic family first).
+    fn listing_names(face: &Face<'_>) -> (Option<String>, Option<String>) {
+        let mut english: [Option<String>; 2] = [None, None];
+        let mut localized: [Option<String>; 2] = [None, None];
+        let mut localized_rank = [u8::MAX; 2];
+        for name in face.names() {
+            let slot = match name.name_id {
+                16 => 0,
+                1 => 1,
+                _ => continue,
+            };
+            if name.platform_id != ttf_parser::PlatformId::Windows {
+                continue;
+            }
+            let Some(value) = name.to_string() else {
+                continue;
+            };
+            let value = value.trim().to_string();
+            if value.is_empty() || value.starts_with('@') || value.chars().count() > 128 {
+                continue;
+            }
+            // Simplified Chinese first, then the other Chinese, Japanese and Korean names
+            let rank = match name.language_id {
+                0x0804 => 0,
+                0x1004 => 1,
+                0x0404 => 2,
+                0x0C04 => 3,
+                0x1404 => 4,
+                0x0411 => 5,
+                0x0412 => 6,
+                _ => u8::MAX,
+            };
+            if name.language_id == 0x0409 {
+                english[slot].get_or_insert(value);
+            } else if rank < localized_rank[slot] {
+                localized_rank[slot] = rank;
+                localized[slot] = Some(value);
+            }
+        }
+        let [english_typographic, english_family] = english;
+        let [local_typographic, local_family] = localized;
+        (english_typographic.or(english_family), local_typographic.or(local_family))
+    }
+
     fn scan_font_file(path: &Path, entries: &mut Vec<FontFaceEntry>) {
         let Ok(metadata) = fs::metadata(path) else {
             return;
@@ -179,6 +241,7 @@ mod windows {
             let Some(display_family) = families.first().cloned() else {
                 continue;
             };
+            let (list_family, localized_family) = listing_names(&face);
             entries.push(FontFaceEntry {
                 path: path.to_path_buf(),
                 face_index,
@@ -186,6 +249,9 @@ mod windows {
                 display_family,
                 italic: face.is_italic(),
                 weight: face.weight().to_number(),
+                list_family,
+                localized_family,
+                cjk: face.glyph_index('\u{4E2D}').is_some(),
             });
         }
     }
@@ -499,6 +565,41 @@ mod windows {
         ))
     }
 
+    /// Every installed family once (its faces merged), by name.
+    pub(super) fn list_families() -> Vec<SystemFontFamily> {
+        let mut families: Vec<SystemFontFamily> = Vec::new();
+        let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for entry in catalog() {
+            let family = entry
+                .list_family
+                .clone()
+                .unwrap_or_else(|| entry.display_family.clone());
+            if family.starts_with('@') {
+                continue;
+            }
+            let key = normalize_font_family(&family);
+            if let Some(&at) = index.get(&key) {
+                let existing = &mut families[at];
+                existing.cjk |= entry.cjk;
+                if existing.localized.is_none() {
+                    existing.localized = entry.localized_family.clone();
+                }
+                continue;
+            }
+            index.insert(key, families.len());
+            families.push(SystemFontFamily {
+                localized: entry
+                    .localized_family
+                    .clone()
+                    .filter(|name| normalize_font_family(name) != normalize_font_family(&family)),
+                family,
+                cjk: entry.cjk,
+            });
+        }
+        families.sort_by_key(|family| family.family.to_lowercase());
+        families
+    }
+
     pub(super) fn probe_fonts(font_families: &[String]) -> Vec<SystemMathFontProbe> {
         font_families
             .iter()
@@ -579,6 +680,21 @@ pub(crate) fn probe_system_math_fonts(
     {
         let _ = font_families;
         Err("System mathematical glyph extraction is unavailable on this platform.".to_string())
+    }
+}
+
+/// The system's font families for the document's body font menus (the font files are read once, off the main thread).
+#[tauri::command]
+pub(crate) async fn list_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return tauri::async_runtime::spawn_blocking(windows::list_families)
+            .await
+            .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
     }
 }
 

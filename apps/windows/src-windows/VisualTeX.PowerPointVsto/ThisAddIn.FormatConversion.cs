@@ -217,6 +217,19 @@ public sealed partial class ThisAddIn
                         .Where(entry => entry.Failure is not null)
                         .ToList();
                     if (failed.Count == 0) work.Add(unit);
+                    else if (unit.InPlaceText)
+                    {
+                        // Formulas rewritten inside a text are independent: each one
+                        // that failed stays as it is, with its own reason, and the
+                        // others are still written.
+                        foreach (var entry in failed)
+                        {
+                            unit.Items.Remove(entry.Item);
+                            plan.Skips.Add(new PowerPointConversionSkip(
+                                PowerPointConversionSkipReason.Failed, unit.SlideIndex, 1, entry.Failure, entry.Item.Latex));
+                        }
+                        if (unit.Items.Count > 0) work.Add(unit);
+                    }
                     else if (failed.Count == 1)
                         plan.Skips.Add(new PowerPointConversionSkip(
                             PowerPointConversionSkipReason.Failed, unit.SlideIndex, unit.Items.Count, failed[0].Failure,
@@ -534,7 +547,9 @@ public sealed partial class ThisAddIn
 
     private static string SourceText(PowerPointConversionRequest request, bool english) =>
         request.Unify
-            ? (english ? "equation(s) in other formats" : "其他格式的公式")
+            ? request.TargetFamily == PowerPointConversionRequest.LatexFamily
+                ? (english ? "equation(s)" : "公式")
+                : (english ? "equation(s) in other formats" : "其他格式的公式")
             : (english
                 ? $"{PowerPointConversionRules.FamilyLabel(request.SourceFamily)} equation(s)"
                 : $"{PowerPointConversionRules.FamilyLabel(request.SourceFamily)} 公式");
@@ -604,6 +619,35 @@ public sealed partial class ThisAddIn
                 RenderFontSizePt = render,
                 PlacementScale = scale,
             };
+        }
+
+        if (target == PowerPointConversionRequest.LatexFamily)
+        {
+            // LaTeX code needs no rendering: every source already carries its
+            // LaTeX. An equation in text keeps its kind ($...$ or $$...$$); an
+            // object becomes display code in its own text box.
+            foreach (var unit in plan.Units)
+            {
+                foreach (var item in unit.Items)
+                {
+                    token.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var latex = string.IsNullOrWhiteSpace(item.Latex) && item.Lines is { Count: > 0 }
+                            ? string.Join("\n", item.Lines.Select(line => line.Latex))
+                            : item.Latex;
+                        prepared[item.Id].LatexSource = PowerPointLatexText.BuildSource(
+                            latex,
+                            display: !unit.InPlaceText || item.DisplayMode == "block",
+                            item.SourceMetadata?.EquationTag);
+                    }
+                    catch (Exception error)
+                    {
+                        prepared[item.Id].Failure = OfficeErrorText.Describe(error);
+                    }
+                }
+            }
+            return;
         }
 
         // MathType and native-equation sources already carry exact MathML; a
@@ -702,8 +746,8 @@ public sealed partial class ThisAddIn
             RenderFontSizePt = formula.RenderFontSizePt,
             FormulaLetterFont = item.SourceMetadata?.FormulaLetterFont,
             FormulaChineseFont = item.SourceMetadata?.FormulaChineseFont,
-            CreatedWithVersion = "1.2.9",
-            UpdatedWithVersion = "1.2.9",
+            CreatedWithVersion = "1.3.0",
+            UpdatedWithVersion = "1.3.0",
             CreatedAt = now,
             UpdatedAt = now,
         };

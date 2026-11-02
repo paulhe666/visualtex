@@ -306,7 +306,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
       if (!isCoreRuntimeFault(error) || runtimeRecoveryScheduledRef.current) return false;
       runtimeRecoveryScheduledRef.current = true;
       setLayoutNotice(
-        "核心运行实例异常，正在从最后一次已提交源码恢复；恢复后本公式的内核撤销历史将从当前检查点重新开始。",
+        "编辑内核异常，正在从已提交源码恢复。",
       );
       window.setTimeout(() => {
         for (const record of hostRecords.current.values()) {
@@ -585,13 +585,13 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
         if (!cancelled) {
           setLayoutNotice(
             unresolved
-              ? "当前字体偏好无法解析为已验证字体资源；本公式会话继续使用上一个已验证布局。"
+              ? "字体不可用，沿用上一布局。"
               : null,
           );
         }
       };
       void updateFonts().catch((error) => {
-        if (!cancelled && !scheduleRuntimeRecovery(error)) setLayoutNotice(`字体资源暂时不可用，公式源码与当前会话保留。${String(error)}`);
+        if (!cancelled && !scheduleRuntimeRecovery(error)) setLayoutNotice(`字体资源不可用：${String(error)}`);
       });
       return () => {
         cancelled = true;
@@ -860,7 +860,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
           <div className="core-math-editor-notice" role="status">
             {probeError
               ? (language === "en" ? "Formula resources could not be loaded. Your source is preserved." : "公式资源加载失败，源码已保留。")
-              : (language === "en" ? "Loading bundled formula fonts…" : "正在加载软件内置公式字体…")}
+              : (language === "en" ? "Loading bundled formula fonts…" : "正在加载公式字体…")}
             {probeError && <button type="button" onClick={() => retryCoreStaticPreviews()}>
               {language === "en" ? "Retry" : "重试"}
             </button>}

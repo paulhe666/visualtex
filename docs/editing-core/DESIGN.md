@@ -112,14 +112,19 @@ The engine already places every glyph in TeX's layout. It additionally returns a
   the slot's x-box), drawn by the engine itself; the caret in that slot touches its left edge and spans its height;
 - `selectionRects(range)`, `insideCue(stop)` — rectangles for the selection highlight; the delimiters/sign of the
   structure holding the caret are tinted with the caret colour (as the old build did);
-- `hitTest(point)` — point (formula units) → allowed stop. Beside the formula (left of its first caret, right of its
-  last): its first/last stop, as beside a line of text. On an empty-slot marker (or within 0.15em of it): that slot's
-  stop. Otherwise the innermost atom whose box holds the point (an atom's box ends where its scripts begin, also when
-  TeX boxed them with it, as for an accented letter): on a glyph, the stop on the side of the glyph the point is on;
-  on a structure's own ink (fraction bar, radical sign, delimiter) or in a gap inside it, the structure's nearest stop
-  — its inner stops and the stops before and after it — by the distance to the caret's centre with vertical
-  distances counted half; elsewhere the nearest stop of the formula. A structure without inner stops (an accent, a
-  macro's expansion) passes the point to the structure holding it.
+- `hitTest(point)` — page point → allowed stop, by AxMath's rule (research: `claude-work/axmath-mouse-reverse`,
+  `selection-caret.md` §2; `rectHit.ts`): no nearest-point search and no glyph outlines, but one rectangle per atom in
+  device pixels (truncated as Windows does; left and top edges in, right and bottom out). Across, an atom's rectangle
+  runs from the caret before it to the caret after it (its advance: the space around an operator is the operator's),
+  1 px wider each side, 3 px on the left of a slot's start (the caret before the first item is easy to reach; an
+  empty slot's start is its marker); up and down, its own box 0.2em higher and lower (`HIT_VERTICAL_MARGIN_EM`, a
+  choice: AxMath reads this margin from its style profile), at the top level of the formula the whole row (the
+  field's box). The point is tested along a slot's atoms in order (where two rectangles meet, the first one's: a base
+  takes the pixel or two where its scripts start); in an atom its slots come first, in their order; when no slot
+  holds the point the middle of the atom's rectangle decides: the stop after it (right half) or before it (left
+  half). A stop the caret may not take (inside an accent's base, a macro's expansion) becomes the nearest enclosing
+  atom's stop before or after it. Nothing in the row: the formula's first stop if the point is left of it, else its
+  last.
 
 The painter draws the caret, markers, selection and tint from these numbers. The kernel and the app never measure the
 page: anything that needs a position (popovers, IME candidate window, scrolling, the app's row layout) asks the core,
@@ -181,7 +186,32 @@ presses); Shift+Up/Down, Shift+Home/End, Ctrl+Shift+Left/Right, Alt+Shift+Left/R
 extend from the anchor with the same rule. Click = `hitTest`; double-click selects the item under the pointer (a run
 of text letters, a number, a math letter, or a structure when its own ink is hit); triple-click selects the slot.
 One pointer handler (the kernel's, deciding nothing itself); the app only forwards clicks in a row's space beside the
-field.
+field. The mouse follows AxMath (`selection-caret.md` §3–4): a press places the caret at `hitTest` and anchors there;
+a move selects from the anchor to the stop under the pointer, again only when that stop changes, and only while the
+left button is held (a move without it ends any tracking or drag whose release never arrived, so a free mouse never
+drags a selection along); letting go keeps the selection. A touch keeps a 20 px / 500 ms tap zone; a mouse has none.
+A caret the app places (a click in a row's space beside its formula) is drawn at once, also in a field that already
+has the focus.
+
+Formula rows (the formula editor, `rowPointer.ts`): the row a point means is the first one whose bottom is at or below
+it (there is no top check: the space above a row is that row's; below the last row there is none and a drag there
+changes nothing). While the pointer stays in the pressed row the formula selects (pressed in the row beside the
+formula, which the formula never sees, the editor selects within the row too); once it reaches another row the
+editor takes the gesture over (the formula stops tracking) and selects across rows: each end at the top level of its
+formula — an end inside a structure takes the whole structure, the first row from before it, the last row up to after
+it — the first row's end, the rows between, the last row's start. Back in the pressed row it is the formula's own
+selection again. Shift+click selects from the caret (or the anchor of a selection across rows) to the point, across
+rows too; in the caret's own row the formula extends its selection. Delete, cut and copy take what the rows show.
+
+Bold (the toolbar, Ctrl+B in documents, the bold typing style) is symbol-wide bold, bm.sty's `\bm` (user,
+2026-11-01: "bold is not applied to math symbols at all"): every glyph keeps its slant and class and takes its bold
+font (letters and Greek bold italic, digits and operators bold upright, symbols from the bold symbol font, large
+operators in poor man's bold); spacing and widths match LaTeX with bm.sty. Only a letter set against its own slant
+uses the alphabets (`\mathbf` upright, `\mathbfit` italic). `\bm`, `\boldsymbol` and `\bold` parse to it (no
+letters-only alias), and the MathML the Office conversions read carries it (`mathvariant` bold / bold-italic).
+
+Deliberate differences from AxMath: Shift+drag keeps the anchor (AxMath anchors again at the press); matrix cells keep
+the cell runs above (AxMath selects the whole matrix); a click on a selection places the caret (§6.12).
 
 ### 6.10 Restore after an app rewrite
 When the formula is replaced (an input conversion, its Backspace revert, contextual upright normalisation), the
@@ -203,6 +233,23 @@ row after it when the caret is at its end or inside a structure. Escape with a s
 (the kernel would turn it into a raw LaTeX group whose text the saved value drops); otherwise it opens the LaTeX box,
 or completes it when open. Row-level states take Escape first (a multi-row selection, a pending Greek-letter prefix,
 the context menu). The core (`keys.ts`) decides; the editor performs row commands and the kernel the LaTeX box.
+
+### 6.12 Dragging a selection
+AxMath's drag (`drag-drop.md`; kernel `selection-drag.ts`, rows in `MathEditor`): a press on the selection's highlight
+(its boxes, merged where they share a top and bottom, across gaps too) drags it — this comes before Shift is looked
+at; a double or triple click selects as anywhere else. The drag starts when the pointer leaves the pixel it was
+pressed in, or after 200 ms (MFC's drag delay). While it lasts the selection stays highlighted and a drop caret (a
+caret bar; no line under the slot, user 2026-11-01) shows where `hitTest` puts it; in the formula editor any row is a
+target (the row rule of §6.9; below the last row the last place stays). Near the editor's edges it scrolls: a 50
+device-pixel band, a counter per axis in [-20, 20] stepping each 50 ms tick, scrolling 20 px from 5 on. Letting go:
+outside the editor nothing is dropped; on the selection itself or its edges (a move there changes nothing) it is a
+click there (AxMath does nothing; VisualTeX places the caret, as Word does); otherwise the selection is moved there,
+or copied when Ctrl is held at the release, and the dropped part is selected. Esc or the right button cancel (the
+right button opens no menu then). Within one formula the move is one edit of the formula (one undo step, one input
+event); between rows, and for a selection across rows, the editor makes it one replace-document step. A selection
+across rows dropped at the top level of a row stays rows (the first part joins the row before the stop, the last part
+the row after it, the rows between come along); dropped inside a structure its parts go in as one. Moved, the rows it
+leaves are joined as Delete joins them.
 
 ## 7. Input and app boundary
 

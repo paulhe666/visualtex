@@ -995,6 +995,9 @@ export function OfficeDialogApp() {
       // a MathType object is MathType's equation (MathType draws it when
       // opened); its alignment geometry is read from MathJax's table layout
       renderer: isMathTypeOle ? "mathjax" : "engine",
+      // Office text is black; the near-black default ink drew a VisualTeX
+      // object lighter than the OMML and MathType beside it.
+      color: isMathTypeOle ? undefined : "#000000",
     });
     const rawMathMl = await latexToMathMl(sourceLatex, outputDisplayMode);
     const mathMl = isMathTypeOle
@@ -1932,17 +1935,17 @@ export function OfficeDialogApp() {
   // recognition and insertion as a pasted image, at the caret.
   const handleQuickOcr = async () => {
     if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
-      setToast(isEn ? "OCR is already running" : "另一个 OCR 任务正在进行");
+      setToast(isEn ? "OCR is running" : "OCR 正在进行");
       return;
     }
     const target = editorRef.current?.captureInsertionTarget();
     if (!target) {
-      setToast(isEn ? "Click a formula field before quick OCR" : "请先点击一个公式框，再使用快捷 OCR");
+      setToast(isEn ? "Select a formula field first" : "请先选择公式框");
       return;
     }
     setQuickOcrCaptureBusy(true);
     try {
-      setToast(isEn ? "Select a formula area to recognize" : "请框选要识别的公式区域");
+      setToast(isEn ? "Select the formula" : "框选公式");
       const capture = await captureOfficeQuickOcrScreenshot();
       if (!capture) {
         setToast(isEn ? "Screenshot cancelled" : "已取消截图");
@@ -2036,8 +2039,8 @@ export function OfficeDialogApp() {
       if (!inserted) {
         throw new Error(
           isEn
-            ? "The original formula line no longer exists; the OCR result was not inserted"
-            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+            ? "The formula line was deleted; nothing was inserted"
+            : "原公式行已删除，未插入",
         );
       }
 
@@ -2045,17 +2048,17 @@ export function OfficeDialogApp() {
         status: "success",
         message: result.backgroundInverted
           ? isEn
-            ? "Recognized and inserted · dark background inverted"
-            : "识别完成并已插入 · 已自动反色"
+            ? "Inserted (inverted)"
+            : "已插入（已反色）"
           : isEn
-            ? "Recognized and inserted at the saved cursor"
-            : "识别完成，已插入原光标位置",
+            ? "Inserted"
+            : "已插入",
         seconds: current?.seconds ?? 0,
         model: ocrModel,
         sourceLabel: current?.sourceLabel,
       }));
       setToast(
-        isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX",
+        isEn ? "Converted to LaTeX" : "已转换为 LaTeX",
       );
       scheduleInlineOcrClear(1800);
     } catch (reason) {
@@ -2407,15 +2410,15 @@ export function OfficeDialogApp() {
           title={
             session.mode === "create"
               ? isEn
-                ? "Choose whether to insert a VisualTeX OLE or a native MathType OLE equation"
-                : "选择插入 VisualTeX OLE 或原生 MathType OLE 公式"
+                ? "Object type"
+                : "对象类型"
               : session.objectMode === "mathTypeOle"
                 ? isEn
-                  ? "Keep this equation as an editable MathType OLE object, or convert it to VisualTeX OLE"
-                  : "本次编辑后继续保持可由 MathType 编辑的 OLE，或转换为 VisualTeX OLE"
+                  ? "Object type"
+                  : "对象类型"
                 : isEn
-                  ? "Choose whether this edit stays as native Word OMML or becomes a VisualTeX OLE object"
-                  : "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE"
+                  ? "Object type"
+                  : "对象类型"
           }
         >
           <span>{isEn ? "Save as" : "保存为"}</span>
@@ -2459,8 +2462,8 @@ export function OfficeDialogApp() {
         title={
           session.host === "word" && session.mode === "create"
             ? isEn
-              ? "Starts from the current Word paragraph font size"
-              : "默认读取当前 Word 段落正文的字号"
+              ? "Font size (default: paragraph)"
+              : "字号（默认：段落字号）"
             : isEn
               ? "Formula font size"
               : "公式字号"
@@ -2501,8 +2504,8 @@ export function OfficeDialogApp() {
           title={
             session.objectMode === "mathTypeOle"
               ? isEn
-                ? "Add or remove this equation's native MathType/Word number"
-                : "添加或取消此公式的 MathType/Word 原生编号"
+                ? "Equation number"
+                : "公式编号"
               : undefined
           }
         >
@@ -2522,8 +2525,8 @@ export function OfficeDialogApp() {
           className="office-font-size-setting office-object-mode-setting"
           title={
             isEn
-              ? "Choose the native MathType equation-number side"
-              : "选择 MathType 原生公式编号位于公式左侧或右侧"
+              ? "Number position"
+              : "编号位置"
           }
         >
           <span>{isEn ? "Number side" : "编号位置"}</span>

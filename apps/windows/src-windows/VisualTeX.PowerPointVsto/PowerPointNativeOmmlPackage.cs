@@ -47,7 +47,11 @@ internal static class PowerPointNativeOmmlPackage
         return equations[0].ToString(SaveOptions.DisableFormatting);
     }
 
-    internal static string ReadTextShapeXml(Presentation presentation, int slideId, int shapeId)
+    internal static string ReadTextShapeXml(Presentation presentation, int slideId, int shapeId) =>
+        ReadTextShapeXml(presentation, slideId, new PowerPointTextHost(shapeId));
+
+    // The saved text of a shape (its p:sp) or of a table cell (its a:tc).
+    internal static string ReadTextShapeXml(Presentation presentation, int slideId, PowerPointTextHost host)
     {
         var path = Path.Combine(Path.GetTempPath(), $"visualtex-ppt-text-{Guid.NewGuid():N}.pptx");
         try
@@ -55,7 +59,7 @@ internal static class PowerPointNativeOmmlPackage
             presentation.SaveCopyAs(path, PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
             using var stream = File.OpenRead(path);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-            return ReadTextShape(archive, slideId, shapeId).ToString(SaveOptions.DisableFormatting);
+            return SelectTextHost(ReadSlide(archive, slideId), host).ToString(SaveOptions.DisableFormatting);
         }
         finally { try { File.Delete(path); } catch { } }
     }
@@ -116,6 +120,24 @@ internal static class PowerPointNativeOmmlPackage
             && element.Element(P + "txBody") is not null).Where(IsSupportedShapeBranch).ToArray();
         return matches.SingleOrDefault()
             ?? throw new InvalidOperationException("The exact text shape no longer exists.");
+    }
+
+    internal static XElement SelectTextHost(XDocument slideXml, PowerPointTextHost host)
+    {
+        if (!host.IsCell) return SelectTextShape(slideXml, host.ShapeId);
+        // A table holding a native equation is saved like a text shape holding
+        // one: the a14 choice and a fallback frame with the same ID.
+        var frame = slideXml.Descendants(P + "graphicFrame").Where(element =>
+            (int?)element.Element(P + "nvGraphicFramePr")?.Element(P + "cNvPr")?.Attribute("id") == host.ShapeId
+            && element.Descendants(A + "tbl").Any()).Where(IsSupportedShapeBranch).SingleOrDefault()
+            ?? throw new InvalidOperationException("The exact table no longer exists.");
+        // Each row holds one a:tc per grid column (merged ones included), in the
+        // object model's Cell(row, column) order.
+        var cell = frame.Descendants(A + "tbl").Single().Elements(A + "tr").ElementAtOrDefault(host.Row - 1)
+            ?.Elements(A + "tc").ElementAtOrDefault(host.Column - 1);
+        if (cell?.Element(A + "txBody") is null)
+            throw new InvalidOperationException("The exact table cell no longer exists.");
+        return cell;
     }
 
     private static bool IsSupportedShapeBranch(XElement shape)

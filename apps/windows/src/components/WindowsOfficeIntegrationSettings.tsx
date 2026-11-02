@@ -170,35 +170,27 @@ export function WindowsOfficeIntegrationSettings() {
     if (!status) {
       return {
         title: isEn ? "Checking Office integration…" : "正在检查 Office 集成…",
-        description: isEn
-          ? "VisualTeX is reading the Word and PowerPoint add-in status."
-          : "VisualTeX 正在读取 Word 和 PowerPoint 加载项状态。",
+        description: "",
       };
     }
     if (integrationReady) {
       return {
-        title: isEn ? "Office integration is ready" : "Office 集成可正常使用",
-        description: isEn
-          ? "Word and PowerPoint can create and edit VisualTeX formulas."
-          : "Word 和 PowerPoint 已可创建、插入和编辑 VisualTeX 公式。",
+        title: isEn ? "Office integration is ready" : "Office 集成正常",
+        description: "",
       };
     }
     if (verificationPending) {
       return {
         title: isEn
-          ? "Office integration is installed"
-          : "Office 集成已安装，等待连接验证",
-        description: isEn
-          ? "Start Word and PowerPoint once to verify that both add-ins connect successfully."
-          : "启动一次 Word 和 PowerPoint 验证加载项连接后，即可完成全部检查。",
+          ? "Installed, connection not verified"
+          : "已安装，连接未验证",
+        description: "",
       };
     }
     if (installationNeedsRepair && componentsHealthy && !mathTypeFontsHealthy) {
       return {
-        title: isEn ? "MathType fonts need repair" : "MathType 字体需要修复",
-        description: isEn
-          ? "On this PC, some symbols in MathType-format formulas (such as △ or ⩽) would display wrongly. Repair installs MathType's own fonts."
-          : "此电脑上的 MathType 字体不完整，MathType 格式公式中的部分符号（如 △、⩽）会显示错误。修复后会安装 MathType 自带的字体。",
+        title: isEn ? "MathType fonts incomplete" : "MathType 字体不完整",
+        description: "",
       };
     }
     if (hasInstalledComponents) {
@@ -210,20 +202,12 @@ export function WindowsOfficeIntegrationSettings() {
           : isEn
             ? "Office connection verification needs attention"
             : "Office 连接验证未通过",
-        description: installationNeedsRepair
-          ? isEn
-            ? "Some installation components are incomplete. Repair the integration and try again."
-            : "部分安装组件不完整，请修复 Office 集成后重试。"
-          : isEn
-            ? "Close Office and run the connection verification again."
-            : "请关闭所有 Office 应用后重新验证连接，必要时可选择强制关闭。",
+        description: "",
       };
     }
     return {
-      title: isEn ? "Office integration is not installed" : "尚未安装 Office 集成",
-      description: isEn
-        ? "Install once to add VisualTeX tools to Word and PowerPoint."
-        : "安装后即可在 Word 和 PowerPoint 中直接使用 VisualTeX。",
+      title: isEn ? "Office integration is not installed" : "未安装 Office 集成",
+      description: "",
     };
   }, [
     componentsHealthy,
@@ -273,11 +257,6 @@ export function WindowsOfficeIntegrationSettings() {
       <div className="office-settings-heading office-settings-heading-simple">
         <div>
           <h3>{isEn ? "Office integration" : "Office 集成"}</h3>
-          <p>
-            {isEn
-              ? "Use VisualTeX directly in Microsoft Word and PowerPoint."
-              : "在 Microsoft Word 和 PowerPoint 中直接插入和编辑公式。"}
-          </p>
         </div>
         <button
           type="button"
@@ -316,7 +295,7 @@ export function WindowsOfficeIntegrationSettings() {
         </span>
         <div>
           <strong>{statusCopy.title}</strong>
-          <p>{statusCopy.description}</p>
+          {statusCopy.description && <p>{statusCopy.description}</p>}
         </div>
       </div>
 
@@ -327,11 +306,6 @@ export function WindowsOfficeIntegrationSettings() {
               ? "Double-click MathType formulas with VisualTeX"
               : "双击 MathType 公式时使用 VisualTeX 编辑"}
           </strong>
-          <p>
-            {isEn
-              ? "When enabled, double-clicking a MathType OLE formula opens VisualTeX instead of the native MathType editor. Disable it to compare or edit the same object directly in MathType."
-              : "开启后，双击 MathType OLE 公式会优先进入 VisualTeX，而不是启动 MathType 原生编辑器；关闭后可直接用 MathType 验收或编辑同一个对象。"}
-          </p>
         </div>
         <button
           type="button"
@@ -665,8 +639,8 @@ export function WindowsOfficeIntegrationSettings() {
                 </strong>
                 <p id="office-runtime-test-description">
                   {isEn
-                    ? "VisualTeX will start Word and PowerPoint briefly to verify that both add-ins connect. Save your documents and close every Office application before continuing."
-                    : "VisualTeX 将临时启动 Word 和 PowerPoint，检查两个加载项是否真正连接。继续前请保存文档，并关闭所有正在运行的 Office 应用。"}
+                    ? "Word and PowerPoint will be started to verify the add-ins. Save and close all Office documents first."
+                    : "将启动 Word 和 PowerPoint 验证加载项。请先保存并关闭所有 Office 文档。"}
                 </p>
               </div>
               <button
@@ -696,11 +670,9 @@ export function WindowsOfficeIntegrationSettings() {
                     ? "Force-close running Word and PowerPoint"
                     : "强制关闭正在运行的 Word 和 PowerPoint"}
                 </strong>
-                <small>
-                  {isEn
-                    ? "Use only after saving. Unsaved Office changes may be lost."
-                    : "仅在保存文档后使用；未保存的 Office 内容可能丢失。"}
-                </small>
+                <span>
+                  {isEn ? "Unsaved changes will be lost." : "未保存的内容将丢失。"}
+                </span>
               </span>
             </label>
 
@@ -739,8 +711,8 @@ export function WindowsOfficeIntegrationSettings() {
                       ? "Force close and verify"
                       : "强制关闭并验证"
                     : isEn
-                      ? "I have closed Office; verify"
-                      : "我已关闭 Office，开始验证"}
+                      ? "Verify"
+                      : "开始验证"}
               </button>
             </footer>
           </section>
@@ -771,8 +743,8 @@ export function WindowsOfficeIntegrationSettings() {
                 </strong>
                 <p id="office-uninstall-description">
                   {isEn
-                    ? "This removes the VisualTeX add-ins and OLE registration from Word and PowerPoint. Your formulas and VisualTeX documents will not be deleted."
-                    : "这会从 Word 和 PowerPoint 中移除 VisualTeX 加载项及 OLE 注册，但不会删除已有公式或 VisualTeX 文档。"}
+                    ? "Removes the VisualTeX add-ins from Word and PowerPoint. Formulas in documents are kept."
+                    : "将从 Word 和 PowerPoint 移除 VisualTeX 加载项。文档中的公式保留。"}
                 </p>
               </div>
               <button

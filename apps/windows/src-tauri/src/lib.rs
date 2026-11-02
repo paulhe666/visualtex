@@ -4069,6 +4069,13 @@ pub fn run() {
                 }
             }
 
+            // MathType's VBA template cannot run in 64-bit WPS (VBA error boxes at every WPS
+            // start): keep a placeholder under its name in WPS's startup folder.
+            #[cfg(windows)]
+            if !isolated {
+                office::wps_mathtype_template::start();
+            }
+
             if !isolated && run_mode.schedules_ocr_warmup() {
                 // Preserve OCR model prewarming. It is independent from the main
                 // embedded index.html and from the removed Office editor WebView prewarm.
@@ -4130,6 +4137,7 @@ pub fn run() {
             anywhere::anywhere_capture_screenshot,
             anywhere::anywhere_read_clipboard,
             anywhere::anywhere_configure_hotkey,
+            anywhere::anywhere_formula_shortcuts,
             anywhere::anywhere_status,
             windows_quick_ocr::capture_windows_quick_ocr,
             windows_quick_ocr::minimize_visualtex_main_window,
@@ -4140,6 +4148,7 @@ pub fn run() {
             get_word_numbering_user_configuration,
             apply_word_numbering_user_configuration,
             system_math_glyphs::probe_system_math_fonts,
+            system_math_glyphs::list_system_font_families,
             system_math_glyphs::read_system_font_asset,
             system_math_glyphs::read_system_font_variant_asset,
             system_math_glyphs::extract_system_math_glyph,

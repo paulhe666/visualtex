@@ -35,12 +35,29 @@
           TrueType="yes"
           KeyPath="yes" />
       </Component>
+      <!-- The OMML Font menu's Times-style faces, TrueType for the same reason. -->
+      <Component Id="VisualTeXTeXGyreTermesMathSystemFont" Guid="2DC8BB17-BB8E-407F-94CE-27D97CCC69C5">
+        <File
+          Id="VisualTeXTeXGyreTermesMathSystemFontFile"
+          Source="$(WordOutput)\VisualTeXTeXGyreTermesMath.ttf"
+          TrueType="yes"
+          KeyPath="yes" />
+      </Component>
+      <Component Id="StixTwoMathSystemFont" Guid="675B238C-4E0D-449F-BCD1-DD0D51D7D4FF">
+        <File
+          Id="StixTwoMathSystemFontFile"
+          Source="$(WordOutput)\STIXTwoMath-Regular.ttf"
+          TrueType="yes"
+          KeyPath="yes" />
+      </Component>
     </StandardDirectory>
 
     <Feature Id="Complete" Title="VisualTeX Windows Office Integration" Level="1">
       <ComponentRef Id="VstoFiles" />
       <ComponentRef Id="LatinModernMathSystemFont" />
       <ComponentRef Id="VisualTeXLatinModernMathSystemFont" />
+      <ComponentRef Id="VisualTeXTeXGyreTermesMathSystemFont" />
+      <ComponentRef Id="StixTwoMathSystemFont" />
       <ComponentRef Id="NativeOleServerFiles" />
       <ComponentRef Id="NativeOleRegistration" />
       <ComponentRef Id="WordComRegistration" />
@@ -71,6 +88,11 @@
       <File Id="LatinModernMathReadme" Source="$(WordOutput)\README-Latin-Modern-Math.txt" />
       <File Id="VisualTeXLatinModernMathFont" Source="$(WordOutput)\VisualTeXLatinModernMath.ttf" />
       <File Id="VisualTeXLatinModernMathReadme" Source="$(WordOutput)\README-VisualTeX-Latin-Modern-Math.txt" />
+      <File Id="VisualTeXTeXGyreTermesMathFont" Source="$(WordOutput)\VisualTeXTeXGyreTermesMath.ttf" />
+      <File Id="VisualTeXTeXGyreTermesMathReadme" Source="$(WordOutput)\README-VisualTeX-TeX-Gyre-Termes-Math.txt" />
+      <File Id="StixTwoMathFont" Source="$(WordOutput)\STIXTwoMath-Regular.ttf" />
+      <File Id="StixTwoMathReadme" Source="$(WordOutput)\README-STIX-Two-Math.txt" />
+      <File Id="StixTwoMathLicense" Source="$(WordOutput)\STIX-Two-Math-OFL.txt" />
       <RegistryValue
         Root="HKLM"
         Key="Software\VisualTeX\OfficeIntegration"

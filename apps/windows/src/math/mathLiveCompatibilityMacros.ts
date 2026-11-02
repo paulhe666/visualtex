@@ -16,13 +16,17 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
   captureSelection: false,
 });
 
+// \bm is the kernel's own command (symbol-wide bold whose content stays
+// editable); a macro wrapper would hide its content from editing and styling.
+const KERNEL_NATIVE_COMMANDS = new Set(["bm"]);
+
 const legacyPackageMacros = Object.fromEntries(
-  Object.entries(VISUALTEX_PACKAGE_COMPATIBILITY_MACROS).map(
-    ([name, [def, args]]) => [
+  Object.entries(VISUALTEX_PACKAGE_COMPATIBILITY_MACROS)
+    .filter(([name]) => !KERNEL_NATIVE_COMMANDS.has(name))
+    .map(([name, [def, args]]) => [
       name,
       { def, args, expand: false, captureSelection: false },
-    ],
-  ),
+    ]),
 ) as MacroDictionary;
 
 /**
@@ -43,10 +47,9 @@ export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
     captureSelection: false,
   },
 
-  // The default MathLive bold wrapper is upright. Force mathematical bold
-  // aliases through mathbfit so Latin variables retain their italic shape.
-  boldsymbol: macro("\\mathbfit{#1}"),
-  bm: macro("\\mathbfit{#1}"),
+  // \bm, \boldsymbol and \bold are the kernel's own symbol-wide bold (every
+  // symbol in its bold font, letters keeping their slant, as bm.sty sets them);
+  // no alias here (\mathbfit would bold only Latin letters and digits).
 
   // unicode-math alphabet aliases. MathLive 0.109 natively exposes mathbfit but
   // does not cover the full unicode-math `\\sym...` command family.

@@ -408,6 +408,8 @@ interface EditorState {
   powerPointDefaultFontSizePt: number;
   wordFormulaShortcuts: WordFormulaShortcutSettings;
   powerPointFormulaShortcuts: PowerPointFormulaShortcutSettings;
+  wpsWriterFormulaShortcuts: WordFormulaShortcutSettings;
+  wpsPresentationFormulaShortcuts: PowerPointFormulaShortcutSettings;
   /** chords the user gave common buttons (shortcuts/buttonShortcuts.ts); none at first */
   buttonShortcuts: ButtonShortcutSettings;
   usage: Record<string, CommandUsage>;
@@ -466,12 +468,67 @@ interface EditorState {
     action: PowerPointFormulaShortcutAction,
     shortcut: string | null,
   ) => void;
+  setWpsWriterFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setWpsPresentationFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
+  ) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
   clearHistory: () => void;
   loadDocument: (document: FormulaDocument) => void;
   toDocument: () => FormulaDocument;
+}
+
+/** Word or WPS Writer: the host's shortcuts after one kind changes (a shortcut taken over from
+ * the other kind leaves it). */
+function nextDocumentFormulaShortcuts(
+  hostSettings: WordFormulaShortcutSettings,
+  kind: keyof WordFormulaShortcutSettings,
+  update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+): WordFormulaShortcutSettings {
+  const otherKind = kind === "inline" ? "display" : "inline";
+  const shortcut =
+    update.shortcut === undefined
+      ? hostSettings[kind].shortcut
+      : normalizeOfficeFormulaShortcut(update.shortcut);
+  const format =
+    update.format === "omml"
+      ? "omml"
+      : update.format === "ole"
+        ? "ole"
+        : hostSettings[kind].format;
+  return {
+    ...hostSettings,
+    [kind]: { shortcut, format },
+    [otherKind]:
+      shortcut && hostSettings[otherKind].shortcut === shortcut
+        ? { ...hostSettings[otherKind], shortcut: null }
+        : hostSettings[otherKind],
+  };
+}
+
+/** PowerPoint or WPS Presentation: the host's shortcuts after one action changes (a shortcut
+ * taken over from another action leaves it). */
+function nextSlideFormulaShortcuts(
+  current: PowerPointFormulaShortcutSettings,
+  action: PowerPointFormulaShortcutAction,
+  value: string | null,
+): PowerPointFormulaShortcutSettings {
+  const shortcut = normalizeOfficeFormulaShortcut(value);
+  const next = { ...current, [action]: shortcut };
+  if (shortcut) {
+    for (const otherAction of ["svg", "ole", "inlineOmml", "displayOmml"] as const) {
+      if (otherAction !== action && next[otherAction] === shortcut) {
+        next[otherAction] = null;
+      }
+    }
+  }
+  return next;
 }
 
 const initialLatex = "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,\\mathrm{d}x = \\sqrt{\\pi}";
@@ -528,6 +585,11 @@ export const useEditorStore = create<EditorState>()(
         display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
       },
       powerPointFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
+      wpsWriterFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
+      wpsPresentationFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -704,52 +766,21 @@ export const useEditorStore = create<EditorState>()(
             2,
         }),
       setWordFormulaShortcut: (kind, update) =>
-        set((state) => {
-          const hostSettings = state.wordFormulaShortcuts;
-          const otherKind = kind === "inline" ? "display" : "inline";
-          const shortcut =
-            update.shortcut === undefined
-              ? hostSettings[kind].shortcut
-              : normalizeOfficeFormulaShortcut(update.shortcut);
-          const format =
-            update.format === "omml"
-              ? "omml"
-              : update.format === "ole"
-                ? "ole"
-                : hostSettings[kind].format;
-          return {
-            wordFormulaShortcuts: {
-              ...hostSettings,
-              [kind]: { shortcut, format },
-              [otherKind]:
-                shortcut &&
-                hostSettings[otherKind].shortcut === shortcut
-                  ? {
-                      ...hostSettings[otherKind],
-                      shortcut: null,
-                    }
-                  : hostSettings[otherKind],
-            },
-          };
-        }),
+        set((state) => ({
+          wordFormulaShortcuts: nextDocumentFormulaShortcuts(state.wordFormulaShortcuts, kind, update),
+        })),
       setPowerPointFormulaShortcut: (action, value) =>
-        set((state) => {
-          const shortcut = normalizeOfficeFormulaShortcut(value);
-          const next = { ...state.powerPointFormulaShortcuts, [action]: shortcut };
-          if (shortcut) {
-            for (const otherAction of [
-              "svg",
-              "ole",
-              "inlineOmml",
-              "displayOmml",
-            ] as const) {
-              if (otherAction !== action && next[otherAction] === shortcut) {
-                next[otherAction] = null;
-              }
-            }
-          }
-          return { powerPointFormulaShortcuts: next };
-        }),
+        set((state) => ({
+          powerPointFormulaShortcuts: nextSlideFormulaShortcuts(state.powerPointFormulaShortcuts, action, value),
+        })),
+      setWpsWriterFormulaShortcut: (kind, update) =>
+        set((state) => ({
+          wpsWriterFormulaShortcuts: nextDocumentFormulaShortcuts(state.wpsWriterFormulaShortcuts, kind, update),
+        })),
+      setWpsPresentationFormulaShortcut: (action, value) =>
+        set((state) => ({
+          wpsPresentationFormulaShortcuts: nextSlideFormulaShortcuts(state.wpsPresentationFormulaShortcuts, action, value),
+        })),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
           const now = Date.now();
@@ -958,6 +989,16 @@ export const useEditorStore = create<EditorState>()(
                 : normalizePowerPointFormulaShortcutSettings(
                     settings.powerPointFormulaShortcuts,
                   ),
+            wpsWriterFormulaShortcuts:
+              settings.wpsWriterFormulaShortcuts === undefined
+                ? state.wpsWriterFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(settings.wpsWriterFormulaShortcuts),
+            wpsPresentationFormulaShortcuts:
+              settings.wpsPresentationFormulaShortcuts === undefined
+                ? state.wpsPresentationFormulaShortcuts
+                : normalizePowerPointFormulaShortcutSettings(
+                    settings.wpsPresentationFormulaShortcuts,
+                  ),
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -1019,6 +1060,8 @@ export const useEditorStore = create<EditorState>()(
             wordFormulaShortcuts: state.wordFormulaShortcuts,
             buttonShortcuts: state.buttonShortcuts,
             powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+            wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+            wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -1063,6 +1106,8 @@ export const useEditorStore = create<EditorState>()(
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
         wordFormulaShortcuts: state.wordFormulaShortcuts,
         powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+        wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+        wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
         buttonShortcuts: state.buttonShortcuts,
         usage: state.usage,
         history: state.history,
@@ -1172,6 +1217,12 @@ export const useEditorStore = create<EditorState>()(
           buttonShortcuts: normalizeButtonShortcutSettings(persisted.buttonShortcuts),
           powerPointFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
             persisted.powerPointFormulaShortcuts,
+          ),
+          wpsWriterFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wpsWriterFormulaShortcuts,
+          ),
+          wpsPresentationFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
+            persisted.wpsPresentationFormulaShortcuts,
           ),
         };
       },

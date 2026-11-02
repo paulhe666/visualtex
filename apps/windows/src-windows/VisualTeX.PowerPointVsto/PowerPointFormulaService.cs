@@ -153,6 +153,19 @@ public sealed partial class PowerPointFormulaService : IDisposable
                             finally { Release(text); }
                         }
                     }
+                    else if (selection.Type == PpSelectionType.ppSelectionText
+                        && !OfficeHostEnvironment.IsWps
+                        && PowerPointTextHost.TryFindSelectedCell(shape, out var row, out var column))
+                    {
+                        // The caret in a table cell: the same candidate, in that cell's text.
+                        object? text = null;
+                        try
+                        {
+                            text = SelectedText(selection);
+                            objectId = NativeOmmlTextReference(slide.SlideID, new PowerPointTextHost(shape.Id, row, column), text);
+                        }
+                        finally { Release(text); }
+                    }
                 }
             }
             return new OfficeSelection
@@ -227,9 +240,20 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 throw new InvalidOperationException(Text(
                     "请只在一个文本框中插入 OMML 公式。", "Insert the OMML equation into only one text box at a time."));
             shape = range[1];
+            var host = new PowerPointTextHost(shape.Id);
             if (shape.HasTextFrame != MsoTriState.msoTrue)
-                throw new InvalidOperationException(Text(
-                    "当前选择不是可编辑文本框。", "The current selection is not an editable text box."));
+            {
+                // The caret in a table cell: the equation goes into that cell's text.
+                if (!IsTable(shape))
+                    throw new InvalidOperationException(Text(
+                        "当前选择不是可编辑文本框。", "The current selection is not an editable text box."));
+                EnsureTextHostSupported(new PowerPointTextHost(shape.Id, 1, 1));
+                if (!PowerPointTextHost.TryFindSelectedCell(shape, out var row, out var column))
+                    throw new InvalidOperationException(Text(
+                        "请把文本光标放在一个表格单元格中，或只选择一个单元格中的文字。",
+                        "Place the text caret in one table cell, or select text in only one cell."));
+                host = new PowerPointTextHost(shape.Id, row, column);
+            }
 
             textRange = SelectedText(selection);
             var start = Convert.ToInt32(((dynamic)textRange).Start);
@@ -244,11 +268,11 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 DocumentId = DocumentIdentity(presentation),
                 ObjectId = TextInsertionReference(
                     slide.SlideID,
-                    shape.Id,
+                    host,
                     start,
                     length,
                     PowerPointTextEditTransaction.Fingerprint(
-                        PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slide.SlideID, shape.Id))),
+                        PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slide.SlideID, host))),
                 ReadOnly = false,
                 FormulaId = null,
                 Metadata = null,
@@ -287,14 +311,26 @@ public sealed partial class PowerPointFormulaService : IDisposable
             view = window.View;
             slide = (Slide)view.Slide;
             try { hit = window.RangeFromPoint(screenX, screenY); }
-            catch { return null; }
+            catch { hit = null; }
             shape = hit as Shape;
             if (shape is null && (hit is TextRange || hit is Microsoft.Office.Core.TextRange2))
             {
                 hitParent = ((dynamic)hit).Parent;
                 shape = ((dynamic)hitParent).Parent as Shape;
             }
-            if (shape is null || IsMathTypeShape(shape)) return null;
+            if (shape is null || !OfficeHostEnvironment.IsWps && IsTableOrCell(shape))
+            {
+                // Over a table PowerPoint answers nothing (or a cell's text):
+                // an equation in the cell under the point.
+                var cellReference = HitNativeMathZoneInTables(window, slide, screenX, screenY);
+                return cellReference is null ? null : new OfficeSelection
+                {
+                    Host = "powerpoint", DocumentId = DocumentIdentity(presentation),
+                    ObjectId = cellReference, ReadOnly = presentation.ReadOnly == MsoTriState.msoTrue,
+                    ObjectMode = FormulaOleContract.WordOmmlMode,
+                };
+            }
+            if (IsMathTypeShape(shape)) return null;
 
             var metadata = ReadMetadata(shape);
             if (metadata is null)
@@ -340,6 +376,19 @@ public sealed partial class PowerPointFormulaService : IDisposable
             Release(window);
             Release(presentation);
         }
+    }
+
+    // A table, or a table cell's text shape (which has no ID of its own).
+    private static bool IsTableOrCell(Shape shape)
+    {
+        try { return shape.HasTable == MsoTriState.msoTrue || shape.Id <= 0; }
+        catch (System.Runtime.InteropServices.COMException) { return true; }
+    }
+
+    private static bool IsTable(Shape shape)
+    {
+        try { return shape.HasTable == MsoTriState.msoTrue; }
+        catch (System.Runtime.InteropServices.COMException) { return false; }
     }
 
     public float ReadCurrentTypingFontSize()
@@ -685,6 +734,29 @@ public sealed partial class PowerPointFormulaService : IDisposable
             (slide, shape) = FindFormula(presentation, requiredFormulaId, selected.ObjectId);
             if (slide is null || shape is null)
                 throw new InvalidOperationException("The selected PowerPoint formula no longer exists.");
+            if (TryParseNativeOmmlReference(selected.ObjectId, out var slideId, out var host) && host.IsCell)
+            {
+                // An equation in a table cell is text of the cell: only its characters go.
+                var source = _nativeOmmlSource;
+                if (source is null || source.ObjectId != selected.ObjectId || source.ShapeFingerprint is null)
+                    throw new InvalidOperationException("Reopen the native equation before deleting it.");
+                var cell = shape;
+                PowerPointTextEditTransaction.Execute(_application, presentation, slideId, host, source.ShapeFingerprint, () =>
+                {
+                    Microsoft.Office.Interop.PowerPoint.TextFrame? frame = null;
+                    TextRange? text = null, equation = null;
+                    try
+                    {
+                        frame = cell.TextFrame;
+                        text = frame.TextRange;
+                        // Assign, never Delete: Delete also removes a space next to it.
+                        equation = text.Characters(source.Start, source.Length);
+                        equation.Text = string.Empty;
+                    }
+                    finally { Release(equation); Release(text); Release(frame); }
+                });
+                return requiredFormulaId;
+            }
             shape.Delete();
             return requiredFormulaId;
         }
@@ -928,19 +1000,28 @@ public sealed partial class PowerPointFormulaService : IDisposable
             {
                 if (string.IsNullOrWhiteSpace(session.SourceDocumentId))
                     throw new InvalidOperationException("The captured text target has no presentation identity; reopen the editor.");
-                (slide, targetTextShape) = ResolveTextInsertionTarget(
+                string targetName;
+                (slide, targetTextShape, targetName) = ResolveTextInsertionTarget(
                     presentation,
                     textTarget);
-                var writeText = PowerPointNativeOmmlKernel.PrepareTextInsertion(
-                    _application,
-                    targetTextShape,
-                    textTarget.Start,
-                    textTarget.Length,
-                    mathMl!,
-                    session.DisplayMode);
+                var writeText = textTarget.Host.IsCell
+                    ? PowerPointCellEquations.PrepareInsertion(
+                        _application,
+                        targetTextShape,
+                        textTarget.Start,
+                        textTarget.Length,
+                        mathMl!,
+                        session.DisplayMode)
+                    : PowerPointNativeOmmlKernel.PrepareTextInsertion(
+                        _application,
+                        targetTextShape,
+                        textTarget.Start,
+                        textTarget.Length,
+                        mathMl!,
+                        session.DisplayMode);
                 PowerPointTextEditTransaction.Execute(_application, presentation,
-                    textTarget.SlideId, textTarget.ShapeId, textTarget.SourceFingerprint, writeText);
-                return Result(session, presentation, targetTextShape.Name);
+                    textTarget.SlideId, textTarget.Host, textTarget.SourceFingerprint, writeText);
+                return Result(session, presentation, targetName);
             }
 
             window = _application.ActiveWindow
@@ -1345,8 +1426,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
             return FindManagedFormula(presentation, preferredObjectId, formulaId);
         if (TryParseMathTypeReference(preferredObjectId, out var mathTypeSlide, out var mathTypeShape))
             return FindMathType(presentation, mathTypeSlide, mathTypeShape);
-        if (TryParseNativeOmmlReference(preferredObjectId, out var nativeSlide, out var nativeShape))
-            return FindNativeOmml(presentation, nativeSlide, nativeShape);
+        if (TryParseNativeOmmlReference(preferredObjectId, out var nativeSlide, out var nativeHost))
+            return FindNativeOmml(presentation, nativeSlide, nativeHost);
         Slides? slides = null;
         try
         {
@@ -2063,17 +2144,17 @@ public sealed partial class PowerPointFormulaService : IDisposable
 
     private readonly struct TextInsertionTarget
     {
-        internal TextInsertionTarget(int slideId, int shapeId, int start, int length, string sourceFingerprint)
+        internal TextInsertionTarget(int slideId, PowerPointTextHost host, int start, int length, string sourceFingerprint)
         {
             SlideId = slideId;
-            ShapeId = shapeId;
+            Host = host;
             Start = start;
             Length = length;
             SourceFingerprint = sourceFingerprint;
         }
 
         internal int SlideId { get; }
-        internal int ShapeId { get; }
+        internal PowerPointTextHost Host { get; }
         internal int Start { get; }
         internal int Length { get; }
         internal string SourceFingerprint { get; }
@@ -2081,11 +2162,11 @@ public sealed partial class PowerPointFormulaService : IDisposable
 
     private static string TextInsertionReference(
         int slideId,
-        int shapeId,
+        PowerPointTextHost host,
         int start,
         int length,
         string sourceFingerprint) =>
-        $"{TextInsertionReferencePrefix}{slideId}:{shapeId}:{start}:{length}:{sourceFingerprint}";
+        $"{TextInsertionReferencePrefix}{slideId}:{host}:{start}:{length}:{sourceFingerprint}";
 
     internal static bool IsTextInsertionReference(string? value) =>
         !string.IsNullOrWhiteSpace(value)
@@ -2101,24 +2182,40 @@ public sealed partial class PowerPointFormulaService : IDisposable
         var parts = payload.Split(':');
         if (parts.Length != 5
             || !int.TryParse(parts[0], out var slideId)
-            || !int.TryParse(parts[1], out var shapeId)
+            || !PowerPointTextHost.TryParse(parts[1], out var host)
             || !int.TryParse(parts[2], out var start)
             || !int.TryParse(parts[3], out var length)
             || slideId <= 0
-            || shapeId <= 0
             || start < 1
             || length < 0
             || parts[4].Length != 64
             || parts[4].Any(character => !(character >= '0' && character <= '9' || character >= 'A' && character <= 'F')))
             throw new InvalidDataException("The captured PowerPoint text target has no valid source proof; reopen the editor from the current text selection.");
-        target = new TextInsertionTarget(slideId, shapeId, start, length, parts[4]);
+        target = new TextInsertionTarget(slideId, host, start, length, parts[4]);
         return true;
     }
 
-    private static (Slide Slide, Shape Shape) ResolveTextInsertionTarget(
+    // The captured text: a text shape, or a table cell's text shape (Name is
+    // then the table's).
+    private static (Slide Slide, Shape Shape, string Name) ResolveTextInsertionTarget(
         Presentation presentation,
         TextInsertionTarget target)
     {
+        if (target.Host.IsCell)
+        {
+            EnsureTextHostSupported(target.Host);
+            var (cellSlide, cell) = FindNativeOmml(presentation, target.SlideId, target.Host);
+            if (cellSlide is null || cell is null)
+                throw new InvalidOperationException(
+                    "The PowerPoint table cell captured for OMML insertion no longer exists.");
+            try { return (cellSlide, cell, ShapeName(cellSlide, target.Host.ShapeId)); }
+            catch
+            {
+                Release(cell);
+                Release(cellSlide);
+                throw;
+            }
+        }
         Slides? slides = null;
         try
         {
@@ -2138,7 +2235,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
                         try
                         {
                             shape = shapes[shapeIndex];
-                            if (shape.Id != target.ShapeId) continue;
+                            if (shape.Id != target.Host.ShapeId) continue;
                             if (shape.HasTextFrame != MsoTriState.msoTrue)
                                 throw new InvalidOperationException(
                                     "The PowerPoint text box captured for OMML insertion no longer contains an editable text frame.");
@@ -2146,7 +2243,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
                             var foundShape = shape;
                             slide = null;
                             shape = null;
-                            return (foundSlide, foundShape);
+                            return (foundSlide, foundShape, foundShape.Name);
                         }
                         finally { Release(shape); }
                     }

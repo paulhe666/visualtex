@@ -12,16 +12,30 @@ import {
   wordDefaultBinding,
   type WordShortcutBinding,
 } from "../office/wordShortcutConflicts";
+import { ANYWHERE_HOTKEY_ACTIONS, anywhereHotkeyLabel } from "../shortcuts/anywhereHotkeys";
+import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import type {
   PowerPointFormulaShortcutAction,
+  PowerPointFormulaShortcutSettings,
   WordFormulaShortcutSettings,
 } from "../types/formula";
 
 type WordShortcutAction = keyof WordFormulaShortcutSettings;
+/** Word and WPS Writer: inline and display formulas with a format each. */
+type DocumentHost = "word" | "wpsWriter";
+/** PowerPoint and WPS Presentation: one shortcut per formula action. */
+type SlideHost = "powerPoint" | "wpsPresentation";
 type ShortcutTarget =
-  | { host: "word"; action: WordShortcutAction }
-  | { host: "powerPoint"; action: PowerPointFormulaShortcutAction };
+  | { host: DocumentHost; action: WordShortcutAction }
+  | { host: SlideHost; action: PowerPointFormulaShortcutAction };
+
+const HOST_NAMES: Record<DocumentHost | SlideHost, { en: string; zh: string }> = {
+  word: { en: "Word", zh: "Word" },
+  wpsWriter: { en: "WPS Writer", zh: "WPS 文字" },
+  powerPoint: { en: "PowerPoint", zh: "PowerPoint" },
+  wpsPresentation: { en: "WPS Presentation", zh: "WPS 演示" },
+};
 
 const powerPointActions: ReadonlyArray<{
   action: PowerPointFormulaShortcutAction;
@@ -50,6 +64,15 @@ const powerPointActions: ReadonlyArray<{
   },
 ];
 
+const wordRows: ReadonlyArray<{
+  action: WordShortcutAction;
+  labelEn: string;
+  labelZh: string;
+}> = [
+  { action: "inline", labelEn: "Insert inline formula", labelZh: "插入行内公式" },
+  { action: "display", labelEn: "Insert display formula", labelZh: "插入行间公式" },
+];
+
 function captureErrorText(
   result: Extract<OfficeFormulaShortcutCapture, { error: string }>,
   isEn: boolean,
@@ -57,16 +80,16 @@ function captureErrorText(
   switch (result.error) {
     case "modifier":
       return isEn
-        ? "Include Ctrl or Alt in the shortcut. Shift can be added."
-        : "快捷键必须包含 Ctrl 或 Alt，Shift 可以作为附加键。";
+        ? "Requires Ctrl or Alt."
+        : "须包含 Ctrl 或 Alt。";
     case "reserved":
       return isEn
-        ? "Ctrl+Alt+O is reserved for VisualTeX Quick OCR."
-        : "Ctrl+Alt+O 已保留给 VisualTeX 快速 OCR。";
+        ? "Ctrl+Alt+O is reserved for Quick OCR."
+        : "Ctrl+Alt+O 已用于快速 OCR。";
     default:
       return isEn
-        ? "Use a letter, number, or F1–F24 together with Ctrl or Alt."
-        : "请使用字母、数字或 F1–F24，并搭配 Ctrl 或 Alt。";
+        ? "Ctrl or Alt + letter, digit or F1–F24."
+        : "Ctrl 或 Alt + 字母、数字或 F1–F24。";
   }
 }
 
@@ -74,24 +97,49 @@ function sameTarget(left: ShortcutTarget | null, right: ShortcutTarget) {
   return left?.host === right.host && left.action === right.action;
 }
 
+function isDocumentHost(host: ShortcutTarget["host"]): host is DocumentHost {
+  return host === "word" || host === "wpsWriter";
+}
+
 export function OfficeFormulaShortcutSettingsSection() {
   const language = useEditorStore((state) => state.language);
   const wordSettings = useEditorStore((state) => state.wordFormulaShortcuts);
+  const wpsWriterSettings = useEditorStore((state) => state.wpsWriterFormulaShortcuts);
   const powerPointSettings = useEditorStore(
     (state) => state.powerPointFormulaShortcuts,
+  );
+  const wpsPresentationSettings = useEditorStore(
+    (state) => state.wpsPresentationFormulaShortcuts,
   );
   const setWordShortcut = useEditorStore(
     (state) => state.setWordFormulaShortcut,
   );
+  const setWpsWriterShortcut = useEditorStore(
+    (state) => state.setWpsWriterFormulaShortcut,
+  );
   const setPowerPointShortcut = useEditorStore(
     (state) => state.setPowerPointFormulaShortcut,
   );
+  const setWpsPresentationShortcut = useEditorStore(
+    (state) => state.setWpsPresentationFormulaShortcut,
+  );
+  const anywhereBindings = useAnywhereHotkeyStore((state) => state.bindings);
   const [capturing, setCapturing] = useState<ShortcutTarget | null>(null);
   const [message, setMessage] = useState("");
+  // The row the message is about: shown under it, where the keys were pressed
+  // (at the section's end it was below the window's edge).
+  const [messageTarget, setMessageTarget] = useState<ShortcutTarget | null>(null);
   const [wordReportedConflicts, setWordReportedConflicts] = useState(
     () => new Map<string, WordShortcutBinding>(),
   );
   const isEn = language === "en";
+
+  const documentSettings = (host: DocumentHost): WordFormulaShortcutSettings =>
+    host === "word" ? wordSettings : wpsWriterSettings;
+  const slideSettings = (host: SlideHost): PowerPointFormulaShortcutSettings =>
+    host === "powerPoint" ? powerPointSettings : wpsPresentationSettings;
+  const hostName = (host: ShortcutTarget["host"]) =>
+    isEn ? HOST_NAMES[host].en : HOST_NAMES[host].zh;
 
   // Conflicts only the running Word knows (custom keys, macros, MathType's
   // template) are recorded by the add-in when it leaves a chord to Word.
@@ -114,10 +162,19 @@ export function OfficeFormulaShortcutSettingsSection() {
   };
 
   const assignShortcut = (target: ShortcutTarget, shortcut: string | null) => {
-    if (target.host === "word") {
-      setWordShortcut(target.action, { shortcut });
-    } else {
-      setPowerPointShortcut(target.action, shortcut);
+    switch (target.host) {
+      case "word":
+        setWordShortcut(target.action, { shortcut });
+        break;
+      case "wpsWriter":
+        setWpsWriterShortcut(target.action, { shortcut });
+        break;
+      case "powerPoint":
+        setPowerPointShortcut(target.action, shortcut);
+        break;
+      case "wpsPresentation":
+        setWpsPresentationShortcut(target.action, shortcut);
+        break;
     }
   };
 
@@ -138,7 +195,9 @@ export function OfficeFormulaShortcutSettingsSection() {
         setMessage("");
         return;
       }
-      if (event.getModifierState("AltGraph")) {
+      // WebView2 reports Ctrl+Alt as AltGraph (Windows types AltGr characters
+      // with Ctrl+Alt): only an AltGr without both reported is refused.
+      if (event.getModifierState("AltGraph") && !(event.ctrlKey && event.altKey)) {
         setMessage(
           isEn
             ? "AltGr is used for text input and cannot be assigned."
@@ -151,15 +210,31 @@ export function OfficeFormulaShortcutSettingsSection() {
         setMessage(captureErrorText(result, isEn));
         return;
       }
-      if (capturing.host === "word" && !event.ctrlKey) {
-        setMessage(isEn
-          ? "Word shortcuts must include Ctrl; Alt-only shortcuts remain available to Word menus."
-          : "Word 公式快捷键必须包含 Ctrl；仅含 Alt 的组合键保留给 Word 菜单。");
+      // A system-wide VisualTeX Anywhere shortcut never reaches the Office window.
+      const anywhere = ANYWHERE_HOTKEY_ACTIONS.find(
+        (definition) =>
+          definition.global && anywhereHotkeyLabel(anywhereBindings[definition.id]) === result.shortcut,
+      );
+      if (anywhere) {
+        setMessage(
+          isEn
+            ? `${result.shortcut} is used by VisualTeX Anywhere (“${anywhere.labelEn}”).`
+            : `${result.shortcut} 已用于 VisualTeX Anywhere（${anywhere.labelZh}）。`,
+        );
         return;
       }
-      if (capturing.host === "word" && /^F(?:1[7-9]|2[0-4])$/.test(event.code)) {
-        setMessage(isEn ? "Word supports F1–F16 here." : "这里的 Word 快捷键支持 F1–F16。");
-        return;
+      if (isDocumentHost(capturing.host)) {
+        const name = hostName(capturing.host);
+        if (!event.ctrlKey) {
+          setMessage(isEn
+            ? `${name}: requires Ctrl.`
+            : `${name}：须包含 Ctrl。`);
+          return;
+        }
+        if (/^F(?:1[7-9]|2[0-4])$/.test(event.code)) {
+          setMessage(isEn ? `${name}: F1–F16 only.` : `${name}：仅支持 F1–F16。`);
+          return;
+        }
       }
       const wordBinding =
         capturing.host === "word" ? wordDefaultBinding(result.shortcut) : null;
@@ -174,34 +249,33 @@ export function OfficeFormulaShortcutSettingsSection() {
           .join(isEn ? " or " : " 或 ");
         setMessage(
           isEn
-            ? `${result.shortcut} is used by ${owner}. Word runs its own command first, so VisualTeX would never respond. Try ${suggestions}.`
-            : `${result.shortcut} 已被 ${owner}占用，Word 会优先执行自己的功能，VisualTeX 不会响应。请换一个，例如 ${suggestions}。`,
+            ? `${result.shortcut} is used by ${owner}. Available: ${suggestions}.`
+            : `${result.shortcut} 已被 ${owner}占用。可用：${suggestions}。`,
         );
         return;
       }
-      const moved =
-        capturing.host === "word"
-          ? Object.entries(wordSettings).some(
-              ([action, setting]) =>
-                action !== capturing.action && setting.shortcut === result.shortcut,
-            )
-          : Object.entries(powerPointSettings).some(
-              ([action, shortcut]) =>
-                action !== capturing.action && shortcut === result.shortcut,
-            );
+      const moved = isDocumentHost(capturing.host)
+        ? Object.entries(documentSettings(capturing.host)).some(
+            ([action, setting]) =>
+              action !== capturing.action && setting.shortcut === result.shortcut,
+          )
+        : Object.entries(slideSettings(capturing.host)).some(
+            ([action, shortcut]) =>
+              action !== capturing.action && shortcut === result.shortcut,
+          );
       assignShortcut(capturing, result.shortcut);
       setCapturing(null);
       setMessage(
         moved
           ? isEn
-            ? `${result.shortcut} was moved from another action in this app.`
-            : `${result.shortcut} 已从此应用的另一个动作移到这里。`
+            ? `${result.shortcut}: moved from another action.`
+            : `${result.shortcut}：已从其他操作移至此处。`
           : "",
       );
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [capturing, isEn, powerPointSettings, wordSettings]);
+  }, [capturing, isEn, anywhereBindings, wordSettings, wpsWriterSettings, powerPointSettings, wpsPresentationSettings]);
 
   const shortcutControls = (
     target: ShortcutTarget,
@@ -217,6 +291,7 @@ export function OfficeFormulaShortcutSettingsSection() {
           aria-pressed={isCapturing}
           onClick={() => {
             setMessage("");
+            setMessageTarget(target);
             setCapturing(isCapturing ? null : target);
           }}
         >
@@ -236,6 +311,7 @@ export function OfficeFormulaShortcutSettingsSection() {
             assignShortcut(target, null);
             if (isCapturing) setCapturing(null);
             setMessage("");
+            setMessageTarget(null);
           }}
           aria-label={isEn ? `Clear ${label}` : `清除${label}快捷键`}
           title={isEn ? "Set to None" : "设为无"}
@@ -247,14 +323,108 @@ export function OfficeFormulaShortcutSettingsSection() {
     );
   };
 
-  const wordRows: ReadonlyArray<{
-    action: WordShortcutAction;
-    labelEn: string;
-    labelZh: string;
-  }> = [
-    { action: "inline", labelEn: "Insert inline formula", labelZh: "插入行内公式" },
-    { action: "display", labelEn: "Insert display formula", labelZh: "插入行间公式" },
-  ];
+  const rowMessage = (target: ShortcutTarget) =>
+    message && sameTarget(messageTarget, target) ? (
+      <small className="office-formula-shortcut-warning" role="status" data-office-formula-shortcut-message>
+        {message}
+      </small>
+    ) : null;
+
+  const documentHostSection = (host: DocumentHost) => {
+    const settings = documentSettings(host);
+    const setShortcut = host === "word" ? setWordShortcut : setWpsWriterShortcut;
+    const name = hostName(host);
+    return (
+      <section
+        className="office-formula-shortcut-host"
+        data-office-formula-shortcut-host={host}
+      >
+        <header className="office-formula-shortcut-host-header">
+          <strong>{name}</strong>
+        </header>
+        <div className="office-formula-shortcut-list">
+          {wordRows.map(({ action, labelEn, labelZh }) => {
+            const setting = settings[action];
+            const target = { host, action } as const;
+            const label = isEn ? labelEn : labelZh;
+            const conflict = host === "word" ? wordConflictText(setting.shortcut) : null;
+            return (
+              <div
+                className="office-formula-shortcut-row"
+                data-office-formula-shortcut={action}
+                key={action}
+              >
+                <div className="office-formula-shortcut-copy">
+                  <strong>{label}</strong>
+                  {conflict && (
+                    <small
+                      className="office-formula-shortcut-warning"
+                      data-office-formula-shortcut-conflict
+                    >
+                      {isEn
+                        ? `${setting.shortcut} is used by ${conflict}.`
+                        : `${setting.shortcut} 已被 ${conflict}占用。`}
+                    </small>
+                  )}
+                  {rowMessage(target)}
+                </div>
+                {shortcutControls(target, `${name} ${label}`, setting.shortcut)}
+                <label className="office-formula-format-select">
+                  <span>{isEn ? "Format" : "格式"}</span>
+                  <select
+                    value={setting.format}
+                    onChange={(event) =>
+                      setShortcut(action, {
+                        format: event.target.value === "omml" ? "omml" : "ole",
+                      })
+                    }
+                    aria-label={isEn ? `${name} ${label} format` : `${name} ${label}格式`}
+                  >
+                    <option value="ole">OLE</option>
+                    <option value="omml">OMML</option>
+                  </select>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
+  const slideHostSection = (host: SlideHost) => {
+    const settings = slideSettings(host);
+    const name = hostName(host);
+    return (
+      <section
+        className="office-formula-shortcut-host"
+        data-office-formula-shortcut-host={host}
+      >
+        <header className="office-formula-shortcut-host-header">
+          <strong>{name}</strong>
+        </header>
+        <div className="office-formula-shortcut-list">
+          {powerPointActions.map(({ action, labelEn, labelZh }) => {
+            const target = { host, action } as const;
+            const label = isEn ? labelEn : labelZh;
+            return (
+              <div
+                className="office-formula-shortcut-row is-format-fixed"
+                data-office-formula-shortcut={action}
+                key={action}
+              >
+                <div className="office-formula-shortcut-copy">
+                  <strong>{label}</strong>
+                  {rowMessage(target)}
+                </div>
+                {shortcutControls(target, `${name} ${label}`, settings[action])}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
 
   return (
     <section className="shortcut-settings-group" data-office-formula-shortcuts>
@@ -266,96 +436,13 @@ export function OfficeFormulaShortcutSettingsSection() {
       </div>
 
       <div className="office-formula-shortcut-hosts">
-        <section
-          className="office-formula-shortcut-host"
-          data-office-formula-shortcut-host="word"
-        >
-          <header className="office-formula-shortcut-host-header">
-            <strong>Word</strong>
-          </header>
-          <p className="office-formula-shortcut-help">
-            {isEn
-              ? "Word’s built-in and custom shortcuts take priority. Use an unassigned Ctrl combination in the document; clear a shortcut to disable it."
-              : "Word 自带和自定义快捷键优先。请在正文中使用未被占用的 Ctrl 组合键；设为“无”即可停用。"}
-          </p>
-          <div className="office-formula-shortcut-list">
-            {wordRows.map(({ action, labelEn, labelZh }) => {
-              const setting = wordSettings[action];
-              const target = { host: "word", action } as const;
-              const label = isEn ? labelEn : labelZh;
-              const conflict = wordConflictText(setting.shortcut);
-              return (
-                <div
-                  className="office-formula-shortcut-row"
-                  data-office-formula-shortcut={action}
-                  key={action}
-                >
-                  <div className="office-formula-shortcut-copy">
-                    <strong>{label}</strong>
-                    {conflict && (
-                      <small
-                        className="office-formula-shortcut-warning"
-                        data-office-formula-shortcut-conflict
-                      >
-                        {isEn
-                          ? `Not active in Word: ${setting.shortcut} is used by ${conflict}.`
-                          : `在 Word 中不会生效：${setting.shortcut} 已被 ${conflict}占用。`}
-                      </small>
-                    )}
-                  </div>
-                  {shortcutControls(target, `Word ${label}`, setting.shortcut)}
-                  <label className="office-formula-format-select">
-                    <span>{isEn ? "Format" : "格式"}</span>
-                    <select
-                      value={setting.format}
-                      onChange={(event) =>
-                        setWordShortcut(action, {
-                          format: event.target.value === "omml" ? "omml" : "ole",
-                        })
-                      }
-                      aria-label={isEn ? `Word ${label} format` : `Word ${label}格式`}
-                    >
-                      <option value="ole">OLE</option>
-                      <option value="omml">OMML</option>
-                    </select>
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section
-          className="office-formula-shortcut-host"
-          data-office-formula-shortcut-host="powerPoint"
-        >
-          <header className="office-formula-shortcut-host-header">
-            <strong>PowerPoint</strong>
-          </header>
-          <div className="office-formula-shortcut-list">
-            {powerPointActions.map(
-              ({ action, labelEn, labelZh }) => {
-                const target = { host: "powerPoint", action } as const;
-                const label = isEn ? labelEn : labelZh;
-                return (
-                  <div
-                    className="office-formula-shortcut-row is-format-fixed"
-                    data-office-formula-shortcut={action}
-                    key={action}
-                  >
-                    <div className="office-formula-shortcut-copy">
-                      <strong>{label}</strong>
-                    </div>
-                    {shortcutControls(target, `PowerPoint ${label}`, powerPointSettings[action])}
-                  </div>
-                );
-              },
-            )}
-          </div>
-        </section>
+        {documentHostSection("word")}
+        {slideHostSection("powerPoint")}
+        {documentHostSection("wpsWriter")}
+        {slideHostSection("wpsPresentation")}
       </div>
 
-      {message && <p className="office-formula-shortcut-help" role="status">{message}</p>}
+      {message && !messageTarget && <p className="office-formula-shortcut-help" role="status">{message}</p>}
     </section>
   );
 }

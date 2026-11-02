@@ -27,6 +27,10 @@ internal sealed class PowerPointFormulaConversionPlan
     internal List<PowerPointConversionUnit> Units { get; } = new();
     internal List<PowerPointConversionSkip> Skips { get; } = new();
     internal int ScopeSlideCount { get; set; }
+    // Text selected inside one text box when a selection command that converts
+    // text (LaTeX redraw, formulas to LaTeX code) started: only the formulas in
+    // that text are converted. Null for a caret, shapes or slides.
+    internal (int ShapeId, int Start, int Length)? SelectedText { get; set; }
     internal int OriginalSlideId { get; set; }
     internal PpViewType OriginalViewType { get; set; } = PpViewType.ppViewNormal;
     internal int ItemCount => Units.Sum(unit => unit.Items.Count);
@@ -49,6 +53,17 @@ internal sealed class PowerPointConversionUnit
     internal bool FlipHorizontal { get; set; }
     internal bool FlipVertical { get; set; }
     internal bool Visible { get; set; } = true;
+    // The conversion rewrites the shape's text instead of replacing the shape
+    // (LaTeX code to native equations, native equations to LaTeX code). Its
+    // formulas are independent: one that fails is left as it is.
+    internal bool InPlaceText { get; set; }
+    // In-place units: the native equations the text held when it was scanned
+    // (1-based start and length, text order).
+    internal List<(int Start, int Length)> EquationRanges { get; } = new();
+    // A text source's live text as scanned (its saved source is proven unchanged
+    // before the batch writes); compared once more right before the box is
+    // written, without a saved copy.
+    internal string? SourceText { get; set; }
     internal List<PowerPointConversionItem> Items { get; } = new();
 }
 
@@ -72,6 +87,10 @@ internal sealed class PowerPointConversionItem
     internal float CenterY { get; set; }
     internal float VisualWidth { get; set; }
     internal float VisualHeight { get; set; }
+    // In-place units: the 1-based range of the shape's text the formula
+    // replaces (its LaTeX code, or its native equation).
+    internal int TextStart { get; set; }
+    internal int TextLength { get; set; }
 }
 
 // Everything a target writer needs, prepared off the Office thread.
@@ -93,6 +112,8 @@ internal sealed class PreparedPowerPointConversion
     internal byte[]? MathTypePreviewEmf { get; set; }
     internal float MathTypeNaturalWidthPt { get; set; }
     internal float MathTypeNaturalHeightPt { get; set; }
+    // The LaTeX code a formula becomes ("$...$" or "$$...$$").
+    internal string? LatexSource { get; set; }
 }
 
 internal sealed class PowerPointConversionUnitResult
@@ -256,6 +277,9 @@ public sealed partial class PowerPointFormulaService
                             }
                             finally { Release(parent); Release(shape); }
                         }
+                        if (selection.Type == PpSelectionType.ppSelectionText && ids.Count == 1
+                            && ConvertsText(plan.Request))
+                            plan.SelectedText = ReadSelectedTextRange(selection, ids.First());
                         result.Add((plan.OriginalSlideId, SlideIndexOf(slides, plan.OriginalSlideId), ids));
                         return result;
                     }
@@ -323,6 +347,12 @@ public sealed partial class PowerPointFormulaService
                     var id = shape.Id;
                     if (shapeIds is not null && !shapeIds.Contains(id)) continue;
                     if (!index.TryGetValue(id, out var info)) continue;
+                    // LaTeX redraw reads text only; no formula object is its source.
+                    if (request.Accepts(PowerPointFormulaKind.Latex))
+                    {
+                        CaptureLatexShape(plan, slideXml, slide, shape, slideIndex, info);
+                        continue;
+                    }
                     switch (info.Kind)
                     {
                         case PowerPointSlideShapeKind.Group:
@@ -360,6 +390,13 @@ public sealed partial class PowerPointFormulaService
                         case PowerPointSlideShapeKind.TextWithMath:
                             if (request.Accepts(PowerPointFormulaKind.Omml) && info.Math is not null)
                             {
+                                // To LaTeX code, equations become text where they are,
+                                // in mixed and equation-only boxes alike.
+                                if (request.TargetFamily == PowerPointConversionRequest.LatexFamily)
+                                {
+                                    CaptureEquationsAsLatexUnit(plan, slideXml, slide, shape, slideIndex, info.Math);
+                                    break;
+                                }
                                 animated ??= CollectAnimatedShapeIds(slide);
                                 CaptureOmmlUnit(plan, slideXml, slide, shape, slideIndex, info.Math, animated);
                             }
@@ -531,6 +568,7 @@ public sealed partial class PowerPointFormulaService
             }
             var live = PowerPointNativeOmmlPackage.SelectTextShape(slideXml, shape.Id);
             unit.TextFingerprint = PowerPointTextEditTransaction.Fingerprint(live.ToString(SaveOptions.DisableFormatting));
+            unit.SourceText = ReadConversionText(shape);
             var zones = ReadMathZoneGeometry(shape, live);
             if (zones.Count != count)
                 throw new InvalidDataException(Text(
@@ -789,7 +827,8 @@ public sealed partial class PowerPointFormulaService
     // from one fresh snapshot; anything that changed is left alone and reported.
     internal void VerifyFormulaConversionSources(PowerPointFormulaConversionPlan plan)
     {
-        if (!plan.Units.Any(unit => unit.SourceKind is PowerPointFormulaKind.MathType or PowerPointFormulaKind.Omml))
+        if (!plan.Units.Any(unit => unit.SourceKind is PowerPointFormulaKind.MathType or PowerPointFormulaKind.Omml
+                or PowerPointFormulaKind.Latex))
             return;
         Presentation? presentation = null;
         string? snapshot = null;
@@ -828,6 +867,7 @@ public sealed partial class PowerPointFormulaService
                                 unit.EquationNative!);
                             break;
                         case PowerPointFormulaKind.Omml:
+                        case PowerPointFormulaKind.Latex:
                         {
                             var slideXml = SlideXml(unit.SlideId);
                             if (slideXml.Xml is null)
@@ -880,6 +920,7 @@ public sealed partial class PowerPointFormulaService
         PowerPointConversionUnit unit,
         IReadOnlyDictionary<string, PreparedPowerPointConversion> prepared)
     {
+        if (unit.InPlaceText) return ApplyInPlaceTextUnit(plan, unit, prepared);
         var result = new PowerPointConversionUnitResult { SlideId = unit.SlideId, FormulaCount = unit.Items.Count };
         Presentation? presentation = null;
         Slide? slide = null;
@@ -914,13 +955,14 @@ public sealed partial class PowerPointFormulaService
                     FormulaOleContract.NativeOleMode => CreateOleReplacement(slide, item, formula, oleRestores),
                     FormulaOleContract.CrossPlatformPictureMode => CreatePictureReplacement(slide, unit, item, formula),
                     FormulaOleContract.WordOmmlMode => CreateOmmlReplacement(slide, unit, item, formula),
+                    PowerPointConversionRequest.LatexFamily => CreateLatexTextReplacement(slide, unit, item, formula),
                     _ => throw new NotSupportedException(target),
                 };
                 created.Add(replacement);
                 MoveToZOrder(replacement, source.ZOrderPosition + 1);
                 replacement.Visible = unit.Visible ? MsoTriState.msoTrue : MsoTriState.msoFalse;
             }
-            if (target == FormulaOleContract.WordOmmlMode)
+            if (target is FormulaOleContract.WordOmmlMode or PowerPointConversionRequest.LatexFamily)
                 NameConversionReplacements(created, unit.ShapeName, fallbackPrefix: null);
             FinishConversionReplacement(slide, source, created);
             // From here on the source is gone: the replacements are the formula.
@@ -1191,15 +1233,22 @@ public sealed partial class PowerPointFormulaService
             {
                 PowerPointFormulaKind.MathType => IsMathTypeShape(shape),
                 PowerPointFormulaKind.Omml => shape.HasTextFrame == MsoTriState.msoTrue,
+                PowerPointFormulaKind.Latex => shape.HasTextFrame == MsoTriState.msoTrue,
                 PowerPointFormulaKind.VisualTeXOle => IsNativeOle(shape)
                     && string.Equals(ReadEncodedMetadata(shape), unit.MetadataFingerprint, StringComparison.Ordinal),
                 _ => !IsNativeOle(shape)
                     && string.Equals(ReadEncodedMetadata(shape), unit.MetadataFingerprint, StringComparison.Ordinal),
             };
-            return matches
-                ? null
-                : Text($"扫描后{ShapeLabel(unit)}已被修改，不再是原来的公式。",
+            if (!matches)
+                return Text($"扫描后{ShapeLabel(unit)}已被修改，不再是原来的公式。",
                     $"{CapitalizedShapeLabel(unit)} was modified after the scan and is no longer the same equation.");
+            // Text typed into the box while the batch ran (WPS, or anything the
+            // input guard does not stop) would move every scanned position.
+            if (unit.SourceText is not null
+                && !string.Equals(ReadConversionText(shape), unit.SourceText, StringComparison.Ordinal))
+                return Text($"扫描后{ShapeLabel(unit)}的文字已改变。",
+                    $"The text of {ShapeLabel(unit)} changed after it was scanned.");
+            return null;
         }
         catch (Exception error)
         {
@@ -1680,8 +1729,10 @@ public sealed partial class PowerPointFormulaService
 // Blocks user input to PowerPoint while a batch writes, the way a modal dialog
 // does: every PowerPoint frame window of this process is disabled and later
 // re-enabled. Programmatic edits, painting and the progress window keep working.
+// WPS Presentation's frame has PowerPoint 2007's class name.
 internal sealed class PowerPointModalGuard : IDisposable
 {
+    private static readonly string[] FrameClasses = { "PPTFrameClass", "PP12FrameClass" };
     private readonly List<IntPtr> _disabled = new();
 
     private PowerPointModalGuard() { }
@@ -1696,7 +1747,7 @@ internal sealed class PowerPointModalGuard : IDisposable
             if (owner != processId || !IsWindowVisible(window) || !IsWindowEnabled(window)) return true;
             var name = new StringBuilder(64);
             GetClassName(window, name, name.Capacity);
-            if (!string.Equals(name.ToString(), "PPTFrameClass", StringComparison.Ordinal)) return true;
+            if (!FrameClasses.Contains(name.ToString(), StringComparer.Ordinal)) return true;
             EnableWindow(window, false);
             guard._disabled.Add(window);
             return true;

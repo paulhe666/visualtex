@@ -216,6 +216,7 @@ export type ContentChangeType =
   | 'insertText'
   | 'insertLineBreak'
   | 'insertFromPaste'
+  | 'insertFromDrop'
   | 'historyUndo'
   | 'historyRedo'
   | 'deleteByCut'

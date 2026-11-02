@@ -1309,6 +1309,8 @@ internal static partial class WordOmmlConverter
         if (transformOmml is not null)
             omml = transformOmml(omml);
         sourceFingerprint = ComputeOmmlFingerprint(omml);
+        // OMML Font choice: the chosen font becomes the document math font first.
+        mathFontName = WordOmmlMathFontPolicy.ForWrite(targetDocument, mathFontName);
         var normalizedMathFontName = NormalizeMathFontName(mathFontName);
         var tempPath = CreateTemporaryDocx(
             omml,
@@ -1980,6 +1982,8 @@ internal static partial class WordOmmlConverter
         if (string.IsNullOrWhiteSpace(omml))
             throw new InvalidDataException(
                 "The prepared paragraph-local OMML replacement is empty.");
+        // OMML Font choice: the chosen font becomes the document math font first.
+        mathFontName = WordOmmlMathFontPolicy.ForWrite(targetDocument, mathFontName);
 
         OMaths? existingTargetMaths = null;
         OMath? existingTargetMath = null;
@@ -2809,6 +2813,8 @@ internal static partial class WordOmmlConverter
         if (string.IsNullOrWhiteSpace(omml))
             throw new InvalidDataException(
                 "The prepared direct OMML replacement is empty.");
+        // OMML Font choice: the chosen font becomes the document math font first.
+        mathFontName = WordOmmlMathFontPolicy.ForWrite(targetDocument, mathFontName);
 
         var bookmarkName =
             "VisualTeXDirect"
@@ -3005,6 +3011,8 @@ internal static partial class WordOmmlConverter
         if (string.IsNullOrWhiteSpace(omml))
             throw new InvalidDataException("The prepared OMML replacement is empty.");
 
+        // OMML Font choice: the chosen font becomes the document math font first.
+        mathFontName = WordOmmlMathFontPolicy.ForWrite(targetDocument, mathFontName);
         var normalizedMathFontName = NormalizeMathFontName(mathFontName);
         var tempPath = CreateTemporaryDocx(
             omml,
@@ -3245,6 +3253,9 @@ internal static partial class WordOmmlConverter
             // InsertFile replaces a non-collapsed Range in place. Do not delete
             // the placeholder first: collapsing at its former boundary lets Word
             // move the imported OMath behind the adjacent typing sentinel.
+            // In WPS the import blanks the OLE formulas already in the document
+            // until they are laid out again.
+            WpsOleDisplayRefresh.Mark(targetDocument);
             target.InsertFile(
                 FileName: filePath,
                 Range: FormulaBookmarkName,
@@ -4471,7 +4482,7 @@ internal static partial class WordOmmlConverter
             // Office only creates a native m:nary for a bare operator when it
             // is carried by a limit structure. Apply that structure to inline
             // formulas too; later normalization hides the synthetic empty
-            // limit, while only display equations receive m:grow=1.
+            // limit (NormalizeDisplayNaryOmml).
             var hasArgument = op.ElementsAfterSelf().Any();
             var syntheticLimit = new XElement(
                 mathMlNamespace + "msub",
@@ -4970,27 +4981,14 @@ internal static partial class WordOmmlConverter
                 nary.AddFirst(properties);
             }
 
-            // Only display equations should force a growing integral/sum. Empty
-            // limits, however, must be hidden for both inline and display OMML.
-            // The previous early return skipped inline formulas entirely, so a
-            // bare inline integral could expose Word's dotted sub/sup slots.
-            var grow = properties.Element(math + "grow");
-            if (display)
-            {
-                if (grow is null)
-                {
-                    grow = new XElement(math + "grow");
-                    properties.Add(grow);
-                }
-                grow.SetAttributeValue(math + "val", "1");
-            }
-            else
-            {
-                // Office's MML2OMML transform may add grow=1 even for inline
-                // n-ary operators. Remove it so the operator follows the Word
-                // paragraph font size instead of taking display proportions.
-                grow?.Remove();
-            }
+            // A sum or integral keeps its size, as in LaTeX: Word already draws
+            // it large in a display equation. With m:grow it stretched to the
+            // height of its operand, so beside a fraction, brackets or a matrix
+            // the sign became huge while its limits stayed script size. An
+            // inline operator follows the paragraph's font size the same way.
+            properties.Element(math + "grow")?.Remove();
+            // Empty limits must be hidden for both inline and display OMML, or a
+            // bare integral exposes Word's dotted sub/sup slots.
 
             SetNaryLimitVisibility(
                 properties,

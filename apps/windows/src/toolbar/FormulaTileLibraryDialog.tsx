@@ -253,8 +253,8 @@ export function FormulaTileLibraryDialog({
         <footer className="formula-tile-library-footer">
           <span>
             {isEn
-              ? `${selectedIds.length} tiles in Common · click a formula to add or remove it`
-              : `常用中已有 ${selectedIds.length} 个磁贴 · 点击公式即可添加或移除`}
+              ? `Common: ${selectedIds.length}`
+              : `常用：${selectedIds.length}`}
           </span>
           <button type="button" className="secondary-button" onClick={onClose}>
             {isEn ? "Done" : "完成"}

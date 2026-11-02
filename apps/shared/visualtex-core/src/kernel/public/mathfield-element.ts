@@ -27,6 +27,7 @@ import {
 } from '../editor-mathfield/options';
 import { _Mathfield } from '../editor-mathfield/mathfield-private';
 import { offsetFromPoint, PointerTracker } from '../editor-mathfield/pointer-input';
+import { dropResult, goToStopDrawn, pointOnSelection, rangeFont, selectStops, styledResult, type DropEdit, type DropResult } from '../editor-mathfield/selection-drag';
 import { getElementInfo, getHref } from '../editor-mathfield/utils';
 import {
   isBrowser,
@@ -751,6 +752,41 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   visualTexStopPointerTracking(): void {
     const field = this._mathfield?.field;
     if (field && PointerTracker.trackedElement === field) PointerTracker.cancel();
+  }
+
+  /** VisualTeX kernel: whether a page point is on the selection's highlight (a press there drags it). */
+  visualTexPointOnSelection(clientX: number, clientY: number): boolean {
+    const mathfield = this._mathfield;
+    return mathfield ? pointOnSelection(mathfield, clientX, clientY) : false;
+  }
+
+  /**
+   * VisualTeX kernel: the formula after a drop's edits and the range of what
+   * was put in, worked out and then undone (the app makes its own edit).
+   */
+  visualTexDropResult(edit: DropEdit): DropResult | null {
+    const mathfield = this._mathfield;
+    return mathfield ? dropResult(mathfield, edit) : null;
+  }
+
+  /** VisualTeX kernel: the editing core's selection from stop `anchor` to stop `focus` (a drag's). */
+  visualTexSelectStops(anchor: Offset, focus: Offset): void {
+    if (this._mathfield) selectStops(this._mathfield, anchor, focus);
+  }
+
+  /** VisualTeX kernel: the caret to an editing-core stop, drawn at once (a click the app places). */
+  visualTexGoToStop(stop: Offset): boolean {
+    return this._mathfield ? goToStopDrawn(this._mathfield, stop) : false;
+  }
+
+  /** VisualTeX kernel: whether every glyph of a range is bold (italic); null when it holds none. */
+  visualTexRangeFont(range: [number, number]): { bold: boolean; italic: boolean } | null {
+    return this._mathfield ? rangeFont(this._mathfield, range) : null;
+  }
+
+  /** VisualTeX kernel: the formula's LaTeX with a range set bold (italic) or not, worked out and undone. */
+  visualTexStyledResult(range: [number, number], kind: 'bold' | 'italic', enable: boolean): string | null {
+    return this._mathfield ? styledResult(this._mathfield, range, kind, enable) : null;
   }
 
   /** @internal */

@@ -142,7 +142,7 @@ const WORD_DEFAULT_BINDINGS = parseBindings(WORD_DEFAULT_BINDINGS_DATA, "|");
 export const WORD_FREE_SHORTCUT_SUGGESTIONS = [
   "Ctrl+Alt+Shift+I",
   "Ctrl+Alt+Shift+D",
-  "Ctrl+Alt+Shift+M",
+  "Ctrl+Alt+Q",
   "Ctrl+F7",
 ] as const;
 

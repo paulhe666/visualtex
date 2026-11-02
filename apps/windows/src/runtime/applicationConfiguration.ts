@@ -129,6 +129,8 @@ const editorSettingKeys = [
   "powerPointDefaultFontSizePt",
   "wordFormulaShortcuts",
   "powerPointFormulaShortcuts",
+  "wpsWriterFormulaShortcuts",
+  "wpsPresentationFormulaShortcuts",
   "buttonShortcuts",
   "classicTileWidth",
   "classicDockHeight",

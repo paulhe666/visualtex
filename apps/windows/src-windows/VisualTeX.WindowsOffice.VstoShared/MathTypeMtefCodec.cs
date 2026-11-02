@@ -1032,9 +1032,25 @@ internal static partial class MathTypeMtefCodec
                 // explicit variant is part of the contract too: ignoring it
                 // makes a bold/monospace digit loss invisible to validation.
                 var numberVariant = (variant ?? string.Empty).Trim().ToLowerInvariant();
-                return numberVariant.Length == 0 || numberVariant is "normal" or "upright"
-                    ? "n(" + element.Value.Trim() + ")"
-                    : "n[" + numberVariant + "](" + element.Value.Trim() + ")";
+                var numberPrefix = numberVariant.Length == 0 || numberVariant is "normal" or "upright"
+                    ? "n("
+                    : "n[" + numberVariant + "](";
+                var number = element.Value.Trim();
+                if (number.Length == 0) return numberPrefix + ")";
+                // MTEF stores a number as one CHAR record per digit and its
+                // read-back groups adjacent digits into one <mn>, while MathJax
+                // keeps digits written apart ("1 0 0", as formula OCR emits
+                // them) as separate <mn> tokens. The same digits in the same
+                // style are the same number either way: compare them one
+                // character at a time, as CanonicalToken does for letter runs.
+                var digits = new StringBuilder();
+                for (var index = 0; index < number.Length; index++)
+                {
+                    var length = char.IsSurrogatePair(number, index) ? 2 : 1;
+                    digits.Append(numberPrefix).Append(number, index, length).Append(')');
+                    index += length - 1;
+                }
+                return digits.ToString();
             }
             case "mo":
             {
@@ -2150,6 +2166,17 @@ internal static partial class MathTypeMtefCodec
             // Only nested constructs whose emitters actually use COLOR 1 need the
             // synthetic definition. The top-level aligned table itself does not.
             var alignedPrefixDefinitions = new List<byte>();
+            // A single-line source keeps its own ENCODING/FONT/FONT_STYLE/COLOR
+            // definitions at the start of its root LINE (VisualTeX writes them
+            // there). They are global and already counted by the index
+            // allocation below, but a root PILE cannot carry them: move them,
+            // in their order, into the prefix ahead of the new definitions, or
+            // every later style index points one definition too far (an upper
+            // Greek Symbol glyph then reads back as its Latin letter).
+            foreach (var record in rootFormattingRecords.Where(record => record.Type
+                         is RecordEncodingDef or RecordFontDef or RecordFontStyleDef or RecordColorDef))
+                for (var index = record.Start; index < record.End; index++)
+                    alignedPrefixDefinitions.Add(sourceMtef[index]);
             if (retainedColors == 0
                 && MathTypeEmissionRequiresColorDefinition(
                     preparedMath,

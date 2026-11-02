@@ -170,6 +170,18 @@ public interface IWordRibbonCallbacks
     [DispId(54)]
     void OnNumberDisplayFormulasDocument(object control);
 
+    [DispId(55)]
+    bool GetOmmlMathFontPressed(Office.IRibbonControl control);
+
+    [DispId(56)]
+    void OnOmmlMathFontChanged(Office.IRibbonControl control, bool pressed);
+
+    [DispId(57)]
+    bool GetOmmlMathFontEnabled(Office.IRibbonControl control);
+
+    [DispId(58)]
+    string GetOmmlMathFontLabel(Office.IRibbonControl control);
+
 }
 
 [ComVisible(true)]
@@ -229,7 +241,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="为所选行间公式编号" onAction="OnNumberDisplayFormulasSelection" />
             <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="为全文行间公式编号" onAction="OnNumberDisplayFormulasDocument" />
           </menu>
-          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同）。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同），并让所有 OMML 公式使用文档数学字体（OMML 字体选定的字体）。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
@@ -321,6 +333,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <item id="VisualTeX.WordVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="增大" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
+          <menu id="VisualTeX.WordVsto.OmmlMathFont" label="OMML 字体" imageMso="FontDialog" tag="menu" screentip="OMML 公式字体" supertip="Word 原生公式（OMML）使用的数学字体。选定字体后，VisualTeX 写入 OMML 前先把它设为文档数学字体，并立即统一当前文档已有公式的字体；“更新公式格式”也会统一。WPS 没有文档数学字体：所选字体用于 VisualTeX 插入或编辑的公式。" getEnabled="GetOmmlMathFontEnabled">
+            <toggleButton id="VisualTeX.WordVsto.OmmlMathFontFollow" label="跟随文档（不更改）" tag="follow" screentip="跟随文档" supertip="不更改文档的数学字体（默认）。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
+            <toggleButton id="VisualTeX.WordVsto.OmmlMathFontCambria" label="Cambria Math" tag="cambria" screentip="Cambria Math" supertip="Word 默认的数学字体。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
+            <toggleButton id="VisualTeX.WordVsto.OmmlMathFontStix" getLabel="GetOmmlMathFontLabel" tag="stix" screentip="STIX Two Math（内置）" supertip="VisualTeX 自带的 STIX Two Math（官方 TrueType 版，Times 风格，另存为 PDF 时可嵌入）。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
+            <toggleButton id="VisualTeX.WordVsto.OmmlMathFontTermes" getLabel="GetOmmlMathFontLabel" tag="termes" screentip="TeX Gyre Termes Math（内置）" supertip="VisualTeX 自带的 TeX Gyre Termes Math（Times 风格，接近 LaTeX 的 newtxmath；TrueType 版，另存为 PDF 时可嵌入）。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
+            <toggleButton id="VisualTeX.WordVsto.OmmlMathFontLatinModern" getLabel="GetOmmlMathFontLabel" tag="latin-modern" screentip="Latin Modern Math（内置）" supertip="VisualTeX 自带的 Latin Modern Math（TrueType 版，另存为 PDF 时可嵌入）。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
+          </menu>
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="兼容修复">
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="修复公式偏移" size="large" screentip="扫描并修复行内公式垂直偏移" supertip="扫描全文中的 MathType / VisualTeX 行内 OLE；VisualTeX 公式优先按自身保存的渲染基线校准，MathType 公式按文档稳定基线检测上浮或下沉。确认后仅修复垂直偏移，不修改公式内容、字号、编号或引用。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
@@ -406,7 +425,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Office.COMAddIn? _comAddIn;
 
     public string GetCustomUI(string ribbonId) =>
-        OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
+        WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml);
 
     public void OnConnection(
         object application,
@@ -442,7 +461,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var officeMathFontReady = WordOfficeMathFontLoader.TryEnsureLoaded(
             out var officeMathFontError);
         _formulaService = new WordFormulaService(_application);
+        WordOmmlMathFontSetting.Install();
         _dispatcher = new OfficeUiDispatcher();
+        WpsOleDisplayRefresh.Attach(_application, _dispatcher.Post);
         _acceptanceSelectionDiagnostics = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
             "1",
@@ -500,7 +521,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             _keyboardHook = new OfficeFormulaShortcutKeyboardHook(
-                OfficeFormulaShortcutHost.Word,
+                OfficeHostEnvironment.IsWps ? OfficeFormulaShortcutHost.WpsWriter : OfficeFormulaShortcutHost.Word,
                 OnWordFormulaShortcut,
                 OnWordPasteKeyGesture,
                 WordDoubleClickHook.TraceMessage);
@@ -637,7 +658,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (conflict.HasValue) ReportWordShortcutConflict(conflict.Value);
             return false;
         }
-        WordShortcutConflictRecord.Clear(shortcut);
+        // The record lists Word's conflicts for the Word settings; WPS Writer has its own.
+        if (!OfficeHostEnvironment.IsWps) WordShortcutConflictRecord.Clear(shortcut);
         return BeginSession("create",
             command.Kind == OfficeFormulaShortcutKind.Inline ? "inline" : "block",
             command.Format == OfficeFormulaShortcutFormat.Omml
@@ -648,13 +670,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     // once per chord in this Word session through the (posted) status bar.
     private void ReportWordShortcutConflict(WordShortcutConflict conflict)
     {
-        WordShortcutConflictRecord.Write(conflict);
+        var wps = OfficeHostEnvironment.IsWps;
+        if (!wps) WordShortcutConflictRecord.Write(conflict);
         lock (_reportedShortcutConflicts)
         {
             if (!_reportedShortcutConflicts.Add(conflict.Shortcut)) return;
         }
         var chord = conflict.Shortcut.Format();
         var name = conflict.Command;
+        if (wps)
+        {
+            SetStatus(T(
+                $"VisualTeX：{chord} 已被 WPS 文字的「{name}」占用，已交给 WPS 处理。请在 VisualTeX 设置的 WPS 文字快捷键里换一个未占用的组合。",
+                $"VisualTeX: {chord} is used by the WPS Writer command “{name}”, so WPS handled it. Choose an unused shortcut for WPS Writer in VisualTeX settings."));
+            return;
+        }
         var owner = conflict.Category switch
         {
             WdKeyCategory.wdKeyCategoryDisable => T("Word（此键在 Word 中被设为禁用）", "Word (the key is disabled in Word)"),
@@ -717,6 +747,145 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         _ = SetEquationNumberFormatAsync(control?.Tag);
     }
+
+    // OMML Font menu: a per-user choice (HKCU). Not "follow": every OMML write
+    // makes the font the document math font (WordOmmlMathFontPolicy.ForWrite).
+    private static readonly string[] OmmlMathFontControlIds =
+    {
+        "VisualTeX.WordVsto.OmmlMathFont",
+        "VisualTeX.WordVsto.OmmlMathFontFollow",
+        "VisualTeX.WordVsto.OmmlMathFontCambria",
+        "VisualTeX.WordVsto.OmmlMathFontStix",
+        "VisualTeX.WordVsto.OmmlMathFontTermes",
+        "VisualTeX.WordVsto.OmmlMathFontLatinModern",
+    };
+
+    public bool GetOmmlMathFontPressed(Office.IRibbonControl control)
+    {
+        try
+        {
+            return string.Equals(
+                WordOmmlMathFontPolicy.Id(WordOmmlMathFontSetting.EffectiveChoice),
+                control?.Tag,
+                StringComparison.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    public bool GetOmmlMathFontEnabled(Office.IRibbonControl control)
+    {
+        var tag = control?.Tag;
+        if (string.IsNullOrEmpty(tag) || tag == "menu") return true;
+        try { return WordOmmlMathFontSetting.IsAvailable(WordOmmlMathFontPolicy.Parse(tag)); }
+        catch { return false; }
+    }
+
+    public string GetOmmlMathFontLabel(Office.IRibbonControl control)
+    {
+        var choice = WordOmmlMathFontPolicy.Parse(control?.Tag);
+        var available = true;
+        try { available = WordOmmlMathFontSetting.IsAvailable(choice); } catch { available = false; }
+        return choice switch
+        {
+            OmmlMathFontChoice.StixTwoMath => available
+                ? T("STIX Two Math（内置）", "STIX Two Math (bundled)")
+                : T("STIX Two Math（内置字体未加载）", "STIX Two Math (bundled font not loaded)"),
+            OmmlMathFontChoice.TexGyreTermesMath => available
+                ? T("TeX Gyre Termes Math（内置）", "TeX Gyre Termes Math (bundled)")
+                : T("TeX Gyre Termes Math（内置字体未加载）", "TeX Gyre Termes Math (bundled font not loaded)"),
+            OmmlMathFontChoice.LatinModernMath => available
+                ? T("Latin Modern Math（内置）", "Latin Modern Math (bundled)")
+                : T("Latin Modern Math（内置字体未加载）", "Latin Modern Math (bundled font not loaded)"),
+            OmmlMathFontChoice.CambriaMath => "Cambria Math",
+            _ => T("跟随文档（不更改）", "Follow Document (No Change)"),
+        };
+    }
+
+    public void OnOmmlMathFontChanged(Office.IRibbonControl control, bool pressed)
+    {
+        // Clicking the selected item again re-applies it (to another document, say).
+        _ = pressed;
+        var choice = WordOmmlMathFontPolicy.Parse(control?.Tag);
+        WordOmmlMathFontSetting.RefreshAvailability();
+        if (!WordOmmlMathFontSetting.IsAvailable(choice))
+        {
+            var family = WordOmmlMathFontPolicy.FontFamily(choice) ?? string.Empty;
+            SetStatus(T(
+                $"OMML 字体：{family} 不可用（字体未安装；重新安装 VisualTeX 的 Office 集成可恢复），未更改设置。",
+                $"OMML font: {family} is not available (the font is not installed; reinstalling VisualTeX's Office integration restores it); the setting is unchanged."));
+            InvalidateOmmlMathFontControls();
+            return;
+        }
+        WordOmmlMathFontSetting.Save(choice);
+        InvalidateOmmlMathFontControls();
+        if (choice == OmmlMathFontChoice.FollowDocument)
+        {
+            SetStatus(OfficeHostEnvironment.IsWps
+                ? T("OMML 字体：跟随文档，VisualTeX 写入的 OMML 公式使用 Cambria Math。",
+                    "OMML font: follow the document; OMML equations VisualTeX writes use Cambria Math.")
+                : T("OMML 字体：跟随文档，VisualTeX 不再更改文档的数学字体。",
+                    "OMML font: follow the document; VisualTeX no longer changes the document math font."));
+            return;
+        }
+        if (OfficeHostEnvironment.IsWps)
+        {
+            // WPS has no document math font, and its Find does not search inside
+            // equations: the font goes into every equation VisualTeX writes or edits.
+            var family = WordOmmlMathFontPolicy.FontFamily(choice) ?? string.Empty;
+            SetStatus(T(
+                $"OMML 字体：{family}。VisualTeX 之后插入或编辑的 OMML 公式使用它；已有公式在编辑后改用它。",
+                $"OMML font: {family}. OMML equations VisualTeX inserts or edits from now on use it; an existing equation changes when it is edited."));
+            return;
+        }
+        _ = ApplyOmmlMathFontAsync();
+    }
+
+    private async Task ApplyOmmlMathFontAsync()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        if (dispatcher is null || service is null) return;
+        try
+        {
+            var result = await dispatcher.InvokeAsync(() => service.ApplyOmmlMathFontToActiveDocument())
+                .ConfigureAwait(false);
+            var font = WordOmmlMathFontSetting.EffectiveFont ?? string.Empty;
+            if (result is null)
+            {
+                SetStatus(T(
+                    $"OMML 字体：{font}（新写入的 OMML 公式将使用它）。",
+                    $"OMML font: {font} (used for OMML equations VisualTeX writes)."));
+                return;
+            }
+            WriteRedrawAcceptanceLog(
+                $"omml-math-font-applied font={result.MathFont} previous={result.PreviousMathFont ?? "-"} equations={result.Equations}");
+            SetStatus(T(
+                $"OMML 字体：文档数学字体为 {result.MathFont}"
+                    + (result.PreviousMathFont is null ? string.Empty : $"（原 {result.PreviousMathFont}）")
+                    + $"，已统一 {result.Equations} 个公式的字体。",
+                $"OMML font: the document math font is {result.MathFont}"
+                    + (result.PreviousMathFont is null ? string.Empty : $" (was {result.PreviousMathFont})")
+                    + $"; {result.Equations} equation(s) brought in line."));
+        }
+        catch (Exception error)
+        {
+            SetStatus(T($"应用 OMML 字体失败：{error.Message}", $"Applying the OMML font failed: {error.Message}"));
+            await ShowWordOperationErrorAsync(dispatcher, "应用 OMML 字体", error).ConfigureAwait(false);
+        }
+    }
+
+    private void InvalidateOmmlMathFontControls()
+    {
+        var ribbon = _ribbonUi;
+        if (ribbon is null) return;
+        try
+        {
+            dynamic ui = ribbon;
+            foreach (var id in OmmlMathFontControlIds) ui.InvalidateControl(id);
+        }
+        catch { }
+    }
+
     public void OnBulkImport(object control) => _ = BulkImportAsync();
     public void OnRedrawSelectionToOmml(object control) =>
         _ = RedrawLatexAsync(wholeDocument: false, FormulaOleContract.WordOmmlMode);
@@ -5847,6 +6016,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     en += "Math font: Latin Modern Math → VisualTeX Latin Modern Math"
                         + " (same glyphs; Word's Save as PDF keeps the parentheses of equation numbers)\r\n";
                 }
+                if (report.MathFont.CurrentMathFont is not null)
+                {
+                    var from = string.IsNullOrWhiteSpace(report.MathFont.CurrentMathFont)
+                        ? "?" : report.MathFont.CurrentMathFont;
+                    zh += $"文档数学字体（OMML 字体）：{from} → {report.MathFont.MathFont}\r\n";
+                    en += $"Document math font (OMML Font): {from} → {report.MathFont.MathFont}\r\n";
+                }
+                if (report.MathFont.EquationsToAlign > 0)
+                {
+                    zh += $"字体未跟随文档数学字体的公式：{report.MathFont.EquationsToAlign} 个\r\n";
+                    en += $"Equations whose fonts do not follow the document math font: {report.MathFont.EquationsToAlign}\r\n";
+                }
                 zh += "\r\n公式内容和类型不变。是否继续？";
                 en += "\r\nEquation content and kinds do not change. Continue?";
                 return System.Windows.Forms.MessageBox.Show(
@@ -5858,11 +6039,28 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     == System.Windows.Forms.DialogResult.Yes;
             }).ConfigureAwait(false);
             if (!proceed) return;
-            var count = await dispatcher.InvokeAsync(service.UpgradeEquationFormat)
+            WordFormulaService.OmmlMathFontAlignmentResult? fontResult = null;
+            var count = await dispatcher.InvokeAsync(() =>
+                {
+                    var numbers = service.UpgradeEquationFormat(out var font);
+                    fontResult = font;
+                    return numbers;
+                })
                 .ConfigureAwait(false);
             WriteRedrawAcceptanceLog(
-                $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}");
-            SetStatus(T($"公式格式已更新（{count} 个编号）。", $"Equation format updated ({count} numbers)."));
+                $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}"
+                + $" ommlFont={fontResult?.MathFont ?? "-"} fontEquations={fontResult?.Equations ?? 0}");
+            var fontZh = fontResult is null
+                ? string.Empty
+                : $"；数学字体 {fontResult.MathFont}"
+                    + (fontResult.PreviousMathFont is null ? string.Empty : $"（原 {fontResult.PreviousMathFont}）")
+                    + $"，统一了 {fontResult.Equations} 个公式的字体";
+            var fontEn = fontResult is null
+                ? string.Empty
+                : $"; math font {fontResult.MathFont}"
+                    + (fontResult.PreviousMathFont is null ? string.Empty : $" (was {fontResult.PreviousMathFont})")
+                    + $", {fontResult.Equations} equation font(s) brought in line";
+            SetStatus(T($"公式格式已更新（{count} 个编号{fontZh}）。", $"Equation format updated ({count} numbers{fontEn})."));
         }
         catch (Exception error)
         {
@@ -6202,11 +6400,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
         _sessionClient?.Dispose();
+        WpsOleDisplayRefresh.Attach(null, null);
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
         _sessionClient = null;
         _dispatcher = null;
         _formulaService = null;
+        WordOmmlMathFontSetting.Uninstall();
         WordOfficeMathFontLoader.UnloadSessionRegistration();
         _lifetime = null;
         _ribbonUi = null;

@@ -144,6 +144,10 @@ export interface FormulaDocument {
     powerPointDefaultFontSizePt?: number;
     wordFormulaShortcuts?: WordFormulaShortcutSettings;
     powerPointFormulaShortcuts?: PowerPointFormulaShortcutSettings;
+    /** WPS Writer's own formula shortcuts (shaped as Word's). */
+    wpsWriterFormulaShortcuts?: WordFormulaShortcutSettings;
+    /** WPS Presentation's own formula shortcuts (shaped as PowerPoint's). */
+    wpsPresentationFormulaShortcuts?: PowerPointFormulaShortcutSettings;
     classicTileWidth?: number;
     classicDockHeight?: number;
     keypadMinimizeOnCopy?: boolean;

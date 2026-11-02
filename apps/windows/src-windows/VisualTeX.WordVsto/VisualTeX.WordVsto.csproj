@@ -29,6 +29,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconProvider.cs" Link="RibbonIconProvider.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WpsRibbonImages.cs" Link="WpsRibbonImages.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
@@ -41,6 +42,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlMathFontPolicy.cs" Link="WordOmmlMathFontPolicy.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OmmlMathMlProjection.cs" Link="OmmlMathMlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
@@ -86,6 +88,24 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-VisualTeX-Latin-Modern-Math.txt" Link="README-VisualTeX-Latin-Modern-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The OMML Font menu's Times-style faces, TrueType for the same reason:
+         TeX Gyre Termes Math converted (office-fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt)
+         and the STIX project's own TrueType STIX Two Math (office-fonts/README-STIX-Two-Math.txt). -->
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\VisualTeXTeXGyreTermesMath.ttf" Link="VisualTeXTeXGyreTermesMath.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-VisualTeX-TeX-Gyre-Termes-Math.txt" Link="README-VisualTeX-TeX-Gyre-Termes-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\STIXTwoMath-Regular.ttf" Link="STIXTwoMath-Regular.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-STIX-Two-Math.txt" Link="README-STIX-Two-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\STIX-Two-Math-OFL.txt" Link="STIX-Two-Math-OFL.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -7,13 +8,39 @@ using System.Security.Cryptography;
 
 namespace VisualTeX.WordVsto;
 
+/// <summary>
+/// A math font the VisualTeX Office integration installs for Word equations
+/// (office-fonts/README-*.txt). All of them are TrueType builds: Word's PDF export
+/// embeds TrueType math; CFF math it rasterizes, dropping the parentheses of native
+/// equation numbers.
+/// </summary>
+internal sealed class BundledMathFont
+{
+    internal BundledMathFont(string family, string fileName, string sha256, bool acceptsInstalledFamily)
+    {
+        Family = family;
+        FileName = fileName;
+        Sha256 = sha256;
+        AcceptsInstalledFamily = acceptsInstalledFamily;
+    }
+
+    internal string Family { get; }
+    internal string FileName { get; }
+    internal string Sha256 { get; }
+
+    /// <summary>
+    /// The font keeps its published name (STIX Two Math), so a copy the user installed
+    /// stands in for the bundled file; the renamed VisualTeX builds have no other source.
+    /// </summary>
+    internal bool AcceptsInstalledFamily { get; }
+}
+
 internal static class WordOfficeMathFontLoader
 {
     // VisualTeX Latin Modern Math: Latin Modern Math 1.959 with its outlines
     // converted to TrueType (office-fonts/README-VisualTeX-Latin-Modern-Math.txt).
-    // Word's PDF export embeds TrueType math; CFF math it rasterizes, dropping
-    // the parentheses of native equation numbers. The original CFF font stays
-    // installed for documents that still name "Latin Modern Math".
+    // The original CFF font stays installed for documents that still name
+    // "Latin Modern Math".
     internal const string LatinModernMathFamily = "VisualTeX Latin Modern Math";
     internal const string LatinModernMathFileName = "VisualTeXLatinModernMath.ttf";
     internal const string LatinModernMathSha256 =
@@ -21,12 +48,50 @@ internal static class WordOfficeMathFontLoader
     // The CFF original that VisualTeX before 1.2.8 set as the document math font.
     internal const string LegacyLatinModernMathFamily = "Latin Modern Math";
 
+    // VisualTeX TeX Gyre Termes Math: TeX Gyre Termes Math 1.543 (Times-style) with its
+    // outlines converted to TrueType (office-fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt).
+    internal const string TexGyreTermesMathFamily = "VisualTeX TeX Gyre Termes Math";
+    internal const string TexGyreTermesMathFileName = "VisualTeXTeXGyreTermesMath.ttf";
+    internal const string TexGyreTermesMathSha256 =
+        "9F58AD9C3C92D18BB439FF31535FBA7A8038624E5E5E7605E2681FFDB9C8B1EE";
+
+    // STIX Two Math 2.13 b171: the TrueType build the STIX Fonts project publishes,
+    // unmodified (office-fonts/README-STIX-Two-Math.txt).
+    internal const string StixTwoMathFamily = "STIX Two Math";
+    internal const string StixTwoMathFileName = "STIXTwoMath-Regular.ttf";
+    internal const string StixTwoMathSha256 =
+        "49B22767985171BCE579307B21D98F4D35012FA39E316ACC4FFCAB8644DFB69B";
+
+    internal static readonly BundledMathFont LatinModernMath =
+        new(LatinModernMathFamily, LatinModernMathFileName, LatinModernMathSha256, acceptsInstalledFamily: false);
+    internal static readonly BundledMathFont TexGyreTermesMath =
+        new(TexGyreTermesMathFamily, TexGyreTermesMathFileName, TexGyreTermesMathSha256, acceptsInstalledFamily: false);
+    internal static readonly BundledMathFont StixTwoMath =
+        new(StixTwoMathFamily, StixTwoMathFileName, StixTwoMathSha256, acceptsInstalledFamily: true);
+
+    internal static IReadOnlyList<BundledMathFont> All { get; } =
+        new[] { LatinModernMath, TexGyreTermesMath, StixTwoMath };
+
+    /// <summary>The bundled font of a family, or null for any other font.</summary>
+    internal static BundledMathFont? Find(string? family)
+    {
+        var name = family?.Trim();
+        return string.IsNullOrEmpty(name)
+            ? null
+            : All.FirstOrDefault(font => string.Equals(font.Family, name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class LoadState
+    {
+        internal bool Verified { get; set; }
+        internal bool SessionRegistrationUsed { get; set; }
+        internal string Path { get; set; } = string.Empty;
+    }
+
     private const uint WmFontChange = 0x001D;
     private static readonly IntPtr HwndBroadcast = new(0xffff);
     private static readonly object Gate = new();
-    private static bool _verified;
-    private static bool _sessionRegistrationUsed;
-    private static string _verifiedPath = string.Empty;
+    private static readonly Dictionary<BundledMathFont, LoadState> States = new();
 
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int AddFontResourceEx(
@@ -51,11 +116,19 @@ internal static class WordOfficeMathFontLoader
         uint timeoutMilliseconds,
         out IntPtr result);
 
+    private static LoadState State(BundledMathFont font)
+    {
+        if (!States.TryGetValue(font, out var state))
+            States[font] = state = new LoadState();
+        return state;
+    }
+
+    // Latin Modern Math, the font the acceptance runs and older callers check.
     internal static bool IsLoaded
     {
         get
         {
-            lock (Gate) return _verified;
+            lock (Gate) return State(LatinModernMath).Verified;
         }
     }
 
@@ -63,7 +136,7 @@ internal static class WordOfficeMathFontLoader
     {
         get
         {
-            lock (Gate) return _sessionRegistrationUsed;
+            lock (Gate) return State(LatinModernMath).SessionRegistrationUsed;
         }
     }
 
@@ -71,38 +144,50 @@ internal static class WordOfficeMathFontLoader
     {
         get
         {
-            lock (Gate) return _verifiedPath;
+            lock (Gate) return State(LatinModernMath).Path;
         }
     }
 
-    internal static void EnsureLoaded()
+    internal static void EnsureLoaded() => EnsureLoaded(LatinModernMath);
+
+    internal static bool TryEnsureLoaded(out string error) => TryEnsureLoaded(LatinModernMath, out error);
+
+    internal static void EnsureLoaded(BundledMathFont font)
     {
         lock (Gate)
         {
-            if (_verified) return;
+            var state = State(font);
+            if (state.Verified) return;
 
-            var fontPath = ResolveInstalledFontPath();
+            var fontPath = ResolveInstalledFontPath(font.FileName);
             if (string.IsNullOrWhiteSpace(fontPath))
             {
+                if (font.AcceptsInstalledFamily && CanResolve(font.Family))
+                {
+                    state.Verified = true;
+                    return;
+                }
                 throw new FileNotFoundException(
-                    "Latin Modern Math is not installed by the VisualTeX Office integration. Reinstall the latest Office integration and restart Word.",
-                    LatinModernMathFileName);
+                    $"{font.Family} is not installed by the VisualTeX Office integration. Reinstall the latest Office integration and restart Word.",
+                    font.FileName);
             }
 
             var actualHash = ComputeSha256(fontPath);
-            if (!string.Equals(
-                    actualHash,
-                    LatinModernMathSha256,
-                    StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(actualHash, font.Sha256, StringComparison.OrdinalIgnoreCase))
             {
+                // Another release of a published font under the same file name is still that font.
+                if (font.AcceptsInstalledFamily && CanResolve(font.Family))
+                {
+                    state.Verified = true;
+                    return;
+                }
                 throw new InvalidDataException(
-                    "The installed Latin Modern Math font failed VisualTeX's SHA-256 integrity check. Reinstall the latest Office integration.");
+                    $"The installed {font.Family} font failed VisualTeX's SHA-256 integrity check. Reinstall the latest Office integration.");
             }
 
-            var globallyResolvable = CanResolveLatinModernMath();
-            if (!globallyResolvable)
+            if (!CanResolve(font.Family))
             {
-                // The MSI installs Latin Modern Math globally, but acceptance runs
+                // The MSI installs the bundled fonts globally, but acceptance runs
                 // and an in-place Office upgrade can load the new VSTO payload before
                 // Windows refreshes the process font cache. Register the exact,
                 // hash-verified file in the current Windows session as a deterministic
@@ -115,38 +200,22 @@ internal static class WordOfficeMathFontLoader
                 if (added <= 0)
                 {
                     throw new InvalidOperationException(
-                        "Word could not load VisualTeX's verified Latin Modern Math font into the current process.");
+                        $"Word could not load VisualTeX's verified {font.Family} font into the current process.");
                 }
-                _sessionRegistrationUsed = true;
-
-                try
-                {
-                    _ = SendMessageTimeout(
-                        HwndBroadcast,
-                        WmFontChange,
-                        IntPtr.Zero,
-                        IntPtr.Zero,
-                        flags: 0x0002,
-                        timeoutMilliseconds: 500,
-                        out _);
-                }
-                catch
-                {
-                    // AddFontResourceEx already made the family available to this
-                    // process. A blocked desktop broadcast is not a fatal error.
-                }
+                state.SessionRegistrationUsed = true;
+                BroadcastFontChange(500);
             }
 
-            _verified = true;
-            _verifiedPath = fontPath;
+            state.Verified = true;
+            state.Path = fontPath;
         }
     }
 
-    internal static bool TryEnsureLoaded(out string error)
+    internal static bool TryEnsureLoaded(BundledMathFont font, out string error)
     {
         try
         {
-            EnsureLoaded();
+            EnsureLoaded(font);
             error = string.Empty;
             return true;
         }
@@ -157,33 +226,47 @@ internal static class WordOfficeMathFontLoader
         }
     }
 
+    /// <summary>Undoes the session registrations this process made (add-in shutdown).</summary>
     internal static void UnloadSessionRegistration()
     {
         lock (Gate)
         {
-            if (!_sessionRegistrationUsed || string.IsNullOrWhiteSpace(_verifiedPath))
-                return;
-            try { _ = RemoveFontResourceEx(_verifiedPath, 0, IntPtr.Zero); }
-            catch { }
-            _sessionRegistrationUsed = false;
-            _verified = false;
-            _verifiedPath = string.Empty;
-            try
+            var removed = false;
+            foreach (var state in States.Values)
             {
-                _ = SendMessageTimeout(
-                    HwndBroadcast,
-                    WmFontChange,
-                    IntPtr.Zero,
-                    IntPtr.Zero,
-                    flags: 0x0002,
-                    timeoutMilliseconds: 250,
-                    out _);
+                if (!state.SessionRegistrationUsed || string.IsNullOrWhiteSpace(state.Path)) continue;
+                try { _ = RemoveFontResourceEx(state.Path, 0, IntPtr.Zero); }
+                catch { }
+                state.SessionRegistrationUsed = false;
+                state.Verified = false;
+                state.Path = string.Empty;
+                removed = true;
             }
-            catch { }
+            if (removed) BroadcastFontChange(250);
         }
     }
 
-    private static string ResolveInstalledFontPath()
+    private static void BroadcastFontChange(uint timeoutMilliseconds)
+    {
+        try
+        {
+            _ = SendMessageTimeout(
+                HwndBroadcast,
+                WmFontChange,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                flags: 0x0002,
+                timeoutMilliseconds: timeoutMilliseconds,
+                out _);
+        }
+        catch
+        {
+            // AddFontResourceEx already made the family available to this
+            // process. A blocked desktop broadcast is not a fatal error.
+        }
+    }
+
+    private static string ResolveInstalledFontPath(string fileName)
     {
         var assemblyDirectory = Path.GetDirectoryName(
             typeof(WordOfficeMathFontLoader).Assembly.Location)
@@ -192,14 +275,14 @@ internal static class WordOfficeMathFontLoader
         {
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Fonts),
-                LatinModernMathFileName),
+                fileName),
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Microsoft",
                 "Windows",
                 "Fonts",
-                LatinModernMathFileName),
-            Path.Combine(assemblyDirectory, LatinModernMathFileName),
+                fileName),
+            Path.Combine(assemblyDirectory, fileName),
         };
         foreach (var candidate in candidates)
         {
@@ -210,18 +293,18 @@ internal static class WordOfficeMathFontLoader
         return string.Empty;
     }
 
-    private static bool CanResolveLatinModernMath()
+    private static bool CanResolve(string family)
     {
         try
         {
             using var font = new Font(
-                LatinModernMathFamily,
+                family,
                 12f,
                 FontStyle.Regular,
                 GraphicsUnit.Point);
             return string.Equals(
                 font.Name,
-                LatinModernMathFamily,
+                family,
                 StringComparison.OrdinalIgnoreCase);
         }
         catch

@@ -552,9 +552,9 @@ export function SettingsDialog({
             <label className="range-setting">
               <span>
                 <strong>{isEn ? "Suggestion count" : "候选项数量"}</strong>
-                <small>
+                <span className="setting-value">
                   {suggestionCount} {isEn ? "items" : "项"}
-                </small>
+                </span>
               </span>
               <input
                 type="range"
@@ -681,7 +681,7 @@ export function SettingsDialog({
             <label className="range-setting">
               <span>
                 <strong>{isEn ? "Formula zoom" : "公式显示缩放"}</strong>
-                <small>{Math.round(zoom * 100)}%</small>
+                <span className="setting-value">{Math.round(zoom * 100)}%</span>
               </span>
               <input
                 type="range"
@@ -796,9 +796,6 @@ export function SettingsDialog({
                 <strong>
                   {isEn ? "Default formula font size" : "默认公式字号"}
                 </strong>
-                <small>
-                  {powerPointDefaultFontSizePt} {isEn ? "pt" : "磅"}
-                </small>
               </span>
               <input
                 type="number"
@@ -1167,11 +1164,6 @@ export function SettingsDialog({
                         ? "Minimize after keypad copy"
                         : "小键盘复制后最小化主应用"}
                     </strong>
-                    <small>
-                      {isEn
-                        ? "In keypad mode, Ctrl+S copies the current LaTeX format and then minimizes VisualTeX."
-                        : "小键盘模式下，Ctrl+S 会按当前 LaTeX 代码格式复制；开启后复制完成再最小化 VisualTeX。"}
-                    </small>
                   </span>
                   <input
                     type="checkbox"
@@ -1217,7 +1209,7 @@ export function SettingsDialog({
                     <label className="range-setting formula-inset-range">
                       <span>
                         <strong>{isEn ? "Button size" : "按钮尺寸"}</strong>
-                        <small>{formulaToolButtonSize}px</small>
+                        <span className="setting-value">{formulaToolButtonSize}px</span>
                       </span>
                       <input
                         type="range"
@@ -1236,7 +1228,7 @@ export function SettingsDialog({
                         <strong>
                           {isEn ? "Content inset" : "字符边距"}
                         </strong>
-                        <small>{formulaToolButtonPadding}px</small>
+                        <span className="setting-value">{formulaToolButtonPadding}px</span>
                       </span>
                       <input
                         type="range"
@@ -1281,7 +1273,7 @@ export function SettingsDialog({
                     <label className="range-setting formula-inset-range">
                       <span>
                         <strong>{isEn ? "Source font size" : "源码字体大小"}</strong>
-                        <small>{latexSourceFontSize}px</small>
+                        <span className="setting-value">{latexSourceFontSize}px</span>
                       </span>
                       <input
                         type="range"
@@ -1330,7 +1322,7 @@ export function SettingsDialog({
                     <label className="range-setting formula-inset-range">
                       <span>
                         <strong>{isEn ? "Left spacing" : "左侧距离"}</strong>
-                        <small>{formulaInsetLeft}px</small>
+                        <span className="setting-value">{formulaInsetLeft}px</span>
                       </span>
                       <input
                         type="range"
@@ -1347,7 +1339,7 @@ export function SettingsDialog({
                     <label className="range-setting formula-inset-range">
                       <span>
                         <strong>{isEn ? "Right spacing" : "右侧距离"}</strong>
-                        <small>{formulaInsetRight}px</small>
+                        <span className="setting-value">{formulaInsetRight}px</span>
                       </span>
                       <input
                         type="range"
@@ -1366,7 +1358,7 @@ export function SettingsDialog({
                         <strong>
                           {isEn ? "Formula row vertical spacing" : "公式行上下距离"}
                         </strong>
-                        <small>{formulaRowVerticalInset}px</small>
+                        <span className="setting-value">{formulaRowVerticalInset}px</span>
                       </span>
                       <input
                         type="range"

@@ -67,6 +67,8 @@ internal static class WpsXmlInsertion
 
     private static void InsertInWps(Range range, string flatOpc, bool deleteFirst)
     {
+        // The import blanks the OLE formulas already in the document until they are laid out again.
+        WpsOleDisplayRefresh.Mark(range);
         var start = range.Start;
         if (range.End > range.Start && EndsWithParagraphMark(range))
         {

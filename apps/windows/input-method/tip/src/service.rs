@@ -10,18 +10,28 @@
 //! hides the field's caret; VisualTeX draws the formula there), every key but the system's goes
 //! to VisualTeX (pinyin spelled in the formula's text goes to it as its composition), and
 //! "commit" replaces the composition with the formula's text.
+//!
+//! An application typing through IMM32 (Qt's, such as WeChat) sees the composition through
+//! Windows' translation (CUAS, a "transitory" context): the anchor there is a zero-width space
+//! marked as the clause being converted (the field hides its caret for it and draws nothing), and
+//! the field's caret is the one the application gave IMM32 for the candidate window, where the
+//! context's own rectangles are made up.
 
 use crate::engine::{Engine, Reply};
 use crate::link::{Link, WM_LINK_CLOSED, WM_LINK_MESSAGE};
 use crate::{display, edit, keys, log, profile, rimekeys};
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows::core::{implement, w, Interface, Ref, Result, BOOL, GUID};
 use windows::Win32::Foundation::{E_INVALIDARG, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Variant::{VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_I4};
 use windows::Win32::UI::HiDpi::LogicalToPhysicalPointForPerMonitorDPI;
+use windows::Win32::UI::Input::Ime::{ImmGetCandidateWindow, ImmGetContext, ImmReleaseContext, CANDIDATEFORM, CFS_EXCLUDE};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition, ITfCompositionSink,
@@ -30,7 +40,7 @@ use windows::Win32::UI::TextServices::{
     ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx,
     ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadMgr, ITfThreadMgrEventSink,
     ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, INSERT_TEXT_AT_SELECTION_FLAGS, TF_AE_NONE, TF_ANCHOR_END,
-    TF_ANCHOR_START, TF_DEFAULT_SELECTION, TF_IAS_QUERYONLY, TF_SELECTION, TF_SELECTIONSTYLE,
+    TF_ANCHOR_START, TF_DEFAULT_SELECTION, TF_IAS_QUERYONLY, TF_SELECTION, TF_SELECTIONSTYLE, TF_SS_TRANSITORY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, KillTimer,
@@ -40,6 +50,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 /// The formula's place in the field: one hair space, selected.
 const ANCHOR: &[u16] = &[0x200A];
+/// The formula's place in a field typing through IMM32: one zero-width space (the field draws the
+/// clause being converted highlighted, Qt in its text colour: the anchor must have no width).
+const IMM_ANCHOR: &[u16] = &[0x200B];
 /// The formula's anchor is followed (Chrome lays the composition out a frame or so later; the
 /// field may scroll): fast at first, then slowly while the formula is open.
 const POLL_TIMER: usize = 1;
@@ -66,6 +79,8 @@ struct Shared {
     engine: Engine,
     /// The display attribute of pinyin being spelled (0: none registered).
     display_atom: Cell<u32>,
+    /// The display attribute of the formula's anchor in a field typing through IMM32 (0: none).
+    anchor_atom: Cell<u32>,
     /// Chinese (false) or English, as RIME last said.
     ascii: Cell<bool>,
     /// A key RIME was offered in OnTestKey*, for the OnKey* that follows: (vk, release, reply).
@@ -82,6 +97,8 @@ struct Shared {
     composing: Cell<bool>,
     formula: RefCell<Option<ITfComposition>>,
     formula_context: RefCell<Option<ITfContext>>,
+    /// The formula's field types through IMM32 (a transitory context).
+    formula_transitory: Cell<bool>,
     /// What the formula inserts, for a field that ends the composition itself.
     formula_text: RefCell<String>,
     /// The formula's caret from its start, physical pixels.
@@ -138,9 +155,19 @@ fn utf16(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
 }
 
-/// The screen rectangle of `range` in physical pixels (top-left origin), whatever the
-/// application's DPI awareness.
-fn range_rect(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<RECT> {
+/// Where a range of the field's text is on the screen.
+struct Extent {
+    /// Physical pixels (top-left origin), whatever the application's DPI awareness.
+    rect: RECT,
+    /// The field cut the rectangle to what it shows (a line partly scrolled out of view is shorter
+    /// than its text).
+    clipped: bool,
+    /// The view's window (0: none).
+    window: isize,
+}
+
+/// The screen rectangle of `range` (see Extent).
+fn range_extent(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<Extent> {
     let view = unsafe { context.GetActiveView() }.ok()?;
     let mut rect = RECT::default();
     let mut clipped = BOOL(0);
@@ -148,18 +175,118 @@ fn range_rect(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<REC
     if rect.bottom <= rect.top {
         return None;
     }
-    if let Ok(window) = unsafe { view.GetWnd() } {
-        if !window.is_invalid() {
-            let mut start = POINT { x: rect.left, y: rect.top };
-            let mut end = POINT { x: rect.right, y: rect.bottom };
-            unsafe {
-                let _ = LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut start);
-                let _ = LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut end);
-            }
+    let window = unsafe { view.GetWnd() }.ok().filter(|window| !window.is_invalid());
+    if let Some(window) = window {
+        let mut start = POINT { x: rect.left, y: rect.top };
+        let mut end = POINT { x: rect.right, y: rect.bottom };
+        let converted = unsafe {
+            LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut start).as_bool()
+                && LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut end).as_bool()
+        };
+        // Both corners or neither: one converted and one not would make a wrong height.
+        if converted {
             rect = RECT { left: start.x, top: start.y, right: end.x, bottom: end.y };
         }
     }
-    Some(rect)
+    Some(Extent { rect, clipped: clipped.as_bool(), window: window.map(|window| window.0 as isize).unwrap_or(0) })
+}
+
+/// The screen rectangle of `range` in physical pixels (top-left origin).
+fn range_rect(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<RECT> {
+    range_extent(context, cookie, range).map(|extent| extent.rect)
+}
+
+/// The context is the one Windows keeps for an application typing through IMM32 (CUAS): it holds
+/// the composition only, and its rectangles are made up from the application's composition window
+/// (one line of the default font below the caret where the application gives no font, as Qt).
+fn is_transitory(context: &ITfContext) -> bool {
+    unsafe { context.GetStatus() }.map(|status| status.dwStaticFlags & TF_SS_TRANSITORY != 0).unwrap_or(false)
+}
+
+/// The window of the context's view (0: none).
+fn view_window(context: &ITfContext) -> isize {
+    unsafe { context.GetActiveView().and_then(|view| view.GetWnd()) }
+        .ok()
+        .filter(|window| !window.is_invalid())
+        .map(|window| window.0 as isize)
+        .unwrap_or(0)
+}
+
+/// The caret an application typing through IMM32 gave Windows for the candidate window: the area
+/// the candidates must not cover (Qt sets its text cursor's rectangle there), in physical screen
+/// pixels. Only a caret-like area counts (some applications exclude their whole text area). Read in
+/// the application's own UI thread, as IMM32 requires.
+fn imm_caret(window: isize) -> Option<RECT> {
+    let focus = unsafe { GetFocus() };
+    for window in [HWND(window as *mut _), focus] {
+        if window.is_invalid() {
+            continue;
+        }
+        let context = unsafe { ImmGetContext(window) };
+        if context.0.is_null() {
+            continue;
+        }
+        let mut form = CANDIDATEFORM::default();
+        let read = unsafe { ImmGetCandidateWindow(context, 0, &mut form) }.as_bool();
+        unsafe {
+            let _ = ImmReleaseContext(window, context);
+        }
+        let area = form.rcArea;
+        let (width, height) = (area.right - area.left, area.bottom - area.top);
+        if !read || form.dwStyle != CFS_EXCLUDE || !(4..=400).contains(&height) || !(0..=height).contains(&width) {
+            continue;
+        }
+        let mut start = POINT { x: area.left, y: area.top };
+        let mut end = POINT { x: area.right, y: area.bottom };
+        if !unsafe { ClientToScreen(window, &mut start).as_bool() && ClientToScreen(window, &mut end).as_bool() } {
+            continue;
+        }
+        // Both corners or neither (see range_extent).
+        let (mut physical_start, mut physical_end) = (start, end);
+        let converted = unsafe {
+            LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut physical_start).as_bool()
+                && LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut physical_end).as_bool()
+        };
+        if converted {
+            (start, end) = (physical_start, physical_end);
+        }
+        return Some(RECT { left: start.x, top: start.y, right: end.x, bottom: end.y });
+    }
+    None
+}
+
+/// A transitory context's rectangle is made up where, at the IMM32 caret's place, it is not the
+/// caret's line: it lies mostly outside the caret (Qt's: below it) or is of another height. One far
+/// from the caret is about another place, and stays.
+fn made_up(rect: &RECT, caret: &RECT) -> bool {
+    let caret_height = caret.bottom - caret.top;
+    let height = rect.bottom - rect.top;
+    let overlap = rect.bottom.min(caret.bottom) - rect.top.max(caret.top);
+    let near = (rect.left - caret.left).abs() <= caret_height * 2 && (rect.top - caret.top).abs() <= caret_height * 2;
+    near && (overlap * 2 < caret_height || height * 4 < caret_height * 3 || height * 3 > caret_height * 4)
+}
+
+/// The extent to report for a field: `extent` (the context's), or in a transitory context the
+/// IMM32 caret where that is made up. Some(note): the caret is IMM32's (the note says what it
+/// replaced, for the log).
+fn field_extent(context: &ITfContext, extent: Option<Extent>) -> (Option<Extent>, Option<String>) {
+    if !is_transitory(context) {
+        return (extent, None);
+    }
+    let window = extent.as_ref().map(|extent| extent.window).filter(|&window| window != 0).unwrap_or_else(|| view_window(context));
+    match (imm_caret(window), extent) {
+        (Some(caret), Some(extent)) if !made_up(&extent.rect, &caret) => (Some(extent), None),
+        (Some(caret), replaced) => {
+            let note = match replaced {
+                Some(Extent { rect, .. }) => {
+                    format!("imm (made up {},{} {}x{})", rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
+                }
+                None => "imm (no rectangle)".to_string(),
+            };
+            (Some(Extent { rect: caret, clipped: false, window }), Some(note))
+        }
+        (None, extent) => (extent, None),
+    }
 }
 
 fn edges(rect: &RECT) -> Edges {
@@ -186,6 +313,67 @@ fn select(context: &ITfContext, cookie: u32, range: &ITfRange) -> Result<()> {
     result
 }
 
+thread_local! {
+    /// The height of a line of text by window, learnt from the caret where the line had text
+    /// before it (physical pixels). An empty line reports its whole line box instead (Chrome,
+    /// Electron), which would make the formula too large: VisualTeX takes this height there (as
+    /// the macOS input method does). Kept across activations (the service is made anew each
+    /// time); by window, so that one field's text (a search box's) does not size another's.
+    static TEXT_HEIGHTS: RefCell<HashMap<isize, i32>> = RefCell::new(HashMap::new());
+}
+
+/// Text stands before `range` on its line.
+fn text_before(cookie: u32, range: &ITfRange) -> bool {
+    let Ok(before) = (unsafe { range.Clone() }) else { return false };
+    let mut moved = 0i32;
+    let mut text = [0u16; 1];
+    let mut read = 0u32;
+    unsafe {
+        if before.Collapse(cookie, TF_ANCHOR_START).is_err()
+            || before.ShiftStart(cookie, -1, &mut moved, std::ptr::null()).is_err()
+            || moved != -1
+            || before.GetText(cookie, 0, &mut text, &mut read).is_err()
+        {
+            return false;
+        }
+    }
+    read == 1 && !matches!(text[0], 0x0a | 0x0b | 0x0c | 0x0d | 0x2028 | 0x2029)
+}
+
+/// The text-height fields of a geometry message. `learn`: the rectangle is the caret's, so where
+/// text stands before it its height is the text's (never the formula's anchor, whose height some
+/// fields make up, nor a clipped rectangle).
+fn add_text_height(message: &mut Value, cookie: u32, range: &ITfRange, extent: &Extent, learn: bool) {
+    let before = text_before(cookie, range);
+    let height = extent.rect.bottom - extent.rect.top;
+    if learn && before && !extent.clipped && (4..=400).contains(&height) {
+        TEXT_HEIGHTS.with(|heights| heights.borrow_mut().insert(extent.window, height));
+    }
+    message["textBefore"] = json!(before);
+    message["clipped"] = json!(extent.clipped);
+    if let Some(learnt) = TEXT_HEIGHTS.with(|heights| heights.borrow().get(&extent.window).copied()) {
+        message["textHeight"] = json!(learnt);
+    }
+}
+
+/// One line of the log for a rectangle reported to VisualTeX (`source`: where an IMM32 caret came
+/// from, see field_extent).
+fn log_extent(what: &str, extent: &Extent, message: &Value, source: Option<&str>) {
+    let rect = &extent.rect;
+    log::write(&format!(
+        "{what} {},{} {}x{} clipped={} window={:x} textBefore={} textHeight={}{}",
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+        extent.clipped,
+        extent.window,
+        message.get("textBefore").and_then(Value::as_bool).unwrap_or(false),
+        message.get("textHeight").and_then(Value::as_i64).unwrap_or(0),
+        source.map(|source| format!(" source={source}")).unwrap_or_default(),
+    ));
+}
+
 fn rect_payload(rect: &RECT) -> Value {
     json!([rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top])
 }
@@ -198,7 +386,11 @@ fn caret_payload(edges: Edges, offset: i32) -> Value {
 // MARK: Pinyin in the field
 
 fn set_attribute(shared: &Shared, context: &ITfContext, cookie: u32, range: &ITfRange) {
-    let atom = shared.display_atom.get();
+    set_attribute_atom(shared.display_atom.get(), context, cookie, range);
+}
+
+/// Gives `range` the display attribute registered as `atom` (0: none).
+fn set_attribute_atom(atom: u32, context: &ITfContext, cookie: u32, range: &ITfRange) {
     if atom == 0 {
         return;
     }
@@ -404,12 +596,22 @@ fn report(shared: &Rc<Shared>, kind: &'static str) {
     let reader = context.clone();
     let _ = edit::request(&context, shared.client.get(), move |cookie| {
         let composition_range = state.formula.borrow().as_ref().and_then(|composition| unsafe { composition.GetRange() }.ok());
+        // The caret's own rectangle (no formula open) teaches the text's height.
+        let learn = composition_range.is_none();
         let range = composition_range.or_else(|| selection_range(&reader, cookie));
-        let rect = range.as_ref().and_then(|range| range_rect(&reader, cookie, range));
+        let (extent, source) = field_extent(&reader, range.as_ref().and_then(|range| range_extent(&reader, cookie, range)));
         let mut message = json!({ "t": kind, "client": client_name() });
-        if let Some(rect) = rect {
-            message["caret"] = rect_payload(&rect);
-            message["line"] = rect_payload(&rect);
+        if let Some(extent) = extent {
+            message["caret"] = rect_payload(&extent.rect);
+            message["line"] = rect_payload(&extent.rect);
+            match range.as_ref() {
+                Some(range) => add_text_height(&mut message, cookie, range, &extent, learn),
+                None => message["clipped"] = json!(false),
+            }
+            if source.is_some() {
+                message["source"] = json!("imm");
+            }
+            log_extent(kind, &extent, &message, source.as_deref());
         }
         state.send(message);
         Ok(())
@@ -425,23 +627,28 @@ fn start_formula(shared: &Rc<Shared>) {
     let state = shared.clone();
     let writer = context.clone();
     let result = edit::request(&context, shared.client.get(), move |cookie| {
+        let transitory = is_transitory(&writer);
         let insert: ITfInsertAtSelection = writer.cast()?;
         let range = unsafe { insert.InsertTextAtSelection(cookie, TF_IAS_QUERYONLY, &[])? };
         let composer: ITfContextComposition = writer.cast()?;
         let sink = state.composition_sink.borrow().clone();
         let composition = unsafe { composer.StartComposition(cookie, &range, sink.as_ref())? };
         let range = unsafe { composition.GetRange()? };
-        unsafe { range.SetText(cookie, 0, ANCHOR)? };
+        unsafe { range.SetText(cookie, 0, if transitory { IMM_ANCHOR } else { ANCHOR })? };
+        if transitory {
+            set_attribute_atom(state.anchor_atom.get(), &writer, cookie, &range);
+        }
         select(&writer, cookie, &range)?;
         *state.formula.borrow_mut() = Some(composition);
         *state.formula_context.borrow_mut() = Some(writer.clone());
+        state.formula_transitory.set(transitory);
         state.last_rect.set(None);
         state.stable_rect.set(None);
         state.polls.set(0);
         unsafe {
             SetTimer(Some(state.window()), POLL_TIMER, 16, None);
         }
-        log::write("formula composition started");
+        log::write(if transitory { "formula composition started (IMM32 field)" } else { "formula composition started" });
         Ok(())
     });
     if let Err(error) = result {
@@ -467,19 +674,27 @@ fn poll_anchor(shared: &Rc<Shared>) {
     let reader = context.clone();
     let _ = edit::request(&context, shared.client.get(), move |cookie| {
         let Ok(range) = (unsafe { composition.GetRange() }) else { return Ok(()) };
-        let Some(rect) = range_rect(&reader, cookie, &range) else { return Ok(()) };
+        let (extent, source) = field_extent(&reader, range_extent(&reader, cookie, &range));
+        let Some(extent) = extent else { return Ok(()) };
+        let rect = extent.rect;
         let current = edges(&rect);
         let previous = state.last_rect.replace(Some(current));
         if previous == Some(current) && state.stable_rect.get() != Some(current) {
             state.stable_rect.set(Some(current));
             let mut anchor = rect;
             anchor.right = anchor.left;
-            state.send(json!({
+            let mut message = json!({
                 "t": "geometry",
                 "client": client_name(),
                 "caret": rect_payload(&anchor),
                 "line": rect_payload(&rect),
-            }));
+            });
+            add_text_height(&mut message, cookie, &range, &extent, false);
+            if source.is_some() {
+                message["source"] = json!("imm");
+            }
+            log_extent(&format!("anchor polls={polls}"), &extent, &message, source.as_deref());
+            state.send(message);
         }
         Ok(())
     });
@@ -507,6 +722,8 @@ fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>
     let writer = context.clone();
     let result = edit::request(&context, shared.client.get(), move |cookie| {
         let range = unsafe { composition.GetRange()? };
+        // the formula's text is no clause being converted
+        clear_attribute(&writer, cookie, &range);
         unsafe {
             range.SetText(cookie, 0, &utf16(&text))?;
             range.Collapse(cookie, TF_ANCHOR_END)?;
@@ -760,10 +977,10 @@ impl ITfDisplayAttributeProvider_Impl for TextService_Impl {
     }
 
     fn GetDisplayAttributeInfo(&self, guid: *const GUID) -> Result<ITfDisplayAttributeInfo> {
-        if guid.is_null() || unsafe { *guid } != display::GUID_INPUT {
+        if guid.is_null() {
             return Err(E_INVALIDARG.into());
         }
-        Ok(display::AttributeInfo.into())
+        display::AttributeInfo::of(unsafe { &*guid }).map(Into::into).ok_or_else(|| E_INVALIDARG.into())
     }
 }
 
@@ -833,6 +1050,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         if let Ok(categories) = categories {
             if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_INPUT) } {
                 shared.display_atom.set(atom);
+            }
+            if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_ANCHOR) } {
+                shared.anchor_atom.set(atom);
             }
         }
         if let Some(link) = Link::connect(shared.window()) {
@@ -994,26 +1214,27 @@ impl ITfThreadMgrEventSink_Impl for FocusSink_Impl {
     }
 
     /// Focus moved to another field (or away): an open formula closes (the field it belonged to
-    /// keeps nothing of it), pinyin being spelled stays as it is shown, VisualTeX hears of the
-    /// new field.
+    /// keeps nothing of it; VisualTeX keeps the draft for the next formula, as on macOS), pinyin
+    /// being spelled stays as it is shown, VisualTeX hears of the new field.
     fn OnSetFocus(&self, focus: Ref<'_, ITfDocumentMgr>, _previous: Ref<'_, ITfDocumentMgr>) -> Result<()> {
         let shared = &self.shared;
         if shared.composing.get() && shared.hold.get() {
             // The screenshot selection: the field gets the keyboard back after it.
             return Ok(());
         }
-        if shared.composing.get() {
+        let left_formula = shared.composing.get();
+        if left_formula {
             close_formula(shared, String::new(), None, None);
-            shared.send(json!({ "t": "forced" }));
         }
         if shared.pinyin.borrow().is_some() {
             drop_pinyin(shared, true);
         }
         shared.engine.call_existing(json!({ "op": "hide" }));
+        if left_formula || focus.is_none() {
+            shared.send(json!({ "t": "deactivate", "client": client_name() }));
+        }
         if focus.is_some() {
             report(shared, "activate");
-        } else {
-            shared.send(json!({ "t": "deactivate", "client": client_name() }));
         }
         Ok(())
     }
@@ -1051,6 +1272,9 @@ impl ITfCompositionSink_Impl for CompositionSink_Impl {
             if let Some(composition) = composition.as_ref() {
                 if let Ok(range) = unsafe { composition.GetRange() } {
                     let text = utf16(&shared.formula_text.borrow());
+                    if let Ok(context) = unsafe { range.GetContext() } {
+                        clear_attribute(&context, cookie, &range);
+                    }
                     unsafe {
                         let _ = range.SetText(cookie, 0, &text);
                     }
@@ -1063,5 +1287,27 @@ impl ITfCompositionSink_Impl for CompositionSink_Impl {
             shared.engine.call_existing(json!({ "op": "hide" }));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(left: i32, top: i32, width: i32, height: i32) -> RECT {
+        RECT { left, top, right: left + width, bottom: top + height }
+    }
+
+    #[test]
+    fn windows_made_up_rectangles_give_way_to_the_imm32_caret() {
+        // WeChat at 150 %: Qt's cursor, 28 px; Windows' rectangles start at its bottom
+        let caret = rect(2325, 1681, 2, 28);
+        assert!(made_up(&rect(2325, 1709, 0, 20), &caret));
+        assert!(made_up(&rect(2328, 1710, 0, 1), &caret));
+        // the caret's own line, or nearly
+        assert!(!made_up(&rect(2325, 1681, 0, 28), &caret));
+        assert!(!made_up(&rect(2325, 1683, 0, 25), &caret));
+        // a rectangle about another place stays
+        assert!(!made_up(&rect(900, 400, 0, 20), &caret));
     }
 }

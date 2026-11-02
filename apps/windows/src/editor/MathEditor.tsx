@@ -12,6 +12,8 @@ import {
 } from "react";
 import {
   MathfieldElement,
+  VisualTexEdgeScroller,
+  visualTexRunSelectionDrag,
   type Selector,
   type Style,
 } from "mathlive";
@@ -127,6 +129,8 @@ import {
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
 } from "./alignmentMarkers";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "./visualTexLayoutRuntime";
+import { rowIndexAt, stopAtPoint, topLevelStop } from "./rowPointer";
+import type { SelectionDragHost } from "../../../shared/visualtex-core/src/index.ts";
 
 export interface MathEditorInsertionTarget {
   lineId: string;
@@ -218,8 +222,8 @@ class FormulaFieldErrorBoundary extends Component<
       <FormulaFieldRenderFallback
         message={
           this.props.language === "en"
-            ? "This formula row failed to render. Its LaTeX source is preserved; edit or remove it in the source panel."
-            : "该行公式渲染失败，LaTeX 源码仍完整保留，可在源码区修改或删除。"
+            ? "Render failed. The LaTeX source is preserved."
+            : "渲染失败，LaTeX 源码已保留。"
         }
       />
     );
@@ -311,7 +315,7 @@ interface Props {
   overlay?: ReactNode;
 }
 
-interface FormulaFieldEdit {
+export interface FormulaFieldEdit {
   lineId: string;
   beforeLatex: string;
   afterLatex: string;
@@ -321,7 +325,7 @@ interface FormulaFieldEdit {
   source: FormulaEditSource;
 }
 
-interface FormulaFieldProps {
+export interface FormulaFieldProps {
   lineId: string;
   index: number;
   latex: string;
@@ -351,6 +355,8 @@ interface FormulaFieldProps {
   onKeyDown: (index: number, event: KeyboardEvent, field: MathfieldElement) => void;
   /** Up/Down found nothing to move to inside the formula: move to another row. */
   onVerticalExit: (index: number, direction: -1 | 1, field: MathfieldElement) => boolean;
+  /** Left/Right at the formula's start/end: leave it (a document's formula); rows leave this unset. */
+  onHorizontalExit?: (index: number, direction: -1 | 1, field: MathfieldElement) => boolean;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
   onCopyPng?: () => Promise<void>;
   onContextMenu?: (clientX: number, clientY: number) => void;
@@ -359,6 +365,8 @@ interface FormulaFieldProps {
     field: MathfieldElement,
     lines: string[],
   ) => void;
+  /** Dragging the formula's selection out to the other rows (DESIGN §6.12): the formula editor's rows. */
+  selectionDrag?: SelectionDragHost;
 }
 
 interface MultiLineSelectionPoint {
@@ -374,11 +382,31 @@ interface MultiLineSelectionState {
 
 interface PointerSelectionSession {
   pointerId: number;
-  startX: number;
-  startY: number;
   anchor: MultiLineSelectionPoint;
-  allowSameLine: boolean;
+  /** The formula pressed: it selects within itself until the pointer reaches another row. */
+  field: MathfieldElement;
+  /**
+   * Pressed in the row beside the formula (a formula does not fill its row):
+   * the formula never sees the press, so the editor selects within the row too.
+   */
+  beside: boolean;
+  /** The pointer reached another row: the editor selects from then on. */
   active: boolean;
+  /** The focus last selected to (AxMath selects again only when an end changes). */
+  last: MultiLineSelectionPoint | null;
+  clientX: number;
+  clientY: number;
+}
+
+/** A selection across rows as the rows hold it: from the first row's start to the last row's end. */
+interface RowsRange {
+  start: MultiLineSelectionPoint;
+  end: MultiLineSelectionPoint;
+}
+
+/** Two pieces of a row's LaTeX side by side (a command's name must not run into a following letter). */
+function joinLatex(left: string, right: string) {
+  return /\\[A-Za-z]+$/.test(left) && /^[A-Za-z]/.test(right) ? `${left} ${right}` : left + right;
 }
 
 const trailingCommand = /\\([\p{L}]+|[|])$/u;
@@ -1532,7 +1560,134 @@ function templateForSelection(
   }
 }
 
-function FormulaField(props: FormulaFieldProps) {
+/** What a command inserts at the field's selection (computed once per insertion, before any attempt). */
+export interface PreparedLatexCommandInsertion {
+  originalSelection: MathSelectionSnapshot;
+  insertionSelection: MathSelectionSnapshot;
+  insertionTemplate: string;
+  autoExitSetting: ReturnType<typeof getCaretAutoExitSetting>;
+}
+
+/** The selection and template a toolbar/tile/shortcut command inserts (the row editor and documents). */
+export function prepareLatexCommandInsertion(
+  field: MathfieldElement,
+  command: LatexCommand,
+): PreparedLatexCommandInsertion {
+  const originalSelection = captureSelection(field);
+  let insertionSelection = originalSelection;
+  let implicitPreviousLatex = "";
+  if (
+    field.selectionIsCollapsed &&
+    commandTargetsPreviousExpression(command)
+  ) {
+    const previousTarget = previousExpressionSelection(field);
+    if (previousTarget) {
+      insertionSelection = previousTarget.selection;
+      implicitPreviousLatex = previousTarget.latex;
+    }
+  }
+  const selectedLatex =
+    implicitPreviousLatex ||
+    (insertionSelection.ranges[0]?.[0] === insertionSelection.ranges[0]?.[1]
+      ? ""
+      : field.getValue(insertionSelection));
+  const insertionTemplate = templateForSelection(command, selectedLatex);
+  const autoExitSetting = getCaretAutoExitSetting(field);
+  return { originalSelection, insertionSelection, insertionTemplate, autoExitSetting };
+}
+
+/**
+ * Insert a prepared command into the field as one edit: `mutate` records it (the row editor's history, a
+ * document's transaction) and returns whether it changed the formula. False: nothing was inserted and the
+ * selection is back where it was.
+ */
+export function attemptLatexCommandInsertion(
+  field: MathfieldElement,
+  command: LatexCommand,
+  prepared: PreparedLatexCommandInsertion,
+  inputBehavior: InputBehaviorSettings,
+  mutate: (change: () => boolean) => boolean,
+): boolean {
+  const { originalSelection, insertionSelection, insertionTemplate, autoExitSetting } = prepared;
+  field.selection = insertionSelection;
+  const inserted = mutate(
+    () => {
+      const isBareOperator = command.id.endsWith("-bare");
+      const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
+      const insertCurrentTemplate = () =>
+        field.insert(insertionTemplate, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceSelection",
+          selectionMode: hasPlaceholder ? "placeholder" : "after",
+          style: {
+            variant: "normal",
+            variantStyle: undefined,
+          },
+          focus: true,
+          scrollIntoView: false,
+        });
+      const valueBeforeInsertion = normalizeChineseLatex(field.value);
+      const bareOperatorCountBefore = isBareOperator
+        ? valueBeforeInsertion.split(insertionTemplate).length - 1
+        : 0;
+      const insertedBareOperator = () =>
+        normalizeChineseLatex(field.value).split(insertionTemplate).length - 1 >
+        bareOperatorCountBefore;
+      let inserted = insertCurrentTemplate();
+      if (isBareOperator && !insertedBareOperator()) {
+        const retryValue = field.value;
+        const retrySelection = captureSelection(field);
+        field.executeCommand("deleteBackward");
+        inserted = insertCurrentTemplate();
+        if (!insertedBareOperator()) {
+          field.position = field.lastOffset;
+          field.selection = {
+            ranges: [[field.lastOffset, field.lastOffset]],
+            direction: "none",
+          };
+          inserted = insertCurrentTemplate();
+        }
+        if (!insertedBareOperator()) {
+          field.setValue(retryValue, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.selection = retrySelection;
+        }
+      }
+      const insertionChangedValue =
+        normalizeChineseLatex(field.value) !== valueBeforeInsertion &&
+        (!isBareOperator || insertedBareOperator());
+      const insertionAccepted =
+        inserted && insertionChangedValue;
+      // The kernel's insertion already put the caret in the template's
+      // first empty slot (the editing core's keyboard order).
+      if (
+        inserted &&
+        insertionChangedValue &&
+        !hasPlaceholder &&
+        autoExitSetting &&
+        inputBehavior[autoExitSetting]
+      ) {
+        moveCaretThroughEnabledAutoExitContainers(
+          field,
+          inputBehavior,
+          autoExitSetting,
+          null,
+        );
+      }
+      return insertionAccepted;
+    },
+  );
+  if (!inserted) field.selection = originalSelection;
+  return inserted;
+}
+
+export function FormulaField(props: FormulaFieldProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<MathfieldElement | null>(null);
   const registeredLineIdRef = useRef(props.lineId);
@@ -2166,6 +2321,8 @@ function FormulaField(props: FormulaFieldProps) {
     visualTexEditingCore.setHost(field, {
       verticalExit: (direction) =>
         propsRef.current.onVerticalExit(propsRef.current.index, direction, field),
+      horizontalExit: (direction) =>
+        propsRef.current.onHorizontalExit?.(propsRef.current.index, direction, field) ?? false,
       keyCommands: [
         (event) => {
           handleKeyDown(event);
@@ -2176,6 +2333,23 @@ function FormulaField(props: FormulaFieldProps) {
           return event.cancelBubble;
         },
       ],
+      ...(propsRef.current.selectionDrag
+        ? {
+            selectionDrag: {
+              target: (clientX: number, clientY: number) =>
+                propsRef.current.selectionDrag?.target?.(clientX, clientY),
+              area: () => propsRef.current.selectionDrag?.area?.() ?? null,
+              scrollers: () => propsRef.current.selectionDrag?.scrollers?.() ?? [],
+              drop: (...args: Parameters<NonNullable<SelectionDragHost["drop"]>>) =>
+                propsRef.current.selectionDrag?.drop?.(...args),
+              outside: (...args: Parameters<NonNullable<SelectionDragHost["outside"]>>) =>
+                propsRef.current.selectionDrag?.outside?.(...args) ?? false,
+              dropOutside: (...args: Parameters<NonNullable<SelectionDragHost["dropOutside"]>>) =>
+                propsRef.current.selectionDrag?.dropOutside?.(...args),
+              end: () => propsRef.current.selectionDrag?.end?.(),
+            },
+          }
+        : {}),
     });
     // Capture before MathLive's keyboard sink replaces a selected placeholder;
     // the bubble phase is already too late because the parent structure is gone.
@@ -2497,6 +2671,22 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const pointerSelectionSessionRef = useRef<PointerSelectionSession | null>(
       null,
     );
+    // a selection dragged across rows scrolls the pane near its edges (as a drag does)
+    const sessionScrollerRef = useRef(new VisualTexEdgeScroller());
+    const sessionScrollTimerRef = useRef(0);
+    const sessionScrollTickRef = useRef<(() => boolean) | null>(null);
+    const startSessionScrolling = () => {
+      if (sessionScrollTimerRef.current) return;
+      sessionScrollerRef.current = new VisualTexEdgeScroller();
+      sessionScrollTimerRef.current = window.setInterval(() => {
+        if (!sessionScrollTickRef.current?.()) stopSessionScrolling();
+      }, 50);
+    };
+    const stopSessionScrolling = () => {
+      window.clearInterval(sessionScrollTimerRef.current);
+      sessionScrollTimerRef.current = 0;
+    };
+    useEffect(() => stopSessionScrolling, []);
     const multiLineSelectedIdsRef = useRef(new Set<string>());
     const [, setMultiLineSelectionRevision] = useState(0);
     const pendingFocusRef = useRef<{
@@ -2554,8 +2744,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       )?.chord;
       return chord ? formatFormulaHotkeyChord(chord) : null;
     };
-    const newInlineRowHotkey = formulaRowHotkeyLabel("row-new-inline");
-    const newDisplayRowHotkey = formulaRowHotkeyLabel("row-new-display");
     const toggleRowHotkey = formulaRowHotkeyLabel("row-toggle-mode");
     const customSymbolRevision = useCustomSymbolRevision();
     const isEn = language === "en";
@@ -3258,62 +3446,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       };
     }, [lines, previewOnly, readOnly]);
 
+    // AxMath's rows (rowPointer.ts): the row a point means is the first one
+    // whose bottom is at or below it (none below the last row); the formula's
+    // own hit test gives the stop in it.
     const resolveMultiLineSelectionPoint = (
       clientX: number,
       clientY: number,
       preferredLineId?: string,
     ): MultiLineSelectionPoint | null => {
-      const mountedLines = linesRef.current.flatMap((line, lineIndex) => {
-        const field = fieldRefs.current.get(line.id);
-        const row = field?.closest<HTMLElement>(".formula-line");
-        return field?.isConnected && row
-          ? [{ lineId: line.id, lineIndex, field, rowRect: row.getBoundingClientRect() }]
-          : [];
-      });
-      if (!mountedLines.length) return null;
-
+      const lines = linesRef.current;
+      const bottomOf = (index: number) =>
+        fieldRefs.current
+          .get(lines[index]?.id ?? "")
+          ?.closest<HTMLElement>(".formula-line")
+          ?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY;
       const preferred = preferredLineId
-        ? mountedLines.find((line) => line.lineId === preferredLineId)
-        : null;
-      const target =
-        preferred ??
-        mountedLines.find(
-          ({ rowRect }) => clientY >= rowRect.top && clientY <= rowRect.bottom,
-        ) ??
-        mountedLines.reduce((nearest, line) => {
-          const distance =
-            clientY < line.rowRect.top
-              ? line.rowRect.top - clientY
-              : clientY > line.rowRect.bottom
-                ? clientY - line.rowRect.bottom
-                : 0;
-          const nearestDistance =
-            clientY < nearest.rowRect.top
-              ? nearest.rowRect.top - clientY
-              : clientY > nearest.rowRect.bottom
-                ? clientY - nearest.rowRect.bottom
-                : 0;
-          return distance < nearestDistance ? line : nearest;
-        });
-      const content = target.field.shadowRoot?.querySelector<HTMLElement>(
-        '[part="content"]',
-      );
-      const contentRect = content?.getBoundingClientRect();
-      const sampleY = contentRect
-        ? Math.max(contentRect.top + 1, Math.min(clientY, contentRect.bottom - 1))
-        : clientY;
-      const offset = Math.max(
-        0,
-        Math.min(
-          target.field.getOffsetFromPoint(clientX, sampleY),
-          target.field.lastOffset,
-        ),
-      );
-      return {
-        lineId: target.lineId,
-        lineIndex: target.lineIndex,
-        offset,
-      };
+        ? lines.findIndex((line) => line.id === preferredLineId)
+        : -1;
+      const lineIndex = preferred >= 0 ? preferred : rowIndexAt(lines.length, bottomOf, clientY);
+      if (lineIndex === null) return null;
+      const line = lines[lineIndex];
+      const field = line ? fieldRefs.current.get(line.id) : null;
+      if (!line || !field?.isConnected) return null;
+      const offset = stopAtPoint(field, clientX, clientY);
+      return offset === null ? null : { lineId: line.id, lineIndex, offset };
     };
 
     const rememberSelectionTarget = (
@@ -3376,14 +3532,28 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         };
       }
 
+      // AxMath: across rows each end stands at the top level of its formula
+      // (an end inside a structure takes the whole structure)
+      const across = start.lineIndex !== end.lineIndex;
+      const fieldAt = (lineIndex: number) => {
+        const line = linesRef.current[lineIndex];
+        const field = line ? fieldRefs.current.get(line.id) : null;
+        return field?.isConnected ? field : null;
+      };
+      const startField = fieldAt(start.lineIndex);
+      const endField = fieldAt(end.lineIndex);
+      const startOffset =
+        across && startField ? topLevelStop(startField, start.offset, "start") : start.offset;
+      const endOffset =
+        across && endField ? topLevelStop(endField, end.offset, "end") : end.offset;
       for (let lineIndex = start.lineIndex; lineIndex <= end.lineIndex; lineIndex += 1) {
         const line = linesRef.current[lineIndex];
         const field = line ? fieldRefs.current.get(line.id) : null;
         if (!line || !field?.isConnected) continue;
         const rangeStart =
-          lineIndex === start.lineIndex ? start.offset : 0;
+          lineIndex === start.lineIndex ? startOffset : 0;
         const rangeEnd =
-          lineIndex === end.lineIndex ? end.offset : field.lastOffset;
+          lineIndex === end.lineIndex ? endOffset : field.lastOffset;
         field.selection = {
           ranges: [[Math.min(rangeStart, rangeEnd), Math.max(rangeStart, rangeEnd)]],
           direction: isForward ? "forward" : "backward",
@@ -3415,6 +3585,362 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (selections.length) lastSelectionTargetRef.current = { selections };
       setMultiLineSelectionRevision((revision) => revision + 1);
     };
+
+    /** Where the caret (or the selection's anchor) of the active row is. */
+    const caretAnchor = (): MultiLineSelectionPoint | null => {
+      const lineId = activeLineIdRef.current;
+      const lineIndex = lineId
+        ? linesRef.current.findIndex((line) => line.id === lineId)
+        : -1;
+      const field = lineId ? fieldRefs.current.get(lineId) : null;
+      const model = field?.isConnected ? editingModelOf(field) : null;
+      return lineId && model && lineIndex >= 0
+        ? { lineId, lineIndex, offset: model.anchor }
+        : null;
+    };
+
+    /** From `anchor` to `focus`: across rows the editor's selection, in one row the formula's own. */
+    const selectRowsBetween = (
+      anchor: MultiLineSelectionPoint,
+      focus: MultiLineSelectionPoint,
+    ) => {
+      if (anchor.lineId !== focus.lineId) {
+        applyMultiLineSelection(anchor, focus);
+        return;
+      }
+      clearMultiLineSelection();
+      fieldRefs.current
+        .get(anchor.lineId)
+        ?.visualTexSelectStops(anchor.offset, focus.offset);
+    };
+
+    /** The selection across rows as its rows show it. */
+    const multiLineRange = (): RowsRange | null => {
+      const selected = linesRef.current.flatMap((line, lineIndex) => {
+        const field = fieldRefs.current.get(line.id);
+        return multiLineSelectedIdsRef.current.has(line.id) && field?.isConnected
+          ? [{ lineId: line.id, lineIndex, ranges: field.selection.ranges.flat() }]
+          : [];
+      });
+      const first = selected[0];
+      const last = selected.at(-1);
+      if (!first || !last || first === last) return null;
+      return {
+        start: { lineId: first.lineId, lineIndex: first.lineIndex, offset: Math.min(...first.ranges) },
+        end: { lineId: last.lineId, lineIndex: last.lineIndex, offset: Math.max(...last.ranges) },
+      };
+    };
+
+    /** A stop inside a selection across rows (or on its edge): a move there changes nothing. */
+    const insideRowsRange = (range: RowsRange, lineIndex: number, stop: number) =>
+      (lineIndex > range.start.lineIndex && lineIndex < range.end.lineIndex) ||
+      (lineIndex === range.start.lineIndex && stop >= range.start.offset) ||
+      (lineIndex === range.end.lineIndex && stop <= range.end.offset);
+
+    const lineOfField = (field: Element) => {
+      for (const [lineId, candidate] of fieldRefs.current) {
+        if (candidate !== field) continue;
+        const lineIndex = linesRef.current.findIndex((line) => line.id === lineId);
+        return lineIndex >= 0 ? { lineId, lineIndex } : null;
+      }
+      return null;
+    };
+
+    /** The containers a drag scrolls when the pointer nears their edges. */
+    const paneScrollers = () => {
+      const pane = surfaceRef.current?.closest<HTMLElement>(".editor-pane-scroll");
+      return pane ? [pane] : [];
+    };
+
+    /** The editor's visible area: a drag let go outside it drops nothing (AxMath). */
+    const dropArea = () =>
+      (surfaceRef.current?.closest<HTMLElement>(".editor-pane-scroll") ?? surfaceRef.current)
+        ?.getBoundingClientRect() ?? null;
+
+    /** Where a dragged selection would land: a row's formula and a stop in it. */
+    const dropTargetAt = (clientX: number, clientY: number) => {
+      const point = resolveMultiLineSelectionPoint(clientX, clientY);
+      const field = point ? fieldRefs.current.get(point.lineId) : null;
+      return point && field?.isConnected ? { field, stop: point.offset } : null;
+    };
+
+    /**
+     * Puts a drop into the document as one step of the history and selects
+     * what was dropped (AxMath): in one row, or from a row's stop to another's.
+     */
+    const commitDrop = (
+      nextLinesOf: (lines: FormulaLine[]) => FormulaLine[] | null,
+      dropped:
+        | { lineId: string; range: [number, number] }
+        | { anchor: { lineId: string; offset: number }; focus: { lineId: string; offset: number } },
+    ) => {
+      historyManager.commitPendingTransaction();
+      const selectionByLineId = Object.fromEntries(
+        linesRef.current.flatMap((line) => {
+          const currentField = fieldRefs.current.get(line.id);
+          return currentField?.isConnected
+            ? [[line.id, captureSelection(currentField)] as const]
+            : [];
+        }),
+      );
+      const before = getEditorDocumentSnapshot(selectionByLineId);
+      before.lines = before.lines.map((line) => {
+        const currentField = fieldRefs.current.get(line.id);
+        return currentField?.isConnected
+          ? { ...line, latex: normalizeChineseLatex(currentField.value) }
+          : line;
+      });
+      const nextLines = nextLinesOf(before.lines);
+      if (!nextLines) return;
+      const focusLineId = "lineId" in dropped ? dropped.lineId : dropped.focus.lineId;
+      const focusRange: [number, number] =
+        "lineId" in dropped ? dropped.range : [0, dropped.focus.offset];
+      const caretAtStart: MathSelectionSnapshot = { ranges: [[0, 0]], direction: "none" };
+      const previous = new Map(before.lines.map((line) => [line.id, line.latex]));
+      const after: ReplaceDocumentEntry["after"] = {
+        title: before.title,
+        lines: nextLines,
+        activeLineId: focusLineId,
+        formulaAlignment: before.formulaAlignment,
+        selectionByLineId: Object.fromEntries(
+          nextLines.map((line) => [
+            line.id,
+            line.id === focusLineId
+              ? { ranges: [focusRange], direction: "forward" as const }
+              : previous.get(line.id) === line.latex
+                ? before.selectionByLineId[line.id] ?? caretAtStart
+                : caretAtStart,
+          ]),
+        ),
+      };
+      const scrollSnapshot = captureEditorScrollSnapshot(focusLineId);
+      clearMultiLineSelection();
+      lastSelectionTargetRef.current = null;
+      flushSync(() => useEditorStore.getState().replaceDocumentState(after));
+      linesRef.current = useEditorStore.getState().lines;
+      setActiveLine(focusLineId);
+      historyManager.push({
+        type: "replace-document",
+        before,
+        after,
+        source: "drag-drop",
+        timestamp: Date.now(),
+      });
+      setQuery("");
+      focusLine(focusLineId, {
+        latex: nextLines.find((line) => line.id === focusLineId)?.latex ?? null,
+        selection: { ranges: [focusRange], direction: "forward" },
+        deferredRepair: false,
+      });
+      if (!("lineId" in dropped)) {
+        const indexOf = (lineId: string) =>
+          linesRef.current.findIndex((line) => line.id === lineId);
+        applyMultiLineSelection(
+          { ...dropped.anchor, lineIndex: indexOf(dropped.anchor.lineId) },
+          { ...dropped.focus, lineIndex: indexOf(dropped.focus.lineId) },
+        );
+      }
+      stabilizeEditorScroll(scrollSnapshot, focusLineId, false);
+    };
+
+    /** A formula's selection dropped into another row: moved (or copied) there. */
+    const dropFormulaSelection = (
+      source: MathfieldElement,
+      start: number,
+      end: number,
+      latex: string,
+      target: MathfieldElement,
+      stop: number,
+      copy: boolean,
+    ) => {
+      if (interactionReadOnly) return;
+      const from = lineOfField(source);
+      const to = lineOfField(target);
+      if (!from || !to || from.lineId === to.lineId) return;
+      const inserted = target.visualTexDropResult({ insert: { at: stop, latex } });
+      const removed = copy ? null : source.visualTexDropResult({ remove: [start, end] });
+      const range = inserted?.inserted;
+      if (!inserted || !range || (!copy && !removed)) return;
+      commitDrop(
+        (lines) =>
+          lines.map((line) =>
+            line.id === to.lineId
+              ? { ...line, latex: normalizeChineseLatex(inserted.latex) }
+              : removed && line.id === from.lineId
+                ? { ...line, latex: normalizeChineseLatex(removed.latex) }
+                : { ...line },
+          ),
+        { lineId: to.lineId, range },
+      );
+    };
+
+    /**
+     * A selection across rows dropped at a stop (AxMath): at the top level of
+     * a row its rows stay rows (the first joins the row before the stop, the
+     * last the row after it); inside a structure they go in as one. Moved, the
+     * rows it leaves are joined as Delete joins them.
+     */
+    const dropRows = (
+      range: RowsRange,
+      targetField: MathfieldElement,
+      stop: number,
+      copy: boolean,
+    ) => {
+      if (interactionReadOnly) return;
+      const target = lineOfField(targetField);
+      const lines = linesRef.current;
+      const startLine = lines[range.start.lineIndex];
+      const endLine = lines[range.end.lineIndex];
+      const startField = startLine ? fieldRefs.current.get(startLine.id) : null;
+      const endField = endLine ? fieldRefs.current.get(endLine.id) : null;
+      if (!target || !startLine || !endLine || !startField?.isConnected || !endField?.isConnected) return;
+      const part = (field: MathfieldElement, from: number, to: number) =>
+        normalizeChineseLatex(field.getValue(from, to, "latex"));
+      const whole = (lineIndex: number) => {
+        const field = fieldRefs.current.get(lines[lineIndex]?.id ?? "");
+        return field?.isConnected ? normalizeChineseLatex(field.value) : lines[lineIndex]?.latex ?? "";
+      };
+      // what moves: the first row's end, the rows between, the last row's start
+      const parts = [part(startField, range.start.offset, startField.lastOffset)];
+      for (let index = range.start.lineIndex + 1; index < range.end.lineIndex; index += 1) {
+        parts.push(whole(index));
+      }
+      parts.push(part(endField, 0, range.end.offset));
+      // what stays of the rows it leaves, joined into the first of them
+      const head = part(startField, 0, range.start.offset);
+      const tail = part(endField, range.end.offset, endField.lastOffset);
+      const joined = joinLatex(head, tail);
+      // a move into the rows it leaves lands in the joined row
+      const intoJoined =
+        !copy &&
+        (target.lineIndex === range.start.lineIndex || target.lineIndex === range.end.lineIndex);
+      const joinedStop =
+        intoJoined && target.lineIndex === range.end.lineIndex
+          ? range.start.offset + (stop - range.end.offset)
+          : stop;
+      const dropLine = lines[intoJoined ? range.start.lineIndex : target.lineIndex];
+      if (!dropLine) return;
+      const model = editingModelOf(targetField);
+      const atom = model?.at(stop);
+      const topLevel = !model || !atom || atom.parent === model.root;
+      const rebuild = (dropRows: FormulaLine[] | ((line: FormulaLine) => FormulaLine[])) =>
+        (current: FormulaLine[]) =>
+          current.flatMap((line, index) => {
+            if (!copy && index > range.start.lineIndex && index <= range.end.lineIndex) return [];
+            if (line.id === dropLine.id) return typeof dropRows === "function" ? dropRows(line) : dropRows;
+            if (!copy && index === range.start.lineIndex) return [{ ...line, latex: joined }];
+            return [{ ...line }];
+          });
+
+      if (!topLevel) {
+        const flat = parts.reduce(joinLatex);
+        const result = intoJoined
+          ? startField.visualTexDropResult({ base: joined, insert: { at: joinedStop, latex: flat } })
+          : targetField.visualTexDropResult({ insert: { at: stop, latex: flat } });
+        const inserted = result?.inserted;
+        if (!result || !inserted) return;
+        commitDrop(
+          rebuild((line) => [{ ...line, latex: normalizeChineseLatex(result.latex) }]),
+          { lineId: dropLine.id, range: inserted },
+        );
+        return;
+      }
+
+      // the drop row's LaTeX before and after the stop
+      let before: string;
+      let after: string;
+      if (intoJoined && target.lineIndex === range.start.lineIndex) {
+        before = part(startField, 0, stop);
+        after = joinLatex(part(startField, stop, range.start.offset), tail);
+      } else if (intoJoined) {
+        before = joinLatex(head, part(endField, range.end.offset, stop));
+        after = part(endField, stop, endField.lastOffset);
+      } else {
+        before = part(targetField, 0, stop);
+        after = part(targetField, stop, targetField.lastOffset);
+      }
+      const lastPart = parts[parts.length - 1] ?? "";
+      const lastPartEnd = targetField.visualTexDropResult({ base: lastPart })?.lastOffset ?? 0;
+      const lastRow = createFormulaLine(
+        joinLatex(lastPart, after),
+        undefined,
+        dropLine.mode,
+        dropLine.displayStyle ?? "default",
+      );
+      const between = lines.slice(range.start.lineIndex + 1, range.end.lineIndex);
+      commitDrop(
+        rebuild((line) => [
+          { ...line, latex: joinLatex(before, parts[0] ?? "") },
+          // the rows between come along (copied: new rows like them)
+          ...between.map((row, index) =>
+            copy
+              ? createFormulaLine(parts[index + 1] ?? "", undefined, row.mode, row.displayStyle ?? "default")
+              : { ...row, latex: parts[index + 1] ?? row.latex },
+          ),
+          lastRow,
+        ]),
+        {
+          anchor: { lineId: dropLine.id, offset: joinedStop },
+          focus: { lineId: lastRow.id, offset: lastPartEnd },
+        },
+      );
+    };
+
+    /** The formula rows' side of a formula's selection drag (DESIGN §6.12). */
+    const rowSelectionDrag: SelectionDragHost = {
+      target: dropTargetAt,
+      area: dropArea,
+      scrollers: paneScrollers,
+      drop: (source, start, end, latex, target, copy) =>
+        dropFormulaSelection(
+          source as MathfieldElement,
+          start,
+          end,
+          latex,
+          target.field as MathfieldElement,
+          target.stop,
+          copy,
+        ),
+    };
+
+    /** A press on a selection across rows: drag it (AxMath's drag, as a formula drags its own). */
+    const startRowsDrag = (press: PointerEvent) => {
+      const range = multiLineRange();
+      if (!range) return;
+      visualTexRunSelectionDrag(
+        {
+          resolve: dropTargetAt,
+          area: dropArea,
+          inside: (target) => {
+            const row = lineOfField(target.field);
+            return !row || insideRowsRange(range, row.lineIndex, target.stop);
+          },
+          scrollers: paneScrollers,
+          commit: (target, copy) =>
+            dropRows(range, target.field as MathfieldElement, target.stop, copy),
+          // let go where it was pressed, or back on the selection: a click there
+          click: (clientX, clientY) => {
+            const point = resolveMultiLineSelectionPoint(clientX, clientY);
+            clearMultiLineSelection();
+            const field = point ? fieldRefs.current.get(point.lineId) : null;
+            if (!point || !field?.isConnected) return;
+            (field as HTMLElement).focus({ preventScroll: true });
+            placeCaretAtPoint(field, clientX, clientY);
+            field.shadowRoot
+              ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+              ?.focus({ preventScroll: true });
+            setActiveLine(point.lineId);
+          },
+        },
+        press,
+      );
+    };
+
+    /** A press on any selected row's highlight. */
+    const pressOnRowsSelection = (clientX: number, clientY: number) =>
+      [...multiLineSelectedIdsRef.current].some((lineId) =>
+        fieldRefs.current.get(lineId)?.visualTexPointOnSelection(clientX, clientY),
+      );
 
     // MathLive owns edits within a formula. The document owns replacing a
     // selection that spans independently mounted formula fields.
@@ -3643,26 +4169,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       setActiveLine(targetLineId);
       field.focus();
 
-      const originalSelection = captureSelection(field);
-      let insertionSelection = originalSelection;
-      let implicitPreviousLatex = "";
-      if (
-        field.selectionIsCollapsed &&
-        commandTargetsPreviousExpression(command)
-      ) {
-        const previousTarget = previousExpressionSelection(field);
-        if (previousTarget) {
-          insertionSelection = previousTarget.selection;
-          implicitPreviousLatex = previousTarget.latex;
-        }
-      }
-      const selectedLatex =
-        implicitPreviousLatex ||
-        (insertionSelection.ranges[0]?.[0] === insertionSelection.ranges[0]?.[1]
-          ? ""
-          : field.getValue(insertionSelection));
-      const insertionTemplate = templateForSelection(command, selectedLatex);
-      const autoExitSetting = getCaretAutoExitSetting(field);
+      const prepared = prepareLatexCommandInsertion(field, command);
+      const insertionTemplate = prepared.insertionTemplate;
       const historySource: FormulaEditSource =
         source === "candidate"
           ? "candidate"
@@ -3670,87 +4178,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             ? "shortcut"
             : "toolbar";
 
-      const tryInsert = () => {
-        field.selection = insertionSelection;
-        const inserted = applyDiscreteFormulaMutation(
-          targetLineId,
-          field,
-          historySource,
-          () => {
-            const isBareOperator = command.id.endsWith("-bare");
-            const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
-            const insertCurrentTemplate = () =>
-              field.insert(insertionTemplate, {
-                mode: "math",
-                format: "latex",
-                insertionMode: "replaceSelection",
-                selectionMode: hasPlaceholder ? "placeholder" : "after",
-                style: {
-                  variant: "normal",
-                  variantStyle: undefined,
-                },
-                focus: true,
-                scrollIntoView: false,
-              });
-            const valueBeforeInsertion = normalizeChineseLatex(field.value);
-            const bareOperatorCountBefore = isBareOperator
-              ? valueBeforeInsertion.split(insertionTemplate).length - 1
-              : 0;
-            const insertedBareOperator = () =>
-              normalizeChineseLatex(field.value).split(insertionTemplate).length - 1 >
-              bareOperatorCountBefore;
-            let inserted = insertCurrentTemplate();
-            if (isBareOperator && !insertedBareOperator()) {
-              const retryValue = field.value;
-              const retrySelection = captureSelection(field);
-              field.executeCommand("deleteBackward");
-              inserted = insertCurrentTemplate();
-              if (!insertedBareOperator()) {
-                field.position = field.lastOffset;
-                field.selection = {
-                  ranges: [[field.lastOffset, field.lastOffset]],
-                  direction: "none",
-                };
-                inserted = insertCurrentTemplate();
-              }
-              if (!insertedBareOperator()) {
-                field.setValue(retryValue, {
-                  mode: "math",
-                  format: "latex",
-                  insertionMode: "replaceAll",
-                  selectionMode: "after",
-                  silenceNotifications: true,
-                });
-                field.selection = retrySelection;
-              }
-            }
-            const insertionChangedValue =
-              normalizeChineseLatex(field.value) !== valueBeforeInsertion &&
-              (!isBareOperator || insertedBareOperator());
-            const insertionAccepted =
-              inserted && insertionChangedValue;
-            // The kernel's insertion already put the caret in the template's
-            // first empty slot (the editing core's keyboard order).
-            if (
-              inserted &&
-              insertionChangedValue &&
-              !hasPlaceholder &&
-              autoExitSetting &&
-              inputBehavior[autoExitSetting]
-            ) {
-              moveCaretThroughEnabledAutoExitContainers(
-                field,
-                inputBehavior,
-                autoExitSetting,
-                null,
-              );
-            }
-            return insertionAccepted;
-          },
+      const tryInsert = () =>
+        attemptLatexCommandInsertion(field, command, prepared, inputBehavior, (mutate) =>
+          applyDiscreteFormulaMutation(targetLineId, field, historySource, mutate),
         );
-        if (!inserted) field.selection = originalSelection;
-        return inserted;
-      };
 
       const finishInsertion = () => {
         const normalizedValue = normalizeChineseLatex(field.value);
@@ -4288,8 +4719,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!startLine || !endLine || !startField || !endField) return false;
 
       historyManager.commitPendingTransaction();
-      const startOffset = Math.max(0, Math.min(start.offset, startField.lastOffset));
-      const endOffset = Math.max(0, Math.min(end.offset, endField.lastOffset));
+      // the ends the rows show (across rows a selection takes whole structures)
+      const startOffset = Math.max(
+        0,
+        Math.min(Math.min(...startField.selection.ranges.flat()), startField.lastOffset),
+      );
+      const endOffset = Math.max(
+        0,
+        Math.min(Math.max(...endField.selection.ranges.flat()), endField.lastOffset),
+      );
       const leftLatex = normalizeChineseLatex(
         startField.getValue(0, startOffset, "latex"),
       );
@@ -5455,9 +5893,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const surface = surfaceRef.current;
       if (!surface) return;
 
+      // AxMath's mouse (DESIGN §6.9, §6.12): a press in a formula places its
+      // caret (the formula's own hit test) and a drag selects within it; once
+      // the pointer reaches another row the editor selects across rows from
+      // the press (each end at the top level of its formula) and the formula
+      // stops tracking. A press on a selection's highlight drags it, Shift or
+      // not; Shift+press selects from the caret to the point, across rows too.
       const handleSurfacePointerDown = (event: PointerEvent) => {
-        if (event.button !== 0 || !event.isPrimary || event.shiftKey) return;
-        lastSelectionTargetRef.current = null;
+        if (event.button !== 0 || !event.isPrimary) return;
         const path = event.composedPath();
         const entry = Array.from(fieldRefs.current.entries()).find(
           ([, field]) =>
@@ -5465,8 +5908,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
             Boolean(field.parentElement && path.includes(field.parentElement)),
         );
         if (!entry) return;
+        const [lineId, field] = entry;
 
         if (previewOnlyRef.current) {
+          if (event.shiftKey) return;
           event.preventDefault();
           event.stopImmediatePropagation();
           if (!onPreviewActivate) {
@@ -5493,29 +5938,86 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           return;
         }
 
+        if (
+          multiLineSelectionRef.current &&
+          !interactionReadOnly &&
+          pressOnRowsSelection(event.clientX, event.clientY)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          startRowsDrag(event);
+          return;
+        }
+        if (event.shiftKey) {
+          const focus = resolveMultiLineSelectionPoint(event.clientX, event.clientY, lineId);
+          const anchor = multiLineSelectionRef.current?.anchor ?? caretAnchor();
+          // in the row of the caret the formula extends its own selection
+          if (!focus || !anchor || (!multiLineSelectionRef.current && anchor.lineId === focus.lineId)) return;
+          const anchorField = fieldRefs.current.get(anchor.lineId);
+          if (!anchorField?.isConnected) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          selectRowsBetween(anchor, focus);
+          pointerSelectionSessionRef.current = {
+            pointerId: event.pointerId,
+            anchor,
+            field: anchorField,
+            beside: false,
+            active: true,
+            last: focus,
+            clientX: event.clientX,
+            clientY: event.clientY,
+          };
+          startSessionScrolling();
+          return;
+        }
+        lastSelectionTargetRef.current = null;
+        // a press on the formula's own selection: the formula drags it
+        if (
+          !multiLineSelectionRef.current &&
+          !interactionReadOnly &&
+          field.visualTexPointOnSelection(event.clientX, event.clientY)
+        ) {
+          return;
+        }
         clearMultiLineSelection();
-        const contentBounds = entry[1].shadowRoot
-          ?.querySelector<HTMLElement>('[part="content"]')
-          ?.getBoundingClientRect();
-        const startedOutsideFormula = Boolean(
-          contentBounds &&
-            (event.clientX < contentBounds.left - 6 ||
-              event.clientX > contentBounds.right + 6),
-        );
         const anchor = resolveMultiLineSelectionPoint(
           event.clientX,
           event.clientY,
-          entry[0],
+          lineId,
         );
         if (!anchor) return;
+        const box = field.getBoundingClientRect();
         pointerSelectionSessionRef.current = {
           pointerId: event.pointerId,
-          startX: event.clientX,
-          startY: event.clientY,
           anchor,
-          allowSameLine: startedOutsideFormula,
+          field,
+          beside:
+            event.clientX < box.left || event.clientX >= box.right ||
+            event.clientY < box.top || event.clientY >= box.bottom,
           active: false,
+          last: null,
+          clientX: event.clientX,
+          clientY: event.clientY,
         };
+      };
+
+      /** The selection from the session's anchor to the row stop under the pointer (AxMath: only when an end changes). */
+      const extendSession = (session: PointerSelectionSession) => {
+        const focus = resolveMultiLineSelectionPoint(session.clientX, session.clientY);
+        // below every row nothing changes
+        if (!focus) return;
+        if (session.last?.lineId === focus.lineId && session.last.offset === focus.offset) return;
+        session.last = focus;
+        selectRowsBetween(session.anchor, focus);
+      };
+      sessionScrollTickRef.current = () => {
+        const session = pointerSelectionSessionRef.current;
+        if (!session?.active) return false;
+        if (sessionScrollerRef.current.tick(paneScrollers(), session.clientX, session.clientY)) {
+          extendSession(session);
+        }
+        return true;
       };
 
       const handleWindowPointerMove = (event: PointerEvent) => {
@@ -5527,54 +6029,50 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           return;
         }
         if (event.pointerId !== session.pointerId) return;
-        const distance = Math.hypot(
-          event.clientX - session.startX,
-          event.clientY - session.startY,
-        );
-        if (!session.active && distance < 5) return;
-
-        const focus = resolveMultiLineSelectionPoint(
-          event.clientX,
-          event.clientY,
-        );
-        if (!focus) return;
-        if (
-          !session.active &&
-          focus.lineId === session.anchor.lineId &&
-          !session.allowSameLine
-        ) {
+        // the formula drags its own selection
+        if (session.field.classList.contains("visualtex-selection-drag")) {
+          pointerSelectionSessionRef.current = null;
           return;
         }
-        session.active = true;
+        // AxMath selects on a move only while the left button is held: a
+        // release that never reached us (outside the window) ends it here
+        if (!(event.buttons & 1)) {
+          pointerSelectionSessionRef.current = null;
+          stopSessionScrolling();
+          if (session.active) {
+            const selection = multiLineSelectionRef.current;
+            setActiveLine(selection ? selection.focus.lineId : session.anchor.lineId);
+          }
+          return;
+        }
+        session.clientX = event.clientX;
+        session.clientY = event.clientY;
+        if (!session.active) {
+          // within the pressed row the formula selects (pressed beside the
+          // formula, the editor does)
+          const focus = resolveMultiLineSelectionPoint(event.clientX, event.clientY);
+          if (!focus) return;
+          if (focus.lineId === session.anchor.lineId &&
+              (!session.beside || focus.offset === session.anchor.offset)) return;
+          session.active = true;
+          // one owner of the gesture from now on: the editor
+          session.field.visualTexStopPointerTracking();
+          startSessionScrolling();
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
-        applyMultiLineSelection(session.anchor, focus);
+        extendSession(session);
       };
 
       const handleWindowPointerEnd = (event: PointerEvent) => {
         const session = pointerSelectionSessionRef.current;
         if (!session || event.pointerId !== session.pointerId) return;
         pointerSelectionSessionRef.current = null;
+        stopSessionScrolling();
         if (!session.active) return;
-
-        // Do not prevent or stop this pointerup. MathLive owns pointer capture
-        // on the active mathfield and must finish its own drag tracker first.
-        // Reapply the cross-line ranges in the next task, after MathLive's
-        // target-phase pointerup handlers have completed, so later free mouse
-        // movement cannot collapse the final line again.
-        for (const field of fieldRefs.current.values()) {
-        }
+        // the selection stays (AxMath); the row of its focus is the active one
         const selection = multiLineSelectionRef.current;
-        if (!selection) return;
-        window.setTimeout(() => {
-          const currentSelection = multiLineSelectionRef.current;
-          if (!currentSelection) return;
-          applyMultiLineSelection(
-            currentSelection.anchor,
-            currentSelection.focus,
-          );
-          setActiveLine(currentSelection.focus.lineId);
-        }, 0);
+        setActiveLine(selection ? selection.focus.lineId : session.anchor.lineId);
       };
 
       const handleWindowMouseMove = (event: MouseEvent) => {
@@ -5591,8 +6089,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const session = pointerSelectionSessionRef.current;
         if (!session || event.pointerId !== session.pointerId) return;
         pointerSelectionSessionRef.current = null;
-        for (const field of fieldRefs.current.values()) {
-        }
+        stopSessionScrolling();
         clearMultiLineSelection();
       };
 
@@ -5782,7 +6279,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                             ? "Switch row to display formula"
                             : "Switch row to inline formula"
                         : lineHasInternalMultiline
-                          ? "多行公式固定为行间公式"
+                          ? "多行公式：行间"
                           : effectiveLineMode === "inline"
                             ? "切换为行间公式"
                             : "切换为行内公式"
@@ -5790,15 +6287,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                     title={
                       language === "en"
                         ? lineHasInternalMultiline
-                          ? "Multi-line formulas are always display formulas"
+                          ? "Multi-line: display"
                           : effectiveLineMode === "inline"
-                            ? `Inline · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for display${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} creates display` : ""}`
-                            : `Display · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for inline${newInlineRowHotkey ? ` · ${newInlineRowHotkey} creates inline` : ""}`
+                            ? `Inline${toggleRowHotkey ? ` (${toggleRowHotkey})` : ""}`
+                            : `Display${toggleRowHotkey ? ` (${toggleRowHotkey})` : ""}`
                         : lineHasInternalMultiline
-                          ? "多行公式固定为行间公式"
+                          ? "多行公式：行间"
                           : effectiveLineMode === "inline"
-                            ? `行内 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行间${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} 新建行间` : ""}`
-                            : `行间 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行内${newInlineRowHotkey ? ` · ${newInlineRowHotkey} 新建行内` : ""}`
+                            ? `行内${toggleRowHotkey ? `（${toggleRowHotkey}）` : ""}`
+                            : `行间${toggleRowHotkey ? `（${toggleRowHotkey}）` : ""}`
                     }
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() =>
@@ -5817,8 +6314,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   <FormulaFieldRenderFallback
                     message={`${mathLiveSourceSafetyMessage(safetyIssue, language)} ${
                       language === "en"
-                        ? "The LaTeX source is preserved; edit or remove this row in the source panel."
-                        : "LaTeX 源码仍完整保留，可在源码区修改或删除这一行。"
+                        ? "The LaTeX source is preserved."
+                        : "LaTeX 源码已保留。"
                     }`}
                   />
                 ) : (
@@ -5882,6 +6379,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                       onPasteImage={onPasteImage}
                       onContextMenu={openContextMenu}
                       onPasteLatexLines={pasteLatexLines}
+                      selectionDrag={rowSelectionDrag}
                     />
                   </FormulaFieldErrorBoundary>
                 )}

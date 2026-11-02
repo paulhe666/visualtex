@@ -32,8 +32,17 @@ internal sealed partial class WordFormulaService
         /// </summary>
         internal bool LegacyMathFont { get; set; }
 
-        internal int Total =>
+        /// <summary>
+        /// OMML Font: the chosen document math font (if not "follow") and the
+        /// equations whose run fonts do not yet follow the document math font.
+        /// </summary>
+        internal OmmlMathFontScan MathFont { get; set; } = new();
+
+        /// <summary>Everything except the math font step.</summary>
+        internal int StructureTotal =>
             RetiredLayouts + NonCanonicalNumbers + (LegacyFormatVariable ? 1 : 0) + (LegacyMathFont ? 1 : 0);
+
+        internal int Total => StructureTotal + MathFont.Total;
     }
 
     public EquationFormatUpgradeReport ScanEquationFormat()
@@ -48,7 +57,9 @@ internal sealed partial class WordFormulaService
         finally { Release(document); }
     }
 
-    private static EquationFormatUpgradeReport ScanEquationFormat(Document document) =>
+    private static EquationFormatUpgradeReport ScanEquationFormat(
+        Document document,
+        bool includeMathFont = true) =>
         new()
         {
             RetiredLayouts = CountRetiredNumberingLayouts(document),
@@ -56,10 +67,14 @@ internal sealed partial class WordFormulaService
                 document, WordEquationNumberFormatAuthority.Resolve(document)),
             LegacyFormatVariable = WordEquationNumbering.HasLegacyEquationNumberFormat(document),
             LegacyMathFont = UsesLegacyLatinModernMath(document),
+            MathFont = includeMathFont ? ScanOmmlMathFont(document) : new OmmlMathFontScan(),
         };
 
-    public int UpgradeEquationFormat()
+    public int UpgradeEquationFormat() => UpgradeEquationFormat(out _);
+
+    public int UpgradeEquationFormat(out OmmlMathFontAlignmentResult? mathFont)
     {
+        mathFont = null;
         Document? document = null;
         UndoRecord? undo = null;
         var undoSteps = 0;
@@ -114,8 +129,22 @@ internal sealed partial class WordFormulaService
                     undoSteps++;
                 }
 
-                var after = ScanEquationFormat(document);
-                if (after.Total != 0)
+                // Last: the OMML Font choice becomes the document math font and
+                // every OMath follows the document math font (never in WPS).
+                if (ScanOmmlMathFont(document).Total > 0)
+                {
+                    undo ??= _application.UndoRecord;
+                    if (undo.IsRecordingCustomRecord || undo.CustomRecordLevel > 0)
+                        throw new InvalidOperationException(
+                            "The equation format update cannot run inside another Word undo transaction.");
+                    undo.StartCustomRecord("VisualTeX Update Equation Format");
+                    try { mathFont = AlignOmmlMathFont(document); }
+                    finally { undo.EndCustomRecord(); }
+                    undoSteps++;
+                }
+
+                var after = ScanEquationFormat(document, includeMathFont: false);
+                if (after.StructureTotal != 0)
                     throw new InvalidDataException(
                         $"The equation format update left {after.RetiredLayouts} retired layout(s), "
                         + $"{after.NonCanonicalNumbers} number(s) in an older form"

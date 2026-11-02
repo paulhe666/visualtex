@@ -154,6 +154,9 @@ internal static class PowerPointNativeOmmlKernel
     // editedZone: the edited equation's native zone (its a14:m as saved). The
     // new equation is pasted back inside it, the way VisualTeX for macOS pastes
     // an edit into the copied original context, so it keeps its justification.
+    // wpsPasted: in WPS the caller proves, with one saved copy for several
+    // pastes, that each pasted range became a native equation; it receives the
+    // pasted range instead of this writer saving a copy for every paste.
     internal static Action PrepareTextInsertion(
         Application application,
         Shape shape,
@@ -161,7 +164,8 @@ internal static class PowerPointNativeOmmlKernel
         int length,
         string mathMl,
         string displayMode,
-        string? editedZone = null)
+        string? editedZone = null,
+        Action<(int Start, int Length)>? wpsPasted = null)
     {
         if (shape.HasTextFrame != MsoTriState.msoTrue)
             throw new InvalidOperationException(
@@ -220,6 +224,8 @@ internal static class PowerPointNativeOmmlKernel
             var insertionStart = start;
             var replacementLength = length;
             string? paragraphBreaks = null;
+            var replacedText = string.Empty;
+            var hideContinuationBullet = false;
             if (display)
             {
                 var originalText =
@@ -242,6 +248,15 @@ internal static class PowerPointNativeOmmlKernel
                 insertionStart =
                     start + (needsLeadingBreak ? 1 : 0);
                 replacementLength = 0;
+                // What the breaks replace (a selection, or LaTeX code), put back in
+                // WPS when the paste then fails.
+                replacedText = zeroBasedEnd <= originalText.Length
+                    ? originalText.Substring(zeroBasedStart, length)
+                    : string.Empty;
+                // A display equation inside a list item: the text after it goes on
+                // with that item, so it must not become a new bulleted or numbered
+                // item of its own.
+                hideContinuationBullet = needsTrailingBreak && BulletVisible(fullRange2, start);
             }
 
             string? textWithBreaks = null;
@@ -280,12 +295,17 @@ internal static class PowerPointNativeOmmlKernel
             };
             return () =>
             {
-                try { InsertPrepared(application, shape, insertionStart, replacementLength, package, display, contextFontSize, writeBreaks); }
-                catch when (textWithBreaks is not null && length == 0)
+                try
+                {
+                    InsertPrepared(application, shape, insertionStart, replacementLength, package, display, contextFontSize,
+                        writeBreaks, hideContinuationBullet, wpsPasted);
+                }
+                catch when (textWithBreaks is not null)
                 {
                     // WPS has no Undo history to roll back with: take out the breaks
-                    // a failed paste left at the caret, so the text is the original.
-                    RemoveUnusedBreaks(shape, start, paragraphBreaks!, textWithBreaks);
+                    // a failed paste left and put back the text they replaced, so the
+                    // text is the original.
+                    RestoreAfterFailedPaste(shape, start, paragraphBreaks!, textWithBreaks, replacedText);
                     throw;
                 }
             };
@@ -297,19 +317,78 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
-    private static void RemoveUnusedBreaks(Shape shape, int start, string breaks, string textWithBreaks)
+    // Only text exactly as the breaks left it is restored: the breaks come out and
+    // the replaced text goes back, one paragraph at a time (WPS turns only the
+    // last CR of an assigned string into a paragraph break).
+    private static void RestoreAfterFailedPaste(Shape shape, int start, string breaks, string textWithBreaks, string replaced)
     {
-        object? frame = null, text = null, inserted = null;
+        object? frame = null, text = null, range = null;
         try
         {
             if (!string.Equals(WpsNativeEquations.LiveText(shape), textWithBreaks, StringComparison.Ordinal)) return;
             frame = TextFrameOf(shape);
             text = ((dynamic)frame).TextRange;
-            inserted = GetCharacterRange(text, start, breaks.Length);
-            if (Convert.ToString(((dynamic)inserted).Text) == breaks) ((dynamic)inserted).Text = string.Empty;
+            if (breaks.Length > 0)
+            {
+                range = GetCharacterRange(text, start, breaks.Length);
+                if (Convert.ToString(((dynamic)range).Text) != breaks) return;
+                ((dynamic)range).Text = string.Empty;
+            }
+            var position = start;
+            var parts = replaced.Split('\r');
+            for (var index = 0; index < parts.Length; index++)
+            {
+                var piece = index < parts.Length - 1 ? parts[index] + "\r" : parts[index];
+                if (piece.Length == 0) continue;
+                Release(range);
+                range = null;
+                Release(text);
+                text = ((dynamic)frame).TextRange;
+                // An emptied text has no character range to type into.
+                range = Convert.ToInt32(((dynamic)text).Length) == 0 ? null : GetCharacterRange(text, position, 0);
+                if (range is null) ((dynamic)text).Text = piece;
+                else ((dynamic)range).Text = piece;
+                position += piece.Length;
+            }
         }
         catch { }
-        finally { Release(inserted); Release(text); Release(frame); }
+        finally { Release(range); Release(text); Release(frame); }
+    }
+
+    // Whether the paragraph holding a text position shows a bullet or a number.
+    private static bool BulletVisible(object range, int position)
+    {
+        object? character = null, paragraph = null, bullet = null;
+        try
+        {
+            character = GetCharacterRange(range, position, 0);
+            paragraph = ((dynamic)character).ParagraphFormat;
+            bullet = ((dynamic)paragraph).Bullet;
+            return Convert.ToInt32(((dynamic)bullet).Visible) == (int)MsoTriState.msoTrue;
+        }
+        catch { return false; }
+        finally { Release(bullet); Release(paragraph); Release(character); }
+    }
+
+    // The paragraph that goes on after a display equation (the one after the
+    // break that follows it) shows no bullet or number.
+    private static void HideContinuationBullet(PptTextRange text, int afterEquation)
+    {
+        PptTextRange? continuation = null;
+        ParagraphFormat? paragraph = null;
+        BulletFormat? bullet = null;
+        try
+        {
+            var value = text.Text ?? string.Empty;
+            var mark = value.IndexOf('\r', Math.Max(0, Math.Min(value.Length, afterEquation - 1)));
+            if (mark < 0 || mark + 1 >= value.Length) return;
+            continuation = text.Characters(mark + 2, 1);
+            paragraph = continuation.ParagraphFormat;
+            bullet = paragraph.Bullet;
+            bullet.Visible = MsoTriState.msoFalse;
+        }
+        catch { }
+        finally { Release(bullet); Release(paragraph); Release(continuation); }
     }
 
     // The text frame insertion reads and writes through: PowerPoint's TextFrame2,
@@ -332,11 +411,13 @@ internal static class PowerPointNativeOmmlKernel
     // paragraph breaks).
     private static void InsertPrepared(Application application, Shape shape, int start,
         int replacementLength, IReadOnlyList<KeyValuePair<string, string>> package, bool display,
-        float fontSize, Action? beforePaste = null)
+        float fontSize, Action? beforePaste = null, bool hideContinuationBullet = false,
+        Action<(int Start, int Length)>? wpsPasted = null)
     {
         if (OfficeHostEnvironment.IsWps)
         {
-            InsertPreparedInWps(application, shape, start, replacementLength, package, display, fontSize, beforePaste);
+            InsertPreparedInWps(application, shape, start, replacementLength, package, display, fontSize, beforePaste,
+                hideContinuationBullet, wpsPasted);
             return;
         }
         beforePaste?.Invoke();
@@ -404,6 +485,13 @@ internal static class PowerPointNativeOmmlKernel
                     Release(paragraph);
                 }
                 catch { }
+                if (hideContinuationBullet)
+                {
+                    text = frame.TextRange;
+                    HideContinuationBullet(text, pastedStart + pastedLength);
+                    Release(text);
+                    text = null;
+                }
             }
 
             // A caret failure after a successful paste is not a failed insertion.
@@ -431,15 +519,19 @@ internal static class PowerPointNativeOmmlKernel
     // empty box, so the equation's size is set on the pasted text.
     private static void InsertPreparedInWps(Application application, Shape shape, int start,
         int replacementLength, IReadOnlyList<KeyValuePair<string, string>> package, bool display,
-        float fontSize, Action? beforePaste)
+        float fontSize, Action? beforePaste, bool hideContinuationBullet = false,
+        Action<(int Start, int Length)>? pasteProof = null)
     {
         ActivateShapeView(application, shape);
         (int Start, int Length) pasted;
         using (PowerPointClipboard.Preserve())
             pasted = WpsNativeEquations.Paste(application, shape, start, replacementLength,
                 PowerPointMathClipboard.Paragraphs(package), beforePaste);
-        if (!WpsNativeEquations.Locate(shape).Any(zone =>
-                zone.Start < pasted.Start + pasted.Length && zone.Start + zone.Length > pasted.Start))
+        // The proof needs a saved copy of the presentation; a caller writing several
+        // equations proves them all with one copy (pasteProof).
+        if (pasteProof is not null)
+            pasteProof(pasted);
+        else if (!WpsNativeEquations.Locate(shape).Any(zone => Covers(zone, pasted)))
             throw new InvalidOperationException(
                 "WPS pasted the equation package without creating a native equation.");
 
@@ -465,6 +557,19 @@ internal static class PowerPointNativeOmmlKernel
                     Release(paragraph);
                 }
                 catch { }
+                if (hideContinuationBullet)
+                {
+                    PptTextFrame? frame = null;
+                    PptTextRange? text = null;
+                    try
+                    {
+                        frame = shape.TextFrame;
+                        text = frame.TextRange;
+                        HideContinuationBullet(text, pasted.Start + pasted.Length);
+                    }
+                    catch { }
+                    finally { Release(text); Release(frame); }
+                }
             }
             // A caret failure after a successful paste is not a failed insertion.
             try
@@ -480,6 +585,11 @@ internal static class PowerPointNativeOmmlKernel
             Release(range);
         }
     }
+
+    // The proof of a WPS paste: a native equation (as located in WPS's saved XML)
+    // covers the pasted text.
+    internal static bool Covers((int Start, int Length) zone, (int Start, int Length) pasted) =>
+        zone.Start < pasted.Start + pasted.Length && zone.Start + zone.Length > pasted.Start;
 
     // TextRange.Paste reads the clipboard at once, and a clipboard listener
     // (input method, clipboard history) still reading the new data makes it
@@ -764,7 +874,7 @@ internal static class PowerPointNativeOmmlKernel
                 "VisualTeX Word OMML converter type is unavailable.");
     }
 
-    private static void ActivateShapeView(
+    internal static void ActivateShapeView(
         Application application,
         Shape shape)
     {

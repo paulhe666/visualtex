@@ -80,6 +80,13 @@ internal static class OfficeOlePreview
     private const int DesktopVertRes = 117;
     private const int DesktopHorzRes = 118;
     internal static string LastRecordingDiagnostics { get; private set; } = string.Empty;
+    // Office and WPS draw the EMF+ outlines anti-aliased and unhinted, so the
+    // thin stems of the TeX fonts turned grey at text sizes, far lighter than
+    // OMML or MathType, which are hinted text. Every glyph is emboldened by this
+    // much in CSS pixels at the formula's own size (stem darkening). On a 150%
+    // display the stems then match Cambria Math (OMML) and Times New Roman
+    // (MathType) text of the same size; 0.35 already looked bold beside them.
+    private const float StemDarkeningCssPixels = 0.12f;
 
     internal static OfficeOleVerticalInkMetrics? TryMeasureVerticalInkMetrics(
         string emfPath)
@@ -763,6 +770,8 @@ internal static class OfficeOlePreview
 
     private sealed class SvgVectorRenderer
     {
+        // Stem darkening of the EMF being recorded, in recording units.
+        [ThreadStatic] private static float s_stemDarkening;
         private static readonly XNamespace XLinkNamespace = "http://www.w3.org/1999/xlink";
         private static readonly Regex TransformPattern = new(
             @"([A-Za-z]+)\s*\(([^)]*)\)",
@@ -960,11 +969,13 @@ internal static class OfficeOlePreview
                     insetX - renderedViewBox.X * contentRecordingWidth / renderedViewBox.Width,
                     -renderedViewBox.Y * recordingHeight / renderedViewBox.Height);
                 var style = SvgStyle.Default;
+                s_stemDarkening = (float)(StemDarkeningCssPixels * (coordinateScaleX + coordinateScaleY) / 2d);
                 foreach (var child in _root.Elements())
                     RenderElement(graphics, child, rootTransform, style, false, new HashSet<string>());
             }
             finally
             {
+                s_stemDarkening = 0f;
                 referenceGraphics.ReleaseHdc(referenceHdc);
             }
 
@@ -1007,8 +1018,9 @@ internal static class OfficeOlePreview
             var measured = MeasurePaintedBounds(measurementPixels);
             if (!measured.HasValue) return original;
             var ink = measured.Value;
-            var safetyX = safetyPaddingPixels * unitsPerPixelX;
-            var safetyY = safetyPaddingPixels * unitsPerPixelY;
+            // The EMF's glyphs are emboldened beyond the measured (PNG) ink.
+            var safetyX = (safetyPaddingPixels + StemDarkeningCssPixels) * unitsPerPixelX;
+            var safetyY = (safetyPaddingPixels + StemDarkeningCssPixels) * unitsPerPixelY;
             var left = Math.Min(_viewBox.X, ink.X - safetyX);
             var top = Math.Min(_viewBox.Y, ink.Y - safetyY);
             var right = Math.Max(
@@ -1736,7 +1748,15 @@ internal static class OfficeOlePreview
             if (fill.HasValue && fill.Value.A > 0)
             {
                 using var brush = new SolidBrush(fill.Value);
-                graphics.FillPath(brush, path);
+                if (s_stemDarkening > 0f && fill.Value.A == 255)
+                {
+                    using var emboldened = Embolden(path, s_stemDarkening);
+                    graphics.FillPath(brush, emboldened);
+                }
+                else
+                {
+                    graphics.FillPath(brush, path);
+                }
             }
 
             var stroke = style.ResolveStrokeColor();
@@ -1745,13 +1765,105 @@ internal static class OfficeOlePreview
                 var scaleX = Math.Sqrt(transform.A * transform.A + transform.B * transform.B);
                 var scaleY = Math.Sqrt(transform.C * transform.C + transform.D * transform.D);
                 var scale = Math.Max(0.0001, (scaleX + scaleY) / 2);
-                using var pen = new Pen(stroke.Value, (float)(style.StrokeWidth * scale))
+                using var pen = new Pen(stroke.Value, (float)(style.StrokeWidth * scale) + s_stemDarkening)
                 {
                     LineJoin = LineJoin.Miter,
                     StartCap = LineCap.Flat,
                     EndCap = LineCap.Flat,
                 };
                 graphics.DrawPath(pen, path);
+            }
+        }
+
+        /// <summary>
+        /// Stem darkening: every contour moves outward by half of
+        /// <paramref name="strength"/> (holes shrink) point by point along the
+        /// bisector of its edges, as FreeType's FT_Outline_EmboldenXY does, so the
+        /// curves and the size of the records stay as they are.
+        /// </summary>
+        private static GraphicsPath Embolden(GraphicsPath path, float strength)
+        {
+            var points = path.PathPoints;
+            var types = path.PathTypes;
+            var moved = (PointF[])points.Clone();
+            // A glyph outline's contours wind one way and its holes the other,
+            // so the sign of the total area says which side of the direction of
+            // travel is outside (FT_Outline_Get_Orientation): with a positive
+            // area the filled side is (-y, x) of each edge, the outside (y, -x).
+            var area = 0d;
+            for (var start = 0; start < points.Length;)
+            {
+                var end = start;
+                while (end + 1 < points.Length && (types[end + 1] & 0x07) != 0) end++;
+                for (var index = start; index <= end; index++)
+                {
+                    var next = index == end ? start : index + 1;
+                    area += (double)points[index].X * points[next].Y - (double)points[next].X * points[index].Y;
+                }
+                start = end + 1;
+            }
+            if (area == 0d) return new GraphicsPath(points, types, path.FillMode);
+            var sign = area > 0d ? 1f : -1f;
+            for (var start = 0; start < points.Length;)
+            {
+                var end = start;
+                while (end + 1 < points.Length && (types[end + 1] & 0x07) != 0) end++;
+                EmboldenContour(points, moved, start, end, sign * strength / 2f);
+                start = end + 1;
+            }
+            return new GraphicsPath(moved, types, path.FillMode);
+        }
+
+        private static void EmboldenContour(
+            PointF[] points,
+            PointF[] moved,
+            int start,
+            int end,
+            float half)
+        {
+            if (end - start < 2) return;
+            int Next(int index) => index == end ? start : index + 1;
+            int Previous(int index) => index == start ? end : index - 1;
+            static float Length(float x, float y) => (float)Math.Sqrt(x * x + y * y);
+            bool Same(int a, int b) =>
+                Length(points[a].X - points[b].X, points[a].Y - points[b].Y) < 1e-4f;
+            const float sign = 1f;
+
+            for (var index = start; index <= end; index++)
+            {
+                var previous = Previous(index);
+                while (previous != index && Same(previous, index)) previous = Previous(previous);
+                var next = Next(index);
+                while (next != index && Same(next, index)) next = Next(next);
+                if (previous == index || next == index) continue;
+                var point = points[index];
+                var inX = point.X - points[previous].X;
+                var inY = point.Y - points[previous].Y;
+                var inLength = Length(inX, inY);
+                inX /= inLength;
+                inY /= inLength;
+                var outX = points[next].X - point.X;
+                var outY = points[next].Y - point.Y;
+                var outLength = Length(outX, outY);
+                outX /= outLength;
+                outY /= outLength;
+                // 1 + the cosine of the turn; a spike (a turn of more than about
+                // 160 degrees) is left where it is.
+                var turn = 1f + inX * outX + inY * outY;
+                if (turn < 0.06f) continue;
+                // The outward normals of both edges, summed, give the bisector;
+                // moving by half/turn along it moves both edges by half.
+                var shiftX = sign * (inY + outY) * half / turn;
+                var shiftY = -sign * (inX + outX) * half / turn;
+                // Never further than the shorter edge, so no contour collapses.
+                var shiftLength = Length(shiftX, shiftY);
+                var limit = Math.Min(inLength, outLength);
+                if (shiftLength > limit && shiftLength > 0f)
+                {
+                    shiftX *= limit / shiftLength;
+                    shiftY *= limit / shiftLength;
+                }
+                moved[index] = new PointF(point.X + shiftX, point.Y + shiftY);
             }
         }
 

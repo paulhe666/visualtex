@@ -96,22 +96,33 @@ function readBracedCommand(source: string, start: number): number {
   return source.length;
 }
 
+// A text-mode group the formula already has (TeX allows spaces before its brace: formula OCR writes
+// "\text { 且 }"): kept as it is, its CJK text not wrapped a second time.
+const TEXT_GROUP_COMMAND =
+  /^\\(?:text|textrm|textnormal|textup|textmd|textbf|textit|textsl|textsf|texttt|mbox|hbox)\s*(?=\{)/;
+
 export function normalizeChineseLatex(source: string): string {
   const normalizedTextCommands = normalizeContextualUprightSymbols(
     normalizeCanonicalUprightCommands(
       normalizeExtendedIntegralLatexCommands(source),
     ),
   ).replace(
-    /\\(?:mathrm|textrm)\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
-    "\\text{$1}",
+    /\\(mathrm|textrm)\s*\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
+    // spaces inside \mathrm are math mode's (not drawn); inside \textrm they are text
+    (_whole, command: string, body: string) =>
+      `\\text{${command === "mathrm" ? body.replace(/\s+/g, "") : body}}`,
   );
 
   let result = "";
   let index = 0;
 
   while (index < normalizedTextCommands.length) {
-    if (normalizedTextCommands.startsWith("\\text{", index)) {
-      const end = readBracedCommand(normalizedTextCommands, index);
+    const textGroup =
+      normalizedTextCommands[index] === "\\"
+        ? TEXT_GROUP_COMMAND.exec(normalizedTextCommands.slice(index))
+        : null;
+    if (textGroup) {
+      const end = readBracedCommand(normalizedTextCommands, index + textGroup[0].length);
       result += normalizedTextCommands.slice(index, end);
       index = end;
       continue;

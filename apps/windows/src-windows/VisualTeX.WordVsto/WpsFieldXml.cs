@@ -75,6 +75,8 @@ internal static class WpsFieldXml
             paragraphs = document.Paragraphs;
             var before = paragraphs.Count;
             insertion = document.Range(position, position);
+            // The import blanks the OLE formulas already in the document until they are laid out again (WPS).
+            WpsOleDisplayRefresh.Mark(document);
             insertion.InsertXML(BuildRunsFlatOpc(runs));
             var after = paragraphs.Count;
             if (after == before) return;

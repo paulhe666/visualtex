@@ -256,22 +256,16 @@ internal static class WordFormulaOperationLocator
             if (mark.Text != "\r" && mark.Text != "\r\a")
                 throw new InvalidDataException("The native display create point has no owned paragraph mark.");
 
-            // An OLE/OMath/field is content even when its visible text is only a
-            // control character. Never mistake an existing formula for a blank row.
             var blank = contentEnd == owner.Start;
             if (!blank)
             {
                 Range? body = null;
-                InlineShapes? shapes = null;
-                OMaths? maths = null;
-                Fields? fields = null;
                 try
                 {
                     body = owner.Duplicate; body.End = contentEnd;
-                    shapes = body.InlineShapes; maths = body.OMaths; fields = body.Fields;
-                    blank = !ContainsVisibleText(body.Text) && shapes.Count == 0 && maths.Count == 0 && fields.Count == 0;
+                    blank = IsBlankBody(body);
                 }
-                finally { Release(fields); Release(maths); Release(shapes); Release(body); }
+                finally { Release(body); }
             }
             var point = owner.Duplicate;
             point.SetRange(blank ? owner.Start : contentEnd, blank ? owner.Start : contentEnd);
@@ -398,16 +392,15 @@ internal static class WordFormulaOperationLocator
             body = document.Range(
                 paragraphRange.Start,
                 bodyEnd);
-            var hasVisibleBody =
-                ContainsVisibleText(body.Text);
 
-            if (!hasVisibleBody)
+            if (IsBlankBody(body))
                 return document.Range(
                     paragraphRange.Start,
                     paragraphRange.Start);
 
-            // A display equation never splices into ordinary prose. Create one
-            // new paragraph after the paragraph containing the captured caret.
+            // A display equation never splices into ordinary prose, nor into a
+            // paragraph holding an object (an equation beside one becomes inline).
+            // Create one new paragraph after the paragraph containing the caret.
             var nextStart = paragraphRange.End;
             paragraphRange.InsertParagraphAfter();
             return document.Range(
@@ -542,6 +535,22 @@ internal static class WordFormulaOperationLocator
             Release(probe);
             Release(content);
         }
+    }
+
+    // An OLE/OMath/field is content even when its visible text is only a control
+    // character: never mistake an existing formula or object for a blank row.
+    private static bool IsBlankBody(Range body)
+    {
+        if (ContainsVisibleText(body.Text)) return false;
+        InlineShapes? shapes = null;
+        OMaths? maths = null;
+        Fields? fields = null;
+        try
+        {
+            shapes = body.InlineShapes; maths = body.OMaths; fields = body.Fields;
+            return shapes.Count == 0 && maths.Count == 0 && fields.Count == 0;
+        }
+        finally { Release(fields); Release(maths); Release(shapes); }
     }
 
     private static bool ContainsVisibleText(string? text)

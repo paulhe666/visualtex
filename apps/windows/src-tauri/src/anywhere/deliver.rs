@@ -6,8 +6,8 @@ use std::time::Duration;
 use windows::core::w;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW,
-    SetClipboardData,
+    CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardSequenceNumber,
+    IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::{CF_DIB, CF_HDROP, CF_UNICODETEXT};
@@ -130,17 +130,84 @@ fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
     }
 }
 
+/// After the paste, the clipboard gets back what it held (as on macOS), unless something else
+/// was copied meanwhile.
+const RESTORE_DELAY: Duration = Duration::from_millis(900);
+
+/// Formats whose data is a GDI or private handle rather than memory: not kept (Windows makes
+/// CF_BITMAP and the metafile picture again from what is kept).
+fn is_memory_format(format: u32) -> bool {
+    !matches!(format, 2 | 3 | 9 | 14 | 0x80 | 0x82 | 0x83 | 0x8E) && !(0x200..=0x3FF).contains(&format)
+}
+
+/// The clipboard's data, format by format (the clipboard open).
+fn snapshot() -> Vec<(u32, Vec<u8>)> {
+    let mut saved = Vec::new();
+    let mut format = 0;
+    loop {
+        format = unsafe { EnumClipboardFormats(format) };
+        if format == 0 {
+            break;
+        }
+        if is_memory_format(format) {
+            if let Some(bytes) = data(format) {
+                saved.push((format, bytes));
+            }
+        }
+    }
+    saved
+}
+
+fn restore_later(saved: Vec<(u32, Vec<u8>)>, written: u32) {
+    let _ = std::thread::Builder::new().name("visualtex-clipboard-restore".to_string()).spawn(move || {
+        std::thread::sleep(RESTORE_DELAY);
+        if unsafe { GetClipboardSequenceNumber() } != written {
+            super::log("clipboard changed meanwhile: not restored");
+            return;
+        }
+        let Ok(_clipboard) = Clipboard::open() else { return };
+        if unsafe { EmptyClipboard() }.is_err() {
+            return;
+        }
+        let kept = saved.iter().filter(|(format, bytes)| set_data(*format, bytes).is_ok()).count();
+        super::log(&format!("clipboard restored formats={kept}/{}", saved.len()));
+    });
+}
+
 /// Puts the PNG on the clipboard (PNG and DIB) and pastes it into the focused field.
 pub(super) fn paste_png(png: Vec<u8>) -> Result<(), String> {
-    {
-        let _clipboard = Clipboard::open()?;
-        unsafe { EmptyClipboard().map_err(|error| error.to_string())? };
+    paste_with("image", || {
         let png_format = unsafe { RegisterClipboardFormatW(w!("PNG")) };
         set_data(png_format, &png)?;
         if let Some(dib) = png_to_dib(&png) {
             set_data(CF_DIB.0 as u32, &dib)?;
         }
+        Ok(())
+    })
+}
+
+/// Puts the text on the clipboard and pastes it into the focused field (the pasting strip).
+pub(super) fn paste_text(text: &str) -> Result<(), String> {
+    paste_with("text", || {
+        let mut wide: Vec<u16> = text.encode_utf16().collect();
+        wide.push(0);
+        let bytes = unsafe { std::slice::from_raw_parts(wide.as_ptr().cast::<u8>(), wide.len() * 2) };
+        set_data(CF_UNICODETEXT.0 as u32, bytes)
+    })
+}
+
+/// The clipboard emptied and written by `write`, Ctrl+V into the focused field, and the
+/// clipboard's former content back a moment later.
+fn paste_with(what: &str, write: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let saved;
+    let written;
+    {
+        let _clipboard = Clipboard::open()?;
+        saved = snapshot();
+        unsafe { EmptyClipboard().map_err(|error| error.to_string())? };
+        write()?;
     }
+    written = unsafe { GetClipboardSequenceNumber() };
     wait_for_released_modifiers();
     std::thread::sleep(Duration::from_millis(60));
     let inputs = [key(VK_CONTROL, false), key(VK_V, false), key(VK_V, true), key(VK_CONTROL, true)];
@@ -148,6 +215,8 @@ pub(super) fn paste_png(png: Vec<u8>) -> Result<(), String> {
     if sent as usize != inputs.len() {
         return Err("Windows did not accept Ctrl+V".to_string());
     }
+    super::log(&format!("paste {what} saved_formats={}", saved.len()));
+    restore_later(saved, written);
     Ok(())
 }
 

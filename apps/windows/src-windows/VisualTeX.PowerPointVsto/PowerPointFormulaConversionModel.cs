@@ -14,6 +14,9 @@ internal enum PowerPointFormulaKind
     VisualTeXPicture,
     MathType,
     Omml,
+    // LaTeX code typed into a text box ($...$, $$...$$, \(...\), \[...\] and
+    // display environments): what "LaTeX redraw" converts.
+    Latex,
 }
 
 internal enum PowerPointConversionScope
@@ -31,6 +34,12 @@ internal enum PowerPointConversionSkipReason
     // An equation-only text box with several equations would be split into
     // several objects, which an animation on the box cannot follow.
     OmmlSplitWithAnimation,
+    // LaTeX code that shares its text box with other text or formulas: only a
+    // box holding exactly one formula can be replaced by an object.
+    LatexMixedWithText,
+    // LaTeX code that is the text of a drawn shape (a filled or outlined
+    // autoshape, a freeform): only a text box is replaced by an object.
+    LatexInShape,
     InGroup,
     InTable,
     RotatedOrFlipped,
@@ -68,6 +77,9 @@ internal sealed class PowerPointConversionSkip
 internal sealed class PowerPointConversionRequest
 {
     internal const string VisualTeXFamily = "visualtex";
+    // As a source: LaTeX code in text boxes. As a target: LaTeX code that
+    // replaces formulas (also its target mode).
+    internal const string LatexFamily = "latex";
     internal const string AnySource = "any";
 
     private PowerPointConversionRequest(string sourceFamily, string targetFamily, string targetMode, PowerPointConversionScope scope)
@@ -78,17 +90,20 @@ internal sealed class PowerPointConversionRequest
         Scope = scope;
     }
 
-    // visualtex | mathTypeOle | wordOmml | any
+    // visualtex | mathTypeOle | wordOmml | latex | any
     internal string SourceFamily { get; }
-    // visualtex | mathTypeOle | wordOmml
+    // visualtex | mathTypeOle | wordOmml | latex
     internal string TargetFamily { get; }
-    // nativeOle | crossPlatformPicture | mathTypeOle | wordOmml
+    // nativeOle | crossPlatformPicture | mathTypeOle | wordOmml | latex
     internal string TargetMode { get; }
     internal PowerPointConversionScope Scope { get; }
     internal bool Unify => SourceFamily == AnySource;
 
     internal bool Accepts(PowerPointFormulaKind kind)
     {
+        // LaTeX code is redrawn only by the LaTeX commands, never by "unify".
+        if (kind == PowerPointFormulaKind.Latex)
+            return string.Equals(SourceFamily, LatexFamily, StringComparison.Ordinal);
         var family = PowerPointConversionRules.FamilyOf(kind);
         return !string.Equals(family, TargetFamily, StringComparison.Ordinal)
             && (Unify || string.Equals(family, SourceFamily, StringComparison.Ordinal));
@@ -126,7 +141,8 @@ internal sealed class PowerPointConversionRequest
     private static bool IsFamily(string value) =>
         value == VisualTeXFamily
         || value == FormulaOleContract.MathTypeOleMode
-        || value == FormulaOleContract.WordOmmlMode;
+        || value == FormulaOleContract.WordOmmlMode
+        || value == LatexFamily;
 }
 
 internal static class PowerPointConversionRules
@@ -136,14 +152,17 @@ internal static class PowerPointConversionRules
         PowerPointFormulaKind.VisualTeXOle => PowerPointConversionRequest.VisualTeXFamily,
         PowerPointFormulaKind.VisualTeXPicture => PowerPointConversionRequest.VisualTeXFamily,
         PowerPointFormulaKind.MathType => FormulaOleContract.MathTypeOleMode,
+        PowerPointFormulaKind.Latex => PowerPointConversionRequest.LatexFamily,
         _ => FormulaOleContract.WordOmmlMode,
     };
 
-    // PowerPoint cannot rotate or mirror an OLE object; text boxes rotate but
-    // must keep their text readable; only pictures accept both.
+    // PowerPoint cannot rotate or mirror an OLE object; text boxes (native
+    // equations, LaTeX code) rotate but must keep their text readable; only
+    // pictures accept both.
     internal static bool TargetSupportsRotation(string targetMode) =>
         targetMode == FormulaOleContract.CrossPlatformPictureMode
-        || targetMode == FormulaOleContract.WordOmmlMode;
+        || targetMode == FormulaOleContract.WordOmmlMode
+        || targetMode == PowerPointConversionRequest.LatexFamily;
 
     internal static bool TargetSupportsFlip(string targetMode) =>
         targetMode == FormulaOleContract.CrossPlatformPictureMode;
@@ -199,6 +218,7 @@ internal static class PowerPointConversionRules
     {
         FormulaOleContract.MathTypeOleMode => "MathType",
         FormulaOleContract.WordOmmlMode => "OMML",
+        PowerPointConversionRequest.LatexFamily => "LaTeX",
         PowerPointConversionRequest.AnySource => "",
         _ => "VisualTeX",
     };
@@ -206,6 +226,7 @@ internal static class PowerPointConversionRules
     internal static string TargetLabel(string targetMode, bool english) => targetMode switch
     {
         FormulaOleContract.MathTypeOleMode => "MathType",
+        PowerPointConversionRequest.LatexFamily => english ? "LaTeX code" : "LaTeX 代码",
         FormulaOleContract.WordOmmlMode => english ? "OMML (native PowerPoint equations)" : "OMML（PowerPoint 原生公式）",
         FormulaOleContract.CrossPlatformPictureMode => english ? "VisualTeX SVG pictures" : "VisualTeX SVG 图片",
         _ => english ? "VisualTeX OLE objects" : "VisualTeX OLE 对象",
@@ -219,6 +240,12 @@ internal static class PowerPointConversionRules
         PowerPointConversionSkipReason.OmmlSplitWithAnimation => english
             ? $"{count} OMML equation(s) are in an animated text box that holds several equations; splitting it would lose the animation"
             : $"{count} 个 OMML 公式所在文本框含多个公式且带动画，拆分会丢失动画",
+        PowerPointConversionSkipReason.LatexMixedWithText => english
+            ? $"{count} LaTeX formula(s) share a text box with other text or formulas and stay as text (an object cannot sit inside a line of text; use LaTeX → OMML for formulas in text)"
+            : $"{count} 个 LaTeX 公式与其他文字或公式在同一文本框中，保持原样（对象无法嵌入文字行内；文字中的公式请用“LaTeX → OMML”）",
+        PowerPointConversionSkipReason.LatexInShape => english
+            ? $"{count} LaTeX formula(s) are the text of a drawn shape, not of a text box, and stay as they are (only a text box that holds just the formula becomes an object; LaTeX → OMML still works there)"
+            : $"{count} 个 LaTeX 公式是图形（而非文本框）中的文字，保持原样（只有仅含该公式的文本框才会变为对象；这里仍可使用“LaTeX → OMML”）",
         PowerPointConversionSkipReason.InGroup => english
             ? $"{count} equation(s) are inside groups (ungroup them first)"
             : $"{count} 个公式位于组合中（请先取消组合）",

@@ -12,7 +12,10 @@ param(
 #   the previous DLL loaded) and the TIP is registered (regsvr32);
 # - for the user: the input method is added to the Chinese (Simplified) language's keyboards
 #   and VisualTeX Input (its RIME server) is started.
-# -Uninstall reverses both. An input method that is already current is left alone (no UAC).
+# -Uninstall reverses both, except when the VisualTeX installer is replacing this installation
+# (it sets VISUALTEX_REINSTALL for the previous uninstaller): the input method stays, and the
+# new installation's step keeps it or brings its new build. An input method that is already
+# current is left alone (no UAC).
 
 $ErrorActionPreference = "Stop"
 $clsid = "{B6E0A6C4-6F52-4C7E-9B7A-2F1E5A3D9C41}"
@@ -38,10 +41,25 @@ function Quote-ProcessArgument([string]$Value) {
     return '"' + $Value.Replace('"', '\"') + '"'
 }
 
+# The installer runs this script in 32-bit PowerShell (NSIS is 32-bit), where HKLM\SOFTWARE\Classes
+# reads the WOW64 view; the TIP is a 64-bit COM server registered in the 64-bit view.
+function Open-MachineClasses([bool]$Writable = $false) {
+    $view = if ([Environment]::Is64BitOperatingSystem) { [Microsoft.Win32.RegistryView]::Registry64 } else { [Microsoft.Win32.RegistryView]::Default }
+    $machine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
+    return $machine.OpenSubKey("SOFTWARE\Classes\CLSID", $Writable)
+}
+
 function Get-RegisteredDll {
-    $key = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\$clsid\InprocServer32"
-    if (-not (Test-Path $key)) { return $null }
-    return [string](Get-ItemProperty -Path $key).'(default)'
+    $classes = Open-MachineClasses
+    if ($null -eq $classes) { return $null }
+    $key = $classes.OpenSubKey("$clsid\InprocServer32")
+    if ($null -eq $key) { return $null }
+    return [string]$key.GetValue("")
+}
+
+function Remove-Registration {
+    $classes = Open-MachineClasses $true
+    if ($null -ne $classes -and $null -ne $classes.OpenSubKey($clsid)) { $classes.DeleteSubKeyTree($clsid) }
 }
 
 function Read-BuildId([string]$Directory) {
@@ -77,7 +95,8 @@ function Set-UserKeyboard([bool]$Present) {
             $list.Add("zh-Hans-CN")
             $chinese = $list | Where-Object { $_.LanguageTag -eq "zh-Hans-CN" } | Select-Object -First 1
         }
-        if ($chinese.InputMethodTips -notcontains $tipId) { $chinese.InputMethodTips.Add($tipId) }
+        if ($chinese.InputMethodTips -contains $tipId) { return }
+        $chinese.InputMethodTips.Add($tipId)
     } else {
         if ($null -eq $chinese -or $chinese.InputMethodTips -notcontains $tipId) { return }
         [void]$chinese.InputMethodTips.Remove($tipId)
@@ -87,39 +106,63 @@ function Set-UserKeyboard([bool]$Present) {
 
 # The elevated part: files and registration.
 if ($Elevated) {
-    if (-not (Test-IsAdministrator)) { throw "The VisualTeX input method needs administrator rights." }
-    $registered = Get-RegisteredDll
-    if ($Uninstall) {
-        if ($registered -and (Test-Path $registered)) {
-            & "$env:WINDIR\System32\regsvr32.exe" /u /s $registered
-            Write-Log "unregistered $registered (exit $LASTEXITCODE)"
+    try {
+        if (-not (Test-IsAdministrator)) { throw "The VisualTeX input method needs administrator rights." }
+        $registered = Get-RegisteredDll
+        if ($Uninstall) {
+            if ($registered -and (Test-Path $registered)) {
+                & "$env:WINDIR\System32\regsvr32.exe" /u /s $registered
+                Write-Log "unregistered $registered (exit $LASTEXITCODE)"
+            }
+            Remove-Registration
+            # Folders still loaded by running applications go at the next install.
+            Get-ChildItem -Path $installRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            exit 0
         }
-        Remove-Item -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\$clsid" -Recurse -ErrorAction SilentlyContinue
-        # Folders still loaded by running applications go at the next install.
-        Get-ChildItem -Path $installRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $buildId = Read-BuildId $SourceDirectory
+        if (-not $buildId) { throw "The input method's build id is missing from $SourceDirectory" }
+        $target = Join-Path $installRoot $buildId
+        if ((Read-BuildId $target) -eq $buildId) {
+            # This build's folder is already there (a reinstall of the same build): applications
+            # may have its DLL loaded, so its files cannot be replaced, and need not be.
+            Write-Log "files of $buildId already in place"
+        } else {
+            # An uninstall leaves the files applications still had loaded (this build's, so the
+            # same): only the others are copied, the build id last.
+            $source = (Get-Item -LiteralPath $SourceDirectory).FullName.TrimEnd('\')
+            New-Item -Path $target -ItemType Directory -Force | Out-Null
+            Get-ChildItem -LiteralPath $source -Recurse -File | Where-Object { $_.Name -ne "build-id" } | ForEach-Object {
+                $destination = Join-Path $target $_.FullName.Substring($source.Length + 1)
+                if ((Test-Path $destination) -and (Get-FileHash $destination).Hash -eq (Get-FileHash $_.FullName).Hash) { return }
+                New-Item -Path (Split-Path -Parent $destination) -ItemType Directory -Force | Out-Null
+                Copy-Item -Path $_.FullName -Destination $destination -Force
+            }
+            Copy-Item -Path (Join-Path $source "build-id") -Destination $target -Force
+        }
+        & "$env:WINDIR\System32\regsvr32.exe" /s (Join-Path $target "visualtex_tip.dll")
+        $code = $LASTEXITCODE
+        Write-Log "registered $target (exit $code)"
+        if ($code -ne 0) { exit $code }
+        # Earlier builds' folders, unless an application still has their DLL loaded.
+        Get-ChildItem -Path $installRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $buildId } | ForEach-Object {
             Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
         exit 0
+    } catch {
+        Write-Log "elevated step failed at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)"
+        exit 1
     }
-    $buildId = Read-BuildId $SourceDirectory
-    if (-not $buildId) { throw "The input method's build id is missing from $SourceDirectory" }
-    $target = Join-Path $installRoot $buildId
-    New-Item -Path $target -ItemType Directory -Force | Out-Null
-    Copy-Item -Path (Join-Path $SourceDirectory "*") -Destination $target -Recurse -Force
-    & "$env:WINDIR\System32\regsvr32.exe" /s (Join-Path $target "visualtex_tip.dll")
-    $code = $LASTEXITCODE
-    Write-Log "registered $target (exit $code)"
-    if ($code -ne 0) { exit $code }
-    # Earlier builds' folders, unless an application still has their DLL loaded.
-    Get-ChildItem -Path $installRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $buildId } | ForEach-Object {
-        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    exit 0
 }
 
 # The user's part.
 try {
     if ($Uninstall) {
+        if ($env:VISUALTEX_REINSTALL -eq "1") {
+            Write-Log "uninstall for a reinstall: the input method stays"
+            exit 0
+        }
         Stop-InputServer
         Set-UserKeyboard $false
         if (Get-RegisteredDll) {
@@ -153,5 +196,18 @@ try {
 } catch {
     Write-Log "failed: $($_.Exception.Message)"
     Write-Output $_.Exception.Message
+    # A registered input method from an earlier install still works: keep it on the user's
+    # keyboards (the uninstall step of a reinstall took it off) rather than leave none.
+    if (-not $Uninstall) {
+        try {
+            $registered = Get-RegisteredDll
+            if ($registered -and (Test-Path $registered)) {
+                Set-UserKeyboard $true
+                Write-Log "kept the registered input method on the keyboards ($registered)"
+            }
+        } catch {
+            Write-Log "could not keep the registered input method: $($_.Exception.Message)"
+        }
+    }
     exit 1
 }

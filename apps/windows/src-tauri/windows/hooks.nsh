@@ -520,7 +520,8 @@ visualtex_postinstall_cleanup_done:
     SetDetailsView show
     Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
   ${EndIf}
-  ; VisualTeX's input method: off the user's keyboards, unregistered (one UAC prompt).
+  ; VisualTeX's input method: off the user's keyboards, unregistered (one UAC prompt);
+  ; left in place when a new installer runs this uninstaller (VISUALTEX_REINSTALL).
   IfFileExists "$INSTDIR\scripts\install_windows_input_method.ps1" 0 visualtex_input_method_uninstall_done
   nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_input_method.ps1" -Uninstall`
   Pop $0

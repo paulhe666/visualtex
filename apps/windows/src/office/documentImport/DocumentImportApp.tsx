@@ -199,8 +199,7 @@ function PreviewPane({ parsed, isEn }: { parsed: ParsedDocumentImport; isEn: boo
           ) : (
             <div className="doc-import-paper-empty">
               <FileText size={28} />
-              <strong>{isEn ? "Waiting for document content" : "等待文档内容"}</strong>
-              <span>{isEn ? "Enter or paste LaTeX or Markdown on the left to generate a live Word structure preview here." : "在左侧输入或粘贴 LaTeX、Markdown 后，这里会实时生成 Word 结构预览。"}</span>
+              <strong>{isEn ? "No content" : "无内容"}</strong>
             </div>
           )}
         </div>
@@ -432,7 +431,6 @@ export function DocumentImportApp() {
           <FileText size={20} />
           <div>
             <strong>{isEn ? "Word Document Bulk Import" : "Word 文档批量导入"}</strong>
-            <span>{isEn ? "Edit source on the left and preview the Word structure live on the right" : "左侧编辑源码，右侧实时查看 Word 导入结构"}</span>
           </div>
         </div>
         <div className="doc-import-options">
@@ -454,7 +452,7 @@ export function DocumentImportApp() {
           </label>
           <label
             className="doc-import-numbering-option"
-            title={isEn ? "Number every display equation in this import using the current VisualTeX equation-number format for the Word document." : "勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。"}
+            title={isEn ? "Number display equations" : "为行间公式编号"}
           >
             <input
               type="checkbox"
@@ -468,7 +466,7 @@ export function DocumentImportApp() {
             className="doc-import-secondary doc-import-file-button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy || fileBusy}
-            title={isEn ? "Import a single LaTeX or Markdown file" : "导入单个 LaTeX 或 Markdown 文件"}
+            title={isEn ? "Import .tex / .md" : "导入 .tex / .md"}
           >
             {fileBusy ? <LoaderCircle size={16} className="spin" /> : <FolderOpen size={16} />}
             {fileBusy ? (isEn ? "Reading…" : "正在读取…") : (isEn ? "Import .tex / .md" : "导入 .tex / .md")}
@@ -497,7 +495,6 @@ export function DocumentImportApp() {
               </span>
               <div>
                 <strong>{isEn ? "LaTeX / Markdown Source" : "LaTeX / Markdown 源码"}</strong>
-                <small>{isEn ? "Supports body text, headings, lists, quotes, code blocks and mixed equations" : "支持正文、标题、列表、引用、代码块和混合公式"}</small>
               </div>
             </div>
             <div className="doc-import-source-meta">
@@ -558,7 +555,6 @@ A display equation directly after body text: \[\frac{1}{2\pi\tau}\]
               </span>
               <div>
                 <strong>{isEn ? "Word Structure Preview" : "Word 结构预览"}</strong>
-                <small>{isEn ? "Simulates body text, equations and paragraph spacing using the final import hierarchy" : "按最终导入层级模拟正文、公式与段落间距"}</small>
               </div>
             </div>
             {preview.parsed ? (
@@ -591,7 +587,7 @@ A display equation directly after body text: \[\frac{1}{2\pi\tau}\]
           {!loadError && preview.parsed && preview.parsed.warnings.length === 0 ? (
             <span className="ok">
               <CheckCircle2 size={15} />
-              {isEn ? "Preview parsed successfully. Word will insert the current structured preview." : "预览解析正常；Word 将按当前结构化预览结果插入。"}
+              {isEn ? "No errors" : "无错误"}
             </span>
           ) : null}
         </div>

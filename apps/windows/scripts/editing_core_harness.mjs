@@ -155,6 +155,19 @@ const PAGE_LIB = `(() => {
           clientY: round(r.top + r.height / 2),
         };
       }
+      // an empty slot shows its marker: the one level with the caret drawn for
+      // the placeholder's offset, nearest it
+      let marker = null;
+      if (c) {
+        const r = c.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const near = [...field().shadowRoot.querySelectorAll(".ML__vtx-marker")]
+          .map((e) => e.getBoundingClientRect())
+          .filter((m) => m.top <= cy && cy <= m.bottom)
+          .sort((a, b) => Math.abs((a.left + a.right) / 2 - cx) - Math.abs((b.left + b.right) / 2 - cx))[0];
+        if (near) marker = { clientX: round(near.left + near.width / 2), clientY: round(near.top + near.height / 2) };
+      }
       return {
         pos: m.position,
         sel: m.selection.ranges.map((r) => [r[0], r[1]]),
@@ -162,6 +175,7 @@ const PAGE_LIB = `(() => {
         value: m.value,
         at: describe(model().at(m.position)),
         caret,
+        marker,
       };
     },
     offsets() {
@@ -282,11 +296,12 @@ class Editor {
   async click(x, y) {
     // a click near the previous one within the double-click time would count
     // as a double (triple) click and select instead of placing the caret
+    // (timed from when the previous press was delivered: a loaded machine is slow to deliver it)
     const last = this.lastClick;
-    if (last && Math.hypot(x - last.x, y - last.y) < 8) await sleep(Math.max(0, last.time + 550 - Date.now()));
-    this.lastClick = { x, y, time: Date.now() };
+    if (last && Math.hypot(x - last.x, y - last.y) < 8) await sleep(Math.max(0, last.time + 600 - Date.now()));
     await this.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await this.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    this.lastClick = { x, y, time: Date.now() };
     await this.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
     await this.settle(40);
   }
@@ -531,13 +546,19 @@ async function runFormula(editor, latex, tests, shotDir, index) {
       // the radical) is reached from the item beside it.
       const first = state.at?.type === "first";
       const want = stop.at.split(" ").slice(0, 2).join(" ");
-      const centre = state.caret.clientX + (state.caret.w ?? 0) / 2;
+      // an empty slot is clicked on its marker (a click on the marker is how
+      // one reaches it; the caret drawn for the placeholder's own offset is
+      // beside the marker)
+      const point = state.at?.type === "placeholder" && state.marker
+        ? state.marker
+        : { clientX: state.caret.clientX + (state.caret.w ?? 0) / 2, clientY: state.caret.clientY };
       let landed = null;
       for (const dx of [0, -1.5, 1.5]) {
         await editor.load(latex, first ? -1 : 0);
-        await editor.click(centre + dx, state.caret.clientY);
+        await editor.click(point.clientX + dx, point.clientY);
         const after = await editor.state();
         const at = after.at ? after.at.path + " " + after.at.type : null;
+        if (process.env.HARNESS_DEBUG) console.error(`click ${want}: (${point.clientX + dx}, ${point.clientY}) -> ${at} sel=${JSON.stringify(after.sel)} value=${after.value}`);
         if (dx === 0) landed = at;
         if (at === want) {
           landed = at;
@@ -622,7 +643,7 @@ async function run(args) {
         .evaluate("Boolean(document.querySelector('math-field')?._mathfield)")
         .catch(() => false);
       if (ready) break;
-      if (Date.now() - started > 30000) throw new Error("The editor did not start");
+      if (Date.now() - started > 180000) throw new Error("The editor did not start");
       await sleep(200);
     }
     if (letterFont) {

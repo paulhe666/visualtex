@@ -164,9 +164,9 @@ internal static class WpsNativeEquations
             File.WriteAllBytes(path, WpsEquationSlide.Build(paragraphs));
             presentations = application.Presentations;
             scratch = presentations.Add(MsoTriState.msoFalse);
-            CopyEquation(scratch, path);
+            var copied = CopyEquation(scratch, path);
             beforePaste?.Invoke();
-            return PasteCopied(application, shape, start, length);
+            return PasteCopied(application, shape, start, length, copied);
         }
         finally
         {
@@ -181,7 +181,8 @@ internal static class WpsNativeEquations
         }
     }
 
-    private static void CopyEquation(Presentation scratch, string path)
+    // Returns the copied equation as WPS spells it in text.
+    private static string CopyEquation(Presentation scratch, string path)
     {
         Slides? slides = null;
         Slide? slide = null;
@@ -204,6 +205,7 @@ internal static class WpsNativeEquations
             text = frame.TextRange;
             if (text.Length == 0)
                 throw new InvalidOperationException("WPS imported the native equation slide without its equation.");
+            var spelled = text.Text ?? string.Empty;
             // A clipboard listener (input method, clipboard history) holding the
             // clipboard makes the copy fail: serve it and retry.
             for (var attempt = 1; ; attempt++)
@@ -212,7 +214,7 @@ internal static class WpsNativeEquations
                 {
                     text.Copy();
                     PowerPointClipboard.ServeSentMessages(20);
-                    return;
+                    return spelled;
                 }
                 catch (COMException) when (attempt < 5)
                 {
@@ -239,8 +241,11 @@ internal static class WpsNativeEquations
     // Selects the target range and pastes there with the window's own Paste (a
     // TextRange.Paste in WPS always appends at the end of the text). Nothing is
     // pasted unless WPS selected exactly the target, and the text around the
-    // pasted range must be exactly the text that was around the target.
-    private static (int Start, int Length) PasteCopied(Application application, Shape shape, int start, int length)
+    // pasted range must be exactly the text that was around the target. An edit
+    // that only restyled its equation pastes the same spelling over itself, so
+    // the text stays as it was: that paste is not repeated.
+    private static (int Start, int Length) PasteCopied(Application application, Shape shape, int start, int length,
+        string copied)
     {
         var original = LiveText(shape);
         if (start < 1 || length < 0 || start - 1 + length > original.Length)
@@ -262,6 +267,7 @@ internal static class WpsNativeEquations
             Release(frame);
         }
         RequireSelection(application, shape, start, length);
+        var same = string.Equals(copied, original.Substring(start - 1, length), StringComparison.Ordinal);
 
         for (var attempt = 1; ; attempt++)
         {
@@ -277,7 +283,7 @@ internal static class WpsNativeEquations
             finally { Release(view); Release(window); }
 
             var after = LiveText(shape);
-            if (!string.Equals(after, original, StringComparison.Ordinal))
+            if (same || !string.Equals(after, original, StringComparison.Ordinal))
             {
                 var pasted = after.Length - (original.Length - length);
                 if (pasted <= 0

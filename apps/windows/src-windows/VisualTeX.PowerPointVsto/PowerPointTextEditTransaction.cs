@@ -33,17 +33,29 @@ internal static class PowerPointTextEditTransaction
     }
 
     internal static void Execute(Application application, Presentation presentation,
-        int slideId, int shapeId, string expectedSource, Action mutate)
+        int slideId, PowerPointTextHost host, string expectedSource, Action mutate) =>
+        Execute(application, presentation, slideId, host, expectedSource, mutate, sourceProven: false);
+
+    // sourceProven: the caller has already compared the text's saved source with
+    // expectedSource and nothing can change it before mutate runs (a batch
+    // conversion proves all its sources in one snapshot and blocks input while
+    // it writes), so the presentation is not saved once more just to compare it
+    // again. Recovery after a failure still proves the restored source.
+    internal static void Execute(Application application, Presentation presentation,
+        int slideId, PowerPointTextHost host, string expectedSource, Action mutate, bool sourceProven)
     {
         RequireActive(application, presentation);
-        var originalXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
-        if (!string.Equals(Fingerprint(originalXml), expectedSource, StringComparison.Ordinal))
-            throw new InvalidOperationException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
-                "文本框内容或格式在编辑器打开后已改变，请重新选择插入位置；未写入公式。",
-                "The text box's content or formatting changed after the editor opened. Choose the insertion point again; the formula was not written."));
+        if (!sourceProven)
+        {
+            var originalXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, host);
+            if (!string.Equals(Fingerprint(originalXml), expectedSource, StringComparison.Ordinal))
+                throw new InvalidOperationException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                    "文本框内容或格式在编辑器打开后已改变，请重新选择插入位置；未写入公式。",
+                    "The text box's content or formatting changed after the editor opened. Choose the insertion point again; the formula was not written."));
+        }
         if (VisualTeX.WindowsOffice.VstoShared.OfficeHostEnvironment.IsWps)
         {
-            ExecuteInWps(application, presentation, slideId, shapeId, expectedSource, mutate);
+            ExecuteInWps(application, presentation, slideId, host, expectedSource, mutate);
             return;
         }
         application.StartNewUndoEntry(); // Failure here must precede any mutation.
@@ -61,7 +73,7 @@ internal static class PowerPointTextEditTransaction
                 RequireActive(application, presentation);
                 application.StartNewUndoEntry();
                 var current = ReadHistory(application);
-                var owned = CountOwnedPrefix(originalHistory, current);
+                var owned = PowerPointUndoHistory.CountOwnedEntries(originalHistory, current);
                 for (var index = 0; index < owned; index++)
                 {
                     RequireActive(application, presentation);
@@ -69,8 +81,10 @@ internal static class PowerPointTextEditTransaction
                         throw new InvalidDataException("PowerPoint undo history changed during recovery; no further Undo was attempted.");
                     application.CommandBars.ExecuteMso("Undo");
                 }
-                if (!ReadHistory(application).SequenceEqual(originalHistory, StringComparer.Ordinal)
-                    || !string.Equals(Fingerprint(PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId)),
+                // At PowerPoint's undo limit the oldest original entries are gone for
+                // good: what must be left is the original entries that were kept.
+                if (!ReadHistory(application).SequenceEqual(current.Skip(owned), StringComparer.Ordinal)
+                    || !string.Equals(Fingerprint(PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, host)),
                         expectedSource, StringComparison.Ordinal))
                     throw new InvalidDataException("PowerPoint could not verify exact text, formatting and native Undo recovery.");
             }
@@ -91,7 +105,7 @@ internal static class PowerPointTextEditTransaction
     // failure is only reported as clean when the shape's saved text is still
     // exactly the original.
     private static void ExecuteInWps(Application application, Presentation presentation,
-        int slideId, int shapeId, string expectedSource, Action mutate)
+        int slideId, PowerPointTextHost host, string expectedSource, Action mutate)
     {
         try
         {
@@ -104,7 +118,7 @@ internal static class PowerPointTextEditTransaction
             try
             {
                 unchanged = string.Equals(
-                    Fingerprint(PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId)),
+                    Fingerprint(PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, host)),
                     expectedSource, StringComparison.Ordinal);
             }
             catch { unchanged = false; }
@@ -114,14 +128,6 @@ internal static class PowerPointTextEditTransaction
                 "Writing the WPS formula failed after the text box was partly changed. Use Undo to restore it and check the slide."),
                 primary);
         }
-    }
-
-    internal static int CountOwnedPrefix(IReadOnlyList<string> original, IReadOnlyList<string> current)
-    {
-        var count = current.Count - original.Count;
-        if (count < 0 || !current.Skip(Math.Max(0, count)).SequenceEqual(original, StringComparer.Ordinal))
-            throw new InvalidDataException("PowerPoint's previous undo boundary changed or was truncated; recovery cannot cross it.");
-        return count;
     }
 
     private static string[] ReadHistory(Application application)

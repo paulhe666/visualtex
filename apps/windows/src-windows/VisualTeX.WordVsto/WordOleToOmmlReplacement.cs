@@ -80,6 +80,9 @@ internal static class WordOleToOmmlReplacement
                 if (_display && _numberScaffold is null) RemoveDisplayLayoutWhitespace(selected);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-scaffold");
                 _owner.CaptureReplacementBoundary(selected);
+                // OMML Font choice: the imported runs carry no font of their own and
+                // follow the document math font, so set it before the import.
+                WordOmmlMathFontPolicy.ApplyPreferredToDocument(_document);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
                 var wpsInline = OfficeHostEnvironment.IsWps && !_display;
                 WpsXmlInsertion.Replace(

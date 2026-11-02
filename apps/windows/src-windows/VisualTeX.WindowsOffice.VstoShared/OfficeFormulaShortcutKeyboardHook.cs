@@ -8,6 +8,10 @@ internal enum OfficeFormulaShortcutHost
 {
     Word,
     PowerPoint,
+    /// <summary>WPS Writer (the Word add-in in wps.exe): its own Word-shaped settings.</summary>
+    WpsWriter,
+    /// <summary>WPS Presentation (the PowerPoint add-in in wpp.exe): its own PowerPoint-shaped settings.</summary>
+    WpsPresentation,
 }
 
 internal enum OfficeFormulaShortcutKind
@@ -150,9 +154,14 @@ internal sealed class OfficeFormulaShortcutConfiguration
     internal static OfficeFormulaShortcutConfiguration Read(
         OfficeFormulaShortcutHost host)
     {
-        var valuePrefix = host == OfficeFormulaShortcutHost.Word
-            ? "Word"
-            : "PowerPoint";
+        var valuePrefix = host switch
+        {
+            OfficeFormulaShortcutHost.Word => "Word",
+            OfficeFormulaShortcutHost.WpsWriter => "WpsWriter",
+            OfficeFormulaShortcutHost.WpsPresentation => "WpsPresentation",
+            _ => "PowerPoint",
+        };
+        var documentHost = host is OfficeFormulaShortcutHost.Word or OfficeFormulaShortcutHost.WpsWriter;
         var views = Environment.Is64BitOperatingSystem
             ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
             : new[] { RegistryView.Default };
@@ -163,7 +172,7 @@ internal sealed class OfficeFormulaShortcutConfiguration
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
                 using var key = root.OpenSubKey(RegistryPath, writable: false);
                 if (key is null) continue;
-                var bindings = host == OfficeFormulaShortcutHost.Word
+                var bindings = documentHost
                     ? ReadWordBindings(key, valuePrefix)
                     : ReadPowerPointBindings(key, valuePrefix);
                 if (bindings is null) continue;
