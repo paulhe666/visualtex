@@ -32,6 +32,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOperationProgress.cs" Link="OfficeOperationProgress.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeDoubleClickGesture.cs" Link="OfficeDoubleClickGesture.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeAutomationAgent.cs" Link="OfficeAutomationAgent.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeDoubleClickPreference.cs" Link="MathTypeDoubleClickPreference.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <Reference Include="Microsoft.CSharp" />

@@ -1,3 +1,4 @@
+pub mod automation;
 #[path = "platform/non_macos_background.rs"]
 pub mod background;
 pub mod certificate;

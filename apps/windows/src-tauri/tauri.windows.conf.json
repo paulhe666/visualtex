@@ -1,7 +1,8 @@
 {
   "bundle": {
     "externalBin": [
-      "binaries/visualtex-windows-office-bridge"
+      "binaries/visualtex-windows-office-bridge",
+      "binaries/visualtex-mcp"
     ],
     "resources": {
       "../dist-office-windows-native/": "office/",

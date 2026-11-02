@@ -362,6 +362,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private WordFormulaService? _formulaService;
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
+    private OfficeAutomationAgent? _automationAgent;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
     private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
@@ -471,6 +472,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
+        // Agent access (docs/office-mcp): the add-in polls the companion for read commands.
+        var dispatcher = _dispatcher;
+        _automationAgent = new OfficeAutomationAgent(
+            _sessionClient,
+            new WordAutomationHost(_application, _formulaService),
+            operation => dispatcher.InvokeAsync(operation),
+            WordDoubleClickHook.TraceMessage);
+        _automationAgent.Start();
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
         _application.WindowActivate += OnWindowActivate;
@@ -6399,6 +6408,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         Interlocked.Increment(ref _copyPasteWatchGeneration);
         Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
+        try { _automationAgent?.Dispose(); } catch { }
+        _automationAgent = null;
         _sessionClient?.Dispose();
         WpsOleDisplayRefresh.Attach(null, null);
         _dispatcher?.Dispose();

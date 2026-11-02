@@ -96,4 +96,6 @@ if (process.platform === "win32") {
   // VisualTeX's input method (VisualTeX Anywhere: pinyin, English and formulas in any
   // application), bundled as input-method/ and registered by the installer.
   run(process.execPath, ["scripts/build_windows_input_method.mjs"]);
+  // visualtex-mcp.exe, the MCP server AI agents start (docs/office-mcp).
+  run(process.execPath, ["scripts/build_windows_mcp_launcher.mjs"]);
 }

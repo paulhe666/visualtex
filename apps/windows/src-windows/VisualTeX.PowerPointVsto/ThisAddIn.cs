@@ -267,6 +267,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private PowerPointFormulaService? _formulaService;
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
+    private OfficeAutomationAgent? _automationAgent;
     private PowerPointDoubleClickHook? _doubleClickHook;
     private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
@@ -306,6 +307,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
+        // Agent access (docs/office-mcp): the add-in polls the companion for read commands.
+        var dispatcher = _dispatcher;
+        _automationAgent = new OfficeAutomationAgent(
+            _sessionClient,
+            new PowerPointAutomationHost(_application, _formulaService),
+            operation => dispatcher.InvokeAsync(operation),
+            PowerPointDoubleClickHook.TraceMessage);
+        _automationAgent.Start();
         _application.WindowSelectionChange += OnWindowSelectionChange;
         string? doubleClickError = null;
         try
@@ -1137,6 +1146,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         _doubleClickHook?.Dispose();
         _keyboardHook?.Dispose();
+        try { _automationAgent?.Dispose(); } catch { }
+        _automationAgent = null;
         _sessionClient?.Dispose();
         try { _formulaService?.Dispose(); } catch { }
         _dispatcher?.Dispose();

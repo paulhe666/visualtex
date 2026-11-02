@@ -199,8 +199,8 @@ pub(crate) fn schedule_persist_office_editor_window_size(
 }
 
 #[derive(Clone)]
-struct ServerContext {
-    companion: OfficeCompanionState,
+pub(crate) struct ServerContext {
+    pub(crate) companion: OfficeCompanionState,
 }
 
 #[derive(Serialize)]
@@ -290,9 +290,11 @@ fn scale_powerpoint_formula_size(width_px: f64, height_px: f64) -> Result<(f64, 
     Ok((natural_width * scale, natural_height * scale))
 }
 
-fn inject_install_token(
+/// The page metadata the Office dialog reads. The install token is not among it: the
+/// HTML is served to anyone on this computer, so VisualTeX's own windows receive the
+/// token through `office_install_token_script` (docs/office-mcp/DESIGN.md §9.2).
+fn inject_dialog_meta(
     html: &str,
-    token: &str,
     theme: &str,
     editor_layout: &str,
 ) -> Result<String, StatusCode> {
@@ -304,7 +306,7 @@ fn inject_install_token(
         "false"
     };
     let meta = format!(
-        "<meta name=\"visualtex-install-token\" content=\"{token}\" />\n<meta name=\"visualtex-native-powerpoint-commit\" content=\"{native_powerpoint_commit}\" />\n<meta name=\"visualtex-theme\" content=\"{theme}\" />\n<meta name=\"visualtex-editor-layout\" content=\"{editor_layout}\" />\n"
+        "<meta name=\"visualtex-native-powerpoint-commit\" content=\"{native_powerpoint_commit}\" />\n<meta name=\"visualtex-theme\" content=\"{theme}\" />\n<meta name=\"visualtex-editor-layout\" content=\"{editor_layout}\" />\n"
     );
     Ok(format!("{}{}{}", &html[..index], meta, &html[index..]))
 }
@@ -312,7 +314,6 @@ fn inject_install_token(
 async fn read_office_html(
     ui_root: &Path,
     relative: &str,
-    token: &str,
     theme: &str,
     editor_layout: &str,
 ) -> Result<Html<String>, StatusCode> {
@@ -320,7 +321,21 @@ async fn read_office_html(
     let html = tokio::fs::read_to_string(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    inject_install_token(&html, token, theme, editor_layout).map(Html)
+    inject_dialog_meta(&html, theme, editor_layout).map(Html)
+}
+
+/// The install token for the Office pages VisualTeX itself opens: defined before the
+/// page's scripts run, and only on the companion's own origin.
+#[cfg(target_os = "windows")]
+fn office_install_token_script(app: &tauri::AppHandle) -> String {
+    let token = app
+        .try_state::<OfficeCompanionState>()
+        .map(|state| state.install_token.to_string())
+        .unwrap_or_default();
+    let origin = format!("https://127.0.0.1:{}", crate::office::state::office_port());
+    format!(
+        "(function(){{if(window.location.origin==={origin:?}){{Object.defineProperty(window,'__VISUALTEX_INSTALL_TOKEN__',{{value:{token:?},writable:false,configurable:false}});}}}})();"
+    )
 }
 
 async fn health(State(context): State<ServerContext>) -> Json<HealthResponse> {
@@ -357,7 +372,6 @@ async fn dialog(
     read_office_html(
         &context.companion.paths.ui_root,
         "dialog/index.html",
-        &context.companion.install_token,
         &theme,
         &editor_layout,
     )
@@ -372,7 +386,6 @@ async fn dialog_shell(
     read_office_html(
         &context.companion.paths.ui_root,
         "dialog/index.html",
-        &context.companion.install_token,
         &theme,
         &editor_layout,
     )
@@ -982,6 +995,7 @@ fn prewarm_desktop_editor_window(app: tauri::AppHandle) -> Result<(), String> {
     .center()
     .focused(false)
     .visible(false)
+    .initialization_script(&office_install_token_script(&app))
     .on_page_load(handle_office_editor_page_load)
     .build()
     .map(|_| {
@@ -1173,6 +1187,7 @@ fn open_desktop_session_window(app: tauri::AppHandle, session_id: String) -> Res
         .center()
         .focused(false)
         .visible(false)
+        .initialization_script(&office_install_token_script(&app))
         .on_page_load(handle_office_editor_page_load)
         .build();
     if let Err(error) = build_result {
@@ -1240,6 +1255,7 @@ fn open_desktop_bulk_import_window(
         .center()
         .focused(true)
         .visible(true)
+        .initialization_script(&office_install_token_script(&app))
         .build()
         .map_err(|error| format!("Unable to create the VisualTeX import window: {error}"))?;
     bring_session_window_to_front(&window, None)
@@ -1265,6 +1281,7 @@ fn ensure_desktop_conversion_window(app: &tauri::AppHandle) -> Result<WebviewWin
     .resizable(false)
     .focused(false)
     .visible(false)
+    .initialization_script(&office_install_token_script(app))
     .build()
     .map_err(|error| format!("Unable to create the reusable VisualTeX conversion window: {error}"))
 }
@@ -1301,6 +1318,7 @@ fn open_desktop_conversion_window(
     .resizable(false)
     .focused(false)
     .visible(false)
+    .initialization_script(&office_install_token_script(&app))
     .build()
     .map(|_| ())
     .map_err(|error| format!("Unable to create the reusable VisualTeX conversion window: {error}"))
@@ -1682,6 +1700,89 @@ async fn delete_render_batch(AxumPath(id): AxumPath<String>) -> Response {
     match crate::office::render_batches::release(&id) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => session_error_response(error),
+    }
+}
+
+/// One formula through the hidden converter, for agents (`render_latex`, docs/office-mcp
+/// DESIGN.md §4.5): the same render batch the add-ins use, created and awaited in-process.
+/// Errors: (code, message); `latex_error` carries the renderer's message.
+pub(crate) async fn render_single_formula(
+    companion: &OfficeCompanionState,
+    latex: &str,
+    display: &str,
+    font_size_pt: f64,
+    limit: std::time::Duration,
+) -> Result<crate::office::sessions::OfficeExportResult, (&'static str, String)> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (companion, latex, display, font_size_pt, limit);
+        Err(("internal", "Rendering for agents is available on Windows only".to_string()))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use crate::office::render_batches::{self, RenderBatchInput, RenderBatchRequest};
+        let Some(app) = companion.app.clone() else {
+            return Err(("internal", "The VisualTeX converter is unavailable in this runtime".to_string()));
+        };
+        let input: CreateOfficeSessionInput = serde_json::from_value(serde_json::json!({
+            "mode": "create", "host": "word", "codeFormat": "latex",
+            "displayMode": display, "objectMode": "nativeOle", "fontSizePt": font_size_pt,
+            "lines": [{ "id": Uuid::new_v4().to_string(), "latex": latex }],
+        }))
+        .map_err(|error| ("internal", error.to_string()))?;
+        let id = Uuid::new_v4().to_string();
+        render_batches::create(RenderBatchRequest {
+            id: id.clone(),
+            items: vec![RenderBatchInput { id: "formula".into(), request: input }],
+        })
+        .map_err(|error| ("latex_error", error.to_string()))?;
+        let outcome = async {
+            let mut receiver = render_batches::subscribe(&id).map_err(|error| ("internal", error.to_string()))?;
+            tokio::task::spawn_blocking(move || {
+                let window = ensure_desktop_conversion_window(&app)?;
+                let _ = window.eval("window.dispatchEvent(new CustomEvent('visualtex-office-render-batch'));");
+                Ok::<(), String>(())
+            })
+            .await
+            .map_err(|error| ("internal", error.to_string()))?
+            .map_err(|error| ("internal", format!("Unable to open the VisualTeX conversion window: {error}")))?;
+            let watchdog_id = id.clone();
+            let watchdog = tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(RENDER_BATCH_START_SECONDS)).await;
+                let _ = render_batches::expire_untaken(&watchdog_id, RENDER_BATCH_START_SECONDS);
+            });
+            let wait = async {
+                loop {
+                    if let Some(result) = receiver.borrow_and_update().clone() {
+                        return Ok(result);
+                    }
+                    if receiver.changed().await.is_err() {
+                        return Err(("internal", "The render batch ended without a result".to_string()));
+                    }
+                }
+            };
+            let result = tokio::time::timeout(limit, wait).await;
+            watchdog.abort();
+            result.map_err(|_| ("render_timeout", "VisualTeX did not finish rendering in time".to_string()))?
+        }
+        .await;
+        let _ = render_batches::release(&id);
+        let snapshot = outcome?;
+        if let Some(error) = snapshot.error {
+            return Err(("internal", error));
+        }
+        let item = snapshot
+            .items
+            .into_iter()
+            .next()
+            .ok_or(("internal", "The render batch returned no formula".to_string()))?;
+        match (item.session.status, item.session.export_result) {
+            (OfficeSessionStatus::Committing, Some(export)) => Ok(export),
+            _ => Err((
+                "latex_error",
+                item.session.error.unwrap_or_else(|| "VisualTeX could not render this LaTeX".to_string()),
+            )),
+        }
     }
 }
 
@@ -3139,12 +3240,19 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route("/ocr/warmup", post(warmup_ocr))
         .route("/ocr/reset", post(reset_ocr))
         .route("/ocr/events", get(get_ocr_events))
+        .merge(crate::office::automation::api_routes())
         .fallback(api_not_found);
 
     Router::new()
         .route("/health", get(health))
         .route("/dialog", get(dialog_shell))
         .route("/dialog/{session_id}", get(dialog))
+        .route(
+            "/mcp",
+            post(crate::office::automation::mcp::post)
+                .get(crate::office::automation::mcp::get)
+                .delete(crate::office::automation::mcp::delete),
+        )
         .nest("/api/v1", api)
         .nest_service("/assets", ServeDir::new(ui_root.join("assets")))
         .fallback(not_found)
@@ -3706,6 +3814,154 @@ mod tests {
         assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
+    async fn mcp_call(
+        router: &Router,
+        token: &str,
+        session: Option<&str>,
+        body: serde_json::Value,
+    ) -> (StatusCode, Option<String>, serde_json::Value) {
+        let mut request = HttpRequest::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(session) = session {
+            request = request.header("mcp-session-id", session);
+        }
+        let response = router
+            .clone()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let session = response
+            .headers()
+            .get("mcp-session-id")
+            .map(|value| value.to_str().unwrap().to_string());
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, session, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
+    #[tokio::test]
+    async fn mcp_endpoint_is_off_by_default_and_needs_its_own_token() {
+        use crate::office::automation::settings;
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        let router = build_router(state.clone());
+        let initialize = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": { "protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": { "name": "test-client", "version": "1" } } });
+
+        // off: refused even with the install token
+        let (status, _, _) = mcp_call(&router, state.install_token.as_str(), None, initialize.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        settings::update(&state.paths.root, settings::McpSettings {
+            enabled: true,
+            mode: settings::McpMode::Ask,
+        })
+        .unwrap();
+        let token = fs::read_to_string(settings::token_path(&state.paths.root)).unwrap();
+        let (status, _, _) = mcp_call(&router, state.install_token.as_str(), None, initialize.clone()).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let (status, session, reply) = mcp_call(&router, &token, None, initialize).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(reply["result"]["protocolVersion"], "2025-06-18");
+        assert_eq!(reply["result"]["serverInfo"]["name"], "visualtex");
+        let session = session.expect("session id");
+
+        let initialized = serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        let (status, _, _) = mcp_call(&router, &token, Some(&session), initialized).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let list = serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
+        let (status, _, reply) = mcp_call(&router, &token, Some(&session), list.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 7);
+
+        let call = serde_json::json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "visualtex_status", "arguments": {} } });
+        let (_, _, reply) = mcp_call(&router, &token, Some(&session), call).await;
+        assert_eq!(reply["result"]["isError"], false);
+        assert_eq!(reply["result"]["structuredContent"]["permission_mode"], "ask_before_changes");
+
+        let call = serde_json::json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": { "name": "read_formula", "arguments": { "document_id": "h0:x", "formula_id": "f" } } });
+        let (_, _, reply) = mcp_call(&router, &token, Some(&session), call).await;
+        assert_eq!(reply["result"]["isError"], true);
+        assert!(reply["result"]["content"][0]["text"].as_str().unwrap().contains("document_not_found"));
+
+        let unknown = serde_json::json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": { "name": "format_disk" } });
+        let (_, _, reply) = mcp_call(&router, &token, Some(&session), unknown).await;
+        assert_eq!(reply["error"]["code"], -32602);
+
+        let (status, _, _) = mcp_call(&router, &token, Some("stale"), list.clone()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // a page in a browser cannot call it
+        let response = router
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .header(header::ORIGIN, "https://example.com")
+                    .body(Body::from(list.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn automation_channel_requires_install_token_and_host_secret() {
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        let router = build_router(state.clone());
+        let registration = serde_json::json!({ "app": "word", "vendor": "microsoft", "pid": 91_200 });
+        let request = |token: &str| {
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/api/v1/automation/hosts")
+                .header(INSTALL_TOKEN_HEADER, token)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(registration.to_string()))
+                .unwrap()
+        };
+        let refused = router.clone().oneshot(request("wrong")).await.unwrap();
+        assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+        let created = router.clone().oneshot(request(state.install_token.as_str())).await.unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body: serde_json::Value = serde_json::from_slice(
+            &created.into_body().collect().await.unwrap().to_bytes(),
+        )
+        .unwrap();
+        let host_id = body["hostId"].as_str().unwrap().to_string();
+        let secret = body["secret"].as_str().unwrap().to_string();
+
+        let poll = |secret: &str| {
+            HttpRequest::builder()
+                .uri(format!("/api/v1/automation/hosts/{host_id}/commands?wait=0"))
+                .header(INSTALL_TOKEN_HEADER, state.install_token.as_str())
+                .header("x-visualtex-automation-secret", secret)
+                .body(Body::empty())
+                .unwrap()
+        };
+        let wrong = router.clone().oneshot(poll("wrong")).await.unwrap();
+        assert_eq!(wrong.status(), StatusCode::NOT_FOUND);
+        let polled = router.clone().oneshot(poll(&secret)).await.unwrap();
+        assert_eq!(polled.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_slice(
+            &polled.into_body().collect().await.unwrap().to_bytes(),
+        )
+        .unwrap();
+        assert_eq!(body["commands"], serde_json::json!([]));
+    }
+
     #[tokio::test]
     async fn formula_metadata_cache_api_round_trips_and_validates_identity() {
         let temp = TempDir::new().expect("temp dir");
@@ -3837,7 +4093,8 @@ mod tests {
         let dialog_body = dialog.into_body().collect().await.unwrap().to_bytes();
         let dialog_html = String::from_utf8(dialog_body.to_vec()).unwrap();
         assert!(!dialog_html.contains("office.js"));
-        assert!(dialog_html.contains("visualtex-install-token"));
+        assert!(!dialog_html.contains("visualtex-install-token"));
+        assert!(!dialog_html.contains(token.as_str()));
 
         let desktop_dialog = router
             .clone()
@@ -3860,7 +4117,7 @@ mod tests {
             .to_bytes();
         let desktop_html = String::from_utf8(desktop_body.to_vec()).unwrap();
         assert!(!desktop_html.contains("office.js"));
-        assert!(desktop_html.contains("visualtex-install-token"));
+        assert!(!desktop_html.contains(token.as_str()));
 
         let patch = router
             .clone()

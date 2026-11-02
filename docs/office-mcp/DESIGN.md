@@ -1,6 +1,7 @@
 # VisualTeX for AI agents: an MCP server for Word, PowerPoint and WPS on Windows
 
-Status: design, 2026-11-01. Nothing here is built yet. The current architecture this design starts from is mapped
+Status: phases 0–1 (read tools) built on Windows, 2026-11-01; see §14. Writes (phase 2 on) are design only. The
+architecture this design starts from is mapped
 with file:line references in `~/claude/visualtex-office-mcp/research/addin-architecture.md` (VPS); the facts used
 below are summarised in §2.
 
@@ -369,3 +370,42 @@ always ask, even in "Allow changes", unless the user ticked "don't ask again for
 ← {"jsonrpc":"2.0","id":2,"result":{"structuredContent":{"formula_id":"w:main:1532:1533:9f2c1d0a",
      "kind":"office_equation","latex_read_back":"x=\\frac{-b\\pm \\sqrt{b^{2}-4ac}}{2a}","number":"(3)"}}}
 ```
+
+## 14. Implementation status (2026-11-01)
+
+Built (phases 0–1, read only):
+
+| Part | Where |
+|---|---|
+| Automation channel (register, long poll, result, unregister; host expiry 60 s) | `src-tauri/src/office/automation/registry.rs`, routes in `automation/mod.rs` |
+| MCP endpoint `POST/GET/DELETE /mcp` (protocol 2025-06-18, 2025-03-26, 2024-11-05; sessions; bearer token; no `Origin`) | `automation/mcp.rs` |
+| Settings (off by default, mode, token file `office\mcp-token`), audit log `office\logs\mcp-audit.jsonl` | `automation/settings.rs`, `automation/audit.rs`; Tauri commands `get_mcp_status`, `set_mcp_settings`, `reset_mcp_access`, `get_mcp_audit` |
+| `render_latex` through a one-item render batch in-process | `server.rs` `render_single_formula` |
+| `recognize_formula_image` through the OCR service | `automation/mcp.rs` |
+| `visualtex-mcp.exe` (stdio ⇄ `/mcp`, pinned certificate, starts `visualtex.exe --office-background`, re-initializes after a companion restart) | `apps/windows/mcp-launcher/` (own crate), built by `scripts/build_windows_mcp_launcher.mjs` into the sidecar `src-tauri/binaries/visualtex-mcp` |
+| Add-in agent (register, poll, run on the UI thread, 20 s UI-start limit → `host_unresponsive`) | `VstoShared/OfficeAutomationAgent.cs`; `VisualTeXSessionClient.SendAutomationAsync` |
+| Word / WPS Writer reads | `WordFormulaService.Automation.cs`, `WordAutomationHost.cs` |
+| PowerPoint / WPS Presentation reads (one `SaveCopyAs` snapshot per call) | `PowerPointFormulaService.Automation.cs`, `PowerPointAutomationHost.cs` |
+| Settings page "AI agents (MCP)" | `src/components/OfficeMcpSettings.tsx` |
+| §9.2: the install token is no longer in the `/dialog` HTML; VisualTeX's own Office windows get it from an initialization script limited to the companion's origin | `server.rs` `office_install_token_script` |
+
+Decisions taken (§13 recommendations): "Ask before changes" is the default mode; only the stdio launcher is
+advertised; reads never change a document (no stable ids without a write); the other points concern writes.
+
+Differences from the sections above:
+- `/mcp` answers each request with JSON only (no server-sent event stream yet): no progress or list-changed
+  notifications.
+- Formula ids: Word `w:<o|m|v>:<story>:<start>:<end>:<hash8>` (kind letter added; a moved formula is found again
+  within 5000 characters by its LaTeX hash), VisualTeX objects `vtx:<formulaId>` when unique; PowerPoint
+  `ppt:<slideId>:<shapeId>` and `ppt:<slideId>:<shapeId>:<n>` for the n-th native equation of a text shape.
+- Scope: Word's main story only (no headers, footnotes, text boxes); PowerPoint top-level shapes only (no groups or
+  table cells yet).
+- Context text shows other equations as `[formula]`.
+- The modes are stored but have no effect until write tools exist; `IOperationUi` comes with the writes.
+- The token file keeps the profile's default ACL.
+
+Verified on the dev PC with an isolated source companion (port 43129) and the dev add-ins loaded through a
+temporary HKCU class override: PowerPoint (native equations inline and display, MathType objects, two decks) and
+Word (inline/display equations, a second document), `render_latex` (image and a LaTeX error), OCR of a formula
+image; Rust tests for the registry, settings, MCP endpoint and channel. Not yet run: WPS, x86 Office, VisualTeX OLE
+objects in PowerPoint, an MCP client other than the test driver (Claude Code / Desktop).

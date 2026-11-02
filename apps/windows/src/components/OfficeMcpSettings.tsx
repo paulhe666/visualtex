@@ -1,0 +1,242 @@
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Copy, History, KeyRound, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
+import { useEditorStore } from "../stores/editorStore";
+
+// Settings → Office integration → AI agents (MCP): docs/office-mcp/DESIGN.md §9.3, §10.
+
+type McpMode = "readOnly" | "ask" | "allow";
+
+type McpStatus = {
+  settings: { enabled: boolean; mode: McpMode };
+  tokenPath: string;
+  launcherPath: string;
+  hosts: { hostId: string; app: string; vendor: string; productVersion: string }[];
+  clients: { sessionId: string; name: string; version: string; connectedAt: string }[];
+};
+
+type AuditEntry = {
+  time: string;
+  client: string;
+  tool: string;
+  document?: string;
+  ok: boolean;
+  error?: string;
+  durationMs: number;
+};
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "";
+}
+
+function hostName(host: McpStatus["hosts"][number], isEn: boolean) {
+  if (host.vendor === "wps") return host.app === "word" ? (isEn ? "WPS Writer" : "WPS 文字") : isEn ? "WPS Presentation" : "WPS 演示";
+  return host.app === "word" ? "Word" : "PowerPoint";
+}
+
+function localTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+export function OfficeMcpSettings() {
+  const isEn = useEditorStore((state) => state.language) === "en";
+  const [status, setStatus] = useState<McpStatus | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await invoke<McpStatus>("get_mcp_status"));
+      setMessage("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const run = async (command: string, args?: Record<string, unknown>) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      setStatus(await invoke<McpStatus>(command, args));
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = (enabled: boolean, mode: McpMode) => run("set_mcp_settings", { settings: { enabled, mode } });
+
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((value) => (value === key ? null : value)), 1600);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  };
+
+  const toggleAudit = async () => {
+    if (audit) {
+      setAudit(null);
+      return;
+    }
+    try {
+      setAudit(await invoke<AuditEntry[]>("get_mcp_audit", { limit: 100 }));
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  };
+
+  const enabled = Boolean(status?.settings.enabled);
+  const mode = status?.settings.mode ?? "ask";
+  const launcher = status?.launcherPath ?? "";
+  const quoted = `"${launcher}"`;
+  const clientConfigs: { key: string; label: string; text: string }[] = [
+    {
+      key: "desktop",
+      label: "Claude Desktop",
+      text: JSON.stringify({ mcpServers: { visualtex: { command: launcher } } }, null, 2),
+    },
+    { key: "code", label: "Claude Code", text: `claude mcp add --scope user visualtex -- ${quoted}` },
+    { key: "command", label: isEn ? "Command" : "命令", text: quoted },
+  ];
+
+  return (
+    <section className="settings-section office-integration-section office-mcp-section">
+      <div className="office-settings-heading office-settings-heading-simple">
+        <div>
+          <h3>{isEn ? "AI agents (MCP)" : "AI 智能体（MCP）"}</h3>
+        </div>
+        <button
+          type="button"
+          className="icon-button compact"
+          onClick={() => void refresh()}
+          disabled={busy}
+          aria-label={isEn ? "Refresh" : "刷新"}
+          title={isEn ? "Refresh" : "刷新"}
+        >
+          <RefreshCw size={15} />
+        </button>
+      </div>
+
+      <div className="office-mathtype-double-click-setting">
+        <div>
+          <strong>{isEn ? "Agent access" : "智能体访问"}</strong>
+        </div>
+        <button
+          type="button"
+          className="secondary-button office-mathtype-double-click-toggle"
+          disabled={busy || !status}
+          aria-pressed={enabled}
+          onClick={() => void save(!enabled, mode)}
+        >
+          {enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+          {enabled ? (isEn ? "Enabled" : "已开启") : isEn ? "Disabled" : "已关闭"}
+        </button>
+      </div>
+
+      {enabled && (
+        <>
+          <div className="office-mathtype-double-click-setting">
+            <div>
+              <strong>{isEn ? "Permission" : "权限"}</strong>
+            </div>
+            <select
+              className="office-mcp-select"
+              value={mode}
+              disabled={busy}
+              onChange={(event) => void save(true, event.target.value as McpMode)}
+            >
+              <option value="readOnly">{isEn ? "Read only" : "只读"}</option>
+              <option value="ask">{isEn ? "Ask before changes" : "修改前询问"}</option>
+              <option value="allow">{isEn ? "Allow changes" : "允许修改"}</option>
+            </select>
+          </div>
+
+          <div className="office-mcp-clients">
+            <strong>{isEn ? "Connect a client" : "连接客户端"}</strong>
+            <div className="office-primary-actions">
+              {clientConfigs.map((config) => (
+                <button
+                  key={config.key}
+                  type="button"
+                  className="secondary-button"
+                  disabled={!launcher}
+                  title={config.text}
+                  onClick={() => void copy(config.key, config.text)}
+                >
+                  <Copy size={15} />
+                  {copied === config.key ? (isEn ? "Copied" : "已复制") : config.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <dl className="office-mcp-connections">
+            <dt>{isEn ? "Office" : "Office 应用"}</dt>
+            <dd>
+              {status?.hosts.length
+                ? status.hosts.map((host) => `${hostName(host, isEn)} ${host.productVersion}`.trim()).join(isEn ? ", " : "、")
+                : "—"}
+            </dd>
+            <dt>{isEn ? "Agents" : "智能体"}</dt>
+            <dd>
+              {status?.clients.length
+                ? status.clients.map((client) => `${client.name} ${client.version}`.trim()).join(isEn ? ", " : "、")
+                : "—"}
+            </dd>
+          </dl>
+
+          <div className="office-secondary-actions">
+            <button type="button" className="secondary-button" onClick={() => void toggleAudit()}>
+              <History size={15} />
+              {isEn ? "Activity" : "活动记录"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy}
+              title={status?.tokenPath}
+              onClick={() => void run("reset_mcp_access")}
+            >
+              <KeyRound size={15} />
+              {isEn ? "Reset access" : "重置访问"}
+            </button>
+          </div>
+
+          {audit && (
+            <ol className="office-mcp-audit">
+              {audit.length === 0 && <li>—</li>}
+              {audit.map((entry, index) => (
+                <li key={`${entry.time}-${index}`} className={entry.ok ? undefined : "is-error"}>
+                  <span>{localTime(entry.time)}</span>
+                  <span>{entry.client}</span>
+                  <code>{entry.tool}</code>
+                  <span>{entry.ok ? `${entry.durationMs} ms` : entry.error}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
+      )}
+
+      {message && (
+        <div className="office-settings-warning" role="alert">
+          <ShieldAlert size={15} />
+          <span className="office-settings-diagnostic">{message}</span>
+        </div>
+      )}
+    </section>
+  );
+}

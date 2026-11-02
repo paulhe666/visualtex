@@ -211,6 +211,17 @@ public sealed class VisualTeXSessionClient : IDisposable
             // default only on runtimes where the property is unavailable.
         }
         handler.ServerCertificateCustomValidationCallback = CaptureServerCertificate;
+        // The agent channel keeps a long poll open beside the add-in's own requests
+        // and render waits; .NET Framework allows only two connections per server.
+        try { handler.MaxConnectionsPerServer = 16; }
+        catch (PlatformNotSupportedException) { }
+        try
+        {
+            var servicePoint = ServicePointManager.FindServicePoint(
+                new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"));
+            if (servicePoint.ConnectionLimit < 16) servicePoint.ConnectionLimit = 16;
+        }
+        catch (Exception) { }
         _http = new HttpClient(handler)
         {
             BaseAddress = new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"),
@@ -351,6 +362,36 @@ public sealed class VisualTeXSessionClient : IDisposable
             throw new VisualTeXCompanionException(diagnostic, error);
         }
     }
+
+    /// <summary>
+    /// One request of the agent channel (docs/office-mcp/DESIGN.md §4.3): the status
+    /// and body, whatever the status. Never starts VisualTeX.
+    /// </summary>
+    public async Task<AutomationHttpResult> SendAutomationAsync(
+        string method,
+        string path,
+        string? json,
+        string? hostSecret,
+        TimeSpan limit,
+        CancellationToken cancellationToken)
+    {
+        if (_configurationException != null) throw _configurationException;
+        EnsureAuthorizationHeader();
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        if (json != null)
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        if (hostSecret != null)
+            request.Headers.TryAddWithoutValidation("X-VisualTeX-Automation-Secret", hostSecret);
+        using var response = await SendLimitedAsync(request, limit, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return new AutomationHttpResult((int)response.StatusCode, body);
+    }
+
+    /// <summary>Whether something listens on the companion port (no TLS, no request).</summary>
+    public Task<bool> IsCompanionListeningAsync(CancellationToken cancellationToken) =>
+        _configurationException != null
+            ? Task.FromResult(false)
+            : IsPortListeningAsync(_configuration.CompanionPort, cancellationToken);
 
     public async Task<OfficeSessionDocument> CreateSessionAsync(
         CreateVstoSessionRequest request,
@@ -1762,6 +1803,18 @@ public sealed class VisualTeXSessionClient : IDisposable
         _renderBatchHttp.Dispose();
         _http.Dispose();
     }
+}
+
+public sealed class AutomationHttpResult
+{
+    public AutomationHttpResult(int statusCode, string body)
+    {
+        StatusCode = statusCode;
+        Body = body;
+    }
+
+    public int StatusCode { get; }
+    public string Body { get; }
 }
 
 public sealed class CreateVstoSessionRequest

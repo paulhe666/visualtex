@@ -4177,7 +4177,11 @@ pub fn run() {
             office::lifecycle::uninstall_office_integration,
             office::lifecycle::regenerate_office_certificate,
             office::lifecycle::open_word,
-            office::lifecycle::open_powerpoint
+            office::lifecycle::open_powerpoint,
+            office::automation::get_mcp_status,
+            office::automation::set_mcp_settings,
+            office::automation::reset_mcp_access,
+            office::automation::get_mcp_audit
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|error| {
