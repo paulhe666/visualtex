@@ -320,8 +320,9 @@ ctex's single spacing, 1.3 x the size). They are the doc node's attributes: save
 (`setDocumentSettings` = `setDocAttribute` steps); null = the default, so older documents keep working. The CSS
 body font is "Latin, CJK, fallbacks" (Latin text from the Latin font, Chinese falls through to the CJK font).
 The font menus list the system's families: Tauri `list_system_font_families` (system_math_glyphs.rs: the existing
-font catalog, English typographic family + Chinese name, "has 中" flag, read off the main thread); without Tauri a
-list of common Windows / macOS fonts (app `systemFonts.ts`).
+font catalog, English typographic family + Chinese name, "has 中" flag, read off the main thread; on macOS the same
+command lists CoreText's families with their names in the user's language); without Tauri a list of common Windows /
+macOS fonts (app `systemFonts.ts`).
 
 ### 8.2 Page view (`pagination.ts`, app `DocumentEditor.tsx`)
 
@@ -396,3 +397,15 @@ writes `% !TEX program = xelatex` first.
 4. LaTeX export + numbering; `.vtxdoc` open/save.
 5. App integration: Formula / Document switch in the main window, toolbar inserts into the open formula (or a
    new inline one), Windows build + NSIS.
+
+## 10. macOS (2026-11-01)
+
+The macOS app has the same document mode: `apps/macos/src/document` and the stores are the Windows files, the
+document package and the editing core are shared (`apps/shared`). The macOS formula editor (`editor/MathEditor.tsx`)
+follows the Windows one (AxMath rows: row hit rule, a drag across rows, Shift+press, dragging a rows selection or a
+formula's selection to another row, edge scrolling; the exports the document needs) and keeps the macOS parts: the
+session history (`useHistoryManager`, `captureDocumentSnapshot` / `restoreDocumentSelection` with the selection
+across rows), typing, pasting or deleting over a selection across rows replaces all of it, one toolbar-insertion
+attempt (`visualTexInsertToolbarTemplate`), copy in the row's code format, the WebKit focus fix, the opt-in IME
+trace. `\bm` is the kernel's own command on both. The body-font menus read the system's families on macOS through
+CoreText (`list_system_font_families`).

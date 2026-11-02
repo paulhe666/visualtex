@@ -110,6 +110,12 @@ const VERBATIM_ARGUMENT_COMMANDS = new Set([
   "url", "begin", "end", "placeholder",
 ]);
 
+// Commands whose first argument is a name, not math (\class{visualtex-align-marker}{…}): that argument is copied
+// verbatim, the others are math.
+const NAME_ARGUMENT_COMMANDS = new Set([
+  "class", "cssId", "htmlClass", "htmlId", "htmlStyle", "htmlData", "data",
+]);
+
 const SPACE_COMMANDS = new Set([
   " ", ",", ":", ";", "quad", "qquad", "enspace", "thinspace", "medspace",
   "thickspace",
@@ -299,9 +305,10 @@ function tokenize(source: string): Item[] {
       if (source[argumentStart] !== "{") break;
       const group = readBraced(source, argumentStart);
       if (!group) break;
+      const nameArgument = firstArgument === undefined && NAME_ARGUMENT_COMMANDS.has(name);
       firstArgument ??= group.content;
       parts.push(source.slice(index, argumentStart));
-      if (verbatim) parts.push(source.slice(argumentStart, group.end));
+      if (verbatim || nameArgument) parts.push(source.slice(argumentStart, group.end));
       else parts.push("{", { content: group.content, child: {} }, "}");
       index = group.end;
     }
