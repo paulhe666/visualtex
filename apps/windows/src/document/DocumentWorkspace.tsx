@@ -1,28 +1,45 @@
 // The main window's document mode (docs/document-editor/DESIGN.md §6.4): the document editor in the workspace's
-// editor area, with autosave, the file actions of the main menu (new, open, save, export LaTeX, copy LaTeX) and an
-// editor handle so that formula commands from the rest of the app (tools, tiles, OCR) go into the document.
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+// editor area beside the document library (saved as you type), the file actions of the main menu (new, import, save,
+// export) and an editor handle so that formula commands from the rest of the app (tools, tiles, OCR) go into the
+// document.
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
 import {
+  documentSchema,
   hasMathDelimiters,
   insertDisplayLatex,
   insertInlineFormula,
   insertInlineLatex,
   mathTextToSlice,
+  parseDocument,
   parseMathText,
+  serializeDocument,
 } from "../../../shared/visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
 import { createSafeStorage } from "../runtime/safeStorage";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
+import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
+import { DocumentLibrary, DocumentLibraryToggle, type DocumentLibraryActions } from "./DocumentLibrary";
+import {
+  documentLibrary,
+  documentTitle,
+  libraryDocumentName,
+  saveTextFile,
+  useDocumentLibraryStore,
+  type Library,
+  type LibraryDocument,
+} from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
@@ -30,7 +47,10 @@ import {
   DOCUMENT_SAVE_REQUEST_EVENT,
 } from "./documentEvents";
 
+// Before the library the one document was kept here; the first start with the library takes it in (once; the key
+// stays for an older version of the app).
 const AUTOSAVE_KEY = "visualtex.document.autosave.v1";
+const AUTOSAVE_TAKEN_KEY = "visualtex.document.autosave.taken";
 const storage = createSafeStorage();
 
 function readAutosave(): unknown {
@@ -43,13 +63,14 @@ function readAutosave(): unknown {
   }
 }
 
-function download(name: string, text: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const link = window.document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
+const SAVE_DELAY_MS = 400;
+
+function emptyDocumentText(): string {
+  return serializeDocument(documentSchema.topNodeType.createAndFill()!);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -145,9 +166,16 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
-  const [initial] = useState(readAutosave);
+  const t = (en: string, zh: string) => (isEn ? en : zh);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef(0);
+  const api = useMemo(documentLibrary, []);
+  const libraryOpen = useDocumentLibraryStore((state) => state.open);
+  const [library, setLibrary] = useState<Library | null>(null);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  // The open document: its id, the text last saved (or read) and the latest text.
+  const current = useRef<{ id: string | null; saved: Node | null; latest: Node | null }>({ id: null, saved: null, latest: null });
+  const saveTimer = useRef(0);
 
   const adapterRef = useRef<MathEditorHandle | null>(null);
   useEffect(() => {
@@ -161,79 +189,275 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     };
   }, [editorRef]);
 
-  // Autosave: the document is kept between sessions (debounced).
-  const saveTimer = useRef(0);
-  const onChange = useCallback((doc: Node) => {
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      storage.setItem(AUTOSAVE_KEY, JSON.stringify({ version: 1, doc: doc.toJSON() }));
-    }, 400);
-  }, []);
-
   const flash = (message: string) => {
     setNotice(message);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 1800);
   };
 
-  const fileName = (ext: string) => {
-    const doc = documentRef.current?.view()?.state.doc;
-    const heading = doc?.firstChild?.type.name === "heading" ? doc.firstChild.textContent : "";
-    const base = heading.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 60) || (isEn ? "Untitled document" : "未命名文档");
+  const entryOf = (id: string | null) => (id ? library?.documents.find((doc) => doc.id === id) : undefined);
+  const withEntry = (entry: LibraryDocument) =>
+    setLibrary((old) => old && { ...old, documents: [entry, ...old.documents.filter((doc) => doc.id !== entry.id)].sort((a, b) => b.modified - a.modified) });
+
+  const fileName = (ext: string, id = current.current.id) => {
+    const entry = entryOf(id);
+    const base = (entry ? libraryDocumentName(entry, isEn) : "").trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 60) || t("Untitled document", "未命名文档");
     return base + ext;
+  };
+
+  // The open document is saved a moment after each change, and at once before another one opens.
+  const onChange = useCallback((doc: Node) => {
+    current.current.latest = doc;
+    if (!current.current.id) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void ops.current.saveNow(), SAVE_DELAY_MS);
+  }, []);
+
+  const ops = useRef({
+    saveNow: async (): Promise<boolean> => true,
+    open: async (_id: string): Promise<boolean> => false,
+    create: async (_folder: string | null) => {},
+    importFile: async (_file: File) => {},
+    exportFile: async (_id: string) => {},
+    afterLoss: async (_library: Library) => {},
+  });
+  ops.current = {
+    saveNow: async () => {
+      window.clearTimeout(saveTimer.current);
+      const { id, saved, latest } = current.current;
+      if (!id || !latest || (saved && saved.eq(latest))) return true;
+      current.current.saved = latest;
+      try {
+        withEntry(await api.save(id, serializeDocument(latest), documentTitle(latest)));
+        return true;
+      } catch (error) {
+        if (current.current.saved === latest) current.current.saved = saved;
+        flash(t("Not saved: ", "未保存：") + errorText(error));
+        return false;
+      }
+    },
+    open: async (id) => {
+      if (id === current.current.id) {
+        documentRef.current?.focus();
+        return true;
+      }
+      await ops.current.saveNow();
+      try {
+        const text = await api.read(id);
+        documentRef.current?.load(text);
+      } catch (error) {
+        flash(t("Cannot open: ", "无法打开：") + errorText(error));
+        return false;
+      }
+      const doc = documentRef.current?.view()?.state.doc ?? null;
+      current.current = { id, saved: doc, latest: doc };
+      setCurrentId(id);
+      useDocumentLibraryStore.getState().setLastId(id);
+      documentRef.current?.focus();
+      return true;
+    },
+    create: async (folder) => {
+      await ops.current.saveNow();
+      try {
+        const entry = await api.create(folder, emptyDocumentText(), null);
+        withEntry(entry);
+        const store = useDocumentLibraryStore.getState();
+        if (folder && store.collapsed.includes(folder)) store.toggleFolder(folder);
+        await ops.current.open(entry.id);
+      } catch (error) {
+        flash(errorText(error));
+      }
+    },
+    // A .vtxdoc (or .json) as it is; Markdown and LaTeX read into a new document (one Ctrl+Z from empty).
+    importFile: async (file) => {
+      const stem = file.name.replace(/\.[^.]+$/, "");
+      const markdown = /\.(md|markdown)$/i.test(file.name);
+      const latex = /\.tex$/i.test(file.name);
+      try {
+        const text = await file.text();
+        if (!markdown && !latex) parseDocument(documentSchema, text);
+        await ops.current.saveNow();
+        const entry = await api.create(null, markdown || latex ? emptyDocumentText() : text, stem);
+        withEntry(entry);
+        if (!(await ops.current.open(entry.id))) return;
+        if (markdown) documentRef.current?.loadMarkdown(text);
+        else if (latex) documentRef.current?.loadLatex(text);
+        await ops.current.saveNow();
+        flash(t("Document imported", "文档已导入"));
+      } catch (error) {
+        flash(t("Cannot open: ", "无法打开：") + errorText(error));
+      }
+    },
+    exportFile: async (id) => {
+      try {
+        let text: string;
+        if (id === current.current.id) {
+          await ops.current.saveNow();
+          text = documentRef.current?.serialize() ?? "";
+        } else text = await api.read(id);
+        if (await saveTextFile(fileName(".vtxdoc", id), text, "vtxdoc", "application/json", isEn)) flash(t("Document exported", "文档已导出"));
+      } catch (error) {
+        flash(errorText(error));
+      }
+    },
+    // The open document was deleted: the newest other one opens, or a new one.
+    afterLoss: async (next) => {
+      current.current = { id: null, saved: null, latest: null };
+      const other = next.documents.find((doc) => doc.trashed === null);
+      if (other) await ops.current.open(other.id);
+      else await ops.current.create(null);
+    },
+  };
+
+  // The library is read once; the document last open opens. On the first start with the library the document kept
+  // before it becomes the first one.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        let lib = await api.list();
+        if (!lib.documents.some((doc) => doc.trashed === null)) {
+          let text = emptyDocumentText();
+          let title = "";
+          const kept = lib.documents.length || storage.getItem(AUTOSAVE_TAKEN_KEY) ? undefined : readAutosave();
+          if (kept) {
+            try {
+              const doc = documentSchema.nodeFromJSON(kept);
+              doc.check();
+              text = serializeDocument(doc);
+              title = documentTitle(doc);
+            } catch {
+              // an unreadable autosave: an empty document
+            }
+          }
+          const entry = await api.create(null, text, null);
+          if (title) await api.save(entry.id, text, title);
+          storage.setItem(AUTOSAVE_TAKEN_KEY, "1");
+          lib = await api.list();
+        }
+        if (!live) return;
+        setLibrary(lib);
+        const documents = lib.documents.filter((doc) => doc.trashed === null);
+        const last = useDocumentLibraryStore.getState().lastId;
+        await ops.current.open((documents.find((doc) => doc.id === last) ?? documents[0]).id);
+      } catch (error) {
+        if (live) flash(t("Documents unavailable: ", "文档库不可用：") + errorText(error));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [api]);
+
+  // Leaving document mode, the window or the app: what is not saved yet is saved now.
+  useEffect(() => {
+    const flush = () => void ops.current.saveNow();
+    window.addEventListener("blur", flush);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("blur", flush);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, []);
+
+  const libraryActions: DocumentLibraryActions = {
+    open: (id) => void ops.current.open(id),
+    create: (folder) => void ops.current.create(folder),
+    importFile: () => fileRef.current?.click(),
+    rename: (id, title) => void api.rename(id, title).then(setLibrary, (error) => flash(errorText(error))),
+    duplicate: (id) =>
+      void (async () => {
+        try {
+          if (id === current.current.id) await ops.current.saveNow();
+          const source = entryOf(id);
+          const entry = await api.duplicate(id, `${source ? libraryDocumentName(source, isEn) : ""} ${t("copy", "副本")}`.trim());
+          withEntry(entry);
+          await ops.current.open(entry.id);
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
+    move: (id, folder) => void api.move(id, folder).then(setLibrary, (error) => flash(errorText(error))),
+    trash: (id) =>
+      void (async () => {
+        try {
+          if (id === current.current.id) await ops.current.saveNow();
+          const next = await api.trash(id);
+          setLibrary(next);
+          if (id === current.current.id) await ops.current.afterLoss(next);
+          flash(t("Moved to Recently deleted", "已移到最近删除"));
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
+    restore: (id) => void api.restore(id).then(setLibrary, (error) => flash(errorText(error))),
+    remove: (id) => void api.remove(id).then(setLibrary, (error) => flash(errorText(error))),
+    emptyTrash: () => void api.emptyTrash().then(setLibrary, (error) => flash(errorText(error))),
+    createFolder: async () => {
+      try {
+        const { library: next, id } = await api.createFolder(t("New folder", "新建文件夹"));
+        setLibrary(next);
+        return id;
+      } catch (error) {
+        flash(errorText(error));
+        return null;
+      }
+    },
+    renameFolder: (id, name) => void api.renameFolder(id, name).then(setLibrary, (error) => flash(errorText(error))),
+    deleteFolder: (id) => void api.deleteFolder(id).then(setLibrary, (error) => flash(errorText(error))),
+    exportFile: (id) => void ops.current.exportFile(id),
+    reveal: isTauri() ? (id) => void invoke("document_library_reveal", { id }).catch((error) => flash(errorText(error))) : null,
+    search: (query) => api.search(query),
   };
 
   const actions = useRef({
     save: () => {},
     open: () => {},
     create: () => {},
+    exportDocument: () => {},
     exportLatex: () => {},
     copyLatex: () => {},
     exportMarkdown: () => {},
     copyMarkdown: () => {},
   });
   actions.current = {
-    save: () => {
-      const text = documentRef.current?.serialize();
-      if (!text) return;
-      download(fileName(".vtxdoc"), text, "application/json");
-      flash(isEn ? "Document saved" : "文档已保存");
-    },
+    save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
     open: () => fileRef.current?.click(),
-    create: () => {
-      // An undoable clear: the old document stays one Ctrl+Z away.
-      const view = documentRef.current?.view();
-      if (!view) return;
-      const paragraph = view.state.schema.nodes.paragraph.create();
-      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, paragraph).scrollIntoView());
-      view.focus();
-    },
+    create: () => void ops.current.create(entryOf(current.current.id)?.folder ?? null),
+    exportDocument: () => current.current.id && void ops.current.exportFile(current.current.id),
     exportLatex: () => {
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
-      download(fileName(".tex"), tex, "text/x-tex");
-      flash(isEn ? "LaTeX exported" : "LaTeX 已导出");
+      void saveTextFile(fileName(".tex"), tex, "tex", "text/x-tex", isEn).then(
+        (done) => done && flash(t("LaTeX exported", "LaTeX 已导出")),
+        (error) => flash(errorText(error)),
+      );
     },
     exportMarkdown: () => {
       const markdown = documentRef.current?.toMarkdown();
       if (!markdown) return;
-      download(fileName(".md"), markdown, "text/markdown");
-      flash(isEn ? "Markdown exported" : "Markdown 已导出");
+      void saveTextFile(fileName(".md"), markdown, "md", "text/markdown", isEn).then(
+        (done) => done && flash(t("Markdown exported", "Markdown 已导出")),
+        (error) => flash(errorText(error)),
+      );
     },
     copyMarkdown: () => {
       const markdown = documentRef.current?.toMarkdown();
       if (!markdown) return;
       void navigator.clipboard.writeText(markdown).then(
-        () => flash(isEn ? "Markdown copied" : "Markdown 已复制"),
-        () => flash(isEn ? "Copy failed" : "复制失败"),
+        () => flash(t("Markdown copied", "Markdown 已复制")),
+        () => flash(t("Copy failed", "复制失败")),
       );
     },
     copyLatex: () => {
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
       void navigator.clipboard.writeText(tex).then(
-        () => flash(isEn ? "LaTeX copied" : "LaTeX 已复制"),
-        () => flash(isEn ? "Copy failed" : "复制失败"),
+        () => flash(t("LaTeX copied", "LaTeX 已复制")),
+        () => flash(t("Copy failed", "复制失败")),
       );
     },
   };
@@ -244,6 +468,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_SAVE_REQUEST_EVENT, () => actions.current.save()],
       [DOCUMENT_OPEN_REQUEST_EVENT, () => actions.current.open()],
       [DOCUMENT_NEW_REQUEST_EVENT, () => actions.current.create()],
+      [DOCUMENT_EXPORT_FILE_EVENT, () => actions.current.exportDocument()],
       [DOCUMENT_EXPORT_LATEX_EVENT, () => actions.current.exportLatex()],
       [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
@@ -256,39 +481,34 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   }, []);
 
   return (
-    <section className="vtx-document-workspace" aria-label={isEn ? "Document" : "文档"}>
-      <DocumentEditor
-        ref={documentRef}
-        initialJson={initial}
-        onChange={onChange}
-        onImage={
-          onPasteImage
-            ? (file) => {
-                const target = adapterRef.current?.captureInsertionTarget();
-                if (target) onPasteImage(file, target);
-              }
-            : undefined
-        }
-      />
+    <section className={"vtx-document-workspace" + (libraryOpen ? " has-library" : "")} aria-label={t("Document", "文档")}>
+      {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
+      <div className="vtx-document-main">
+        {/* the document's own buttons above it; the formula tools stay in the bottom dock */}
+        <DocumentTextToolbar leading={libraryOpen ? null : <DocumentLibraryToggle isEn={isEn} />} />
+        <DocumentEditor
+          ref={documentRef}
+          onChange={onChange}
+          onImage={
+            onPasteImage
+              ? (file) => {
+                  const target = adapterRef.current?.captureInsertionTarget();
+                  if (target) onPasteImage(file, target);
+                }
+              : undefined
+          }
+        />
+      </div>
       {notice && <div className="mc-notice" role="status">{notice}</div>}
       <input
         ref={fileRef}
         type="file"
         accept=".vtxdoc,.json,.md,.markdown,.tex"
         className="visually-hidden"
-        onChange={async (event) => {
+        onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (!file) return;
-          try {
-            // A Markdown file is read as Markdown (Typora, Obsidian, GitHub); otherwise the document format.
-            if (/\.(md|markdown)$/i.test(file.name)) documentRef.current?.loadMarkdown(await file.text());
-            else if (/\.tex$/i.test(file.name)) documentRef.current?.loadLatex(await file.text());
-            else documentRef.current?.load(await file.text());
-            flash(isEn ? "Document opened" : "文档已打开");
-          } catch (error) {
-            flash((isEn ? "Cannot open: " : "无法打开：") + (error instanceof Error ? error.message : String(error)));
-          }
+          if (file) void ops.current.importFile(file);
         }}
       />
     </section>

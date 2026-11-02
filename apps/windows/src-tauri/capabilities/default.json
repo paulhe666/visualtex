@@ -9,6 +9,7 @@
     "allow-office-desktop-integration",
     "allow-ocr-desktop",
     "allow-main-window-files",
+    "allow-document-library",
     "allow-anywhere",
     "dialog:allow-open",
     "dialog:allow-save",

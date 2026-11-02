@@ -1,9 +1,11 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentModeStore } from "./stores/documentModeStore";
 import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
+import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
@@ -1653,6 +1655,7 @@ function App() {
 
   const workspaceContent = useDocumentModeStore((state) => state.content);
   const setWorkspaceContent = useDocumentModeStore((state) => state.setContent);
+  const documentLibraryOpen = useDocumentLibraryStore((state) => state.open);
 
   const desktopHeaderControls = (
     <>
@@ -1761,6 +1764,10 @@ function App() {
                 </span>
               </div>
               {workspaceContent === "document" ? (<>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => useDocumentLibraryStore.getState().setOpen(!documentLibraryOpen))}>
+                {documentLibraryOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                <span>{documentLibraryOpen ? (isEn ? "Hide documents" : "隐藏文档库") : isEn ? "Show documents" : "显示文档库"}</span>
+              </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT)))}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New document" : "新建文档"}</span>
@@ -1775,6 +1782,11 @@ function App() {
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
                 <kbd>Ctrl+S</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_FILE_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export document" : "导出文档"}</span>
+                <kbd>.vtxdoc</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_LATEX_EVENT)))}>
                 <FileDown size={16} />

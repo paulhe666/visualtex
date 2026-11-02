@@ -36,6 +36,7 @@ pub fn system_font_asset_acceptance_json(
     serde_json::to_string(&system_math_glyphs::read_system_font_asset(font_families)?)
         .map_err(|error| format!("VisualTeX could not serialize the system font asset: {error}"))
 }
+mod document_library;
 mod office;
 #[cfg(windows)]
 mod windows_quick_ocr;
@@ -4104,6 +4105,22 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
+            document_library::document_library_list,
+            document_library::document_library_read,
+            document_library::document_library_create,
+            document_library::document_library_save,
+            document_library::document_library_rename,
+            document_library::document_library_duplicate,
+            document_library::document_library_move,
+            document_library::document_library_trash,
+            document_library::document_library_restore,
+            document_library::document_library_delete,
+            document_library::document_library_empty_trash,
+            document_library::document_library_create_folder,
+            document_library::document_library_rename_folder,
+            document_library::document_library_delete_folder,
+            document_library::document_library_search,
+            document_library::document_library_reveal,
             get_ocr_runtime_status,
             configure_ocr_storage_location,
             open_ocr_storage_location,
