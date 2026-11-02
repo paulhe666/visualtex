@@ -32,5 +32,9 @@ commands.allow = [
   "open_word",
   "open_powerpoint",
   "get_word_numbering_user_configuration",
-  "apply_word_numbering_user_configuration"
+  "apply_word_numbering_user_configuration",
+  "get_mcp_status",
+  "set_mcp_settings",
+  "reset_mcp_access",
+  "get_mcp_audit"
 ]
