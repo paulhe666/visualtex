@@ -413,7 +413,7 @@ export function paginationPlugin(options: PaginationOptions): Plugin<PaginationS
   return new Plugin<PaginationState>({
     key: paginationKey,
     state: {
-      init: (_config, state) => ({ decorations: DecorationSet.empty, breaks: [] as PageBreak[] }),
+      init: () => ({ decorations: DecorationSet.empty, breaks: [] as PageBreak[] }),
       apply: (tr, value) => {
         const breaks = tr.getMeta(paginationKey) as PageBreak[] | undefined;
         if (breaks) return { decorations: buildDecorations(tr.doc, breaks), breaks };

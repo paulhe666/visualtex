@@ -51,7 +51,6 @@ import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
-import { openDocumentFormula } from "./openDocumentFormula";
 import { CommandMenu } from "./CommandMenu";
 import { LinkDialog } from "./LinkDialog";
 import { FootnoteDialog } from "./FootnoteDialog";

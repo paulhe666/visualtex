@@ -221,7 +221,7 @@ class EqrefView {
   constructor(
     private node: Node,
     private view: EditorView,
-    private getPos: () => number | undefined,
+    _getPos: () => number | undefined,
     decorations: readonly Decoration[],
   ) {
     this.dom = document.createElement("span");

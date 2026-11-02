@@ -15,7 +15,6 @@ import {
 } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "prosemirror-view";
 import { isFormulaNodeName } from "./schema.ts";
-import { newNodeId } from "./ids.ts";
 import { DropMarker, dropPlace } from "./dropPlace.ts";
 
 /** A selection inside a formula, in kernel offsets (the row editor's MathSelectionSnapshot). */
