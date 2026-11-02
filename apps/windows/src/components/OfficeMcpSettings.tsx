@@ -109,6 +109,8 @@ export function OfficeMcpSettings() {
       text: JSON.stringify({ mcpServers: { visualtex: { command: launcher } } }, null, 2),
     },
     { key: "code", label: "Claude Code", text: `claude mcp add --scope user visualtex -- ${quoted}` },
+    // Codex: ~/.codex/config.toml (a literal string keeps the path's backslashes); writes can take minutes
+    { key: "codex", label: "Codex", text: `[mcp_servers.visualtex]\ncommand = '${launcher}'\nstartup_timeout_sec = 30\ntool_timeout_sec = 600\n` },
     { key: "command", label: isEn ? "Command" : "命令", text: quoted },
   ];
 
