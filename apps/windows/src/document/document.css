@@ -510,17 +510,17 @@
 .vtx-document :is(h1, h2, h3)::before {
   float: left;
 }
-.vtx-document :is(h1, h2, h3):is([style*="text-align:center"], [style*="text-align:right"])::before {
+.vtx-document :is(h1, h2, h3):is([data-align="center"], [data-align="right"])::before {
   position: absolute;
   float: none;
   transform: translateX(-100%);
 }
 /* room for the number inside the text area (both sides, so the text stays centred) */
-.vtx-document :is(h1, h2, h3)[style*="text-align:center"] {
+.vtx-document :is(h1, h2, h3)[data-align="center"] {
   padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
   padding-right: 3em;
 }
-.vtx-document :is(h1, h2, h3)[style*="text-align:right"] {
+.vtx-document :is(h1, h2, h3)[data-align="right"] {
   padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
 }
 

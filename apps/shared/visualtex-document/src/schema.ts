@@ -21,7 +21,10 @@ function styleOf(attrs: { align?: string | null; indent?: number }) {
   const style: string[] = [];
   if (attrs.align) style.push(`text-align:${attrs.align}`);
   if (attrs.indent) style.push(`--vtx-indent:${attrs.indent}`);
-  return style.length ? { style: style.join(";"), "data-indent": attrs.indent ? String(attrs.indent) : undefined } : {};
+  // data-align: for the style sheet (the browser rewrites the style attribute: "text-align: center;")
+  return style.length
+    ? { style: style.join(";"), "data-indent": attrs.indent ? String(attrs.indent) : undefined, "data-align": attrs.align ?? undefined }
+    : {};
 }
 
 function paragraphStyleFrom(dom: HTMLElement | string) {
