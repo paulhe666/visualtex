@@ -32,6 +32,8 @@ import {
   FileCog,
   Hash,
   Superscript,
+  Heading,
+  RotateCcw,
 } from "lucide-react";
 import {
   FONT_SIZES,
@@ -63,7 +65,11 @@ import {
   type EquationBrackets,
   type EquationNumbering,
   type HeadingNumbering,
+  type HeadingStyle,
   type PaperName,
+  headingSize,
+  headingSpace,
+  setHeadingStyle,
 } from "../../../shared/visualtex-document/src/index.ts";
 import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "./systemFonts";
 import { CitationPicker } from "./CitationPicker";
@@ -470,6 +476,167 @@ function NumberingSetup(props: { lang: Lang; settings: DocumentSettings; apply: 
   );
 }
 
+/** A size or a spacing in points; empty: the default (shown greyed). Enter or leaving the field sets it. */
+function PointField(props: { label: string; value: number | null; fallback: number; max: number; onCommit: (pt: number | null) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = props.value === null ? "" : formatPt(props.value);
+  const commit = (text: string) => {
+    setDraft(null);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      if (props.value !== null) props.onCommit(null);
+      return;
+    }
+    const value = Number(trimmed.replace(",", "."));
+    if (!Number.isFinite(value)) return;
+    const pt = Math.round(Math.max(0, Math.min(props.max, value)) * 10) / 10;
+    if (pt !== props.value) props.onCommit(pt);
+  };
+  return (
+    <label className="document-page-field">
+      <span>{props.label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft ?? shown}
+        placeholder={formatPt(props.fallback)}
+        onMouseDown={letFocus}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={(event) => commit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit(event.currentTarget.value);
+          } else if (event.key === "Escape") {
+            event.stopPropagation();
+            setDraft(null);
+          }
+        }}
+      />
+      <span className="document-page-unit">pt</span>
+    </label>
+  );
+}
+
+/** The document's heading styles (one per level): fonts, size, bold / italic, colour, alignment, spacing. */
+function HeadingStyleSetup(props: { lang: Lang; view: EditorView | null; settings: DocumentSettings; level: number }) {
+  const { lang, view, settings } = props;
+  const [level, setLevel] = useState(Math.min(3, Math.max(1, props.level || 1)));
+  const style = settings.headingStyles[level - 1];
+  const apply = (patch: Partial<HeadingStyle> | null) => {
+    if (view) setHeadingStyle(level, patch)(view.state, view.dispatch);
+  };
+  const size = headingSize(settings, level);
+  const sizeChoices = [...CHINESE_FONT_SIZES.map((s) => ({ pt: s.pt, label: `${s.name} · ${formatPt(s.pt)}` })), ...POINT_FONT_SIZES.map((pt) => ({ pt, label: formatPt(pt) }))];
+  const numbers = ["1.", "1.1.", "1.1.1."];
+  const body = t(lang, "Body", "正文");
+  return (
+    <div className="document-page-setup document-heading-setup">
+      <div className="document-page-papers document-heading-levels" role="tablist">
+        {[1, 2, 3].map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={level === value}
+            className={"document-menu-item" + (level === value ? " is-current" : "")}
+            onClick={() => setLevel(value)}
+          >
+            {t(lang, `Level ${value}`, ["一级", "二级", "三级"][value - 1])} {numbers[value - 1]}
+          </button>
+        ))}
+      </div>
+      <div className="document-heading-row">
+        <FontButton
+          lang={lang}
+          label={t(lang, "Heading Chinese font", "标题中文字体")}
+          caption={t(lang, "CJK", "中")}
+          value={style.cjkFont ?? settings.cjkFont}
+          cjkOnly
+          onPick={(cjkFont) => apply({ cjkFont })}
+        />
+        <FontButton
+          lang={lang}
+          label={t(lang, "Heading Latin font", "标题西文字体")}
+          caption={t(lang, "Latin", "西")}
+          value={style.latinFont ?? settings.latinFont}
+          cjkOnly={false}
+          onPick={(latinFont) => apply({ latinFont })}
+        />
+        {(style.cjkFont || style.latinFont) && (
+          <button type="button" className="document-menu-item" onClick={() => apply({ cjkFont: null, latinFont: null })}>
+            {t(lang, "Body fonts", "正文字体")}
+          </button>
+        )}
+      </div>
+      <div className="document-heading-row">
+        <label className="document-page-field">
+          <span>{t(lang, "Size", "字号")}</span>
+          <select
+            className="document-heading-select"
+            value={style.size === null ? "" : String(style.size)}
+            onChange={(event) => apply({ size: event.target.value ? Number(event.target.value) : null })}
+          >
+            <option value="">{`${body} × ${[1.2, 1.1, 1][level - 1]} · ${formatPt(size)}`}</option>
+            {sizeChoices.map((choice) => (
+              <option key={choice.label} value={String(choice.pt)}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+          <span className="document-page-unit">pt</span>
+        </label>
+        <Button label={t(lang, "Bold", "加粗")} active={style.bold} onClick={() => apply({ bold: !style.bold })}>
+          <Bold size={15} strokeWidth={2.2} />
+        </Button>
+        <Button label={t(lang, "Italic", "斜体")} active={style.italic} onClick={() => apply({ italic: !style.italic })}>
+          <Italic size={15} strokeWidth={2.2} />
+        </Button>
+        <ColorMenuButton
+          kind="color"
+          lang={lang}
+          value={style.color}
+          label={t(lang, "Heading color", "标题颜色")}
+          title={t(lang, "Heading color", "标题颜色")}
+          onApply={(color) => apply({ color: color && /^#[0-9a-f]{6}$/i.test(color) ? color : null })}
+        />
+        {(
+          [
+            ["left", AlignLeft, t(lang, "Align left", "左对齐")],
+            ["center", AlignCenter, t(lang, "Centre", "居中")],
+            ["right", AlignRight, t(lang, "Align right", "右对齐")],
+          ] as const
+        ).map(([value, Icon, label]) => (
+          <Button key={value} label={label} active={(style.align ?? "left") === value} onClick={() => apply({ align: value === "left" ? null : value })}>
+            <Icon size={16} strokeWidth={2} />
+          </Button>
+        ))}
+      </div>
+      <div className="document-heading-row">
+        <PointField
+          label={t(lang, "Space before", "段前")}
+          value={style.spaceBefore}
+          fallback={headingSpace(settings, level, "before")}
+          max={144}
+          onCommit={(spaceBefore) => apply({ spaceBefore })}
+        />
+        <PointField
+          label={t(lang, "Space after", "段后")}
+          value={style.spaceAfter}
+          fallback={headingSpace(settings, level, "after")}
+          max={144}
+          onCommit={(spaceAfter) => apply({ spaceAfter })}
+        />
+      </div>
+      <div className="document-heading-row is-end">
+        <button type="button" className="document-menu-item" onClick={() => apply(null)}>
+          <RotateCcw size={13} /> {t(lang, `Reset level ${level}`, `恢复${["一级", "二级", "三级"][level - 1]}默认`)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Paper, margins and line spacing. */
 /** A margin typed in mm: shows the document's value (also after a drag on the sheet); Enter or leaving the field
  *  sets it, Esc puts the value back, ↑/↓ step 0.1 mm (Shift: 1 mm). */
@@ -771,6 +938,9 @@ export function DocumentTextToolbar() {
           1.2.
         </span>
       </Button>
+      <Popover label={t(lang, "Heading styles", "标题样式")} wide button={<Heading size={16} strokeWidth={2} />} className="document-heading-style-button">
+        {() => <HeadingStyleSetup lang={lang} view={view} settings={settings} level={level} />}
+      </Popover>
       <Button label={tip(["Numbered list (Ctrl+Shift+7)", "有序列表 (Ctrl+Shift+7)"], ["Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)"])} active={list === "ordered_list"} onClick={() => run(view, toggleList("ordered_list"))}>
         <ListOrdered size={16} />
       </Button>

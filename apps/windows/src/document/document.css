@@ -171,7 +171,8 @@
   gap: 2px;
 }
 /* a button with a panel: its icon and caret side by side (the strip makes its icon buttons 28px squares) */
-.document-controls .icon-button.compact.document-control-popover-button {
+.document-controls .icon-button.compact.document-control-popover-button,
+.document-heading-setup .icon-button.compact.document-control-popover-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -180,7 +181,8 @@
   min-width: 36px;
   padding: 0 3px;
 }
-.document-controls .icon-button.compact.document-control-popover-button.is-wide {
+.document-controls .icon-button.compact.document-control-popover-button.is-wide,
+.document-heading-setup .icon-button.compact.document-control-popover-button.is-wide {
   min-width: 96px;
   justify-content: space-between;
   padding: 0 6px;
@@ -466,18 +468,40 @@
   font-weight: bold;
   line-height: 1.4;
 }
+/* the document's heading styles (settings.ts headingStyleVars) */
 .vtx-document h1 {
-  font-size: 1.2em;
+  font-size: var(--vtx-h1-size, 1.2em);
+  font-weight: var(--vtx-h1-weight, bold);
+  font-style: var(--vtx-h1-style, normal);
+  font-family: var(--vtx-h1-font, inherit);
+  color: var(--vtx-h1-color, inherit);
+  text-align: var(--vtx-h1-align, start);
+  padding-top: var(--vtx-h1-before, 0.5em);
+  padding-bottom: var(--vtx-h1-after, 0.5em);
   counter-increment: vtx-s1;
   counter-reset: vtx-s2 vtx-s3;
 }
 .vtx-document h2 {
-  font-size: 1.1em;
+  font-size: var(--vtx-h2-size, 1.1em);
+  font-weight: var(--vtx-h2-weight, bold);
+  font-style: var(--vtx-h2-style, normal);
+  font-family: var(--vtx-h2-font, inherit);
+  color: var(--vtx-h2-color, inherit);
+  text-align: var(--vtx-h2-align, start);
+  padding-top: var(--vtx-h2-before, 0.5em);
+  padding-bottom: var(--vtx-h2-after, 0.5em);
   counter-increment: vtx-s2;
   counter-reset: vtx-s3;
 }
 .vtx-document h3 {
-  font-size: 1em;
+  font-size: var(--vtx-h3-size, 1em);
+  font-weight: var(--vtx-h3-weight, bold);
+  font-style: var(--vtx-h3-style, normal);
+  font-family: var(--vtx-h3-font, inherit);
+  color: var(--vtx-h3-color, inherit);
+  text-align: var(--vtx-h3-align, start);
+  padding-top: var(--vtx-h3-before, 0.5em);
+  padding-bottom: var(--vtx-h3-after, 0.5em);
   counter-increment: vtx-s3;
 }
 .vtx-document h1::before {
@@ -494,6 +518,47 @@
   content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) ". ";
   padding-right: 0.25em;
   white-space: pre;
+}
+/* WebKit (macOS) draws the caret of an empty line before generated content that flows inline (and none at all in a
+   flex row), so the number never flows inline: it floats at the start of a left-aligned heading; in a centred or
+   right-aligned one it is taken out of the line where it would start and drawn just before the text. */
+.vtx-document :is(h1, h2, h3)::before {
+  float: left;
+}
+.vtx-document :is(h1, h2, h3):is([style*="text-align:center"], [style*="text-align:right"])::before,
+.vtx-sheet.is-h1-center .vtx-document h1::before,
+.vtx-sheet.is-h2-center .vtx-document h2::before,
+.vtx-sheet.is-h3-center .vtx-document h3::before,
+.vtx-sheet.is-h1-right .vtx-document h1::before,
+.vtx-sheet.is-h2-right .vtx-document h2::before,
+.vtx-sheet.is-h3-right .vtx-document h3::before {
+  position: absolute;
+  float: none;
+  transform: translateX(-100%);
+}
+/* room for the number inside the text area (both sides, so the text stays centred) */
+.vtx-document :is(h1, h2, h3)[style*="text-align:center"],
+.vtx-sheet.is-h1-center .vtx-document h1,
+.vtx-sheet.is-h2-center .vtx-document h2,
+.vtx-sheet.is-h3-center .vtx-document h3 {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
+  padding-right: 3em;
+}
+.vtx-document :is(h1, h2, h3)[style*="text-align:right"],
+.vtx-sheet.is-h1-right .vtx-document h1,
+.vtx-sheet.is-h2-right .vtx-document h2,
+.vtx-sheet.is-h3-right .vtx-document h3 {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
+  padding-right: 0;
+}
+.vtx-sheet .vtx-document :is(h1, h2, h3):is([style*="text-align:left"], [style*="text-align:justify"]) {
+  padding-left: calc(var(--vtx-indent, 0) * 2em);
+  padding-right: 0;
+}
+.vtx-sheet .vtx-document :is(h1, h2, h3):is([style*="text-align:left"], [style*="text-align:justify"])::before {
+  position: static;
+  float: left;
+  transform: none;
 }
 
 /* lists: Mathcha's prefix at 30px (2em), the text after it (bullet 45px, number 49px); a nested level 20px further */
@@ -1211,7 +1276,8 @@
 }
 
 /* ---- body fonts, size, page setup, citations in the document's toolbar (DESIGN.md §8) ---- */
-.document-controls .icon-button.compact.document-control-popover-button.document-font-button {
+.document-controls .icon-button.compact.document-control-popover-button.document-font-button,
+.document-heading-setup .icon-button.compact.document-control-popover-button.document-font-button {
   min-width: 112px;
   max-width: 170px;
 }
@@ -1533,5 +1599,45 @@
   color: var(--text);
   font: inherit;
   font-size: 13px;
+  outline: none;
+}
+
+/* ---- heading styles (标题样式) ---- */
+.document-heading-setup {
+  min-width: 430px;
+  gap: 8px;
+}
+.document-heading-levels .document-menu-item {
+  flex: 1 1 0;
+  justify-content: center;
+}
+.document-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.document-heading-row.is-end {
+  justify-content: flex-end;
+}
+.document-heading-row .document-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.document-heading-select {
+  box-sizing: border-box;
+  height: 26px;
+  max-width: 170px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.document-heading-select:focus {
+  border-color: var(--accent);
   outline: none;
 }

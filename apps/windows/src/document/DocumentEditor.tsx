@@ -28,6 +28,7 @@ import {
   splitInlineMath,
   bodyFontFamily,
   documentSettings,
+  headingStyleVars,
   FOOTNOTE_EDIT_EVENT,
   CITATION_REQUEST_EVENT,
   PAPER_SIZES,
@@ -487,6 +488,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-line-height" as string]: String(SINGLE_LINE_HEIGHT * settings.lineSpacing),
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
+      ...headingStyleVars(settings),
     } as CSSProperties;
   }, [settings, zoom, lang]);
 
@@ -511,7 +513,14 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       <div className="mc-body">
         <div className="mc-canvas is-paged" ref={setFrame} onContextMenu={onContextMenu} onMouseDown={onCanvasMouseDown}>
           <div
-            className={"mc-page vtx-sheet" + (settings?.headingNumbering === "1" ? " is-headings-plain" : settings?.headingNumbering === "none" ? " is-headings-none" : "")}
+            className={
+              "mc-page vtx-sheet" +
+              (settings?.headingNumbering === "1" ? " is-headings-plain" : settings?.headingNumbering === "none" ? " is-headings-none" : "") +
+              // centred and right-aligned heading styles (document.css places their numbers before the text)
+              (settings?.headingStyles ?? [])
+                .map((style, index) => (style.align === "center" || style.align === "right" ? ` is-h${index + 1}-${style.align}` : ""))
+                .join("")
+            }
             style={sheetStyle}
             ref={setSheet}
           >
