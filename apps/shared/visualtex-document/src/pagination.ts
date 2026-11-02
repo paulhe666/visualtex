@@ -142,7 +142,7 @@ function collectUnits(view: EditorView): Unit[] {
       const lines = lineBoxes(dom);
       if (!lines.length) {
         const r = dom.getBoundingClientRect();
-        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading", footnotes: [] });
+        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [] });
         return;
       }
       let previous = -1;
@@ -155,7 +155,7 @@ function collectUnits(view: EditorView): Unit[] {
           bottom: line.bottom,
           pos: start,
           inline: true,
-          keepWithNext: node.type.name === "heading" && index === lines.length - 1,
+          keepWithNext: (node.type.name === "heading" || node.type.name === "title") && index === lines.length - 1,
           footnotes: [],
         });
       });

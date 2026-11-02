@@ -1,6 +1,6 @@
-// Commands typed in the text (DESIGN.md §6.1, §7.3). In LaTeX input "\" starts a command right in the line ("/" too,
-// at the start of a line or after a space); in Markdown input "/" does, and the menu offers Markdown's blocks and
-// marks, written as Markdown writes them. The characters stay ordinary text while a menu under them offers the
+// Commands typed in the text (DESIGN.md §6.1, §7.3). In LaTeX input "\" starts a command right in the line; in
+// Markdown input "/" does (at the start of a line or after a space), and the menu offers Markdown's blocks and
+// marks, written as Markdown writes them, found by name or by the Markdown itself ("/#" is a heading). The characters stay ordinary text while a menu under them offers the
 // commands that match. Enter, Tab, Space or 1-9 run the highlighted (numbered) one, a closing brace completes
 // \textbf{…} or \begin{itemize}, \( and \[ open formulas, Escape leaves the text as it is. The command is read from the
 // text, not from the key, so a "\" or "/" typed through an input method starts one just the same.
@@ -42,6 +42,7 @@ export type CommandPreview =
   | { kind: "display"; latex: string; numbered: boolean }
   | { kind: "text"; text: string; style?: "bold" | "italic" | "underline" | "mono" | "strike"; scale?: number }
   | { kind: "section"; level: 1 | 2 | 3 }
+  | { kind: "title" }
   | { kind: "list"; ordered: boolean }
   | { kind: "align"; align: "left" | "center" | "right" }
   | { kind: "block"; block: "table" | "rule" | "quote" | "break" | "code" }
@@ -103,11 +104,12 @@ const ARGUMENT = /^([A-Za-z]+)\{([^{}\\]*)$/;
 /** characters LaTeX escapes with a backslash: "\$" is a dollar sign, not a formula */
 const ESCAPED = "$%&#_{}";
 
-/** a "/" command's name in Markdown input: Latin letters, or Chinese (the words of the menu's descriptions) */
-const SLASH_NAME = /^(?:[A-Za-z]*|[\u3400-\u9fff\uf900-\ufaff]+)$/;
+/** a "/" command's name in Markdown input: Latin letters, Chinese (the words of the menu's descriptions), or the
+ *  Markdown it writes ("#", "##", "-", ">", "```", "---", "|", "**") */
+const SLASH_NAME = /^(?:[A-Za-z]*|[\u3400-\u9fff\uf900-\ufaff]+|[#*\-+>`|$=~[\]^<!\\]{1,6})$/;
 
 function validQuery(query: string, trigger: CommandToken["trigger"], mode: InputMode): boolean {
-  if (trigger !== "\\") return mode === "markdown" ? SLASH_NAME.test(query) : /^[A-Za-z]*$/.test(query);
+  if (trigger !== "\\") return mode === "markdown" && SLASH_NAME.test(query);
   return NAME.test(query) || ENVIRONMENT.test(query) || ARGUMENT.test(query);
 }
 
@@ -141,6 +143,17 @@ function section(level: 1 | 2 | 3): CommandEntry["run"] {
     return true;
   };
 }
+
+/** \title{…}: the line is the document's title (centred, unnumbered); after the argument, body text. */
+const documentTitle: CommandEntry["run"] = (view, how) => {
+  ownLine(view);
+  if (!setBlockType(view.state.schema.nodes.title)(view.state, view.dispatch)) return false;
+  if (how.argument !== undefined) {
+    if (how.argument) view.dispatch(view.state.tr.insertText(how.argument).scrollIntoView());
+    bodyTextAfter(view);
+  }
+  return true;
+};
 
 function textStyle(mark: (view: EditorView) => MarkType, attrs: Record<string, unknown> | null = null): CommandEntry["run"] {
   return (view, how) => {
@@ -249,6 +262,7 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
   { id: "section", label: "\\section{…}", names: ["section"], argument: true, featured: true, description: t("Section", "一级标题"), preview: { kind: "section", level: 1 }, run: section(1) },
   { id: "subsection", label: "\\subsection{…}", names: ["subsection"], argument: true, featured: true, description: t("Subsection", "二级标题"), preview: { kind: "section", level: 2 }, run: section(2) },
   { id: "subsubsection", label: "\\subsubsection{…}", names: ["subsubsection"], argument: true, description: t("Subsubsection", "三级标题"), preview: { kind: "section", level: 3 }, run: section(3) },
+  { id: "title", label: "\\title{…}", names: ["title", "maketitle"], argument: true, featured: true, description: t("Title", "文档标题"), preview: { kind: "title" }, run: documentTitle },
   { id: "itemize", label: "\\begin{itemize}", names: ["itemize"], environment: "itemize", featured: true, description: t("Bulleted list", "无序列表"), preview: { kind: "list", ordered: false }, run: list("bullet_list") },
   { id: "enumerate", label: "\\begin{enumerate}", names: ["enumerate"], environment: "enumerate", featured: true, description: t("Numbered list", "有序列表"), preview: { kind: "list", ordered: true }, run: list("ordered_list") },
   { id: "item", label: "\\item", names: ["item"], description: t("List item", "列表项"), preview: { kind: "list", ordered: false }, run: listItem },
@@ -294,7 +308,8 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
 /** Markdown input's "/" menu: Markdown's blocks and marks, as Markdown writes them (found by English names and by
  * the Chinese words, in characters or pinyin). */
 export const MARKDOWN_COMMANDS: CommandEntry[] = [
-  { id: "md-h1", label: "# …", names: ["h1", "heading", "title", "biaoti", "bt", "yjbt"], featured: true, description: t("Heading 1", "一级标题"), preview: { kind: "section", level: 1 }, run: section(1) },
+  { id: "md-title", label: '<h1 align="center">', names: ["title", "biaoti", "bt", "wdbt"], description: t("Title", "文档标题"), preview: { kind: "title" }, run: documentTitle },
+  { id: "md-h1", label: "# …", names: ["h1", "heading", "biaoti", "bt", "yjbt"], featured: true, description: t("Heading 1", "一级标题"), preview: { kind: "section", level: 1 }, run: section(1) },
   { id: "md-h2", label: "## …", names: ["h2", "heading", "subtitle", "biaoti", "bt", "ejbt"], featured: true, description: t("Heading 2", "二级标题"), preview: { kind: "section", level: 2 }, run: section(2) },
   { id: "md-h3", label: "### …", names: ["h3", "heading", "biaoti", "bt", "sjbt"], featured: true, description: t("Heading 3", "三级标题"), preview: { kind: "section", level: 3 }, run: section(3) },
   { id: "md-bullet", label: "- …", names: ["ul", "bullet", "list", "liebiao", "wuxu", "lb", "wxlb"], featured: true, description: t("Bulleted list", "无序列表"), preview: { kind: "list", ordered: false }, run: list("bullet_list") },
@@ -365,9 +380,20 @@ function mathEntry(math: MathCommandProvider, command: MathCommandSuggestion): C
 
 const MATH_LIMIT = 12;
 
-/** Markdown's "/" entries for `query`: the names it starts first, then the ones whose name or description has it. */
+/** What an entry writes, without its placeholders: "# …" -> "#", "**…**" -> "**", "| … | … |" -> "|". */
+function markdownSyntax(label: string): string {
+  return label.split("…")[0].trim();
+}
+
+/** Markdown's "/" entries for `query`: typed Markdown finds what writes it ("#" a heading, "##" the next level);
+ *  otherwise the names it starts first, then the ones whose name or description has it. */
 function matchMarkdown(query: string, doc: Node): CommandEntry[] {
   if (!query) return MARKDOWN_COMMANDS.filter((e) => e.featured);
+  if (!/^[A-Za-z㐀-鿿豈-﫿]/.test(query)) {
+    const exact = MARKDOWN_COMMANDS.filter((e) => markdownSyntax(e.label) === query);
+    const longer = MARKDOWN_COMMANDS.filter((e) => !exact.includes(e) && markdownSyntax(e.label).startsWith(query));
+    return [...exact, ...longer];
+  }
   const all = [...MARKDOWN_COMMANDS, ...equationReferences(doc, true)];
   const lower = query.toLowerCase();
   const prefix = all.filter((e) => e.names.some((n) => n.startsWith(lower)));
@@ -493,7 +519,8 @@ function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: b
   const at = (offset: number) => (offset < 0 ? "" : parent.textBetween(offset, offset + 1, undefined, "￼"));
   const trigger = at($head.parentOffset - 1);
   // In Markdown input a Chinese input method's "／", and "、" (its "\" or "/") at the start of a line, are "/" too.
-  const slash = trigger === "/" || (mode === "markdown" && chinese && (trigger === "／" || (trigger === "、" && $head.parentOffset === 1)));
+  // In LaTeX input only "\" starts a command.
+  const slash = mode === "markdown" && (trigger === "/" || (chinese && (trigger === "／" || (trigger === "、" && $head.parentOffset === 1))));
   if (trigger !== "\\" && !slash) return null;
   if (!insertedBy(tr, $head.pos - 1)) return null;
   // Code is literal text.

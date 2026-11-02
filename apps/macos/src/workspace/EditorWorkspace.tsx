@@ -38,7 +38,7 @@ import {
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
 import { DocumentWorkspace } from "../document/DocumentWorkspace";
-import { DocumentControls, DocumentTextToolbar } from "../document/DocumentControls";
+import { DocumentControls } from "../document/DocumentControls";
 import { DocumentSourceView } from "../document/DocumentSourceView";
 import { DOCUMENT_COPY_LATEX_EVENT, DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
@@ -1131,9 +1131,8 @@ export function EditorWorkspace({
     if (documentMode) {
       return (
         <section className="editor-surface document-editor-surface">
-          {/* The document's own buttons sit above it; the formula tools stay in the bottom dock. */}
-          <DocumentTextToolbar />
-          <DocumentWorkspace editorRef={editorRef} />
+          {/* the document library, the document's own buttons and the page; the formula tools stay in the bottom dock */}
+          <DocumentWorkspace editorRef={editorRef} onPasteImage={showOcrActions ? onPasteImage : undefined} />
         </section>
       );
     }

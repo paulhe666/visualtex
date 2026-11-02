@@ -21,7 +21,10 @@ function styleOf(attrs: { align?: string | null; indent?: number }) {
   const style: string[] = [];
   if (attrs.align) style.push(`text-align:${attrs.align}`);
   if (attrs.indent) style.push(`--vtx-indent:${attrs.indent}`);
-  return style.length ? { style: style.join(";"), "data-indent": attrs.indent ? String(attrs.indent) : undefined } : {};
+  // data-align: for the style sheet (the browser rewrites the style attribute: "text-align: center;")
+  return style.length
+    ? { style: style.join(";"), "data-indent": attrs.indent ? String(attrs.indent) : undefined, "data-align": attrs.align ?? undefined }
+    : {};
 }
 
 function paragraphStyleFrom(dom: HTMLElement | string) {
@@ -54,6 +57,16 @@ const nodes: Record<string, NodeSpec> = {
       getAttrs: (dom: HTMLElement | string) => ({ ...idFrom(dom), ...paragraphStyleFrom(dom), level: Math.min(3, level) }),
     })),
     toDOM: (node): DOMOutputSpec => ["h" + node.attrs.level, { ...withId(node.attrs), ...styleOf(node.attrs) }, 0],
+  },
+
+  /** The document's title (LaTeX's \title + \maketitle): centred, unnumbered, at the top. */
+  title: {
+    group: "block",
+    content: "inline*",
+    defining: true,
+    attrs: id,
+    parseDOM: [{ tag: "p.vtx-title", priority: 60, getAttrs: idFrom }],
+    toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), class: "vtx-title" }, 0],
   },
 
   blockquote: {

@@ -13,6 +13,7 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
+mod document_library;
 mod ocr_offline;
 mod ocr_provider;
 mod anywhere;
@@ -1749,7 +1750,7 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig") {
+    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex") {
         return Err("Unsupported export file extension".to_string());
     }
     let parent = target
@@ -2155,6 +2156,22 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             write_export_file,
             copy_png_to_clipboard,
+            document_library::document_library_list,
+            document_library::document_library_read,
+            document_library::document_library_create,
+            document_library::document_library_save,
+            document_library::document_library_rename,
+            document_library::document_library_duplicate,
+            document_library::document_library_move,
+            document_library::document_library_trash,
+            document_library::document_library_restore,
+            document_library::document_library_delete,
+            document_library::document_library_empty_trash,
+            document_library::document_library_create_folder,
+            document_library::document_library_rename_folder,
+            document_library::document_library_delete_folder,
+            document_library::document_library_search,
+            document_library::document_library_reveal,
             quick_ocr::capture_quick_ocr_screenshot,
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,

@@ -116,13 +116,21 @@
 .vtx-document-workspace {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+.vtx-document-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 .mc-shell {
   display: flex;
@@ -457,6 +465,15 @@
   padding-left: calc(var(--vtx-indent, 0) * 2em);
 }
 
+/* the document's title (\title + \maketitle): centred, LaTeX's \LARGE, unnumbered */
+.vtx-document p.vtx-title {
+  margin: 0;
+  padding: 0.6em 0 0.9em;
+  font-size: 1.728em;
+  line-height: 1.3;
+  text-align: center;
+}
+
 /* sections: Mathcha's three numbered levels */
 .vtx-document h1,
 .vtx-document h2,
@@ -494,6 +511,25 @@
   content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) ". ";
   padding-right: 0.25em;
   white-space: pre;
+}
+/* WebKit (macOS) draws the caret of an empty line before generated content that flows inline (and none at all in a
+   flex row), so the number never flows inline: it floats at the start of a left-aligned heading; in a centred or
+   right-aligned one it is taken out of the line where it would start and drawn just before the text. */
+.vtx-document :is(h1, h2, h3)::before {
+  float: left;
+}
+.vtx-document :is(h1, h2, h3):is([data-align="center"], [data-align="right"])::before {
+  position: absolute;
+  float: none;
+  transform: translateX(-100%);
+}
+/* room for the number inside the text area (both sides, so the text stays centred) */
+.vtx-document :is(h1, h2, h3)[data-align="center"] {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
+  padding-right: 3em;
+}
+.vtx-document :is(h1, h2, h3)[data-align="right"] {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
 }
 
 /* lists: Mathcha's prefix at 30px (2em), the text after it (bullet 45px, number 49px); a nested level 20px further */
@@ -933,6 +969,12 @@
 .vtx-cmd-section.is-level-2 { font-size: 12px; }
 .vtx-cmd-section.is-level-3 { font-size: 11px; }
 .vtx-cmd-section .vtx-cmd-line { height: 4px; background: var(--text-muted); }
+.vtx-cmd-title {
+  display: inline-flex;
+  justify-content: center;
+  width: 52px;
+}
+.vtx-cmd-title .vtx-cmd-line { width: 34px; height: 6px; background: var(--text-muted); }
 .vtx-cmd-list-mock,
 .vtx-cmd-align,
 .vtx-cmd-quote {
@@ -1534,4 +1576,289 @@
   font: inherit;
   font-size: 13px;
   outline: none;
+}
+
+/* ---- the document library beside the page (DocumentLibrary.tsx) ---- */
+.document-library {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 236px;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.document-library-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px 4px 12px;
+}
+.document-library-heading {
+  flex: 1 1 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.document-library-icon,
+.document-library-item-more,
+.document-library-item-action,
+.document-library-search-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.document-library-icon {
+  width: 26px;
+  height: 26px;
+}
+.document-library-icon:hover,
+.document-library-item-more:hover,
+.document-library-item-action:hover,
+.document-library-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.document-library-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 2px 8px 6px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-faint);
+}
+.document-library-search:focus-within {
+  border-color: var(--accent);
+}
+.document-library-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.document-library-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.document-library-search-clear {
+  width: 18px;
+  height: 18px;
+}
+.document-library-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 6px 8px;
+  overflow-y: auto;
+}
+.document-library-root {
+  min-height: 24px;
+  border-radius: 6px;
+}
+.document-library-folder,
+.document-library-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  cursor: default;
+}
+.document-library-item.is-nested {
+  padding-left: 27px;
+}
+.document-library-folder:hover,
+.document-library-item:hover {
+  background: var(--surface-hover);
+}
+.document-library-item.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.document-library-folder.is-drop,
+.document-library-root.is-drop {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+.document-library-chevron {
+  flex: none;
+  margin: 0 -2px 0 -4px;
+  color: var(--text-faint);
+}
+.document-library-item-icon {
+  flex: none;
+  color: var(--text-faint);
+}
+.document-library-item.is-current .document-library-item-icon {
+  color: var(--accent);
+}
+.document-library-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-library-item.is-untitled .document-library-item-name {
+  color: var(--text-faint);
+}
+.document-library-item-time {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.document-library-item-more,
+.document-library-item-action {
+  width: 22px;
+  height: 22px;
+}
+.document-library-item-more {
+  display: none;
+}
+.document-library-folder:hover .document-library-item-more,
+.document-library-item:hover .document-library-item-more {
+  display: inline-flex;
+}
+.document-library-folder:hover .document-library-item-time,
+.document-library-item:hover .document-library-item-time {
+  display: none;
+}
+.document-library-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.document-library-empty {
+  padding: 12px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+.document-library-trash {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 40%;
+  padding: 4px 6px 6px;
+  border-top: 1px solid var(--border);
+}
+.document-library-trash-head {
+  cursor: pointer;
+}
+.document-library-trash-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.document-library-item.is-trashed {
+  color: var(--text-muted);
+}
+.document-library-text-button {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.document-library-text-button:hover {
+  background: var(--surface-active);
+}
+.document-library-menu {
+  position: fixed;
+  z-index: var(--z-popover, 190);
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 13px;
+}
+.document-library-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.document-library-menu-item:hover {
+  background: var(--surface-hover);
+}
+.document-library-menu-item.is-danger {
+  color: var(--danger);
+}
+.document-library-menu-item.is-checked {
+  color: var(--accent);
+  font-weight: 600;
+}
+.document-library-menu-icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.document-library-menu-item.is-danger .document-library-menu-icon {
+  color: var(--danger);
+}
+.document-library-menu-rule {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+/* a narrow window: the library over the page */
+@media (max-width: 760px) {
+  .vtx-document-workspace .document-library {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 120;
+    box-shadow: var(--shadow-lg);
+  }
 }

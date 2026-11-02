@@ -11,6 +11,7 @@ import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { FONT_SIZES } from "./schema.ts";
 import { bibliographyEntries, citeLabel } from "./notes.ts";
 import { documentSettings, equationLabels } from "./settings.ts";
+import { MARKDOWN_TITLE_CLOSE, MARKDOWN_TITLE_OPEN } from "./latexImport.ts";
 
 /** The highlight colour ==text== gets (the first of the highlight swatches). */
 export const MARKDOWN_HIGHLIGHT = "#fff59d";
@@ -224,11 +225,34 @@ function tidy(state: StateCore) {
   }
 }
 
+/** <h1 align="center">…</h1> on lines of its own: the document's title, its text read as Markdown. */
+function titleLines(state: StateCore) {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== "html_block" || token.level !== 0) continue;
+    const match = /^<h1\s+align\s*=\s*["']?center["']?\s*>([\s\S]*?)<\/h1>\s*$/i.exec(token.content);
+    if (!match) continue;
+    const open = new state.Token("title_open", "p", 1);
+    open.map = token.map;
+    open.block = true;
+    const inline = new state.Token("inline", "", 0);
+    inline.content = match[1].replace(/\s*\n\s*/g, " ").trim();
+    inline.map = token.map;
+    inline.children = [];
+    const close = new state.Token("title_close", "p", -1);
+    close.block = true;
+    tokens.splice(i, 1, open, inline, close);
+    i += 2;
+  }
+}
+
 function createMarkdownIt(): MarkdownIt {
   const md = new MarkdownIt("default", { html: true, linkify: true, breaks: false });
   md.block.ruler.before("fence", "math_block", mathBlock, { alt: ["paragraph", "reference", "blockquote", "list"] });
   md.inline.ruler.before("escape", "math_inline", mathInline);
   md.inline.ruler.before("emphasis", "highlight", highlight);
+  md.core.ruler.before("inline", "vtx_title", titleLines);
   md.core.ruler.push("vtx_tidy", tidy);
   return md;
 }
@@ -290,6 +314,7 @@ function parserFor(schema: Schema): MarkdownParser {
     bullet_list: { block: "bullet_list" },
     ordered_list: { block: "ordered_list", getAttrs: (tok) => ({ start: Number(tok.attrGet("start")) || 1 }) },
     heading: { block: "heading", getAttrs: (tok) => ({ level: Math.min(3, Number(tok.tag.slice(1)) || 1) }) },
+    title: { block: "title" },
     code_block: { block: "code_block", noCloseToken: true },
     fence: { block: "code_block", getAttrs: (tok) => ({ language: blockLanguage(tok.info) }), noCloseToken: true },
     hr: { node: "horizontal_rule" },
@@ -449,6 +474,12 @@ function serializerFor(
         state.renderInline(node);
         state.write("</p>");
       } else state.renderInline(node);
+      state.closeBlock(node);
+    },
+    title(state, node) {
+      state.write(MARKDOWN_TITLE_OPEN);
+      state.renderInline(node, false);
+      state.write(MARKDOWN_TITLE_CLOSE);
       state.closeBlock(node);
     },
     heading(state, node) {

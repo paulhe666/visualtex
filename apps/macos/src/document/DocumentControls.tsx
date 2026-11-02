@@ -698,12 +698,12 @@ export function DocumentControls() {
 }
 
 /** The document's own buttons, above the document: paragraph, lists, table, code, size, marks, colours. */
-export function DocumentTextToolbar() {
+export function DocumentTextToolbar(props: { leading?: ReactNode } = {}) {
   const view = useDocumentEditorStore((store) => store.view);
   const state = useDocumentEditorStore((store) => store.state);
   const lang = useLang();
   const markdownInput = useDocumentFormatStore((store) => store.inputMode) === "markdown";
-  if (!state) return <div className="document-controls document-top-toolbar" />;
+  if (!state) return <div className="document-controls document-top-toolbar">{props.leading}</div>;
   const inMath = !!openFormulaId(state);
   const align = currentAlign(state);
   const list = currentListKind(state);
@@ -721,6 +721,7 @@ export function DocumentTextToolbar() {
   };
   return (
     <div className={"document-controls document-top-toolbar" + (inMath ? " is-in-formula" : "")} role="toolbar" aria-label={t(lang, "Document", "文档")}>
+      {props.leading}
       <FontButton
         lang={lang}
         label={t(lang, "Chinese font", "中文字体")}

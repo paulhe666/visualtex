@@ -61,6 +61,12 @@ function Preview({ preview }: { preview: CommandPreview }) {
           {["1", "1.1", "1.1.1"][preview.level - 1]} <span className="vtx-cmd-line" />
         </span>
       );
+    case "title":
+      return (
+        <span className="vtx-cmd-title">
+          <span className="vtx-cmd-line" />
+        </span>
+      );
     case "list":
       return (
         <span className="vtx-cmd-list-mock">

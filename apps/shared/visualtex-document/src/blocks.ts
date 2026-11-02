@@ -68,6 +68,19 @@ export const toggleSection: Command = (state, dispatch) => {
   return setBlockType(heading, { ...keep, level: 1 })(state, dispatch);
 };
 
+/** Whether the caret's line is the document's title. */
+export function isTitleLine(state: EditorState): boolean {
+  return textblockAt(state)?.node.type.name === "title";
+}
+
+/** Ctrl+Alt+0: the line becomes the document's title, or body text again. */
+export const toggleTitle: Command = (state, dispatch) => {
+  const block = textblockAt(state);
+  if (!block || block.node.type.spec.code) return false;
+  const { title, paragraph } = state.schema.nodes;
+  return setBlockType(block.node.type === title ? paragraph : title)(state, dispatch);
+};
+
 /** Tab / Shift+Tab on a section: one level deeper / higher (1 ↔ 2 ↔ 3). */
 export function changeSectionLevel(delta: 1 | -1): Command {
   return (state, dispatch) => {
@@ -92,9 +105,9 @@ export function toggleList(kind: "ordered_list" | "bullet_list"): Command {
       }
       return true;
     }
-    // A section becomes body text first: list items hold paragraphs.
+    // A section (or the title) becomes body text first: list items hold paragraphs.
     const block = textblockAt(state);
-    if (block?.node.type.name !== "heading") return wrapInList(type)(state, dispatch);
+    if (block?.node.type.name !== "heading" && block?.node.type.name !== "title") return wrapInList(type)(state, dispatch);
     const tr = state.tr.setBlockType(block.pos, block.pos + block.node.nodeSize, state.schema.nodes.paragraph, {
       align: block.node.attrs.align ?? null,
       indent: 0,
@@ -164,8 +177,8 @@ export const clearLineStyle: Command = (state, dispatch) => {
   const { $cursor } = state.selection as TextSelection;
   if (!$cursor || $cursor.parentOffset > 0 || !$cursor.parent.isTextblock) return false;
   const block = $cursor.parent;
-  const { heading, paragraph, list_item, blockquote } = state.schema.nodes;
-  if (block.type === heading) {
+  const { heading, title, paragraph, list_item, blockquote } = state.schema.nodes;
+  if (block.type === heading || block.type === title) {
     if (dispatch) {
       const attrs = { align: block.attrs.align ?? null, indent: block.attrs.indent ?? 0 };
       dispatch(state.tr.setBlockType($cursor.pos, $cursor.pos, paragraph, attrs).scrollIntoView());
@@ -190,11 +203,17 @@ export const clearLineStyle: Command = (state, dispatch) => {
   return false;
 };
 
-/** Enter: a new line in the same style (a section stays a section of the same level, as in Mathcha). */
+/** Enter: a new line in the same style (a section stays a section of the same level, as in Mathcha); after the
+ *  title, body text. */
 export const splitKeepingStyle: Command = (state, dispatch, view) => {
   const { $from } = state.selection;
   if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
-  return splitBlockAs((node) => ({ type: node.type, attrs: { ...node.attrs, id: null } }))(state, dispatch, view);
+  const { title, paragraph } = state.schema.nodes;
+  return splitBlockAs((node) => (node.type === title ? { type: paragraph } : { type: node.type, attrs: { ...node.attrs, id: null } }))(
+    state,
+    dispatch,
+    view,
+  );
 };
 
 /** Enter in a list item: a new item; on an empty item: out of the list (Mathcha). */

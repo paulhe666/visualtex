@@ -296,15 +296,22 @@ function blocks(text: string): string {
   return out.join("\n");
 }
 
+/** Markdown has no title: the document's title is written as a centred level-1 heading in HTML (Typora and GitHub
+ *  show it so) and read back as the title (markdown.ts). */
+export const MARKDOWN_TITLE_OPEN = '<h1 align="center">';
+export const MARKDOWN_TITLE_CLOSE = "</h1>";
+
 /** LaTeX source as Markdown the document reads. */
 export function latexToMarkdown(source: string): string {
   let text = source.replace(/\r\n?/g, "\n");
   // Comments (an unescaped % to the end of the line).
   text = text.replace(/(^|[^\\])%.*$/gm, "$1");
-  // The body of a whole document; its title as the first heading.
-  const title = /\\title\s*\{([^}]*)\}/.exec(text)?.[1];
+  // The body of a whole document; a \title shown by \maketitle as the document's title (a line marked \u0006 until
+  // the end, where it becomes Markdown's form of the title).
+  const titleAt = /\\title\s*(?=\{)/.exec(text);
+  const title = titleAt ? group(text, titleAt.index + titleAt[0].length)?.content.replace(/\s*\n\s*/g, " ").trim() : undefined;
   const body = /\\begin\{document\}([\s\S]*?)(\\end\{document\}|$)/.exec(text);
-  if (body) text = (title && /\\maketitle/.test(body[1]) ? `\\section{${title}}\n` : "") + body[1];
+  if (body) text = (title && /\\maketitle/.test(body[1]) ? `\u0006${title.replace(/\\\\/g, " ")}\n\n` : "") + body[1];
   const kept: string[] = [];
   text = protectCode(text, kept);
   text = protectMath(text, kept);
@@ -322,5 +329,6 @@ export function latexToMarkdown(source: string): string {
   // Typographic leftovers: ~ (a tie), ``quotes'', -- and ---.
   text = text.replace(/(?<!\\)~/g, " ").replace(/``/g, "“").replace(/''/g, "”").replace(/---/g, "—").replace(/--/g, "–");
   for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = text.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => kept[Number(n)]);
+  text = text.replace(/^\u0006[ \t]*(.*)$/m, (_m, line: string) => `${MARKDOWN_TITLE_OPEN}${line.trim()}${MARKDOWN_TITLE_CLOSE}`);
   return text.replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }
