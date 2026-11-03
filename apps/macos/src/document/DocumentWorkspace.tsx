@@ -105,6 +105,15 @@ function insertRecognized(view: EditorView, latex: string, place: { from: number
   return command(view.state, view.dispatch, view);
 }
 
+/** A recognised formula's LaTeX without its delimiters ($…$, $$…$$, \(…\), \[…\]); lines joined as rows. */
+function bareFormulaLatex(latex: string): string {
+  let source = latex.trim();
+  const wrapped = /^\$\$([\s\S]*)\$\$$/.exec(source) ?? /^\$([\s\S]*)\$$/.exec(source) ??
+    /^\\\[([\s\S]*)\\\]$/.exec(source) ?? /^\\\(([\s\S]*)\\\)$/.exec(source);
+  if (wrapped) source = wrapped[1].trim();
+  return source.replace(/\s*\n\s*/g, " ");
+}
+
 /** The editor handle in document mode: formula commands go into the open formula (or a new inline one). */
 function createDocumentEditorAdapter(document: () => DocumentEditorHandle | null): MathEditorHandle {
   const target = async () => {
@@ -122,21 +131,43 @@ function createDocumentEditorAdapter(document: () => DocumentEditorHandle | null
   };
   // Quick OCR keeps the caret's place when the screenshot starts; the recognised formula goes there (the place
   // holds while the document is unchanged; otherwise the caret's place then).
-  const places = new Map<string, { doc: Node; from: number; to: number }>();
+  // In an open formula the place is the formula's caret (its selection then), as in a formula row.
+  const places = new Map<string, { doc: Node; from: number; to: number; formula?: { field: HTMLElement; selection: MathEditorInsertionTarget } }>();
   let placeCount = 0;
   const captureInsertionTarget = (): MathEditorInsertionTarget | null => {
     const view = document()?.view();
     if (!view) return null;
     const { from, to } = view.state.selection;
     const lineId = `document-place-${++placeCount}`;
-    places.set(lineId, { doc: view.state.doc, from, to });
-    return { lineId, ranges: [[from, to]], direction: "forward" };
+    const open = openDocumentFormula();
+    const formula = open
+      ? {
+          field: open.field,
+          selection: {
+            lineId,
+            ranges: open.field.selection.ranges.map(([start, end]) => [start, end] as [number, number]),
+            direction: open.field.selection.direction ?? "none",
+          },
+        }
+      : undefined;
+    places.set(lineId, { doc: view.state.doc, from, to, formula });
+    return formula?.selection ?? { lineId, ranges: [[from, to]], direction: "forward" };
   };
   const insertLatexAt = (target: MathEditorInsertionTarget, latex: string) => {
     const view = document()?.view();
     if (!view) return false;
     const place = places.get(target.lineId);
     places.delete(target.lineId);
+    const open = openDocumentFormula();
+    if (place?.formula && open && open.field === place.formula.field && open.field.isConnected) {
+      // into the formula, at its caret then: the formula's own LaTeX, without the delimiters of a recognised formula
+      const bare = bareFormulaLatex(latex);
+      if (!bare) return false;
+      const { ranges, direction } = place.formula.selection;
+      open.field.selection = { ranges, direction };
+      insertLatexIntoFormula(open, bare);
+      return true;
+    }
     const done = insertRecognized(view, latex, place && place.doc === view.state.doc ? place : null);
     view.focus();
     return done;

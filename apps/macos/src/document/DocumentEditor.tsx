@@ -114,7 +114,7 @@ function imageOf(data: DataTransfer | null): File | null {
   return data.getData("text/plain").trim() ? null : image;
 }
 
-function createFormulaHost(mathSize: () => number): FormulaHost {
+function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) => void) | undefined): FormulaHost {
   return {
     renderStatic(latex, display) {
       const source = display ? latex : `{\\textstyle ${latex}}`;
@@ -136,6 +136,7 @@ function createFormulaHost(mathSize: () => number): FormulaHost {
             display={display}
             entry={entry}
             passive={passive}
+            onPasteImage={onImage()}
             fontSize={parseFloat(getComputedStyle(container).fontSize) || mathSize()}
             callbacks={callbacks}
             apiRef={(api) => {
@@ -156,6 +157,20 @@ function createFormulaHost(mathSize: () => number): FormulaHost {
         styled: (range, _kind, enable) => apiRef.current?.styled(range, enable) ?? null,
         rangeBold: (range) => apiRef.current?.rangeBold(range) ?? null,
         toggleBold: () => apiRef.current?.toggleBold() ?? false,
+        whenDrawn(done) {
+          // The editor's first frame is not styled yet (its shadow styles apply a frame later): drawn once its formula
+          // is laid out with them.
+          let frames = 0;
+          const check = () => {
+            const root = container.querySelector("math-field")?.shadowRoot;
+            const ink = root?.querySelector(".ML__latex");
+            const speech = root?.querySelector<HTMLElement>(".ML__sr-only");
+            const styled = !speech || getComputedStyle(speech).position === "absolute";
+            if ((ink && styled) || ++frames > 30 || !container.isConnected) done();
+            else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        },
         update(next, selection) {
           apiRef.current?.update(next, selection);
         },
@@ -260,7 +275,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
 
   const makeState = (doc: Node) =>
     createDocumentState(documentSchema, doc, {
-      host: createFormulaHost(() => DOCUMENT_MATH_SIZE * zoomRef.current),
+      host: createFormulaHost(() => DOCUMENT_MATH_SIZE * zoomRef.current, () => onImageRef.current),
       formulaText: portableFormulaLatex,
       mathCommands: documentMathCommands,
       codeHighlighter,

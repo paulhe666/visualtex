@@ -15,6 +15,7 @@ import {
 } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "prosemirror-view";
 import { isFormulaNodeName } from "./schema.ts";
+import { newNodeId } from "./ids.ts";
 import { DropMarker, dropPlace } from "./dropPlace.ts";
 
 /** A selection inside a formula, in kernel offsets (the row editor's MathSelectionSnapshot). */
@@ -51,6 +52,9 @@ export interface FormulaSessionCallbacks {
   redo(): boolean;
   /** Keys that were waiting for the formula but come after it was left: the document takes them, in order. */
   handBack(keys: FormulaKey[]): void;
+  /** Enter inside a display formula: it becomes two display formulas, `before` and `after`; the caret goes to the
+   *  start of the second. */
+  split?(before: string, after: string): void;
   /**
    * The formula's selection is dragged and the pointer is outside the formula, at a page point: the document takes
    * it there (and marks the place); false: not the document's (no place there for it).
@@ -109,6 +113,8 @@ export interface FormulaSession {
   styled?(range: [number, number], kind: "bold", enable: boolean): string | null;
   /** Whether every glyph of a range is bold (null: it holds none). */
   rangeBold?(range: [number, number]): boolean | null;
+  /** `done` once the editor has drawn the formula (until then the formula's own picture stays on the page). */
+  whenDrawn?(done: () => void): void;
   /** The open formula's own selection made bold, or not bold when all of it is (Ctrl+B in it); false: no selection. */
   toggleBold?(): boolean;
 }
@@ -724,6 +730,21 @@ export class FormulaView implements NodeView {
   };
 
   private onMouseDown = (event: MouseEvent) => {
+    if (this.session && !this.passive && event.button === 0 && !event.shiftKey && this.editorBox) {
+      // Beside the open formula's editor (on a display formula's line, left or right of it): the caret goes to the
+      // nearest place in the formula, as a click beside a formula row does.
+      const target = event.target as globalThis.Node | null;
+      if (target && (this.editorBox.contains(target) || this.numberBox?.contains(target))) return;
+      const box = this.editorBox.getBoundingClientRect();
+      if (!box.width) return;
+      event.preventDefault();
+      const x = Math.min(Math.max(event.clientX, box.left + 1), box.right - 1);
+      const y = Math.min(Math.max(event.clientY, box.top + 1), box.bottom - 1);
+      const stop = this.session.stopAt?.(x, y);
+      if (stop !== null && stop !== undefined) this.session.selectStops?.(stop, stop);
+      this.session.focus();
+      return;
+    }
     if ((this.session && !this.passive) || event.button !== 0) return;
     if (event.shiftKey) return; // extend the text selection over the formula
     const pos = this.getPos();
@@ -842,6 +863,9 @@ export class FormulaView implements NodeView {
     this.endSession();
     this.generation = generation;
     this.passive = passive;
+    // Until the editor has drawn the formula, the formula's picture stays where it is, over the (transparent) editor:
+    // a new editor's first frame is not styled yet.
+    this.holdStatic();
     this.editorBox = document.createElement(this.display ? "div" : "span");
     this.editorBox.className = "vtx-formula-editor";
     this.editorBox.addEventListener("pointerdown", this.onEditorPointerDown, true);
@@ -907,6 +931,15 @@ export class FormulaView implements NodeView {
         undo: () => commands.undo(view.state, view.dispatch),
         redo: () => commands.redo(view.state, view.dispatch),
         handBack: (keys) => deliverKeys(view, keys),
+        split: (before, after) => {
+          const at = current();
+          if (!at || !at.node.isBlock) return;
+          const first = at.node.type.create({ ...at.node.attrs, latex: before });
+          const second = at.node.type.create({ ...at.node.attrs, id: newNodeId(), latex: after });
+          const tr = closeFormula(view.state.tr.replaceWith(at.pos, at.pos + at.node.nodeSize, [first, second]));
+          view.dispatch(openFormula(tr, at.pos + first.nodeSize, { kind: "start" }).scrollIntoView());
+          view.focus();
+        },
         dragOutAt: (x, y, start, end) => {
           this.dragOut ??= new FormulaDragOut(view, id);
           return this.dragOut.at(x, y, start, end);
@@ -916,6 +949,12 @@ export class FormulaView implements NodeView {
         dragOutEnd: () => this.dragOut?.end(),
       },
     });
+    const session = this.session;
+    const reveal = () => {
+      if (this.session === session) this.releaseStatic();
+    };
+    if (session.whenDrawn) session.whenDrawn(reveal);
+    else reveal();
     // Keys handed back by a formula left just before this one opened.
     const waiting = waitingKeys.get(view);
     if (waiting?.length) {
@@ -975,7 +1014,24 @@ export class FormulaView implements NodeView {
     return true;
   }
 
+  /** The formula's picture stays in place, over the editor that is starting (holdStatic) until it has drawn. */
+  private holdStatic() {
+    const box = this.staticBox.getBoundingClientRect();
+    const own = this.dom.getBoundingClientRect();
+    if (!box.width && !box.height) return;
+    this.staticBox.style.left = `${box.left - own.left}px`;
+    this.staticBox.style.top = `${box.top - own.top}px`;
+    this.dom.classList.add("is-opening");
+  }
+
+  private releaseStatic() {
+    this.dom.classList.remove("is-opening");
+    this.staticBox.style.left = "";
+    this.staticBox.style.top = "";
+  }
+
   private endSession() {
+    this.releaseStatic();
     if (!this.session) return;
     const session = this.session;
     this.session = null;
