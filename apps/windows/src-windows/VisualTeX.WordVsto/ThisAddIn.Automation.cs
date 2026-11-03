@@ -91,8 +91,10 @@ public sealed partial class ThisAddIn
             {
                 var lines = OfficeAutomationText.Lines(arguments);
                 var mode = OfficeAutomationText.ObjectMode(OfficeAutomationText.String(arguments, "format"));
-                if (lines is null && mode is null)
-                    throw new OfficeAutomationException("invalid_arguments", "Give latex (new content) and/or format (convert).");
+                // the editor's number switch: a display formula numbered or not
+                var numbered = OfficeAutomationText.Bool(arguments, "numbered");
+                if (lines is null && mode is null && numbered is null)
+                    throw new OfficeAutomationException("invalid_arguments", "Give latex (new content), format (convert) and/or numbered.");
                 if (mode == FormulaOleContract.CrossPlatformPictureMode)
                     throw new OfficeAutomationException("unsupported_in_host", "Pictures are a PowerPoint format.");
                 var selection = await dispatcher.InvokeAsync(() =>
@@ -109,7 +111,7 @@ public sealed partial class ThisAddIn
                     // the format first, through the Ribbon's conversion of the selected formula;
                     // the converted formula stays selected
                     await ConvertFormulaFormatAsync(false, sourceMode!, mode!).ConfigureAwait(false);
-                    if (lines is not null)
+                    if (lines is not null || numbered is not null)
                     {
                         run.ThrowIfFailed();
                         selection = await dispatcher.InvokeAsync(() => service.ReadSelection()).ConfigureAwait(false);
@@ -117,12 +119,13 @@ public sealed partial class ThisAddIn
                             throw new OfficeAutomationException("operation_failed", "The formula was converted but could not be found again to change its LaTeX.");
                     }
                 }
-                if (lines is not null)
+                if (lines is not null || numbered is not null)
                 {
                     await RunSessionAsync("edit", null, null, selection, conversionOnly: true, lifetime.Token,
                         new AutomationSessionInput
                         {
                             Lines = lines,
+                            Numbered = numbered,
                             FontSizePt = OfficeAutomationText.Number(arguments, "font_size_pt"),
                         }).ConfigureAwait(false);
                     return await FinishWithWrittenAsync(run, dispatcher, service).ConfigureAwait(false);

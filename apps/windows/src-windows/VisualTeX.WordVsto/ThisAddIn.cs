@@ -3288,6 +3288,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         : OfficeErrorText.DescribeItemError(session.Error));
             if (session.Mode == "edit"
                 && automation?.Lines is null
+                && automation?.Numbered is null
                 && !session.Dirty
                 && (!requiresObjectModeChange || session.ExportResult is null))
             {

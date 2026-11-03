@@ -102,10 +102,10 @@ internal static class WordFormulaHostMutationKernel
                             document,
                             source.Range.End);
             }
+            // Numbering a formula moves the later numbers on the same way.
             var renumberVisualTeX =
-                source.Kind == WordFormulaHostKind.VisualTeX
-                && source.Numbering.Numbered
-                && !(target.Kind == WordFormulaHostKind.VisualTeX && target.Numbered);
+                (source.Kind == WordFormulaHostKind.VisualTeX && source.Numbering.Numbered)
+                != (target.Kind == WordFormulaHostKind.VisualTeX && target.Numbered);
 
             // Read REF targets before Undo opens; the source host and its
             // reference bookmark are removed by the replacement below.
@@ -451,6 +451,15 @@ internal static class WordFormulaHostMutationKernel
             // Unnumbered VisualTeX targets need no numbering-container walk.
             return validated;
         }
+
+        // A new number before existing ones moves every later number (and the
+        // references to them) on by one, as Word's own SEQ insertion does.
+        if (target.Numbered)
+            using (WordOperationMetrics.Measure("Numbering.Insertion.VisualTeXRefresh"))
+                _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                    document,
+                    kindFilter: WordFormulaHostKind.VisualTeX,
+                    fromPosition: validated.Range.End);
 
         WordFormulaNumberingKernel.ValidatePreservedContainer(
             document,

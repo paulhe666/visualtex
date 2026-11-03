@@ -11942,9 +11942,12 @@ internal static partial class WordEquationNumbering
                 {
                     result =
                         field.Result.Duplicate;
+                    // A chapter number ("2." written before the field) puts
+                    // the bookmark's start ahead of the SEQ result; it still
+                    // has to end inside that result.
                     if (result.StoryType !=
                             numberRange.StoryType
-                        || result.Start >
+                        || result.End <=
                             numberRange.Start
                         || result.End <
                             numberRange.End)

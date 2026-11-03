@@ -124,8 +124,9 @@ internal sealed partial class WordFormulaService
             document = FindAutomationDocument(key);
             var formulas = CaptureAutomationFormulas(document, kinds);
             AssignAutomationIds(formulas);
+            var numbers = AutomationNumberTargets(document);
             var page = formulas.Skip(offset).Take(limit)
-                .Select(formula => DescribeAutomationFormula(document, formula, contextChars, full: false))
+                .Select(formula => DescribeAutomationFormula(document, formula, contextChars, full: false, numbers))
                 .ToList();
             return new
             {
@@ -606,7 +607,8 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private object DescribeAutomationFormula(Document document, AutomationFormula formula, int contextChars, bool full)
+    private object DescribeAutomationFormula(Document document, AutomationFormula formula, int contextChars, bool full,
+        Lazy<List<EquationReferenceTarget>>? numbers = null)
     {
         AutomationSemantic? semantic = null;
         string? error = null;
@@ -623,13 +625,31 @@ internal sealed partial class WordFormulaService
             lines = full && semantic is not null ? semantic.Lines : null,
             display = semantic?.Display ?? formula.Host.DisplayMode,
             numbered = semantic?.Numbered,
-            number = semantic?.Number,
+            number = semantic?.Number ?? (semantic?.Numbered == true ? AutomationNumber(formula, numbers ?? AutomationNumberTargets(document)) : null),
             font_size_pt = semantic?.FontSizePt,
             location = AutomationLocation(document, formula.Host.Range.StoryType, formula.Host.Range.Start),
             context_before = before,
             context_after = after,
             error,
         };
+    }
+
+    /// The numbers the reference picker offers, read once per answer.
+    private Lazy<List<EquationReferenceTarget>> AutomationNumberTargets(Document document) =>
+        new(() =>
+        {
+            try { return GetCanonicalEquationReferenceTargets(document).Concat(MathTypeEquationReferences.GetTargets(document)).ToList(); }
+            catch { return new List<EquationReferenceTarget>(); }
+        });
+
+    private static string? AutomationNumber(AutomationFormula formula, Lazy<List<EquationReferenceTarget>> numbers)
+    {
+        var host = formula.Host;
+        var target = numbers.Value.FirstOrDefault(item => !string.IsNullOrEmpty(host.FormulaId)
+                && string.Equals(item.FormulaId, host.FormulaId, StringComparison.OrdinalIgnoreCase))
+            ?? numbers.Value.FirstOrDefault(item => item.Position >= host.Range.Start && item.Position <= host.Range.End);
+        var text = target?.NumberText?.Trim().Trim('(', ')', ' ');
+        return string.IsNullOrEmpty(text) ? null : text;
     }
 
     private static object AutomationLocation(Document document, WdStoryType story, int position)

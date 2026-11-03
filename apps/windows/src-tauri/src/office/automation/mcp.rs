@@ -469,6 +469,7 @@ fn write_tool_definitions() -> Vec<Value> {
         write_tool("update_formula", "Update a formula",
             "Replaces a formula's LaTeX and/or converts it to another format, in place (numbering and references kept), as the add-in's editor does. PowerPoint: position moves and/or resizes it (alone, or after the new content is drawn); a native equation moves with its text box.",
             json!({ "formula_id": formula_id, "latex": latex, "lines": lines, "format": format, "font_size_pt": font_size,
+                "numbered": { "type": "boolean", "description": "Word display formulas: give or take away the equation number (the numbers after it follow)." },
                 "position": { "type": "object", "description": "PowerPoint: the new frame in points from the slide's top-left corner; what is left out stays. width_pt or height_pt alone keeps the proportions.",
                     "properties": { "left_pt": { "type": "number" }, "top_pt": { "type": "number" },
                         "width_pt": { "type": "number", "exclusiveMinimum": 0 }, "height_pt": { "type": "number", "exclusiveMinimum": 0 } } } }),
