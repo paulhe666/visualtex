@@ -7,8 +7,11 @@ import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
+import { unzipSync } from "fflate";
 import {
+  decodeText,
   documentSchema,
+  findMarkdownFile,
   hasMathDelimiters,
   insertDisplayLatex,
   insertInlineFormula,
@@ -16,6 +19,7 @@ import {
   mathTextToSlice,
   parseDocument,
   parseMathText,
+  readLatexProject,
   serializeDocument,
 } from "../../../shared/visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
@@ -268,20 +272,37 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         flash(errorText(error));
       }
     },
-    // A .vtxdoc (or .json) as it is; Markdown and LaTeX read into a new document (one Ctrl+Z from empty).
+    // A .vtxdoc (or .json) as it is; Markdown and LaTeX read into a new document (one Ctrl+Z from empty); a .zip of
+    // a LaTeX project (its main file, the files it inputs, the macros of its class and packages) or of Markdown.
     importFile: async (file) => {
       const stem = file.name.replace(/\.[^.]+$/, "");
-      const markdown = /\.(md|markdown)$/i.test(file.name);
-      const latex = /\.tex$/i.test(file.name);
       try {
-        const text = await file.text();
-        if (!markdown && !latex) parseDocument(documentSchema, text);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let kind: "document" | "markdown" | "latex";
+        let text: string;
+        if (/\.zip$/i.test(file.name)) {
+          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown)$/i.test(entry.name) });
+          const files = Object.entries(entries).map(([path, data]) => ({ path, bytes: data }));
+          const project = readLatexProject(files);
+          const markdownFile = project ? null : findMarkdownFile(files);
+          if (project) {
+            kind = "latex";
+            text = project.source;
+          } else if (markdownFile) {
+            kind = "markdown";
+            text = decodeText(markdownFile.bytes);
+          } else throw new Error(t("no .tex or .md file in the archive", "压缩包中没有 .tex 或 .md 文件"));
+        } else {
+          text = decodeText(bytes);
+          kind = /\.(md|markdown)$/i.test(file.name) ? "markdown" : /\.(tex|ltx)$/i.test(file.name) ? "latex" : "document";
+          if (kind === "document") parseDocument(documentSchema, text);
+        }
         await ops.current.saveNow();
-        const entry = await api.create(null, markdown || latex ? emptyDocumentText() : text, stem);
+        const entry = await api.create(null, kind === "document" ? text : emptyDocumentText(), stem);
         withEntry(entry);
         if (!(await ops.current.open(entry.id))) return;
-        if (markdown) documentRef.current?.loadMarkdown(text);
-        else if (latex) documentRef.current?.loadLatex(text);
+        if (kind === "markdown") documentRef.current?.loadMarkdown(text);
+        else if (kind === "latex") documentRef.current?.loadLatex(text);
         await ops.current.saveNow();
         flash(t("Document imported", "文档已导入"));
       } catch (error) {
@@ -503,7 +524,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       <input
         ref={fileRef}
         type="file"
-        accept=".vtxdoc,.json,.md,.markdown,.tex"
+        accept=".vtxdoc,.json,.md,.markdown,.tex,.ltx,.zip"
         className="visually-hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];

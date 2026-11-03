@@ -206,7 +206,8 @@ function inline(text: string, kept: string[]): string {
     // (\noindent, \centering, \maketitle, …): dropped.
     j = skipOptional(text, j);
     const arg = group(text, skipSpaces(text, j));
-    const dropsArgument = /^(label|includegraphics|vspace|hspace|setlength|addtolength|bibliography|bibliographystyle|input|include|usepackage|documentclass|newcommand|renewcommand|pagestyle|thispagestyle|setcounter)$/.test(command);
+    // \begin{…} / \end{…} of an environment with no counterpart (a class's own, minipage contents…): its text stays
+    const dropsArgument = /^(begin|end|label|includegraphics|vspace|hspace|setlength|addtolength|bibliography|bibliographystyle|input|include|usepackage|documentclass|newcommand|renewcommand|pagestyle|thispagestyle|setcounter|addbibresource)$/.test(command);
     i = dropsArgument && arg ? arg.end : j;
     if (!dropsArgument && arg) {
       out += inline(arg.content, kept);
