@@ -49,11 +49,21 @@ import {
   DEFAULT_FORMULA_LETTER_FONT,
   FORMULA_CHINESE_FONT_OPTIONS,
   FORMULA_LETTER_FONT_OPTIONS,
+  DEFAULT_FORMULA_FACES,
+  FORMULA_FACE_ROLES,
   formulaChineseFontFamily,
   formulaLetterFontFamilies,
   type FormulaChineseFont,
+  type FormulaFaceRole,
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
+import { PREFERRED_LATIN, systemFontFamilies } from "../document/systemFonts";
+
+const FORMULA_FACE_LABELS: Record<FormulaFaceRole, { zh: string; en: string }> = {
+  letter: { zh: "字母字体", en: "Letters" },
+  greek: { zh: "希腊字母字体", en: "Greek letters" },
+  digit: { zh: "数字字体", en: "Digits" },
+};
 import {
   applyVisualTexConfiguration,
   buildVisualTexConfiguration,
@@ -247,6 +257,27 @@ export function SettingsDialog({
   const setFormulaChineseFont = useEditorStore(
     (state) => state.setFormulaChineseFont,
   );
+  const formulaFaces = useEditorStore((state) => state.formulaFaces);
+  const setFormulaFace = useEditorStore((state) => state.setFormulaFace);
+  const setFormulaFaces = useEditorStore((state) => state.setFormulaFaces);
+  // the installed Latin fonts, for the letter, Greek and digit fonts (the usual ones first)
+  const [latinFonts, setLatinFonts] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open || latinFonts.length) return;
+    let live = true;
+    void systemFontFamilies().then((fonts) => {
+      if (!live) return;
+      const names = fonts.filter((font) => !font.cjk).map((font) => font.family);
+      const rank = (name: string) => {
+        const i = PREFERRED_LATIN.indexOf(name);
+        return i < 0 ? PREFERRED_LATIN.length : i;
+      };
+      setLatinFonts([...new Set(names)].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, latinFonts.length]);
   const personalize = useEditorStore((state) => state.personalize);
   const setPersonalize = useEditorStore((state) => state.setPersonalize);
   const suggestionCount = useEditorStore((state) => state.suggestionCount);
@@ -1444,6 +1475,7 @@ export function SettingsDialog({
                       onClick={() => {
                         setFormulaLetterFont(DEFAULT_FORMULA_LETTER_FONT);
                         setFormulaChineseFont(DEFAULT_FORMULA_CHINESE_FONT);
+                        setFormulaFaces(DEFAULT_FORMULA_FACES);
                       }}
                     >
                       {isEn ? "Reset" : "恢复默认"}
@@ -1453,7 +1485,7 @@ export function SettingsDialog({
                   <div className="formula-font-select-grid">
                     <label className="formula-font-setting">
                       <span>
-                        <strong>{isEn ? "Math letter font" : "数学字母字体"}</strong>
+                        <strong>{isEn ? "Math font" : "数学字体"}</strong>
                       </span>
                       <select
                         value={formulaLetterFont}
@@ -1471,6 +1503,30 @@ export function SettingsDialog({
                         ))}
                       </select>
                     </label>
+
+                    {FORMULA_FACE_ROLES.map((role) => {
+                      const value = formulaFaces[role];
+                      const names = value && !latinFonts.includes(value) ? [value, ...latinFonts] : latinFonts;
+                      return (
+                        <label key={role} className="formula-font-setting">
+                          <span>
+                            <strong>{isEn ? FORMULA_FACE_LABELS[role].en : FORMULA_FACE_LABELS[role].zh}</strong>
+                          </span>
+                          <select
+                            value={value}
+                            data-formula-face-setting={role}
+                            onChange={(event) => setFormulaFace(role, event.currentTarget.value)}
+                          >
+                            <option value="">{isEn ? "Same as math font" : "跟随数学字体"}</option>
+                            {names.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      );
+                    })}
 
                     <label className="formula-font-setting">
                       <span>
@@ -1510,7 +1566,7 @@ export function SettingsDialog({
                   >
                     <span>{isEn ? "Live preview" : "实时预览"}</span>
                     <MathPreview
-                      latex={String.raw`E=mc^2,\quad \alpha+\beta=\gamma,\quad \text{中文公式}`}
+                      latex={String.raw`\begin{gathered}AxMath\ \delta\Delta\sigma\Sigma\ 0123456789\ \text{中文公式}\\ \frac{-b\pm\sqrt{b^2-4ac}}{2a}\end{gathered}`}
                       staticLayout
                     />
                   </div>

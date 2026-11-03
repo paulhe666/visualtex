@@ -124,6 +124,7 @@ const editorSettingKeys = [
   "formulaLetterFont",
   "formulaChineseFont",
   "formulaSpacing",
+  "formulaFaces",
   "inputBehavior",
   "personalize",
   "suggestionCount",

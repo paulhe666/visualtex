@@ -198,6 +198,22 @@ export const FAM = {
   letterUp: 22,
   letterBf: 23,
   letterBfIt: 24,
+  /** Greek letters and digits in fonts of their own, chosen apart from the letters' (the same four faces) */
+  greekIt: 25,
+  greekUp: 26,
+  greekBf: 27,
+  greekBfIt: 28,
+  digitIt: 29,
+  digitUp: 30,
+  digitBf: 31,
+  digitBfIt: 32,
+} as const;
+
+/** The families of a group of characters set in a chosen font: italic, upright, bold, bold italic. */
+export const FACE_GROUP_FAMS = {
+  letter: [FAM.letterIt, FAM.letterUp, FAM.letterBf, FAM.letterBfIt],
+  greek: [FAM.greekIt, FAM.greekUp, FAM.greekBf, FAM.greekBfIt],
+  digit: [FAM.digitIt, FAM.digitUp, FAM.digitBf, FAM.digitBfIt],
 } as const;
 
 const CM_ROLES: FamilyRoles = {
@@ -980,16 +996,27 @@ export class LatexAdapter {
    */
   private letterField(fam: number, ch: number): Field | null {
     const r = this.role;
-    const to = fam === r.mi || fam === r.it ? FAM.letterIt : fam === r.rm ? FAM.letterUp : fam === r.bf ? FAM.letterBf : fam === r.bm ? FAM.letterBfIt : undefined;
-    if (to === undefined || !this.fams.has(to)) return null;
+    // italic, upright, bold, bold italic (FACE_GROUP_FAMS order)
+    const face = fam === r.mi || fam === r.it ? 0 : fam === r.rm ? 1 : fam === r.bf ? 2 : fam === r.bm ? 3 : -1;
+    if (face < 0) return null;
     const mathItalic = fam === r.mi || fam === r.bm;
     let c: string | undefined;
+    let group: keyof typeof FACE_GROUP_FAMS = "letter";
     if ((ch >= 0x41 && ch <= 0x5a) || (ch >= 0x61 && ch <= 0x7a)) c = String.fromCharCode(ch);
     // the math italic fonts' digits are old-style figures
-    else if (ch >= 0x30 && ch <= 0x39) c = mathItalic ? undefined : String.fromCharCode(ch);
-    else if (ch <= 0x0a) c = UPPER_GREEK[ch];
-    else if (mathItalic && ch <= 0x27) c = LOWER_GREEK[ch - 0x0b];
-    return c === undefined ? null : charField(to, c.codePointAt(0)!);
+    else if (ch >= 0x30 && ch <= 0x39) {
+      c = mathItalic ? undefined : String.fromCharCode(ch);
+      group = "digit";
+    } else if (ch <= 0x0a) {
+      c = UPPER_GREEK[ch];
+      group = "greek";
+    } else if (mathItalic && ch <= 0x27) {
+      c = LOWER_GREEK[ch - 0x0b];
+      group = "greek";
+    }
+    const to = (FACE_GROUP_FAMS[group] as readonly number[])[face];
+    if (c === undefined || !this.fams.has(to)) return null;
+    return charField(to, c.codePointAt(0)!);
   }
 
   /** bm: families with a bold version. */

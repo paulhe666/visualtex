@@ -5,7 +5,7 @@
 // in which every atom has an element with data-atom-id spanning its TeX box,
 // so the kernel's caret, selection and hit-testing code work unchanged.
 import { FontCache } from "./latex.ts";
-import { FAM, LatexAdapter, type AtomLike, type LatexData } from "./latex-adapter.ts";
+import { FACE_GROUP_FAMS, FAM, LatexAdapter, type AtomLike, type LatexData } from "./latex-adapter.ts";
 import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
@@ -198,6 +198,12 @@ export interface LayoutOptions {
    * roman text are then set in it, measured; symbols keep the TeX fonts.
    */
   letterFamilies?: () => { upright: string; italic: string } | null;
+  /**
+   * Fonts chosen apart for letters, Greek letters and digits (AxMath's letter, symbol and digit fonts): CSS
+   * family lists of their upright and italic faces; null for a group set in the TeX fonts. A group left out
+   * takes letterFamilies.
+   */
+  faceFamilies?: () => Partial<Record<"letter" | "greek" | "digit", { upright: string; italic: string } | null>> | null;
   /** the user's spacing adjustments (spacing.ts), read at every layout; null or absent: LaTeX's */
   spacing?: () => Spacing | null;
   /**
@@ -258,22 +264,32 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
   // families at 10, 7 and 5pt; they are rebuilt when the choice changes
   let letterChoice: string | null = null;
   const syncLetterFonts = () => {
-    const families = options.measureNative ? options.letterFamilies?.() ?? null : null;
-    const choice = families ? families.upright + "\n" + families.italic : null;
+    const legacy = options.measureNative ? options.letterFamilies?.() ?? null : null;
+    const faces = options.measureNative ? options.faceFamilies?.() ?? null : null;
+    const groups = {
+      letter: faces?.letter !== undefined ? faces.letter : legacy,
+      greek: faces?.greek !== undefined ? faces.greek : legacy,
+      digit: faces?.digit !== undefined ? faces.digit : legacy,
+    };
+    const choice = JSON.stringify(groups);
     if (choice === letterChoice) return;
     letterChoice = choice;
-    for (const fam of [FAM.letterIt, FAM.letterUp, FAM.letterBf, FAM.letterBfIt]) adapter.fams.delete(fam);
-    if (!families) return;
-    const measure = options.measureNative!;
+    const measure = options.measureNative;
     const covers = (c: number) => !CJK.test(String.fromCodePoint(c));
     const sizes = (family: string, style: string): [TeXFont, TeXFont, TeXFont] => {
-      const at = (pt: number) => new NativeFont(family, pt * 65536, measure, { style, covers });
+      const at = (pt: number) => new NativeFont(family, pt * 65536, measure!, { style, covers });
       return [at(10), at(7), at(5)];
     };
-    adapter.fams.set(FAM.letterIt, sizes(families.italic, "italic"));
-    adapter.fams.set(FAM.letterUp, sizes(families.upright, ""));
-    adapter.fams.set(FAM.letterBf, sizes(families.upright, "bold"));
-    adapter.fams.set(FAM.letterBfIt, sizes(families.italic, "italic bold"));
+    for (const group of ["letter", "greek", "digit"] as const) {
+      const [it, up, bf, bfIt] = FACE_GROUP_FAMS[group];
+      for (const fam of [it, up, bf, bfIt]) adapter.fams.delete(fam);
+      const families = groups[group];
+      if (!families || !measure) continue;
+      adapter.fams.set(it, sizes(families.italic, "italic"));
+      adapter.fams.set(up, sizes(families.upright, ""));
+      adapter.fams.set(bf, sizes(families.upright, "bold"));
+      adapter.fams.set(bfIt, sizes(families.italic, "italic bold"));
+    }
   };
   const familyOf = new Map(data.fonts.map((f) => [f.tfm, f.family]));
   // the caret's size and the strut of empty formulas, from the profile's fonts

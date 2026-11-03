@@ -43,11 +43,16 @@ import {
   DEFAULT_FORMULA_LETTER_FONT,
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
+  normalizeFormulaFaces,
   persistFormulaChineseFontPreference,
+  persistFormulaFaces,
   persistFormulaFontPreferences,
   persistFormulaLetterFontPreference,
+  readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
   type FormulaChineseFont,
+  type FormulaFaceRole,
+  type FormulaFaces,
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
 
@@ -387,6 +392,8 @@ interface EditorState {
   formulaChineseFont: FormulaChineseFont;
   /** spacing configurations per formula font (stored on their own, not with the editor state) */
   formulaSpacing: FormulaSpacingPreferences;
+  /** letters, Greek letters and digits in fonts of their own ("": the math font); stored on their own */
+  formulaFaces: FormulaFaces;
   classicTileWidth: number;
   classicDockHeight: number;
   keypadMinimizeOnCopy: boolean;
@@ -428,6 +435,8 @@ interface EditorState {
   setFormulaLetterFont: (font: FormulaLetterFont) => void;
   setFormulaChineseFont: (font: FormulaChineseFont) => void;
   setFormulaSpacing: (spacing: FormulaSpacingPreferences) => void;
+  setFormulaFace: (role: FormulaFaceRole, family: string) => void;
+  setFormulaFaces: (faces: FormulaFaces) => void;
   setButtonShortcut: (id: ButtonShortcutId, chord: FormulaHotkeyChord | null) => void;
   setButtonShortcuts: (settings: unknown) => void;
   setClassicTileWidth: (width: number) => void;
@@ -479,6 +488,7 @@ export const useEditorStore = create<EditorState>()(
       formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
       formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
       formulaSpacing: defaultFormulaSpacingPreferences(),
+      formulaFaces: readPersistedFormulaFaces(),
       buttonShortcuts: {},
       classicTileWidth: legacyClassicPanelSize(
         legacyClassicTileWidthStorageKey,
@@ -614,6 +624,17 @@ export const useEditorStore = create<EditorState>()(
           const next = normalizeButtonShortcutSettings(value);
           return JSON.stringify(next) === JSON.stringify(state.buttonShortcuts) ? state : { buttonShortcuts: next };
         }),
+      setFormulaFace: (role, family) =>
+        set((state) => {
+          const formulaFaces = normalizeFormulaFaces({ ...state.formulaFaces, [role]: family });
+          persistFormulaFaces(formulaFaces);
+          return { formulaFaces };
+        }),
+      setFormulaFaces: (faces) => {
+        const formulaFaces = normalizeFormulaFaces(faces);
+        persistFormulaFaces(formulaFaces);
+        set({ formulaFaces });
+      },
       setFormulaSpacing: (formulaSpacing) => {
         const normalized = normalizeFormulaSpacingPreferences(formulaSpacing);
         persistFormulaSpacing(normalized);
@@ -733,6 +754,9 @@ export const useEditorStore = create<EditorState>()(
               ? state.formulaSpacing
               : mergeFormulaSpacingPreferences(state.formulaSpacing, settings.formulaSpacing);
           if (settings.formulaSpacing !== undefined) persistFormulaSpacing(formulaSpacing);
+          const formulaFaces =
+            settings.formulaFaces === undefined ? state.formulaFaces : normalizeFormulaFaces(settings.formulaFaces);
+          if (settings.formulaFaces !== undefined) persistFormulaFaces(formulaFaces);
           return {
             title: document.title,
             lines,
@@ -816,6 +840,7 @@ export const useEditorStore = create<EditorState>()(
             formulaLetterFont,
             formulaChineseFont,
             formulaSpacing,
+            formulaFaces,
             inputBehavior:
               settings.inputBehavior === undefined
                 ? state.inputBehavior
@@ -900,6 +925,7 @@ export const useEditorStore = create<EditorState>()(
             formulaLetterFont: state.formulaLetterFont,
             formulaChineseFont: state.formulaChineseFont,
             formulaSpacing: state.formulaSpacing,
+            formulaFaces: { ...state.formulaFaces },
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
@@ -1018,6 +1044,7 @@ export const useEditorStore = create<EditorState>()(
             storedFormulaFonts.formulaChineseFont ??
             normalizeFormulaChineseFont(persisted.formulaChineseFont),
           formulaSpacing: readPersistedFormulaSpacing(),
+          formulaFaces: readPersistedFormulaFaces(),
           classicTileWidth:
             persisted.classicTileWidth === undefined
               ? legacyClassicPanelSize(

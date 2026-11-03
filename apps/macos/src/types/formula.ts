@@ -110,6 +110,8 @@ export interface FormulaDocument {
     formulaChineseFont?: "system" | "pingfang" | "songti" | "kaiti" | "heiti";
     /** spacing configurations per formula font (editor/formulaSpacingPreferences.ts); normalized when read */
     formulaSpacing?: unknown;
+    /** letters, Greek letters and digits in fonts of their own (editor/formulaFontPreferences.ts); normalized when read */
+    formulaFaces?: unknown;
     /** chords of common buttons (shortcuts/buttonShortcuts.ts); normalized when read */
     buttonShortcuts?: unknown;
     inputBehavior?: InputBehaviorSettings;
