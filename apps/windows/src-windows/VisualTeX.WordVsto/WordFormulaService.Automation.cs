@@ -624,7 +624,7 @@ internal sealed partial class WordFormulaService
             display = semantic?.Display ?? formula.Host.DisplayMode,
             numbered = semantic?.Numbered,
             number = semantic?.Number,
-            font_size_pt = full ? semantic?.FontSizePt : null,
+            font_size_pt = semantic?.FontSizePt,
             location = AutomationLocation(document, formula.Host.Range.StoryType, formula.Host.Range.Start),
             context_before = before,
             context_after = after,

@@ -144,6 +144,31 @@ public sealed partial class ThisAddIn
             {
                 var size = OfficeAutomationText.Number(arguments, "font_size_pt")
                     ?? throw new OfficeAutomationException("invalid_arguments", "font_size_pt is required.");
+                if (OfficeAutomationText.String(arguments, "kind") is { Length: > 0 } kind)
+                {
+                    // every inline or every display formula of the document, as the Ribbon's 行内 / 行间 do
+                    var display = kind switch
+                    {
+                        "inline" => false,
+                        "display" => true,
+                        _ => throw new OfficeAutomationException("invalid_arguments", $"Unknown kind {kind}: use inline or display."),
+                    };
+                    BeginFormulaFormatMutation();
+                    try
+                    {
+                        var batch = await dispatcher.InvokeAsync(() =>
+                        {
+                            service.AutomationActivate(key);
+                            return service.ApplyFontSizeToDocumentFormulas(display, size);
+                        }).ConfigureAwait(false);
+                        run.Status(T(
+                            $"已把 {batch.Resized} 个{(display ? "行间" : "行内")}公式改为 {FormulaFontSize.Describe(size)}。",
+                            $"{batch.Resized} {(display ? "display" : "inline")} formula(s) set to {FormulaFontSize.Describe(size, english: true)}."));
+                        foreach (var failure in batch.Failures) run.Warn(failure);
+                    }
+                    finally { EndFormulaFormatMutation(); }
+                    return run.Finish();
+                }
                 await dispatcher.InvokeAsync(() =>
                 {
                     service.AutomationSelectFormula(Key(), OfficeAutomationText.RequiredString(arguments, "formula_id"));

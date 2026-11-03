@@ -123,6 +123,74 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.WordVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="Increase" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
+          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.WordVsto.InlineFontSizeFollow" label="Follow Text" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeChu" label="42 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoChu" label="36 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeYi" label="26 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoYi" label="24 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeEr" label="22 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoEr" label="18 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeSan" label="16 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoSan" label="15 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeSi" label="14 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoSi" label="12 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeWu" label="10.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoWu" label="9 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeLiu" label="7.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoLiu" label="6.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeQi" label="5.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeBa" label="5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.InlineFontSize8" label="8" />
+            <item id="VisualTeX.WordVsto.InlineFontSize9" label="9" />
+            <item id="VisualTeX.WordVsto.InlineFontSize10" label="10" />
+            <item id="VisualTeX.WordVsto.InlineFontSize10_5" label="10.5" />
+            <item id="VisualTeX.WordVsto.InlineFontSize11" label="11" />
+            <item id="VisualTeX.WordVsto.InlineFontSize12" label="12" />
+            <item id="VisualTeX.WordVsto.InlineFontSize14" label="14" />
+            <item id="VisualTeX.WordVsto.InlineFontSize16" label="16" />
+            <item id="VisualTeX.WordVsto.InlineFontSize18" label="18" />
+            <item id="VisualTeX.WordVsto.InlineFontSize20" label="20" />
+            <item id="VisualTeX.WordVsto.InlineFontSize24" label="24" />
+            <item id="VisualTeX.WordVsto.InlineFontSize28" label="28" />
+            <item id="VisualTeX.WordVsto.InlineFontSize36" label="36" />
+            <item id="VisualTeX.WordVsto.InlineFontSize48" label="48" />
+            <item id="VisualTeX.WordVsto.InlineFontSize72" label="72" />
+          </comboBox>
+          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula (numbered ones included) of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.WordVsto.DisplayFontSizeFollow" label="Follow Text" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeChu" label="42 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoChu" label="36 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeYi" label="26 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoYi" label="24 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeEr" label="22 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoEr" label="18 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeSan" label="16 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoSan" label="15 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeSi" label="14 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoSi" label="12 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeWu" label="10.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoWu" label="9 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeLiu" label="7.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoLiu" label="6.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeQi" label="5.5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeBa" label="5 pt (CN preset)" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize8" label="8" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize9" label="9" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize10" label="10" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize10_5" label="10.5" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize11" label="11" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize12" label="12" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize14" label="14" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize16" label="16" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize18" label="18" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize20" label="20" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize24" label="24" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize28" label="28" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize36" label="36" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize48" label="48" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize72" label="72" />
+          </comboBox>
           <menu id="VisualTeX.WordVsto.OmmlMathFont" label="OMML Font" imageMso="FontDialog" tag="menu" screentip="OMML equation font" supertip="The math font of native Word equations (OMML). With a font chosen, VisualTeX makes it the document math font before writing OMML and brings the existing equations of the current document in line at once; Update Equation Format does the same. WPS has no document math font: the chosen font is used for the equations VisualTeX inserts or edits." getEnabled="GetOmmlMathFontEnabled">
             <toggleButton id="VisualTeX.WordVsto.OmmlMathFontFollow" label="Follow Document (No Change)" tag="follow" screentip="Follow document" supertip="Leave the document math font unchanged (default)." getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
             <toggleButton id="VisualTeX.WordVsto.OmmlMathFontCambria" label="Cambria Math" tag="cambria" screentip="Cambria Math" supertip="Word's default math font." getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />

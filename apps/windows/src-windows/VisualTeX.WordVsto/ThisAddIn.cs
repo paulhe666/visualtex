@@ -182,6 +182,15 @@ public interface IWordRibbonCallbacks
     [DispId(58)]
     string GetOmmlMathFontLabel(Office.IRibbonControl control);
 
+    [DispId(59)]
+    string GetFormulaKindFontSizeText(Office.IRibbonControl control);
+
+    [DispId(60)]
+    bool GetFormulaKindFontSizeEnabled(Office.IRibbonControl control);
+
+    [DispId(61)]
+    void OnFormulaKindFontSizeChanged(Office.IRibbonControl control, string value);
+
 }
 
 [ComVisible(true)]
@@ -333,6 +342,74 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <item id="VisualTeX.WordVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="增大" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
+          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="行内" sizeString="初号（42 磅）" screentip="行内公式字号" supertip="选择字号后，当前文档中所有行内公式立即改为这个字号，可撤销；之后 LaTeX 重绘、批量导入和格式转换生成的行内公式也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.WordVsto.InlineFontSizeFollow" label="跟随正文" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeChu" label="初号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoChu" label="小初" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeYi" label="一号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoYi" label="小一" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeEr" label="二号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoEr" label="小二" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeSan" label="三号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoSan" label="小三" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeSi" label="四号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoSi" label="小四" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeWu" label="五号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoWu" label="小五" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeLiu" label="六号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeXiaoLiu" label="小六" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeQi" label="七号" />
+            <item id="VisualTeX.WordVsto.InlineFontSizeBa" label="八号" />
+            <item id="VisualTeX.WordVsto.InlineFontSize8" label="8" />
+            <item id="VisualTeX.WordVsto.InlineFontSize9" label="9" />
+            <item id="VisualTeX.WordVsto.InlineFontSize10" label="10" />
+            <item id="VisualTeX.WordVsto.InlineFontSize10_5" label="10.5" />
+            <item id="VisualTeX.WordVsto.InlineFontSize11" label="11" />
+            <item id="VisualTeX.WordVsto.InlineFontSize12" label="12" />
+            <item id="VisualTeX.WordVsto.InlineFontSize14" label="14" />
+            <item id="VisualTeX.WordVsto.InlineFontSize16" label="16" />
+            <item id="VisualTeX.WordVsto.InlineFontSize18" label="18" />
+            <item id="VisualTeX.WordVsto.InlineFontSize20" label="20" />
+            <item id="VisualTeX.WordVsto.InlineFontSize24" label="24" />
+            <item id="VisualTeX.WordVsto.InlineFontSize28" label="28" />
+            <item id="VisualTeX.WordVsto.InlineFontSize36" label="36" />
+            <item id="VisualTeX.WordVsto.InlineFontSize48" label="48" />
+            <item id="VisualTeX.WordVsto.InlineFontSize72" label="72" />
+          </comboBox>
+          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="行间" sizeString="初号（42 磅）" screentip="行间公式字号" supertip="选择字号后，当前文档中所有行间公式（含编号公式）立即改为这个字号，可撤销；之后 LaTeX 重绘、批量导入和格式转换生成的行间公式（含编号公式）也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.WordVsto.DisplayFontSizeFollow" label="跟随正文" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeChu" label="初号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoChu" label="小初" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeYi" label="一号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoYi" label="小一" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeEr" label="二号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoEr" label="小二" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeSan" label="三号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoSan" label="小三" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeSi" label="四号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoSi" label="小四" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeWu" label="五号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoWu" label="小五" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeLiu" label="六号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoLiu" label="小六" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeQi" label="七号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSizeBa" label="八号" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize8" label="8" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize9" label="9" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize10" label="10" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize10_5" label="10.5" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize11" label="11" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize12" label="12" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize14" label="14" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize16" label="16" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize18" label="18" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize20" label="20" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize24" label="24" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize28" label="28" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize36" label="36" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize48" label="48" />
+            <item id="VisualTeX.WordVsto.DisplayFontSize72" label="72" />
+          </comboBox>
           <menu id="VisualTeX.WordVsto.OmmlMathFont" label="OMML 字体" imageMso="FontDialog" tag="menu" screentip="OMML 公式字体" supertip="Word 原生公式（OMML）使用的数学字体。选定字体后，VisualTeX 写入 OMML 前先把它设为文档数学字体，并立即统一当前文档已有公式的字体；“更新公式格式”也会统一。WPS 没有文档数学字体：所选字体用于 VisualTeX 插入或编辑的公式。" getEnabled="GetOmmlMathFontEnabled">
             <toggleButton id="VisualTeX.WordVsto.OmmlMathFontFollow" label="跟随文档（不更改）" tag="follow" screentip="跟随文档" supertip="不更改文档的数学字体（默认）。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
             <toggleButton id="VisualTeX.WordVsto.OmmlMathFontCambria" label="Cambria Math" tag="cambria" screentip="Cambria Math" supertip="Word 默认的数学字体。" getEnabled="GetOmmlMathFontEnabled" getPressed="GetOmmlMathFontPressed" onAction="OnOmmlMathFontChanged" />
@@ -953,6 +1030,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private static double ParseFontSize(string value) =>
         FormulaFontSize.Parse(value, OfficePluginLanguage.IsEnglish);
+
+    // A bulk import's formula: the Ribbon's inline/display size when one is set, else the text's.
+    private static float BulkRunFontSize(WordBulkRun run, float textFontSizePt) =>
+        FormulaFontSize.Normalize(WordFormulaFontSizeSetting.Resolve(
+            string.Equals(run.DisplayMode, "block", StringComparison.Ordinal),
+            textFontSizePt));
 
     private void ApplyFormulaFontSize(double value)
     {
@@ -4946,11 +5029,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 lifetime.Token.ThrowIfCancellationRequested();
                 var run = formulaRuns[index];
+                var runFontSizePt = BulkRunFontSize(run, fontSizePt);
                 var key = string.Join(
                     "\u001F",
                     objectMode,
                     run.DisplayMode,
-                    fontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    runFontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     run.Latex,
                     run.EquationTag ?? string.Empty);
                 formulaKeys.Add(run.Id, key);
@@ -4967,7 +5051,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         run,
                         objectMode,
                         sourceDocumentId,
-                        fontSizePt)));
+                        runFontSizePt)));
             }
 
             if (pendingTemplates.Count > 0)
@@ -5113,7 +5197,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     template.Session,
                     run,
                     sourceDocumentId,
-                    fontSizePt,
+                    BulkRunFontSize(run, fontSizePt),
                     objectMode,
                     mathTypeNumberPosition);
                 var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)

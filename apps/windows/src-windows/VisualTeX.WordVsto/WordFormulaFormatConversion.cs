@@ -71,6 +71,10 @@ internal sealed class WordFormulaFormatConversionTarget
     internal int PrecedingPlainBlankParagraphCount { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";
     internal double FontSizePt { get; set; } = FormulaFontSize.DefaultPt;
+    // The Ribbon's inline/display size when one is set. FontSizePt stays the source's own size, which
+    // writing checks the source against; the converted formula is written at WriteFontSizePt.
+    internal double? TargetFontSizePt { get; set; }
+    internal double WriteFontSizePt => TargetFontSizePt ?? FontSizePt;
     // Preserve the source Word-layer inline baseline during MathType -> VisualTeX
     // conversion. MathType already presents the formula at this object-character
     // Position; recalculating a fresh VisualTeX descent here can visibly push an

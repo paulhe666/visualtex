@@ -257,7 +257,7 @@ public sealed partial class ThisAddIn
                     "\u001F",
                     targetMode,
                     target.DisplayMode,
-                    target.FontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    target.WriteFontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     target.Latex);
                 targetKeys[target.Id] = key;
                 if (targetAcceptsDirectSourceMathMl
@@ -266,7 +266,7 @@ public sealed partial class ThisAddIn
                 if (!pendingKeys.Add(key)) continue;
 
                 var request = CreateBulkFormulaConversionRequest(
-                    run, targetMode, plan.DocumentId, target.FontSizePt,
+                    run, targetMode, plan.DocumentId, target.WriteFontSizePt,
                     rows: target.Metadata?.Lines?.Select(line => line.Latex).ToList());
                 pending.Add((key, run, target, request));
             }
@@ -374,7 +374,7 @@ public sealed partial class ThisAddIn
                         new OfficeSessionDocument(),
                         run,
                         plan.DocumentId,
-                        target.FontSizePt,
+                        target.WriteFontSizePt,
                         targetMode);
                     directSession.Numbered = target.Numbered;
                     directSession.MathTypeNumberPosition = target.MathTypeNumberPosition;
@@ -396,7 +396,7 @@ public sealed partial class ThisAddIn
                     template.Session,
                     run,
                     plan.DocumentId,
-                    target.FontSizePt,
+                    target.WriteFontSizePt,
                     targetMode);
                 session.Numbered = target.Numbered;
                 session.MathTypeNumberPosition = target.MathTypeNumberPosition;

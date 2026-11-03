@@ -954,6 +954,8 @@ internal sealed partial class WordFormulaService
             // MathType equation cannot also be that destination in this matrix.
             MathTypeNumberPosition = targetMathTypeNumberPosition,
             FontSizePt = fontSize,
+            TargetFontSizePt = WordFormulaFontSizeSetting.Get(
+                numberedIntent || string.Equals(host.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)),
             Metadata = metadata,
         };
     }
@@ -1018,7 +1020,7 @@ internal sealed partial class WordFormulaService
         session.MathTypeNumberPosition =
             target.MathTypeNumberPosition;
         session.FontSizePt =
-            target.FontSizePt;
+            target.WriteFontSizePt;
         session.OriginalMetadata =
             CloneCoreMetadata(
                 target.Metadata);

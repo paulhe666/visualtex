@@ -206,6 +206,8 @@ internal sealed partial class WordFormulaService
                         Release(exact);
                     }
                 }
+                // the Ribbon's inline/display size, when one is set, instead of the text's
+                target.FontSizePt = WordFormulaFontSizeSetting.Resolve(display, target.FontSizePt);
                 ReportOperationProgress(ReadFontSizesStage, ++fontTargetsCompleted, plan.Targets.Count);
             }
             plan.CaptureTimings["targets"] =
