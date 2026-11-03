@@ -55,6 +55,9 @@ internal sealed class PowerPointAutomationHost : IOfficeAutomationHost
         "read_formula" => _service.AutomationReadFormula(
             OfficeAutomationText.RequiredString(arguments, "document"),
             OfficeAutomationText.RequiredString(arguments, "formulaId")),
+        "get_slide_layout" => _service.AutomationSlideLayout(
+            OfficeAutomationText.RequiredString(arguments, "document"),
+            OfficeAutomationText.Number(arguments, "slide") is { } slide ? (int)slide : null),
         _ => throw OfficeAutomationText.UnknownOperation(operation),
     };
 }

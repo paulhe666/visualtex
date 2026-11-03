@@ -81,8 +81,18 @@ public sealed partial class ThisAddIn
             {
                 var lines = OfficeAutomationText.Lines(arguments);
                 var mode = OfficeAutomationText.ObjectMode(OfficeAutomationText.String(arguments, "format"));
+                var position = PowerPointFormulaService.AutomationFrameChange.From(OfficeAutomationText.Element(arguments, "position"));
+                if (lines is null && mode is null && position is null)
+                    throw new OfficeAutomationException("invalid_arguments", "Give latex (new content), format (convert) and/or position (move or resize).");
                 if (lines is null && mode is null)
-                    throw new OfficeAutomationException("invalid_arguments", "Give latex (new content) and/or format (convert).");
+                {
+                    // only a new place / size: the formula stays as it is
+                    var moved = await dispatcher.InvokeAsync(() => service.AutomationSetFrame(Key(), FormulaId(), position!))
+                        .ConfigureAwait(false);
+                    var result = run.Finish();
+                    result["result"] = moved;
+                    return result;
+                }
                 var selection = await dispatcher.InvokeAsync(() =>
                 {
                     service.AutomationSelectFormula(Key(), FormulaId());
@@ -91,6 +101,12 @@ public sealed partial class ThisAddIn
                 await RunSessionAsync("edit", mode, selection, conversionOnly: true, null, lifetime.Token,
                     new AutomationSessionInput { Lines = lines, FontSizePt = OfficeAutomationText.Number(arguments, "font_size_pt") })
                     .ConfigureAwait(false);
+                if (position is not null)
+                {
+                    // PowerPoint leaves the edited formula selected: it takes the new place / size
+                    run.ThrowIfFailed();
+                    await dispatcher.InvokeAsync(() => service.AutomationSetFrame(Key(), null, position)).ConfigureAwait(false);
+                }
                 return await FinishWithSelectionAsync(run, dispatcher, service).ConfigureAwait(false);
             }
 

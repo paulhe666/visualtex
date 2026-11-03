@@ -971,6 +971,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             await dispatcher.InvokeAsync(() =>
             {
+                // an agent's formula goes into the presentation it named, even if another one
+                // came to the front while the formula was drawn
+                if (OfficeAutomationRun.Current is not null)
+                    service.AutomationActivateByIdentity(session.SourceDocumentId);
                 var current = service.ReadSelection();
                 if (!string.Equals(
                         current.DocumentId,

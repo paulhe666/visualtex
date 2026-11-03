@@ -30,8 +30,9 @@ const FORMULA_KINDS: [&str; 4] = ["visualtex_ole", "office_equation", "mathtype"
 const INSTRUCTIONS: &str = "VisualTeX works with the formulas in the documents open in Microsoft Word, \
 PowerPoint, WPS Writer and WPS Presentation on this computer, through the user's VisualTeX add-in. Start \
 with list_documents and pass its document_id to the other tools. Read: list_formulas, read_formula, \
-get_selection. Write (each is one undo step in Office): insert_formula, update_formula (new LaTeX and/or \
-another format), delete_formula, convert_formulas, latex_text_to_formulas, formulas_to_latex_text, and in \
+get_selection, and for presentations get_slide_layout (every shape's frame on a slide, in points). Write \
+(each is one undo step in Office): insert_formula, update_formula (new LaTeX, another format and/or, on a \
+slide, a new position or size), delete_formula, convert_formulas, latex_text_to_formulas, formulas_to_latex_text, and in \
 Word insert_rich_text (Markdown or LaTeX prose with formulas), insert_equation_reference, \
 number_display_formulas, update_equation_numbers, set_equation_number_format. Formats: visualtex_ole \
 (VisualTeX object), office_equation (native Word/PowerPoint equation), mathtype, picture (PowerPoint). Check \
@@ -284,6 +285,8 @@ fn formula_schema() -> Value {
             "display": { "type": "string", "enum": ["inline", "block"] },
             "numbered": { "type": "boolean" },
             "location": { "type": "object" },
+            "frame": { "type": "object", "description": "PowerPoint: where it is on the slide, in points from the slide's top-left corner (left_pt, top_pt, width_pt, height_pt, rotation, z_order)." },
+            "frame_of": { "type": "string", "enum": ["formula", "text_box"], "description": "text_box: a native equation's frame is the text box that holds it." },
             "context_before": { "type": "string" },
             "context_after": { "type": "string" },
             "error": { "type": "string" }
@@ -309,13 +312,14 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "list_documents",
             "title": "List open documents",
-            "description": "The documents and presentations open in Word, PowerPoint and WPS on this computer, with the document_id the other tools take. active: the document in its application's active window; foreground: that application is the window the user is working in.",
+            "description": "The documents and presentations open in Word, PowerPoint and WPS on this computer, with the document_id the other tools take. active: the document in its application's active window; foreground: that application is the window the user is working in. Presentations also give their slide count and slide size in points.",
             "inputSchema": { "type": "object", "properties": {} },
             "outputSchema": { "type": "object", "properties": {
                 "documents": { "type": "array", "items": { "type": "object", "properties": {
                     "document_id": { "type": "string" }, "app": { "type": "string" }, "vendor": { "type": "string" },
                     "name": { "type": "string" }, "path": { "type": "string" }, "active": { "type": "boolean" },
-                    "foreground": { "type": "boolean" }, "saved": { "type": "boolean" }, "read_only": { "type": "boolean" } },
+                    "foreground": { "type": "boolean" }, "saved": { "type": "boolean" }, "read_only": { "type": "boolean" },
+                    "slide_count": { "type": "integer" }, "slide_width_pt": { "type": "number" }, "slide_height_pt": { "type": "number" } },
                     "required": ["document_id", "app", "name"] } },
                 "unavailable_hosts": { "type": "array" } },
                 "required": ["documents"] },
@@ -336,7 +340,7 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "list_formulas",
             "title": "List formulas",
-            "description": format!("The formulas in a document in reading order, a page at a time (offset, limit), each with its LaTeX, kind (visualtex_ole: VisualTeX object; office_equation: Word/PowerPoint native equation; mathtype: MathType object; picture: VisualTeX picture in PowerPoint), whether it is a display formula, its location and up to context_chars characters of text on each side. Word formula ids stay valid until the document changes (the result's revision changes); VisualTeX object ids are permanent.{data_note}"),
+            "description": format!("The formulas in a document in reading order, a page at a time (offset, limit), each with its LaTeX, kind (visualtex_ole: VisualTeX object; office_equation: Word/PowerPoint native equation; mathtype: MathType object; picture: VisualTeX picture in PowerPoint), whether it is a display formula, its location (PowerPoint: slide, shape and its frame on the slide in points) and up to context_chars characters of text on each side. Word formula ids stay valid until the document changes (the result's revision changes); VisualTeX object ids are permanent.{data_note}"),
             "inputSchema": { "type": "object", "properties": {
                 "document_id": document_id_schema("From list_documents."),
                 "kinds": { "type": "array", "items": { "type": "string", "enum": FORMULA_KINDS }, "description": "Only these kinds. Default: all." },
@@ -360,6 +364,25 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["document_id", "formula_id"] },
             "outputSchema": formula_schema(),
             "annotations": annotations("Read a formula", false),
+        }),
+        json!({
+            "name": "get_slide_layout",
+            "title": "Read a slide's layout",
+            "description": format!("PowerPoint and WPS Presentation: every shape on a slide (the current slide by default) in stacking order, with its type (placeholder, text_box, formula, picture, table, group, shape, ...), placeholder role (title, body, ...), frame in points from the slide's top-left corner, a preview of its text and the formula ids on it; and the slide's size. Use it to place, line up or move formulas without covering other content.{data_note}"),
+            "inputSchema": { "type": "object", "properties": {
+                "document_id": document_id_schema("From list_documents (a presentation)."),
+                "slide": { "type": "integer", "minimum": 1, "description": "1-based slide number. Default: the slide shown in the window." } },
+                "required": ["document_id"] },
+            "outputSchema": { "type": "object", "properties": {
+                "document_id": { "type": "string" }, "slide": { "type": "integer" }, "slide_id": { "type": "integer" },
+                "slide_count": { "type": "integer" }, "layout": { "type": ["string", "null"] },
+                "slide_width_pt": { "type": "number" }, "slide_height_pt": { "type": "number" },
+                "shapes": { "type": "array", "items": { "type": "object", "properties": {
+                    "shape_id": { "type": "integer" }, "name": { "type": "string" }, "type": { "type": "string" },
+                    "placeholder": { "type": ["string", "null"] }, "frame": { "type": "object" },
+                    "text": { "type": ["string", "null"] }, "formula_ids": { "type": ["array", "null"] } } } } },
+                "required": ["document_id", "slide", "shapes"] },
+            "annotations": annotations("Read a slide's layout", false),
         }),
         json!({
             "name": "render_latex",
@@ -444,15 +467,20 @@ fn write_tool_definitions() -> Vec<Value> {
                 "format": format, "numbered": { "type": "boolean" }, "font_size_pt": font_size, "location": location }),
             &[], false),
         write_tool("update_formula", "Update a formula",
-            "Replaces a formula's LaTeX and/or converts it to another format, in place (numbering and references kept), as the add-in's editor does.",
-            json!({ "formula_id": formula_id, "latex": latex, "lines": lines, "format": format, "font_size_pt": font_size }),
+            "Replaces a formula's LaTeX and/or converts it to another format, in place (numbering and references kept), as the add-in's editor does. PowerPoint: position moves and/or resizes it (alone, or after the new content is drawn); a native equation moves with its text box.",
+            json!({ "formula_id": formula_id, "latex": latex, "lines": lines, "format": format, "font_size_pt": font_size,
+                "position": { "type": "object", "description": "PowerPoint: the new frame in points from the slide's top-left corner; what is left out stays. width_pt or height_pt alone keeps the proportions.",
+                    "properties": { "left_pt": { "type": "number" }, "top_pt": { "type": "number" },
+                        "width_pt": { "type": "number", "exclusiveMinimum": 0 }, "height_pt": { "type": "number", "exclusiveMinimum": 0 } } } }),
             &["formula_id"], true),
         write_tool("delete_formula", "Delete a formula", "Deletes a formula (with its number in Word).",
             json!({ "formula_id": formula_id }), &["formula_id"], true),
         write_tool("select_formula", "Select a formula", "Scrolls to a formula and selects it, to show it to the user.",
             json!({ "formula_id": formula_id }), &["formula_id"], false),
-        write_tool("set_formula_font_size", "Set a formula's font size", "Sets a formula's font size in points.",
-            json!({ "formula_id": formula_id, "font_size_pt": font_size }), &["formula_id", "font_size_pt"], false),
+        write_tool("set_formula_font_size", "Set formula font sizes",
+            "Sets a formula's font size in points; or, with kind instead of formula_id, the size of every inline or every display formula of a Word document at once (one undo step; numbered formulas are display formulas).",
+            json!({ "formula_id": formula_id, "kind": { "type": "string", "enum": ["inline", "display"] }, "font_size_pt": font_size }),
+            &["font_size_pt"], false),
         write_tool("convert_formulas", "Convert formulas",
             "Redraws all formulas of one format as another, in the whole document or the user's selection (numbering and references follow). from may be any (PowerPoint).",
             json!({ "from": { "type": "string", "enum": ["visualtex_ole", "office_equation", "mathtype", "picture", "any"] },
@@ -550,6 +578,7 @@ async fn call_tool(context: &ServerContext, name: &str, arguments: Value) -> Res
         "get_selection" => get_selection(&arguments).await.map(Into::into),
         "list_formulas" => list_formulas(&arguments).await.map(Into::into),
         "read_formula" => read_formula(&arguments).await.map(Into::into),
+        "get_slide_layout" => get_slide_layout(&arguments).await.map(Into::into),
         "render_latex" => render_latex(context, &arguments).await,
         "recognize_formula_image" => recognize_formula_image(context, &arguments).await.map(Into::into),
         name if WRITE_TOOLS.contains(&name) => write(context, name, arguments).await.map(Into::into),
@@ -574,6 +603,19 @@ async fn write(context: &ServerContext, name: &str, mut arguments: Map<String, V
     }
     let document_id = required_string(&arguments, "document_id")?.to_string();
     let (host, key) = split_document_id(&document_id)?;
+    if arguments.get("position").is_some_and(|value| !value.is_null()) && host.app != "powerpoint" {
+        return Err(invalid("position is for formulas on slides (PowerPoint, WPS Presentation)"));
+    }
+    if name == "set_formula_font_size" {
+        let by_id = arguments.get("formula_id").is_some_and(|value| !value.is_null());
+        let by_kind = arguments.get("kind").is_some_and(|value| !value.is_null());
+        if by_id == by_kind {
+            return Err(invalid("Give formula_id (one formula) or kind (every inline or display formula), not both"));
+        }
+        if by_kind && host.app == "powerpoint" {
+            return Err(CommandError::new("unsupported_in_host", "kind sets the formulas of a Word document; on slides, give formula_id"));
+        }
+    }
     for field in ["latex", "text"] {
         if arguments.get(field).and_then(Value::as_str).is_some_and(|value| value.len() > 1024 * 1024) {
             return Err(invalid(format!("{field} is longer than 1 MB")));
@@ -665,7 +707,7 @@ async fn list_documents() -> Result<Value, CommandError> {
                     entry.insert("document_id".into(), json!(format!("{}:{key}", host.host_id)));
                     entry.insert("app".into(), json!(host.app));
                     entry.insert("vendor".into(), json!(host.vendor));
-                    for field in ["name", "path", "active", "foreground", "saved", "read_only"] {
+                    for field in ["name", "path", "active", "foreground", "saved", "read_only", "slide_count", "slide_width_pt", "slide_height_pt"] {
                         if let Some(value) = document.get(field) {
                             entry.insert(field.into(), value.clone());
                         }
@@ -766,6 +808,22 @@ async fn read_formula(arguments: &Map<String, Value>) -> Result<Value, CommandEr
         SCAN_DEADLINE,
     )
     .await?;
+    Ok(with_document_id(data, document_id))
+}
+
+async fn get_slide_layout(arguments: &Map<String, Value>) -> Result<Value, CommandError> {
+    let document_id = required_string(arguments, "document_id")?;
+    let (host, key) = split_document_id(document_id)?;
+    if host.app != "powerpoint" {
+        return Err(invalid("get_slide_layout reads presentations (PowerPoint, WPS Presentation)"));
+    }
+    let mut request = json!({ "document": key });
+    if let Some(slide) = arguments.get("slide").filter(|value| !value.is_null()) {
+        let slide = slide.as_u64().filter(|slide| (1..=10_000).contains(slide))
+            .ok_or_else(|| invalid("slide must be a slide number from 1"))?;
+        request["slide"] = json!(slide);
+    }
+    let data = registry::dispatch(&host.host_id, "get_slide_layout", request, SCAN_DEADLINE).await?;
     Ok(with_document_id(data, document_id))
 }
 
@@ -894,7 +952,7 @@ mod tests {
     #[test]
     fn tool_definitions_are_complete() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 7 + WRITE_TOOLS.len());
+        assert_eq!(tools.len(), 8 + WRITE_TOOLS.len());
         for tool in &tools {
             let name = tool["name"].as_str().unwrap();
             assert_eq!(tool["inputSchema"]["type"], "object");

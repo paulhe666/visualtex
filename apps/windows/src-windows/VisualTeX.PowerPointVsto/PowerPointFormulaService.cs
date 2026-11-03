@@ -30,6 +30,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
     private readonly Action<string, Shape>? _oleStageProbe;
     private readonly Action<string, IntPtr>? _windowRedrawProbe;
     private readonly Dictionary<string, long> _oleGeometryRestoreGenerations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (float Left, float Top, float Width, float Height)> _oleGeometryTargets =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<IntPtr, long> _windowRedrawFreezeGenerations = new();
     private long _nextWindowRedrawFreezeGeneration;
 
@@ -2009,6 +2011,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             ? previousGeneration + 1
             : 1;
         _oleGeometryRestoreGenerations[generationKey] = generation;
+        _oleGeometryTargets.Remove(generationKey);
 
         bool IsCurrentGeneration() =>
             _oleGeometryRestoreGenerations.TryGetValue(generationKey, out var currentGeneration)
@@ -2016,8 +2019,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
 
         void CompleteGeneration()
         {
-            if (IsCurrentGeneration())
-                _oleGeometryRestoreGenerations.Remove(generationKey);
+            if (!IsCurrentGeneration()) return;
+            _oleGeometryRestoreGenerations.Remove(generationKey);
+            _oleGeometryTargets.Remove(generationKey);
         }
 
         void Restore()
@@ -2037,8 +2041,12 @@ public sealed partial class PowerPointFormulaService : IDisposable
                     return;
                 (slide, shape) = FindFormula(presentation, formulaId, objectId);
                 if (shape is null || !IsNativeOle(shape)) return;
-                ApplyOleSizeAndRefresh(shape, width, height);
-                RestoreOlePosition(shape, left, top);
+                // an agent's frame set since the write (RetargetPendingOleGeometry) is the one to keep
+                var target = _oleGeometryTargets.TryGetValue(generationKey, out var moved)
+                    ? moved
+                    : (Left: left, Top: top, Width: width, Height: height);
+                ApplyOleSizeAndRefresh(shape, target.Width, target.Height);
+                RestoreOlePosition(shape, target.Left, target.Top);
             }
             catch
             {
@@ -2079,6 +2087,21 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 finally { CompleteGeneration(); }
             }, 320);
         }
+    }
+
+    /// <summary>
+    /// A frame an agent gives an OLE formula just written replaces the one the pending geometry
+    /// repair (ScheduleOleGeometryRestore) would put back.
+    /// </summary>
+    internal void RetargetPendingOleGeometry(Presentation presentation, Slide slide, Shape shape)
+    {
+        try
+        {
+            var key = DocumentIdentity(presentation) + "\n" + ManagedReference(slide, shape);
+            if (_oleGeometryRestoreGenerations.ContainsKey(key))
+                _oleGeometryTargets[key] = (shape.Left, shape.Top, shape.Width, shape.Height);
+        }
+        catch { }
     }
 
     private static void Configure(Shape shape, FormulaMetadata metadata)

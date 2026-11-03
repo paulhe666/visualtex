@@ -430,3 +430,19 @@ temporary HKCU class override: PowerPoint (native equations inline and display, 
 Word (inline/display equations, a second document), `render_latex` (image and a LaTeX error), OCR of a formula
 image; Rust tests for the registry, settings, MCP endpoint and channel. Not yet run: WPS, x86 Office, VisualTeX OLE
 objects in PowerPoint, an MCP client other than the test driver (Claude Code / Desktop).
+
+Added 2026-11-02:
+- Slide layout: `list_documents` gives `slide_count`, `slide_width_pt`, `slide_height_pt`; every slide formula has
+  `frame` (`left_pt`, `top_pt`, `width_pt`, `height_pt`, `rotation`, `z_order`; points from the slide's top-left
+  corner) and `frame_of` (`formula`, or `text_box` for a native equation); `get_slide_layout` lists every shape of a
+  slide (type, placeholder role, frame, text preview, formula ids) with the slide size; `update_formula` takes
+  `position` (move and/or resize; width or height alone keeps the proportions, except a text box), alone or after
+  new content. An agent's frame on a VisualTeX OLE object wins over the add-in's delayed OLE geometry repair.
+- Agents' PowerPoint writes wait until PowerPoint has switched to the named presentation, and bring it back to the
+  front before writing if another one came forward while the formula was drawn ("the active presentation changed"
+  happened intermittently before, also on d7a710fa).
+- Font size by kind (as on the Mac): Word's Ribbon 行内 / 行间 and `set_formula_font_size` with `kind`; see the
+  commit "Word: one font size for every inline or display formula". `list_formulas` gives `font_size_pt`.
+- Verified with `e2e-ppt.ps1 -Scenario powerpoint-layout` and `powerpoint` (twice), `e2e-word.ps1 -Scenario
+  word-fontsize` and `word`: no failures.
+- macOS: the same tools for Word and PowerPoint for Mac, see `MACOS.md` in the macOS repository.

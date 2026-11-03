@@ -44,6 +44,59 @@ public sealed partial class PowerPointFormulaService
         internal string ContextBefore { get; set; } = string.Empty;
         internal string ContextAfter { get; set; } = string.Empty;
         internal string? Error { get; set; }
+        /// The formula's own object, or the text box that holds a native equation.
+        internal AutomationFrame? Frame { get; set; }
+    }
+
+    /// A shape's place on its slide, in points from the slide's top-left corner.
+    internal sealed class AutomationFrame
+    {
+        internal double Left { get; set; }
+        internal double Top { get; set; }
+        internal double Width { get; set; }
+        internal double Height { get; set; }
+        internal double Rotation { get; set; }
+        internal int ZOrder { get; set; }
+    }
+
+    private static AutomationFrame? ReadFrame(Shape shape)
+    {
+        try
+        {
+            return new AutomationFrame
+            {
+                Left = shape.Left,
+                Top = shape.Top,
+                Width = shape.Width,
+                Height = shape.Height,
+                Rotation = SafeRead(() => (double)shape.Rotation),
+                ZOrder = SafeRead(() => shape.ZOrderPosition),
+            };
+        }
+        catch { return null; }
+    }
+
+    private static object? DescribeFrame(AutomationFrame? frame) => frame is null ? null : new
+    {
+        left_pt = Math.Round(frame.Left, 2),
+        top_pt = Math.Round(frame.Top, 2),
+        width_pt = Math.Round(frame.Width, 2),
+        height_pt = Math.Round(frame.Height, 2),
+        rotation = Math.Round(frame.Rotation, 2),
+        z_order = frame.ZOrder,
+    };
+
+    /// The slide size in points.
+    private static (double Width, double Height)? SlideSize(Presentation presentation)
+    {
+        PageSetup? setup = null;
+        try
+        {
+            setup = presentation.PageSetup;
+            return (Math.Round(setup.SlideWidth, 2), Math.Round(setup.SlideHeight, 2));
+        }
+        catch { return null; }
+        finally { Release(setup); }
     }
 
     internal object AutomationListDocuments()
@@ -66,6 +119,12 @@ public sealed partial class PowerPointFormulaService
                     var active = string.Equals(identity, activeIdentity, StringComparison.OrdinalIgnoreCase);
                     string path;
                     try { path = presentation.Path ?? string.Empty; } catch { path = string.Empty; }
+                    var size = SlideSize(presentation);
+                    int? slideCount = null;
+                    Slides? slides = null;
+                    try { slides = presentation.Slides; slideCount = slides.Count; }
+                    catch { }
+                    finally { Release(slides); }
                     result.Add(new
                     {
                         key = OfficeAutomationText.DocumentKey(identity),
@@ -75,6 +134,9 @@ public sealed partial class PowerPointFormulaService
                         foreground = foreground && active,
                         saved = SafeRead(() => (bool?)(presentation.Saved == MsoTriState.msoTrue)),
                         read_only = SafeRead(() => (bool?)(presentation.ReadOnly == MsoTriState.msoTrue)),
+                        slide_count = slideCount,
+                        slide_width_pt = size?.Width,
+                        slide_height_pt = size?.Height,
                     });
                 }
                 finally { Release(presentation); }
@@ -234,9 +296,60 @@ public sealed partial class PowerPointFormulaService
             var window = FirstWindow(presentation)
                 ?? throw new OfficeAutomationException("document_not_found", "The presentation has no window.");
             window.Activate();
+            // PowerPoint switches the active presentation a few messages later; the command
+            // that follows writes into the active one, so wait until it is this one.
+            var wanted = DocumentIdentity(presentation);
+            for (var attempt = 0; attempt < 40 && !string.Equals(
+                     TryActivePresentationIdentity(), wanted, StringComparison.OrdinalIgnoreCase); attempt++)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                System.Threading.Thread.Sleep(50);
+                if (attempt == 10) window.Activate();
+            }
+            if (!string.Equals(TryActivePresentationIdentity(), wanted, StringComparison.OrdinalIgnoreCase))
+                throw new OfficeAutomationException("host_busy", "PowerPoint did not switch to the presentation; try again.");
             return window;
         }
         finally { Release(presentation); }
+    }
+
+    /// The presentation a write was prepared in, brought back to the front (agents' writes only).
+    internal void AutomationActivateByIdentity(string? identity)
+    {
+        if (string.IsNullOrEmpty(identity)
+            || string.Equals(TryActivePresentationIdentity(), identity, StringComparison.OrdinalIgnoreCase))
+            return;
+        Presentations? presentations = null;
+        try
+        {
+            presentations = _application.Presentations;
+            for (var index = 1; index <= presentations.Count; index++)
+            {
+                Presentation? candidate = null;
+                try
+                {
+                    candidate = presentations[index];
+                    if (!string.Equals(DocumentIdentity(candidate), identity, StringComparison.OrdinalIgnoreCase)) continue;
+                    var window = FirstWindow(candidate);
+                    if (window is null) return;
+                    try
+                    {
+                        window.Activate();
+                        for (var attempt = 0; attempt < 40 && !string.Equals(
+                                 TryActivePresentationIdentity(), identity, StringComparison.OrdinalIgnoreCase); attempt++)
+                        {
+                            System.Windows.Forms.Application.DoEvents();
+                            System.Threading.Thread.Sleep(50);
+                        }
+                    }
+                    finally { Release(window); }
+                    return;
+                }
+                finally { Release(candidate); }
+            }
+        }
+        catch { }
+        finally { Release(presentations); }
     }
 
     /// Shows a formula's slide and selects the formula (its text for an equation in a text box).
@@ -397,6 +510,8 @@ public sealed partial class PowerPointFormulaService
                     added.Add(shape.Id);
                     if (insertion.Left is { } left) shape.Left = left;
                     if (insertion.Top is { } top) shape.Top = top;
+                    if (insertion.Left is not null || insertion.Top is not null)
+                        RetargetPendingOleGeometry(presentation, slide, shape);
                 }
                 finally { Release(shape); }
             }
@@ -412,6 +527,304 @@ public sealed partial class PowerPointFormulaService
             Release(shapes);
             Release(slide);
             Release(slides);
+            Release(presentation);
+        }
+    }
+
+    // Slide layout
+
+    /// Every shape on a slide (the current slide by default) with its frame, its kind, the text it shows
+    /// and the formulas on it, and the slide's size: what an agent needs to place or line up formulas.
+    internal object AutomationSlideLayout(string key, int? slideNumber)
+    {
+        Presentation? presentation = null;
+        DocumentWindow? window = null;
+        View? view = null;
+        Slides? slides = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        try
+        {
+            presentation = FindAutomationPresentation(key);
+            slides = presentation.Slides;
+            int index;
+            if (slideNumber is { } wanted)
+            {
+                if (wanted < 1 || wanted > slides.Count)
+                    throw new OfficeAutomationException("invalid_arguments", $"The presentation has {slides.Count} slides.");
+                index = wanted;
+            }
+            else
+            {
+                window = FirstWindow(presentation)
+                    ?? throw new OfficeAutomationException("document_not_found", "The presentation has no window.");
+                view = window.View;
+                Slide? current = null;
+                try
+                {
+                    current = (Slide)view.Slide;
+                    index = current.SlideIndex;
+                }
+                catch { index = 1; }
+                finally { Release(current); }
+                if (slides.Count == 0) throw new OfficeAutomationException("invalid_arguments", "The presentation has no slides.");
+            }
+            slide = slides[index];
+            var slideId = slide.SlideID;
+            var formulas = ScanAutomationFormulas(presentation, new HashSet<string>(), 0, slideId);
+            var items = new List<object>();
+            shapes = slide.Shapes;
+            for (var position = 1; position <= shapes.Count; position++)
+            {
+                Shape? shape = null;
+                try
+                {
+                    shape = shapes[position];
+                    var id = shape.Id;
+                    var onShape = formulas.Where(formula => formula.ShapeId == id).ToList();
+                    items.Add(new
+                    {
+                        shape_id = id,
+                        name = SafeShapeName(shape),
+                        type = AutomationShapeType(shape, onShape),
+                        placeholder = AutomationPlaceholderType(shape),
+                        frame = DescribeFrame(ReadFrame(shape)),
+                        text = AutomationTextPreview(shape),
+                        formula_ids = onShape.Count == 0 ? null : onShape.Select(formula => formula.Id).ToList(),
+                    });
+                }
+                finally { Release(shape); }
+            }
+            var size = SlideSize(presentation);
+            string? layout = null;
+            CustomLayout? custom = null;
+            try
+            {
+                custom = slide.CustomLayout;
+                layout = custom.Name;
+            }
+            catch { }
+            finally { Release(custom); }
+            return new
+            {
+                slide = index,
+                slide_id = slideId,
+                slide_count = slides.Count,
+                layout,
+                slide_width_pt = size?.Width,
+                slide_height_pt = size?.Height,
+                shapes = items,
+            };
+        }
+        finally
+        {
+            Release(shapes);
+            Release(slide);
+            Release(slides);
+            Release(view);
+            Release(window);
+            Release(presentation);
+        }
+    }
+
+    private static string AutomationShapeType(Shape shape, List<AutomationSlideFormula> formulas)
+    {
+        if (formulas.Count == 1 && formulas[0].Kind != AutomationOmmlKind) return "formula";
+        MsoShapeType type;
+        try { type = shape.Type; }
+        catch { return "shape"; }
+        return type switch
+        {
+            MsoShapeType.msoPlaceholder => "placeholder",
+            MsoShapeType.msoTextBox => "text_box",
+            MsoShapeType.msoPicture or MsoShapeType.msoLinkedPicture => "picture",
+            MsoShapeType.msoGroup => "group",
+            MsoShapeType.msoTable => "table",
+            MsoShapeType.msoChart => "chart",
+            MsoShapeType.msoSmartArt => "smart_art",
+            MsoShapeType.msoLine => "line",
+            MsoShapeType.msoMedia => "media",
+            MsoShapeType.msoEmbeddedOLEObject or MsoShapeType.msoLinkedOLEObject or MsoShapeType.msoOLEControlObject => "ole_object",
+            MsoShapeType.msoAutoShape or MsoShapeType.msoFreeform => "shape",
+            _ => "other",
+        };
+    }
+
+    private static string? AutomationPlaceholderType(Shape shape)
+    {
+        PlaceholderFormat? format = null;
+        try
+        {
+            if (shape.Type != MsoShapeType.msoPlaceholder) return null;
+            format = shape.PlaceholderFormat;
+            return format.Type switch
+            {
+                PpPlaceholderType.ppPlaceholderTitle or PpPlaceholderType.ppPlaceholderCenterTitle or PpPlaceholderType.ppPlaceholderVerticalTitle => "title",
+                PpPlaceholderType.ppPlaceholderSubtitle => "subtitle",
+                PpPlaceholderType.ppPlaceholderBody or PpPlaceholderType.ppPlaceholderVerticalBody => "body",
+                PpPlaceholderType.ppPlaceholderObject => "content",
+                PpPlaceholderType.ppPlaceholderPicture => "picture",
+                PpPlaceholderType.ppPlaceholderFooter => "footer",
+                PpPlaceholderType.ppPlaceholderSlideNumber => "slide_number",
+                PpPlaceholderType.ppPlaceholderDate => "date",
+                _ => "other",
+            };
+        }
+        catch { return null; }
+        finally { Release(format); }
+    }
+
+    /// The shape's visible text, shortened (data from the user's presentation).
+    private static string? AutomationTextPreview(Shape shape)
+    {
+        Microsoft.Office.Interop.PowerPoint.TextFrame? frame = null;
+        Microsoft.Office.Interop.PowerPoint.TextRange? range = null;
+        try
+        {
+            if (shape.HasTextFrame != MsoTriState.msoTrue) return null;
+            frame = shape.TextFrame;
+            if (frame.HasText != MsoTriState.msoTrue) return null;
+            range = frame.TextRange;
+            var text = OfficeAutomationText.Clean(range.Text);
+            return text.Length > 200 ? text.Substring(0, 200) + "…" : text;
+        }
+        catch { return null; }
+        finally { Release(range); Release(frame); }
+    }
+
+    /// A new place and/or size for a formula (points; what is left out stays). One of width and height
+    /// alone keeps the proportions (a native equation's text box: only that side changes).
+    internal sealed class AutomationFrameChange
+    {
+        internal double? Left { get; private set; }
+        internal double? Top { get; private set; }
+        internal double? Width { get; private set; }
+        internal double? Height { get; private set; }
+
+        internal static AutomationFrameChange? From(JsonElement position)
+        {
+            if (position.ValueKind == JsonValueKind.Undefined || position.ValueKind == JsonValueKind.Null) return null;
+            if (position.ValueKind != JsonValueKind.Object)
+                throw new OfficeAutomationException("invalid_arguments", "position is {\"left_pt\", \"top_pt\", \"width_pt\", \"height_pt\"} (any of them).");
+            double? Read(string name, double minimum, double maximum)
+            {
+                var value = OfficeAutomationText.Number(position, name);
+                if (value is { } number && (double.IsNaN(number) || number < minimum || number > maximum))
+                    throw new OfficeAutomationException("invalid_arguments", $"{name} must be a number from {minimum} to {maximum}.");
+                return value;
+            }
+            var change = new AutomationFrameChange
+            {
+                Left = Read("left_pt", -5000, 5000),
+                Top = Read("top_pt", -5000, 5000),
+                Width = Read("width_pt", 1, 5000),
+                Height = Read("height_pt", 1, 5000),
+            };
+            if (change.Left is null && change.Top is null && change.Width is null && change.Height is null)
+                throw new OfficeAutomationException("invalid_arguments", "position needs left_pt, top_pt, width_pt and/or height_pt.");
+            return change;
+        }
+    }
+
+    /// Moves / resizes a formula: the one with formulaId, or (null) the shape PowerPoint has selected after
+    /// an edit. A native equation moves with the text box that holds it. Returns the new frame.
+    internal object AutomationSetFrame(string key, string? formulaId, AutomationFrameChange change)
+    {
+        Presentation? presentation = null;
+        DocumentWindow? window = null;
+        Selection? selection = null;
+        ShapeRange? range = null;
+        Slides? slides = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        Shape? shape = null;
+        try
+        {
+            presentation = FindAutomationPresentation(key);
+            if (presentation.ReadOnly == MsoTriState.msoTrue)
+                throw new OfficeAutomationException("document_read_only", "The presentation is read-only.");
+            var textBox = false;
+            if (formulaId is null)
+            {
+                window = FirstWindow(presentation)
+                    ?? throw new OfficeAutomationException("document_not_found", "The presentation has no window.");
+                selection = window.Selection;
+                range = selection.ShapeRange;
+                if (range.Count != 1) throw new OfficeAutomationException("internal", "The edited formula is not selected.");
+                var selected = range[1];
+                shape = selected;
+                textBox = selected.HasTextFrame == MsoTriState.msoTrue && SafeRead(() => selected.TextFrame.HasText == MsoTriState.msoTrue);
+            }
+            else
+            {
+                int? slideFilter = formulaId.StartsWith("ppt:", StringComparison.Ordinal)
+                    && formulaId.Split(':') is { Length: >= 3 } parts && int.TryParse(parts[1], out var parsed)
+                    ? parsed : null;
+                var formula = ScanAutomationFormulas(presentation, new HashSet<string>(), 0, slideFilter)
+                    .FirstOrDefault(candidate => candidate.Id == formulaId)
+                    ?? throw new OfficeAutomationException("formula_not_found", "No formula in this presentation has that id; call list_formulas again.");
+                textBox = formula.Kind == AutomationOmmlKind;
+                slides = presentation.Slides;
+                slide = FindSlideById(slides, formula.SlideId);
+                shapes = slide.Shapes;
+                for (var index = 1; index <= shapes.Count && shape is null; index++)
+                {
+                    var candidate = shapes[index];
+                    if (candidate.Id == formula.ShapeId) shape = candidate;
+                    else Release(candidate);
+                }
+                if (shape is null) throw new OfficeAutomationException("formula_not_found", "The formula's shape no longer exists.");
+            }
+
+            var locked = shape.LockAspectRatio;
+            try
+            {
+                shape.LockAspectRatio = MsoTriState.msoFalse;
+                double width = shape.Width, height = shape.Height;
+                if (change.Width is { } newWidth && change.Height is { } newHeight)
+                {
+                    width = newWidth;
+                    height = newHeight;
+                }
+                else if (change.Width is { } onlyWidth)
+                {
+                    if (!textBox && width > 0) height *= onlyWidth / width;
+                    width = onlyWidth;
+                }
+                else if (change.Height is { } onlyHeight)
+                {
+                    if (!textBox && height > 0) width *= onlyHeight / height;
+                    height = onlyHeight;
+                }
+                if (change.Width is not null || change.Height is not null)
+                {
+                    shape.Width = (float)width;
+                    shape.Height = (float)height;
+                }
+                if (change.Left is { } left) shape.Left = (float)left;
+                if (change.Top is { } top) shape.Top = (float)top;
+            }
+            finally
+            {
+                try { shape.LockAspectRatio = locked; } catch { }
+            }
+            if (!textBox)
+            {
+                var owner = slide ?? shape.Parent as Slide;
+                try { if (owner is not null) RetargetPendingOleGeometry(presentation, owner, shape); }
+                finally { if (slide is null) Release(owner); }
+            }
+            return new { frame = DescribeFrame(ReadFrame(shape)), frame_of = textBox ? "text_box" : "formula" };
+        }
+        finally
+        {
+            Release(shape);
+            Release(shapes);
+            Release(slide);
+            Release(slides);
+            Release(range);
+            Release(selection);
+            Release(window);
             Release(presentation);
         }
     }
@@ -563,6 +976,7 @@ public sealed partial class PowerPointFormulaService
             ShapeId = info.ShapeId,
             ShapeName = SafeShapeName(shape),
             Ordinal = ordinal,
+            Frame = ReadFrame(shape),
         };
 
         switch (info.Kind)
@@ -698,6 +1112,9 @@ public sealed partial class PowerPointFormulaService
             shape_name = formula.ShapeName,
             equation = formula.Ordinal > 0 ? formula.Ordinal : (int?)null,
         },
+        // where it is on the slide: the formula's own object, or (a native equation) the text box holding it
+        frame = DescribeFrame(formula.Frame),
+        frame_of = formula.Kind == AutomationOmmlKind ? "text_box" : "formula",
         context_before = formula.ContextBefore,
         context_after = formula.ContextAfter,
         error = formula.Error,
