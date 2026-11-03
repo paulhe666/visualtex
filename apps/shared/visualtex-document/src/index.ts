@@ -68,6 +68,7 @@ export {
 } from "./markdown.ts";
 export { documentDragKey, documentDragPlugin } from "./documentDrag.ts";
 export { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
+export { decodeText, findMarkdownFile, readLatexProject, type LatexProject, type ProjectFile } from "./latexProject.ts";
 export { LINK_REQUEST_EVENT, insertLink, linkAt, normalizeHref, removeLink, requestLink, setLink, type LinkRange } from "./links.ts";
 export { markdownEnter, markdownInputKey, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
 export { deleteSelectionWithParts, mixedSelectionPlugin, selectionHasFormulaParts, selectionSliceWithParts, toggleDocumentBold } from "./mixedSelection.ts";
