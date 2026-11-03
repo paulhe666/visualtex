@@ -485,10 +485,11 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     }
     const paperWidth = PAPER_SIZES[settings.paper].width * PX_PER_MM;
     const fit = () => {
-      const width = frame.clientWidth - 2 * SHEET_SIDE_ROOM;
+      // the page touches both sides; rounded down so that it never overflows into a horizontal scrollbar
+      const width = frame.clientWidth;
       if (width <= 0) return;
-      const next = Math.round(Math.min(4, Math.max(0.3, width / paperWidth)) * 100) / 100;
-      if (Math.abs(useDocumentEditorStore.getState().effectiveZoom - next) > 0.004) useDocumentEditorStore.getState().setEffectiveZoom(next);
+      const next = Math.floor(Math.min(4, Math.max(0.3, width / paperWidth)) * 1000) / 1000;
+      if (Math.abs(useDocumentEditorStore.getState().effectiveZoom - next) > 0.0005) useDocumentEditorStore.getState().setEffectiveZoom(next);
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -509,7 +510,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       width: paper.width * mm,
       minHeight: pageHeight,
       padding: `${settings.marginTop * mm}px ${settings.marginRight * mm}px ${settings.marginBottom * mm}px ${settings.marginLeft * mm}px`,
-      margin: `${SHEET_SIDE_ROOM}px auto`,
+      margin: fitWidth ? `${SHEET_SIDE_ROOM}px 0` : `${SHEET_SIDE_ROOM}px auto`,
       fontSize: settings.fontSize * (96 / 72) * zoom,
       // the pages: white, then the gap between them (the canvas shows through)
       background: `repeating-linear-gradient(to bottom, var(--vtx-paper, #fff) 0, var(--vtx-paper, #fff) ${pageHeight}px, transparent ${pageHeight}px, transparent ${pageHeight + PAGE_GAP}px)`,
@@ -518,7 +519,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
     } as CSSProperties;
-  }, [settings, zoom, lang]);
+  }, [settings, zoom, lang, fitWidth]);
 
   const view = viewRef.current;
   const writeText = (text: string) => void navigator.clipboard.writeText(text);
