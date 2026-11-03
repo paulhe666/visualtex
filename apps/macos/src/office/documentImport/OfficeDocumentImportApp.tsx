@@ -395,6 +395,7 @@ export function OfficeDocumentImportApp() {
     if (!request || busy) return;
     if (!blocks.length || blocks.every((block) => block.kind === "text" && !block.text.trim())) {
       setError(t("没有可导入的文字或公式。", "No text or formulas to import."));
+      if (request.agent) void cancel();
       return;
     }
     const formulas = blocks.filter(
@@ -402,6 +403,7 @@ export function OfficeDocumentImportApp() {
     );
     if (formulas.some((block) => !block.latex.trim())) {
       setError(t("存在空公式。", "There is an empty formula."));
+      if (request.agent) void cancel();
       return;
     }
 
@@ -485,6 +487,31 @@ export function OfficeDocumentImportApp() {
       setBusy(false);
     }
   };
+
+  // An AI agent's import (office::automation): its text goes in as the user's
+  // would, without waiting for the Insert button.
+  const [agentArmed, setAgentArmed] = useState(false);
+  useEffect(() => {
+    const agent = request?.agent;
+    if (!agent) return;
+    setSource(agent.text);
+    setSourceKind(agent.sourceFormat);
+    setOutputKind(agent.outputKind);
+    const parsed = parseLatexMarkdownDocument(agent.text, agent.sourceFormat, defaultFontSizePt).map((block) =>
+      agent.numberDisplayFormulas && block.kind === "formula" && block.displayMode === "block"
+        ? { ...block, numbered: true }
+        : block,
+    );
+    setBlocks(withConversionSizes(parsed));
+    setAgentArmed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
+  useEffect(() => {
+    if (!agentArmed || busy) return;
+    setAgentArmed(false);
+    void commit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentArmed, blocks]);
 
   useEffect(() => {
     if (!sessionId) return;

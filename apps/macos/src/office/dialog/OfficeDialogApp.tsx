@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { MathfieldElement } from "mathlive";
 import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
 import { OcrDialog } from "../../components/OcrDialog";
+import { installMcpRenderBridge } from "../shared/mcpRenderBridge";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../history/EditorSession";
 import {
@@ -372,6 +373,8 @@ function documentFingerprint(
 }
 
 export function OfficeDialogApp() {
+  // the resident editors also draw formulas for AI agents (render_latex)
+  useEffect(() => installMcpRenderBridge(), []);
   const tauriResidentEditor = isMacosOfflineTauriTransport();
   const editorRef = useRef<MathEditorHandle>(null);
   const historyManager = useHistoryManager();
@@ -1972,7 +1975,8 @@ export function OfficeDialogApp() {
       !session ||
       !sessionHydrated ||
       (session.operation !== "nativeToImage" &&
-        session.operation !== "imageToNative") ||
+        session.operation !== "imageToNative" &&
+        session.operation !== "agent") ||
       silentCommitSessionKeyRef.current === sessionKey
     ) {
       return;

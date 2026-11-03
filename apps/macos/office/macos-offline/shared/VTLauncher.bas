@@ -13,6 +13,7 @@ Public Sub VTLaunchSession(ByVal hostName As String, ByVal sessionId As String)
     If Not VTIsCanonicalUuid(sessionId) Then
         Err.Raise vbObjectError + 7300, "VisualTeX", "Invalid VisualTeX Session id."
     End If
+    If VT_AGENT_MODE Then VT_AGENT_SESSION_ID = sessionId
     scriptName = VTOfficeLauncherScriptName(hostName)
 
 #If Mac Then
@@ -47,6 +48,12 @@ Public Function VTWriteAndLaunchSession( _
     scriptName = VTOfficeLauncherScriptName(normalizedHost)
     operationStage = "validate-request"
     VTValidateRequestPayload sessionId, requestJson
+    If VT_AGENT_MODE Then
+        VT_AGENT_SESSION_ID = sessionId
+        VT_AGENT_REQUEST_JSON = requestJson
+        VTWriteAndLaunchSession = "agent"
+        Exit Function
+    End If
     operationStage = "fast-direct-launch"
 #If Mac Then
     If VTTryWriteAndLaunchSessionDirect( _
@@ -129,6 +136,7 @@ Public Function VTWriteFormulaRestoreAndLaunchSession( _
         Err.Raise vbObjectError + 7312, "VisualTeX", _
             "The formula restore source is empty."
     End If
+    If VT_AGENT_MODE Then VT_AGENT_SESSION_ID = sessionId
     operationStage = "encode-payloads"
     encodedRequest = VTBase64UrlEncodeUtf8(requestJson)
     encodedSource = VTBase64UrlEncodeUtf8(restoreSource)

@@ -10,7 +10,7 @@ const SESSION_MODES = ["create", "edit"] as const;
 const OFFICE_HOSTS = ["word", "powerpoint"] as const;
 const DISPLAY_MODES = ["inline", "block"] as const;
 const INLINE_IMAGE_MATH_STYLES = ["text", "display"] as const;
-const OPERATIONS = ["nativeToImage", "imageToNative"] as const;
+const OPERATIONS = ["nativeToImage", "imageToNative", "agent"] as const;
 const CLIENTS = ["wps"] as const;
 const SESSION_STATUSES = [
   "created",

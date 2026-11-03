@@ -8,6 +8,7 @@ import {
 import type {
   DocumentFormulaDisplayMode,
   DocumentFormulaOutputKind,
+  DocumentImportSourceKind,
   DocumentListKind,
   DocumentParagraphAlignment,
   DocumentParagraphStyle,
@@ -56,6 +57,13 @@ export interface MacosDocumentImportRequest {
   client?: "wps";
   /** A presentation's text boxes in `source`, each searched on its own. */
   segments?: MacosPresentationSegment[];
+  /** An AI agent's import: inserted without waiting for the user. */
+  agent?: {
+    text: string;
+    sourceFormat: DocumentImportSourceKind;
+    outputKind: DocumentFormulaOutputKind;
+    numberDisplayFormulas: boolean;
+  };
 }
 
 export interface DocumentImportParagraphCommitMetadata {

@@ -79,7 +79,7 @@ Private Sub VTStartPresentationRedraw(ByVal scope As String, ByVal outputKind As
     On Error GoTo Failed
     stage = "require-presentation"
     VTRequireWritablePowerPointPresentation
-    If scope = "presentation" Then
+    If scope = "presentation" And Not VT_AGENT_MODE Then
         If MsgBox("VisualTeX will find the LaTeX formulas in the whole presentation and redraw them in place. Continue?", _
            vbOKCancel Or vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
     End If
@@ -170,7 +170,7 @@ Private Sub VTStartPresentationRestore(ByVal scope As String)
     On Error GoTo Failed
     stage = "require-presentation"
     VTRequireWritablePowerPointPresentation
-    If scope = "presentation" Then
+    If scope = "presentation" And Not VT_AGENT_MODE Then
         If MsgBox("VisualTeX will turn every formula in the presentation into LaTeX code. Continue?", _
            vbOKCancel Or vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
     End If

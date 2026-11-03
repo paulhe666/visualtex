@@ -10360,3 +10360,89 @@ small:not(:is([class*="-demo"], [class*="-preview"]) small) {
 .update-dialog-content :is(p, .update-community-number) {
   font-size: 12px !important;
 }
+
+/* Settings → AI agents (MCP) */
+.office-mcp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+}
+.office-mcp-row strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.office-mcp-toggle {
+  flex: 0 0 auto;
+  min-width: 86px;
+  justify-content: center;
+}
+.office-mcp-select {
+  height: var(--control-height);
+  min-width: 150px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.office-mcp-clients {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.office-mcp-clients > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.office-mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.office-mcp-connections {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.office-mcp-connections dt {
+  color: var(--text-muted);
+}
+.office-mcp-connections dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.office-mcp-audit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.office-mcp-audit li {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text);
+}
+.office-mcp-audit li.is-error {
+  color: var(--danger);
+}
+.office-mcp-audit li > span:last-child {
+  overflow-wrap: anywhere;
+}

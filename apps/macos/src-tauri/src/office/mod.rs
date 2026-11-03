@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod background;
 pub mod certificate;
 pub mod formula_cache;

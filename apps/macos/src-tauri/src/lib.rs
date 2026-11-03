@@ -1984,6 +1984,10 @@ pub fn run() {
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }
+    // an AI agent's client: relay its stdio to the running companion's /mcp
+    if let Some(status) = office::automation::stdio::run_if_requested() {
+        std::process::exit(status);
+    }
     if let Some(status) = office::macos_offline::run_image_ink_center_cli_if_requested() {
         std::process::exit(status);
     }
@@ -2097,6 +2101,8 @@ pub fn run() {
                         eprintln!("Unable to start PowerPoint double-click monitor: {error}");
                     }
                     app.manage(office_state.clone());
+                    // AI agents' operations run the add-ins' macros from this app's main thread
+                    office::automation::hosts::set_app(app.handle().clone());
                     if initial_office_url.is_some() || background_mode {
                         // Hide the desktop shell before WebKit prewarming. Otherwise a
                         // cold Office URL can flash the main editor while the resident
@@ -2127,6 +2133,11 @@ pub fn run() {
                     }
                     #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
+                    // The Mac add-ins need no companion server; AI agents reach /mcp on it.
+                    #[cfg(target_os = "macos")]
+                    if office::automation::settings::settings(&office_state.paths.root).enabled {
+                        office::lifecycle::start(office_state.clone());
+                    }
                     if let Some(url) = initial_office_url.as_deref() {
                         if let Err(error) =
                             office::macos_offline::handle_open_url_safely(app.handle(), url)
@@ -2209,6 +2220,11 @@ pub fn run() {
             install_optional_ocr_model,
             remove_optional_ocr_model,
             office::lifecycle::get_office_companion_status,
+            office::automation::get_mcp_status,
+            office::automation::set_mcp_settings,
+            office::automation::reset_mcp_access,
+            office::automation::get_mcp_audit,
+            office::automation::render::mcp_render_result,
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
             office::lifecycle::set_office_background_start,

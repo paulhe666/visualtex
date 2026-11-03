@@ -2,6 +2,7 @@ import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState }
 import { useDocumentModeStore } from "./stores/documentModeStore";
 import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
 import { useDocumentLibraryStore } from "./document/documentLibraryApi";
+import { installMcpRenderBridge } from "./office/shared/mcpRenderBridge";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
@@ -168,6 +169,8 @@ function documentContentKey() {
 }
 
 function App() {
+  // draws formulas for AI agents (render_latex)
+  useEffect(() => installMcpRenderBridge(), []);
   const editorRef = useRef<MathEditorHandle>(null);
   const historyManager = useHistoryManager();
   const { openDocumentWithHistory,

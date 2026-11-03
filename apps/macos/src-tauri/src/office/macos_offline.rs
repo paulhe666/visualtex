@@ -273,6 +273,10 @@ struct MacOfflineSessionRequest {
     /// then goes to that add-in instead of a Word or PowerPoint macro.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client: Option<String>,
+    /// An AI agent's formula (open_agent_session): drawn in the hidden editor
+    /// and applied without being shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    agent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -327,6 +331,10 @@ pub struct MacOfflineDocumentImportPublicRequest {
     /// its own (presentation_redraw).
     #[serde(skip_serializing_if = "Option::is_none")]
     segments: Option<Vec<presentation_redraw::PresentationSegment>>,
+    /// An AI agent's import: {text, sourceFormat, outputKind, numberDisplayFormulas}
+    /// (open_agent_import); the window inserts it without waiting for the user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2270,7 +2278,7 @@ fn format_document_formula_rows(lines: &[String], align_relations: bool) -> Stri
         .join("\n")
 }
 
-fn canonical_document_formula_latex(metadata: &VisualTeXFormulaMetadata) -> Result<String, String> {
+pub(crate) fn canonical_document_formula_latex(metadata: &VisualTeXFormulaMetadata) -> Result<String, String> {
     // `metadata.lines` stores logical editor rows. A single logical formula may
     // itself contain source-formatting newlines, especially inside equation or
     // equation* environments. Keep those internal newlines inside the same row;
@@ -2648,7 +2656,9 @@ fn import_request(
         .operation
         .as_deref()
         .filter(|operation| *operation != "formula")
-        .map(str::to_string);
+        .map(str::to_string)
+        // the editor commits an agent's formula by itself, as it does a conversion
+        .or_else(|| request.agent.then(|| "agent".to_string()));
     match state.session_store.create_external(
         session_id.clone(),
         CreateOfficeSessionInput {
@@ -3627,10 +3637,10 @@ pub fn report_macos_offline_office_editor_ready(
     }
     active.ready = true;
     let active = active.clone();
-    let silent = matches!(
-        read_request(&input.session_id)?.operation.as_deref(),
-        Some("nativeToImage" | "imageToNative")
-    );
+    let silent = {
+        let request = read_request(&input.session_id)?;
+        request.agent || matches!(request.operation.as_deref(), Some("nativeToImage" | "imageToNative"))
+    };
     let report_received_ms = active.received_at.elapsed().as_secs_f64() * 1000.0;
     let frontend_origin_ms = (report_received_ms - input.content_ready_ms).max(0.0);
 
@@ -4130,6 +4140,166 @@ pub(crate) fn open_wps_session(app: &AppHandle, request: Value) -> Result<(), St
     )
 }
 
+// AI agents' writes (office::automation::writes): the add-in's command prepares
+// the formula's request as its Ribbon button does; the app draws the agent's
+// LaTeX in the hidden editor, which applies it like Insert.
+
+/// How the sessions agents wait for ended: None while one runs.
+fn agent_sessions() -> &'static Mutex<std::collections::HashMap<String, Option<Result<(), String>>>> {
+    static SESSIONS: OnceLock<Mutex<std::collections::HashMap<String, Option<Result<(), String>>>>> = OnceLock::new();
+    SESSIONS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+/// An agent waits for this session (a formula's, or a document operation's window).
+pub(crate) fn watch_agent_session(session_id: &str) {
+    if let Ok(mut sessions) = agent_sessions().lock() {
+        sessions.entry(session_id.to_string()).or_insert(None);
+    }
+}
+
+/// The first outcome of a watched session counts (a failed commit is then cancelled).
+fn finish_agent_session(session_id: &str, outcome: Result<(), String>) {
+    if let Ok(mut sessions) = agent_sessions().lock() {
+        if let Some(slot @ None) = sessions.get_mut(session_id) {
+            *slot = Some(outcome);
+        }
+    }
+}
+
+/// The outcome of a watched session once it has one (and the session is no longer watched).
+pub(crate) fn take_agent_session_outcome(session_id: &str) -> Option<Result<(), String>> {
+    let mut sessions = agent_sessions().lock().ok()?;
+    if matches!(sessions.get(session_id), Some(Some(_))) {
+        return sessions.remove(session_id).flatten();
+    }
+    None
+}
+
+pub(crate) fn forget_agent_session(session_id: &str) {
+    if let Ok(mut sessions) = agent_sessions().lock() {
+        sessions.remove(session_id);
+    }
+}
+
+/// Opens an agent's formula: `request` is what the add-in's command wrote for
+/// the editor (create, edit or conversion), `lines` the agent's LaTeX rows
+/// (none: a conversion keeps the formula's). The hidden editor draws and
+/// applies it; watch the session for the outcome.
+pub(crate) fn open_agent_session(
+    app: &AppHandle,
+    request: Value,
+    lines: Option<Vec<String>>,
+    font_size_pt: Option<f64>,
+) -> Result<String, String> {
+    let mut request: MacOfflineSessionRequest = serde_json::from_value(request)
+        .map_err(|error| format!("The add-in's formula request is invalid: {error}"))?;
+    request.agent = true;
+    if let Some(size) = font_size_pt {
+        // a slide's formula takes its size from the PowerPoint geometry
+        match request.power_point.as_mut() {
+            Some(powerpoint) => powerpoint.font_size_pt = Some(size),
+            None => request.font_size_pt = Some(size),
+        }
+    }
+    let session_id = request.session_id.clone();
+    validate_request(&request, &session_id)?;
+    let host = host_from_request_name(&request.host)?;
+    if active_editor_session(host).is_some_and(|active| active.activation.session_id != session_id) {
+        return Err("The VisualTeX formula editor is open; try again when the user has closed it".to_string());
+    }
+    ensure_runtime_root(host)?;
+    let directory = session_directory(host, &session_id)?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+    set_mode(&directory, 0o700)?;
+    let bytes = serde_json::to_vec(&request)
+        .map_err(|error| format!("Unable to encode the formula request: {error}"))?;
+    atomic_write_runtime(&request_path(host, &session_id)?, &bytes, 0o600)?;
+    let state = app
+        .try_state::<OfficeCompanionState>()
+        .ok_or_else(|| "VisualTeX Office state is not initialized".to_string())?;
+    import_request(state.inner(), read_request(&session_id)?)?;
+    if let Some(lines) = lines {
+        let lines: Vec<FormulaLine> = lines
+            .into_iter()
+            .map(|latex| FormulaLine { id: Uuid::new_v4().to_string(), latex })
+            .collect();
+        state
+            .session_store
+            .patch(&session_id, json!({ "lines": lines, "activeLineId": null, "dirty": true }))
+            .map_err(|error| error.to_string())?;
+    }
+    watch_agent_session(&session_id);
+    let (sender, receiver) = mpsc::channel();
+    let opener = app.clone();
+    let id = session_id.clone();
+    app.run_on_main_thread(move || {
+        let _ = sender.send(open_editor_window(&opener, host, &id, epoch_ms(), Instant::now(), true));
+    })
+    .map_err(|error| error.to_string())?;
+    let opened = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "The VisualTeX editor did not start".to_string())
+        .and_then(|opened| opened);
+    if let Err(error) = opened {
+        forget_agent_session(&session_id);
+        let _ = cancel_host(&read_request(&session_id)?);
+        let _ = cleanup_session_files(host, &session_id);
+        return Err(error);
+    }
+    Ok(session_id)
+}
+
+/// Opens an agent's Markdown/LaTeX import (the add-in's LaTeX/Markdown import
+/// request): the import window takes the agent's text and inserts it.
+pub(crate) fn open_agent_import(app: &AppHandle, request: Value, agent: Value) -> Result<String, String> {
+    let request: MacOfflineSessionRequest = serde_json::from_value(request)
+        .map_err(|error| format!("The add-in's import request is invalid: {error}"))?;
+    let session_id = request.session_id.clone();
+    if request.operation.as_deref() != Some("documentImport") {
+        return Err("The add-in did not start an import".to_string());
+    }
+    validate_request(&request, &session_id)?;
+    let host = host_from_request_name(&request.host)?;
+    ensure_runtime_root(host)?;
+    let directory = session_directory(host, &session_id)?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Unable to create {}: {error}", directory.display()))?;
+    set_mode(&directory, 0o700)?;
+    let bytes = serde_json::to_vec(&request)
+        .map_err(|error| format!("Unable to encode the import request: {error}"))?;
+    atomic_write_runtime(&request_path(host, &session_id)?, &bytes, 0o600)?;
+    atomic_write_runtime(&directory.join(AGENT_IMPORT_FILE), agent.to_string().as_bytes(), 0o600)?;
+    watch_agent_session(&session_id);
+    let (sender, receiver) = mpsc::channel();
+    let opener = app.clone();
+    let id = session_id.clone();
+    app.run_on_main_thread(move || {
+        let opened = read_request(&id).and_then(|request| open_document_operation_window(&opener, &request, &id));
+        let _ = sender.send(opened);
+    })
+    .map_err(|error| error.to_string())?;
+    let opened = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "The VisualTeX import window did not open".to_string())
+        .and_then(|opened| opened);
+    if let Err(error) = opened {
+        forget_agent_session(&session_id);
+        let _ = cancel_document_import_blocking(session_id.clone());
+        return Err(error);
+    }
+    Ok(session_id)
+}
+
+/// What an agent asked the import window to insert (open_agent_import).
+const AGENT_IMPORT_FILE: &str = "agent-import.json";
+
+fn agent_import(request: &MacOfflineSessionRequest) -> Option<Value> {
+    let host = host_from_request_name(&request.host).ok()?;
+    let path = session_directory(host, &request.session_id).ok()?.join(AGENT_IMPORT_FILE);
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
 fn protect_office_open<T>(
     operation: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
@@ -4255,7 +4425,7 @@ fn atomic_write(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
     atomic_write_with_durability(path, bytes, mode, true)
 }
 
-fn atomic_write_runtime(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
+pub(crate) fn atomic_write_runtime(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
     // Session artifacts are consumed only after the atomic rename completes.
     // They do not need crash-durable fsync before a synchronous Office callback,
     // and skipping it removes several full storage barriers from every Apply.
@@ -4424,7 +4594,7 @@ end tell"#,
     )
 }
 
-fn run_office_vba_script_subprocess(script: &str, label: &str) -> Result<(), String> {
+pub(crate) fn run_office_vba_script_subprocess(script: &str, label: &str) -> Result<(), String> {
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -4529,7 +4699,7 @@ fn execute_word_vba_apple_event() -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn run_office_vba_script_on_main_thread(
+pub(crate) fn run_office_vba_script_on_main_thread(
     app: &AppHandle,
     script: &str,
     label: &str,
@@ -4556,7 +4726,7 @@ fn run_office_vba_script(script: &str, label: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn run_office_vba_script_on_main_thread(
+pub(crate) fn run_office_vba_script_on_main_thread(
     _app: &AppHandle,
     script: &str,
     label: &str,
@@ -4580,8 +4750,24 @@ fn with_dispatch_pointer<T>(
     atomic_write_runtime(&pointer, session_id.as_bytes(), 0o600)?;
     let result = operation();
     let _ = fs::remove_file(pointer);
+    // The add-in's callback reports its failure here instead of raising it
+    // (VTReportCallbackFailure): a raised error stops Office in a dialog.
+    let reported = session_directory(host, session_id)
+        .map(|directory| directory.join(CALLBACK_ERROR_FILE))
+        .ok()
+        .and_then(|path| {
+            let text = fs::read_to_string(&path).ok()?;
+            let _ = fs::remove_file(&path);
+            Some(text)
+        });
+    if let Some(text) = reported {
+        let message = text.split_once('\n').map_or(text.as_str(), |(_, message)| message).trim();
+        return Err(if message.is_empty() { "The Office add-in could not apply the result".to_string() } else { message.to_string() });
+    }
     result
 }
+
+const CALLBACK_ERROR_FILE: &str = "callback-error.txt";
 
 fn scale_word_reference_geometry(
     reference_width_pt: f64,
@@ -6695,6 +6881,7 @@ fn document_import_request_data(
         restore_targets,
         client: request.client.clone(),
         segments: None,
+        agent: agent_import(request),
     })
 }
 
@@ -8076,6 +8263,16 @@ fn commit_session_blocking(
     state: OfficeCompanionState,
     session_id: String,
 ) -> Result<OfficeFormulaSession, String> {
+    let id = session_id.clone();
+    let committed = commit_formula_session(state, session_id);
+    finish_agent_session(&id, committed.as_ref().map(|_| ()).map_err(Clone::clone));
+    committed
+}
+
+fn commit_formula_session(
+    state: OfficeCompanionState,
+    session_id: String,
+) -> Result<OfficeFormulaSession, String> {
     let commit_started = Instant::now();
     validate_uuid(&session_id, "Session id")?;
     let session = state
@@ -8114,6 +8311,7 @@ fn commit_session_blocking(
         && !session.dirty
         && !word_format_conversion_requested
         && !native_powerpoint_source_changed
+        && !(request.agent && !(request.host == "powerpoint" && request.native_equation))
     {
         // Nothing to apply: release the host's session state (PowerPoint's
         // native edit, Word's session-only anchor) the way Cancel does.
@@ -8218,6 +8416,8 @@ fn cancel_session_blocking(
     state: OfficeCompanionState,
     session_id: String,
 ) -> Result<OfficeFormulaSession, String> {
+    // an agent's formula is cancelled when the hidden editor could not draw it
+    finish_agent_session(&session_id, Err("VisualTeX could not draw the formula; check its LaTeX".to_string()));
     validate_uuid(&session_id, "Session id")?;
     let request = read_request(&session_id)?;
     let host = host_from_request_name(&request.host)?;
@@ -8401,13 +8601,18 @@ pub async fn commit_macos_offline_document_import(
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> Result<(), String> {
     let state = state.inner().clone();
-    tokio::task::spawn_blocking(move || commit_document_import_blocking(state, session_id, input))
+    let id = session_id.clone();
+    let committed = tokio::task::spawn_blocking(move || commit_document_import_blocking(state, session_id, input))
         .await
-        .map_err(|error| format!("Offline document import task failed: {error}"))?
+        .map_err(|error| format!("Offline document import task failed: {error}"))
+        .and_then(|result| result);
+    finish_agent_session(&id, committed.clone());
+    committed
 }
 
 #[tauri::command]
 pub async fn cancel_macos_offline_document_import(session_id: String) -> Result<(), String> {
+    finish_agent_session(&session_id, Err("The operation was cancelled".to_string()));
     tokio::task::spawn_blocking(move || cancel_document_import_blocking(session_id))
         .await
         .map_err(|error| format!("Offline document import cancel task failed: {error}"))?
@@ -9398,6 +9603,7 @@ mod tests {
                 source_kind: None,
             }),
             client: None,
+            agent: false,
         };
         assert!(validate_request(&request, &session_id)
             .unwrap_err()
@@ -9938,6 +10144,7 @@ mod tests {
             power_point: None,
             document_import: None,
             client: None,
+            agent: false,
         };
         let json = serde_json::to_vec(&request).expect("UTF-8 request should encode");
         let decoded: MacOfflineSessionRequest =
@@ -10265,6 +10472,7 @@ mod tests {
             power_point: None,
             document_import: None,
             client: None,
+            agent: false,
         };
 
         assert!(validate_request(&request, &session_id)
@@ -10313,6 +10521,7 @@ mod tests {
             power_point: None,
             document_import: None,
             client: None,
+            agent: false,
         };
 
         validate_request(&request, &session_id)
@@ -10745,6 +10954,7 @@ c &= e
             power_point: None,
             document_import: None,
             client: None,
+            agent: false,
         };
         let mut word_session = session.clone();
         word_session.host = OfficeHost::Word;

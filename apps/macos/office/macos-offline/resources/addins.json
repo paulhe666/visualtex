@@ -3,10 +3,10 @@
   "pluginVersion": "1.3.0",
   "files": {
     "VisualTeX.dotm": {
-      "sha256": "f3011654c65dd4c6435b5b8e9a282ecebf88875f53c4d9fb6fd865c7b88ebc3a"
+      "sha256": "b5a84b129061afa578fd0e39fbb7bc84da875de8e8849820abfd1a83cf14c75f"
     },
     "VisualTeX.ppam": {
-      "sha256": "b540e515e943ce9a0dc496599fe2fdc91821c1ffd829993b99537cf0b60e434b"
+      "sha256": "08af7e52e1043492d70a67e19df58619d24a0ab9bad3216750777261b2649975"
     },
     "fonts/VisualTeXLatinModernMath.ttf": {
       "sha256": "bb3646f9296c10c9b5ccd95bf5680297a4e35b3bc25ea5f4f7593a9c405e0c93"

@@ -31,6 +31,862 @@ Private VT_MOVED_COPY_TEST_SOURCE_TOP As Double
 Private VT_MOVED_COPY_TEST_COPIED_LEFT As Double
 Private VT_MOVED_COPY_TEST_COPIED_TOP As Double
 Private VT_MOVED_COPY_TEST_SOURCE_FORMULA_ID As String
+' AI agents: the request VisualTeX_AgentRun is answering
+Private VT_PPT_AGENT_REQUEST As Collection
+Private Const VT_PPT_AGENT_MAX_REQUEST_CHARACTERS As Long = 2097152
+Private Const VT_PPT_AGENT_RESPONSE_CHUNK As Long = 40000
+
+' ---------------------------------------------------------------------------------------------------
+' AI agents (docs/office-mcp/MACOS.md): VisualTeX_AgentRun for PowerPoint
+'
+' The app writes OfficeSessions/agent-request.txt (key=value rows: id, op, s.<name> = Base64URL UTF-8
+' text, n.<name> = number, b.<name> = 0/1, c.<name> = array length) and runs this macro through AppleScript;
+' the answer goes to OfficeSessions/agent-response.txt as {"id","ok","data"} or {"id","ok":false,"error"}.
+' A VisualTeX formula reports its encoded metadata. The object model has no OMML: the app reads a native equation
+' by having VisualTeX_AgentCopyEquation copy it, with the user's clipboard saved around the copies, as a restore does.
+' ---------------------------------------------------------------------------------------------------
+
+Public Sub VisualTeX_AgentRun()
+    Dim requestId As String
+    Dim operation As String
+    Dim data As String
+    Dim code As String
+    Dim message As String
+    Dim separator As Long
+
+    On Error GoTo AgentFailed
+    VT_AGENT_ERRORS = ""
+    VT_AGENT_NOTES = ""
+    VT_AGENT_SESSION_ID = ""
+    VT_AGENT_REQUEST_JSON = ""
+    Set VT_PPT_AGENT_REQUEST = VTPptAgentReadRequest()
+    requestId = VTPptAgentRaw("id")
+    operation = VTPptAgentRaw("op")
+    VT_AGENT_MODE = True
+    Select Case operation
+        Case "list_documents": data = VTPptAgentListDocuments()
+        Case "get_selection": data = VTPptAgentGetSelection()
+        Case "list_formulas": data = VTPptAgentListFormulas()
+        Case "read_formula": data = VTPptAgentReadFormula()
+        Case "get_slide_layout": data = VTPptAgentSlideLayout()
+        Case "find_vtx_formula": data = VTPptAgentFindVisualTeXFormula()
+        Case "begin_insert": data = VTPptAgentBeginInsert()
+        Case "begin_update": data = VTPptAgentBeginUpdate()
+        Case "select_formula": data = VTPptAgentSelectFormula()
+        Case "delete_formula": data = VTPptAgentDeleteFormula()
+        Case "set_formula_font_size": data = VTPptAgentSetFontSize()
+        Case "set_frame": data = VTPptAgentSetFrame()
+        Case "latex_text_to_formulas", "formulas_to_latex_text": data = VTPptAgentDocumentOperation(operation)
+        Case Else
+            Err.Raise vbObjectError + 7900, "VisualTeX", "unknown_operation|PowerPoint has no agent operation " & operation & "."
+    End Select
+    VT_AGENT_MODE = False
+    VTPptAgentWriteResponse "{""id"":" & VTJsonString(requestId) & ",""ok"":true,""data"":" & data & "}"
+    Exit Sub
+
+AgentFailed:
+    message = Err.Description
+    VT_AGENT_MODE = False
+    code = "operation_failed"
+    separator = InStr(1, message, "|", vbBinaryCompare)
+    If separator > 1 And separator < 40 And InStr(1, Left$(message, separator - 1), " ", vbBinaryCompare) = 0 Then
+        code = Left$(message, separator - 1)
+        message = Mid$(message, separator + 1)
+    End If
+    If Len(VT_AGENT_ERRORS) > 0 Then message = message & " " & VT_AGENT_ERRORS
+    On Error Resume Next
+    VTPptAgentWriteResponse "{""id"":" & VTJsonString(requestId) & ",""ok"":false,""error"":{""code"":" & _
+        VTJsonString(code) & ",""message"":" & VTJsonString(message) & "}}"
+End Sub
+
+' Copies one native equation (formula id "ppt:<slideId>:<shapeId>:<zone>") of the request's presentation.
+Public Sub VisualTeX_AgentCopyEquation(ByVal formulaId As String)
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+
+    ' A failure leaves the clipboard as it is, which the app reports; no dialog may open.
+    On Error GoTo CopyFailed
+    Set VT_PPT_AGENT_REQUEST = VTPptAgentReadRequest()
+    Set target = VTPptAgentPresentation()
+    Set found = VTPptAgentFindFormula(target, formulaId, foundSlide, zone)
+    If zone < 1 Then Exit Sub
+    found.TextFrame2.TextRange.MathZones(zone, 1).Copy
+CopyFailed:
+End Sub
+
+Private Function VTPptAgentReadRequest() As Collection
+    Dim values As Collection
+    Dim contents As String
+    Dim rows() As String
+    Dim row As Variant
+    Dim separator As Long
+
+    Set values = New Collection
+    contents = Replace$(VTReadText(VTSessionRoot() & "/agent-request.txt", VT_PPT_AGENT_MAX_REQUEST_CHARACTERS), vbCr, "")
+    rows = Split(contents, vbLf)
+    For Each row In rows
+        separator = InStr(1, CStr(row), "=", vbBinaryCompare)
+        If separator > 1 Then
+            If Not VTCollectionHasKey(values, Left$(CStr(row), separator - 1)) Then
+                values.Add Mid$(CStr(row), separator + 1), Left$(CStr(row), separator - 1)
+            End If
+        End If
+    Next row
+    If Not VTCollectionHasKey(values, "id") Or Not VTCollectionHasKey(values, "op") Then
+        Err.Raise vbObjectError + 7901, "VisualTeX", "invalid_arguments|The agent request is incomplete."
+    End If
+    Set VTPptAgentReadRequest = values
+End Function
+
+Private Function VTPptAgentRaw(ByVal key As String) As String
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, key) Then VTPptAgentRaw = CStr(VT_PPT_AGENT_REQUEST(key))
+End Function
+
+Private Function VTPptAgentString(ByVal name As String) As String
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "s." & name) Then
+        VTPptAgentString = VTBase64UrlDecodeUtf8(CStr(VT_PPT_AGENT_REQUEST("s." & name)))
+    End If
+End Function
+
+Private Function VTPptAgentNumber(ByVal name As String, ByVal fallback As Double) As Double
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "n." & name) Then
+        VTPptAgentNumber = VTParseInvariantDouble(CStr(VT_PPT_AGENT_REQUEST("n." & name)))
+    Else
+        VTPptAgentNumber = fallback
+    End If
+End Function
+
+Private Function VTPptAgentCount(ByVal name As String) As Long
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "c." & name) Then VTPptAgentCount = CLng(VT_PPT_AGENT_REQUEST("c." & name))
+End Function
+
+Private Sub VTPptAgentWriteResponse(ByVal contents As String)
+    Dim position As Long
+    Dim path As String
+
+    path = VTSessionRoot() & "/agent-response.txt"
+    VTWriteTextAtomic path, Left$(contents, VT_PPT_AGENT_RESPONSE_CHUNK)
+    position = VT_PPT_AGENT_RESPONSE_CHUNK + 1
+    Do While position <= Len(contents)
+        VTAppendText path, Mid$(contents, position, VT_PPT_AGENT_RESPONSE_CHUNK)
+        position = position + VT_PPT_AGENT_RESPONSE_CHUNK
+    Loop
+End Sub
+
+Private Function VTPptAgentQuotedBase64(ByVal value As String) As String
+    If Len(value) = 0 Then
+        VTPptAgentQuotedBase64 = "null"
+    Else
+        VTPptAgentQuotedBase64 = """" & VTBase64UrlEncodeUtf8(value) & """"
+    End If
+End Function
+
+Private Function VTPptAgentKey(ByVal target As Presentation) As String
+    If Len(target.Path) > 0 Then
+        VTPptAgentKey = target.FullName
+    Else
+        VTPptAgentKey = target.Name
+    End If
+End Function
+
+Private Function VTPptAgentPresentation() As Presentation
+    Dim key As String
+    Dim candidate As Presentation
+
+    If Presentations.Count = 0 Then
+        Err.Raise vbObjectError + 7902, "VisualTeX", "document_not_found|No presentation is open in PowerPoint."
+    End If
+    key = VTPptAgentString("document")
+    If Len(key) = 0 Then
+        Set VTPptAgentPresentation = ActivePresentation
+        Exit Function
+    End If
+    For Each candidate In Presentations
+        If VTPptAgentKey(candidate) = key Then
+            Set VTPptAgentPresentation = candidate
+            Exit Function
+        End If
+    Next candidate
+    Err.Raise vbObjectError + 7902, "VisualTeX", "document_not_found|The presentation is no longer open; call list_documents again."
+End Function
+
+Private Function VTPptAgentFrameJson(ByVal target As Shape) As String
+    Dim rotation As Double
+    Dim zOrder As Long
+
+    On Error Resume Next
+    rotation = target.Rotation
+    zOrder = target.ZOrderPosition
+    On Error GoTo 0
+    VTPptAgentFrameJson = "{""left_pt"":" & VTJsonNumber(Round(CDbl(target.Left), 2)) & _
+        ",""top_pt"":" & VTJsonNumber(Round(CDbl(target.Top), 2)) & _
+        ",""width_pt"":" & VTJsonNumber(Round(CDbl(target.Width), 2)) & _
+        ",""height_pt"":" & VTJsonNumber(Round(CDbl(target.Height), 2)) & _
+        ",""rotation"":" & VTJsonNumber(Round(rotation, 2)) & _
+        ",""z_order"":" & CStr(zOrder) & "}"
+End Function
+
+Private Function VTPptAgentListDocuments() As String
+    Dim result As String
+    Dim candidate As Presentation
+    Dim activeKey As String
+
+    On Error Resume Next
+    If Presentations.Count > 0 Then activeKey = VTPptAgentKey(ActivePresentation)
+    On Error GoTo 0
+    For Each candidate In Presentations
+        If Len(result) > 0 Then result = result & ","
+        result = result & "{""key"":" & VTJsonString(VTPptAgentKey(candidate)) & _
+            ",""name"":" & VTJsonString(candidate.Name) & _
+            ",""path"":" & VTJsonNullableString(IIf(Len(candidate.Path) > 0, candidate.FullName, "")) & _
+            ",""active"":" & VTJsonBoolean(VTPptAgentKey(candidate) = activeKey) & _
+            ",""saved"":" & VTJsonBoolean(candidate.Saved <> 0) & _
+            ",""read_only"":" & VTJsonBoolean(candidate.ReadOnly <> 0) & _
+            ",""slide_count"":" & CStr(candidate.Slides.Count) & _
+            ",""slide_width_pt"":" & VTJsonNumber(Round(CDbl(candidate.PageSetup.SlideWidth), 2)) & _
+            ",""slide_height_pt"":" & VTJsonNumber(Round(CDbl(candidate.PageSetup.SlideHeight), 2)) & "}"
+    Next candidate
+    VTPptAgentListDocuments = "{""documents"":[" & result & "]}"
+End Function
+
+Private Function VTPptAgentMathZoneCount(ByVal target As Shape) As Long
+    On Error Resume Next
+    If target.HasTextFrame Then VTPptAgentMathZoneCount = target.TextFrame2.TextRange.MathZones.Count
+End Function
+
+' One formula: a VisualTeX picture (zone 0) or the zone-th native equation of a text shape.
+Private Function VTPptAgentFormulaJson( _
+    ByVal currentSlide As Slide, _
+    ByVal target As Shape, _
+    ByVal zone As Long, _
+    ByVal contextChars As Long) As String
+
+    Dim kind As String
+    Dim agentId As String
+    Dim payload As String
+    Dim fontSizePt As Double
+    Dim fullText As Object
+    Dim mathZone As Object
+    Dim textValue As String
+    Dim zoneStart As Long
+    Dim zoneLength As Long
+    Dim before As String
+    Dim after As String
+    Dim fromIndex As Long
+    Dim display As String
+
+    display = "inline"
+    If zone = 0 Then
+        kind = "picture"
+        agentId = "vtx:" & VTShapeFormulaId(target)
+        payload = VTShapeMetadata(target)
+        On Error Resume Next
+        fontSizePt = VTParseInvariantDouble(target.Tags(VT_POWERPOINT_FONT_TAG))
+        On Error GoTo 0
+    Else
+        kind = "office_equation"
+        agentId = "ppt:" & CStr(currentSlide.SlideID) & ":" & CStr(target.Id) & ":" & CStr(zone)
+        On Error Resume Next
+        Set fullText = target.TextFrame2.TextRange
+        Set mathZone = fullText.MathZones(zone, 1)
+        textValue = fullText.Text
+        zoneStart = mathZone.Start
+        zoneLength = mathZone.Length
+        fontSizePt = mathZone.Font.Size
+        If Len(Trim$(Replace$(mathZone.Paragraphs(1).Text, vbCr, ""))) <= zoneLength Then display = "block"
+        On Error GoTo 0
+        If contextChars > 0 Then
+            If zoneStart > 0 Then
+                fromIndex = zoneStart - contextChars
+                If fromIndex < 1 Then fromIndex = 1
+                before = Mid$(textValue, fromIndex, zoneStart - fromIndex)
+                after = Mid$(textValue, zoneStart + zoneLength, contextChars)
+            End If
+        End If
+    End If
+
+    VTPptAgentFormulaJson = "{""formula_id"":" & VTJsonString(agentId) & _
+        ",""kind"":" & VTJsonString(kind) & _
+        ",""display"":" & VTJsonString(display) & _
+        ",""numbered"":false" & _
+        ",""font_size_pt"":" & IIf(fontSizePt > 0, VTJsonNumber(Round(CDbl(fontSizePt), 2)), "null") & _
+        ",""slide"":" & CStr(currentSlide.SlideIndex) & _
+        ",""slide_id"":" & CStr(currentSlide.SlideID) & _
+        ",""shape_id"":" & CStr(target.Id) & _
+        ",""shape_name"":" & VTJsonString(target.Name) & _
+        ",""equation"":" & IIf(zone > 0, CStr(zone), "null") & _
+        ",""frame"":" & VTPptAgentFrameJson(target) & _
+        ",""frame_of"":" & VTJsonString(IIf(zone > 0, "text_box", "formula")) & _
+        ",""payload_b64"":" & VTPptAgentQuotedBase64(payload) & _
+        ",""context_before"":" & VTJsonString(Replace$(Replace$(before, vbCr, vbLf), Chr$(11), vbLf)) & _
+        ",""context_after"":" & VTJsonString(Replace$(Replace$(after, vbCr, vbLf), Chr$(11), vbLf)) & "}"
+End Function
+
+Private Function VTPptAgentKindWanted(ByVal kind As String) As Boolean
+    Dim count As Long
+    Dim index As Long
+
+    count = VTPptAgentCount("kinds")
+    If count = 0 Then
+        VTPptAgentKindWanted = True
+        Exit Function
+    End If
+    For index = 0 To count - 1
+        If VTPptAgentString("kinds." & CStr(index)) = kind Then
+            VTPptAgentKindWanted = True
+            Exit Function
+        End If
+    Next index
+End Function
+
+Private Function VTPptAgentListFormulas() As String
+    Dim target As Presentation
+    Dim currentSlide As Slide
+    Dim candidate As Shape
+    Dim offset As Long
+    Dim limit As Long
+    Dim contextChars As Long
+    Dim listed As Long
+    Dim total As Long
+    Dim zone As Long
+    Dim zones As Long
+    Dim items As String
+    Dim revision As String
+
+    Set target = VTPptAgentPresentation()
+    offset = CLng(VTPptAgentNumber("offset", 0))
+    limit = CLng(VTPptAgentNumber("limit", 50))
+    contextChars = CLng(VTPptAgentNumber("contextChars", 40))
+    For Each currentSlide In target.Slides
+        For Each candidate In currentSlide.Shapes
+            If VTIsVisualTeXPowerPointShape(candidate) Then
+                If VTPptAgentKindWanted("picture") Then
+                    revision = revision & CStr(currentSlide.SlideID) & "." & CStr(candidate.Id) & ";"
+                    If total >= offset And listed < limit Then
+                        If Len(items) > 0 Then items = items & ","
+                        items = items & VTPptAgentFormulaJson(currentSlide, candidate, 0, contextChars)
+                        listed = listed + 1
+                    End If
+                    total = total + 1
+                End If
+            ElseIf VTPptAgentKindWanted("office_equation") Then
+                zones = VTPptAgentMathZoneCount(candidate)
+                For zone = 1 To zones
+                    revision = revision & CStr(currentSlide.SlideID) & "." & CStr(candidate.Id) & "." & CStr(zone) & ";"
+                    If total >= offset And listed < limit Then
+                        If Len(items) > 0 Then items = items & ","
+                        items = items & VTPptAgentFormulaJson(currentSlide, candidate, zone, contextChars)
+                        listed = listed + 1
+                    End If
+                    total = total + 1
+                Next zone
+            End If
+        Next candidate
+    Next currentSlide
+    VTPptAgentListFormulas = "{""revision"":" & VTJsonString(revision) & ",""total"":" & CStr(total) & _
+        ",""offset"":" & CStr(offset) & ",""formulas"":[" & items & "]}"
+End Function
+
+' The formula an agent id names: "vtx:<id>" or "ppt:<slideId>:<shapeId>:<zone>".
+Private Function VTPptAgentFindFormula( _
+    ByVal target As Presentation, _
+    ByVal agentId As String, _
+    ByRef foundSlide As Slide, _
+    ByRef zone As Long) As Shape
+
+    Dim currentSlide As Slide
+    Dim candidate As Shape
+    Dim parts() As String
+
+    If Left$(agentId, 4) = "vtx:" Then
+        For Each currentSlide In target.Slides
+            For Each candidate In currentSlide.Shapes
+                If VTIsVisualTeXPowerPointShape(candidate) Then
+                    If VTShapeFormulaId(candidate) = Mid$(agentId, 5) Then
+                        Set foundSlide = currentSlide
+                        zone = 0
+                        Set VTPptAgentFindFormula = candidate
+                        Exit Function
+                    End If
+                End If
+            Next candidate
+        Next currentSlide
+        Err.Raise vbObjectError + 7903, "VisualTeX", "formula_not_found|No VisualTeX formula in this presentation has that id."
+    End If
+    parts = Split(agentId, ":")
+    If UBound(parts) <> 3 Or parts(0) <> "ppt" Then
+        Err.Raise vbObjectError + 7903, "VisualTeX", "formula_not_found|This is not a PowerPoint formula id from list_formulas."
+    End If
+    For Each currentSlide In target.Slides
+        If CStr(currentSlide.SlideID) = parts(1) Then
+            For Each candidate In currentSlide.Shapes
+                If CStr(candidate.Id) = parts(2) Then
+                    zone = CLng(parts(3))
+                    If zone < 1 Or zone > VTPptAgentMathZoneCount(candidate) Then Exit For
+                    Set foundSlide = currentSlide
+                    Set VTPptAgentFindFormula = candidate
+                    Exit Function
+                End If
+            Next candidate
+        End If
+    Next currentSlide
+    Err.Raise vbObjectError + 7904, "VisualTeX", "stale_formula_id|The presentation changed; call list_formulas again."
+End Function
+
+Private Function VTPptAgentReadFormula() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+
+    Set target = VTPptAgentPresentation()
+    Set found = VTPptAgentFindFormula(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    VTPptAgentReadFormula = VTPptAgentFormulaJson(foundSlide, found, zone, 120)
+End Function
+
+Private Function VTPptAgentShapeType(ByVal target As Shape) As String
+    Dim typeValue As Long
+
+    On Error Resume Next
+    typeValue = target.Type
+    On Error GoTo 0
+    Select Case typeValue
+        Case 14: VTPptAgentShapeType = "placeholder"
+        Case 17: VTPptAgentShapeType = "text_box"
+        Case 13, 11: VTPptAgentShapeType = "picture"
+        Case 6: VTPptAgentShapeType = "group"
+        Case 19: VTPptAgentShapeType = "table"
+        Case 3: VTPptAgentShapeType = "chart"
+        Case 24: VTPptAgentShapeType = "smart_art"
+        Case 9: VTPptAgentShapeType = "line"
+        Case 16: VTPptAgentShapeType = "media"
+        Case 7, 10, 12: VTPptAgentShapeType = "ole_object"
+        Case 1, 5: VTPptAgentShapeType = "shape"
+        Case Else: VTPptAgentShapeType = "other"
+    End Select
+End Function
+
+Private Function VTPptAgentPlaceholderType(ByVal target As Shape) As String
+    Dim typeValue As Long
+
+    On Error GoTo NotPlaceholder
+    If target.Type <> 14 Then Exit Function
+    typeValue = target.PlaceholderFormat.Type
+    Select Case typeValue
+        Case 1, 3, 5: VTPptAgentPlaceholderType = "title"
+        Case 4: VTPptAgentPlaceholderType = "subtitle"
+        Case 2, 6: VTPptAgentPlaceholderType = "body"
+        Case 7: VTPptAgentPlaceholderType = "content"
+        Case 18: VTPptAgentPlaceholderType = "picture"
+        Case 15: VTPptAgentPlaceholderType = "footer"
+        Case 13: VTPptAgentPlaceholderType = "slide_number"
+        Case 16: VTPptAgentPlaceholderType = "date"
+        Case Else: VTPptAgentPlaceholderType = "other"
+    End Select
+NotPlaceholder:
+End Function
+
+Private Function VTPptAgentTextPreview(ByVal target As Shape) As String
+    Dim value As String
+
+    On Error Resume Next
+    If target.HasTextFrame Then
+        If target.TextFrame.HasText Then value = target.TextFrame.TextRange.Text
+    End If
+    On Error GoTo 0
+    value = Replace$(Replace$(value, vbCr, vbLf), Chr$(11), vbLf)
+    If Len(value) > 200 Then value = Left$(value, 200) & ChrW(8230)
+    VTPptAgentTextPreview = value
+End Function
+
+Private Function VTPptAgentSlideLayout() As String
+    Dim target As Presentation
+    Dim currentSlide As Slide
+    Dim candidate As Shape
+    Dim slideNumber As Long
+    Dim items As String
+    Dim ids As String
+    Dim kind As String
+    Dim zone As Long
+    Dim zones As Long
+    Dim layoutName As String
+
+    Set target = VTPptAgentPresentation()
+    slideNumber = CLng(VTPptAgentNumber("slide", 0))
+    If slideNumber = 0 Then
+        On Error Resume Next
+        slideNumber = ActiveWindow.View.Slide.SlideIndex
+        On Error GoTo 0
+        If slideNumber = 0 Then slideNumber = 1
+    End If
+    If slideNumber < 1 Or slideNumber > target.Slides.Count Then
+        Err.Raise vbObjectError + 7905, "VisualTeX", "invalid_arguments|The presentation has " & CStr(target.Slides.Count) & " slides."
+    End If
+    Set currentSlide = target.Slides(slideNumber)
+    For Each candidate In currentSlide.Shapes
+        ids = ""
+        If VTIsVisualTeXPowerPointShape(candidate) Then
+            kind = "formula"
+            ids = VTJsonString("vtx:" & VTShapeFormulaId(candidate))
+        Else
+            kind = VTPptAgentShapeType(candidate)
+            zones = VTPptAgentMathZoneCount(candidate)
+            For zone = 1 To zones
+                If Len(ids) > 0 Then ids = ids & ","
+                ids = ids & VTJsonString("ppt:" & CStr(currentSlide.SlideID) & ":" & CStr(candidate.Id) & ":" & CStr(zone))
+            Next zone
+        End If
+        If Len(items) > 0 Then items = items & ","
+        items = items & "{""shape_id"":" & CStr(candidate.Id) & _
+            ",""name"":" & VTJsonString(candidate.Name) & _
+            ",""type"":" & VTJsonString(kind) & _
+            ",""placeholder"":" & VTJsonNullableString(VTPptAgentPlaceholderType(candidate)) & _
+            ",""frame"":" & VTPptAgentFrameJson(candidate) & _
+            ",""text"":" & VTJsonNullableString(VTPptAgentTextPreview(candidate)) & _
+            ",""formula_ids"":" & IIf(Len(ids) > 0, "[" & ids & "]", "null") & "}"
+    Next candidate
+    On Error Resume Next
+    layoutName = currentSlide.CustomLayout.Name
+    On Error GoTo 0
+    VTPptAgentSlideLayout = "{""slide"":" & CStr(slideNumber) & _
+        ",""slide_id"":" & CStr(currentSlide.SlideID) & _
+        ",""slide_count"":" & CStr(target.Slides.Count) & _
+        ",""layout"":" & VTJsonNullableString(layoutName) & _
+        ",""slide_width_pt"":" & VTJsonNumber(Round(CDbl(target.PageSetup.SlideWidth), 2)) & _
+        ",""slide_height_pt"":" & VTJsonNumber(Round(CDbl(target.PageSetup.SlideHeight), 2)) & _
+        ",""shapes"":[" & items & "]}"
+End Function
+
+Private Function VTPptAgentGetSelection() As String
+    Dim target As Presentation
+    Dim selectionType As Long
+    Dim currentSlide As Slide
+    Dim selectedShape As Shape
+    Dim kind As String
+    Dim formula As String
+    Dim preview As String
+    Dim slideIndex As Long
+    Dim slideId As Long
+    Dim shapeId As Long
+    Dim zone As Long
+    Dim caret As Long
+    Dim fullText As Object
+
+    Set target = VTPptAgentPresentation()
+    kind = "none"
+    On Error Resume Next
+    Set currentSlide = ActiveWindow.View.Slide
+    selectionType = ActiveWindow.Selection.Type
+    On Error GoTo 0
+    If Not currentSlide Is Nothing Then
+        slideIndex = currentSlide.SlideIndex
+        slideId = currentSlide.SlideID
+    End If
+    If selectionType = 1 Then kind = "slide"
+    If selectionType = 2 Or selectionType = 3 Then
+        On Error Resume Next
+        If ActiveWindow.Selection.ShapeRange.Count = 1 Then Set selectedShape = ActiveWindow.Selection.ShapeRange(1)
+        On Error GoTo 0
+    End If
+    If Not selectedShape Is Nothing And Not currentSlide Is Nothing Then
+        shapeId = selectedShape.Id
+        kind = "shape"
+        If VTIsVisualTeXPowerPointShape(selectedShape) Then
+            kind = "formula"
+            formula = VTPptAgentFormulaJson(currentSlide, selectedShape, 0, 0)
+        ElseIf VTPptAgentMathZoneCount(selectedShape) > 0 Then
+            If selectionType = 3 Then
+                On Error Resume Next
+                caret = ActiveWindow.Selection.TextRange2.Start
+                Set fullText = selectedShape.TextFrame2.TextRange
+                For zone = 1 To fullText.MathZones.Count
+                    If caret >= fullText.MathZones(zone, 1).Start And caret <= fullText.MathZones(zone, 1).Start + fullText.MathZones(zone, 1).Length Then Exit For
+                Next zone
+                On Error GoTo 0
+                If zone >= 1 And zone <= VTPptAgentMathZoneCount(selectedShape) Then
+                    kind = "formula"
+                    formula = VTPptAgentFormulaJson(currentSlide, selectedShape, zone, 60)
+                End If
+            ElseIf VTPptAgentMathZoneCount(selectedShape) = 1 Then
+                kind = "formula"
+                formula = VTPptAgentFormulaJson(currentSlide, selectedShape, 1, 60)
+            End If
+        End If
+        If kind = "shape" And selectionType = 3 Then
+            kind = "text"
+            On Error Resume Next
+            preview = ActiveWindow.Selection.TextRange.Text
+            On Error GoTo 0
+            If Len(preview) > 200 Then preview = Left$(preview, 200) & ChrW(8230)
+        End If
+    End If
+    If Len(formula) = 0 Then formula = "null"
+    VTPptAgentGetSelection = "{""document"":" & VTJsonString(VTPptAgentKey(target)) & _
+        ",""kind"":" & VTJsonString(kind) & ",""formula"":" & formula & _
+        ",""text_preview"":" & VTJsonNullableString(Replace$(preview, vbCr, vbLf)) & _
+        ",""location"":{""slide"":" & IIf(slideIndex > 0, CStr(slideIndex), "null") & _
+        ",""slide_id"":" & IIf(slideId > 0, CStr(slideId), "null") & _
+        ",""shape_id"":" & IIf(shapeId > 0, CStr(shapeId), "null") & "}" & _
+        ",""read_only"":" & VTJsonBoolean(target.ReadOnly <> 0) & "}"
+End Function
+
+' ---- writes: each puts its target in place (the presentation's window and slide, the formula selected) and
+' runs the Ribbon's command with VT_AGENT_MODE on; a command that opens the formula editor hands its session
+' to the app (VTPptAgentSessionJson), which draws the agent's LaTeX in its hidden editor and applies it.
+
+Private Function VTPptAgentWritablePresentation() As Presentation
+    Dim target As Presentation
+
+    Set target = VTPptAgentPresentation()
+    If target.ReadOnly <> 0 Then
+        Err.Raise vbObjectError + 7910, "VisualTeX", "document_read_only|The presentation is read-only."
+    End If
+    If VTPptAgentKey(ActivePresentation) <> VTPptAgentKey(target) Then
+        If target.Windows.Count = 0 Then
+            Err.Raise vbObjectError + 7910, "VisualTeX", "operation_failed|The presentation has no window."
+        End If
+        target.Windows(1).Activate
+    End If
+    Set VTPptAgentWritablePresentation = target
+End Function
+
+Private Sub VTPptAgentShowSlide(ByVal slideIndex As Long)
+    If ActiveWindow.ViewType <> ppViewNormal Then ActiveWindow.ViewType = ppViewNormal
+    If ActiveWindow.View.Slide.SlideIndex <> slideIndex Then ActiveWindow.View.GotoSlide slideIndex
+End Sub
+
+' The formula an agent id names, its slide shown and the formula selected (a native equation's text).
+Private Function VTPptAgentSelect( _
+    ByVal target As Presentation, _
+    ByVal agentId As String, _
+    ByRef foundSlide As Slide, _
+    ByRef zone As Long) As Shape
+
+    Dim found As Shape
+    Dim mathZone As Object
+
+    Set found = VTPptAgentFindFormula(target, agentId, foundSlide, zone)
+    VTPptAgentShowSlide foundSlide.SlideIndex
+    If zone = 0 Then
+        found.Select
+    Else
+        Set mathZone = found.TextFrame2.TextRange.MathZones(zone, 1)
+        found.TextFrame.TextRange.Characters(mathZone.Start, mathZone.Length).Select
+    End If
+    Set VTPptAgentSelect = found
+End Function
+
+Private Function VTPptAgentSessionJson() As String
+    Dim slideIndex As Long
+
+    If Len(VT_AGENT_ERRORS) > 0 Then
+        Err.Raise vbObjectError + 7912, "VisualTeX", "operation_failed|PowerPoint could not carry out the operation."
+    End If
+    On Error Resume Next
+    slideIndex = ActiveWindow.View.Slide.SlideIndex
+    On Error GoTo 0
+    VTPptAgentSessionJson = "{""session_id"":" & VTJsonNullableString(VT_AGENT_SESSION_ID) & _
+        ",""request"":" & IIf(Len(VT_AGENT_REQUEST_JSON) > 0, VT_AGENT_REQUEST_JSON, "null") & _
+        ",""slide"":" & IIf(slideIndex > 0, CStr(slideIndex), "null") & _
+        ",""message"":" & VTJsonNullableString(VT_AGENT_NOTES) & "}"
+End Function
+
+Private Function VTPptAgentDone(ByVal message As String) As String
+    If Len(VT_AGENT_ERRORS) > 0 Then
+        Err.Raise vbObjectError + 7912, "VisualTeX", "operation_failed|PowerPoint could not carry out the operation."
+    End If
+    If Len(VT_AGENT_NOTES) > 0 Then
+        If Len(message) > 0 Then message = message & " "
+        message = message & Replace$(VT_AGENT_NOTES, vbLf, " ")
+    End If
+    VTPptAgentDone = "{""message"":" & VTJsonNullableString(message) & "}"
+End Function
+
+' location: "cursor" (default: the selected text box, or a new formula on the current slide) or {slide, ...}
+' (a new formula on that slide; the app moves it to left_pt/top_pt afterwards).
+Private Function VTPptAgentBeginInsert() As String
+    Dim target As Presentation
+    Dim slideNumber As Long
+
+    Set target = VTPptAgentWritablePresentation()
+    slideNumber = CLng(VTPptAgentNumber("location.slide", 0))
+    If slideNumber <> 0 Then
+        If slideNumber < 1 Or slideNumber > target.Slides.Count Then
+            Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|The presentation has " & _
+                CStr(target.Slides.Count) & " slides."
+        End If
+        VTPptAgentShowSlide slideNumber
+        ActiveWindow.Selection.Unselect
+    ElseIf Len(VTPptAgentString("location")) > 0 And VTPptAgentString("location") <> "cursor" Then
+        Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|Unknown location " & VTPptAgentString("location") & "."
+    End If
+    If VTPptAgentString("format") = "office_equation" Then
+        If VTPptAgentString("display") = "block" Then
+            VisualTeX_NewDisplayNativeEquation
+        Else
+            VisualTeX_NewInlineNativeEquation
+        End If
+    Else
+        VisualTeX_NewFormula
+    End If
+    VTPptAgentBeginInsert = VTPptAgentSessionJson()
+End Function
+
+Private Function VTPptAgentBeginUpdate() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+
+    Set target = VTPptAgentWritablePresentation()
+    Set found = VTPptAgentSelect(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    If zone = 0 Then
+        VisualTeX_EditShape found
+    ElseIf Not VTEditSelectedNativeEquation() Then
+        Err.Raise vbObjectError + 7913, "VisualTeX", "operation_failed|PowerPoint did not open the equation."
+    End If
+    VTPptAgentBeginUpdate = VTPptAgentSessionJson()
+End Function
+
+Private Function VTPptAgentFindVisualTeXFormula() As String
+    Dim target As Presentation
+    Dim currentSlide As Slide
+    Dim candidate As Shape
+
+    Set target = VTPptAgentPresentation()
+    For Each currentSlide In target.Slides
+        For Each candidate In currentSlide.Shapes
+            If VTIsVisualTeXPowerPointShape(candidate) Then
+                If VTShapeFormulaId(candidate) = VTPptAgentString("vtxId") Then
+                    VTPptAgentFindVisualTeXFormula = "{""formula"":" & VTPptAgentFormulaJson(currentSlide, candidate, 0, 0) & "}"
+                    Exit Function
+                End If
+            End If
+        Next candidate
+    Next currentSlide
+    VTPptAgentFindVisualTeXFormula = "{""formula"":null}"
+End Function
+
+Private Function VTPptAgentSelectFormula() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+
+    Set target = VTPptAgentPresentation()
+    If VTPptAgentKey(ActivePresentation) <> VTPptAgentKey(target) And target.Windows.Count > 0 Then target.Windows(1).Activate
+    Set found = VTPptAgentSelect(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    VTPptAgentSelectFormula = "{""formula"":" & VTPptAgentFormulaJson(foundSlide, found, zone, 0) & "}"
+End Function
+
+' A native equation alone in its text box goes with the box.
+Private Function VTPptAgentDeleteFormula() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+    Dim mathZone As Object
+
+    Set target = VTPptAgentWritablePresentation()
+    Set found = VTPptAgentFindFormula(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    If zone = 0 Then
+        found.Delete
+    Else
+        Set mathZone = found.TextFrame2.TextRange.MathZones(zone, 1)
+        If Len(Trim$(Replace$(Replace$(found.TextFrame.TextRange.Text, vbCr, ""), Chr$(11), ""))) <= mathZone.Length Then
+            found.Delete
+        Else
+            mathZone.Delete
+        End If
+    End If
+    VTPptAgentDeleteFormula = VTPptAgentDone("Deleted the formula.")
+End Function
+
+Private Function VTPptAgentSetFontSize() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+    Dim size As Double
+
+    size = VTPptAgentNumber("font_size_pt", 0)
+    If size < 5 Or size > 200 Then
+        Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|font_size_pt must be from 5 to 200."
+    End If
+    Set target = VTPptAgentWritablePresentation()
+    Set found = VTPptAgentSelect(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    If zone = 0 Then
+        VisualTeX_SetSelectedFormulaFontSize Trim$(Str$(size))
+    Else
+        found.TextFrame2.TextRange.MathZones(zone, 1).Font.Size = size
+    End If
+    VTPptAgentSetFontSize = VTPptAgentDone("The formula is " & Trim$(Str$(size)) & " pt.")
+End Function
+
+' position: the new frame in points; what is left out stays. width or height alone keeps the proportions
+' (a text box only takes the size given).
+Private Function VTPptAgentSetFrame() As String
+    Dim target As Presentation
+    Dim foundSlide As Slide
+    Dim found As Shape
+    Dim zone As Long
+    Dim locked As Long
+    Dim ratio As Double
+    Dim hasWidth As Boolean
+    Dim hasHeight As Boolean
+
+    Set target = VTPptAgentWritablePresentation()
+    Set found = VTPptAgentFindFormula(target, VTPptAgentString("formulaId"), foundSlide, zone)
+    hasWidth = VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "n.position.width_pt")
+    hasHeight = VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "n.position.height_pt")
+    locked = found.LockAspectRatio
+    found.LockAspectRatio = msoFalse
+    If found.Height > 0 Then ratio = found.Width / found.Height
+    If hasWidth And hasHeight Then
+        found.Width = VTPptAgentNumber("position.width_pt", found.Width)
+        found.Height = VTPptAgentNumber("position.height_pt", found.Height)
+    ElseIf hasWidth Then
+        found.Width = VTPptAgentNumber("position.width_pt", found.Width)
+        If zone = 0 And ratio > 0 Then found.Height = found.Width / ratio
+    ElseIf hasHeight Then
+        found.Height = VTPptAgentNumber("position.height_pt", found.Height)
+        If zone = 0 And ratio > 0 Then found.Width = found.Height * ratio
+    End If
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "n.position.left_pt") Then found.Left = VTPptAgentNumber("position.left_pt", found.Left)
+    If VTCollectionHasKey(VT_PPT_AGENT_REQUEST, "n.position.top_pt") Then found.Top = VTPptAgentNumber("position.top_pt", found.Top)
+    found.LockAspectRatio = locked
+    VTPptAgentSetFrame = "{""frame"":" & VTPptAgentFrameJson(found) & _
+        ",""frame_of"":" & VTJsonString(IIf(zone > 0, "text_box", "formula")) & "}"
+End Function
+
+' The Ribbon's LaTeX redraw and formulas-to-LaTeX, which open VisualTeX's progress window; the app waits for
+' the session they start.
+Private Function VTPptAgentDocumentOperation(ByVal operation As String) As String
+    Dim scope As String
+
+    Call VTPptAgentWritablePresentation
+    scope = VTPptAgentString("scope")
+    If scope <> "selection" And scope <> "slide" Then scope = "presentation"
+    If operation = "latex_text_to_formulas" Then
+        Select Case scope & "|" & IIf(VTPptAgentString("format") = "office_equation", "omml", "image")
+            Case "selection|omml": VisualTeX_RedrawSelectionToOmml
+            Case "slide|omml": VisualTeX_RedrawSlideToOmml
+            Case "presentation|omml": VisualTeX_RedrawPresentationToOmml
+            Case "selection|image": VisualTeX_RedrawSelectionToImage
+            Case "slide|image": VisualTeX_RedrawSlideToImage
+            Case "presentation|image": VisualTeX_RedrawPresentationToImage
+        End Select
+    Else
+        Select Case scope
+            Case "selection": VisualTeX_RestoreSelectionToLatex
+            Case "slide": VisualTeX_RestoreSlideToLatex
+            Case "presentation": VisualTeX_RestorePresentationToLatex
+        End Select
+    End If
+    VTPptAgentDocumentOperation = VTPptAgentSessionJson()
+End Function
 
 Public Sub Auto_Open()
     On Error Resume Next
@@ -709,7 +1565,12 @@ Public Sub VisualTeX_ApplyPendingResult()
     Exit Sub
 
 Failed:
-    Err.Raise Err.Number, "VisualTeX PowerPoint callback", Err.Description
+    Dim failureNumber As Long
+    Dim failureText As String
+    failureNumber = Err.Number
+    failureText = Err.Description
+    If VTReportCallbackFailure(sessionId, failureNumber, failureText) Then Exit Sub
+    Err.Raise failureNumber, "VisualTeX PowerPoint callback", failureText
 End Sub
 
 Private Sub VTFinalizePowerPointDispatch(ByVal sessionId As String, ByVal dispatch As Object)

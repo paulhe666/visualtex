@@ -181,7 +181,24 @@ export function decodeMacosDocumentImportRequest(
       optionalString(target.latex, `${path}.latex`);
     });
   }
+  if (request.agent !== undefined) {
+    const agent = record(request.agent, "documentImportRequest.agent");
+    stringValue(agent.text, "documentImportRequest.agent.text");
+    sourceKindOfText(agent.sourceFormat, "documentImportRequest.agent.sourceFormat");
+    if (agent.outputKind !== "omml" && agent.outputKind !== "image") {
+      invalid("documentImportRequest.agent.outputKind", '"omml" or "image"');
+    }
+    if (typeof agent.numberDisplayFormulas !== "boolean") {
+      invalid("documentImportRequest.agent.numberDisplayFormulas", "a boolean");
+    }
+  }
   return request as unknown as MacosDocumentImportRequest;
+}
+
+function sourceKindOfText(value: unknown, path: string) {
+  if (value !== "auto" && value !== "markdown" && value !== "latex") {
+    invalid(path, '"auto", "markdown" or "latex"');
+  }
 }
 
 export function decodeMacosLatexRedrawFontSizes(value: unknown): number[] {

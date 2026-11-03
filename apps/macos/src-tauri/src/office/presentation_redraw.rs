@@ -251,6 +251,7 @@ pub(super) fn public_request(request: &MacOfflineSessionRequest) -> Result<MacOf
         restore_targets,
         client: request.client.clone(),
         segments,
+        agent: None,
     })
 }
 
