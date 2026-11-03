@@ -30,8 +30,11 @@ import {
   type FormulaChineseFont,
   type FormulaLetterFont,
   FORMULA_FONT_PREFERENCES_CHANGED_EVENT,
+  FORMULA_FACES_STORAGE,
   formulaChineseFontFamily,
+  formulaFaceFamilies,
   formulaLetterFontFamilies,
+  readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
 } from "./formulaFontPreferences";
 import {
@@ -43,7 +46,7 @@ import {
 
 // Formulas are laid out and drawn exactly as LaTeX does (amsmath, 10pt), by
 // the shared VisualTeX layout engine, in one of its font profiles: Computer
-// Modern, or newtxtext + newtxmath for "Times New Roman" (every symbol,
+// Modern, or newtxtext + newtxmath ("newtxmath", stored as "times"; every symbol,
 // spacing and the caret as LaTeX with those packages has them). The editing
 // core decides where the caret is shown and answers every geometry question
 // from the engine's layout (docs/editing-core/DESIGN.md).
@@ -54,6 +57,8 @@ import {
 let installed = false;
 let chineseFamily: string | null = null;
 let letterFamilies: { upright: string; italic: string } | null | undefined;
+type FaceFamilies = Record<"letter" | "greek" | "digit", { upright: string; italic: string } | null>;
+let faceFamilies: FaceFamilies | undefined;
 let profileChoice: "cm" | "ntx" | undefined;
 let spacingPreferences: FormulaSpacingPreferences | null = null;
 let fontRevision = 0;
@@ -189,6 +194,19 @@ function currentLetterFamilies(): { upright: string; italic: string } | null {
   return letterFamilies;
 }
 
+/** Letters, Greek letters and digits in fonts of their own (Settings), over the math font. */
+function currentFaceFamilies(): FaceFamilies {
+  if (faceFamilies === undefined) {
+    const faces = readPersistedFormulaFaces();
+    faceFamilies = {
+      letter: formulaFaceFamilies(faces.letter),
+      greek: formulaFaceFamilies(faces.greek),
+      digit: formulaFaceFamilies(faces.digit),
+    };
+  }
+  return faceFamilies;
+}
+
 /** The spacing adjustments of the chosen font's active configuration (Settings), null for LaTeX's. */
 function currentSpacing() {
   if (spacingPreferences === null) spacingPreferences = readPersistedFormulaSpacing();
@@ -271,6 +289,7 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
         pathGlyphs: paths,
         caretState: visualTexEditingCore.caretState,
         letterFamilies: currentLetterFamilies,
+        faceFamilies: currentFaceFamilies,
         spacing: currentSpacing,
         classOperatorItalic: customSymbolOperatorItalic,
         caretBand: () => caretBand,
@@ -292,6 +311,7 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
 function relayoutFormulas(): void {
   chineseFamily = null;
   letterFamilies = undefined;
+  faceFamilies = undefined;
   profileChoice = undefined;
   spacingPreferences = null;
   fontRevision++;
@@ -311,6 +331,10 @@ export function installVisualTexLayout(): void {
     // open formulas are laid out again in the new fonts
     window.addEventListener(FORMULA_FONT_PREFERENCES_CHANGED_EVENT, relayoutFormulas);
     window.addEventListener(FORMULA_SPACING_CHANGED_EVENT, relayoutFormulas);
+    // the faces chosen in another window (the main window's Settings, for an Office editor)
+    window.addEventListener("storage", (event) => {
+      if (event.key === FORMULA_FACES_STORAGE) relayoutFormulas();
+    });
   }
 }
 

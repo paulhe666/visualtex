@@ -1,7 +1,8 @@
 import { safeStorage } from "../runtime/safeStorage.ts";
 
-// The formula fonts of the main app: KaTeX (LaTeX's Computer Modern) and
-// Times New Roman (LaTeX's newtxtext + newtxmath). Earlier versions offered
+// The formula fonts of the main app: the math font, KaTeX (LaTeX's Computer
+// Modern) or newtxmath (LaTeX's newtxtext + newtxmath; stored as "times"),
+// with letters, Greek letters and digits optionally in fonts of their own. Earlier versions offered
 // more; formulas saved with those carry the old names (LegacyFormulaLetterFont)
 // and are shown in KaTeX.
 export type FormulaLetterFont = "katex" | "times";
@@ -54,8 +55,60 @@ export const FORMULA_LETTER_FONT_OPTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { id: "katex", label: "KaTeX / Computer Modern" },
-  { id: "times", label: "Times New Roman" },
+  { id: "times", label: "newtxmath" },
 ];
+
+/**
+ * Characters set in a font of their own instead of the math font (AxMath's letter, symbol and digit fonts):
+ * Latin letters, Greek letters, digits. "" follows the math font.
+ */
+export type FormulaFaceRole = "letter" | "greek" | "digit";
+export type FormulaFaces = Record<FormulaFaceRole, string>;
+export const FORMULA_FACE_ROLES: readonly FormulaFaceRole[] = ["letter", "greek", "digit"];
+export const DEFAULT_FORMULA_FACES: FormulaFaces = { letter: "", greek: "", digit: "" };
+const FORMULA_FACES_STORAGE_KEY = "visualtex.formula-faces";
+
+/** A font family name as stored: no characters that could leave a CSS string. */
+function normalizeFaceName(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const name = value.replace(/["'\\;{}<>\n\r]/g, "").trim();
+  return name.length <= 128 ? name : "";
+}
+
+export function normalizeFormulaFaces(value: unknown): FormulaFaces {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    letter: normalizeFaceName(source.letter),
+    greek: normalizeFaceName(source.greek),
+    digit: normalizeFaceName(source.digit),
+  };
+}
+
+export function readPersistedFormulaFaces(): FormulaFaces {
+  try {
+    return normalizeFormulaFaces(JSON.parse(safeStorage.getItem(FORMULA_FACES_STORAGE_KEY) ?? "null"));
+  } catch {
+    return { ...DEFAULT_FORMULA_FACES };
+  }
+}
+
+export function persistFormulaFaces(value: FormulaFaces) {
+  const next = JSON.stringify(normalizeFormulaFaces(value));
+  if (safeStorage.getItem(FORMULA_FACES_STORAGE_KEY) === next) return;
+  safeStorage.setItem(FORMULA_FACES_STORAGE_KEY, next);
+  notifyFormulaFontPreferencesChanged();
+}
+
+/** The storage key other windows watch for a change of the faces. */
+export const FORMULA_FACES_STORAGE = FORMULA_FACES_STORAGE_KEY;
+
+/** The CSS families of a chosen face (its own italic and bold), or null: the math font's. */
+export function formulaFaceFamilies(name: string): { upright: string; italic: string } | null {
+  const face = normalizeFaceName(name);
+  if (!face) return null;
+  const family = `"${face}", serif`;
+  return { upright: family, italic: family };
+}
 
 export const FORMULA_CHINESE_FONT_OPTIONS: ReadonlyArray<{
   id: FormulaChineseFont;
