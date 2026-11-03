@@ -651,6 +651,21 @@
 .vtx-math-display.is-partial .vtx-formula-static {
   display: none;
 }
+/* a formula's editor that is starting: the formula's picture stays in its place, over the editor, until the editor
+   has drawn the formula (a new editor's first frame is unstyled) */
+.vtx-math-inline.is-opening {
+  position: relative;
+}
+.vtx-math-inline.is-opening .vtx-formula-static,
+.vtx-math-display.is-opening .vtx-formula-static {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+}
+.vtx-math-inline.is-opening .vtx-formula-editor,
+.vtx-math-display.is-opening .vtx-formula-editor {
+  opacity: 0;
+}
 /* a formula a selection through the text takes a part of: its editor only shows that part selected; a press on it
    is the document's (it opens the formula, or drags the selection) */
 .vtx-math-inline.is-partial .vtx-formula-editor,

@@ -24,6 +24,11 @@ import {
   toggleMathLiveSelectionStyle,
 } from "../editor/mathLiveKernelCommands";
 import { useEditorStore } from "../stores/editorStore";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../shortcuts/formulaHotkeys";
+import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../shortcuts/greekLetterHotkeys";
+import type { LatexCommand } from "../types/command";
+import { insertCommandIntoFormula } from "./formulaInsert";
 import { setOpenDocumentFormula } from "./openDocumentFormula";
 
 /** The row editor's formula size is 54px x zoom. */
@@ -62,6 +67,8 @@ interface Props {
   apiRef: Ref<DocumentFormulaFieldApi>;
   /** Only shown, with a part selected (a selection through the text): not focused, no caret placed. */
   passive?: boolean;
+  /** An image pasted into the formula: the app's OCR, the result going in at the formula's caret. */
+  onPasteImage?: (file: File) => void;
 }
 
 function captureSelection(field: MathfieldElement): FormulaSelection {
@@ -173,7 +180,7 @@ function applyEntry(field: MathfieldElement, entry: FormulaEntry) {
   }
 }
 
-export function DocumentFormulaField({ id, latex, display, entry, fontSize, callbacks, apiRef, passive = false }: Props) {
+export function DocumentFormulaField({ id, latex, display, entry, fontSize, callbacks, apiRef, passive = false, onPasteImage }: Props) {
   const [currentLatex, setCurrentLatex] = useState(latex);
   const fieldRef = useRef<MathfieldElement | null>(null);
   const pendingSelection = useRef<FormulaSelection | null>(null);
@@ -330,7 +337,30 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
 
   const mutateRef = useRef(mutate);
   mutateRef.current = mutate;
+  // Ctrl+G (Greek letter shortcut) waits for the letter, as in the formula rows.
+  const greekPrefixRef = useRef(false);
+  /** A formula command (shortcut, Greek letter) at the caret, as the formula rows insert it. */
+  const insertCommand = (field: MathfieldElement, command: LatexCommand) =>
+    insertCommandIntoFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) }, command);
   useEffect(() => () => setOpenDocumentFormula(null, fieldRef.current ?? undefined), []);
+
+  /** Enter in a display formula: two formulas at the caret (at the formula's top level), else a text line after it. */
+  const splitAtCaret = (field: MathfieldElement) => {
+    const [start, end] = field.selectionIsCollapsed
+      ? [field.position, field.position]
+      : [Math.min(...field.selection.ranges.flat()), Math.max(...field.selection.ranges.flat())];
+    const last = field.lastOffset;
+    const atTop = topLevelStop(field, start, "start") === start && topLevelStop(field, end, "end") === end;
+    const before = normalizeChineseLatex(field.getValue(0, start, "latex")).trim();
+    const after = normalizeChineseLatex(field.getValue(end, last, "latex")).trim();
+    if (!atTop || start <= 0 || end >= last || !before || !after || !callbacksRef.current.split) {
+      leaveFormula("new-paragraph");
+      return;
+    }
+    flush();
+    leftRef.current = true;
+    callbacksRef.current.split(before, after);
+  };
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent, field: MathfieldElement) => {
@@ -341,6 +371,32 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       };
       const key = event.key.toLocaleLowerCase();
       const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+      // The formula rows' shortcuts: Greek letters (Ctrl+G, then the letter) and the formula shortcuts of Settings.
+      const rawInput = hasRawLatexInput(field);
+      if (greekPrefixRef.current) {
+        if (event.code === "ShiftLeft" || event.code === "ShiftRight") return;
+        greekPrefixRef.current = false;
+        const greek = event.key === "Escape" ? null : greekLetterHotkeyCommandFromEvent(event);
+        if (event.key === "Escape" || greek) {
+          stop();
+          if (greek) insertCommand(field, greek);
+          return;
+        }
+      }
+      if (!rawInput && isGreekLetterHotkeyPrefix(event)) {
+        stop();
+        greekPrefixRef.current = true;
+        return;
+      }
+      const hotkey = rawInput ? null : matchFormulaHotkey(event, useFormulaHotkeyStore.getState().bindings);
+      if (hotkey) {
+        const command = resolveFormulaHotkeyCommand(hotkey.target);
+        if (command) {
+          stop();
+          insertCommand(field, command);
+          return;
+        }
+      }
       if (mod && ((key === "z" && event.shiftKey) || (key === "y" && !event.shiftKey))) {
         stop();
         callbacksRef.current.redo();
@@ -374,16 +430,16 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
         const action = visualTexEditingCore.enterAction(model, event, rawLatex);
         if (action === "complete") return;
         stop();
-        if (action === "split-row" || action === "row-break") {
-          // Mathcha: Enter in a display formula is a new line inside it (each line centred; an \\align keeps
-          // its columns); an inline formula is left, the text goes on after it. An empty display formula takes no
-          // empty line ("$$" and Enter, as in Typora, leave the caret in it).
-          // A display formula's lines are aligned rows, as formula mode's rows: left-aligned until an & aligns them
-          // (a formula written as gathered stays gathered).
-          if (!display) leaveFormula("after");
-          else if (!field.getValue("latex-without-placeholders").trim()) return;
-          else mutate(field, () => insertMathLiveRowBreak(field, /^\s*\\begin\{gathered\}/.test(field.value) ? "gathered" : "aligned"));
+        // As in the formula rows: Shift+Enter is a new line inside the formula (its lines aligned rows,
+        // left-aligned until an & aligns them; a formula written as gathered stays gathered), Enter ends the line —
+        // the display formula is split at the caret, or a new text line follows it; an inline formula is left.
+        if (!display) leaveFormula("after");
+        else if (action === "row-break") {
+          // an empty display formula takes no empty line
+          if (field.getValue("latex-without-placeholders").trim())
+            mutate(field, () => insertMathLiveRowBreak(field, /^\s*\\begin\{gathered\}/.test(field.value) ? "gathered" : "aligned"));
         } else if (action === "case-row") mutate(field, () => field.executeCommand("addRowAfter"));
+        else splitAtCaret(field);
         return;
       }
       if (rawLatex || field.mode === "latex") return;
@@ -532,6 +588,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
         return true;
       }}
       selectionDrag={selectionDrag}
+      onPasteImage={onPasteImage ? (file) => onPasteImage(file) : undefined}
     />
   );
 }
