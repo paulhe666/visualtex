@@ -249,6 +249,19 @@ Function un.VisualTeXEnsureNativeRendererStopped
   !insertmacro VisualTeXEnsureNativeRendererStoppedBody "un."
 FunctionEnd
 
+; An AI agent's MCP client (Codex, Claude, ...) keeps visualtex-mcp.exe running as its VisualTeX server, and Windows
+; will not replace or remove a running executable. Stop it before the files are written or removed, as the app itself
+; is stopped; the client starts it again when it next needs VisualTeX.
+!macro VisualTeXStopAgentLauncher
+  nsExec::ExecToStack `"$SYSDIR\taskkill.exe" /F /IM visualtex-mcp.exe`
+  Pop $0
+  Pop $1
+  DetailPrint "visualtex-mcp: taskkill ExitCode=$0"
+  ${If} $0 == "0"
+    Sleep 500
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; Normalize the two legacy 1.2.3 install locations back to Tauri's canonical
   ; current-user directory. Preserve genuinely custom directories.
@@ -257,6 +270,8 @@ FunctionEnd
   ${ElseIf} $INSTDIR == "$APPDATA\VisualTeX"
     StrCpy $INSTDIR "$LOCALAPPDATA\VisualTeX"
   ${EndIf}
+
+  !insertmacro VisualTeXStopAgentLauncher
 
   ; Builds before 1.2.7 could leave MathType's canonical per-user COM class
   ; pointing at VisualTeX's reduced renderer after a native sidecar crash. That
@@ -509,6 +524,8 @@ visualtex_postinstall_cleanup_done:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro VisualTeXStopAgentLauncher
+
   ; Stop only the explicitly owned renderer service before removing its MSI.
   ; Service shutdown closes the owned Job Object and all private descendants.
   Call un.VisualTeXEnsureNativeRendererStopped
