@@ -157,6 +157,12 @@ function tidy(state: StateCore) {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type === "html_block") {
+      // <br clear="all"> (written after a wrapped image's text): the layout's, not text
+      if (/^\s*<br\s+clear\s*=\s*["']?\w+["']?\s*\/?>\s*$/i.test(token.content)) {
+        tokens.splice(i, 1);
+        i--;
+        continue;
+      }
       const line = imageLineTokens(state, token.content);
       if (line) {
         tokens.splice(i, 1, ...line);
@@ -190,6 +196,7 @@ function tidy(state: StateCore) {
         const tag = /^<\s*(\/?)\s*([a-zA-Z]+)[^>]*?(\/?)\s*>$/.exec(child.content);
         const name = tag?.[2].toLowerCase();
         if (name === "br") {
+          if (/\sclear\s*=/i.test(child.content)) continue;
           children.push(new Token("hardbreak", "br", 0));
           continue;
         }
@@ -283,7 +290,8 @@ function htmlImageToken(state: StateCore, tag: string): Token | null {
 /** `<p align="…"><img …> <img …></p>` (VisualTeX's image line) as a paragraph of images. */
 function imageLineTokens(state: StateCore, html: string): Token[] | null {
   // also <img> tags alone on their lines (an HTML block): a left-aligned image line
-  const match = /^\s*<p(\s[^>]*)?>\s*((?:<img\b[^>]*>\s*)+)<\/p>\s*$/i.exec(html) ?? /^()\s*((?:<img\b[^>]*>\s*)+)$/i.exec(html);
+  const match =
+    /^\s*<p(\s[^>]*)?>\s*((?:<img\b[^>]*>(?:\s|&[a-z]+;)*)+)<\/p>\s*$/i.exec(html) ?? /^()\s*((?:<img\b[^>]*>(?:\s|&[a-z]+;)*)+)$/i.exec(html);
   if (!match) return null;
   const images: Token[] = [];
   for (const tag of match[2].match(/<img\b[^>]*>/gi) ?? []) {
@@ -540,6 +548,22 @@ function numbering(doc: Node): { byNode: Map<Node, string>; byId: Map<string, st
   return { byNode, byId, brackets: documentSettings(doc).equationBrackets };
 }
 
+/** Whether the editor starts this top-level block below a wrapped image (document.css: clear). */
+function clearsWrap(node: Node): boolean {
+  if (node.type.name !== "paragraph") return node.isBlock;
+  return isImageLine(node) || (isImage(node.firstChild) && !!node.firstChild!.attrs.wrap);
+}
+
+/** Whether a wrapped image above the block at `index` may still float beside it (only body paragraphs between). */
+function wrapGoesOn(doc: Node, index: number): boolean {
+  for (let i = index - 1; i >= 0; i--) {
+    const block = doc.child(i);
+    if (block.type.name !== "paragraph" || isImageLine(block)) return false;
+    if (isImage(block.firstChild) && block.firstChild!.attrs.wrap) return true;
+  }
+  return false;
+}
+
 function serializerFor(
   numbers: { byNode: Map<Node, string>; byId: Map<string, string>; brackets: "()" | "[]" },
   options: MarkdownExportOptions,
@@ -562,7 +586,8 @@ function serializerFor(
         node.forEach((child) => {
           if (isImage(child)) images.push(imageHtml(child));
         });
-        state.write(`<p align="${(node.attrs.align as string | null) ?? "left"}">${images.join(" ")}</p>`);
+        // the gap the editor leaves (0.02 of the line, about 1em in a viewer's column): an em space
+        state.write(`<p align="${(node.attrs.align as string | null) ?? "left"}">${images.join("&emsp;")}</p>`);
         state.closeBlock(node);
         return;
       }
@@ -730,6 +755,17 @@ function serializerFor(
       close: "</span>",
     },
   };
+  // A wrapped image floats beside the paragraphs after it, as in the editor; what the editor starts below it (a
+  // heading, a list, an image line, the next wrapped paragraph…) gets <br clear="all"> first (GitHub keeps it).
+  for (const [name, write] of Object.entries(nodes)) {
+    nodes[name] = (state, node, parent, index) => {
+      if (parent?.type.name === "doc" && clearsWrap(node) && wrapGoesOn(parent, index)) {
+        state.write('<br clear="all">');
+        state.closeBlock(node);
+      }
+      write(state, node, parent, index);
+    };
+  }
   // Besides CommonMark's characters: "$" (math), "==" (highlight) and "<" before a tag name (HTML), all literal here.
   const serializer = new MarkdownSerializer(nodes, marks, { escapeExtraCharacters: /[$]|==|<(?=[A-Za-z\/!?])/g });
   return serializer;
