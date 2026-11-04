@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FileText,
   Keyboard,
@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Rows3,
   Trash2,
-  X,
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
@@ -40,14 +39,16 @@ import {
   type FormulaRowHotkeyActionDefinition,
 } from "../shortcuts/formulaRowHotkeys";
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-}
+const SHORTCUT_TABS = [
+  { id: "buttons", en: "Buttons", zh: "按钮" },
+  { id: "global", en: "Formula input", zh: "公式输入法" },
+  { id: "office", en: "Office", zh: "Office" },
+  { id: "editor", en: "Formula editor", zh: "公式编辑" },
+] as const;
 
-export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
-  const dialogRef = useRef<HTMLElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
+/** Settings → Keyboard shortcuts: every shortcut group, with the recorders they open. */
+export function KeyboardShortcutsPanel() {
+  const [tab, setTab] = useState<(typeof SHORTCUT_TABS)[number]["id"]>("buttons");
   const [editingTarget, setEditingTarget] =
     useState<FormulaHotkeyTarget | null>(null);
   const [editingOfficeAction, setEditingOfficeAction] =
@@ -73,35 +74,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
     () => [...bindings].sort((left, right) => right.updatedAt - left.updatedAt),
     [bindings],
   );
-
-  useEffect(() => {
-    if (!open) {
-      setEditingTarget(null);
-      setEditingOfficeAction(null);
-      setEditingRowAction(null);
-      return;
-    }
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape" ||
-        editingTarget ||
-        editingOfficeAction ||
-        editingRowAction
-      ) {
-        return;
-      }
-      event.preventDefault();
-      onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", handleKeyDown);
-      previousFocusRef.current?.focus({ preventScroll: true });
-    };
-  }, [open, editingOfficeAction, editingRowAction, editingTarget, onClose]);
 
   const renderOfficeGroup = (
     host: OfficeHotkeyHost,
@@ -272,56 +244,34 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
     </section>
   );
 
-  if (!open) return null;
-
-  const assignedRowCount = rowBindings.filter((item) => item.chord).length;
-
   return (
     <>
-      <div className="modal-backdrop formula-hotkey-modal-backdrop" role="presentation" onMouseDown={onClose}>
-        <section
-          ref={dialogRef}
-          className="formula-hotkey-manager-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="formula-hotkey-manager-title"
-          tabIndex={-1}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <header className="dialog-header">
-            <div>
-              <span className="eyebrow">HOT KEYS</span>
-              <h2 id="formula-hotkey-manager-title">
-                {isEn ? "Formula hotkeys" : "公式快捷键"}
-              </h2>
-            </div>
+      <div className="shortcut-manager-scroll">
+        <div className="theme-segment shortcut-tabs" role="tablist" aria-label={isEn ? "Shortcut groups" : "快捷键分组"}>
+          {SHORTCUT_TABS.map((item) => (
             <button
+              key={item.id}
               type="button"
-              className="icon-button"
-              onClick={onClose}
-              aria-label={isEn ? "Close" : "关闭"}
+              role="tab"
+              className={tab === item.id ? "is-active" : ""}
+              aria-selected={tab === item.id}
+              data-shortcut-tab={item.id}
+              onClick={() => setTab(item.id)}
             >
-              <X size={18} />
+              {isEn ? item.en : item.zh}
             </button>
-          </header>
-
-          <div className="formula-hotkey-manager-summary">
-            <div>
-              <Keyboard size={18} />
-              <span>
-                <strong>
-                  {sortedBindings.length + officeBindings.length + assignedRowCount}{" "}
-                  {isEn ? "assigned" : "项已设置"}
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          <div className="formula-hotkey-manager-content">
-            <ButtonShortcutSettingsSection />
-            <AnywhereHotkeySettingsSection />
+          ))}
+        </div>
+        {tab === "buttons" && <ButtonShortcutSettingsSection />}
+        {tab === "global" && <AnywhereHotkeySettingsSection />}
+        {tab === "office" && (
+          <>
             {renderOfficeGroup("word", "Microsoft Word")}
             {renderOfficeGroup("powerpoint", "Microsoft PowerPoint")}
+          </>
+        )}
+        {tab === "editor" && (
+          <>
             {renderRowGroup()}
             <ConfirmEscapeKeySettingsSection />
             <section className="formula-editor-hotkey-group">
@@ -385,15 +335,8 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               </div>
             )}
             </section>
-          </div>
-
-          <footer className="dialog-footer">
-            <span />
-            <button type="button" className="primary-button" onClick={onClose}>
-              {isEn ? "Done" : "完成"}
-            </button>
-          </footer>
-        </section>
+          </>
+        )}
       </div>
 
       <FormulaHotkeyRecorderDialog

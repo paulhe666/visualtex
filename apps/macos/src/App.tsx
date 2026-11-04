@@ -50,7 +50,6 @@ import {
   type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
@@ -185,7 +184,6 @@ function App() {
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
   const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
@@ -1428,7 +1426,6 @@ function App() {
 
       if (
         settingsOpen ||
-        formulaHotkeyManagerOpen ||
         ocrOpen ||
         historyOpen ||
         exportOpen ||
@@ -1518,7 +1515,6 @@ function App() {
     keypadMinimizeOnCopy,
     latexFormatProfile,
     settingsOpen,
-    formulaHotkeyManagerOpen,
     ocrOpen,
     historyOpen,
     exportOpen,
@@ -2250,14 +2246,6 @@ function App() {
           setSettingsOpen(false);
           void runUpdateCheck(true);
         }}
-        onOpenFormulaHotkeys={() => {
-          setSettingsOpen(false);
-          setFormulaHotkeyManagerOpen(true);
-        }}
-      />
-      <FormulaHotkeyManagerDialog
-        open={formulaHotkeyManagerOpen}
-        onClose={() => setFormulaHotkeyManagerOpen(false)}
       />
       <HistoryPanel
         open={historyOpen}
