@@ -158,6 +158,10 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
 
   /** VisualTeX: the last input judgment, undone by an immediate Backspace */
   visualTexLastJudgment?: { after: string; revert: string; position: number };
+  // VisualTeX kernel: the formula as it was set (opened, loaded or judged). The
+  // input judgment leaves it as it is until it is edited: opening a formula or
+  // moving the caret in it changes nothing.
+  visualTexUnjudged?: string;
   // The last quick escape (confirm-escape key), for the Backspace that
   // restores its letters: the state right after it and the replaced range.
   visualTexLastEscape?: {
@@ -881,6 +885,8 @@ If you are using Vue, this may be because you are using the runtime-only build o
       ) {
         this.model.mode = options.mode;
       }
+      if (options.insertionMode === 'replaceAll')
+        this.visualTexUnjudged = this.model.getValue();
       requestUpdate(this);
       // If this is the first insertion, drop the previous (empty) snapshot
       if (!couldUndo) this.undoManager.reset();

@@ -337,6 +337,40 @@ export const insertDivider: Command = (state, dispatch) => {
   return true;
 };
 
+/**
+ * A page command (\newpage, \pagenumbering{…}…) where the caret is: in an empty line it takes the line's place, at a
+ * line's start it goes before it, at its end after it, in its middle the line is split there (TeX ends the paragraph).
+ */
+export function insertPageCommand(command: string, value = ""): Command {
+  return (state, dispatch) => {
+    const type = state.schema.nodes.page_command;
+    const $from = state.selection.$from;
+    if (!type || !$from.parent.isTextblock || $from.parent.type.spec.code) return false;
+    if (!dispatch) return true;
+    const node = type.create({ command, value });
+    const paragraph = $from.parent;
+    const start = $from.before();
+    const tr = state.tr;
+    if (paragraph.content.size === 0) {
+      tr.insert(start, node);
+      tr.setSelection(TextSelection.create(tr.doc, start + node.nodeSize + 1));
+    } else if ($from.parentOffset === 0) {
+      tr.insert(start, node);
+    } else if ($from.parentOffset === paragraph.content.size) {
+      const after = $from.after();
+      tr.insert(after, [node, state.schema.nodes.paragraph.create()]);
+      tr.setSelection(TextSelection.create(tr.doc, after + node.nodeSize + 1));
+    } else {
+      tr.split($from.pos);
+      const at = tr.mapping.map($from.pos) - 1;
+      tr.insert(at, node);
+      tr.setSelection(TextSelection.create(tr.doc, at + node.nodeSize + 1));
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
+  };
+}
+
 /** \table: a rows x cols table after the current block, or in place of an empty paragraph; caret in its first cell. */
 export function insertTable(rows = 3, cols = 3): Command {
   return (state, dispatch) => {

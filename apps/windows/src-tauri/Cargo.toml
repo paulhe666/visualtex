@@ -76,6 +76,7 @@ hex = "0.4"
 flate2 = "1.1"
 tar = "0.4"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.41"
 sha2 = "0.10"
 sha1 = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -87,6 +88,7 @@ rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "multipart", "system-proxy"] }
 ttf-parser = "0.25"
 png = "0.17"
+webview2-com = "0.38"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.61"

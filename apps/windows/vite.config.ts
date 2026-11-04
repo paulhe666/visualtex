@@ -54,6 +54,8 @@ export default defineConfig({
         main: "index.html",
         // VisualTeX Anywhere's formula overlay (src/anywhere)
         anywhere: "anywhere.html",
+        // the PDF export's print page (src/document/print-main.ts)
+        print: "print.html",
       },
     },
   },

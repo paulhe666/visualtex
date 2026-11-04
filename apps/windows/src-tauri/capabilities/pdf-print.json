@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pdf-print",
+  "description": "The hidden print window of the PDF export (print.html): it receives the pages by event and says when they are ready.",
+  "windows": ["pdf-print"],
+  "permissions": ["core:default"]
+}

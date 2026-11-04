@@ -369,6 +369,177 @@ function applyTheorems(text: string, theorems: Map<string, Theorem>, chinese: bo
   });
 }
 
+// ---------------------------------------------------------------- BibTeX --
+
+interface BibEntry {
+  type: string;
+  key: string;
+  fields: Map<string, string>;
+}
+
+/** A .bib file's entries (@string macros applied; @comment / @preamble skipped). */
+export function parseBibtex(text: string): BibEntry[] {
+  const entries: BibEntry[] = [];
+  const strings = new Map<string, string>([["jan", "January"], ["feb", "February"], ["mar", "March"], ["apr", "April"], ["may", "May"], ["jun", "June"], ["jul", "July"], ["aug", "August"], ["sep", "September"], ["oct", "October"], ["nov", "November"], ["dec", "December"]]);
+  const at = /@\s*([A-Za-z]+)\s*([{(])/g;
+  let match: RegExpExecArray | null;
+  while ((match = at.exec(text))) {
+    const type = match[1].toLowerCase();
+    const close = match[2] === "{" ? "}" : ")";
+    // the entry's body: to its closing bracket, braces balanced
+    let depth = 0;
+    let end = -1;
+    for (let i = at.lastIndex; i < text.length; i++) {
+      const c = text[i];
+      if (c === "{") depth++;
+      else if (c === "}" && depth > 0) depth--;
+      else if (c === close && depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) break;
+    const body = text.slice(at.lastIndex, end);
+    at.lastIndex = end + 1;
+    if (type === "comment" || type === "preamble") continue;
+    const fields = bibFields(type === "string" ? `,${body}` : body.slice(body.indexOf(",")), strings);
+    if (type === "string") {
+      for (const [name, value] of fields) strings.set(name, value);
+      continue;
+    }
+    const key = (body.includes(",") ? body.slice(0, body.indexOf(",")) : body).trim();
+    if (key) entries.push({ type, key, fields });
+  }
+  return entries;
+}
+
+/** `, name = {value} # "value" # macro, …` as fields (lower-case names). */
+function bibFields(text: string, strings: Map<string, string>): Map<string, string> {
+  const fields = new Map<string, string>();
+  let i = 0;
+  while (i < text.length) {
+    const name = /^[\s,]*([A-Za-z][\w:.+-]*)\s*=\s*/.exec(text.slice(i));
+    if (!name) break;
+    i += name[0].length;
+    let value = "";
+    for (;;) {
+      if (text[i] === "{") {
+        const part = group(text, i);
+        if (!part) return fields;
+        value += part.content;
+        i = part.end;
+      } else if (text[i] === '"') {
+        let k = i + 1;
+        let depth = 0;
+        while (k < text.length && !(text[k] === '"' && depth === 0)) {
+          if (text[k] === "{") depth++;
+          else if (text[k] === "}") depth--;
+          k++;
+        }
+        value += text.slice(i + 1, k);
+        i = k + 1;
+      } else {
+        const bare = /^[\w:.+-]+/.exec(text.slice(i));
+        if (!bare) break;
+        value += strings.get(bare[0].toLowerCase()) ?? bare[0];
+        i += bare[0].length;
+      }
+      const hash = /^\s*#\s*/.exec(text.slice(i));
+      if (!hash) break;
+      i += hash[0].length;
+    }
+    fields.set(name[1].toLowerCase(), value.replace(/\s+/g, " ").trim());
+  }
+  return fields;
+}
+
+/** "Last, First and First Last" as "F. Last and F. Last" (a list of more than three: "F. Last et al."). */
+function bibAuthors(value: string): string {
+  const names = value
+    .split(/\s+and\s+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => {
+      if (/^\{.*\}$/.test(name) || name === "others") return name;
+      let first = "";
+      let last = name;
+      if (name.includes(",")) {
+        const parts = name.split(",").map((p) => p.trim());
+        last = parts[0];
+        first = parts.slice(1).join(" ");
+      } else {
+        const words = name.split(/\s+/);
+        last = words.pop()!;
+        first = words.join(" ");
+      }
+      const initials = first
+        .split(/[\s~]+/)
+        .filter(Boolean)
+        .map((word) => (/[\u4e00-\u9fff]/.test(word) ? word : `${word.replace(/[{}]/g, "").split("-").map((p) => p[0] ?? "").join(".-")}.`))
+        .join(" ");
+      return initials ? `${initials} ${last}` : last;
+    });
+  if (names.length > 3) return `${names[0]} et al.`;
+  const list = names.map((n) => (n === "others" ? "et al." : n));
+  return list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0] ?? "";
+}
+
+/** An entry as a reference list item (LaTeX text, as BibTeX's plain style sets it). */
+function bibText(entry: BibEntry): string {
+  const f = (name: string) => entry.fields.get(name) ?? "";
+  const parts: string[] = [];
+  const authors = f("author") ? bibAuthors(f("author")) : f("editor") ? `${bibAuthors(f("editor"))}, editors` : "";
+  if (authors) parts.push(authors);
+  const title = f("title");
+  const book = entry.type === "book" || entry.type === "phdthesis" || entry.type === "mastersthesis";
+  if (title) parts.push(book ? `\\emph{${title}}` : title);
+  const container = f("journal") || f("journaltitle") || f("booktitle");
+  if (container) {
+    let where = `${entry.type === "inproceedings" || entry.type === "incollection" ? "In " : ""}\\emph{${container}}`;
+    if (f("volume")) where += `, ${f("volume")}${f("number") ? `(${f("number")})` : ""}`;
+    if (f("pages")) where += `:${f("pages")}`;
+    parts.push(where);
+  } else if (f("pages")) parts.push(`pp. ${f("pages")}`);
+  if (entry.type === "phdthesis") parts.push(`PhD thesis${f("school") ? `, ${f("school")}` : ""}`);
+  else if (entry.type === "mastersthesis") parts.push(`Master's thesis${f("school") ? `, ${f("school")}` : ""}`);
+  const publisher = f("publisher") || f("institution") || f("organization");
+  if (publisher) parts.push(f("address") ? `${publisher}, ${f("address")}` : publisher);
+  const year = f("year") || f("date").slice(0, 4);
+  if (year) parts.push(f("month") ? `${f("month")} ${year}` : year);
+  if (f("note")) parts.push(f("note"));
+  const link = f("doi") ? `\\url{https://doi.org/${f("doi").replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}}` : f("url") ? `\\url{${f("url")}}` : "";
+  return `${parts.join(". ").replace(/\.\./g, ".")}.${link ? ` ${link}` : ""}`;
+}
+
+/**
+ * \bibliography{…} / \printbibliography with the project's .bib files: a thebibliography of the cited entries in
+ * the order they are first cited (\nocite{*}: all of them), as BibTeX's unsrt style lists them.
+ */
+function applyBibliography(source: string, bibs: string[]): string {
+  if (!bibs.length || !/\\(bibliography|printbibliography)\b/.test(source)) return source;
+  const entries = new Map<string, BibEntry>();
+  for (const text of bibs) for (const entry of parseBibtex(text)) if (!entries.has(entry.key)) entries.set(entry.key, entry);
+  const cited: string[] = [];
+  const cite = /\\(?:no)?cite[a-zA-Z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{([^{}]*)\}/g;
+  for (const match of source.matchAll(cite)) {
+    for (const key of match[1].split(",").map((k) => k.trim())) {
+      if (key === "*") for (const all of entries.keys()) if (!cited.includes(all)) cited.push(all);
+      if (entries.has(key) && !cited.includes(key)) cited.push(key);
+    }
+  }
+  if (!cited.length) return source;
+  const list =
+    `\\begin{thebibliography}{${String(cited.length).replace(/\d/g, "9")}}\n` +
+    cited.map((key) => `\\bibitem{${key}} ${bibText(entries.get(key)!)}`).join("\n") +
+    "\n\\end{thebibliography}";
+  let placed = false;
+  return source.replace(/\\bibliography\s*\{[^{}]*\}|\\printbibliography\b(\s*\[[^\]]*\])?/g, () => {
+    if (placed) return "";
+    placed = true;
+    return list;
+  });
+}
+
 /** A project archive's files as one LaTeX source for latexToMarkdown; null when it holds no .tex file. */
 export function readLatexProject(files: ProjectFile[]): LatexProject | null {
   const byPath = index(files);
@@ -404,7 +575,8 @@ export function readLatexProject(files: ProjectFile[]): LatexProject | null {
   for (const path of loaded) collectDefinitions(texts.get(path)!, macros, theorems);
   collectDefinitions(source, macros, theorems);
   const chinese = /[\u4e00-\u9fff]/.test(source);
-  return { main, source: applyTheorems(applyMacros(source, macros), theorems, chinese), macros: macros.size };
+  const bibs = [...byPath].filter(([path]) => /\.bib$/i.test(path)).map(([, file]) => decodeText(file.bytes));
+  return { main, source: applyBibliography(applyTheorems(applyMacros(source, macros), theorems, chinese), bibs), macros: macros.size };
 }
 
 /** A Markdown file of an archive (README.md last), for an archive without LaTeX. */

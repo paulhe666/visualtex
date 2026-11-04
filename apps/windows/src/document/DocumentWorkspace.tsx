@@ -7,11 +7,14 @@ import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import {
   decodeText,
   documentSchema,
   findMarkdownFile,
+  graphicsPaths,
+  registerImageBytes,
+  setImageFileResolver,
   hasMathDelimiters,
   insertDisplayLatex,
   insertInlineFormula,
@@ -28,24 +31,31 @@ import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentLibrary, DocumentLibraryToggle, type DocumentLibraryActions } from "./DocumentLibrary";
+import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
 import {
   documentLibrary,
   documentTitle,
   libraryDocumentName,
   saveTextFile,
+  saveBinaryFile,
+  chooseExportPath,
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
 } from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
+import { documentToWord, type WordFormulaFormat } from "./documentExport";
+import { documentToPdf } from "./documentPdf";
+import { WordExportDialog } from "./WordExportDialog";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_PDF_EVENT,
+  DOCUMENT_EXPORT_WORD_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
@@ -253,7 +263,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     open: async (_id: string): Promise<boolean> => false,
     create: async (_folder: string | null) => {},
     importFile: async (_file: File) => {},
-    exportFile: async (_id: string) => {},
+    exportFile: async (_id: string, _format?: DocumentExportFormat) => {},
     afterLoss: async (_library: Library) => {},
   });
   ops.current = {
@@ -311,17 +321,23 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         let kind: "document" | "markdown" | "latex";
         let text: string;
+        // the archive's images, for the paths its text gives them (figures/x.png, assets/x.png)
+        let images: Map<string, Uint8Array> | null = null;
+        let base = "";
         if (/\.zip$/i.test(file.name)) {
-          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown)$/i.test(entry.name) });
-          const files = Object.entries(entries).map(([path, data]) => ({ path, bytes: data }));
+          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown|png|jpe?g)$/i.test(entry.name) });
+          images = new Map(Object.entries(entries).filter(([path]) => /\.(png|jpe?g)$/i.test(path)));
+          const files = Object.entries(entries).filter(([path]) => !/\.(png|jpe?g)$/i.test(path)).map(([path, data]) => ({ path, bytes: data }));
           const project = readLatexProject(files);
           const markdownFile = project ? null : findMarkdownFile(files);
           if (project) {
             kind = "latex";
             text = project.source;
+            base = project.main.includes("/") ? project.main.slice(0, project.main.lastIndexOf("/") + 1) : "";
           } else if (markdownFile) {
             kind = "markdown";
             text = decodeText(markdownFile.bytes);
+            base = markdownFile.path.includes("/") ? markdownFile.path.slice(0, markdownFile.path.lastIndexOf("/") + 1) : "";
           } else throw new Error(t("no .tex or .md file in the archive", "压缩包中没有 .tex 或 .md 文件"));
         } else {
           text = decodeText(bytes);
@@ -332,16 +348,44 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         const entry = await api.create(null, kind === "document" ? text : emptyDocumentText(), stem);
         withEntry(entry);
         if (!(await ops.current.open(entry.id))) return;
-        if (kind === "markdown") documentRef.current?.loadMarkdown(text);
-        else if (kind === "latex") documentRef.current?.loadLatex(text);
+        if (images?.size) {
+          const found = images;
+          const folders = ["", ...(kind === "latex" ? graphicsPaths(text) : [])];
+          setImageFileResolver((path) => {
+            for (const folder of folders) {
+              for (const ext of ["", ".png", ".jpg", ".jpeg", ".PNG", ".JPG"]) {
+                const candidate = (base + folder + path + ext).replace(/\/\.\//g, "/").replace(/^\.\//, "");
+                const bytes = found.get(candidate) ?? found.get(folder + path + ext);
+                if (bytes) return registerImageBytes(bytes);
+              }
+            }
+            return null;
+          });
+        }
+        try {
+          if (kind === "markdown") documentRef.current?.loadMarkdown(text);
+          else if (kind === "latex") documentRef.current?.loadLatex(text);
+        } finally {
+          setImageFileResolver(null);
+        }
         await ops.current.saveNow();
         flash(t("Document imported", "文档已导入"));
       } catch (error) {
         flash(t("Cannot open: ", "无法打开：") + errorText(error));
       }
     },
-    exportFile: async (id) => {
+    exportFile: async (id, format = "vtxdoc") => {
       try {
+        if (format !== "vtxdoc") {
+          // the other formats come from the editor: the document is opened (its pages laid out) first
+          if (id !== current.current.id) {
+            await ops.current.open(id);
+            await new Promise((resolve) => window.setTimeout(resolve, 400));
+          }
+          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, word: actions.current.exportWord, pdf: actions.current.exportPdf }[format];
+          run();
+          return;
+        }
         let text: string;
         if (id === current.current.id) {
           await ops.current.saveNow();
@@ -460,9 +504,33 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     },
     renameFolder: (id, name) => void api.renameFolder(id, name).then(setLibrary, (error) => flash(errorText(error))),
     deleteFolder: (id) => void api.deleteFolder(id).then(setLibrary, (error) => flash(errorText(error))),
-    exportFile: (id) => void ops.current.exportFile(id),
+    exportFile: (id, format) => void ops.current.exportFile(id, format),
     reveal: isTauri() ? (id) => void invoke("document_library_reveal", { id }).catch((error) => flash(errorText(error))) : null,
     search: (query) => api.search(query),
+  };
+
+  // Word export: the dialog (the formulas' form) and its progress; PDF: one at a time
+  const [wordExport, setWordExport] = useState(false);
+  const [wordBusy, setWordBusy] = useState<string | null>(null);
+  const pdfBusy = useRef(false);
+  const exportWord = (format: WordFormulaFormat) => {
+    const doc = documentRef.current?.view()?.state.doc;
+    if (!doc) return;
+    void (async () => {
+      try {
+        setWordBusy(t("Preparing…", "正在准备…"));
+        const result = await documentToWord(doc, format, { bibliographyTitle: t("References", "参考文献"), title: fileName("") }, (done, total) =>
+          setWordBusy(`${done} / ${total}`),
+        );
+        setWordBusy(null);
+        setWordExport(false);
+        const saved = await saveBinaryFile(fileName(".docx"), result.bytes, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", isEn);
+        if (saved) flash(result.fallbacks ? t(`Word exported (${result.fallbacks} formulas as pictures)`, `Word 已导出（${result.fallbacks} 个公式为图片）`) : t("Word exported", "Word 已导出"));
+      } catch (error) {
+        setWordBusy(null);
+        flash(errorText(error));
+      }
+    })();
   };
 
   const actions = useRef({
@@ -474,6 +542,8 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     copyLatex: () => {},
     exportMarkdown: () => {},
     copyMarkdown: () => {},
+    exportWord: () => {},
+    exportPdf: () => {},
   });
   actions.current = {
     save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
@@ -483,6 +553,16 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportLatex: () => {
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
+      // with images: the .tex and its figures/ in one .zip (Overleaf's upload)
+      const figures = documentRef.current?.imageFiles("figures") ?? [];
+      if (figures.length) {
+        const zip = zipSync({ [fileName(".tex")]: strToU8(tex), ...Object.fromEntries(figures.map((file) => [file.path, file.bytes])) });
+        void saveBinaryFile(fileName(".zip"), zip, "zip", "application/zip", isEn).then(
+          (done) => done && flash(t("LaTeX exported", "LaTeX 已导出")),
+          (error) => flash(errorText(error)),
+        );
+        return;
+      }
       void saveTextFile(fileName(".tex"), tex, "tex", "text/x-tex", isEn).then(
         (done) => done && flash(t("LaTeX exported", "LaTeX 已导出")),
         (error) => flash(errorText(error)),
@@ -491,6 +571,15 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportMarkdown: () => {
       const markdown = documentRef.current?.toMarkdown();
       if (!markdown) return;
+      const assets = documentRef.current?.imageFiles("assets") ?? [];
+      if (assets.length) {
+        const zip = zipSync({ [fileName(".md")]: strToU8(markdown), ...Object.fromEntries(assets.map((file) => [file.path, file.bytes])) });
+        void saveBinaryFile(fileName(".zip"), zip, "zip", "application/zip", isEn).then(
+          (done) => done && flash(t("Markdown exported", "Markdown 已导出")),
+          (error) => flash(errorText(error)),
+        );
+        return;
+      }
       void saveTextFile(fileName(".md"), markdown, "md", "text/markdown", isEn).then(
         (done) => done && flash(t("Markdown exported", "Markdown 已导出")),
         (error) => flash(errorText(error)),
@@ -503,6 +592,25 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         () => flash(t("Markdown copied", "Markdown 已复制")),
         () => flash(t("Copy failed", "复制失败")),
       );
+    },
+    exportWord: () => setWordExport(true),
+    exportPdf: () => {
+      const view = documentRef.current?.view();
+      if (!view || pdfBusy.current) return;
+      pdfBusy.current = true;
+      void (async () => {
+        try {
+          const path = await chooseExportPath(fileName(".pdf"), "pdf", isEn);
+          if (!path) return;
+          flash(t("Exporting PDF…", "正在导出 PDF…"));
+          await documentToPdf(view, path, fileName(""));
+          flash(t("PDF exported", "PDF 已导出"));
+        } catch (error) {
+          flash(errorText(error));
+        } finally {
+          pdfBusy.current = false;
+        }
+      })();
     },
     copyLatex: () => {
       const tex = documentRef.current?.toLatex();
@@ -525,6 +633,8 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
+      [DOCUMENT_EXPORT_WORD_EVENT, () => actions.current.exportWord()],
+      [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
     ];
     for (const [name, fn] of bind) window.addEventListener(name, fn);
     return () => {
@@ -534,6 +644,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
 
   return (
     <section className={"vtx-document-workspace" + (libraryOpen ? " has-library" : "")} aria-label={t("Document", "文档")}>
+      {wordExport && <WordExportDialog lang={isEn ? "en" : "zh"} busy={wordBusy} onExport={exportWord} onClose={() => setWordExport(false)} />}
       {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
       <div className="vtx-document-main">
         {/* the document's own buttons above it; the formula tools stay in the bottom dock */}

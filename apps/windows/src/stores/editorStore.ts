@@ -411,6 +411,8 @@ interface EditorState {
   inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
+  /** the command candidates: a list (cards) or one row like an input method's candidate bar */
+  candidateStyle: CandidateStyle;
   checkUpdatesOnStartup: boolean;
   powerPointDefaultFontSizePt: number;
   wordFormulaShortcuts: WordFormulaShortcutSettings;
@@ -467,6 +469,7 @@ interface EditorState {
   ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
+  setCandidateStyle: (style: CandidateStyle) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
   setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
   setWordFormulaShortcut: (
@@ -588,6 +591,7 @@ export const useEditorStore = create<EditorState>()(
       inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
+      candidateStyle: "list",
       checkUpdatesOnStartup: true,
       powerPointDefaultFontSizePt: 20,
       wordFormulaShortcuts: {
@@ -778,6 +782,7 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+      setCandidateStyle: (candidateStyle) => set({ candidateStyle: candidateStyle === "bar" ? "bar" : "list" }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
       setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
@@ -1128,6 +1133,7 @@ export const useEditorStore = create<EditorState>()(
         inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
+        candidateStyle: state.candidateStyle,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
         wordFormulaShortcuts: state.wordFormulaShortcuts,
@@ -1256,6 +1262,17 @@ export const useEditorStore = create<EditorState>()(
     },
   ),
 );
+
+export type CandidateStyle = "list" | "bar";
+
+// The candidates' look applies to every window's popovers (the formula fields' and the document's "\" menu).
+if (typeof document !== "undefined") {
+  const applyCandidateStyle = (style: CandidateStyle) => {
+    document.documentElement.dataset.candidateStyle = style === "bar" ? "bar" : "list";
+  };
+  applyCandidateStyle(useEditorStore.getState().candidateStyle);
+  useEditorStore.subscribe((state) => applyCandidateStyle(state.candidateStyle));
+}
 
 // The upright switch also governs normalization outside the formula fields
 // (stored, pasted and imported LaTeX).

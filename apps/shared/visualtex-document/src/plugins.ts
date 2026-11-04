@@ -49,9 +49,11 @@ import { ALL_RULES, markdownEnter, markdownInputPlugin, markdownKeymap, type Inp
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
-import { insertFootnote, noteText, notesPlugin } from "./notes.ts";
+import { bibliographyEntries, insertFootnote, noteText, notesPlugin } from "./notes.ts";
 import { bracketLabel, equationLabels } from "./settings.ts";
 import { paginationPlugin, type PaginationOptions } from "./pagination.ts";
+import { imagesPlugin, type ImageLabels } from "./images.ts";
+import { pageCommandLatex } from "./pageCommands.ts";
 
 // --------------------------------------------------------------- triggers --
 
@@ -179,7 +181,8 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode) {
         const source = htmlShowsSource(html, text, data.types);
         // LaTeX source (\section, itemize, \textbf, equation…) is read into the document's structure, in either input.
         if (source && looksLikeLatexSource(text)) {
-          view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, latexToMarkdown(text))).scrollIntoView());
+          const keys = new Map(bibliographyEntries(view.state.doc).map((entry) => [entry.key, entry.id]));
+          view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, latexToMarkdown(text), keys)).scrollIntoView());
           return true;
         }
         // Pasted Markdown keeps its structure (headings, lists, tables, math, marks): in Markdown input whenever it reads
@@ -414,7 +417,11 @@ export interface DocumentPluginOptions {
   markdownRules?: () => MarkdownRuleSwitches;
   /** The page view: the document divided into the paper's pages (none: one long page). */
   pagination?: PaginationOptions | null;
+  /** The image bar's button names in the app's language. */
+  imageLabels?: () => ImageLabels;
 }
+
+const DEFAULT_IMAGE_LABELS: ImageLabels = { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text, image left", wrapRight: "Wrap text, image right" };
 
 const DEFAULT_CODE_LABELS: CodeBlockOptions["labels"] = { plainText: "Plain Text", copy: "Copy", copied: "Copied", language: "Language" };
 
@@ -428,12 +435,14 @@ export function slicePlainText(slice: Slice, formulaText: (latex: string) => str
       else if (child.type.name === "math_inline") out += `$${formulaText(child.attrs.latex)}$`;
       else if (child.type.name === "hard_break") out += "\n";
       else if (child.type.name === "eqref") out += `\\eqref{eq:${child.attrs.target ?? ""}}`;
+      else if (child.type.name === "image") out += child.attrs.alt ? `[${child.attrs.alt}]` : "";
       else if (child.type.name === "footnote" || child.type.name === "cite") out += noteText(child, null);
     });
     return out;
   };
   const walk = (node: Node) => {
     if (node.type.name === "math_display") blocks.push(`$$${formulaText(node.attrs.latex)}$$`);
+    else if (node.type.name === "page_command") blocks.push(pageCommandLatex(node.attrs.command, node.attrs.value));
     else if (node.isTextblock) blocks.push(inline(node));
     else if (node.type.name === "table_row") {
       const cells: string[] = [];
@@ -484,6 +493,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     }),
     numberingPlugin(),
     notesPlugin(),
+    imagesPlugin({ labels: options.imageLabels ?? (() => DEFAULT_IMAGE_LABELS) }),
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS }),
     keymap(codeBlockKeys),
@@ -494,6 +504,53 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     tableEditing(),
     gapCursor(),
     dropCursor(),
+    history({ newGroupDelay: 600 }),
+  ];
+}
+
+export interface FootnoteEditorOptions {
+  host: FormulaHost;
+  mathCommands?: MathCommandProvider | null;
+  inputMode?: () => InputMode;
+  /** Enter (outside a formula's menu): the note is done */
+  submit: Command;
+  /** Escape */
+  cancel: Command;
+}
+
+/** Entries a footnote's text can take: formulas (\alpha, \frac… into a formula; \( … \)) and a line break. */
+const inFootnote = (entry: { id: string }) => entry.id.startsWith("math-") || entry.id === "inline-math" || entry.id === "md-inline-math" || entry.id === "newline";
+
+/**
+ * A footnote's own editor (the footnote panel): text and inline formulas, typed as in the document — "$" or "\("
+ * opens a formula, a formula command (\frac) starts one, the formula editor's keys move in and out of formulas.
+ */
+export function footnoteEditorPlugins(schema: Schema, options: FootnoteEditorOptions): Plugin[] {
+  const inputMode = options.inputMode ?? (() => "latex");
+  return [
+    idsPlugin(),
+    mixedSelectionPlugin(),
+    commandMenuPlugin(options.mathCommands ?? null, inputMode, () => ALL_RULES, inFootnote),
+    dollarPlugin(inputMode),
+    formulaPlugin(options.host, { undo, redo, displayFormula: () => false }),
+    keymap({
+      "Mod-z": undo,
+      "Mod-y": redo,
+      "Shift-Mod-z": redo,
+      Backspace: deleteFormulaBackward,
+      Delete: deleteFormulaForward,
+      ArrowRight: enterFormulaForward,
+      ArrowLeft: enterFormulaBackward,
+      ArrowDown: enterFormulaDown,
+      ArrowUp: enterFormulaUp,
+      Enter: chainCommands(openSelectedFormula, options.submit),
+      Escape: options.cancel,
+      "Shift-Enter": (state, dispatch) => {
+        if (dispatch) dispatch(state.tr.replaceSelectionWith(schema.nodes.hard_break.create()).scrollIntoView());
+        return true;
+      },
+    }),
+    keymap(baseKeymap),
     history({ newGroupDelay: 600 }),
   ];
 }

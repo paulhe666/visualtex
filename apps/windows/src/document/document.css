@@ -1250,20 +1250,23 @@
   font-size: 12px;
   font-weight: 600;
 }
-.vtx-footnote-dialog textarea {
+.vtx-footnote-dialog {
+  overflow: visible;
+}
+.vtx-footnote-input .vtx-footnote-editor {
   min-height: 64px;
+  max-height: 40vh;
+  overflow-y: auto;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
+  background: #fff;
+  font-family: var(--vtx-body-font);
+  font-size: 14px;
+  line-height: 1.5;
 }
-.vtx-footnote-dialog textarea:focus {
+.vtx-footnote-input .vtx-footnote-editor:focus-within {
   border-color: var(--accent);
-  outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
@@ -1876,4 +1879,303 @@
     z-index: 120;
     box-shadow: var(--shadow-lg);
   }
+}
+
+/* ---- images (DESIGN.md §11): a box in the line, bottom on the baseline, as \includegraphics ---- */
+.vtx-document .vtx-image {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+  max-width: 100%;
+  line-height: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--vtx-image-aspect, auto);
+  pointer-events: none;
+}
+.vtx-document .vtx-image.is-missing {
+  min-height: 2em;
+  background: repeating-linear-gradient(45deg, #f1f3f6 0 6px, #e6e9ee 6px 12px);
+}
+/* an image line: the images 0.02\linewidth apart (\hspace{0.02\linewidth}) */
+.vtx-document p.vtx-image-line .vtx-image.has-gap {
+  margin-left: 2%;
+}
+/* wrapfigure: \columnsep (10pt) beside the text, \intextsep (12pt) below; the top \intextsep − 1.4ex under the first
+   baseline (wrapfig mid-page) */
+.vtx-document .vtx-image.is-wrap-left,
+.vtx-document .vtx-image.is-wrap-right {
+  margin-top: calc((var(--vtx-line-height, 1.3) - 1) * 0.5em + 0.85em + 12 * var(--vtx-pt, 1.333px) - 0.6em);
+  margin-bottom: calc(12 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-left {
+  float: left;
+  margin-right: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-right {
+  float: right;
+  margin-left: calc(10 * var(--vtx-pt, 1.333px));
+}
+/* wrapfig wraps paragraphs only: other blocks, image lines and the next wrapped paragraph start below a wrapped
+   image (the export's \vtxwrapclear) */
+.vtx-document > :not(p),
+.vtx-document > p.vtx-image-line,
+.vtx-document > p:has(> .vtx-image.is-wrap-left, > .vtx-image.is-wrap-right) {
+  clear: both;
+}
+.vtx-document .vtx-image.is-selected {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 1px;
+}
+.vtx-image-handle {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 28px;
+  max-height: 80%;
+  transform: translateY(-50%);
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: var(--accent, #2f6fde);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+.vtx-image-handle.is-left {
+  left: -5px;
+}
+.vtx-image-handle.is-right {
+  right: -5px;
+}
+.vtx-document .vtx-image.is-selected .vtx-image-handle,
+.vtx-document .vtx-image.is-resizing .vtx-image-handle {
+  display: block;
+}
+.vtx-image-size {
+  position: fixed;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(30, 34, 40, 0.86);
+  color: #fff;
+  font: 12px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}
+.vtx-image-bar {
+  position: fixed;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.vtx-image-bar[hidden] {
+  display: none;
+}
+.vtx-image-bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #2b3038);
+  cursor: pointer;
+}
+.vtx-image-bar-button:hover:not(:disabled) {
+  background: var(--hover, #eef1f5);
+}
+.vtx-image-bar-button.is-on {
+  background: var(--active, #e2ebfb);
+  color: var(--accent, #2f6fde);
+}
+.vtx-image-bar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vtx-image-bar-gap {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border, #d8dce3);
+}
+.vtx-drop-marker.is-wrap {
+  border-radius: 2px;
+}
+
+/* ---- page commands (\newpage, \pagenumbering{…}…): no height, as in TeX; the command in the left margin ---- */
+.vtx-document .vtx-page-command {
+  position: relative;
+  height: 0;
+  margin: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-page-command .vtx-page-command-label {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: -0.7em;
+  color: #8a8f98;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+.vtx-document .vtx-page-command[data-command="newpage"],
+.vtx-document .vtx-page-command[data-command="clearpage"] {
+  border-top: 1px dashed #b8bec8;
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode .vtx-page-command-label {
+  color: var(--accent, #2f6fde);
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode {
+  outline: 1px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+
+/* ---- export to Word: the formulas' form (WordExportDialog) ---- */
+.vtx-export-dismiss {
+  background: rgba(15, 23, 42, 0.12);
+}
+.vtx-word-export {
+  left: 50%;
+  top: 22%;
+  width: 320px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.vtx-word-export-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.vtx-word-export-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.vtx-word-export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vtx-word-export-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.vtx-word-export-options label.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.vtx-word-export-options input {
+  margin: 0;
+}
+.vtx-word-export-status {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- candidate bar (Settings > Formula editor > Candidates): the "\" menu in one row ---- */
+:root[data-candidate-style="bar"] .vtx-cmd-menu {
+  width: auto;
+  max-width: min(calc(100% - 8px), 760px);
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+}
+:root[data-candidate-style="bar"] .vtx-cmd-list {
+  display: flex;
+  flex-direction: row;
+  column-gap: 1px;
+  max-height: none;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #ffffff;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item,
+:root[data-candidate-style="bar"] .vtx-cmd-item + .vtx-cmd-item {
+  flex: none;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-copy {
+  grid-row: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  background: #5c3b18;
+  color: #ffffff;
+  font: 13px/1.2 Menlo, Consolas, "JetBrains Mono", monospace;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index {
+  grid-column: 1;
+  padding-left: 7px;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index:not(:empty)::after {
+  content: ".";
+}
+:root[data-candidate-style="bar"] .vtx-cmd-copy {
+  grid-column: 2;
+  padding-right: 8px;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-label,
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-label {
+  overflow: visible;
+  color: #ffffff;
+  font: inherit;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-desc {
+  display: none;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-preview {
+  grid-row: 2;
+  grid-column: 1 / span 2;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  padding: 4px 8px;
+  background: #ede4e4;
+  color: #1e232a;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-copy {
+  background: #a66a2f;
+  color: #ffffff;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-preview {
+  background: #f6ecda;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-copy {
+  background: #7d5226;
 }

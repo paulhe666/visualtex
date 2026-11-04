@@ -148,7 +148,6 @@ export function ButtonShortcutSettingsSection() {
                     title={isEn ? "Set to None" : "设为无"}
                   >
                     <X size={14} />
-                    {isEn ? "None" : "无"}
                   </button>
                 </div>
               );

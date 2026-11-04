@@ -13,6 +13,7 @@ import type {
 } from "../../../shared/visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
 import { topLevelStop } from "../editor/rowPointer";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
@@ -501,10 +502,28 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       typedDollarRef.current(field);
     };
     field.addEventListener("beforeinput", onBeforeInput, true);
-    detachDollar.current = () => field.removeEventListener("beforeinput", onBeforeInput, true);
+    // the candidates as the formula rows have them: ranked by what was chosen before, and every choice remembered
+    const configure = () => {
+      const { usage, personalize, suggestionCount } = useEditorStore.getState();
+      configureMathLiveCompletion(field, { usage, personalize, count: suggestionCount });
+    };
+    configure();
+    const onAccepted = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; query?: string }>).detail;
+      if (!detail?.id) return;
+      useEditorStore.getState().recordCommand(detail.id, detail.query ?? "", "candidate");
+      configure();
+    };
+    field.addEventListener("visualtex-command-accepted", onAccepted);
+    detachDollar.current = () => {
+      field.removeEventListener("beforeinput", onBeforeInput, true);
+      field.removeEventListener("visualtex-command-accepted", onAccepted);
+    };
     // An inline formula is set in text style, as in the text (and as its static markup).
     if (!displayRef.current) field.defaultMode = "inline-math";
     installDocumentFieldStyle(field);
+    // the formula as the field reads it: only an edit is reported back (not the field's own form of the same LaTeX)
+    if (normalizeChineseLatex(field.value) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeChineseLatex(field.value);
     if (passiveRef.current) {
       // only shown: the part a selection through the text takes, once the engine has drawn it
       readyRef.current = true;

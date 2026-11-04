@@ -5,6 +5,8 @@ import { TableMap } from "prosemirror-tables";
 import { splitInlineMath } from "./mathText.ts";
 import { bibliographyEntries } from "./notes.ts";
 import { chosenSettings, documentSettings, settingsPreamble } from "./settings.ts";
+import { IMAGE_GAP, imageFiles, isImage, isImageLine } from "./images.ts";
+import { pageCommandLatex } from "./pageCommands.ts";
 
 export interface LatexExportOptions {
   /** The formula's LaTeX made portable (the app's own conventions -> plain amsmath). */
@@ -13,6 +15,8 @@ export interface LatexExportOptions {
   formulaPackages?: (latex: string) => string[];
   /** A whole document (preamble + \begin{document}) or only the body. */
   standalone?: boolean;
+  /** Where an image's file is, relative to the .tex (default: figures/fig-n.ext in the order of appearance). */
+  imagePath?: (key: string) => string | null;
   title?: string;
 }
 
@@ -39,6 +43,19 @@ const LISTINGS_LANGUAGES: Record<string, string> = {
   html: "HTML",
   latex: "TeX",
 };
+
+/** \vtxwrapclear: wrapfig's remaining narrowed lines (its counter, + 1) as vertical space, and the wrapping ended. */
+const WRAP_CLEAR = [
+  "\\makeatletter",
+  "\\newcommand\\vtxwrapclear{\\par\\ifnum\\c@WF@wrappedlines>\\@ne",
+  "  \\vspace*{\\dimexpr\\baselineskip*\\numexpr\\c@WF@wrappedlines-1\\relax\\relax}\\WF@finale\\global\\c@WF@wrappedlines\\z@\\fi}",
+  "\\makeatother",
+].join("\n");
+
+/** A width fraction as LaTeX writes it: 0.45, 0.333, 1. */
+function widthOf(width: number): string {
+  return String(Math.round(width * 1000) / 1000);
+}
 
 /** Text for LaTeX's text mode: the ten special characters escaped. */
 export function escapeLatexText(text: string): string {
@@ -118,6 +135,8 @@ class LatexWriter {
   hasCjk = false;
   private listDepth = 0;
   private titled = false;
+  /** a wrapfigure's text may still be wrapping: a block that is not a body paragraph starts below the image */
+  private wrapping = false;
 
   constructor(
     private options: LatexExportOptions,
@@ -176,6 +195,10 @@ class LatexWriter {
         const latex = this.formula(child.attrs.latex, false);
         if (latex) out += `\\(${latex}\\)`;
       } else if (child.type.name === "hard_break") out += "\\\\\n";
+      else if (isImage(child)) {
+        // a wrapped image is its paragraph's wrapfigure (blockBody), not part of the line
+        if (!child.attrs.wrap) out += this.image(child);
+      }
       else if (child.type.name === "footnote") out += `\\footnote{${this.noteText(child.attrs.text).trim()}}`;
       else if (child.type.name === "cite") {
         const keys = (child.attrs.targets as string[]).map((id) => this.citeKeys.get(id)).filter((key): key is string => !!key);
@@ -191,15 +214,57 @@ class LatexWriter {
     return out.replace(/^(\\\\\n)+/, "").replace(/(\\\\\n)+$/, "");
   }
 
+  /** \includegraphics of an image at its width (a fraction of \linewidth). */
+  image(node: Node, width = `${widthOf(node.attrs.width)}\\linewidth`): string {
+    this.packages.add("graphicx");
+    const path = (this.options.imagePath ?? (() => null))(node.attrs.src) ?? node.attrs.src;
+    return `\\includegraphics[width=${width}]{${path}}`;
+  }
+
+  /** An image line: its images bottom-aligned on one line, 0.02\linewidth apart, aligned as the paragraph. */
+  private imageLine(node: Node): string {
+    const images: string[] = [];
+    node.forEach((child) => {
+      if (isImage(child)) images.push(this.image(child));
+    });
+    const line = images.join(`\\hspace{${widthOf(IMAGE_GAP)}\\linewidth}%\n`);
+    const indent = node.attrs.indent ? `\\hspace*{${node.attrs.indent * 2}em}` : "";
+    if (node.attrs.align === "center") return `{\\centering\n${line}\\par}\n`;
+    if (node.attrs.align === "right") return `{\\raggedleft\n${line}\\par}\n`;
+    return `\\noindent${indent}%\n${line}\\par\n`;
+  }
+
+  /** A body paragraph that starts with a wrapped image: wrapfig's environment before it (DESIGN.md §11.1). */
+  private wrapFigure(image: Node): string {
+    // a wrap still going on ends first (wrapfig would collide), as the editor starts this paragraph below it
+    const clear = this.wrapping ? "\\vtxwrapclear\n" : "";
+    this.packages.add("graphicx");
+    this.packages.add("wrapfig");
+    this.wrapping = true;
+    return `${clear}\\begin{wrapfigure}{${image.attrs.wrap === "left" ? "l" : "r"}}{${widthOf(image.attrs.width)}\\linewidth}\n\\centering\n${this.image(image, "\\linewidth")}\n\\end{wrapfigure}\n`;
+  }
+
   block(node: Node): string {
+    // wrapfig wraps body paragraphs only: before anything else the rest of the image's height is skipped
+    // (\vtxwrapclear, defined in the preamble), as the editor starts such a block below the image
+    const clear = this.wrapping && (node.type.name !== "paragraph" || isImageLine(node));
+    if (clear) this.wrapping = false;
+    const text = this.blockBody(node);
+    return clear ? `\\vtxwrapclear\n${text}` : text;
+  }
+
+  private blockBody(node: Node): string {
     switch (node.type.name) {
       case "paragraph": {
+        if (isImageLine(node)) return this.imageLine(node);
+        const first = node.firstChild;
+        const wrap = first && isImage(first) && first.attrs.wrap ? this.wrapFigure(first) : "";
         const body = this.inline(node).trim();
         if (!body) return "";
         const indented = node.attrs.indent ? `\\noindent\\hspace*{${node.attrs.indent * 2}em}` + body : body;
-        if (node.attrs.align === "center") return `\\begin{center}\n${indented}\n\\end{center}\n`;
-        if (node.attrs.align === "right") return `\\begin{flushright}\n${indented}\n\\end{flushright}\n`;
-        return indented + "\n";
+        if (node.attrs.align === "center") return `${wrap}\\begin{center}\n${indented}\n\\end{center}\n`;
+        if (node.attrs.align === "right") return `${wrap}\\begin{flushright}\n${indented}\n\\end{flushright}\n`;
+        return wrap + indented + "\n";
       }
       case "title": {
         // the first is the document's title; any other a centred large line
@@ -220,6 +285,8 @@ class LatexWriter {
         return this.list(node);
       case "math_display":
         return this.display(node);
+      case "page_command":
+        return `${pageCommandLatex(node.attrs.command, node.attrs.value)}\n`;
       case "horizontal_rule":
         return "\\par\\noindent\\rule{\\linewidth}{0.4pt}\\par\n";
       case "code_block": {
@@ -375,12 +442,16 @@ class LatexWriter {
 export function documentToLatex(doc: Node, options: LatexExportOptions = {}): string {
   const numbers = new Map<string, number>();
   const citeKeys = new Map(bibliographyEntries(doc).map((entry) => [entry.id, entry.key]));
-  const writer = new LatexWriter(options, numbers, citeKeys);
+  // the images' files: figures/fig-1.png, … in the order they appear
+  const paths = imageFiles(doc, "figures").paths;
+  const writer = new LatexWriter({ imagePath: (key) => paths.get(key) ?? null, ...options }, numbers, citeKeys);
   const body = writer.blocks(doc);
   if (options.standalone === false) return body;
   const packages = [...writer.packages].sort().map((name) =>
     name === "ulem" ? "\\usepackage[normalem]{ulem}" : `\\usepackage{${name}}`,
   );
+  // the rest of a wrapped image's lines skipped before a block wrapfig cannot wrap (a heading, a list, an image line)
+  if (writer.packages.has("wrapfig")) packages.push(WRAP_CLEAR);
   // the page, body size, spacing and fonts the editor shows (settings.ts)
   const page = settingsPreamble(documentSettings(doc), chosenSettings(doc), writer.hasCjk);
   const classOptions = page.classOptions.length ? `[${page.classOptions.join(",")}]` : "";

@@ -10251,3 +10251,334 @@ small:not(:is([class*="-demo"], [class*="-preview"]) small) {
 .office-mcp-audit li > span:last-child {
   overflow-wrap: anywhere;
 }
+
+/* ---- Settings: a directory on the left, the chosen page on the right ---- */
+.settings-dialog.is-paged {
+  width: min(920px, calc(100vw - 36px));
+  height: min(720px, calc(100vh - 48px));
+  max-height: none;
+}
+.settings-dialog.is-paged .dialog-header h2 {
+  margin: 0;
+}
+.settings-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-nav button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.settings-nav button.is-active {
+  background: var(--active);
+  color: var(--accent);
+  font-weight: 600;
+}
+.settings-page {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 22px 24px;
+}
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 14px;
+}
+.settings-page-header h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-group + .settings-group,
+.settings-page > .settings-group ~ .formula-spacing-settings,
+.settings-page > * + .settings-section {
+  margin-top: 22px;
+}
+.settings-group > h4 {
+  margin: 0 0 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-page .switch-row strong,
+.settings-page .range-setting strong,
+.settings-page .editor-layout-setting strong,
+.settings-page .theme-mode-row strong {
+  font-size: 12px;
+}
+/* a group names its one control: the control's own label goes */
+.settings-group > .editor-layout-setting > span:first-child,
+.settings-group > .theme-choice-setting > span:first-child {
+  display: none;
+}
+.theme-custom-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.theme-custom-details > summary {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-custom-details[open] > summary {
+  margin-bottom: 10px;
+}
+.theme-custom-details > * + * {
+  margin-top: 10px;
+}
+.theme-custom-details > button {
+  align-self: flex-start;
+}
+/* the shortcut groups as a page of the dialog */
+.settings-page .shortcut-manager-scroll {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+.office-default-font-size-setting.is-compact {
+  max-width: 320px;
+}
+@media (max-width: 720px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-nav button {
+    width: auto;
+  }
+}
+
+/* nothing under 12 px in the settings (the old sub-dialogs' small labels) */
+.settings-page .theme-color-details > summary,
+.settings-page .theme-color-row strong,
+.settings-page .formula-font-setting strong,
+.settings-page .settings-subdialog-trigger strong,
+.settings-page .formula-spacing-customization strong,
+.settings-page .office-formula-shortcut-host-header strong,
+.settings-page .office-formula-shortcut-copy strong,
+.settings-page .office-formula-shortcut-capture kbd,
+.settings-page .formula-hotkey-binding-copy strong,
+.settings-page .formula-hotkey-binding-copy span,
+.settings-page .formula-hotkey-binding-copy code,
+.settings-page .formula-hotkey-binding-row kbd,
+.settings-page .formula-row-hotkey-off,
+.settings-page .office-formula-format-select span,
+.settings-page .formula-hotkey-manager-summary strong {
+  font-size: 12px;
+}
+/* the previews speak for themselves: no "live preview" captions or mock window text */
+.settings-page .formula-inset-preview-titlebar span,
+.settings-page .formula-font-live-preview > span:first-child,
+.settings-page .theme-preview-status {
+  display: none;
+}
+.settings-page .theme-preview-toolbar button,
+.settings-page .theme-preview-controls button {
+  font-size: 12px;
+}
+.shortcut-tabs {
+  position: sticky;
+  top: -16px;
+  z-index: 1;
+}
+/* the page names the agents' section */
+.settings-page[data-settings-page-content="agents"] .settings-section-title h3,
+.settings-page[data-settings-page-content="agents"] .office-settings-heading h3 {
+  display: none;
+}
+.settings-update-button {
+  align-self: flex-start;
+}
+
+/* a tab that is one group: the tab names it */
+.settings-page :is([data-button-shortcuts], [data-anywhere-shortcuts], [data-office-formula-shortcuts]) > .settings-section-title {
+  display: none;
+}
+/* no shortcut: no clear button */
+.settings-page .office-formula-shortcut-clear:disabled {
+  visibility: hidden;
+}
+.settings-dialog .settings-page .formula-spacing-customization .settings-subdialog-trigger strong {
+  font-size: 12px;
+}
+
+.settings-group > .secondary-button,
+.settings-group > .configuration-transfer-actions {
+  align-self: flex-start;
+}
+
+.settings-page .theme-preview-titlebar strong,
+.settings-page .png-background-controls strong,
+.settings-page details > summary {
+  font-size: 12px;
+}
+
+/* Command candidates stay above every panel (a footnote's editor, dialogs). */
+html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
+  --suggestion-zindex: 1200;
+  z-index: 1200 !important;
+}
+
+/* Candidate bar (Settings > Formula editor > Candidates): the candidates in one row, each one's
+   command on a dark band above its picture, the current one lighter. */
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24) !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).top-tip::after,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).bottom-tip::after {
+  display: none;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) ul {
+  flex-flow: row nowrap !important;
+  align-items: stretch !important;
+  column-gap: 1px;
+  max-height: none;
+  padding: 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #ffffff !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li {
+  width: auto !important;
+  min-height: 0;
+  display: grid !important;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  align-items: stretch !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__latex {
+  grid-row: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 0;
+  background: #5c3b18;
+  color: #ffffff !important;
+  font: 13px/1.2 Menlo, Consolas, "JetBrains Mono", monospace !important;
+  text-align: left;
+  white-space: nowrap;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index {
+  grid-column: 1;
+  flex: none;
+  padding-left: 7px;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index:not(:empty)::after {
+  content: ".";
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__latex {
+  grid-column: 2;
+  padding-right: 8px;
+  overflow: visible;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__label,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__keybinding {
+  display: none !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__command,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.has-visualtex-command-preview .ML__popover__command {
+  grid-row: 2;
+  grid-column: 1 / span 2;
+  align-self: stretch !important;
+  min-width: 0 !important;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: #ede4e4;
+  color: #1e232a !important;
+  font-size: 1.15rem !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__index,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__latex {
+  background: #a66a2f;
+  color: #ffffff !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__command {
+  background: #f6ecda;
+  color: #1e232a !important;
+}
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover .ML__popover__index,
+:root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover .ML__popover__latex {
+  background: #7d5226;
+}
+
+/* Settings: a label and its choice on one row */
+.settings-inline-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+.settings-inline-choice > strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-inline-choice .theme-segment {
+  flex: 0 0 220px;
+}

@@ -36,6 +36,7 @@ pub fn system_font_asset_acceptance_json(
     serde_json::to_string(&system_math_glyphs::read_system_font_asset(font_families)?)
         .map_err(|error| format!("VisualTeX could not serialize the system font asset: {error}"))
 }
+mod document_export;
 mod document_library;
 mod office;
 #[cfg(windows)]
@@ -4105,6 +4106,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
+            document_export::read_image_file,
+            document_export::document_export_omml,
+            document_export::pdf_print_open,
+            document_export::pdf_print_save,
+            document_export::pdf_print_close,
             document_library::document_library_list,
             document_library::document_library_read,
             document_library::document_library_create,

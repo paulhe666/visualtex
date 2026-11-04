@@ -7,6 +7,7 @@ pub mod formula_cache;
 pub mod installer;
 pub mod lifecycle;
 pub mod mathtype_fonts;
+pub(crate) mod omml_write;
 #[path = "platform/non_macos_manifest.rs"]
 pub mod manifest;
 pub mod platform;

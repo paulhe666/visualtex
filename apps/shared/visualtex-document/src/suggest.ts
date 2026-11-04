@@ -5,11 +5,13 @@
 // \textbf{…} or \begin{itemize}, \( and \[ open formulas, Escape leaves the text as it is. The command is read from the
 // text, not from the key, so a "\" or "/" typed through an input method starts one just the same.
 import type { MarkType, Node } from "prosemirror-model";
+import { requestImage } from "./images.ts";
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
 import { sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
-import { insertDivider, insertTable, setAlign } from "./blocks.ts";
+import { insertDivider, insertPageCommand, insertTable, setAlign } from "./blocks.ts";
+import { PAGE_NUMBER_STYLES, PAGE_STYLES } from "./pageCommands.ts";
 import { insertDisplayLatex, insertInlineFormula, insertInlineLatex } from "./commands.ts";
 import { insertCodeBlock } from "./codeBlocks.ts";
 import { requestLink } from "./links.ts";
@@ -45,7 +47,7 @@ export type CommandPreview =
   | { kind: "title" }
   | { kind: "list"; ordered: boolean }
   | { kind: "align"; align: "left" | "center" | "right" }
-  | { kind: "block"; block: "table" | "rule" | "quote" | "break" | "code" }
+  | { kind: "block"; block: "table" | "rule" | "quote" | "break" | "code" | "image" }
   | { kind: "ref"; number: number | null };
 
 /** How an entry was chosen: from the menu, by Space after its full name, or by the closing brace. */
@@ -245,6 +247,15 @@ const cite: CommandEntry["run"] = (view, how) => {
   return requestCitation(view.state, view.dispatch, view);
 };
 
+/** \pagenumbering{roman} and its kin: the typed argument when it is one of the command's values, else its default. */
+const pageCommandEntry =
+  (command: string, values: readonly string[], fallback: string): CommandEntry["run"] =>
+  (view, how) => {
+    const typed = how.argument?.trim() ?? "";
+    const value = values.includes(typed) ? typed : fallback;
+    return insertPageCommand(command, value)(view.state, view.dispatch, view);
+  };
+
 const asRun =
   (command: Command): CommandEntry["run"] =>
   (view) =>
@@ -288,6 +299,12 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
   { id: "flushright", label: "\\begin{flushright}", names: ["flushright", "raggedleft"], environment: "flushright", description: t("Right-aligned lines", "右对齐"), preview: { kind: "align", align: "right" }, run: asRun(setAlign("right")) },
   { id: "quote", label: "\\begin{quote}", names: ["quote", "quotation"], environment: "quote", description: t("Quotation", "引用"), preview: { kind: "block", block: "quote" }, run: quote },
   { id: "href", label: "\\href{…}{…}", names: ["href", "url", "link"], description: t("Link (Ctrl+K)", "链接（Ctrl+K）"), preview: { kind: "text", text: "link", style: "underline" }, run: asRun(requestLink) },
+  { id: "includegraphics", label: "\\includegraphics{…}", names: ["includegraphics", "image", "figure", "picture", "graphics", "tupian", "tp", "charutupian", "crtp"], featured: true, description: t("Image", "图片"), preview: { kind: "block", block: "image" }, run: (view) => requestImage(view) },
+  { id: "newpage", label: "\\newpage", names: ["newpage", "pagebreak", "fenye", "fy", "huanye"], featured: true, description: t("Page break", "分页"), preview: { kind: "block", block: "rule" }, run: asRun(insertPageCommand("newpage")) },
+  { id: "clearpage", label: "\\clearpage", names: ["clearpage", "fenye"], description: t("Page break (after floats)", "分页（浮动体之后）"), preview: { kind: "block", block: "rule" }, run: asRun(insertPageCommand("clearpage")) },
+  { id: "pagenumbering", label: "\\pagenumbering{…}", names: ["pagenumbering", "yema", "ym", "yemageshi"], argument: true, description: t("Page numbers: arabic, roman, Roman, alph, Alph, gobble", "页码格式：arabic、roman、Roman、alph、Alph、gobble"), preview: { kind: "text", text: "i ii iii" }, run: pageCommandEntry("pagenumbering", PAGE_NUMBER_STYLES, "arabic") },
+  { id: "pagestyle", label: "\\pagestyle{…}", names: ["pagestyle", "yemianfengge"], argument: true, description: t("Page style: plain, empty", "页面样式：plain、empty"), preview: { kind: "text", text: "plain" }, run: pageCommandEntry("pagestyle", PAGE_STYLES, "plain") },
+  { id: "thispagestyle", label: "\\thispagestyle{…}", names: ["thispagestyle"], argument: true, description: t("This page's style: plain, empty", "本页样式：plain、empty"), preview: { kind: "text", text: "empty" }, run: pageCommandEntry("thispagestyle", PAGE_STYLES, "empty") },
   { id: "hrule", label: "\\hrule", names: ["hrule", "hrulefill"], featured: true, description: t("Horizontal line", "水平线"), preview: { kind: "block", block: "rule" }, run: asRun(insertDivider) },
   { id: "footnote", label: "\\footnote{…}", names: ["footnote", "jiaozhu", "jz"], argument: true, description: t("Footnote (Ctrl+Alt+F)", "脚注（Ctrl+Alt+F）"), preview: { kind: "text", text: "a¹" }, run: footnote },
   { id: "cite", label: "\\cite{…}", names: ["cite", "citep", "citet", "yinyong", "wenxian", "ckwx"], argument: true, description: t("Citation", "引用文献"), preview: { kind: "text", text: "[1]" }, run: cite },
@@ -323,6 +340,7 @@ export const MARKDOWN_COMMANDS: CommandEntry[] = [
   { id: "md-footnote", label: "[^1]", names: ["footnote", "note", "jiaozhu", "zhushi", "jz"], description: t("Footnote (Ctrl+Alt+F)", "脚注（Ctrl+Alt+F）"), preview: { kind: "text", text: "a¹" }, run: footnote },
   { id: "md-cite", label: "[1]", names: ["cite", "citation", "reference", "wenxian", "cankao", "ckwx", "yinwen"], description: t("Citation", "引用文献"), preview: { kind: "text", text: "[1]" }, run: cite },
   { id: "md-references", label: "[1] …", names: ["references", "bibliography", "cankaowenxian", "wenxian", "ckwx"], description: t("Reference entry", "参考文献条目"), preview: { kind: "text", text: "[1] …" }, run: asRun(addReferenceEntry) },
+  { id: "md-image", label: "![…](…)", names: ["image", "img", "picture", "figure", "tupian", "tp", "charutupian", "crtp"], featured: true, description: t("Image", "图片"), preview: { kind: "block", block: "image" }, run: (view) => requestImage(view) },
   { id: "md-rule", label: "---", names: ["hr", "divider", "rule", "line", "fengexian", "fgx"], featured: true, description: t("Horizontal line", "分割线"), preview: { kind: "block", block: "rule" }, run: asRun(insertDivider) },
   { id: "md-bold", label: "**…**", names: ["bold", "strong", "cuti", "jiacu", "ct", "jc"], description: t("Bold", "粗体"), preview: { kind: "text", text: "Bold", style: "bold" }, run: textStyle((v) => v.state.schema.marks.strong) },
   { id: "md-italic", label: "*…*", names: ["italic", "em", "emphasis", "xieti", "xt"], description: t("Italic", "斜体"), preview: { kind: "text", text: "Italic", style: "italic" }, run: textStyle((v) => v.state.schema.marks.em) },
@@ -448,8 +466,10 @@ export function matchCommands(token: CommandToken, doc: Node, math: MathCommandP
 export function commandMenuEntries(state: EditorState): CommandEntry[] {
   const token = commandToken(state);
   if (!token || token.dismissed) return [];
-  const plugin = commandMenuKey.get(state) as (Plugin<CommandToken | null> & { spec: { math?: MathCommandProvider | null } }) | undefined;
-  return matchCommands(token, state.doc, plugin?.spec.math ?? null);
+  const plugin = commandMenuKey.get(state) as (Plugin<CommandToken | null> & { spec: { math?: MathCommandProvider | null; only?: ((entry: CommandEntry) => boolean) | null } }) | undefined;
+  const entries = matchCommands(token, state.doc, plugin?.spec.math ?? null);
+  const only = plugin?.spec.only;
+  return only ? entries.filter(only) : entries;
 }
 
 // ------------------------------------------------------------- the plugin --
@@ -556,11 +576,14 @@ export function commandMenuPlugin(
   math: MathCommandProvider | null = null,
   inputMode: () => InputMode = () => "latex",
   rules: () => MarkdownRuleSwitches = () => ({ blocks: true, marks: true, chinese: true }),
+  /** the entries offered (a footnote's editor: formulas only); default all */
+  only: ((entry: CommandEntry) => boolean) | null = null,
 ): Plugin<CommandToken | null> {
   return new Plugin<CommandToken | null>({
     key: commandMenuKey,
     math,
     inputMode,
+    only,
     state: {
       init: () => null,
       apply(tr, value, _old, state) {
@@ -608,7 +631,7 @@ export function commandMenuPlugin(
         const token = commandToken(view.state);
         if (!token || from !== to || from !== view.state.selection.head || text.length !== 1) return false;
         const query = token.query;
-        const done = (entry: CommandEntry | undefined, how: CommandRun) => (entry ? runCommandEntry(view, entry, how) : false);
+        const done = (entry: CommandEntry | undefined, how: CommandRun) => (entry && (!only || only(entry)) ? runCommandEntry(view, entry, how) : false);
         // After Escape the typed text is just text.
         if (token.dismissed) return false;
         if (token.trigger === "\\" && query === "") {

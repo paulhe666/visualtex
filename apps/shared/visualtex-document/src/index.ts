@@ -21,7 +21,7 @@ export {
   type FormulaSessionCallbacks,
 } from "./formulas.ts";
 export * from "./commands.ts";
-export { createDocumentState, insertEquationReference, numberedEquations, slicePlainText, documentPlugins, equationNumbers, isDocumentEmpty, mathTextToSlice, numberingKey } from "./plugins.ts";
+export { createDocumentState, footnoteEditorPlugins, type FootnoteEditorOptions, insertEquationReference, numberedEquations, slicePlainText, documentPlugins, equationNumbers, isDocumentEmpty, mathTextToSlice, numberingKey } from "./plugins.ts";
 export { hasMathDelimiters, parseMathText, splitInlineMath, type MathTextBlock } from "./mathText.ts";
 export { documentToLatex, escapeLatexText, sliceToLatex, type LatexExportOptions } from "./latex.ts";
 export { parseDocument, serializeDocument, DOCUMENT_FILE_FORMAT } from "./fileFormat.ts";
@@ -109,6 +109,8 @@ export {
   citationKey,
   citeLabel,
   footnotes,
+  footnoteEditorDoc,
+  footnoteEditorText,
   insertCitation,
   insertFootnote,
   notesKey,
@@ -118,3 +120,25 @@ export {
   type FootnoteEditRequest,
 } from "./notes.ts";
 export { paginationKey, paginationPlugin, refreshPagination, type PageGeometry, type PaginationOptions } from "./pagination.ts";
+export {
+  DEFAULT_IMAGE_WIDTH,
+  IMAGE_GAP,
+  documentImageKeys,
+  imageEntry,
+  imageDataUrl,
+  imageFiles,
+  imageUrl,
+  insertImagesAtSelection,
+  isImageLine,
+  registerImageBytes,
+  registerImageFile,
+  resolveImageSource,
+  setImageAlign,
+  setImageFileResolver,
+  setImageWrap,
+  type ImageLabels,
+} from "./images.ts";
+export { graphicsPaths } from "./latexImport.ts";
+export { IMAGE_REQUEST_EVENT, requestImage } from "./images.ts";
+export { docxFormulaRequests, documentToDocx, equationBookmark, type DocxEquationNumber, type DocxExportOptions, type DocxFormula, type DocxFormulaRequest } from "./docx.ts";
+export { formatPageNumber, hasPageNumbering, pageCommandLatex, pageLabels, parsePageCommand, PAGE_NUMBER_STYLES } from "./pageCommands.ts";

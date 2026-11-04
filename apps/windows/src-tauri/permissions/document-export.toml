@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-document-export"
+description = "Allow the main window to export documents to Word (formulas as Word equations) and PDF (through the hidden print window), and to read image files dropped on a document."
+commands.allow = [
+  "read_image_file",
+  "document_export_omml",
+  "pdf_print_open",
+  "pdf_print_save",
+  "pdf_print_close"
+]

@@ -2,6 +2,7 @@
 // the formula editor's "\" suggestions are (numbered rows, the command, a picture of what it makes). The keys
 // stay in the text: ↑/↓, Enter or Tab, 1-9, Esc are the editor's; a click runs an entry too.
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Image as ImageIcon } from "lucide-react";
 import type { EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import {
@@ -98,6 +99,7 @@ function Preview({ preview }: { preview: CommandPreview }) {
       }
       if (preview.block === "rule") return <span className="vtx-cmd-rule" />;
       if (preview.block === "code") return <span className="vtx-cmd-code">{"{ }"}</span>;
+      if (preview.block === "image") return <ImageIcon size={18} strokeWidth={1.6} aria-hidden="true" />;
       if (preview.block === "quote") {
         return (
           <span className="vtx-cmd-quote">
@@ -119,6 +121,8 @@ export function CommandMenu(props: { view: EditorView | null; state: EditorState
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [above, setAbove] = useState(false);
+  // the menu's width (the candidate bar is as wide as its entries)
+  const [width, setWidth] = useState(392);
   const index = token && entries.length ? Math.min(token.index, entries.length - 1) : -1;
   const visible = !!(view && frame && token && !token.dismissed && entries.length);
 
@@ -133,11 +137,13 @@ export function CommandMenu(props: { view: EditorView | null; state: EditorState
     const height = menuRef.current.offsetHeight;
     const room = window.innerHeight - anchor.bottom - 8;
     setAbove(room < height && anchor.top - 8 > room);
+    const measured = menuRef.current.offsetWidth + 12;
+    if (Math.abs(measured - width) > 1) setWidth(measured);
   });
   if (!visible || !anchor) return null;
 
   const box = frame!.getBoundingClientRect();
-  const left = Math.max(4, Math.min(anchor.left - box.left + frame!.scrollLeft - 10, frame!.scrollWidth - 392));
+  const left = Math.max(4, Math.min(anchor.left - box.left + frame!.scrollLeft - 10, frame!.scrollWidth - width));
   const top = above
     ? anchor.top - box.top + frame!.scrollTop - 6 - (menuRef.current?.offsetHeight ?? 0)
     : anchor.bottom - box.top + frame!.scrollTop + 6;

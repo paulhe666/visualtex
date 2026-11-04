@@ -38,7 +38,13 @@ import {
   type FootnoteEditRequest,
   type FormulaHost,
   type FormulaSession,
+  IMAGE_REQUEST_EVENT,
+  imageFiles,
+  insertImagesAtSelection,
+  registerImageFile,
 } from "../../../shared/visualtex-document/src/index.ts";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { cachedPreviewMarkup } from "../components/MathPreview";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
@@ -86,6 +92,8 @@ export interface DocumentEditorHandle {
   view(): EditorView | null;
   run(command: Command): boolean;
   toLatex(): string;
+  /** The document's images as the export writes them (figures/fig-1.png …, or assets/ for Markdown). */
+  imageFiles(folder: string): Array<{ path: string; bytes: Uint8Array }>;
   /** The document as Markdown (Typora / Obsidian / GitHub flavour). */
   toMarkdown(): string;
   serialize(): string;
@@ -101,17 +109,35 @@ export interface DocumentEditorHandle {
 interface Props {
   initialJson?: unknown;
   onChange?: (doc: Node) => void;
-  /** An image pasted or dropped into the text (a screenshot of a formula): the app recognises it (OCR) and puts the
-   *  formula at the caret (the drop point for a drop). */
+  /** An image pasted into an open formula (a screenshot of a formula): the app recognises it (OCR) and puts it in
+   *  the formula. In the text an image is inserted as an image (DESIGN.md §11). */
   onImage?: (file: File) => void;
 }
 
-/** The image a paste or drop carries, unless it also carries text (then the text is pasted). */
-function imageOf(data: DataTransfer | null): File | null {
-  if (!data) return null;
-  const image = [...data.files].find((file) => file.type.startsWith("image/"));
-  if (!image) return null;
-  return data.getData("text/plain").trim() ? null : image;
+/** The images a paste or drop carries, unless it also carries text (then the text is pasted). */
+function imagesOf(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const images = [...data.files].filter((file) => file.type.startsWith("image/"));
+  if (!images.length) return [];
+  return data.getData("text/plain").trim() ? [] : images;
+}
+
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg|tiff?|heic|avif)$/i;
+
+/** When the page last took a dropped image itself (a webview that gives drops to the page as well as to Tauri). */
+let lastPageDrop = 0;
+
+/** Image files into the document at the selection (or a page point): an image line, or onto the line there. */
+async function insertImageFiles(view: EditorView, files: Blob[], at?: { x: number; y: number }) {
+  const keys = (await Promise.all(files.map((file) => registerImageFile(file)))).filter((key): key is string => !!key);
+  if (!keys.length || view.isDestroyed) return;
+  if (at) {
+    const hit = view.posAtCoords({ left: at.x, top: at.y });
+    if (hit) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(hit.pos))));
+  }
+  const tr = insertImagesAtSelection(view.state, keys, view.state.schema);
+  if (tr) view.dispatch(tr.scrollIntoView());
+  view.focus();
 }
 
 function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) => void) | undefined): FormulaHost {
@@ -269,6 +295,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
   onChangeRef.current = onChange;
   const onImageRef = useRef(onImage);
   onImageRef.current = onImage;
+  // a footnote's formulas: the document's formula fields at the footnote panel's size
+  const [noteFormulaHost] = useState(() => createFormulaHost(() => 14, () => onImageRef.current));
   const language = useEditorStore((state) => state.language);
   const lang = language === "en" ? "en" : "zh";
 
@@ -291,6 +319,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         lang === "en"
           ? { plainText: "Plain Text", copy: "Copy", copied: "Copied", language: "Language" }
           : { plainText: "纯文本", copy: "复制", copied: "已复制", language: "语言" },
+      imageLabels: () =>
+        lang === "en"
+          ? { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text (image left)", wrapRight: "Wrap text (image right)" }
+          : { left: "左对齐", center: "居中", right: "右对齐", wrapLeft: "文字环绕（图片在左）", wrapRight: "文字环绕（图片在右）" },
     });
 
   useEffect(() => {
@@ -306,21 +338,20 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     const view = new EditorView(host, {
       state: makeState(doc),
       attributes: { class: "vtx-document", spellcheck: "false" },
-      handlePaste(_view, event) {
-        const image = onImageRef.current && imageOf(event.clipboardData);
-        if (!image) return false;
+      handlePaste(pasteView, event) {
+        // an image in the text is inserted (an image pasted in an open formula is the formula's: OCR)
+        const images = imagesOf(event.clipboardData);
+        if (!images.length) return false;
         event.preventDefault();
-        onImageRef.current?.(image);
+        void insertImageFiles(pasteView, images);
         return true;
       },
       handleDrop(dropView, event) {
-        const image = onImageRef.current && imageOf((event as DragEvent).dataTransfer);
-        if (!image) return false;
+        const images = imagesOf((event as DragEvent).dataTransfer);
+        if (!images.length) return false;
         event.preventDefault();
-        const at = dropView.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY });
-        if (at) dropView.dispatch(dropView.state.tr.setSelection(TextSelection.near(dropView.state.doc.resolve(at.pos))));
-        dropView.focus();
-        onImageRef.current?.(image);
+        lastPageDrop = Date.now();
+        void insertImageFiles(dropView, images, { x: (event as DragEvent).clientX, y: (event as DragEvent).clientY });
         return true;
       },
       dispatchTransaction(tr) {
@@ -345,6 +376,52 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       },
     });
     viewRef.current = view;
+    // \includegraphics, "/image" and the toolbar's image button: the system's file picker
+    const pick = () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.multiple = true;
+      input.addEventListener("change", () => {
+        const files = [...(input.files ?? [])];
+        if (files.length) void insertImageFiles(view, files);
+      });
+      input.click();
+    };
+    host.addEventListener(IMAGE_REQUEST_EVENT, pick);
+    // Files dropped from the system: the Windows webview gives them to Tauri (its drag-drop handler), not to the page
+    let unlistenDrop: (() => void) | null = null;
+    let disposed = false;
+    if (isTauri()) {
+      void getCurrentWebview()
+        .onDragDropEvent((event) => {
+          const payload = event.payload;
+          if (payload.type !== "drop" || view.isDestroyed || Date.now() - lastPageDrop < 1500) return;
+          const paths = payload.paths.filter((path) => IMAGE_FILE.test(path));
+          if (!paths.length) return;
+          const scale = window.devicePixelRatio || 1;
+          const x = payload.position.x / scale;
+          const y = payload.position.y / scale;
+          const frame = (view.dom.closest(".mc-canvas") ?? view.dom).getBoundingClientRect();
+          if (x < frame.left || x > frame.right || y < frame.top || y > frame.bottom) return;
+          // the page may take the same drop itself (its own drop event, which can come after this one)
+          window.setTimeout(() => {
+            if (Date.now() - lastPageDrop < 1500 || view.isDestroyed) return;
+            void Promise.all(
+              paths.map((path) =>
+                invoke<string>("read_image_file", { path })
+                  .then((base64) => new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: path.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "" }))
+                  .catch(() => null),
+              ),
+            ).then((blobs) => insertImageFiles(view, blobs.filter((b): b is Blob => !!b), { x, y }));
+          }, 250);
+        })
+        .then((dispose) => {
+          if (disposed) dispose();
+          else unlistenDrop = dispose;
+        })
+        .catch(() => undefined);
+    }
     setPmState(view.state);
     useDocumentEditorStore.getState().setEditor(view, view.state);
     view.focus();
@@ -353,6 +430,9 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     const unsubscribeFonts = subscribeFormulaFontRevision(refresh);
     const unsubscribeSymbols = subscribeCustomSymbols(refresh);
     return () => {
+      disposed = true;
+      unlistenDrop?.();
+      host.removeEventListener(IMAGE_REQUEST_EVENT, pick);
       unsubscribeFonts();
       unsubscribeSymbols();
       view.destroy();
@@ -383,6 +463,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     toLatex() {
       const view = viewRef.current;
       return view ? documentToLatex(view.state.doc, { formulaLatex: portableFormulaLatex }) : "";
+    },
+    imageFiles(folder) {
+      const view = viewRef.current;
+      return view ? imageFiles(view.state.doc, folder).files : [];
     },
     toMarkdown() {
       const view = viewRef.current;
@@ -530,6 +614,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       // the pages: white, then the gap between them (the canvas shows through)
       background: `repeating-linear-gradient(to bottom, var(--vtx-paper, #fff) 0, var(--vtx-paper, #fff) ${pageHeight}px, transparent ${pageHeight}px, transparent ${pageHeight + PAGE_GAP}px)`,
       ["--vtx-body-font" as string]: bodyFontFamily(settings),
+      // one TeX point on the screen (images: wrapfig's \columnsep and \intextsep)
+      ["--vtx-pt" as string]: `${(96 / 72) * zoom}px`,
       ["--vtx-line-height" as string]: String(SINGLE_LINE_HEIGHT * settings.lineSpacing),
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
@@ -595,7 +681,17 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
           document.body,
         )}
       {footnote && view && (
-        <FootnoteDialog key={`${footnote.pos}`} view={view} pos={footnote.pos} rect={footnote.rect} lang={lang} onClose={() => setFootnote(null)} />
+        <FootnoteDialog
+          key={`${footnote.pos}`}
+          view={view}
+          pos={footnote.pos}
+          rect={footnote.rect}
+          lang={lang}
+          host={noteFormulaHost}
+          mathCommands={documentMathCommands}
+          font={settings ? bodyFontFamily(settings) : ""}
+          onClose={() => setFootnote(null)}
+        />
       )}
     </div>
   );

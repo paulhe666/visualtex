@@ -755,6 +755,8 @@ export function visualTexJudgeInput(
     deferLetterRuns: !(options?.finishing) && visualTexWordBeforeCaret(model) !== ""
   };
   const before = model.getValue();
+  // a formula not edited since it was set keeps its letters as they are
+  if (before === mathfield.visualTexUnjudged) return false;
   const after = visualTexApplyInputJudgment(before, judgment);
   if (after === before) return false;
   const revert = visualTexApplyInputJudgment(before, { ...judgment, revert: true });

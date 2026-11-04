@@ -7,6 +7,8 @@ import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
+  DOCUMENT_EXPORT_PDF_EVENT,
+  DOCUMENT_EXPORT_WORD_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
@@ -57,7 +59,6 @@ import {
 import { FormulaToolbar } from "./toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpDialog } from "./components/HelpDialog";
 import { OcrDialog } from "./components/OcrDialog";
@@ -176,7 +177,6 @@ function App() {
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
   const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
@@ -1295,7 +1295,6 @@ function App() {
 
       if (
         settingsOpen ||
-        formulaHotkeyManagerOpen ||
         ocrOpen ||
         historyOpen ||
         exportOpen ||
@@ -1384,7 +1383,6 @@ function App() {
     keypadMinimizeOnCopy,
     latexFormatProfile,
     settingsOpen,
-    formulaHotkeyManagerOpen,
     ocrOpen,
     historyOpen,
     exportOpen,
@@ -1806,6 +1804,16 @@ function App() {
                 <ClipboardCopy size={16} />
                 <span>{isEn ? "Copy as Markdown" : "复制为 Markdown"}</span>
               </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_WORD_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export Word" : "导出 Word"}</span>
+                <kbd>.docx</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_PDF_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export PDF" : "导出 PDF"}</span>
+                <kbd>.pdf</kbd>
+              </button>
               </>) : (<>
               <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
                 <FilePlus2 size={16} />
@@ -2118,14 +2126,6 @@ function App() {
           setSettingsOpen(false);
           void runUpdateCheck(true);
         }}
-        onOpenFormulaHotkeys={() => {
-          setSettingsOpen(false);
-          setFormulaHotkeyManagerOpen(true);
-        }}
-      />
-      <FormulaHotkeyManagerDialog
-        open={formulaHotkeyManagerOpen}
-        onClose={() => setFormulaHotkeyManagerOpen(false)}
       />
       <HistoryPanel
         open={historyOpen}

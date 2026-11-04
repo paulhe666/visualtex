@@ -8,6 +8,7 @@ import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { documentSettings, PAPER_SIZES, type DocumentSettings } from "./settings.ts";
 import { requestFootnoteEdit } from "./notes.ts";
+import { hasPageNumbering, isPageBreak, pageLabels } from "./pageCommands.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -29,6 +30,9 @@ interface PageBreak {
   /** inside a paragraph (at the start of a line) or between blocks */
   inline: boolean;
   height: number;
+  /** a break before a textblock's first line: a transparent top border on the block (its heading number and first-line indent
+   *  moves with its text), at this block position */
+  block?: number;
 }
 
 interface PaginationState {
@@ -47,7 +51,13 @@ interface Unit {
   inline: boolean;
   /** the last line of a heading: it goes to the next page with what follows it */
   keepWithNext: boolean;
+  /** a textblock's first line: the block's position */
+  block?: number;
   footnotes: number[];
+  /** \newpage / \clearpage: what follows starts a new page */
+  breakAfter?: boolean;
+  /** a page command (\pagenumbering…): the page it lands on numbers by it */
+  command?: { command: string; value: string };
 }
 
 const SEPARATOR_HEIGHT_EM = 0.9;
@@ -71,21 +81,29 @@ function spacer(height: number, inline: boolean): () => HTMLElement {
 function buildDecorations(doc: Node, breaks: PageBreak[]): DecorationSet {
   return DecorationSet.create(
     doc,
-    breaks.map((b) =>
-      Decoration.widget(b.pos, spacer(b.height, b.inline), {
+    breaks.map((b) => {
+      const block = b.block !== undefined ? doc.nodeAt(b.block) : null;
+      if (block?.isTextblock) {
+        return Decoration.node(b.block!, b.block! + block.nodeSize, {
+          class: "vtx-page-break-before",
+          style: `border-top:${b.height}px solid transparent`,
+          "data-page-break": String(b.height),
+        });
+      }
+      return Decoration.widget(b.pos, spacer(b.height, b.inline), {
         side: -1,
         ignoreSelection: true,
         key: `page-break-${b.pos}-${b.inline ? "i" : "b"}-${Math.round(b.height * 10)}`,
-      }),
-    ),
+      });
+    }),
   );
 }
 
 const sameBreaks = (a: PageBreak[], b: PageBreak[]) =>
-  a.length === b.length && a.every((x, i) => x.pos === b[i].pos && x.inline === b[i].inline && Math.abs(x.height - b[i].height) < 0.5);
+  a.length === b.length && a.every((x, i) => x.pos === b[i].pos && x.inline === b[i].inline && x.block === b[i].block && Math.abs(x.height - b[i].height) < 0.5);
 
 /** The lines of a textblock's DOM, from its text and inline boxes (top/bottom in client coordinates). */
-function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left: number }> {
+export function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left: number }> {
   const rects: DOMRect[] = [];
   const range = document.createRange();
   for (const child of Array.from(dom.childNodes)) {
@@ -94,6 +112,8 @@ function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left:
       for (const r of Array.from(range.getClientRects())) if (r.height > 0) rects.push(r);
     } else if (child instanceof HTMLElement) {
       if (child.classList.contains("vtx-page-break")) continue;
+      // a wrapped image is beside the lines, not one of them (its height goes with the first line: collectUnits)
+      if (child.classList.contains("is-wrap-left") || child.classList.contains("is-wrap-right")) continue;
       // a mark's span holds text; an inline formula or a footnote is one box
       if (getComputedStyle(child).display === "inline") {
         range.selectNodeContents(child);
@@ -142,21 +162,25 @@ function collectUnits(view: EditorView): Unit[] {
       const lines = lineBoxes(dom);
       if (!lines.length) {
         const r = dom.getBoundingClientRect();
-        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [] });
+        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [], block: pos });
         return;
       }
       let previous = -1;
+      // a wrapped image takes its paragraph's first line along: wrapfig puts them on the next page together
+      const wrapped = dom.querySelector(":scope > .is-wrap-left, :scope > .is-wrap-right");
+      const wrapBottom = wrapped ? wrapped.getBoundingClientRect().bottom : -Infinity;
       lines.forEach((line, index) => {
         const start = index === 0 ? pos + 1 : lineStart(view, pos + 1, pos + node.nodeSize - 1, line);
         if (start === null || start <= previous) return;
         previous = start;
         units.push({
           top: index === 0 ? Math.min(line.top, dom.getBoundingClientRect().top) : line.top,
-          bottom: line.bottom,
+          bottom: index === 0 ? Math.max(line.bottom, wrapBottom) : line.bottom,
           pos: start,
           inline: true,
           keepWithNext: (node.type.name === "heading" || node.type.name === "title") && index === lines.length - 1,
           footnotes: [],
+          ...(index === 0 ? { block: pos } : {}),
         });
       });
       return;
@@ -167,7 +191,12 @@ function collectUnits(view: EditorView): Unit[] {
       return;
     }
     const r = dom.getBoundingClientRect();
-    units.push({ top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: false, footnotes: [] });
+    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: false, footnotes: [] };
+    if (node.type.name === "page_command") {
+      unit.breakAfter = isPageBreak(node);
+      unit.command = { command: node.attrs.command, value: node.attrs.value };
+    }
+    units.push(unit);
   };
   view.state.doc.forEach((node, offset) => visit(node, offset));
   return units;
@@ -247,9 +276,10 @@ class PaginationView {
     const origin = view.dom.getBoundingClientRect().top;
 
     // the spacers now on the screen: what is below them is that much lower than it would be without them
-    const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break")).map((el) => {
+    const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break, [data-page-break]")).map((el) => {
       const r = el.getBoundingClientRect();
-      return { top: r.top, height: r.height };
+      // a block's top border: from its top
+      return el.dataset.pageBreak !== undefined ? { top: r.top, height: Number(el.dataset.pageBreak) || 0 } : { top: r.top, height: r.height };
     });
     const natural = (y: number) => {
       let shift = 0;
@@ -278,7 +308,9 @@ class PaginationView {
     // place the units page by page
     const breaks: PageBreak[] = [];
     const pageNotes: number[][] = [[]];
+    const pageCommands: Array<Array<{ command: string; value: string }>> = [[]];
     let page = 0;
+    let breakPending = false;
     let offset = 0;
     let reserve = 0;
     const roomFor = (unit: Unit, reserved: number) =>
@@ -287,18 +319,35 @@ class PaginationView {
       const unit = units[i];
       let top = unit.top + offset;
       let bottom = unit.bottom + offset;
-      // past the foot of its page (an earlier block ran over): it starts on the page it is on
-      while (top >= page * stride + contentHeight - 0.5) {
-        page++;
-        reserve = 0;
-        pageNotes[page] = [];
+      // after \newpage: the next page (from its top)
+      if (breakPending) {
+        breakPending = false;
+        if (top < (page + 1) * stride) {
+          const push = (page + 1) * stride - top;
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
+          offset += push;
+          top += push;
+          bottom += push;
+        }
       }
-      if (top < page * stride) {
-        const push = page * stride - top;
-        breaks.push({ pos: unit.pos, inline: unit.inline, height: push });
-        offset += push;
-        top += push;
-        bottom += push;
+      // past the foot of its page (an earlier block ran over): it starts on the page it is on — unless a heading on
+      // this page is right before it: then both go to the next page (below)
+      const previous = i > 0 ? units[i - 1] : null;
+      const headingBefore =
+        !!previous?.keepWithNext && previous.top + offset > page * stride + 0.5 && previous.bottom + offset <= page * stride + contentHeight;
+      if (!headingBefore) {
+        while (top >= page * stride + contentHeight - 0.5) {
+          page++;
+          reserve = 0;
+          pageNotes[page] = [];
+        }
+        if (top < page * stride) {
+          const push = page * stride - top;
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
+          offset += push;
+          top += push;
+          bottom += push;
+        }
       }
       const extra = roomFor(unit, reserve);
       const atPageTop = top <= page * stride + 0.5;
@@ -313,7 +362,7 @@ class PaginationView {
         }
         const firstTop = first.top + offset;
         const push = (page + 1) * stride - firstTop;
-        breaks.push({ pos: first.pos, inline: first.inline, height: push });
+        breaks.push({ pos: first.pos, inline: first.inline, height: push, block: first.block });
         offset += push;
         page++;
         reserve = 0;
@@ -327,6 +376,8 @@ class PaginationView {
       }
       reserve += roomFor(unit, reserve);
       pageNotes[page].push(...unit.footnotes);
+      if (unit.command) (pageCommands[page] ??= []).push(unit.command);
+      if (unit.breakAfter) breakPending = true;
       // a block taller than the rest of the page runs over its foot
       if (bottom > page * stride + contentHeight) {
         while (bottom > page * stride + contentHeight) {
@@ -343,7 +394,9 @@ class PaginationView {
     if (state && !sameBreaks(state.breaks, breaks)) {
       view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
     }
-    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes);
+    // the pages' numbers: LaTeX's when the document has page-numbering commands
+    const labels = hasPageNumbering(view.state.doc) ? pageLabels(pages, pageCommands).map((l) => l.text) : null;
+    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes, labels);
   }
 
   /** Each footnote's height at the foot of a page (its text set at the text area's width). */
@@ -367,11 +420,12 @@ class PaginationView {
     pages: number,
     pageNotes: number[][],
     notes: Array<{ pos: number; text: string; number: number }>,
+    labels: string[] | null,
   ) {
     const paper = PAPER_SIZES[settings.paper];
     const sheetHeight = pages * stride - (stride - paper.height * pxPerMm);
     sheet.style.minHeight = `${sheetHeight}px`;
-    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text])]);
+    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text]), labels]);
     if (key === this.lastKey) return;
     this.lastKey = key;
     const label = this.options.pageLabel ?? ((page: number, total: number) => `${page} / ${total}`);
@@ -388,7 +442,7 @@ class PaginationView {
         );
       }
       parts.push(
-        `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom / 2) * pxPerMm}px">${escapeHtml(label(page + 1, pages))}</div>`,
+        `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom / 2) * pxPerMm}px">${escapeHtml(labels ? labels[page] ?? "" : label(page + 1, pages))}</div>`,
       );
     }
     const html = parts.join("");

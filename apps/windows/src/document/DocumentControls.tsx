@@ -25,6 +25,7 @@ import {
   SquareCode,
   Strikethrough,
   Table,
+  Image as ImageIcon,
   Underline,
   Undo2,
   Link2,
@@ -40,6 +41,7 @@ import {
   indent,
   insertCodeBlock,
   insertTable,
+  requestImage,
   isInTable,
   openFormulaId,
   requestLink,
@@ -795,6 +797,9 @@ export function DocumentTextToolbar(props: { leading?: ReactNode } = {}) {
           />
         )}
       </Popover>
+      <Button label={t(lang, "Image", "图片")} onClick={() => view && requestImage(view)}>
+        <ImageIcon size={16} strokeWidth={1.8} />
+      </Button>
       <Button label={t(lang, "Code block", "代码块")} onClick={() => run(view, insertCodeBlock(""))}>
         <SquareCode size={16} strokeWidth={1.8} />
       </Button>
