@@ -1571,7 +1571,7 @@ export function SettingsDialog({
                   >
                     <span>{isEn ? "Live preview" : "实时预览"}</span>
                     <MathPreview
-                      latex={String.raw`\begin{gathered}AxMath\ \delta\Delta\sigma\Sigma\ 0123456789\ \text{中文公式}\\ \frac{-b\pm\sqrt{b^2-4ac}}{2a}\end{gathered}`}
+                      latex={String.raw`\begin{gathered}VisualTeX\ \delta\Delta\sigma\Sigma\ 0123456789\ \text{中文公式}\\ \frac{-b\pm\sqrt{b^2-4ac}}{2a}\\ i\hbar\frac{\partial}{\partial t}\Psi(\mathbf{r},t)=\left[-\frac{\hbar^2}{2m}\nabla^2+V(\mathbf{r},t)\right]\Psi(\mathbf{r},t)\end{gathered}`}
                       staticLayout
                     />
                   </div>
