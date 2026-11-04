@@ -505,6 +505,8 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     // An inline formula is set in text style, as in the text (and as its static markup).
     if (!displayRef.current) field.defaultMode = "inline-math";
     installDocumentFieldStyle(field);
+    // the formula as the field reads it: only an edit is reported back (not the field's own form of the same LaTeX)
+    if (normalizeChineseLatex(field.value) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeChineseLatex(field.value);
     if (passiveRef.current) {
       // only shown: the part a selection through the text takes, once the engine has drawn it
       readyRef.current = true;

@@ -6,6 +6,7 @@ import { splitInlineMath } from "./mathText.ts";
 import { bibliographyEntries } from "./notes.ts";
 import { chosenSettings, documentSettings, settingsPreamble } from "./settings.ts";
 import { IMAGE_GAP, imageFiles, isImage, isImageLine } from "./images.ts";
+import { pageCommandLatex } from "./pageCommands.ts";
 
 export interface LatexExportOptions {
   /** The formula's LaTeX made portable (the app's own conventions -> plain amsmath). */
@@ -284,6 +285,8 @@ class LatexWriter {
         return this.list(node);
       case "math_display":
         return this.display(node);
+      case "page_command":
+        return `${pageCommandLatex(node.attrs.command, node.attrs.value)}\n`;
       case "horizontal_rule":
         return "\\par\\noindent\\rule{\\linewidth}{0.4pt}\\par\n";
       case "code_block": {

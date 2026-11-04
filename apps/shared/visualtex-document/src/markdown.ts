@@ -4,6 +4,7 @@
 // with VisualTeX's rules for math, highlight and the few HTML tags Markdown writers use.
 import MarkdownIt, { type StateBlock, type StateCore, type StateInline, type Token } from "markdown-it";
 import { DEFAULT_IMAGE_WIDTH, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
+import { pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
 import { MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
 import { Slice, type Mark, type Node, type Schema } from "prosemirror-model";
 import { Transform } from "prosemirror-transform";
@@ -13,6 +14,7 @@ import { FONT_SIZES } from "./schema.ts";
 import { bibliographyEntries, citeLabel } from "./notes.ts";
 import { documentSettings, equationLabels } from "./settings.ts";
 import { MARKDOWN_TITLE_CLOSE, MARKDOWN_TITLE_OPEN } from "./latexImport.ts";
+import { resolveLatexMarkers } from "./latexMarkers.ts";
 
 /** The highlight colour ==text== gets (the first of the highlight swatches). */
 export const MARKDOWN_HIGHLIGHT = "#fff59d";
@@ -163,6 +165,12 @@ function tidy(state: StateCore) {
         i--;
         continue;
       }
+      // a page command: <!-- \pagenumbering{roman} -->, or a page break as HTML writes it
+      const page = pageCommandToken(state, token.content);
+      if (page) {
+        tokens.splice(i, 1, page);
+        continue;
+      }
       const line = imageLineTokens(state, token.content);
       if (line) {
         tokens.splice(i, 1, ...line);
@@ -308,6 +316,18 @@ function imageLineTokens(state: StateCore, html: string): Token[] | null {
   return [open, inline, new state.Token("paragraph_close", "p", -1)];
 }
 
+/** A page command block: <!-- \newpage --> and the like, or <div style="page-break-after: always"></div>. */
+function pageCommandToken(state: StateCore, html: string): Token | null {
+  const comment = /^\s*<!--\s*(\\[\s\S]*?)\s*-->\s*$/.exec(html);
+  const parsed = comment ? parsePageCommand(comment[1]) : /^\s*<div\s+style\s*=\s*["']\s*page-break-(?:after|before)\s*:\s*always;?\s*["']\s*>\s*<\/div>\s*$/i.test(html) ? { command: "newpage", value: "" } : null;
+  if (!parsed) return null;
+  const token = new state.Token("vtx_page_command", "div", 0);
+  token.block = true;
+  token.attrSet("command", parsed.command);
+  token.attrSet("value", parsed.value);
+  return token;
+}
+
 /** <h1 align="center">…</h1> on lines of its own: the document's title, its text read as Markdown. */
 function titleLines(state: StateCore) {
   const tokens = state.tokens;
@@ -393,6 +413,7 @@ function parserFor(schema: Schema): MarkdownParser {
   parser = new MarkdownParser(schema, createMarkdownIt(), {
     blockquote: { block: "blockquote" },
     paragraph: { block: "paragraph", getAttrs: (tok) => (tok.attrGet("align") ? { align: tok.attrGet("align") } : null) },
+    vtx_page_command: { node: "page_command", getAttrs: (tok) => ({ command: tok.attrGet("command"), value: tok.attrGet("value") ?? "" }), noCloseToken: true },
     vtx_image: {
       node: "image",
       getAttrs: (tok) => ({ src: tok.attrGet("src"), alt: tok.attrGet("alt") ?? "", width: Number(tok.attrGet("width")) || DEFAULT_IMAGE_WIDTH, wrap: tok.attrGet("wrap") }),
@@ -431,15 +452,17 @@ function parserFor(schema: Schema): MarkdownParser {
 }
 
 /** Markdown text as a document. */
-export function markdownToDoc(schema: Schema, text: string): Node {
-  return linkReferences(parserFor(schema).parse(text.replace(/\r\n?/g, "\n")));
+export function markdownToDoc(schema: Schema, text: string, citationKeys?: Map<string, string>): Node {
+  return linkReferences(resolveLatexMarkers(parserFor(schema).parse(text.replace(/\r\n?/g, "\n")), citationKeys));
 }
 
-/** Markdown text as a slice to paste (a single paragraph pastes inline). */
-export function markdownToSlice(schema: Schema, text: string): Slice {
-  const doc = markdownToDoc(schema, text);
+/** Markdown text as a slice to paste (a single paragraph pastes inline); `citationKeys`: the document's entries. */
+export function markdownToSlice(schema: Schema, text: string, citationKeys?: Map<string, string>): Slice {
+  const doc = markdownToDoc(schema, text, citationKeys);
   const single = doc.childCount === 1 && doc.firstChild!.type.name === "paragraph";
-  return single ? new Slice(doc.firstChild!.content, 0, 0) : new Slice(doc.content, 1, 1);
+  if (single) return new Slice(doc.firstChild!.content, 0, 0);
+  // open into the first and last blocks only when they hold text (a page command or a rule is closed)
+  return new Slice(doc.content, doc.firstChild?.isTextblock ? 1 : 0, doc.lastChild?.isTextblock ? 1 : 0);
 }
 
 /** Whether pasted text reads as Markdown (blocks or marks), not just plain prose. */
@@ -642,6 +665,12 @@ function serializerFor(
       state.text(text, false);
       state.ensureNewLine();
       state.write(ticks);
+      state.closeBlock(node);
+    },
+    page_command(state, node) {
+      // a page break as Typora and the browsers print one; the other commands kept as a comment
+      if (node.attrs.command === "newpage" || node.attrs.command === "clearpage") state.write('<div style="page-break-after: always;"></div>');
+      else state.write(`<!-- ${pageCommandLatex(node.attrs.command, node.attrs.value)} -->`);
       state.closeBlock(node);
     },
     horizontal_rule(state, node) {
@@ -983,7 +1012,7 @@ export function readMarkdown(schema: Schema, raw: string): { doc: Node; source: 
   const bodyStart = front ? front[0].length : 0;
   const body = text.slice(bodyStart);
   const parser = parserFor(schema);
-  let doc = linkReferences(parser.parse(body));
+  let doc = linkReferences(resolveLatexMarkers(parser.parse(body)));
   if (front) {
     const yaml = schema.nodes.code_block.create({ language: "yaml" }, front[1] ? schema.text(front[1]) : null);
     doc = doc.type.create(doc.attrs, [yaml, ...childrenOf(doc)]);

@@ -295,6 +295,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
   onChangeRef.current = onChange;
   const onImageRef = useRef(onImage);
   onImageRef.current = onImage;
+  // a footnote's formulas: the document's formula fields at the footnote panel's size
+  const [noteFormulaHost] = useState(() => createFormulaHost(() => 14, () => onImageRef.current));
   const language = useEditorStore((state) => state.language);
   const lang = language === "en" ? "en" : "zh";
 
@@ -679,7 +681,17 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
           document.body,
         )}
       {footnote && view && (
-        <FootnoteDialog key={`${footnote.pos}`} view={view} pos={footnote.pos} rect={footnote.rect} lang={lang} onClose={() => setFootnote(null)} />
+        <FootnoteDialog
+          key={`${footnote.pos}`}
+          view={view}
+          pos={footnote.pos}
+          rect={footnote.rect}
+          lang={lang}
+          host={noteFormulaHost}
+          mathCommands={documentMathCommands}
+          font={settings ? bodyFontFamily(settings) : ""}
+          onClose={() => setFootnote(null)}
+        />
       )}
     </div>
   );

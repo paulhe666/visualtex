@@ -1250,20 +1250,23 @@
   font-size: 12px;
   font-weight: 600;
 }
-.vtx-footnote-dialog textarea {
+.vtx-footnote-dialog {
+  overflow: visible;
+}
+.vtx-footnote-input .vtx-footnote-editor {
   min-height: 64px;
+  max-height: 40vh;
+  overflow-y: auto;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
+  background: #fff;
+  font-family: var(--vtx-body-font);
+  font-size: 14px;
+  line-height: 1.5;
 }
-.vtx-footnote-dialog textarea:focus {
+.vtx-footnote-input .vtx-footnote-editor:focus-within {
   border-color: var(--accent);
-  outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
@@ -2012,4 +2015,32 @@
 }
 .vtx-drop-marker.is-wrap {
   border-radius: 2px;
+}
+
+/* ---- page commands (\newpage, \pagenumbering{…}…): no height, as in TeX; the command in the left margin ---- */
+.vtx-document .vtx-page-command {
+  position: relative;
+  height: 0;
+  margin: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-page-command .vtx-page-command-label {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: -0.7em;
+  color: #8a8f98;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+.vtx-document .vtx-page-command[data-command="newpage"],
+.vtx-document .vtx-page-command[data-command="clearpage"] {
+  border-top: 1px dashed #b8bec8;
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode .vtx-page-command-label {
+  color: var(--accent, #2f6fde);
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode {
+  outline: 1px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
 }

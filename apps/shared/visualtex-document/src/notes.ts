@@ -2,10 +2,11 @@
 // note's text (inline formulas as $…$); its number is its place among the document's footnotes, and the page view
 // prints the note at the foot of the page its mark is on. A citation names entries of the reference list (the
 // document's bibliography block, \begin{thebibliography}); it shows their numbers, [1] or [1, 3–5].
-import type { DOMOutputSpec, Node, NodeSpec } from "prosemirror-model";
+import type { DOMOutputSpec, Node, NodeSpec, Schema } from "prosemirror-model";
 import { NodeSelection, Plugin, PluginKey, TextSelection, type Command, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { newNodeId } from "./ids.ts";
+import { splitInlineMath } from "./mathText.ts";
 
 // ------------------------------------------------------------------ schema --
 
@@ -426,4 +427,44 @@ export function noteText(node: Node, doc: Node | null): string {
     return citeLabel((node.attrs.targets as string[]).map((id) => entries.get(id) ?? null));
   }
   return "";
+}
+
+// ---------------------------------------------------------- note editing --
+
+/** A footnote's text as the content of its editor: one paragraph, its formulas as formulas, its lines as breaks. */
+export function footnoteEditorDoc(schema: Schema, text: string): Node {
+  const content: Node[] = [];
+  text.split("\n").forEach((line, index) => {
+    if (index) content.push(schema.nodes.hard_break.create());
+    for (const part of splitInlineMath(line)) {
+      if (part.kind === "text") {
+        if (part.text) content.push(schema.text(part.text));
+      } else content.push(schema.nodes.math_inline.create({ id: newNodeId(), latex: part.latex }));
+    }
+  });
+  return schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, content));
+}
+
+/** The editor's content back as a footnote's text: formulas as $…$ (\(…\) where $…$ would not read back). */
+export function footnoteEditorText(doc: Node): string {
+  const parts: Array<{ text: string } | { latex: string }> = [];
+  doc.forEach((block, _offset, index) => {
+    if (index) parts.push({ text: "\n" });
+    block.descendants((node) => {
+      if (node.isText) parts.push({ text: node.text!.replace(/\$/g, "\\$") });
+      else if (node.type.name === "hard_break") parts.push({ text: "\n" });
+      else if (node.type.name === "math_inline" && String(node.attrs.latex).trim()) parts.push({ latex: String(node.attrs.latex).trim() });
+      return true;
+    });
+  });
+  return parts
+    .map((part, i) => {
+      if ("text" in part) return part.text;
+      const next = parts[i + 1];
+      // "$x$2" does not close at the "$": then \(x\)
+      const dollar = !part.latex.includes("$") && !(next && "text" in next && /^\d/.test(next.text));
+      return dollar ? `$${part.latex}$` : `\\(${part.latex}\\)`;
+    })
+    .join("")
+    .trim();
 }

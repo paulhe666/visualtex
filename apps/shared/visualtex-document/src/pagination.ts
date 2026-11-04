@@ -8,6 +8,7 @@ import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { documentSettings, PAPER_SIZES, type DocumentSettings } from "./settings.ts";
 import { requestFootnoteEdit } from "./notes.ts";
+import { hasPageNumbering, isPageBreak, pageLabels } from "./pageCommands.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -48,6 +49,10 @@ interface Unit {
   /** the last line of a heading: it goes to the next page with what follows it */
   keepWithNext: boolean;
   footnotes: number[];
+  /** \newpage / \clearpage: what follows starts a new page */
+  breakAfter?: boolean;
+  /** a page command (\pagenumbering…): the page it lands on numbers by it */
+  command?: { command: string; value: string };
 }
 
 const SEPARATOR_HEIGHT_EM = 0.9;
@@ -172,7 +177,12 @@ function collectUnits(view: EditorView): Unit[] {
       return;
     }
     const r = dom.getBoundingClientRect();
-    units.push({ top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: false, footnotes: [] });
+    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: false, footnotes: [] };
+    if (node.type.name === "page_command") {
+      unit.breakAfter = isPageBreak(node);
+      unit.command = { command: node.attrs.command, value: node.attrs.value };
+    }
+    units.push(unit);
   };
   view.state.doc.forEach((node, offset) => visit(node, offset));
   return units;
@@ -283,7 +293,9 @@ class PaginationView {
     // place the units page by page
     const breaks: PageBreak[] = [];
     const pageNotes: number[][] = [[]];
+    const pageCommands: Array<Array<{ command: string; value: string }>> = [[]];
     let page = 0;
+    let breakPending = false;
     let offset = 0;
     let reserve = 0;
     const roomFor = (unit: Unit, reserved: number) =>
@@ -292,6 +304,17 @@ class PaginationView {
       const unit = units[i];
       let top = unit.top + offset;
       let bottom = unit.bottom + offset;
+      // after \newpage: the next page (from its top)
+      if (breakPending) {
+        breakPending = false;
+        if (top < (page + 1) * stride) {
+          const push = (page + 1) * stride - top;
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push });
+          offset += push;
+          top += push;
+          bottom += push;
+        }
+      }
       // past the foot of its page (an earlier block ran over): it starts on the page it is on
       while (top >= page * stride + contentHeight - 0.5) {
         page++;
@@ -332,6 +355,8 @@ class PaginationView {
       }
       reserve += roomFor(unit, reserve);
       pageNotes[page].push(...unit.footnotes);
+      if (unit.command) (pageCommands[page] ??= []).push(unit.command);
+      if (unit.breakAfter) breakPending = true;
       // a block taller than the rest of the page runs over its foot
       if (bottom > page * stride + contentHeight) {
         while (bottom > page * stride + contentHeight) {
@@ -348,7 +373,9 @@ class PaginationView {
     if (state && !sameBreaks(state.breaks, breaks)) {
       view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
     }
-    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes);
+    // the pages' numbers: LaTeX's when the document has page-numbering commands
+    const labels = hasPageNumbering(view.state.doc) ? pageLabels(pages, pageCommands).map((l) => l.text) : null;
+    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes, labels);
   }
 
   /** Each footnote's height at the foot of a page (its text set at the text area's width). */
@@ -372,11 +399,12 @@ class PaginationView {
     pages: number,
     pageNotes: number[][],
     notes: Array<{ pos: number; text: string; number: number }>,
+    labels: string[] | null,
   ) {
     const paper = PAPER_SIZES[settings.paper];
     const sheetHeight = pages * stride - (stride - paper.height * pxPerMm);
     sheet.style.minHeight = `${sheetHeight}px`;
-    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text])]);
+    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text]), labels]);
     if (key === this.lastKey) return;
     this.lastKey = key;
     const label = this.options.pageLabel ?? ((page: number, total: number) => `${page} / ${total}`);
@@ -393,7 +421,7 @@ class PaginationView {
         );
       }
       parts.push(
-        `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom / 2) * pxPerMm}px">${escapeHtml(label(page + 1, pages))}</div>`,
+        `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom / 2) * pxPerMm}px">${escapeHtml(labels ? labels[page] ?? "" : label(page + 1, pages))}</div>`,
       );
     }
     const html = parts.join("");

@@ -4,6 +4,8 @@
 // it is ($…$, \(…\), \[…\], equation / align / gather as numbered display formulas, \eqref as references).
 // Commands without a counterpart (\maketitle, \usepackage, \centering…) are dropped; their text stays.
 import { resolveImageSource } from "./images.ts";
+import { bibliographyMarker, citeMarker, footnoteMarker } from "./latexMarkers.ts";
+import { PAGE_COMMAND_PATTERN, pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
 
 /** Whether text is LaTeX document source (not just a formula). */
 export function looksLikeLatexSource(text: string): boolean {
@@ -11,7 +13,8 @@ export function looksLikeLatexSource(text: string): boolean {
     /\\documentclass|\\begin\{document\}/.test(text) ||
     /\\(?:chapter|section|subsection|subsubsection|paragraph)\*?\s*\{/.test(text) ||
     /\\begin\{(?:itemize|enumerate|description|quote|quotation|tabular|table|figure|lstlisting|verbatim|center|abstract)\}/.test(text) ||
-    /\\(?:textbf|textit|emph|underline|texttt)\s*\{/.test(text)
+    /\\(?:textbf|textit|emph|underline|texttt)\s*\{/.test(text) ||
+    PAGE_COMMAND_PATTERN.test(text)
   );
 }
 
@@ -71,6 +74,18 @@ function graphicsHtml(options: string, path: string, align: string | null = null
 }
 
 const GRAPHICS = /\\includegraphics\*?\s*(?:\[([^\]]*)\])?\s*\{([^{}]*)\}/g;
+
+const PAGE_COMMANDS = /\\(?:newpage|clearpage|cleardoublepage|pagebreak)\b(?:\[\d\])?|\\pagenumbering\s*\{[^{}]*\}|\\(?:this)?pagestyle\s*\{[^{}]*\}|\\setcounter\s*\{\s*page\s*\}\s*\{[^{}]*\}/g;
+
+/** \newpage, \pagenumbering{…} and the other page commands: blocks of their own (pageCommands.ts). */
+function pageCommands(text: string, kept: string[]): string {
+  return text.replace(PAGE_COMMANDS, (whole) => {
+    const parsed = parsePageCommand(whole);
+    if (!parsed) return whole;
+    kept.push(`\n\n<!-- ${pageCommandLatex(parsed.command, parsed.value)} -->\n\n`);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+}
 
 /** \graphicspath{{dir/}{dir2/}}: the folders \includegraphics looks in. */
 export function graphicsPaths(source: string): string[] {
@@ -174,13 +189,120 @@ const WRAPPERS: Record<string, (arg: string) => string> = {
   textsuperscript: (a) => `<sup>${a}</sup>`,
   textsubscript: (a) => `<sub>${a}</sub>`,
   url: (a) => `<${a}>`,
-  footnote: (a) => ` (${a})`,
   caption: (a) => `*${a}*`,
   mbox: (a) => a,
   textrm: (a) => a,
   textnormal: (a) => a,
   text: (a) => a,
 };
+
+/** Accents: \"o, \'{e}, \c{c}… as the accented letter. */
+const ACCENTS: Record<string, string> = { '"': "\u0308", "'": "\u0301", "`": "\u0300", "^": "\u0302", "~": "\u0303", "=": "\u0304", ".": "\u0307", c: "\u0327", v: "\u030C", u: "\u0306", H: "\u030B", r: "\u030A", k: "\u0328" };
+const LETTERS: Record<string, string> = { ss: "ß", ae: "æ", AE: "Æ", oe: "œ", OE: "Œ", o: "ø", O: "Ø", aa: "å", AA: "Å", l: "ł", L: "Ł", i: "ı", j: "ȷ" };
+
+/** Commands without arguments that print a sign or a logo. */
+const SIGNS: Record<string, string> = {
+  TeX: "TeX", LaTeX: "LaTeX", LaTeXe: "LaTeX2ε", BibTeX: "BibTeX", XeTeX: "XeTeX", XeLaTeX: "XeLaTeX", LuaTeX: "LuaTeX", LuaLaTeX: "LuaLaTeX", pdfTeX: "pdfTeX", pdfLaTeX: "pdfLaTeX", AmS: "AMS", AmSTeX: "AMS-TeX",
+  copyright: "©", textcopyright: "©", textregistered: "®", texttrademark: "™", dag: "†", ddag: "‡", textdagger: "†", textdaggerdbl: "‡", S: "§", P: "¶", pounds: "£", textsterling: "£", euro: "€", texteuro: "€", textdegree: "°", textbullet: "•", textperiodcentered: "·",
+  textbackslash: "\\\\", textendash: "–", textemdash: "—", textellipsis: "…", textbar: "|", textless: "<", textgreater: ">", textquotedblleft: "“", textquotedblright: "”", textquoteleft: "‘", textquoteright: "’", guillemotleft: "«", guillemotright: "»",
+  quad: "\u2003", qquad: "\u2003\u2003", enspace: "\u2002", thinspace: "\u2009", slash: "/", textasciicircum: "^",
+};
+
+/** An accent's letter (`at` is after the accent command): the accented letter and the index after it. */
+function accented(text: string, at: number, mark: string): { text: string; end: number } | null {
+  let k = skipSpaces(text, at);
+  let letter = "";
+  if (text[k] === "{") {
+    const arg = group(text, k);
+    if (!arg) return null;
+    letter = arg.content.trim();
+    k = arg.end;
+  } else if (/[A-Za-z]/.test(text[k] ?? "")) {
+    letter = text[k];
+    k++;
+  } else return null;
+  const special = /^\\([a-zA-Z]+)$/.exec(letter);
+  // the dotless i / j take the accent as i / j
+  if (special) letter = special[1] === "i" || special[1] === "j" ? special[1] : (LETTERS[special[1]] ?? special[1]);
+  if (!letter || letter.length > 2) return null;
+  return { text: (letter + mark).normalize("NFC"), end: k };
+}
+
+/** A note's or an entry's text (Markdown with placeholders): plain text with $…$ formulas. */
+function plainText(markdown: string, kept: string[]): string {
+  // marks and grouping braces go before the formulas come back (they keep theirs)
+  let text = finishText(
+    markdown
+      .replace(/\*\*|<\/?(u|sup|sub)>|<\/?span[^>]*>|[*`]/g, "")
+      .replace(/<((?:https?|ftp|mailto):[^>\s]+)>/g, "$1")
+      .replace(/\[([^\]]*)\]\(([^)\s]*)\)/g, "$1"),
+  ).replace(/\\\n/g, " ");
+  for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = text.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => kept[Number(n)]);
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The text's last steps: grouping braces go, literal ones come back; ties, quotes and dashes. */
+function finishText(text: string): string {
+  return text
+    .replace(/[{}]/g, "")
+    .replace(/\u0004/g, "{")
+    .replace(/\u0005/g, "}")
+    .replace(/(?<!\\)~/g, " ")
+    .replace(/``/g, "“")
+    .replace(/''/g, "”")
+    .replace(/---/g, "—")
+    .replace(/--/g, "–");
+}
+
+/**
+ * What \ref prints for labels of sections, figures and tables (equations are references to their formulas): the
+ * numbers LaTeX gives them, counted through the source. Set while a source is read.
+ */
+let labelNumbers = new Map<string, { number: string; kind: "section" | "figure" | "table" }>();
+
+function countLabels(text: string): Map<string, { number: string; kind: "section" | "figure" | "table" }> {
+  const labels = new Map<string, { number: string; kind: "section" | "figure" | "table" }>();
+  const hasChapters = /\\chapter\*?\s*[[{]/.test(text);
+  const levels = hasChapters ? ["chapter", "section", "subsection", "subsubsection"] : ["section", "subsection", "subsubsection"];
+  const counts = [0, 0, 0, 0];
+  let appendix = false;
+  let figures = 0;
+  let tables = 0;
+  let current: { number: string; kind: "section" | "figure" | "table" } | null = null;
+  let float: "figure" | "table" | null = null;
+  let math = false;
+  const pattern = /\\(chapter|section|subsection|subsubsection)(\*?)\s*(?:\[[^\]]*\])?\s*\{|\\appendix\b|\\begin\{(figure|table|equation|align|gather|multline|eqnarray|flalign|alignat)\*?\}|\\end\{(figure|table|equation|align|gather|multline|eqnarray|flalign|alignat)\*?\}|\\caption\b|\\label\s*\{([^{}]*)\}/g;
+  const prefix = (level: number) => {
+    const top = appendix ? String.fromCharCode(64 + counts[0]) : String(counts[0]);
+    return [top, ...counts.slice(1, level + 1).map(String)].join(".");
+  };
+  for (const match of text.matchAll(pattern)) {
+    if (match[1]) {
+      if (match[2]) continue;
+      const level = levels.indexOf(match[1]);
+      if (level < 0) continue;
+      counts[level]++;
+      for (let k = level + 1; k < counts.length; k++) counts[k] = 0;
+      if (hasChapters && level === 0) figures = tables = 0;
+      current = { number: prefix(level), kind: "section" };
+    } else if (match[0] === "\\appendix") {
+      appendix = true;
+      counts.fill(0);
+    } else if (match[3]) {
+      if (match[3] === "figure" || match[3] === "table") float = match[3];
+      else math = true;
+    } else if (match[4]) {
+      if (match[4] === "figure" || match[4] === "table") float = null;
+      else math = false;
+    } else if (match[0].startsWith("\\caption") && float) {
+      const n = float === "figure" ? ++figures : ++tables;
+      current = { number: hasChapters ? `${prefix(0)}.${n}` : String(n), kind: float };
+    } else if (match[5] && !math && current) labels.set(match[5].trim(), current);
+  }
+  return labels;
+}
+
+const REFERENCE_NAMES = { section: ["Section", "section"], figure: ["Figure", "figure"], table: ["Table", "table"] };
 
 /** Inline commands: wrappers, links, references, escapes. Generated math goes into `kept` (placeholders). */
 function inline(text: string, kept: string[]): string {
@@ -214,6 +336,10 @@ function inline(text: string, kept: string[]): string {
       } else if (c === ",") {
         out += " ";
         i += 2;
+      } else if (ACCENTS[c] && c !== "c" && accented(text, i + 2, ACCENTS[c])) {
+        const accent = accented(text, i + 2, ACCENTS[c])!;
+        out += accent.text;
+        i = accent.end;
       } else {
         out += c;
         i += 2;
@@ -222,6 +348,29 @@ function inline(text: string, kept: string[]): string {
     }
     const command = name[1];
     let j = i + name[0].length;
+    if (/^[cvuHrk]$/.test(command)) {
+      const accent = accented(text, j, ACCENTS[command]);
+      if (accent) {
+        out += accent.text;
+        i = accent.end;
+        continue;
+      }
+    }
+    const sign = LETTERS[command] ?? SIGNS[command];
+    if (sign !== undefined) {
+      if (text[j] === "{" && text[j + 1] === "}") j += 2;
+      out += sign;
+      i = text[j] === " " ? j + 1 : j;
+      continue;
+    }
+    if (command === "footnote") {
+      const arg = group(text, skipSpaces(text, skipOptional(text, j)));
+      if (arg) {
+        out += footnoteMarker(plainText(inline(arg.content, kept), kept));
+        i = arg.end;
+        continue;
+      }
+    }
     const wrapper = WRAPPERS[command];
     if (wrapper) {
       const arg = group(text, skipSpaces(text, j));
@@ -253,19 +402,27 @@ function inline(text: string, kept: string[]): string {
         continue;
       }
     }
-    if (command === "ref" || command === "eqref" || command === "autoref" || command === "cref") {
+    if (command === "ref" || command === "eqref" || command === "autoref" || command === "cref" || command === "Cref") {
       const arg = group(text, skipSpaces(text, j));
+      const counted = arg && command !== "eqref" ? labelNumbers.get(arg.content.trim()) : undefined;
+      if (arg && counted) {
+        const name = command === "autoref" || command === "Cref" ? REFERENCE_NAMES[counted.kind][0] : command === "cref" ? REFERENCE_NAMES[counted.kind][1] : "";
+        out += name ? `${name} ${counted.number}` : counted.number;
+        i = arg.end;
+        continue;
+      }
       if (arg) {
         out += keep(`$\\eqref{${arg.content.trim()}}$`);
         i = arg.end;
         continue;
       }
     }
-    if (command === "cite" || command === "citep" || command === "citet") {
-      j = skipOptional(text, j);
+    if (/^(cite|citep|citet|citealp|citealt|parencite|textcite|autocite|footcite|supercite|upcite)$/.test(command)) {
+      j = skipOptional(text, skipOptional(text, j));
       const arg = group(text, skipSpaces(text, j));
       if (arg) {
-        out += `[${arg.content}]`;
+        const keys = arg.content.split(",").map((key) => key.trim()).filter(Boolean);
+        out += citeMarker(keys);
         i = arg.end;
         continue;
       }
@@ -290,7 +447,7 @@ function inline(text: string, kept: string[]): string {
     j = skipOptional(text, j);
     const arg = group(text, skipSpaces(text, j));
     // \begin{…} / \end{…} of an environment with no counterpart (a class's own, minipage contents…): its text stays
-    const dropsArgument = /^(begin|end|label|includegraphics|vspace|hspace|setlength|addtolength|bibliography|bibliographystyle|input|include|usepackage|documentclass|newcommand|renewcommand|pagestyle|thispagestyle|setcounter|addbibresource)$/.test(command);
+    const dropsArgument = /^(begin|end|label|includegraphics|vspace|hspace|setlength|addtolength|bibliography|bibliographystyle|input|include|usepackage|documentclass|newcommand|renewcommand|pagestyle|thispagestyle|setcounter|addbibresource|nocite|printbibliography|pageref)$/.test(command);
     i = dropsArgument && arg ? arg.end : j;
     if (!dropsArgument && arg) {
       out += inline(arg.content, kept);
@@ -298,6 +455,24 @@ function inline(text: string, kept: string[]): string {
     }
   }
   return out;
+}
+
+/** \begin{thebibliography} as the document's reference list (its \bibitem keys kept for the citations). */
+function bibliographies(text: string, kept: string[]): string {
+  return text.replace(/\\begin\{thebibliography\}\s*(\{[^{}]*\})?([\s\S]*?)\\end\{thebibliography\}/g, (_m, _widest: string, body: string) => {
+    const entries: Array<{ key: string; text: string }> = [];
+    const items = body.split(/\\bibitem\b/).slice(1);
+    for (const item of items) {
+      let i = skipOptional(item, 0);
+      const key = group(item, skipSpaces(item, i));
+      if (!key) continue;
+      i = key.end;
+      entries.push({ key: key.content.trim(), text: plainText(inline(item.slice(i).replace(/\\newblock\b/g, " "), kept), kept) });
+    }
+    if (!entries.length) return "";
+    kept.push(`\n\n${bibliographyMarker(entries)}\n\n`);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
 }
 
 /** A tabular as a GFM table (the first row is the header). */
@@ -395,11 +570,18 @@ export function latexToMarkdown(source: string): string {
   const titleAt = /\\title\s*(?=\{)/.exec(text);
   const title = titleAt ? group(text, titleAt.index + titleAt[0].length)?.content.replace(/\s*\n\s*/g, " ").trim() : undefined;
   const body = /\\begin\{document\}([\s\S]*?)(\\end\{document\}|$)/.exec(text);
+  // page commands of the preamble act from the first page: they open the body
+  const preamble = body ? text.slice(0, body.index) : "";
+  const early = [...preamble.matchAll(PAGE_COMMANDS)].map((m) => m[0]).join("\n");
+  if (body && early) body[1] = `${early}\n\n${body[1]}`;
   if (body) text = (title && /\\maketitle/.test(body[1]) ? `\u0006${title.replace(/\\\\/g, " ")}\n\n` : "") + body[1];
+  labelNumbers = countLabels(text);
   const kept: string[] = [];
   text = protectCode(text, kept);
   text = protectMath(text, kept);
   text = figures(text, kept);
+  text = pageCommands(text, kept);
+  text = bibliographies(text, kept);
   text = tables(text, kept);
   text = sections(text);
   // Old switches in a group: {\bf …}, {\it …}, {\tt …}.
@@ -409,10 +591,8 @@ export function latexToMarkdown(source: string): string {
     .replace(/\{\\(?:tt|ttfamily)\s+([^{}]*)\}/g, "`$1`");
   text = blocks(text);
   text = inline(text, kept);
-  // Grouping braces go; literal ones (\{ \}) come back.
-  text = text.replace(/[{}]/g, "").replace(/\u0004/g, "{").replace(/\u0005/g, "}");
-  // Typographic leftovers: ~ (a tie), ``quotes'', -- and ---.
-  text = text.replace(/(?<!\\)~/g, " ").replace(/``/g, "“").replace(/''/g, "”").replace(/---/g, "—").replace(/--/g, "–");
+  // Grouping braces go, literal ones (\{ \}) come back; ties, quotes and dashes.
+  text = finishText(text);
   for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = text.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => kept[Number(n)]);
   text = text.replace(/^\u0006[ \t]*(.*)$/m, (_m, line: string) => `${MARKDOWN_TITLE_OPEN}${line.trim()}${MARKDOWN_TITLE_CLOSE}`);
   return text.replace(/\n{3,}/g, "\n\n").trim() + "\n";

@@ -6,6 +6,7 @@ import { tableNodes } from "prosemirror-tables";
 import { DOCUMENT_SETTING_ATTRS } from "./settings.ts";
 import { noteNodes } from "./notes.ts";
 import { imageNodeSpec } from "./images.ts";
+import { pageCommandNodeSpec } from "./pageCommands.ts";
 
 /** Every block carries a stable id (labels, export mapping, compile errors). */
 const id = { id: { default: null as string | null } };
@@ -174,6 +175,9 @@ const nodes: Record<string, NodeSpec> = {
       },
     ],
   },
+
+  /** \newpage, \pagenumbering{…} and the other page commands (pageCommands.ts). */
+  page_command: pageCommandNodeSpec,
 
   horizontal_rule: {
     group: "block",
