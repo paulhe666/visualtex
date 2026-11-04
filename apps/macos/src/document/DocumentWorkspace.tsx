@@ -7,11 +7,14 @@ import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import {
   decodeText,
   documentSchema,
   findMarkdownFile,
+  graphicsPaths,
+  registerImageBytes,
+  setImageFileResolver,
   hasMathDelimiters,
   insertDisplayLatex,
   insertInlineFormula,
@@ -34,6 +37,7 @@ import {
   documentTitle,
   libraryDocumentName,
   saveTextFile,
+  saveBinaryFile,
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
@@ -315,17 +319,23 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         let kind: "document" | "markdown" | "latex";
         let text: string;
+        // the archive's images, for the paths its text gives them (figures/x.png, assets/x.png)
+        let images: Map<string, Uint8Array> | null = null;
+        let base = "";
         if (/\.zip$/i.test(file.name)) {
-          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown)$/i.test(entry.name) });
-          const files = Object.entries(entries).map(([path, data]) => ({ path, bytes: data }));
+          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown|png|jpe?g)$/i.test(entry.name) });
+          images = new Map(Object.entries(entries).filter(([path]) => /\.(png|jpe?g)$/i.test(path)));
+          const files = Object.entries(entries).filter(([path]) => !/\.(png|jpe?g)$/i.test(path)).map(([path, data]) => ({ path, bytes: data }));
           const project = readLatexProject(files);
           const markdownFile = project ? null : findMarkdownFile(files);
           if (project) {
             kind = "latex";
             text = project.source;
+            base = project.main.includes("/") ? project.main.slice(0, project.main.lastIndexOf("/") + 1) : "";
           } else if (markdownFile) {
             kind = "markdown";
             text = decodeText(markdownFile.bytes);
+            base = markdownFile.path.includes("/") ? markdownFile.path.slice(0, markdownFile.path.lastIndexOf("/") + 1) : "";
           } else throw new Error(t("no .tex or .md file in the archive", "压缩包中没有 .tex 或 .md 文件"));
         } else {
           text = decodeText(bytes);
@@ -336,8 +346,26 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         const entry = await api.create(null, kind === "document" ? text : emptyDocumentText(), stem);
         withEntry(entry);
         if (!(await ops.current.open(entry.id))) return;
-        if (kind === "markdown") documentRef.current?.loadMarkdown(text);
-        else if (kind === "latex") documentRef.current?.loadLatex(text);
+        if (images?.size) {
+          const found = images;
+          const folders = ["", ...(kind === "latex" ? graphicsPaths(text) : [])];
+          setImageFileResolver((path) => {
+            for (const folder of folders) {
+              for (const ext of ["", ".png", ".jpg", ".jpeg", ".PNG", ".JPG"]) {
+                const candidate = (base + folder + path + ext).replace(/\/\.\//g, "/").replace(/^\.\//, "");
+                const bytes = found.get(candidate) ?? found.get(folder + path + ext);
+                if (bytes) return registerImageBytes(bytes);
+              }
+            }
+            return null;
+          });
+        }
+        try {
+          if (kind === "markdown") documentRef.current?.loadMarkdown(text);
+          else if (kind === "latex") documentRef.current?.loadLatex(text);
+        } finally {
+          setImageFileResolver(null);
+        }
         await ops.current.saveNow();
         flash(t("Document imported", "文档已导入"));
       } catch (error) {
@@ -487,6 +515,16 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportLatex: () => {
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
+      // with images: the .tex and its figures/ in one .zip (Overleaf's upload)
+      const figures = documentRef.current?.imageFiles("figures") ?? [];
+      if (figures.length) {
+        const zip = zipSync({ [fileName(".tex")]: strToU8(tex), ...Object.fromEntries(figures.map((file) => [file.path, file.bytes])) });
+        void saveBinaryFile(fileName(".zip"), zip, "zip", "application/zip", isEn).then(
+          (done) => done && flash(t("LaTeX exported", "LaTeX 已导出")),
+          (error) => flash(errorText(error)),
+        );
+        return;
+      }
       void saveTextFile(fileName(".tex"), tex, "tex", "text/x-tex", isEn).then(
         (done) => done && flash(t("LaTeX exported", "LaTeX 已导出")),
         (error) => flash(errorText(error)),
@@ -495,6 +533,15 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportMarkdown: () => {
       const markdown = documentRef.current?.toMarkdown();
       if (!markdown) return;
+      const assets = documentRef.current?.imageFiles("assets") ?? [];
+      if (assets.length) {
+        const zip = zipSync({ [fileName(".md")]: strToU8(markdown), ...Object.fromEntries(assets.map((file) => [file.path, file.bytes])) });
+        void saveBinaryFile(fileName(".zip"), zip, "zip", "application/zip", isEn).then(
+          (done) => done && flash(t("Markdown exported", "Markdown 已导出")),
+          (error) => flash(errorText(error)),
+        );
+        return;
+      }
       void saveTextFile(fileName(".md"), markdown, "md", "text/markdown", isEn).then(
         (done) => done && flash(t("Markdown exported", "Markdown 已导出")),
         (error) => flash(errorText(error)),

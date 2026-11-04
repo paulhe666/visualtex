@@ -5,6 +5,7 @@
 // \textbf{…} or \begin{itemize}, \( and \[ open formulas, Escape leaves the text as it is. The command is read from the
 // text, not from the key, so a "\" or "/" typed through an input method starts one just the same.
 import type { MarkType, Node } from "prosemirror-model";
+import { requestImage } from "./images.ts";
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
@@ -45,7 +46,7 @@ export type CommandPreview =
   | { kind: "title" }
   | { kind: "list"; ordered: boolean }
   | { kind: "align"; align: "left" | "center" | "right" }
-  | { kind: "block"; block: "table" | "rule" | "quote" | "break" | "code" }
+  | { kind: "block"; block: "table" | "rule" | "quote" | "break" | "code" | "image" }
   | { kind: "ref"; number: number | null };
 
 /** How an entry was chosen: from the menu, by Space after its full name, or by the closing brace. */
@@ -288,6 +289,7 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
   { id: "flushright", label: "\\begin{flushright}", names: ["flushright", "raggedleft"], environment: "flushright", description: t("Right-aligned lines", "右对齐"), preview: { kind: "align", align: "right" }, run: asRun(setAlign("right")) },
   { id: "quote", label: "\\begin{quote}", names: ["quote", "quotation"], environment: "quote", description: t("Quotation", "引用"), preview: { kind: "block", block: "quote" }, run: quote },
   { id: "href", label: "\\href{…}{…}", names: ["href", "url", "link"], description: t("Link (Ctrl+K)", "链接（Ctrl+K）"), preview: { kind: "text", text: "link", style: "underline" }, run: asRun(requestLink) },
+  { id: "includegraphics", label: "\\includegraphics{…}", names: ["includegraphics", "image", "figure", "picture", "graphics", "tupian", "tp", "charutupian", "crtp"], featured: true, description: t("Image", "图片"), preview: { kind: "block", block: "image" }, run: (view) => requestImage(view) },
   { id: "hrule", label: "\\hrule", names: ["hrule", "hrulefill"], featured: true, description: t("Horizontal line", "水平线"), preview: { kind: "block", block: "rule" }, run: asRun(insertDivider) },
   { id: "footnote", label: "\\footnote{…}", names: ["footnote", "jiaozhu", "jz"], argument: true, description: t("Footnote (Ctrl+Alt+F)", "脚注（Ctrl+Alt+F）"), preview: { kind: "text", text: "a¹" }, run: footnote },
   { id: "cite", label: "\\cite{…}", names: ["cite", "citep", "citet", "yinyong", "wenxian", "ckwx"], argument: true, description: t("Citation", "引用文献"), preview: { kind: "text", text: "[1]" }, run: cite },
@@ -323,6 +325,7 @@ export const MARKDOWN_COMMANDS: CommandEntry[] = [
   { id: "md-footnote", label: "[^1]", names: ["footnote", "note", "jiaozhu", "zhushi", "jz"], description: t("Footnote (Ctrl+Alt+F)", "脚注（Ctrl+Alt+F）"), preview: { kind: "text", text: "a¹" }, run: footnote },
   { id: "md-cite", label: "[1]", names: ["cite", "citation", "reference", "wenxian", "cankao", "ckwx", "yinwen"], description: t("Citation", "引用文献"), preview: { kind: "text", text: "[1]" }, run: cite },
   { id: "md-references", label: "[1] …", names: ["references", "bibliography", "cankaowenxian", "wenxian", "ckwx"], description: t("Reference entry", "参考文献条目"), preview: { kind: "text", text: "[1] …" }, run: asRun(addReferenceEntry) },
+  { id: "md-image", label: "![…](…)", names: ["image", "img", "picture", "figure", "tupian", "tp", "charutupian", "crtp"], featured: true, description: t("Image", "图片"), preview: { kind: "block", block: "image" }, run: (view) => requestImage(view) },
   { id: "md-rule", label: "---", names: ["hr", "divider", "rule", "line", "fengexian", "fgx"], featured: true, description: t("Horizontal line", "分割线"), preview: { kind: "block", block: "rule" }, run: asRun(insertDivider) },
   { id: "md-bold", label: "**…**", names: ["bold", "strong", "cuti", "jiacu", "ct", "jc"], description: t("Bold", "粗体"), preview: { kind: "text", text: "Bold", style: "bold" }, run: textStyle((v) => v.state.schema.marks.strong) },
   { id: "md-italic", label: "*…*", names: ["italic", "em", "emphasis", "xieti", "xt"], description: t("Italic", "斜体"), preview: { kind: "text", text: "Italic", style: "italic" }, run: textStyle((v) => v.state.schema.marks.em) },

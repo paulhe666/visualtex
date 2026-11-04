@@ -85,7 +85,7 @@ const sameBreaks = (a: PageBreak[], b: PageBreak[]) =>
   a.length === b.length && a.every((x, i) => x.pos === b[i].pos && x.inline === b[i].inline && Math.abs(x.height - b[i].height) < 0.5);
 
 /** The lines of a textblock's DOM, from its text and inline boxes (top/bottom in client coordinates). */
-function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left: number }> {
+export function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left: number }> {
   const rects: DOMRect[] = [];
   const range = document.createRange();
   for (const child of Array.from(dom.childNodes)) {
@@ -94,6 +94,8 @@ function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left:
       for (const r of Array.from(range.getClientRects())) if (r.height > 0) rects.push(r);
     } else if (child instanceof HTMLElement) {
       if (child.classList.contains("vtx-page-break")) continue;
+      // a wrapped image is beside the lines, not one of them (its height goes with the first line: collectUnits)
+      if (child.classList.contains("is-wrap-left") || child.classList.contains("is-wrap-right")) continue;
       // a mark's span holds text; an inline formula or a footnote is one box
       if (getComputedStyle(child).display === "inline") {
         range.selectNodeContents(child);
@@ -146,13 +148,16 @@ function collectUnits(view: EditorView): Unit[] {
         return;
       }
       let previous = -1;
+      // a wrapped image takes its paragraph's first line along: wrapfig puts them on the next page together
+      const wrapped = dom.querySelector(":scope > .is-wrap-left, :scope > .is-wrap-right");
+      const wrapBottom = wrapped ? wrapped.getBoundingClientRect().bottom : -Infinity;
       lines.forEach((line, index) => {
         const start = index === 0 ? pos + 1 : lineStart(view, pos + 1, pos + node.nodeSize - 1, line);
         if (start === null || start <= previous) return;
         previous = start;
         units.push({
           top: index === 0 ? Math.min(line.top, dom.getBoundingClientRect().top) : line.top,
-          bottom: line.bottom,
+          bottom: index === 0 ? Math.max(line.bottom, wrapBottom) : line.bottom,
           pos: start,
           inline: true,
           keepWithNext: (node.type.name === "heading" || node.type.name === "title") && index === lines.length - 1,

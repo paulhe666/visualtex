@@ -409,3 +409,76 @@ across rows), typing, pasting or deleting over a selection across rows replaces 
 attempt (`visualTexInsertToolbarTemplate`), copy in the row's code format, the WebKit focus fix, the opt-in IME
 trace. `\bm` is the kernel's own command on both. The body-font menus read the system's families on macOS through
 CoreText (`list_system_font_families`).
+
+## 11. Images (2026-11-04)
+
+Research behind every rule here (measured with TeX Live 2023, GitHub's renderer, Obsidian, Pandoc; Mathcha probed
+live): VPS `~/claude/document-images/research/` (`latex-image-layout.md`, `markdown-image-layout.md`,
+`interaction-survey.md`). The requirement: what the user arranges with the mouse is where the exported LaTeX (and,
+as far as Markdown allows, the Markdown) puts it when compiled elsewhere. So every arrangement is one deterministic
+LaTeX construct, and the editor lays it out by the same rule.
+
+### 11.1 Model: an image is a box in a line, as `\includegraphics` is
+
+`image` is an inline atom (`images.ts`): `src` (a key into the document's images, `vtx-image:<sha-256>.png|jpg`),
+`alt`, `width` (a fraction of the line width — LaTeX's `\linewidth` — to 0.001), `wrap` (null, `left`, `right`).
+TeX's `\includegraphics` is a box whose bottom sits on the baseline; the editor's `<img>` is an inline box with
+`vertical-align: baseline`. The arrangements follow from where the box is:
+
+| Arrangement | In the document | LaTeX | Markdown |
+|---|---|---|---|
+| One image on its own line | a paragraph holding only the image (an **image line**); its alignment is the paragraph's (centre when inserted) | centre `{\centering\includegraphics[width=f\linewidth]{figures/x.png}\par}`; left `\noindent\includegraphics[..]{..}\par`; right `{\raggedleft\includegraphics[..]{..}\par}` | `<p align="center"><img src alt width="f%"></p>` (left/right: `align="left|right"`) |
+| 2-3 (or more) images on one line | an image line holding several images, bottoms on one baseline, `0.02\linewidth` between neighbours | the same, neighbours joined by `\hspace{0.02\linewidth}%` | the same `<p>` with the `<img>`s separated by a space |
+| An image in a sentence | the image among the text: one character | `\includegraphics[width=f\linewidth]{..}` in the text | `<img src alt width="f%">` in the text |
+| Text wrapped around an image | the image (`wrap` = side) first in a body paragraph that has text; the paragraph's lines (and the next paragraphs') run beside it | a blank line, `\begin{wrapfigure}[N]{r|l}{f\linewidth}\centering\includegraphics[width=\linewidth]{..}\end{wrapfigure}`, the paragraph | `<img src alt width="f%" align="right|left">` at the start of the paragraph's line |
+
+- `\centering` / `\noindent` (never `center`): they add no vertical space, so the image line is spaced like any line
+  (previous descender + `\lineskip` above, `\baselineskip` to the next baseline), as the editor's line box spaces it.
+- Widths are always written (TeX's natural size depends on DPI metadata and engine). A line's images plus gaps are
+  kept within the line (≤ 0.99): an image dropped beside others scales the line's images to one height to fit; a
+  resize stops at the room left. (Inside `\centering` TeX would silently break an overfull line onto two — so would the
+  browser — but the editor never makes one.)
+- Wrapped images: the box is placed as wrapfig places it mid-page (its top `\intextsep − 1.4ex` ≈ 0.55em below the
+  first line's baseline, `\columnsep` = 10pt beside the text, `\intextsep` = 12pt below); wrapfig counts the
+  narrowed lines itself (the export's fonts set the lines, so the image is never overrun). Wrapping goes on into the
+  next paragraphs as wrapfig's does; a heading, list, quote, table, display formula, code, rule, image line or the
+  next wrapped paragraph starts below the image in the editor (`clear`), and the export puts `\vtxwrapclear` before
+  it (defined in the preamble: wrapfig's remaining lines, `\c@WF@wrappedlines − 1`, as `\vspace*`, then
+  `\WF@finale`). Wrap is offered only for body paragraphs (wrapfig fails in lists, quotes, tables). A wrapped image
+  that would cross the page's foot takes its paragraph to the next page (wrapfig's forced break).
+- Images are not allowed in table cells, headings, the title, footnotes or code.
+- Packages: `graphicx` (always with images), `wrapfig` (with a wrap). Files: `figures/fig-1.png`, numbered by first
+  appearance (one file per distinct image); the export with images is a `.zip` (name.tex + figures/, Overleaf's
+  upload), Markdown `.zip` (name.md + assets/). Copy LaTeX/Markdown writes the same paths.
+- Markdown (GitHub keeps `width` in %, `align`, `alt`; strips `style`; `align` on `<img>` does not centre, so lines are
+  `<p align>`; one line per construct, blank lines around).
+
+### 11.2 Images and their files
+
+The bytes live beside the document, not in its nodes: `.vtxdoc` gets `images: { key: base64 }` (only the keys the
+document uses; `version` 2 when it has any, so an older VisualTeX refuses it instead of losing them). In the editor
+a registry holds key → bytes, type, pixel size, object URL. Inserted images are stored as PNG or JPEG (what every TeX
+engine reads): JPEG stays JPEG, PNG stays PNG, anything else (GIF, WebP, BMP, SVG, HEIC as the webview decodes it)
+is drawn into a PNG. The key is the content's hash, so the same image twice is one file. Copy within the app carries
+the image as a `data:` URL in the HTML, so a paste into another document finds it.
+
+### 11.3 Gestures
+
+- Insert: paste or drop an image file into the text, the toolbar's image button (file dialog) or `\includegraphics`
+  in the `\` menu (Markdown: `/image`). In an empty paragraph the image takes it; at a line's end or in its middle the
+  image gets an image line after that paragraph (Mathcha; the sentence is not split); in an image line it joins the
+  line. Width: its natural size (96 px per inch at zoom 1) up to half the line. Pasting an image in an **open formula**
+  still recognises it (OCR); in the text it is always inserted (the user, 2026-11-04).
+- Select: a click selects the image (outline, two side handles, a bar above: left / centre / right, wrap left / wrap
+  right). A selected image: Backspace/Delete removes it, Enter opens a paragraph after its line, typing does not
+  replace it.
+- Resize: drag a side handle; the ratio stays. A centred line grows to both sides (the pointer keeps the edge), a
+  left/right one from its free edge. A label shows "45%"; the width snaps to 25/33/50/67/75/100% and other images'
+  widths within 1%; Alt turns snapping off; a double-click on a handle gives the inserted width back. One undo step.
+- Move (`documentDrag.ts`): press on the selected image and move. The drop caret decides: between two blocks (a line
+  across) → an image line of its own; beside an image on an image line (a caret the line's height) → joins that line
+  (fitted); in text → a character there (a block-sized image dropped into text is made one line high: its height the
+  text size). A wrapped image dragged over a body paragraph shows the paragraph's start on the nearer side: it wraps
+  that paragraph on that side; elsewhere it stops wrapping. Ctrl copies, Esc cancels, one undo step.
+- Wrap: the bar's wrap buttons. The image goes to the start of its paragraph (an image line wraps the next body
+  paragraph); "centre / left / right" in the bar makes it an image line again before that paragraph.

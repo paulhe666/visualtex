@@ -3,6 +3,7 @@
 // pasted or opened — read back as a document. ProseMirror's own Markdown bridge (prosemirror-markdown on markdown-it)
 // with VisualTeX's rules for math, highlight and the few HTML tags Markdown writers use.
 import MarkdownIt, { type StateBlock, type StateCore, type StateInline, type Token } from "markdown-it";
+import { DEFAULT_IMAGE_WIDTH, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
 import { MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
 import { Slice, type Mark, type Node, type Schema } from "prosemirror-model";
 import { Transform } from "prosemirror-transform";
@@ -156,6 +157,12 @@ function tidy(state: StateCore) {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type === "html_block") {
+      const line = imageLineTokens(state, token.content);
+      if (line) {
+        tokens.splice(i, 1, ...line);
+        i += line.length - 1;
+        continue;
+      }
       const open = new Token("paragraph_open", "p", 1);
       open.map = token.map;
       const inline = new Token("inline", "", 0);
@@ -213,6 +220,16 @@ function tidy(state: StateCore) {
           continue;
         }
       }
+      if (child.type === "image" || (child.type === "html_inline" && /^<img\b/i.test(child.content))) {
+        const image = child.type === "image" ? markdownImageToken(state, child) : htmlImageToken(state, child.content);
+        if (image) {
+          children.push(image);
+          // the space written after a wrapped image (its paragraph's line) is not text
+          const next = token.children[token.children.indexOf(child) + 1];
+          if (image.attrGet("wrap") && next?.type === "text") next.content = next.content.replace(/^\s+/, "");
+          continue;
+        }
+      }
       if (child.type === "html_inline" || child.type === "image") {
         const text = new Token("text", "", 0);
         text.content = child.type === "image" ? `![${child.content}](${child.attrGet("src") ?? ""})` : child.content;
@@ -223,6 +240,64 @@ function tidy(state: StateCore) {
     }
     token.children = children;
   }
+}
+
+/** An attribute of an HTML tag's text. */
+function tagAttr(tag: string, name: string): string | null {
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+  return match ? (match[1] ?? match[2] ?? match[3] ?? "") : null;
+}
+
+/** A width as a fraction of the line: "40%", or pixels at 96 per inch on an A4 page's text width. */
+function widthFraction(value: string | null): number | null {
+  if (!value) return null;
+  const match = /^\s*([\d.]+)\s*(%|px)?\s*$/.exec(value);
+  if (!match) return null;
+  const n = Number(match[1]);
+  if (!(n > 0)) return null;
+  const fraction = match[2] === "%" ? n / 100 : n / 605;
+  return Math.max(0.01, Math.min(1, Math.round(fraction * 1000) / 1000));
+}
+
+/** An image token for the parser (the image node), or null when its file is not known. */
+function imageToken(state: StateCore, src: string, alt: string, width: number | null, align: string | null): Token | null {
+  const key = resolveImageSource(src);
+  if (!key) return null;
+  const token = new state.Token("vtx_image", "img", 0);
+  token.attrSet("src", key);
+  token.attrSet("alt", alt);
+  token.attrSet("width", String(width ?? DEFAULT_IMAGE_WIDTH));
+  if (align === "left" || align === "right") token.attrSet("wrap", align);
+  return token;
+}
+
+function markdownImageToken(state: StateCore, child: Token): Token | null {
+  const alt = child.children?.map((c) => c.content).join("") ?? child.content;
+  return imageToken(state, child.attrGet("src") ?? "", alt, null, null);
+}
+
+function htmlImageToken(state: StateCore, tag: string): Token | null {
+  return imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width")), tagAttr(tag, "align"));
+}
+
+/** `<p align="…"><img …> <img …></p>` (VisualTeX's image line) as a paragraph of images. */
+function imageLineTokens(state: StateCore, html: string): Token[] | null {
+  // also <img> tags alone on their lines (an HTML block): a left-aligned image line
+  const match = /^\s*<p(\s[^>]*)?>\s*((?:<img\b[^>]*>\s*)+)<\/p>\s*$/i.exec(html) ?? /^()\s*((?:<img\b[^>]*>\s*)+)$/i.exec(html);
+  if (!match) return null;
+  const images: Token[] = [];
+  for (const tag of match[2].match(/<img\b[^>]*>/gi) ?? []) {
+    const image = imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width")), null);
+    if (!image) return null;
+    images.push(image);
+  }
+  const open = new state.Token("paragraph_open", "p", 1);
+  const align = tagAttr(match[1] ?? "", "align");
+  if (align === "center" || align === "right") open.attrSet("align", align);
+  const inline = new state.Token("inline", "", 0);
+  inline.children = images;
+  inline.content = "";
+  return [open, inline, new state.Token("paragraph_close", "p", -1)];
 }
 
 /** <h1 align="center">…</h1> on lines of its own: the document's title, its text read as Markdown. */
@@ -309,7 +384,12 @@ function parserFor(schema: Schema): MarkdownParser {
   if (parser) return parser;
   parser = new MarkdownParser(schema, createMarkdownIt(), {
     blockquote: { block: "blockquote" },
-    paragraph: { block: "paragraph" },
+    paragraph: { block: "paragraph", getAttrs: (tok) => (tok.attrGet("align") ? { align: tok.attrGet("align") } : null) },
+    vtx_image: {
+      node: "image",
+      getAttrs: (tok) => ({ src: tok.attrGet("src"), alt: tok.attrGet("alt") ?? "", width: Number(tok.attrGet("width")) || DEFAULT_IMAGE_WIDTH, wrap: tok.attrGet("wrap") }),
+      noCloseToken: true,
+    },
     list_item: { block: "list_item" },
     bullet_list: { block: "bullet_list" },
     ordered_list: { block: "ordered_list", getAttrs: (tok) => ({ start: Number(tok.attrGet("start")) || 1 }) },
@@ -419,7 +499,12 @@ export interface MarkdownExportOptions {
   references?: "eqref" | "plain";
   /** The Markdown file the document was read from: blocks still as they were are written back unchanged. */
   source?: MarkdownSource | null;
+  /** Where an image's file is, relative to the .md (default: assets/fig-n.ext in the order of appearance). */
+  imagePath?: (key: string) => string | null;
 }
+
+const htmlAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const percent = (width: number) => `${Math.round(width * 1000) / 10}%`;
 
 /** A formula id as a LaTeX label: as read from a file, or eq:<id> for formulas made here. */
 function labelOf(id: string, source: MarkdownSource | null | undefined): string {
@@ -465,8 +550,22 @@ function serializerFor(
   // New and changed blocks follow the file's own habits (Typora keeps a list's marker the same way).
   const style = options.source?.style ?? { bullet: "-", delimiter: ".", setext: false };
   const latexOf = (latex: string) => (options.formulaLatex ?? ((l: string) => l))(latex).trim();
+  const pathOf = (key: string) => (options.imagePath ?? (() => null))(key) ?? key;
+  /** An image as the HTML GitHub, Typora, Obsidian and VS Code show at its width (DESIGN.md §11.1). */
+  const imageHtml = (node: Node) =>
+    `<img src="${htmlAttr(pathOf(node.attrs.src))}" alt="${htmlAttr(node.attrs.alt || "")}" width="${percent(node.attrs.width)}"${node.attrs.wrap ? ` align="${node.attrs.wrap}"` : ""}>`;
   const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {
     paragraph(state, node) {
+      if (isImageLine(node)) {
+        // an image line: one <p> (align on <img> does not centre), the images a space apart
+        const images: string[] = [];
+        node.forEach((child) => {
+          if (isImage(child)) images.push(imageHtml(child));
+        });
+        state.write(`<p align="${(node.attrs.align as string | null) ?? "left"}">${images.join(" ")}</p>`);
+        state.closeBlock(node);
+        return;
+      }
       const align = node.attrs.align as string | null;
       if (align === "center" || align === "right") {
         // Markdown has no alignment: HTML, as Typora writes it.
@@ -538,6 +637,11 @@ function serializerFor(
     },
     math_inline(state, node) {
       state.write(`$${latexOf(node.attrs.latex)}$`);
+    },
+    image(state, node) {
+      // a wrapped image opens its paragraph's line, the text beside it (an <img> alone on the line above would make
+      // the paragraph raw HTML)
+      state.write(imageHtml(node) + (node.attrs.wrap ? " " : ""));
     },
     eqref(state, node) {
       const number = node.attrs.target ? numbers.byId.get(node.attrs.target) : undefined;
@@ -699,6 +803,10 @@ function backticks(text: string, side: -1 | 1): string {
 
 /** The document as Markdown. */
 export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {}): string {
+  if (!options.imagePath) {
+    const paths = imageFiles(doc, "assets").paths;
+    options = { ...options, imagePath: (key) => paths.get(key) ?? null };
+  }
   const numbers = numbering(doc);
   const notes = noteNumbers(doc);
   const serializer = serializerFor(numbers, options, referencedIds(doc), notes);

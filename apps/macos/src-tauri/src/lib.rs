@@ -1739,6 +1739,28 @@ end run"#;
     }
 }
 
+/// An image file dropped from the system on a document (Tauri's drag-drop event gives its path): its bytes, base64.
+#[tauri::command]
+fn read_image_file(path: String) -> Result<String, String> {
+    let target = PathBuf::from(path.trim());
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !target.is_absolute()
+        || !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic" | "avif")
+    {
+        return Err("Not an image file".to_string());
+    }
+    let size = fs::metadata(&target).map_err(|error| format!("Unable to read the image: {error}"))?.len();
+    if size > 50 * 1024 * 1024 {
+        return Err("The image is too large".to_string());
+    }
+    let bytes = fs::read(&target).map_err(|error| format!("Unable to read the image: {error}"))?;
+    Ok(BASE64_STANDARD.encode(bytes))
+}
+
 #[tauri::command]
 fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
     let target = PathBuf::from(path.trim());
@@ -1750,7 +1772,8 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex") {
+    // zip: a document's .tex or .md with its figures
+    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex" | "zip") {
         return Err("Unsupported export file extension".to_string());
     }
     let parent = target
@@ -2166,6 +2189,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
+            read_image_file,
             copy_png_to_clipboard,
             document_library::document_library_list,
             document_library::document_library_read,

@@ -5,6 +5,7 @@ import { Schema, type DOMOutputSpec, type MarkSpec, type NodeSpec } from "prosem
 import { tableNodes } from "prosemirror-tables";
 import { DOCUMENT_SETTING_ATTRS } from "./settings.ts";
 import { noteNodes } from "./notes.ts";
+import { imageNodeSpec } from "./images.ts";
 
 /** Every block carries a stable id (labels, export mapping, compile errors). */
 const id = { id: { default: null as string | null } };
@@ -199,6 +200,9 @@ const nodes: Record<string, NodeSpec> = {
     ],
     toDOM: (node): DOMOutputSpec => ["span", { class: "vtx-math-inline", "data-latex": node.attrs.latex }],
   },
+
+  /** An image (images.ts): a box in the line, as \includegraphics is. */
+  image: imageNodeSpec,
 
   /** A reference to a numbered display formula: shows its number, exported as \eqref. */
   eqref: {

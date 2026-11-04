@@ -118,3 +118,22 @@ export {
   type FootnoteEditRequest,
 } from "./notes.ts";
 export { paginationKey, paginationPlugin, refreshPagination, type PageGeometry, type PaginationOptions } from "./pagination.ts";
+export {
+  DEFAULT_IMAGE_WIDTH,
+  IMAGE_GAP,
+  documentImageKeys,
+  imageEntry,
+  imageFiles,
+  imageUrl,
+  insertImagesAtSelection,
+  isImageLine,
+  registerImageBytes,
+  registerImageFile,
+  resolveImageSource,
+  setImageAlign,
+  setImageFileResolver,
+  setImageWrap,
+  type ImageLabels,
+} from "./images.ts";
+export { graphicsPaths } from "./latexImport.ts";
+export { IMAGE_REQUEST_EVENT, requestImage } from "./images.ts";

@@ -2,6 +2,7 @@
 // the formula editor's "\" suggestions are (numbered rows, the command, a picture of what it makes). The keys
 // stay in the text: ↑/↓, Enter or Tab, 1-9, Esc are the editor's; a click runs an entry too.
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Image as ImageIcon } from "lucide-react";
 import type { EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import {
@@ -98,6 +99,7 @@ function Preview({ preview }: { preview: CommandPreview }) {
       }
       if (preview.block === "rule") return <span className="vtx-cmd-rule" />;
       if (preview.block === "code") return <span className="vtx-cmd-code">{"{ }"}</span>;
+      if (preview.block === "image") return <ImageIcon size={18} strokeWidth={1.6} aria-hidden="true" />;
       if (preview.block === "quote") {
         return (
           <span className="vtx-cmd-quote">

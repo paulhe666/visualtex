@@ -1877,3 +1877,139 @@
     box-shadow: var(--shadow-lg);
   }
 }
+
+/* ---- images (DESIGN.md §11): a box in the line, bottom on the baseline, as \includegraphics ---- */
+.vtx-document .vtx-image {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+  max-width: 100%;
+  line-height: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--vtx-image-aspect, auto);
+  pointer-events: none;
+}
+.vtx-document .vtx-image.is-missing {
+  min-height: 2em;
+  background: repeating-linear-gradient(45deg, #f1f3f6 0 6px, #e6e9ee 6px 12px);
+}
+/* an image line: the images 0.02\linewidth apart (\hspace{0.02\linewidth}) */
+.vtx-document p.vtx-image-line .vtx-image.has-gap {
+  margin-left: 2%;
+}
+/* wrapfigure: \columnsep (10pt) beside the text, \intextsep (12pt) below; the top \intextsep − 1.4ex under the first
+   baseline (wrapfig mid-page) */
+.vtx-document .vtx-image.is-wrap-left,
+.vtx-document .vtx-image.is-wrap-right {
+  margin-top: calc((var(--vtx-line-height, 1.3) - 1) * 0.5em + 0.85em + 12 * var(--vtx-pt, 1.333px) - 0.6em);
+  margin-bottom: calc(12 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-left {
+  float: left;
+  margin-right: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-right {
+  float: right;
+  margin-left: calc(10 * var(--vtx-pt, 1.333px));
+}
+/* wrapfig wraps paragraphs only: other blocks, image lines and the next wrapped paragraph start below a wrapped
+   image (the export's \vtxwrapclear) */
+.vtx-document > :not(p),
+.vtx-document > p.vtx-image-line,
+.vtx-document > p:has(> .vtx-image.is-wrap-left, > .vtx-image.is-wrap-right) {
+  clear: both;
+}
+.vtx-document .vtx-image.is-selected {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 1px;
+}
+.vtx-image-handle {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 28px;
+  max-height: 80%;
+  transform: translateY(-50%);
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: var(--accent, #2f6fde);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+.vtx-image-handle.is-left {
+  left: -5px;
+}
+.vtx-image-handle.is-right {
+  right: -5px;
+}
+.vtx-document .vtx-image.is-selected .vtx-image-handle,
+.vtx-document .vtx-image.is-resizing .vtx-image-handle {
+  display: block;
+}
+.vtx-image-size {
+  position: fixed;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(30, 34, 40, 0.86);
+  color: #fff;
+  font: 12px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}
+.vtx-image-bar {
+  position: fixed;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.vtx-image-bar[hidden] {
+  display: none;
+}
+.vtx-image-bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #2b3038);
+  cursor: pointer;
+}
+.vtx-image-bar-button:hover:not(:disabled) {
+  background: var(--hover, #eef1f5);
+}
+.vtx-image-bar-button.is-on {
+  background: var(--active, #e2ebfb);
+  color: var(--accent, #2f6fde);
+}
+.vtx-image-bar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vtx-image-bar-gap {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border, #d8dce3);
+}
+.vtx-drop-marker.is-wrap {
+  border-radius: 2px;
+}

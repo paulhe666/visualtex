@@ -11,6 +11,7 @@ import { isFormulaNodeName } from "./schema.ts";
 import { formulaParts, formulaViewOf, openFormula } from "./formulas.ts";
 import { deleteSelectionWithParts, selectionSliceWithParts, wholeFormulasRange } from "./mixedSelection.ts";
 import { DropMarker, dropPlace } from "./dropPlace.ts";
+import { imageDropMarker, imageDropTarget, isImage, moveImage, type ImageDropTarget } from "./images.ts";
 
 export const documentDragKey = new PluginKey("visualtex-document-drag");
 
@@ -88,6 +89,10 @@ class SelectionDrag {
   private readonly from: number;
   private readonly to: number;
   private readonly mixed: boolean;
+  /** a selected image: dropped by the image rules (images.ts), not as a slice */
+  private readonly image: boolean;
+  private imageTarget: ImageDropTarget | null = null;
+  private imageMarker: HTMLElement | null = null;
 
   constructor(
     private readonly view: EditorView,
@@ -105,6 +110,7 @@ class SelectionDrag {
     this.from = from ?? mixed?.from ?? sel.from;
     this.to = to ?? mixed?.to ?? sel.to;
     this.mixed = !!mixed;
+    this.image = sel instanceof NodeSelection && isImage(sel.node);
     window.addEventListener("pointermove", this.onMove, true);
     window.addEventListener("pointerup", this.onUp, true);
     window.addEventListener("pointercancel", this.onCancel, true);
@@ -121,6 +127,8 @@ class SelectionDrag {
     window.removeEventListener("keydown", this.onKey, true);
     window.clearInterval(this.timer);
     this.marker.remove();
+    this.imageMarker?.remove();
+    this.imageMarker = null;
     document.documentElement.style.removeProperty("cursor");
     this.view.dom.classList.remove("is-dragging-selection");
   }
@@ -129,6 +137,18 @@ class SelectionDrag {
   private place() {
     const last = this.last;
     if (!last) return;
+    if (this.image) {
+      const node = this.view.state.doc.nodeAt(this.from)!;
+      this.imageTarget = imageDropTarget(this.view, last.x, last.y, node, this.from, this.to);
+      if (!this.imageMarker) {
+        this.imageMarker = document.createElement("div");
+        this.imageMarker.className = "vtx-drop-marker is-caret";
+        document.body.append(this.imageMarker);
+      }
+      this.imageMarker.classList.toggle("is-wrap", this.imageTarget?.kind === "wrap");
+      this.imageMarker.hidden = !imageDropMarker(this.view, this.imageTarget, this.imageMarker);
+      return;
+    }
     this.target = dropPlace(this.view, last.x, last.y, this.slice, this.from, this.to);
     this.marker.show(this.view, this.target);
   }
@@ -168,6 +188,11 @@ class SelectionDrag {
     this.finish();
     if (this.cancelled) return;
     const view = this.view;
+    if (!this.dragging && this.image) {
+      // a click on an image keeps it selected (its bar and handles)
+      view.focus();
+      return;
+    }
     if (!this.dragging) {
       // A click on the selection: on a formula in it, the formula opens; elsewhere the caret goes there.
       const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -182,6 +207,12 @@ class SelectionDrag {
       return;
     }
     event.preventDefault();
+    if (this.image) {
+      const tr = this.imageTarget ? moveImage(view, this.imageTarget, this.from, this.to, event.ctrlKey || event.altKey) : null;
+      if (tr) view.dispatch(tr.setMeta("uiEvent", "drop").scrollIntoView());
+      view.focus();
+      return;
+    }
     const target = this.target;
     if (target === null) return;
     const copy = event.ctrlKey || event.altKey;
@@ -245,6 +276,19 @@ export function documentDragPlugin(): Plugin {
           if (event.button !== 0 || event.shiftKey || !event.isPrimary) return false;
           // An open formula (its editor, its number) handles its own presses; one showing a part is the document's.
           if ((event.target as Element | null)?.closest?.(".is-open")) return false;
+          // a press on an image selects it and may drag it at once (Notion, Word)
+          const imageDom = (event.target as Element | null)?.closest?.(".vtx-image");
+          if (imageDom && !(event.target as Element).classList.contains("vtx-image-handle")) {
+            const pos = view.posAtDOM(imageDom, 0);
+            const node = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+            if (node && isImage(node)) {
+              view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
+              new SelectionDrag(view, event);
+              event.preventDefault();
+              view.focus();
+              return true;
+            }
+          }
           if (!onSelection(view, event.clientX, event.clientY)) return false;
           new SelectionDrag(view, event);
           // Neither the editor's own press handling nor the browser's selection or drag starts.

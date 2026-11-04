@@ -52,6 +52,7 @@ import { requestLink } from "./links.ts";
 import { insertFootnote, noteText, notesPlugin } from "./notes.ts";
 import { bracketLabel, equationLabels } from "./settings.ts";
 import { paginationPlugin, type PaginationOptions } from "./pagination.ts";
+import { imagesPlugin, type ImageLabels } from "./images.ts";
 
 // --------------------------------------------------------------- triggers --
 
@@ -414,7 +415,11 @@ export interface DocumentPluginOptions {
   markdownRules?: () => MarkdownRuleSwitches;
   /** The page view: the document divided into the paper's pages (none: one long page). */
   pagination?: PaginationOptions | null;
+  /** The image bar's button names in the app's language. */
+  imageLabels?: () => ImageLabels;
 }
+
+const DEFAULT_IMAGE_LABELS: ImageLabels = { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text, image left", wrapRight: "Wrap text, image right" };
 
 const DEFAULT_CODE_LABELS: CodeBlockOptions["labels"] = { plainText: "Plain Text", copy: "Copy", copied: "Copied", language: "Language" };
 
@@ -428,6 +433,7 @@ export function slicePlainText(slice: Slice, formulaText: (latex: string) => str
       else if (child.type.name === "math_inline") out += `$${formulaText(child.attrs.latex)}$`;
       else if (child.type.name === "hard_break") out += "\n";
       else if (child.type.name === "eqref") out += `\\eqref{eq:${child.attrs.target ?? ""}}`;
+      else if (child.type.name === "image") out += child.attrs.alt ? `[${child.attrs.alt}]` : "";
       else if (child.type.name === "footnote" || child.type.name === "cite") out += noteText(child, null);
     });
     return out;
@@ -484,6 +490,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     }),
     numberingPlugin(),
     notesPlugin(),
+    imagesPlugin({ labels: options.imageLabels ?? (() => DEFAULT_IMAGE_LABELS) }),
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS }),
     keymap(codeBlockKeys),

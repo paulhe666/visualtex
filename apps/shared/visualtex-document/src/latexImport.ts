@@ -3,6 +3,7 @@
 // enumerate into lists, quote into a quote, tabular into a table, lstlisting / verbatim into code blocks, math as
 // it is ($…$, \(…\), \[…\], equation / align / gather as numbered display formulas, \eqref as references).
 // Commands without a counterpart (\maketitle, \usepackage, \centering…) are dropped; their text stays.
+import { resolveImageSource } from "./images.ts";
 
 /** Whether text is LaTeX document source (not just a formula). */
 export function looksLikeLatexSource(text: string): boolean {
@@ -42,6 +43,88 @@ function skipOptional(text: string, i: number): number {
   if (text[j] !== "[") return i;
   const close = text.indexOf("]", j);
   return close < 0 ? i : close + 1;
+}
+
+/** The text width of an A4 page with Word's margins (the document's default), in pt, for widths given in units. */
+const DEFAULT_TEXT_WIDTH_PT = ((210 - 63.6) / 25.4) * 72.27;
+
+const UNIT_PT: Record<string, number> = { pt: 1, bp: 72.27 / 72, mm: 72.27 / 25.4, cm: 72.27 / 2.54, in: 72.27, pc: 12, em: 10, ex: 4.3 };
+
+/** \includegraphics' width as a fraction of the line: 0.5\linewidth, \textwidth, 5cm, 120pt (null: not given). */
+function graphicsWidth(options: string): number | null {
+  const width = /(?:^|,)\s*width\s*=\s*([^,]+)/.exec(options)?.[1]?.trim();
+  if (!width) return null;
+  const relative = /^([\d.]*)\s*\\(?:linewidth|textwidth|columnwidth|hsize)$/.exec(width);
+  if (relative) return Math.min(1, Number(relative[1] || "1"));
+  const absolute = /^([\d.]+)\s*(pt|bp|mm|cm|in|pc|em|ex)$/.exec(width);
+  if (absolute) return Math.min(1, (Number(absolute[1]) * UNIT_PT[absolute[2]]) / DEFAULT_TEXT_WIDTH_PT);
+  return null;
+}
+
+/** \includegraphics[…]{path} as the HTML image the Markdown reader takes (markdown.ts). */
+function graphicsHtml(options: string, path: string, align: string | null = null): string {
+  // an image whose file is not at hand (LaTeX pasted without its figures) is left out, as before
+  if (!resolveImageSource(path)) return "";
+  const width = graphicsWidth(options);
+  const escaped = path.trim().replace(/"/g, "&quot;");
+  return `<img src="${escaped}" alt=""${width ? ` width="${Math.round(width * 1000) / 10}%"` : ""}${align ? ` align="${align}"` : ""}>`;
+}
+
+const GRAPHICS = /\\includegraphics\*?\s*(?:\[([^\]]*)\])?\s*\{([^{}]*)\}/g;
+
+/** \graphicspath{{dir/}{dir2/}}: the folders \includegraphics looks in. */
+export function graphicsPaths(source: string): string[] {
+  const match = /\\graphicspath\s*\{((?:\s*\{[^{}]*\})+)\s*\}/.exec(source);
+  return match ? [...match[1].matchAll(/\{([^{}]*)\}/g)].map((m) => m[1]) : [];
+}
+
+/**
+ * Images (DESIGN.md §11): a wrapfigure becomes an image at the start of the next paragraph (wrapped on its side);
+ * figure / center / \centering groups and lines holding only \includegraphics become image lines; an
+ * \includegraphics among text stays in the text. A caption becomes an italic line under the image line.
+ */
+function figures(text: string, kept: string[]): string {
+  const keep = (markdown: string) => {
+    kept.push(markdown);
+    return `\u0000${kept.length - 1}\u0000`;
+  };
+  const captionOf = (body: string) => {
+    const at = /\\caption\s*(?:\[[^\]]*\])?\s*(?=\{)/.exec(body);
+    return at ? group(body, at.index + at[0].length)?.content.trim() ?? "" : "";
+  };
+  // wrapfigure: its image goes to the start of the paragraph after it
+  text = text.replace(/\\begin\{wrapfigure\}\s*(?:\[[^\]]*\])?\s*\{([rlioRLIO])\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}([\s\S]*?)\\end\{wrapfigure\}\s*/g, (_m, side: string, width: string, body: string) => {
+    const graphics = [...body.matchAll(GRAPHICS)][0];
+    if (!graphics) return "";
+    const fraction = graphicsWidth(`width=${width.trim()}`);
+    const inner = graphicsWidth(graphics[1] ?? "");
+    const options = fraction ? `width=${(fraction * (inner ?? 1)).toFixed(3)}\\linewidth` : graphics[1] ?? "";
+    const html = graphicsHtml(options, graphics[2], /[lLiI]/.test(side) ? "left" : "right");
+    return html ? keep(html + " ") : "";
+  });
+  // figure / center / a \centering group with images: an image line (and the caption under it)
+  text = text.replace(/\\begin\{(figure|center|subfigure|minipage)\*?\}(?:\[[^\]]*\])?(?:\{[^{}]*\})?([\s\S]*?)\\end\{\1\*?\}/g, (whole, env: string, body: string) => {
+    if (env === "subfigure" || env === "minipage") return whole;
+    const images = [...body.matchAll(GRAPHICS)];
+    if (!images.length) return whole;
+    const align = env === "center" || /\\centering/.test(body) || env === "figure" ? "center" : /\\raggedleft/.test(body) ? "right" : "left";
+    const caption = captionOf(body);
+    const html = images.map((g) => graphicsHtml(g[1] ?? "", g[2])).filter(Boolean);
+    return (html.length ? keep(`\n\n<p align="${align}">${html.join(" ")}</p>\n\n`) : "") + (caption ? `\n\n*${caption}*\n\n` : "");
+  });
+  // {\centering …\par} / \noindent … lines with only images
+  text = text.replace(/\{\\(centering|raggedleft|raggedright)\b((?:[^{}]|\{[^{}]*\})*?)\\par\s*\}/g, (whole, switch_: string, body: string) => {
+    const images = [...body.matchAll(GRAPHICS)];
+    if (!images.length || body.replace(GRAPHICS, "").replace(/\\(hspace\*?\{[^{}]*\}|hfill|quad|qquad|noindent)|%|\s/g, "")) return whole;
+    const align = switch_ === "centering" ? "center" : switch_ === "raggedleft" ? "right" : "left";
+    const html = images.map((g) => graphicsHtml(g[1] ?? "", g[2])).filter(Boolean);
+    return html.length ? keep(`\n\n<p align="${align}">${html.join(" ")}</p>\n\n`) : "";
+  });
+  // any other \includegraphics: in the text where it is
+  return text.replace(GRAPHICS, (_m, options: string | undefined, path: string) => {
+    const html = graphicsHtml(options ?? "", path);
+    return html ? keep(html) : "";
+  });
 }
 
 const DISPLAY_ENVIRONMENTS = "equation|align|gather|multline|eqnarray|flalign|alignat";
@@ -316,6 +399,7 @@ export function latexToMarkdown(source: string): string {
   const kept: string[] = [];
   text = protectCode(text, kept);
   text = protectMath(text, kept);
+  text = figures(text, kept);
   text = tables(text, kept);
   text = sections(text);
   // Old switches in a group: {\bf …}, {\it …}, {\tt …}.

@@ -306,6 +306,32 @@ function toBase64(text: string): string {
 }
 
 /**
+ * A binary file (an export .zip) to the disk: in the app through the system's save dialog (false when cancelled);
+ * in a browser as a download.
+ */
+export async function saveBinaryFile(name: string, bytes: Uint8Array, extension: string, type: string, isEn: boolean): Promise<boolean> {
+  if (isTauri()) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const chosen = await save({ defaultPath: name, filters: [{ name: extension.toUpperCase(), extensions: [extension] }], title: isEn ? "Save" : "保存" });
+    if (!chosen) return false;
+    const path = chosen.toLowerCase().endsWith(`.${extension}`) ? chosen : `${chosen}.${extension}`;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const dataBase64 = btoa(binary);
+    const windows = /Windows/i.test(navigator.userAgent);
+    await invoke("write_export_file", windows ? { request: { path, text: "", dataBase64 } } : { path, dataBase64 });
+    return true;
+  }
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  const link = window.document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+/**
  * A text file to the disk: in the app through the system's save dialog (false when cancelled); in a browser as a
  * download.
  */
