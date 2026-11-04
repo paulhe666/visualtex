@@ -40,7 +40,7 @@ export interface DocumentLibraryActions {
   createFolder(): Promise<string | null>;
   renameFolder(id: string, name: string): void;
   deleteFolder(id: string): void;
-  /** the document to a file: its own format, or LaTeX, Markdown, Word, PDF */
+  /** the document to a file: its own format, or LaTeX, Markdown, PDF */
   exportFile(id: string, format?: DocumentExportFormat): void;
   /** Shows the file in Finder / Explorer (the app only). */
   reveal: ((id: string) => void) | null;
@@ -114,10 +114,9 @@ function InlineName(props: { value: string; placeholder: string; onDone: (value:
 
 type MenuTarget = { kind: "document" | "folder"; id: string; x: number; y: number; moving?: boolean; exporting?: boolean };
 
-export type DocumentExportFormat = "vtxdoc" | "latex" | "markdown" | "word" | "pdf";
+export type DocumentExportFormat = "vtxdoc" | "latex" | "markdown" | "pdf";
 
 const EXPORT_FORMATS: Array<{ id: DocumentExportFormat; en: string; zh: string; extension: string }> = [
-  { id: "word", en: "Word", zh: "Word", extension: ".docx" },
   { id: "pdf", en: "PDF", zh: "PDF", extension: ".pdf" },
   { id: "latex", en: "LaTeX", zh: "LaTeX", extension: ".tex" },
   { id: "markdown", en: "Markdown", zh: "Markdown", extension: ".md" },

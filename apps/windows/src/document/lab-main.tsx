@@ -16,10 +16,9 @@ import { useDocumentLibraryStore } from "./documentLibraryApi";
 import { EditorState, NodeSelection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { buildPrintCopy } from "./printCopy";
-import { documentToWord } from "./documentExport";
 
 const editor = createRef<DocumentEditorHandle>();
-(window as unknown as Record<string, unknown>).__docLab = { editor, core: documentCore, pm: { NodeSelection, TextSelection, EditorState, EditorView }, sampleDocument, format: useDocumentFormatStore, editorStore: useDocumentEditorStore, libraryStore: useDocumentLibraryStore, buildPrintCopy, documentToWord };
+(window as unknown as Record<string, unknown>).__docLab = { editor, core: documentCore, pm: { NodeSelection, TextSelection, EditorState, EditorView }, sampleDocument, format: useDocumentFormatStore, editorStore: useDocumentEditorStore, libraryStore: useDocumentLibraryStore, buildPrintCopy };
 
 // ?workspace: the whole document mode (library, toolbar, editor) with the header's library button.
 const workspace = new URLSearchParams(window.location.search).has("workspace");

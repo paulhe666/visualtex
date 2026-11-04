@@ -13,7 +13,6 @@ import {
   documentSchema,
   findMarkdownFile,
   graphicsPaths,
-  registerImageBytes,
   setImageFileResolver,
   hasMathDelimiters,
   insertDisplayLatex,
@@ -39,15 +38,15 @@ import {
   saveTextFile,
   saveBinaryFile,
   chooseExportPath,
+  chooseImportFile,
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
 } from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
-import { documentToWord, type WordFormulaFormat } from "./documentExport";
 import { documentToPdf } from "./documentPdf";
-import { WordExportDialog } from "./WordExportDialog";
+import { imagePathKey, loadImportImages } from "./importImages";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
@@ -55,7 +54,6 @@ import {
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_PDF_EVENT,
-  DOCUMENT_EXPORT_WORD_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
@@ -262,7 +260,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     saveNow: async (): Promise<boolean> => true,
     open: async (_id: string): Promise<boolean> => false,
     create: async (_folder: string | null) => {},
-    importFile: async (_file: File) => {},
+    importFile: async (_file: File, _folder?: string | null) => {},
     exportFile: async (_id: string, _format?: DocumentExportFormat) => {},
     afterLoss: async (_library: Library) => {},
   });
@@ -315,7 +313,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     },
     // A .vtxdoc (or .json) as it is; Markdown and LaTeX read into a new document (one Ctrl+Z from empty); a .zip of
     // a LaTeX project (its main file, the files it inputs, the macros of its class and packages) or of Markdown.
-    importFile: async (file) => {
+    importFile: async (file, folder = null) => {
       const stem = file.name.replace(/\.[^.]+$/, "");
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -325,9 +323,10 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         let images: Map<string, Uint8Array> | null = null;
         let base = "";
         if (/\.zip$/i.test(file.name)) {
-          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|md|markdown|png|jpe?g)$/i.test(entry.name) });
-          images = new Map(Object.entries(entries).filter(([path]) => /\.(png|jpe?g)$/i.test(path)));
-          const files = Object.entries(entries).filter(([path]) => !/\.(png|jpe?g)$/i.test(path)).map(([path, data]) => ({ path, bytes: data }));
+          const picture = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|bib|md|markdown)$/i.test(entry.name) || picture.test(entry.name) });
+          images = new Map(Object.entries(entries).filter(([path]) => picture.test(path)));
+          const files = Object.entries(entries).filter(([path]) => !picture.test(path)).map(([path, data]) => ({ path, bytes: data }));
           const project = readLatexProject(files);
           const markdownFile = project ? null : findMarkdownFile(files);
           if (project) {
@@ -344,24 +343,16 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
           kind = /\.(md|markdown)$/i.test(file.name) ? "markdown" : /\.(tex|ltx)$/i.test(file.name) ? "latex" : "document";
           if (kind === "document") parseDocument(documentSchema, text);
         }
+        // the pictures it names: from the web, the file's folder, its archive (before it is read)
+        const pictures =
+          kind === "document"
+            ? new Map<string, string>()
+            : await loadImportImages(text, kind, { archive: images, base, folder, folders: kind === "latex" ? graphicsPaths(text) : [] });
         await ops.current.saveNow();
         const entry = await api.create(null, kind === "document" ? text : emptyDocumentText(), stem);
         withEntry(entry);
         if (!(await ops.current.open(entry.id))) return;
-        if (images?.size) {
-          const found = images;
-          const folders = ["", ...(kind === "latex" ? graphicsPaths(text) : [])];
-          setImageFileResolver((path) => {
-            for (const folder of folders) {
-              for (const ext of ["", ".png", ".jpg", ".jpeg", ".PNG", ".JPG"]) {
-                const candidate = (base + folder + path + ext).replace(/\/\.\//g, "/").replace(/^\.\//, "");
-                const bytes = found.get(candidate) ?? found.get(folder + path + ext);
-                if (bytes) return registerImageBytes(bytes);
-              }
-            }
-            return null;
-          });
-        }
+        if (pictures.size) setImageFileResolver((path) => pictures.get(imagePathKey(path)) ?? null);
         try {
           if (kind === "markdown") documentRef.current?.loadMarkdown(text);
           else if (kind === "latex") documentRef.current?.loadLatex(text);
@@ -382,7 +373,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
             await ops.current.open(id);
             await new Promise((resolve) => window.setTimeout(resolve, 400));
           }
-          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, word: actions.current.exportWord, pdf: actions.current.exportPdf }[format];
+          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, pdf: actions.current.exportPdf }[format];
           run();
           return;
         }
@@ -459,10 +450,22 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     };
   }, []);
 
+  // Open: the system's dialog in the app (the file's folder then finds its pictures), the file input in a browser
+  const openFile = () => {
+    if (!isTauri()) {
+      fileRef.current?.click();
+      return;
+    }
+    void chooseImportFile(isEn).then(
+      (chosen) => chosen && ops.current.importFile(chosen.file, chosen.folder),
+      (error) => flash(errorText(error)),
+    );
+  };
+
   const libraryActions: DocumentLibraryActions = {
     open: (id) => void ops.current.open(id),
     create: (folder) => void ops.current.create(folder),
-    importFile: () => fileRef.current?.click(),
+    importFile: () => openFile(),
     rename: (id, title) => void api.rename(id, title).then(setLibrary, (error) => flash(errorText(error))),
     duplicate: (id) =>
       void (async () => {
@@ -509,29 +512,8 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     search: (query) => api.search(query),
   };
 
-  // Word export: the dialog (the formulas' form) and its progress; PDF: one at a time
-  const [wordExport, setWordExport] = useState(false);
-  const [wordBusy, setWordBusy] = useState<string | null>(null);
+  // PDF: one at a time
   const pdfBusy = useRef(false);
-  const exportWord = (format: WordFormulaFormat) => {
-    const doc = documentRef.current?.view()?.state.doc;
-    if (!doc) return;
-    void (async () => {
-      try {
-        setWordBusy(t("Preparing…", "正在准备…"));
-        const result = await documentToWord(doc, format, { bibliographyTitle: t("References", "参考文献"), title: fileName("") }, (done, total) =>
-          setWordBusy(`${done} / ${total}`),
-        );
-        setWordBusy(null);
-        setWordExport(false);
-        const saved = await saveBinaryFile(fileName(".docx"), result.bytes, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", isEn);
-        if (saved) flash(result.fallbacks ? t(`Word exported (${result.fallbacks} formulas as pictures)`, `Word 已导出（${result.fallbacks} 个公式为图片）`) : t("Word exported", "Word 已导出"));
-      } catch (error) {
-        setWordBusy(null);
-        flash(errorText(error));
-      }
-    })();
-  };
 
   const actions = useRef({
     save: () => {},
@@ -542,12 +524,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     copyLatex: () => {},
     exportMarkdown: () => {},
     copyMarkdown: () => {},
-    exportWord: () => {},
     exportPdf: () => {},
   });
   actions.current = {
     save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
-    open: () => fileRef.current?.click(),
+    open: () => openFile(),
     create: () => void ops.current.create(entryOf(current.current.id)?.folder ?? null),
     exportDocument: () => current.current.id && void ops.current.exportFile(current.current.id),
     exportLatex: () => {
@@ -593,7 +574,6 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         () => flash(t("Copy failed", "复制失败")),
       );
     },
-    exportWord: () => setWordExport(true),
     exportPdf: () => {
       const view = documentRef.current?.view();
       if (!view || pdfBusy.current) return;
@@ -633,7 +613,6 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
-      [DOCUMENT_EXPORT_WORD_EVENT, () => actions.current.exportWord()],
       [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
     ];
     for (const [name, fn] of bind) window.addEventListener(name, fn);
@@ -644,7 +623,6 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
 
   return (
     <section className={"vtx-document-workspace" + (libraryOpen ? " has-library" : "")} aria-label={t("Document", "文档")}>
-      {wordExport && <WordExportDialog lang={isEn ? "en" : "zh"} busy={wordBusy} onExport={exportWord} onClose={() => setWordExport(false)} />}
       {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
       <div className="vtx-document-main">
         {/* the document's own buttons above it; the formula tools stay in the bottom dock */}

@@ -120,10 +120,15 @@ function lineStartConversion(state: EditorState, $cursor: ResolvedPos, before: s
   let match: RegExpExecArray | null;
   if ((match = HEADING.exec(before))) {
     if (block.type !== nodes.paragraph && block.type !== nodes.heading) return null;
-    const level = Math.min(3, match[1].length);
+    const level = Math.min(6, match[1].length);
     return retype(state, $cursor, nodes.heading, { id: block.attrs.id, level, align: block.attrs.align ?? null, indent: 0 });
   }
   if (block.type !== nodes.paragraph) return null;
+  // "[ ] " / "[x] " opening a list item: a task (a Chinese input method types 【 】)
+  const task = (rules.chinese ? /^[\[【]([ xX])[\]】][ \u00a0\u3000]$/ : /^\[([ xX])\][ \u00a0]$/).exec(before);
+  if (task && $cursor.depth >= 2 && $cursor.node(-1).type === nodes.list_item && $cursor.index(-1) === 0 && $cursor.node(-1).attrs.checked === null) {
+    return state.tr.delete(start, $cursor.pos).setNodeAttribute($cursor.before(-1), "checked", task[1] !== " ");
+  }
   if (BULLET.test(before)) return wrapBlock(state, $cursor, nodes.bullet_list, null);
   if ((match = ORDERED.exec(before))) return wrapBlock(state, $cursor, nodes.ordered_list, { start: Number(match[1]) });
   if (QUOTE.test(before)) return wrapBlock(state, $cursor, nodes.blockquote, null);

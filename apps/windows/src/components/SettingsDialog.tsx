@@ -1,5 +1,3 @@
-import { useDocumentFormatStore } from "../stores/documentFormatStore";
-import { wordFormulaOptions } from "../document/WordExportDialog";
 import {
   useEffect,
   useRef,
@@ -193,8 +191,6 @@ export function SettingsDialog({
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const configurationInputRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState<SettingsPage>(initialPage ?? "general");
-  const wordFormulas = useDocumentFormatStore((state) => state.wordFormulas);
-  const setWordFormulas = useDocumentFormatStore((state) => state.setWordFormulas);
   const [configurationBusy, setConfigurationBusy] = useState(false);
   const [configurationStatus, setConfigurationStatus] = useState("");
   const [customTheme, setCustomTheme] =
@@ -1348,22 +1344,6 @@ export function SettingsDialog({
           )}
           {page === "export" && (
             <>
-              <div className="settings-group">
-                <h4>{isEn ? "Word formulas" : "Word 公式"}</h4>
-                <div className="theme-segment">
-                  {wordFormulaOptions().map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={wordFormulas === option.id ? "is-active" : ""}
-                      aria-pressed={wordFormulas === option.id}
-                      onClick={() => setWordFormulas(option.id)}
-                    >
-                      {isEn ? option.en : option.zh}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <div className="settings-group">
                 <h4>{isEn ? "PNG background" : "PNG 背景"}</h4>
                 <div className="png-background-controls">

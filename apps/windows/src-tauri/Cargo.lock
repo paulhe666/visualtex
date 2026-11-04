@@ -4985,7 +4985,6 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "png 0.17.16",
- "quick-xml",
  "rcgen",
  "reqwest",
  "rustls",

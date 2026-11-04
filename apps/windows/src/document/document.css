@@ -611,6 +611,151 @@
   border-top: 1px solid #9e9e9e;
 }
 
+/* ---- what Markdown files bring (markdown.ts, richBlocks.ts) ---- */
+/* headings 4-6 (Markdown's ####…): unnumbered, bold, as LaTeX's \paragraph */
+.vtx-document h4,
+.vtx-document h5,
+.vtx-document h6 {
+  margin: 0;
+  padding: 0.4em 0 0.3em calc(var(--vtx-indent, 0) * 2em);
+  font-size: 1em;
+  font-weight: bold;
+  line-height: inherit;
+}
+.vtx-document h6 {
+  color: #555;
+}
+/* a task: a box in place of the bullet (a click ticks it) */
+.vtx-document li.vtx-task::before {
+  content: "";
+  box-sizing: border-box;
+  left: calc(2em - 0.15em);
+  top: 0.32em;
+  width: 0.85em;
+  height: 0.85em;
+  border: 1px solid #6b7280;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.vtx-document li li.vtx-task::before {
+  left: calc(1.333em - 0.15em);
+}
+.vtx-document li.vtx-task[data-checked="true"]::before {
+  border-color: var(--accent, #2f6fde);
+  background: var(--accent, #2f6fde) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% no-repeat;
+}
+.vtx-document li.vtx-task[data-checked="true"] > p {
+  color: #6b7280;
+}
+/* an alert (> [!NOTE]): GitHub's colours and name */
+.vtx-document blockquote[data-alert] {
+  padding: 0.2em 0 0.2em 1em;
+  border-left-width: 3px;
+}
+.vtx-document blockquote[data-alert]::before {
+  display: block;
+  font-weight: bold;
+}
+.vtx-document blockquote[data-alert="note"] { border-left-color: #0969da; }
+.vtx-document blockquote[data-alert="note"]::before { content: "ⓘ Note"; color: #0969da; }
+.vtx-document blockquote[data-alert="tip"] { border-left-color: #1a7f37; }
+.vtx-document blockquote[data-alert="tip"]::before { content: "💡 Tip"; color: #1a7f37; }
+.vtx-document blockquote[data-alert="important"] { border-left-color: #8250df; }
+.vtx-document blockquote[data-alert="important"]::before { content: "❗ Important"; color: #8250df; }
+.vtx-document blockquote[data-alert="warning"] { border-left-color: #9a6700; }
+.vtx-document blockquote[data-alert="warning"]::before { content: "⚠ Warning"; color: #9a6700; }
+.vtx-document blockquote[data-alert="caution"] { border-left-color: #d1242f; }
+.vtx-document blockquote[data-alert="caution"]::before { content: "⛔ Caution"; color: #d1242f; }
+/* x^2^, H~2~O: no taller lines */
+.vtx-document sup,
+.vtx-document sub {
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document kbd {
+  padding: 0 0.3em;
+  border: 1px solid #c8ccd2;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f6f8fa;
+  font: 0.85em ui-monospace, "SF Mono", Consolas, monospace;
+}
+/* [toc]: the headings, a click goes there */
+.vtx-document .vtx-toc {
+  margin: 0.3em 0;
+  padding: 0.3em 0;
+  user-select: none;
+}
+.vtx-document .vtx-toc[data-empty]::before {
+  content: "[toc]";
+  color: #8a8f98;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+}
+.vtx-document .vtx-toc-entry {
+  cursor: pointer;
+}
+.vtx-document .vtx-toc-entry:hover {
+  color: var(--accent, #2f6fde);
+}
+.vtx-document .vtx-toc-entry[data-level="2"] { padding-left: 1.5em; }
+.vtx-document .vtx-toc-entry[data-level="3"] { padding-left: 3em; }
+.vtx-document .vtx-toc-entry[data-level="4"] { padding-left: 4.5em; }
+.vtx-document .vtx-toc-entry[data-level="5"] { padding-left: 6em; }
+.vtx-document .vtx-toc-entry[data-level="6"] { padding-left: 7.5em; }
+.vtx-document .vtx-toc-number {
+  margin-right: 0.5em;
+}
+.vtx-document .vtx-toc.ProseMirror-selectednode,
+.vtx-document .vtx-html.ProseMirror-selectednode {
+  outline: 1px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+/* HTML kept from a file: drawn as it is; a comment only as a faint label */
+.vtx-document .vtx-html {
+  margin: 0.2em 0;
+  white-space: normal;
+}
+.vtx-document .vtx-html.is-comment {
+  margin: 0;
+  line-height: 1.2;
+}
+.vtx-document .vtx-html-comment {
+  color: #9aa0a8;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+}
+.vtx-document .vtx-html img,
+.vtx-document .vtx-html-inline img {
+  max-width: 100%;
+}
+.vtx-document .vtx-html-source {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--accent, #2f6fde);
+  border-radius: 4px;
+  font: 12px/1.5 ui-monospace, "SF Mono", Consolas, monospace;
+  resize: vertical;
+}
+/* a Mermaid block: its diagram under the code */
+.vtx-document .vtx-code-diagram {
+  padding: 12px;
+  border-top: 1px solid #2b2b2b;
+  background: #fff;
+  text-align: center;
+  white-space: normal;
+}
+.vtx-document .vtx-code-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.vtx-document .vtx-code-diagram.is-error {
+  background: #1e1e1e;
+  color: #f48771;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+  text-align: left;
+}
+
 /* ---- formulas: 17px (17/15 of the text; on a page, --vtx-math-scale of the body size), line height 1.2 ---- */
 .vtx-math-inline,
 .vtx-math-display {
@@ -2040,8 +2185,12 @@
 }
 .vtx-document .vtx-page-command .vtx-page-command-label {
   position: absolute;
-  right: calc(100% + 10px);
+  right: calc(100% + 8px);
   top: -0.7em;
+  /* within the left margin: a long command ends in "…" (its whole text is the label's title) */
+  max-width: calc(var(--vtx-margin-left, 120px) - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #8a8f98;
   font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
   white-space: nowrap;
@@ -2056,53 +2205,6 @@
 .vtx-document .vtx-page-command.ProseMirror-selectednode {
   outline: 1px solid var(--accent, #2f6fde);
   outline-offset: 2px;
-}
-
-/* ---- export to Word: the formulas' form (WordExportDialog) ---- */
-.vtx-export-dismiss {
-  background: rgba(15, 23, 42, 0.12);
-}
-.vtx-word-export {
-  left: 50%;
-  top: 22%;
-  width: 320px;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-}
-.vtx-word-export-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.vtx-word-export-label {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.vtx-word-export-options {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.vtx-word-export-options label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.vtx-word-export-options label.is-active {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.vtx-word-export-options input {
-  margin: 0;
-}
-.vtx-word-export-status {
-  flex: 1;
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 /* ---- candidate bar (Settings > Formula editor > Candidates): the "\" menu in one row ---- */

@@ -65,7 +65,7 @@ export const pageCommandNodeSpec: NodeSpec = {
       "data-value": node.attrs.value,
       contenteditable: "false",
     },
-    ["span", { class: "vtx-page-command-label" }, pageCommandLatex(node.attrs.command, node.attrs.value)],
+    ["span", { class: "vtx-page-command-label", title: pageCommandLatex(node.attrs.command, node.attrs.value) }, pageCommandLatex(node.attrs.command, node.attrs.value)],
   ],
 };
 

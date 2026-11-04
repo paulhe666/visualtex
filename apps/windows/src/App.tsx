@@ -8,7 +8,6 @@ import {
   DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_PDF_EVENT,
-  DOCUMENT_EXPORT_WORD_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
@@ -1803,11 +1802,6 @@ function App() {
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_MARKDOWN_EVENT)))}>
                 <ClipboardCopy size={16} />
                 <span>{isEn ? "Copy as Markdown" : "复制为 Markdown"}</span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_WORD_EVENT)))}>
-                <FileDown size={16} />
-                <span>{isEn ? "Export Word" : "导出 Word"}</span>
-                <kbd>.docx</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_PDF_EVENT)))}>
                 <FileDown size={16} />

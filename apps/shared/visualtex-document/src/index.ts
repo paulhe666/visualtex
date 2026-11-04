@@ -140,5 +140,6 @@ export {
 } from "./images.ts";
 export { graphicsPaths } from "./latexImport.ts";
 export { IMAGE_REQUEST_EVENT, requestImage } from "./images.ts";
-export { docxFormulaRequests, documentToDocx, equationBookmark, equationFormulaId, type DocxEquationNumber, type DocxExportOptions, type DocxFormula, type DocxFormulaRequest } from "./docx.ts";
 export { formatPageNumber, hasPageNumbering, pageCommandLatex, pageLabels, parsePageCommand, PAGE_NUMBER_STYLES } from "./pageCommands.ts";
+export { richBlockViews, richBlocksPlugin, safeHtml } from "./richBlocks.ts";
+export { emojiOf } from "./emoji.ts";
