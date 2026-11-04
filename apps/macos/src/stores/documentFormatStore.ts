@@ -7,6 +7,9 @@ import { safeStorage } from "../runtime/safeStorage";
 
 export type DocumentFormat = "latex" | "markdown";
 
+/** How formulas are written into Word: Office equations, VisualTeX formula pictures, MathType objects (Windows). */
+export type WordFormulaFormat = "omml" | "visualtex" | "mathtype";
+
 /** Groups of Markdown input rules that can be turned off (SiYuan had to add such switches after false positives). */
 export interface MarkdownRules {
   /** "# ", "- ", "1. ", "> ", "```" at the start of a line; "---", "| a | b |" on Enter */
@@ -23,6 +26,9 @@ interface DocumentFormatState {
   /** Markdown output: references to numbered formulas as $\eqref{label}$ (links in Typora) or as plain "(n)" */
   markdownReferences: "eqref" | "plain";
   markdownRules: MarkdownRules;
+  /** Word export: the formulas' form (the last one chosen) */
+  wordFormulas: WordFormulaFormat;
+  setWordFormulas: (format: WordFormulaFormat) => void;
   setInputMode: (mode: DocumentFormat) => void;
   setOutputFormat: (format: DocumentFormat) => void;
   setMarkdownReferences: (style: "eqref" | "plain") => void;
@@ -36,6 +42,8 @@ export const useDocumentFormatStore = create<DocumentFormatState>()(
       outputFormat: "latex",
       markdownReferences: "eqref",
       markdownRules: { blocks: true, marks: true, chinese: true },
+      wordFormulas: "omml",
+      setWordFormulas: (wordFormulas) => set({ wordFormulas }),
       setInputMode: (inputMode) => set({ inputMode }),
       setOutputFormat: (outputFormat) => set({ outputFormat }),
       setMarkdownReferences: (markdownReferences) => set({ markdownReferences }),
@@ -49,6 +57,7 @@ export const useDocumentFormatStore = create<DocumentFormatState>()(
         outputFormat: state.outputFormat,
         markdownReferences: state.markdownReferences,
         markdownRules: state.markdownRules,
+        wordFormulas: state.wordFormulas,
       }),
     },
   ),

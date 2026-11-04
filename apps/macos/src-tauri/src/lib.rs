@@ -13,6 +13,7 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
+mod document_export;
 mod document_library;
 mod ocr_offline;
 mod ocr_provider;
@@ -1772,8 +1773,8 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    // zip: a document's .tex or .md with its figures
-    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex" | "zip") {
+    // zip: a document's .tex or .md with its figures; docx: a document as Word
+    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex" | "zip" | "docx") {
         return Err("Unsupported export file extension".to_string());
     }
     let parent = target
@@ -2190,6 +2191,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             write_export_file,
             read_image_file,
+            document_export::document_export_omml,
+            document_export::pdf_print_open,
+            document_export::pdf_print_save,
+            document_export::pdf_print_close,
             copy_png_to_clipboard,
             document_library::document_library_list,
             document_library::document_library_read,

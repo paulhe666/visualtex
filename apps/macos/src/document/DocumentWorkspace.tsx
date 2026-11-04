@@ -38,18 +38,24 @@ import {
   libraryDocumentName,
   saveTextFile,
   saveBinaryFile,
+  chooseExportPath,
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
 } from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
+import { documentToWord, type WordFormulaFormat } from "./documentExport";
+import { documentToPdf } from "./documentPdf";
+import { WordExportDialog } from "./WordExportDialog";
 import {
   DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_PDF_EVENT,
+  DOCUMENT_EXPORT_WORD_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
@@ -497,6 +503,30 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     search: (query) => api.search(query),
   };
 
+  // Word export: the dialog (the formulas' form) and its progress; PDF: one at a time
+  const [wordExport, setWordExport] = useState(false);
+  const [wordBusy, setWordBusy] = useState<string | null>(null);
+  const pdfBusy = useRef(false);
+  const exportWord = (format: WordFormulaFormat) => {
+    const doc = documentRef.current?.view()?.state.doc;
+    if (!doc) return;
+    void (async () => {
+      try {
+        setWordBusy(t("Preparing…", "正在准备…"));
+        const result = await documentToWord(doc, format, { bibliographyTitle: t("References", "参考文献"), title: fileName("") }, (done, total) =>
+          setWordBusy(`${done} / ${total}`),
+        );
+        setWordBusy(null);
+        setWordExport(false);
+        const saved = await saveBinaryFile(fileName(".docx"), result.bytes, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", isEn);
+        if (saved) flash(result.fallbacks ? t(`Word exported (${result.fallbacks} formulas as pictures)`, `Word 已导出（${result.fallbacks} 个公式为图片）`) : t("Word exported", "Word 已导出"));
+      } catch (error) {
+        setWordBusy(null);
+        flash(errorText(error));
+      }
+    })();
+  };
+
   const actions = useRef({
     save: () => {},
     open: () => {},
@@ -506,6 +536,8 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     copyLatex: () => {},
     exportMarkdown: () => {},
     copyMarkdown: () => {},
+    exportWord: () => {},
+    exportPdf: () => {},
   });
   actions.current = {
     save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
@@ -555,6 +587,25 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         () => flash(t("Copy failed", "复制失败")),
       );
     },
+    exportWord: () => setWordExport(true),
+    exportPdf: () => {
+      const view = documentRef.current?.view();
+      if (!view || pdfBusy.current) return;
+      pdfBusy.current = true;
+      void (async () => {
+        try {
+          const path = await chooseExportPath(fileName(".pdf"), "pdf", isEn);
+          if (!path) return;
+          flash(t("Exporting PDF…", "正在导出 PDF…"));
+          await documentToPdf(view, path, fileName(""));
+          flash(t("PDF exported", "PDF 已导出"));
+        } catch (error) {
+          flash(errorText(error));
+        } finally {
+          pdfBusy.current = false;
+        }
+      })();
+    },
     copyLatex: () => {
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
@@ -576,6 +627,8 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
+      [DOCUMENT_EXPORT_WORD_EVENT, () => actions.current.exportWord()],
+      [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
     ];
     for (const [name, fn] of bind) window.addEventListener(name, fn);
     return () => {
@@ -585,6 +638,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
 
   return (
     <section className={"vtx-document-workspace" + (libraryOpen ? " has-library" : "")} aria-label={t("Document", "文档")}>
+      {wordExport && <WordExportDialog lang={isEn ? "en" : "zh"} busy={wordBusy} onExport={exportWord} onClose={() => setWordExport(false)} />}
       {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
       <div className="vtx-document-main">
         {/* the document's own buttons above it; the formula tools stay in the bottom dock */}

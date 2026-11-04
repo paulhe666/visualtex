@@ -331,6 +331,15 @@ export async function saveBinaryFile(name: string, bytes: Uint8Array, extension:
   return true;
 }
 
+/** A path to save a file of `extension` to, from the system's save dialog (null when cancelled; the app only). */
+export async function chooseExportPath(name: string, extension: string, isEn: boolean): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const chosen = await save({ defaultPath: name, filters: [{ name: extension.toUpperCase(), extensions: [extension] }], title: isEn ? "Save" : "保存" });
+  if (!chosen) return null;
+  return chosen.toLowerCase().endsWith(`.${extension}`) ? chosen : `${chosen}.${extension}`;
+}
+
 /**
  * A text file to the disk: in the app through the system's save dialog (false when cancelled); in a browser as a
  * download.

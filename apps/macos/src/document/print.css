@@ -1,0 +1,46 @@
+/* The PDF's pages (print-main.ts): one paper-sized box per page, each a window onto the copy of the page view. */
+html,
+body.vtx-print {
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: #fff !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+body.vtx-print #pages {
+  display: block;
+}
+.vtx-print-page {
+  position: relative;
+  overflow: hidden;
+  /* what overflows a box (the rest of the page view) must not make pages of its own */
+  contain: strict;
+  break-inside: avoid;
+  background: #fff;
+}
+.vtx-print-page + .vtx-print-page {
+  break-before: page;
+  page-break-before: always;
+}
+.vtx-print-window {
+  position: absolute;
+  left: 0;
+  transform-origin: 0 0;
+}
+.vtx-print-window .vtx-sheet {
+  background: #fff !important;
+}
+a.vtx-print-link {
+  color: inherit;
+  text-decoration: none;
+}
+.vtx-print-window .vtx-page-command {
+  border: 0 !important;
+}
+.vtx-print-window .vtx-page-number {
+  color: #000 !important;
+}

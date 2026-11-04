@@ -30,6 +30,9 @@ interface PageBreak {
   /** inside a paragraph (at the start of a line) or between blocks */
   inline: boolean;
   height: number;
+  /** a break before a textblock's first line: a transparent top border on the block (its heading number and first-line indent
+   *  moves with its text), at this block position */
+  block?: number;
 }
 
 interface PaginationState {
@@ -48,6 +51,8 @@ interface Unit {
   inline: boolean;
   /** the last line of a heading: it goes to the next page with what follows it */
   keepWithNext: boolean;
+  /** a textblock's first line: the block's position */
+  block?: number;
   footnotes: number[];
   /** \newpage / \clearpage: what follows starts a new page */
   breakAfter?: boolean;
@@ -76,18 +81,26 @@ function spacer(height: number, inline: boolean): () => HTMLElement {
 function buildDecorations(doc: Node, breaks: PageBreak[]): DecorationSet {
   return DecorationSet.create(
     doc,
-    breaks.map((b) =>
-      Decoration.widget(b.pos, spacer(b.height, b.inline), {
+    breaks.map((b) => {
+      const block = b.block !== undefined ? doc.nodeAt(b.block) : null;
+      if (block?.isTextblock) {
+        return Decoration.node(b.block!, b.block! + block.nodeSize, {
+          class: "vtx-page-break-before",
+          style: `border-top:${b.height}px solid transparent`,
+          "data-page-break": String(b.height),
+        });
+      }
+      return Decoration.widget(b.pos, spacer(b.height, b.inline), {
         side: -1,
         ignoreSelection: true,
         key: `page-break-${b.pos}-${b.inline ? "i" : "b"}-${Math.round(b.height * 10)}`,
-      }),
-    ),
+      });
+    }),
   );
 }
 
 const sameBreaks = (a: PageBreak[], b: PageBreak[]) =>
-  a.length === b.length && a.every((x, i) => x.pos === b[i].pos && x.inline === b[i].inline && Math.abs(x.height - b[i].height) < 0.5);
+  a.length === b.length && a.every((x, i) => x.pos === b[i].pos && x.inline === b[i].inline && x.block === b[i].block && Math.abs(x.height - b[i].height) < 0.5);
 
 /** The lines of a textblock's DOM, from its text and inline boxes (top/bottom in client coordinates). */
 export function lineBoxes(dom: HTMLElement): Array<{ top: number; bottom: number; left: number }> {
@@ -149,7 +162,7 @@ function collectUnits(view: EditorView): Unit[] {
       const lines = lineBoxes(dom);
       if (!lines.length) {
         const r = dom.getBoundingClientRect();
-        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [] });
+        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [], block: pos });
         return;
       }
       let previous = -1;
@@ -167,6 +180,7 @@ function collectUnits(view: EditorView): Unit[] {
           inline: true,
           keepWithNext: (node.type.name === "heading" || node.type.name === "title") && index === lines.length - 1,
           footnotes: [],
+          ...(index === 0 ? { block: pos } : {}),
         });
       });
       return;
@@ -262,9 +276,10 @@ class PaginationView {
     const origin = view.dom.getBoundingClientRect().top;
 
     // the spacers now on the screen: what is below them is that much lower than it would be without them
-    const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break")).map((el) => {
+    const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break, [data-page-break]")).map((el) => {
       const r = el.getBoundingClientRect();
-      return { top: r.top, height: r.height };
+      // a block's top border: from its top
+      return el.dataset.pageBreak !== undefined ? { top: r.top, height: Number(el.dataset.pageBreak) || 0 } : { top: r.top, height: r.height };
     });
     const natural = (y: number) => {
       let shift = 0;
@@ -309,24 +324,30 @@ class PaginationView {
         breakPending = false;
         if (top < (page + 1) * stride) {
           const push = (page + 1) * stride - top;
-          breaks.push({ pos: unit.pos, inline: unit.inline, height: push });
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
           offset += push;
           top += push;
           bottom += push;
         }
       }
-      // past the foot of its page (an earlier block ran over): it starts on the page it is on
-      while (top >= page * stride + contentHeight - 0.5) {
-        page++;
-        reserve = 0;
-        pageNotes[page] = [];
-      }
-      if (top < page * stride) {
-        const push = page * stride - top;
-        breaks.push({ pos: unit.pos, inline: unit.inline, height: push });
-        offset += push;
-        top += push;
-        bottom += push;
+      // past the foot of its page (an earlier block ran over): it starts on the page it is on — unless a heading on
+      // this page is right before it: then both go to the next page (below)
+      const previous = i > 0 ? units[i - 1] : null;
+      const headingBefore =
+        !!previous?.keepWithNext && previous.top + offset > page * stride + 0.5 && previous.bottom + offset <= page * stride + contentHeight;
+      if (!headingBefore) {
+        while (top >= page * stride + contentHeight - 0.5) {
+          page++;
+          reserve = 0;
+          pageNotes[page] = [];
+        }
+        if (top < page * stride) {
+          const push = page * stride - top;
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
+          offset += push;
+          top += push;
+          bottom += push;
+        }
       }
       const extra = roomFor(unit, reserve);
       const atPageTop = top <= page * stride + 0.5;
@@ -341,7 +362,7 @@ class PaginationView {
         }
         const firstTop = first.top + offset;
         const push = (page + 1) * stride - firstTop;
-        breaks.push({ pos: first.pos, inline: first.inline, height: push });
+        breaks.push({ pos: first.pos, inline: first.inline, height: push, block: first.block });
         offset += push;
         page++;
         reserve = 0;

@@ -54,6 +54,8 @@ export default defineConfig({
         main: "index.html",
         officeNativeDialog: "office-native-dialog.html",
         anywhere: "anywhere.html",
+        // the PDF export's print page (src/document/print-main.ts)
+        print: "print.html",
       },
     },
   },

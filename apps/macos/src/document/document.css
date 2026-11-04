@@ -2044,3 +2044,50 @@
   outline: 1px solid var(--accent, #2f6fde);
   outline-offset: 2px;
 }
+
+/* ---- export to Word: the formulas' form (WordExportDialog) ---- */
+.vtx-export-dismiss {
+  background: rgba(15, 23, 42, 0.12);
+}
+.vtx-word-export {
+  left: 50%;
+  top: 22%;
+  width: 320px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.vtx-word-export-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.vtx-word-export-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.vtx-word-export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vtx-word-export-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.vtx-word-export-options label.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.vtx-word-export-options input {
+  margin: 0;
+}
+.vtx-word-export-status {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}

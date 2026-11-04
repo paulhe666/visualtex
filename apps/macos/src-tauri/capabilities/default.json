@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for VisualTeX",
-  "windows": ["main", "office-native-*", "quick-ocr-hud", "anywhere"],
+  "windows": ["main", "office-native-*", "quick-ocr-hud", "anywhere", "pdf-print"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
