@@ -31,7 +31,7 @@ import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentLibrary, DocumentLibraryToggle, type DocumentLibraryActions } from "./DocumentLibrary";
+import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
 import {
   documentLibrary,
   documentTitle,
@@ -267,7 +267,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     open: async (_id: string): Promise<boolean> => false,
     create: async (_folder: string | null) => {},
     importFile: async (_file: File) => {},
-    exportFile: async (_id: string) => {},
+    exportFile: async (_id: string, _format?: DocumentExportFormat) => {},
     afterLoss: async (_library: Library) => {},
   });
   ops.current = {
@@ -378,8 +378,18 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         flash(t("Cannot open: ", "无法打开：") + errorText(error));
       }
     },
-    exportFile: async (id) => {
+    exportFile: async (id, format = "vtxdoc") => {
       try {
+        if (format !== "vtxdoc") {
+          // the other formats come from the editor: the document is opened (its pages laid out) first
+          if (id !== current.current.id) {
+            await ops.current.open(id);
+            await new Promise((resolve) => window.setTimeout(resolve, 400));
+          }
+          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, word: actions.current.exportWord, pdf: actions.current.exportPdf }[format];
+          run();
+          return;
+        }
         let text: string;
         if (id === current.current.id) {
           await ops.current.saveNow();
@@ -498,7 +508,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     },
     renameFolder: (id, name) => void api.renameFolder(id, name).then(setLibrary, (error) => flash(errorText(error))),
     deleteFolder: (id) => void api.deleteFolder(id).then(setLibrary, (error) => flash(errorText(error))),
-    exportFile: (id) => void ops.current.exportFile(id),
+    exportFile: (id, format) => void ops.current.exportFile(id, format),
     reveal: isTauri() ? (id) => void invoke("document_library_reveal", { id }).catch((error) => flash(errorText(error))) : null,
     search: (query) => api.search(query),
   };

@@ -298,6 +298,8 @@ export function SettingsDialog({
   const personalize = useEditorStore((state) => state.personalize);
   const setPersonalize = useEditorStore((state) => state.setPersonalize);
   const suggestionCount = useEditorStore((state) => state.suggestionCount);
+  const candidateStyle = useEditorStore((state) => state.candidateStyle);
+  const setCandidateStyle = useEditorStore((state) => state.setCandidateStyle);
   const setSuggestionCount = useEditorStore((state) => state.setSuggestionCount);
   const resetUsage = useEditorStore((state) => state.resetUsage);
   const powerPointDefaultFontSizePt = useEditorStore(
@@ -1179,6 +1181,27 @@ export function SettingsDialog({
               </div>
               <div className="settings-group">
                 <h4>{isEn ? "Command suggestions" : "命令推荐"}</h4>
+                <div className="settings-inline-choice">
+                  <strong>{isEn ? "Candidates" : "候选框"}</strong>
+                  <div className="theme-segment">
+                    <button
+                      type="button"
+                      className={candidateStyle === "list" ? "is-active" : ""}
+                      aria-pressed={candidateStyle === "list"}
+                      onClick={() => setCandidateStyle("list")}
+                    >
+                      {isEn ? "List" : "列表"}
+                    </button>
+                    <button
+                      type="button"
+                      className={candidateStyle === "bar" ? "is-active" : ""}
+                      aria-pressed={candidateStyle === "bar"}
+                      onClick={() => setCandidateStyle("bar")}
+                    >
+                      {isEn ? "Input method" : "输入法"}
+                    </button>
+                  </div>
+                </div>
                 <label className="switch-row">
                   <span>
                     <strong>{isEn ? "Enable personalized ranking" : "启用个性化排序"}</strong>

@@ -121,6 +121,8 @@ export function CommandMenu(props: { view: EditorView | null; state: EditorState
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [above, setAbove] = useState(false);
+  // the menu's width (the candidate bar is as wide as its entries)
+  const [width, setWidth] = useState(392);
   const index = token && entries.length ? Math.min(token.index, entries.length - 1) : -1;
   const visible = !!(view && frame && token && !token.dismissed && entries.length);
 
@@ -135,11 +137,13 @@ export function CommandMenu(props: { view: EditorView | null; state: EditorState
     const height = menuRef.current.offsetHeight;
     const room = window.innerHeight - anchor.bottom - 8;
     setAbove(room < height && anchor.top - 8 > room);
+    const measured = menuRef.current.offsetWidth + 12;
+    if (Math.abs(measured - width) > 1) setWidth(measured);
   });
   if (!visible || !anchor) return null;
 
   const box = frame!.getBoundingClientRect();
-  const left = Math.max(4, Math.min(anchor.left - box.left + frame!.scrollLeft - 10, frame!.scrollWidth - 392));
+  const left = Math.max(4, Math.min(anchor.left - box.left + frame!.scrollLeft - 10, frame!.scrollWidth - width));
   const top = above
     ? anchor.top - box.top + frame!.scrollTop - 6 - (menuRef.current?.offsetHeight ?? 0)
     : anchor.bottom - box.top + frame!.scrollTop + 6;

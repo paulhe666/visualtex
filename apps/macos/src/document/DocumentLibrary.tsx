@@ -40,7 +40,8 @@ export interface DocumentLibraryActions {
   createFolder(): Promise<string | null>;
   renameFolder(id: string, name: string): void;
   deleteFolder(id: string): void;
-  exportFile(id: string): void;
+  /** the document to a file: its own format, or LaTeX, Markdown, Word, PDF */
+  exportFile(id: string, format?: DocumentExportFormat): void;
   /** Shows the file in Finder (the app only). */
   reveal: ((id: string) => void) | null;
   search(query: string): Promise<string[]>;
@@ -108,7 +109,17 @@ function InlineName(props: { value: string; placeholder: string; onDone: (value:
   );
 }
 
-type MenuTarget = { kind: "document" | "folder"; id: string; x: number; y: number; moving?: boolean };
+type MenuTarget = { kind: "document" | "folder"; id: string; x: number; y: number; moving?: boolean; exporting?: boolean };
+
+export type DocumentExportFormat = "vtxdoc" | "latex" | "markdown" | "word" | "pdf";
+
+const EXPORT_FORMATS: Array<{ id: DocumentExportFormat; en: string; zh: string; extension: string }> = [
+  { id: "word", en: "Word", zh: "Word", extension: ".docx" },
+  { id: "pdf", en: "PDF", zh: "PDF", extension: ".pdf" },
+  { id: "latex", en: "LaTeX", zh: "LaTeX", extension: ".tex" },
+  { id: "markdown", en: "Markdown", zh: "Markdown", extension: ".md" },
+  { id: "vtxdoc", en: "VisualTeX document", zh: "VisualTeX 文档", extension: ".vtxdoc" },
+];
 
 function Menu(props: { target: MenuTarget; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -446,7 +457,22 @@ export function DocumentLibrary(props: {
       )}
       {menu && menuDocument && (
         <Menu target={menu} onClose={closeMenu}>
-          {menu.moving ? (
+          {menu.exporting ? (
+            <>
+              <MenuItem icon={<ChevronLeft size={14} />} label={t("Export", "导出")} onClick={() => setMenu({ ...menu, exporting: false })} />
+              <div className="document-library-menu-rule" />
+              {EXPORT_FORMATS.map((format) => (
+                <MenuItem
+                  key={format.id}
+                  label={`${t(format.en, format.zh)} (${format.extension})`}
+                  onClick={() => {
+                    closeMenu();
+                    actions.exportFile(menuDocument.id, format.id);
+                  }}
+                />
+              ))}
+            </>
+          ) : menu.moving ? (
             <>
               <MenuItem icon={<ChevronLeft size={14} />} label={t("Move to", "移到")} onClick={() => setMenu({ ...menu, moving: false })} />
               <div className="document-library-menu-rule" />
@@ -492,11 +518,8 @@ export function DocumentLibrary(props: {
               {folders.length > 0 && <MenuItem icon={<FolderInput size={14} />} label={t("Move to", "移到")} onClick={() => setMenu({ ...menu, moving: true })} />}
               <MenuItem
                 icon={<Download size={14} />}
-                label={t("Export…", "导出…")}
-                onClick={() => {
-                  closeMenu();
-                  actions.exportFile(menuDocument.id);
-                }}
+                label={t("Export", "导出")}
+                onClick={() => setMenu({ ...menu, exporting: true })}
               />
               {actions.reveal && (
                 <MenuItem
