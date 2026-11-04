@@ -79,6 +79,9 @@ const MARK_OPEN: Record<string, string> = {
   underline: "\\uline{",
   strike: "\\sout{",
   code: "\\texttt{",
+  superscript: "\\textsuperscript{",
+  subscript: "\\textsubscript{",
+  kbd: "\\fbox{\\footnotesize\\ttfamily ",
 };
 
 /** A CSS colour as an xcolor argument: [HTML]{RRGGBB} for #rgb/#rrggbb, {name} otherwise. */
@@ -200,6 +203,15 @@ class LatexWriter {
         if (!child.attrs.wrap) out += this.image(child);
       }
       else if (child.type.name === "footnote") out += `\\footnote{${this.noteText(child.attrs.text).trim()}}`;
+      else if (child.type.name === "html_inline") {
+        // a picture on the web that was not fetched: a link to it
+        const html = String(child.attrs.html ?? "");
+        const src = /^!\[[^\]]*\]\(<?([^)\s>]+)/.exec(html)?.[1] ?? /\bsrc\s*=\s*["']?([^"'\s>]+)/i.exec(html)?.[1];
+        if (src && /^https?:/i.test(src)) {
+          this.packages.add("hyperref");
+          out += `\\url{${src.replace(/[\\{}%#]/g, (c) => `\\${c}`)}}`;
+        }
+      }
       else if (child.type.name === "cite") {
         const keys = (child.attrs.targets as string[]).map((id) => this.citeKeys.get(id)).filter((key): key is string => !!key);
         out += keys.length ? `\\cite{${keys.join(",")}}` : "[?]";
@@ -275,11 +287,21 @@ class LatexWriter {
         return `\\title{${text}}\n\\author{}\n\\date{}\n\\maketitle\n`;
       }
       case "heading": {
-        const command = ["section", "subsection", "subsubsection"][Math.min(3, Math.max(1, node.attrs.level)) - 1];
+        const command = ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"][Math.min(6, Math.max(1, node.attrs.level)) - 1];
         return `\\${command}{${this.inline(node).trim()}}\n`;
       }
-      case "blockquote":
-        return `\\begin{quote}\n${this.blocks(node)}\\end{quote}\n`;
+      case "blockquote": {
+        // an alert: its kind first, bold
+        const alert = node.attrs.alert ? `\\textbf{${String(node.attrs.alert).replace(/^./, (c) => c.toUpperCase())}.}\n` : "";
+        return `\\begin{quote}\n${alert}${this.blocks(node)}\\end{quote}\n`;
+      }
+      case "toc":
+        return "\\tableofcontents\n";
+      case "html_block": {
+        // HTML has no LaTeX: kept as a comment
+        const html = String(node.attrs.html ?? "").trim();
+        return html ? `${html.split("\n").map((line) => `% ${line}`).join("\n")}\n` : "";
+      }
       case "bullet_list":
       case "ordered_list":
         return this.list(node);
@@ -332,7 +354,9 @@ class LatexWriter {
     }
     node.forEach((item) => {
       const body = this.blocks(item).trim();
-      out += `\\item ${body}\n`;
+      // a task: an empty or ticked box as its label (amssymb)
+      const box = item.attrs.checked === true ? "[$\\boxtimes$]" : item.attrs.checked === false ? "[$\\square$]" : "";
+      out += `\\item${box} ${body}\n`;
     });
     out += `\\end{${env}}\n`;
     this.listDepth--;

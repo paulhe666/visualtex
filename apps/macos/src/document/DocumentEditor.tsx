@@ -65,6 +65,7 @@ import { MarginGuides } from "./MarginGuides";
 import { createPortal } from "react-dom";
 import { documentMathCommands } from "./documentMathCommands";
 import { codeHighlighter } from "./codeHighlighter";
+import { drawDiagram } from "./diagrams";
 import "./document.css";
 
 /** Mathcha's defaults (MATHCHA-SPEC.md): text 15px, formulas 17px, at zoom 1. */
@@ -308,6 +309,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       formulaText: portableFormulaLatex,
       mathCommands: documentMathCommands,
       codeHighlighter,
+      codeDiagram: drawDiagram,
       inputMode: () => useDocumentFormatStore.getState().inputMode,
       markdownRules: () => useDocumentFormatStore.getState().markdownRules,
       // the page view: the paper's pages, the footnotes at their feet, the page numbers
@@ -616,6 +618,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       background: `repeating-linear-gradient(to bottom, var(--vtx-paper, #fff) 0, var(--vtx-paper, #fff) ${pageHeight}px, transparent ${pageHeight}px, transparent ${pageHeight + PAGE_GAP}px)`,
       ["--vtx-body-font" as string]: bodyFontFamily(settings),
       // one TeX point on the screen (images: wrapfig's \columnsep and \intextsep)
+      // the left margin (what a page command's label may take)
+      ["--vtx-margin-left" as string]: `${settings.marginLeft * mm}px`,
       ["--vtx-pt" as string]: `${(96 / 72) * zoom}px`,
       ["--vtx-line-height" as string]: String(SINGLE_LINE_HEIGHT * settings.lineSpacing),
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",

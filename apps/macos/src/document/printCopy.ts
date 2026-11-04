@@ -25,6 +25,8 @@ const EDITOR_ONLY = [
   ".vtx-page-command-label",
   // the code block's language menu and copy button
   ".vtx-code-header",
+  // an HTML comment's label; an empty [toc]'s placeholder is its ::before (left as it is)
+  ".vtx-html-comment",
 ].join(",");
 
 /** The child indices from `root` down to `el`. */

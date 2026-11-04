@@ -1,75 +1,74 @@
-// Documents to Word and PDF (docs/document-editor/DESIGN.md §12).
-// - document_export_omml: the document's formulas as Word equations, written by the shared
-//   Word writer (omml_write), numbered ones with Word's own "#" number and the bookmark
-//   references point to.
+// Documents to PDF (docs/document-editor/DESIGN.md §12) and the files a document is read from.
 // - pdf_print_open / pdf_print_save / pdf_print_close: the print window (print.html) gets the
 //   print copy of the page view from the main window; WKWebView's print operation writes it
 //   to the file (runOperationModalForWindow; runOperation gives blank pages).
+// - read_import_file: a document file chosen in the open dialog (its folder then finds its
+//   pictures, read with read_image_file).
+// - fetch_image_url: a picture a Markdown file names on the web.
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const PRINT_WINDOW: &str = "pdf-print";
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OmmlNumber {
-    bookmark: String,
-    sequence: String,
-    chapter_level: u32,
-    separator: String,
-    literal_prefix: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct OmmlItem {
-    mathml: String,
-    number: Option<OmmlNumber>,
-}
-
-#[derive(Serialize, Default)]
-pub struct OmmlAnswer {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    omml: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-fn omml_of(item: &OmmlItem, math_font: &str) -> Result<String, String> {
-    let omml = crate::office::omml_write::transform_mathml_to_omml(&item.mathml)?;
-    let omml = match &item.number {
-        Some(number) => crate::office::omml_write::build_word_native_numbered_omml(
-            &omml,
-            "Equation",
-            Some(&number.bookmark),
-            number.chapter_level,
-            if number.chapter_level > 0 { &number.separator } else { "" },
-            if number.sequence.trim().is_empty() { "1" } else { &number.sequence },
-            if number.chapter_level > 0 { number.literal_prefix.as_deref() } else { None },
-            None,
-        )?,
-        None => omml,
-    };
-    crate::office::omml_write::insertion_omml(&omml, math_font)
-}
-
+/// A document file to open (the open dialog's choice), as base64.
 #[tauri::command]
-pub async fn document_export_omml(items: Vec<OmmlItem>, math_font: String) -> Vec<OmmlAnswer> {
-    if items.len() > 20_000 {
-        return Vec::new();
+pub fn read_import_file(path: String) -> Result<String, String> {
+    let target = PathBuf::from(path.trim());
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !target.is_absolute() || !matches!(extension.as_str(), "vtxdoc" | "json" | "md" | "markdown" | "tex" | "ltx" | "zip") {
+        return Err("Not a document file".to_string());
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        items
-            .iter()
-            .map(|item| match omml_of(item, &math_font) {
-                Ok(omml) => OmmlAnswer { omml: Some(omml), error: None },
-                Err(error) => OmmlAnswer { omml: None, error: Some(error) },
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
+    let size = fs::metadata(&target).map_err(|error| format!("Unable to read the file: {error}"))?.len();
+    if size > 300 * 1024 * 1024 {
+        return Err("The file is too large".to_string());
+    }
+    let bytes = fs::read(&target).map_err(|error| format!("Unable to read the file: {error}"))?;
+    Ok(BASE64_STANDARD.encode(bytes))
+}
+
+/// A picture on the web (http/https, at most 30 MB, an image by its type or its first bytes), as base64.
+#[tauri::command]
+pub async fn fetch_image_url(url: String) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|error| format!("Invalid address: {error}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Only http and https pictures".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("VisualTeX")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let response = client.get(parsed).send().await.map_err(|error| format!("Unable to fetch the picture: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Unable to fetch the picture: {}", response.status()));
+    }
+    if response.content_length().is_some_and(|length| length > 30 * 1024 * 1024) {
+        return Err("The picture is too large".to_string());
+    }
+    let typed = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim_start().to_ascii_lowercase().starts_with("image/"));
+    let bytes = response.bytes().await.map_err(|error| format!("Unable to fetch the picture: {error}"))?;
+    if bytes.len() > 30 * 1024 * 1024 {
+        return Err("The picture is too large".to_string());
+    }
+    let looks_like_image = bytes.starts_with(&[0x89, b'P', b'N', b'G'])
+        || bytes.starts_with(&[0xff, 0xd8])
+        || bytes.starts_with(b"GIF8")
+        || (bytes.len() > 12 && &bytes[8..12] == b"WEBP")
+        || bytes.starts_with(b"BM");
+    if !typed && !looks_like_image {
+        return Err("Not a picture".to_string());
+    }
+    Ok(BASE64_STANDARD.encode(&bytes))
 }
 
 /// A new, hidden print window (an older one goes first).
@@ -142,40 +141,18 @@ pub async fn pdf_print_save(app: AppHandle, path: String, width_mm: f64, height_
 mod tests {
     use super::*;
 
-    const MATHML: &str = r#"<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow></math>"#;
-
-    #[test]
-    fn a_formula_becomes_one_word_equation() {
-        let omml = omml_of(&OmmlItem { mathml: MATHML.to_string(), number: None }, "Cambria Math").unwrap();
-        assert!(omml.starts_with("<m:oMath"), "{omml}");
-        assert!(omml.contains("Cambria Math"));
-    }
-
-    #[test]
-    fn a_numbered_formula_has_words_number_and_the_bookmark() {
-        let number = OmmlNumber {
-            bookmark: "VTEqNum_0123456789abcdef0123456789abcdef".to_string(),
-            sequence: "3".to_string(),
-            chapter_level: 0,
-            separator: ".".to_string(),
-            literal_prefix: None,
-        };
-        let omml = omml_of(&OmmlItem { mathml: MATHML.to_string(), number: Some(number) }, "Cambria Math").unwrap();
-        assert!(omml.contains("eqArr"), "{omml}");
-        assert!(omml.contains("VTEqNum_0123456789abcdef0123456789abcdef"));
-        assert!(omml.contains("SEQ Equation"));
-        if let Ok(path) = std::env::var("VTX_OMML_SAMPLE") {
-            let plain = omml_of(&OmmlItem { mathml: MATHML.to_string(), number: None }, "Cambria Math").unwrap();
-            std::fs::write(path, format!("{plain}\n{omml}\n")).unwrap();
-        }
-    }
-
     #[test]
     fn only_pdf_paths_in_existing_folders() {
         assert!(pdf_target("relative.pdf").is_err());
         assert!(pdf_target("/tmp/x.docx").is_err());
         assert!(pdf_target("/no-such-folder-vtx/x.pdf").is_err());
         assert!(pdf_target("/tmp/x.pdf").is_ok());
+    }
+
+    #[test]
+    fn only_document_files_are_opened() {
+        assert!(read_import_file("/etc/hosts".to_string()).is_err());
+        assert!(read_import_file("relative.md".to_string()).is_err());
     }
 }
 

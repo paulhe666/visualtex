@@ -363,11 +363,11 @@ function inline(text: string, kept: string[]): string {
       continue;
     }
     if (command === "textsuperscript" || command === "textsubscript") {
-      // the document has no raised text: a formula with the text raised or lowered
+      // raised / lowered text (<sup> / <sub>, read as the document's marks)
       const arg = group(text, skipSpaces(text, j));
       if (arg) {
-        const inner = plainText(inline(arg.content, kept), kept).replace(/[{}\\]/g, "");
-        out += keep(`$${command === "textsuperscript" ? "^" : "_"}{\\text{${inner}}}$`);
+        const tag = command === "textsuperscript" ? "sup" : "sub";
+        out += `<${tag}>${inline(arg.content, kept)}</${tag}>`;
         i = arg.end;
         continue;
       }
@@ -591,6 +591,28 @@ function blocks(text: string): string {
   return out.join("\n");
 }
 
+/**
+ * The pieces kept aside back in place. One inside a list item or a quote (a display formula after \item, a table)
+ * takes the item's indentation and the quote's "> " on each of its lines, so that it stays in the item; at the
+ * start of an item it starts on the item's line.
+ */
+function restoreKept(text: string, kept: string[]): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      if (!line.includes("\u0000")) return line;
+      const lead = /^((?:> ?)*)([ \t]*)((?:[-*+]|\d+[.)])[ \t]+)?/.exec(line)!;
+      const continuation = lead[1] + " ".repeat(lead[2].length + (lead[3]?.length ?? 0));
+      return line.replace(/\u0000(\d+)\u0000/g, (_m, n: string, offset: number) => {
+        let piece = kept[Number(n)];
+        if (!continuation) return piece;
+        if (offset === lead[0].length && lead[3]) piece = piece.replace(/^\n+/, "");
+        return piece.replace(/\n/g, `\n${continuation}`);
+      });
+    })
+    .join("\n");
+}
+
 /** Markdown has no title: the document's title is written as a centred level-1 heading in HTML (Typora and GitHub
  *  show it so) and read back as the title (markdown.ts). */
 export const MARKDOWN_TITLE_OPEN = '<h1 align="center">';
@@ -620,6 +642,8 @@ export function latexToMarkdown(source: string): string {
   text = bibliographies(text, kept);
   text = tables(text, kept);
   text = sections(text);
+  // the table of contents where \tableofcontents stands (on a line of its own)
+  text = text.replace(/\\tableofcontents\b/g, "\n\n[toc]\n\n");
   // Old switches in a group: {\bf …}, {\it …}, {\tt …}.
   text = text
     .replace(/\{\\(?:bf|bfseries)\s+([^{}]*)\}/g, "**$1**")
@@ -629,7 +653,7 @@ export function latexToMarkdown(source: string): string {
   text = inline(text, kept);
   // Grouping braces go, literal ones (\{ \}) come back; ties, quotes and dashes.
   text = finishText(text);
-  for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = text.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => kept[Number(n)]);
+  for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = restoreKept(text, kept);
   text = text.replace(/^\u0006[ \t]*(.*)$/m, (_m, line: string) => `${MARKDOWN_TITLE_OPEN}${line.trim()}${MARKDOWN_TITLE_CLOSE}`);
   return text.replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

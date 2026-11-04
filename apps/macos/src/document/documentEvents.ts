@@ -7,5 +7,4 @@ export const DOCUMENT_EXPORT_LATEX_EVENT = "visualtex-document-export-latex";
 export const DOCUMENT_COPY_LATEX_EVENT = "visualtex-document-copy-latex";
 export const DOCUMENT_EXPORT_MARKDOWN_EVENT = "visualtex-document-export-markdown";
 export const DOCUMENT_COPY_MARKDOWN_EVENT = "visualtex-document-copy-markdown";
-export const DOCUMENT_EXPORT_WORD_EVENT = "visualtex-document-export-word";
 export const DOCUMENT_EXPORT_PDF_EVENT = "visualtex-document-export-pdf";

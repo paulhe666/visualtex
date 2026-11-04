@@ -1,9 +1,13 @@
 // Markdown in and out (DESIGN.md §7): the document written as the Markdown that Typora, Obsidian and GitHub read
-// (CommonMark + GFM tables and strikethrough, $…$ / $$…$$ math, ==highlight==, <u> for underline), and Markdown —
-// pasted or opened — read back as a document. ProseMirror's own Markdown bridge (prosemirror-markdown on markdown-it)
+// (CommonMark + GFM tables, strikethrough and task lists, $…$ / $$…$$ math, ==highlight==, <u> for underline), and
+// Markdown — pasted or opened — read back as a document, with what Typora reads besides: footnotes, [toc], x^2^ and
+// H~2~O, :emoji:, alerts (> [!NOTE]), headings to level 6, and HTML (shown as it is when the document has no element
+// for it). ProseMirror's own Markdown bridge (prosemirror-markdown on markdown-it)
 // with VisualTeX's rules for math, highlight and the few HTML tags Markdown writers use.
 import MarkdownIt, { type StateBlock, type StateCore, type StateInline, type Token } from "markdown-it";
-import { DEFAULT_IMAGE_WIDTH, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
+import { DEFAULT_IMAGE_WIDTH, imageEntry, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
+import { emojiOf } from "./emoji.ts";
+import { ALERTS } from "./schema.ts";
 import { pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
 import { MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
 import { Slice, type Mark, type Node, type Schema } from "prosemirror-model";
@@ -116,7 +120,22 @@ function highlight(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
-const HTML_PAIRS: Record<string, string> = { u: "u", ins: "u", mark: "mark", s: "s", del: "s", strike: "s", b: "strong", strong: "strong", i: "em", em: "em" };
+const HTML_PAIRS: Record<string, string> = {
+  u: "u",
+  ins: "u",
+  mark: "mark",
+  s: "s",
+  del: "s",
+  strike: "s",
+  b: "strong",
+  strong: "strong",
+  i: "em",
+  em: "em",
+  sup: "superscript",
+  sub: "subscript",
+  kbd: "kbd",
+  code: "code_inline",
+};
 
 /** The document's size name nearest to a CSS font size ("1.2em", "18px"; the text is 15px). */
 function sizeName(value: string): string | null {
@@ -177,16 +196,26 @@ function tidy(state: StateCore) {
         i += line.length - 1;
         continue;
       }
-      const open = new Token("paragraph_open", "p", 1);
-      open.map = token.map;
-      const inline = new Token("inline", "", 0);
-      const text = new Token("text", "", 0);
-      text.content = token.content.replace(/\n+$/, "");
-      inline.children = [text];
-      inline.content = text.content;
-      const close = new Token("paragraph_close", "p", -1);
-      tokens.splice(i, 1, open, inline, close);
-      i += 2;
+      // any other HTML (<details>, <div>, a comment…): kept and shown as it is; an element left open (<details>
+      // with Markdown inside, after a blank line) takes in what follows up to the HTML that closes it, as the
+      // browser does when GitHub and Typora show it
+      let last = i;
+      const open = openElements(token.content);
+      if (open > 0 && token.level === 0 && token.map) {
+        let depth = open;
+        for (let k = i + 1; k < tokens.length && depth > 0; k++) {
+          if (tokens[k].type === "html_block" && tokens[k].level === 0) {
+            depth += openElements(tokens[k].content);
+            if (depth <= 0) last = k;
+          }
+        }
+      }
+      const html = new Token("vtx_html", "div", 0);
+      html.block = true;
+      html.map = token.map;
+      const lines = state.src.split("\n");
+      html.attrSet("html", (last > i && token.map && tokens[last].map ? lines.slice(token.map[0], tokens[last].map![1]).join("\n") : token.content).replace(/\n+$/, ""));
+      tokens.splice(i, last - i + 1, html);
       continue;
     }
     if ((token.type === "td_open" || token.type === "th_open") && tokens[i + 1]?.type === "inline") {
@@ -197,9 +226,13 @@ function tidy(state: StateCore) {
     }
     if (token.type !== "inline" || !token.children) continue;
     const children: Token[] = [];
-    // The marks each open <span> stood for (none: the span stays text, and so does its </span>).
+    // The marks each open <span> stood for (none: the span stays text, and so does its </span>); so for <font>, <a>.
     const spans: Array<string[] | null> = [];
-    for (const child of token.children) {
+    const fonts: boolean[] = [];
+    const anchors: boolean[] = [];
+    let skipUntil = -1;
+    for (const [index, child] of token.children.entries()) {
+      if (index <= skipUntil) continue;
       if (child.type === "html_inline") {
         const tag = /^<\s*(\/?)\s*([a-zA-Z]+)[^>]*?(\/?)\s*>$/.exec(child.content);
         const name = tag?.[2].toLowerCase();
@@ -229,10 +262,55 @@ function tidy(state: StateCore) {
           }
         }
         if (name && HTML_PAIRS[name] && !tag![3]) {
-          const kind = HTML_PAIRS[name];
-          const type = kind === "strong" || kind === "em" ? kind : kind;
-          children.push(new Token(`${type}_${tag![1] ? "close" : "open"}`, name, tag![1] ? -1 : 1));
-          continue;
+          const type = HTML_PAIRS[name];
+          // <code>…</code>: its text as inline code
+          if (type === "code_inline") {
+            if (tag![1]) continue;
+            const end = token.children!.findIndex((c, k) => k > index && c.type === "html_inline" && /^<\/\s*code\s*>$/i.test(c.content));
+            if (end > 0) {
+              const code = new Token("code_inline", "code", 0);
+              code.content = token.children!.slice(index + 1, end).map((c) => c.content).join("");
+              children.push(code);
+              skipUntil = end;
+              continue;
+            }
+          } else {
+            children.push(new Token(`${type}_${tag![1] ? "close" : "open"}`, name, tag![1] ? -1 : 1));
+            continue;
+          }
+        }
+        // <font color="…"> (old HTML): the text's colour; <a href="…">: a link
+        if (name === "font" && !tag![3]) {
+          if (!tag![1]) {
+            const color = tagAttr(child.content, "color");
+            fonts.push(!!color);
+            if (color) {
+              const open = new Token("textColor_open", "span", 1);
+              open.attrSet("color", color);
+              children.push(open);
+              continue;
+            }
+          } else if (fonts.pop()) {
+            children.push(new Token("textColor_close", "span", -1));
+            continue;
+          }
+        }
+        if (name === "a" && !tag![3]) {
+          if (!tag![1]) {
+            const href = tagAttr(child.content, "href");
+            anchors.push(!!href);
+            if (href) {
+              const open = new Token("link_open", "a", 1);
+              open.attrSet("href", href);
+              const title = tagAttr(child.content, "title");
+              if (title) open.attrSet("title", title);
+              children.push(open);
+              continue;
+            }
+          } else if (anchors.pop()) {
+            children.push(new Token("link_close", "a", -1));
+            continue;
+          }
         }
       }
       if (child.type === "image" || (child.type === "html_inline" && /^<img\b/i.test(child.content))) {
@@ -240,10 +318,17 @@ function tidy(state: StateCore) {
         if (image) {
           children.push(image);
           // the space written after a wrapped image (its paragraph's line) is not text
-          const next = token.children[token.children.indexOf(child) + 1];
+          const next = token.children[index + 1];
           if (image.attrGet("wrap") && next?.type === "text") next.content = next.content.replace(/^\s+/, "");
           continue;
         }
+      }
+      // a picture that could not be found: kept as written (drawn from its address)
+      if (child.type === "image" || (child.type === "html_inline" && /^<img\b/i.test(child.content))) {
+        const kept = new Token("vtx_html_inline", "span", 0);
+        kept.attrSet("html", child.type === "image" ? imageSource(child) : child.content);
+        children.push(kept);
+        continue;
       }
       if (child.type === "html_inline" || child.type === "image") {
         const text = new Token("text", "", 0);
@@ -255,6 +340,25 @@ function tidy(state: StateCore) {
     }
     token.children = children;
   }
+}
+
+/** A Markdown picture as written: ![alt](src "title"). */
+function imageSource(token: Token): string {
+  const alt = token.children?.map((c) => c.content).join("") ?? token.content;
+  const title = token.attrGet("title");
+  const src = token.attrGet("src") ?? "";
+  return `![${alt}](${/[\s()]/.test(src) ? `<${src}>` : src}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`;
+}
+
+/** How many more elements an HTML text opens than it closes (void elements and comments aside). */
+function openElements(html: string): number {
+  const text = html.replace(/<!--[\s\S]*?-->/g, "");
+  let depth = 0;
+  for (const tag of text.matchAll(/<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g)) {
+    if (tag[3] || /^(br|hr|img|input|meta|link|col|area|base|wbr|source|track|embed|param)$/i.test(tag[2])) continue;
+    depth += tag[1] ? -1 : 1;
+  }
+  return depth;
 }
 
 /** An attribute of an HTML tag's text. */
@@ -281,7 +385,9 @@ function imageToken(state: StateCore, src: string, alt: string, width: number | 
   const token = new state.Token("vtx_image", "img", 0);
   token.attrSet("src", key);
   token.attrSet("alt", alt);
-  token.attrSet("width", String(width ?? DEFAULT_IMAGE_WIDTH));
+  // no width given: the picture's own size, as Typora and the browsers show it (on an A4 page's text width)
+  const natural = imageEntry(key)?.width ?? 0;
+  token.attrSet("width", String(width ?? (natural > 0 ? Math.max(0.05, Math.min(1, Math.round((natural / 605) * 1000) / 1000)) : DEFAULT_IMAGE_WIDTH)));
   if (align === "left" || align === "right") token.attrSet("wrap", align);
   return token;
 }
@@ -291,8 +397,21 @@ function markdownImageToken(state: StateCore, child: Token): Token | null {
   return imageToken(state, child.attrGet("src") ?? "", alt, null, null);
 }
 
-function htmlImageToken(state: StateCore, tag: string): Token | null {
-  return imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width")), tagAttr(tag, "align"));
+function htmlImageToken(state: StateCore, tag: string, align: string | null = tagAttr(tag, "align")): Token | null {
+  const token = imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width") ?? cssWidth(tag)), align);
+  // Typora's <img style="zoom:50%">: half the picture's own width (on an A4 page's text width)
+  const zoom = /zoom\s*:\s*([\d.]+)\s*(%?)/i.exec(tagAttr(tag, "style") ?? "");
+  if (token && zoom && !tagAttr(tag, "width")) {
+    const factor = Number(zoom[1]) / (zoom[2] ? 100 : 1);
+    const natural = imageEntry(token.attrGet("src") ?? "")?.width ?? 0;
+    if (factor > 0 && natural > 0) token.attrSet("width", String(Math.max(0.01, Math.min(1, Math.round(((natural * factor) / 605) * 1000) / 1000))));
+  }
+  return token;
+}
+
+/** <img style="width:…">'s width. */
+function cssWidth(tag: string): string | null {
+  return /(?:^|;)\s*width\s*:\s*([\d.]+\s*(?:%|px)?)/i.exec(tagAttr(tag, "style") ?? "")?.[1] ?? null;
 }
 
 /** `<p align="…"><img …> <img …></p>` (VisualTeX's image line) as a paragraph of images. */
@@ -303,7 +422,7 @@ function imageLineTokens(state: StateCore, html: string): Token[] | null {
   if (!match) return null;
   const images: Token[] = [];
   for (const tag of match[2].match(/<img\b[^>]*>/gi) ?? []) {
-    const image = imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width")), null);
+    const image = htmlImageToken(state, tag, null);
     if (!image) return null;
     images.push(image);
   }
@@ -357,8 +476,11 @@ function alignedParagraphs(state: StateCore) {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type !== "html_block") continue;
-    const match = /^\s*<p\s+align\s*=\s*["']?(center|right|left)["']?\s*>([\s\S]*?)<\/p>\s*$/i.exec(token.content);
-    if (!match || /<img\b/i.test(match[2])) continue;
+    // also <div align="…"> and <center> (old HTML Typora still shows)
+    const match =
+      /^\s*<(p|div)\s+align\s*=\s*["']?(center|right|left)["']?\s*>([\s\S]*?)<\/\1>\s*$/i.exec(token.content)?.slice(1) ??
+      /^\s*<(center)>([\s\S]*?)<\/center>\s*$/i.exec(token.content)?.slice(0, 3).map((part, k) => (k === 0 ? "center" : k === 1 ? "center" : part));
+    if (!match || /<img\b/i.test(match[2]) || /<(p|div|table|ul|ol|h\d)\b/i.test(match[2])) continue;
     const open = new state.Token("paragraph_open", "p", 1);
     open.map = token.map;
     open.block = true;
@@ -375,11 +497,135 @@ function alignedParagraphs(state: StateCore) {
   }
 }
 
+/** x^2^ and H~2~O (Typora's superscript and subscript, markdown-it-sup/-sub's rule): no unescaped space inside; "~~"
+ *  stays strikethrough. */
+function script(marker: "^" | "~", name: "superscript" | "subscript") {
+  return (state: StateInline, silent: boolean): boolean => {
+    const start = state.pos;
+    const max = state.posMax;
+    if (silent || state.src[start] !== marker || state.src[start + 1] === marker || start + 2 >= max) return false;
+    let end = start + 1;
+    while (end < max && state.src[end] !== marker) end += state.src[end] === "\\" ? 2 : 1;
+    if (end >= max || end === start + 1) return false;
+    const content = state.src.slice(start + 1, end);
+    if (/(^|[^\\])(\\\\)*\s/.test(content)) return false;
+    state.posMax = end;
+    state.pos = start + 1;
+    state.push(`${name}_open`, marker === "^" ? "sup" : "sub", 1).markup = marker;
+    state.md.inline.tokenize(state);
+    state.push(`${name}_close`, marker === "^" ? "sup" : "sub", -1).markup = marker;
+    state.pos = end + 1;
+    state.posMax = max;
+    return true;
+  };
+}
+
+/** :smile: as 😄 (GitHub's short codes). */
+function emoji(state: StateInline, silent: boolean): boolean {
+  if (state.src[state.pos] !== ":") return false;
+  const match = /^:([a-z0-9_+-]{1,40}):/.exec(state.src.slice(state.pos, state.pos + 44));
+  const found = match ? emojiOf(match[1]) : undefined;
+  if (!match || !found) return false;
+  if (!silent) state.push("text", "", 0).content = found;
+  state.pos += match[0].length;
+  return true;
+}
+
+/** A footnote's Markdown as the footnote's text (its formulas kept; emphasis, code and link marks dropped). */
+function footnoteText(markdown: string): string {
+  return markdown
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|~~|==)(.+?)\1/g, "$2")
+    .replace(/(^|[^\\*])\*(?!\s)([^*]+?)\*/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
+}
+
+/** [^label]: text (with lines indented under it): a footnote's definition, kept for its references. */
+function footnoteDefinition(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+  const start = state.bMarks[startLine] + state.tShift[startLine];
+  const first = /^\[\^([^\]\s]+)\]:[ \t]?/.exec(state.src.slice(start, state.eMarks[startLine]));
+  if (!first) return false;
+  if (silent) return true;
+  const lines = [state.src.slice(start + first[0].length, state.eMarks[startLine])];
+  let line = startLine + 1;
+  for (; line < endLine; line++) {
+    const text = state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]);
+    // blank: the definition goes on only with an indented line after it
+    if (!text.trim()) {
+      if (line + 1 < endLine && state.sCount[line + 1] >= state.blkIndent + 2 && state.src.slice(state.bMarks[line + 1], state.eMarks[line + 1]).trim()) continue;
+      break;
+    }
+    if (state.sCount[line] < state.blkIndent + 2 && (/^\[\^[^\]\s]+\]:/.test(text) || /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|```|~~~|\$\$|\|)/.test(text))) break;
+    lines.push(text);
+  }
+  const env = state.env as { vtxFootnotes?: Record<string, string> };
+  env.vtxFootnotes ??= {};
+  env.vtxFootnotes[first[1]] ??= footnoteText(lines.join("\n"));
+  state.line = line;
+  return true;
+}
+
+/** [^label]: a footnote with its definition's text. */
+function footnoteReference(state: StateInline, silent: boolean): boolean {
+  if (!state.src.startsWith("[^", state.pos)) return false;
+  const match = /^\[\^([^\]\s]+)\]/.exec(state.src.slice(state.pos, state.pos + 200));
+  const text = match ? (state.env as { vtxFootnotes?: Record<string, string> }).vtxFootnotes?.[match[1]] : undefined;
+  if (!match || text === undefined) return false;
+  if (!silent) state.push("vtx_footnote", "", 0).attrSet("text", text);
+  state.pos += match[0].length;
+  return true;
+}
+
+/**
+ * Before the inline text is read: "[ ] " / "[x] " opening a list item (a task), "> [!NOTE]" opening a quote (an
+ * alert, its kind on the quote) and a paragraph of just [toc] (the table of contents).
+ */
+function blockMarkers(state: StateCore) {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const inline = tokens[i + 2];
+    if (token.type === "list_item_open" && tokens[i + 1]?.type === "paragraph_open" && inline?.type === "inline") {
+      const task = /^\[([ xX])\](?:[ \t]+|$)/.exec(inline.content);
+      if (task) {
+        token.attrSet("checked", task[1] === " " ? "false" : "true");
+        inline.content = inline.content.slice(task[0].length);
+      }
+    }
+    if (token.type === "blockquote_open" && tokens[i + 1]?.type === "paragraph_open" && inline?.type === "inline") {
+      const alert = /^\[!(\w+)\][ \t]*(?:\n|$)/.exec(inline.content);
+      if (alert && ALERTS.includes(alert[1].toLowerCase())) {
+        token.attrSet("alert", alert[1].toLowerCase());
+        inline.content = inline.content.slice(alert[0].length);
+        // the marker alone on its line: no paragraph of its own
+        if (!inline.content.trim()) {
+          tokens.splice(i + 1, 3);
+        }
+      }
+    }
+    if (token.type === "paragraph_open" && inline?.type === "paragraph_close" && /^\s*\[toc\]\s*$/i.test(tokens[i + 1]?.content ?? "")) {
+      const toc = new state.Token("vtx_toc", "div", 0);
+      toc.block = true;
+      toc.map = token.map;
+      tokens.splice(i, 3, toc);
+    }
+  }
+}
+
 function createMarkdownIt(): MarkdownIt {
   const md = new MarkdownIt("default", { html: true, linkify: true, breaks: false });
   md.block.ruler.before("fence", "math_block", mathBlock, { alt: ["paragraph", "reference", "blockquote", "list"] });
   md.inline.ruler.before("escape", "math_inline", mathInline);
   md.inline.ruler.before("emphasis", "highlight", highlight);
+  md.inline.ruler.after("emphasis", "superscript", script("^", "superscript"));
+  md.inline.ruler.after("emphasis", "subscript", script("~", "subscript"));
+  md.inline.ruler.after("emphasis", "emoji", emoji);
+  md.inline.ruler.before("link", "footnote_reference", footnoteReference);
+  md.block.ruler.before("reference", "footnote_definition", footnoteDefinition);
+  md.core.ruler.before("inline", "vtx_block_markers", blockMarkers);
   md.core.ruler.before("inline", "vtx_title", titleLines);
   md.core.ruler.before("inline", "vtx_aligned", alignedParagraphs);
   md.core.ruler.push("vtx_tidy", tidy);
@@ -431,13 +677,22 @@ function linkReferences(doc: Node): Node {
   return tr.doc;
 }
 
+/** A GFM table column's alignment (markdown-it writes it as the cell's style). */
+function cellAlign(tok: Token): { align: string | null } {
+  return { align: /text-align\s*:\s*(left|center|right)/.exec(tok.attrGet("style") ?? "")?.[1] ?? null };
+}
+
 const parsers = new WeakMap<Schema, MarkdownParser>();
 
 function parserFor(schema: Schema): MarkdownParser {
   let parser = parsers.get(schema);
   if (parser) return parser;
   parser = new MarkdownParser(schema, createMarkdownIt(), {
-    blockquote: { block: "blockquote" },
+    blockquote: { block: "blockquote", getAttrs: (tok) => ({ alert: tok.attrGet("alert") }) },
+    vtx_toc: { node: "toc", noCloseToken: true },
+    vtx_html_inline: { node: "html_inline", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
+    vtx_html: { node: "html_block", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
+    vtx_footnote: { node: "footnote", getAttrs: (tok) => ({ text: tok.attrGet("text") ?? "" }), noCloseToken: true },
     paragraph: { block: "paragraph", getAttrs: (tok) => (tok.attrGet("align") ? { align: tok.attrGet("align") } : null) },
     vtx_page_command: { node: "page_command", getAttrs: (tok) => ({ command: tok.attrGet("command"), value: tok.attrGet("value") ?? "" }), noCloseToken: true },
     vtx_image: {
@@ -445,10 +700,10 @@ function parserFor(schema: Schema): MarkdownParser {
       getAttrs: (tok) => ({ src: tok.attrGet("src"), alt: tok.attrGet("alt") ?? "", width: Number(tok.attrGet("width")) || DEFAULT_IMAGE_WIDTH, wrap: tok.attrGet("wrap") }),
       noCloseToken: true,
     },
-    list_item: { block: "list_item" },
+    list_item: { block: "list_item", getAttrs: (tok) => ({ checked: tok.attrGet("checked") === "true" ? true : tok.attrGet("checked") === "false" ? false : null }) },
     bullet_list: { block: "bullet_list" },
     ordered_list: { block: "ordered_list", getAttrs: (tok) => ({ start: Number(tok.attrGet("start")) || 1 }) },
-    heading: { block: "heading", getAttrs: (tok) => ({ level: Math.min(3, Number(tok.tag.slice(1)) || 1) }) },
+    heading: { block: "heading", getAttrs: (tok) => ({ level: Math.min(6, Number(tok.tag.slice(1)) || 1) }) },
     title: { block: "title" },
     code_block: { block: "code_block", noCloseToken: true },
     fence: { block: "code_block", getAttrs: (tok) => ({ language: blockLanguage(tok.info) }), noCloseToken: true },
@@ -458,14 +713,17 @@ function parserFor(schema: Schema): MarkdownParser {
     thead: { ignore: true },
     tbody: { ignore: true },
     tr: { block: "table_row" },
-    th: { block: "table_cell" },
-    td: { block: "table_cell" },
+    th: { block: "table_cell", getAttrs: cellAlign },
+    td: { block: "table_cell", getAttrs: cellAlign },
     math_inline: { node: "math_inline", getAttrs: (tok) => ({ latex: tok.content }), noCloseToken: true },
     math_block: { node: "math_display", getAttrs: (tok) => displayAttrs(tok.content), noCloseToken: true },
     em: { mark: "em" },
     strong: { mark: "strong" },
     s: { mark: "strike" },
     u: { mark: "underline" },
+    superscript: { mark: "superscript" },
+    subscript: { mark: "subscript" },
+    kbd: { mark: "kbd" },
     mark: { mark: "highlight", attrs: { color: MARKDOWN_HIGHLIGHT } },
     textColor: { mark: "textColor", getAttrs: (tok) => ({ color: tok.attrGet("color") }) },
     bgcolor: { mark: "highlight", getAttrs: (tok) => ({ color: tok.attrGet("color") }) },
@@ -668,7 +926,25 @@ function serializerFor(
       state.closeBlock(node);
     },
     blockquote(state, node) {
-      state.wrapBlock("> ", null, node, () => state.renderContent(node));
+      state.wrapBlock("> ", null, node, () => {
+        // an alert: its kind on the first line (GitHub's form, which Typora reads)
+        if (node.attrs.alert) {
+          state.write(`[!${String(node.attrs.alert).toUpperCase()}]`);
+          state.ensureNewLine();
+        }
+        state.renderContent(node);
+      });
+    },
+    toc(state, node) {
+      state.write("[toc]");
+      state.closeBlock(node);
+    },
+    html_inline(state, node) {
+      state.write(String(node.attrs.html ?? ""));
+    },
+    html_block(state, node) {
+      state.text(String(node.attrs.html ?? ""), false);
+      state.closeBlock(node);
     },
     bullet_list(state, node) {
       state.renderList(node, "  ", () => `${style.bullet} `);
@@ -682,6 +958,7 @@ function serializerFor(
       });
     },
     list_item(state, node) {
+      if (node.attrs.checked !== null) state.write(node.attrs.checked ? "[x] " : "[ ] ");
       state.renderContent(node);
     },
     code_block(state, node) {
@@ -777,7 +1054,11 @@ function serializerFor(
       });
       const width = Math.max(...rows.map((r) => r.length));
       const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? " ").join(" | ")} |`;
-      const out = [line(rows[0] ?? []), `|${Array.from({ length: width }, () => " --- ").join("|")}|`, ...rows.slice(1).map(line)];
+      // the columns' alignment: the header row's cells'
+      const aligns: Array<string | null> = [];
+      node.firstChild?.forEach((cell) => aligns.push(cell.attrs.align ?? null));
+      const rule = (i: number) => ({ left: " :--- ", center: " :---: ", right: " ---: " })[aligns[i] as "left"] ?? " --- ";
+      const out = [line(rows[0] ?? []), `|${Array.from({ length: width }, (_, i) => rule(i)).join("|")}|`, ...rows.slice(1).map(line)];
       state.write(out.join("\n"));
       state.closeBlock(node);
     },
@@ -793,6 +1074,10 @@ function serializerFor(
     strong: emphasis("**", "strong"),
     em: emphasis("*", "em"),
     underline: { open: "<u>", close: "</u>", mixable: true },
+    // as HTML, which Typora, GitHub and Obsidian all show (x^2^ needs Typora's option)
+    superscript: { open: "<sup>", close: "</sup>", mixable: true },
+    subscript: { open: "<sub>", close: "</sub>", mixable: true },
+    kbd: { open: "<kbd>", close: "</kbd>" },
     strike: { open: "~~", close: "~~", mixable: true, expelEnclosingWhitespace: true },
     code: {
       open: (_state, _mark, parent, index) => backticks(parent.child(index).text ?? "", -1),
@@ -822,7 +1107,8 @@ function serializerFor(
     };
   }
   // Besides CommonMark's characters: "$" (math), "==" (highlight) and "<" before a tag name (HTML), all literal here.
-  const serializer = new MarkdownSerializer(nodes, marks, { escapeExtraCharacters: /[$]|==|<(?=[A-Za-z\/!?])/g });
+  // Also "^" before a second one (x^2^ is superscript when read) and ":" of an emoji short code.
+  const serializer = new MarkdownSerializer(nodes, marks, { escapeExtraCharacters: /[$]|==|<(?=[A-Za-z\/!?])|\^(?=[^\s^]+\^)|:(?=[a-z_+][a-z0-9_+-]*:)/g });
   return serializer;
 }
 

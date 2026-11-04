@@ -2191,7 +2191,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             write_export_file,
             read_image_file,
-            document_export::document_export_omml,
+            document_export::read_import_file,
+            document_export::fetch_image_url,
             document_export::pdf_print_open,
             document_export::pdf_print_save,
             document_export::pdf_print_close,

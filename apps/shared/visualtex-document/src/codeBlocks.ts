@@ -57,6 +57,7 @@ export const CODE_LANGUAGES: Array<{ id: string; label: string }> = [
   { id: "css", label: "CSS" },
   { id: "latex", label: "LaTeX" },
   { id: "markdown", label: "Markdown" },
+  { id: "mermaid", label: "Mermaid" },
   { id: "dockerfile", label: "Dockerfile" },
   { id: "ini", label: "INI" },
 ];
@@ -256,6 +257,8 @@ export interface CodeBlockOptions {
   highlighter: CodeHighlighter | null;
   /** names in the app's language */
   labels: { plainText: string; copy: string; copied: string; language: string };
+  /** a diagram's code drawn as SVG (Mermaid, as Typora draws it); null: shown as code only */
+  diagram?: ((language: string, code: string) => Promise<string> | null) | null;
 }
 
 class CodeBlockView implements NodeView {
@@ -264,6 +267,9 @@ class CodeBlockView implements NodeView {
   private header: HTMLElement;
   private select: HTMLSelectElement;
   private copyButton: HTMLButtonElement;
+  private drawing: HTMLElement | null = null;
+  private drawn = "";
+  private drawTimer = 0;
 
   constructor(
     private node: Node,
@@ -308,6 +314,45 @@ class CodeBlockView implements NodeView {
     const language = this.node.attrs.language as string;
     if (this.select.value !== language) this.select.value = CODE_LANGUAGES.some((l) => l.id === language) ? language : "";
     this.dom.dataset.language = language;
+    this.scheduleDrawing();
+  }
+
+  /** A diagram block: its picture under the code, drawn again a moment after the code changes. */
+  private scheduleDrawing() {
+    const language = this.node.attrs.language as string;
+    const code = this.node.textContent;
+    const key = `${language}\n${code}`;
+    if (!this.options.diagram || language !== "mermaid" || !code.trim()) {
+      this.drawing?.remove();
+      this.drawing = null;
+      this.drawn = "";
+      return;
+    }
+    if (key === this.drawn) return;
+    window.clearTimeout(this.drawTimer);
+    this.drawTimer = window.setTimeout(() => {
+      this.drawn = key;
+      const pending = this.options.diagram?.(language, code);
+      if (!pending) return;
+      void pending.then(
+        (svg) => {
+          if (this.drawn !== key) return;
+          if (!this.drawing) {
+            this.drawing = document.createElement("div");
+            this.drawing.className = "vtx-code-diagram";
+            this.drawing.contentEditable = "false";
+            this.dom.append(this.drawing);
+          }
+          this.drawing.classList.remove("is-error");
+          this.drawing.innerHTML = svg;
+        },
+        (error: unknown) => {
+          if (this.drawn !== key || !this.drawing) return;
+          this.drawing.classList.add("is-error");
+          this.drawing.textContent = String((error as Error)?.message ?? error).split("\n")[0];
+        },
+      );
+    }, this.drawn ? 400 : 0);
   }
 
   private onLanguage = () => {
@@ -332,9 +377,9 @@ class CodeBlockView implements NodeView {
     return true;
   }
 
-  // The header is the block's own; the code is ProseMirror's.
+  // The header and the diagram are the block's own; the code is ProseMirror's.
   stopEvent(event: Event) {
-    return this.header.contains(event.target as globalThis.Node);
+    return this.header.contains(event.target as globalThis.Node) || !!this.drawing?.contains(event.target as globalThis.Node);
   }
 
   ignoreMutation(mutation: ViewMutationRecord) {
@@ -343,6 +388,7 @@ class CodeBlockView implements NodeView {
   }
 
   destroy() {
+    window.clearTimeout(this.drawTimer);
     this.select.removeEventListener("change", this.onLanguage);
     this.copyButton.removeEventListener("click", this.onCopy);
   }

@@ -44,6 +44,7 @@ import {
 } from "./blocks.ts";
 import { commandMenuPlugin, type MathCommandProvider } from "./suggest.ts";
 import { codeBlockKeys, codeBlockPlugin, type CodeBlockOptions, type CodeHighlighter } from "./codeBlocks.ts";
+import { richBlocksPlugin } from "./richBlocks.ts";
 import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
 import { ALL_RULES, markdownEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
@@ -411,6 +412,8 @@ export interface DocumentPluginOptions {
   codeHighlighter?: CodeHighlighter | null;
   /** The code block header's words in the app's language. */
   codeLabels?: CodeBlockOptions["labels"];
+  /** diagrams (Mermaid) drawn under their code */
+  codeDiagram?: CodeBlockOptions["diagram"];
   /** LaTeX or Markdown input (what typing converts, what the candidate menu offers, how Markdown pastes). */
   inputMode?: () => InputMode;
   /** The Markdown rules that are on (all by default). */
@@ -495,7 +498,8 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     notesPlugin(),
     imagesPlugin({ labels: options.imageLabels ?? (() => DEFAULT_IMAGE_LABELS) }),
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
-    codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS }),
+    codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS, diagram: options.codeDiagram ?? null }),
+    richBlocksPlugin(),
     keymap(codeBlockKeys),
     markdownKeymap(inputMode),
     documentKeymap(schema, inputMode, rules),

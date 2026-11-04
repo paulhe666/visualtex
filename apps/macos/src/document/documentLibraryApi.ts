@@ -365,3 +365,52 @@ export async function saveTextFile(name: string, text: string, extension: string
   URL.revokeObjectURL(url);
   return true;
 }
+
+const IMPORT_EXTENSIONS = ["vtxdoc", "json", "md", "markdown", "tex", "ltx", "zip"];
+
+/**
+ * A file to open, from the system's open dialog (the app only; null when cancelled): its bytes and the folder it is
+ * in (a Markdown or LaTeX file's pictures are found from there).
+ */
+export async function chooseImportFile(isEn: boolean): Promise<{ file: File; folder: string } | null> {
+  if (!isTauri()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const chosen = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: isEn ? "Documents" : "文档", extensions: IMPORT_EXTENSIONS }],
+    title: isEn ? "Open" : "打开",
+  });
+  if (!chosen || Array.isArray(chosen)) return null;
+  const bytes = fromBase64(await invoke<string>("read_import_file", { path: chosen }));
+  const name = chosen.split(/[\\/]/).pop() ?? chosen;
+  return { file: new File([bytes as BlobPart], name), folder: chosen.slice(0, chosen.length - name.length) };
+}
+
+function fromBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** A picture file on the disk (an absolute path; the app only). */
+export async function readImageFile(path: string): Promise<Uint8Array | null> {
+  if (!isTauri()) return null;
+  try {
+    return fromBase64(await invoke<string>("read_image_file", { path }));
+  } catch {
+    return null;
+  }
+}
+
+/** A picture on the web (http/https): through the app (no browser restrictions), or the browser's fetch. */
+export async function fetchImage(url: string): Promise<Uint8Array | null> {
+  try {
+    if (isTauri()) return fromBase64(await invoke<string>("fetch_image_url", { url }));
+    const response = await fetch(url);
+    return response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
