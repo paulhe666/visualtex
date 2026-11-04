@@ -1,6 +1,6 @@
-# VisualTeX for AI agents on the Mac: MCP for Word and PowerPoint
+# VisualTeX for AI agents on the Mac: MCP for Word, PowerPoint and WPS
 
-Status: built 2026-11-02. The tools, their arguments and their answers are those of the Windows server
+Status: built 2026-11-02; WPS Writer and WPS Presentation 2026-11-03 (§5). The tools, their arguments and their answers are those of the Windows server
 (DESIGN.md §5, §6, §14 in the Windows repository); this page says how the Mac carries them out.
 
 ## 1. Pieces
@@ -62,8 +62,35 @@ runs the Ribbon's command, as the Windows add-ins do.
 
 An agent write is refused while the user has the formula editor open.
 
-## 5. Tests
+## 5. WPS
+
+WPS Writer (host `ww`) and WPS Presentation (`wp`) are hosts while their add-in is loaded (vendor `kingsoft`).
+The WPS add-ins already talk to the app over the WPS bridge (`office/wps/bridge.rs`, `http://127.0.0.1:43129/wps/v1`),
+so the operations go that way instead of through a macro:
+
+- the add-in asks `GET /agent/commands?host=writer|presentation&wait=20` (a long poll; `enabled: false` while agent
+  access is off, and it then asks every 30 s) and answers `POST /agent/results` with `{id, ok, data|error}`. A host
+  that has not asked for 45 s is gone; an operation not taken in 35 s fails with `host_unresponsive`.
+- `module.js` / `module-wpp.js` (`AGENT_OPERATIONS`) answer what the Word and PowerPoint macros answer, with the same
+  formula ids (`vtx:`, `w:m:<start>:<end>`, `ppt:<slide id>:<shape id>:<n>`). While an operation runs, `notify`
+  collects its messages for the answer (a WPS alert would stop every add-in) and confirmations say yes.
+- A formula command posts its session with `agent: true`; the bridge gives the request back without opening the
+  editor, and the app draws it in the hidden editor as for Word (`open_agent_session`). The commit goes to the add-in
+  through the bridge as after Apply. Imports post `agent: true` too (`open_agent_import`); redraw, restore and
+  conversions open their progress window and the tool follows their session.
+- WPS Presentation's equations are read from a copy WPS saves (`/presentation/equations`, as Edit and Restore read
+  them): the add-in sends each equation's `a14:m` as `zone`, which the app turns into OMML and LaTeX.
+- Writer's `convert_formulas` takes `picture` ↔ `office_equation` and scope `selection` or `document`; numbering,
+  references and number formats run the Ribbon's own code.
+
+## 6. Tests
 
 - Rust: `cargo test --lib office::automation` (request rows, readers, PowerPoint OMML, argument checks).
 - Live: `~/claude-work/wkcheck/agent/agent.sh word|powerpoint <op> s.name=...` runs one operation as the app does;
   `copyeq.sh` copies PowerPoint equations as the app does.
+- Live, every tool through `VisualTeX --mcp-stdio`: `.cache/mcp-mac/mcp-mac.mjs <exe> <report> word|powerpoint <document
+  name> [w|p|ww|wp]` (the last argument picks the host, e.g. `ww` for WPS Writer); `test_app.sh start|stop` swaps
+  in the built bundle. An add-in still running a module older than this feature picks up the new one at the
+  user's next selection change in WPS.
+- A document window an agent waits for tells it what it skipped (`note_macos_agent_session`) and closes; the
+  answer lists those formulas in `warnings`.

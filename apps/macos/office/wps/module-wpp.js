@@ -99,6 +99,12 @@
   /* An alert, or the host's own notifier (a WPS alert is modal and stops
      every add-in until it is answered). */
   function notify(message) {
+    /* An agent's command (or a formula it started) says it in its answer instead. */
+    if (agentRun || (active && active.agent)) {
+      if (agentRun) agentRun.notes.push(String(message));
+      else log("agent notice: " + message);
+      return;
+    }
     if (host && typeof host.notify === "function") {
       host.notify(String(message));
       return;
@@ -406,7 +412,8 @@
       identity: spec.powerPoint.presentationIdentity,
       pendingMarker: spec.pendingMarker || null,
       /* A native equation: the text box and the text it had when the editor opened. */
-      native: spec.native || null
+      native: spec.native || null,
+      agent: !!agentRun
     };
     var body = {
       sessionId: sessionId,
@@ -421,7 +428,11 @@
     ["formulaId", "sourceObjectId", "encodedMetadata", "nativeEditXml"].forEach(function (key) {
       if (spec[key]) body[key] = spec[key];
     });
-    call("POST", "/sessions", body, 25000).then(function () {
+    /* An agent's formula: VisualTeX gives the request back and draws the agent's LaTeX itself. */
+    if (agentRun) body.agent = true;
+    var posting = call("POST", "/sessions", body, 25000);
+    if (agentRun) agentRun.started = posting;
+    posting.then(function () {
       poll(sessionId, 0);
     }, function (error) {
       if (active && active.sessionId === sessionId) {
@@ -1070,6 +1081,8 @@
   };
 
   function confirmWithUser(message) {
+    /* An agent asked for it: yes. */
+    if (agentRun) return true;
     if (host && typeof host.confirm === "function") return host.confirm(String(message));
     return safe(function () { return window.confirm(message); }, false);
   }
@@ -1173,7 +1186,8 @@
       identity: presentationIdentity(spec.presentation),
       operation: spec.operation,
       /* The text each shape had, to check before writing. */
-      texts: spec.texts
+      texts: spec.texts,
+      agent: !!agentRun
     };
     var body = {
       sessionId: sessionId,
@@ -1187,7 +1201,15 @@
       source: JSON.stringify(spec.source)
     };
     if (spec.sourceKind) body.sourceKind = spec.sourceKind;
-    call("POST", "/documents", body, 60000).then(function () {
+    /* An agent's operation: the window tells the agent what it skipped instead of showing it. */
+    if (agentRun) body.agent = true;
+    var posting = call("POST", "/documents", body, 60000);
+    if (agentRun) agentRun.started = posting.then(function (reply) {
+      reply = reply || {};
+      reply.sessionId = reply.sessionId || sessionId;
+      return reply;
+    });
+    posting.then(function () {
       poll(sessionId, 0);
     }, function (error) {
       if (active && active.sessionId === sessionId) active = null;
@@ -1787,6 +1809,537 @@
     }
   }
 
+  /* ---- AI agents (docs/office-mcp/MACOS.md) -----------------------------------
+     VisualTeX hands the add-in an agent's operations over the WPS connection
+     (office::wps::bridge agent_commands); each answers what the PowerPoint
+     add-in's VisualTeX_AgentRun answers. A native equation is "ppt:<slide
+     id>:<shape id>:<n>", the n-th equation of a text box, found in a copy WPS
+     saves; its a14:m goes to the app as `zone`. A command that opens the
+     formula editor hands its request back: VisualTeX draws the agent's LaTeX
+     in its hidden editor and the add-in writes the result as after Apply. */
+
+  var AGENT_POLL_SECONDS = 20;
+  var agentRun = null;
+  var agentLoopStarted = false;
+
+  function agentFail(code, message) {
+    var error = new Error(message);
+    error.agentCode = code;
+    throw error;
+  }
+
+  function base64UrlUtf8(text) {
+    var bytes = new TextEncoder().encode(String(text));
+    var binary = "";
+    for (var index = 0; index < bytes.length; index += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(index, index + 0x8000));
+    }
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function agentPresentation(args) {
+    if (!safe(function () { return app().Presentations.Count; }, 0)) {
+      agentFail("document_not_found", "No presentation is open in WPS Presentation.");
+    }
+    if (!args.document) return app().ActivePresentation;
+    var presentations = app().Presentations;
+    for (var index = 1; index <= presentations.Count; index++) {
+      var candidate = presentations.Item(index);
+      if (presentationIdentity(candidate) === args.document) return candidate;
+    }
+    agentFail("document_not_found", "The presentation is no longer open; call list_documents again.");
+  }
+
+  function agentWritable(args) {
+    var presentation = agentPresentation(args);
+    if (Number(safe(function () { return presentation.ReadOnly; }, MSO_FALSE)) === MSO_TRUE) {
+      agentFail("document_read_only", "The presentation is read-only.");
+    }
+    if (presentationIdentity(app().ActivePresentation) !== presentationIdentity(presentation)) {
+      if (!safe(function () { return presentation.Windows.Count; }, 0)) agentFail("operation_failed", "The presentation has no window.");
+      presentation.Windows.Item(1).Activate();
+    }
+    return presentation;
+  }
+
+  function agentShowSlide(slide) {
+    var pane = app().ActiveWindow;
+    if (Number(safe(function () { return pane.View.Slide.SlideID; }, 0)) !== Number(slide.SlideID)) {
+      pane.View.GotoSlide(Number(slide.SlideIndex));
+    }
+  }
+
+  function round2(value) {
+    return Math.round(Number(value) * 100) / 100;
+  }
+
+  function agentFrame(shape) {
+    return {
+      left_pt: round2(shape.Left), top_pt: round2(shape.Top), width_pt: round2(shape.Width), height_pt: round2(shape.Height),
+      rotation: round2(safe(function () { return shape.Rotation; }, 0) || 0),
+      z_order: Number(safe(function () { return shape.ZOrderPosition; }, 0)) || 0
+    };
+  }
+
+  /* item: {slide, shape} (a picture formula) or {slide, shape, number, zone, text} (the number-th
+     equation of a text box, as /presentation/equations found it). */
+  function agentFormula(item, contextChars) {
+    var slide = item.slide;
+    var shape = item.shape;
+    var formula = {
+      numbered: false, slide: Number(slide.SlideIndex), slide_id: Number(slide.SlideID), shape_id: Number(shape.Id),
+      shape_name: String(safe(function () { return shape.Name; }, "") || ""), frame: agentFrame(shape),
+      context_before: "", context_after: ""
+    };
+    if (!item.zone) {
+      var size = scaleOf(shape, false).size;
+      formula.formula_id = "vtx:" + shapeFormulaId(shape);
+      formula.kind = "picture";
+      formula.display = "inline";
+      formula.font_size_pt = size > 0 ? round2(size) : null;
+      formula.equation = null;
+      formula.frame_of = "formula";
+      formula.payload_b64 = base64UrlUtf8(shapeMetadata(shape));
+      formula.vtx_formula_id = shapeFormulaId(shape) || null;
+      return formula;
+    }
+    var zone = item.zone;
+    formula.formula_id = "ppt:" + slide.SlideID + ":" + shape.Id + ":" + item.number;
+    formula.kind = "office_equation";
+    formula.display = zone.display ? "block" : "inline";
+    formula.font_size_pt = round2(contextFontSize(shape, zone.start, zone.length));
+    formula.equation = item.number;
+    formula.frame_of = "text_box";
+    formula.payload_b64 = null;
+    formula.zone = zone.zone;
+    if (contextChars > 0) {
+      var text = item.text;
+      var from = Math.max(1, zone.start - contextChars);
+      formula.context_before = text.substr(from - 1, zone.start - from).replace(/[\r\u000b]/g, "\n");
+      formula.context_after = text.substr(zone.start - 1 + zone.length, contextChars).replace(/[\r\u000b]/g, "\n");
+    }
+    return formula;
+  }
+
+  /* Every formula of the slides, in slide and shape order: pictures, and the equations of the text boxes
+     (one saved copy for all of them). */
+  function agentFormulas(presentation, slides) {
+    var shapes = [];
+    var texts = [];
+    slides.forEach(function (slide) {
+      for (var index = 1; index <= slide.Shapes.Count; index++) {
+        var shape = slide.Shapes.Item(index);
+        if (isFormulaShape(shape)) {
+          shapes.push({ slide: slide, shape: shape });
+        } else if (isTextShape(shape)) {
+          var text = liveText(shape);
+          if (!mayContainMath(text)) continue;
+          var entry = { slide: slide, shape: shape, text: text, zones: [] };
+          shapes.push(entry);
+          texts.push({ target: { slide: slide, shape: shape }, text: text, entry: entry });
+        }
+      }
+    });
+    var located = texts.length ? savedEquationsOf(presentation, texts) : Promise.resolve([]);
+    return located.then(function (answers) {
+      texts.forEach(function (text, index) {
+        var answer = answers[index] || {};
+        text.entry.zones = answer.zones || [];
+        if (answer.error) log("agent: equations of shape " + text.entry.shape.Id + " unreadable: " + answer.error);
+      });
+      var items = [];
+      shapes.forEach(function (entry) {
+        if (!entry.text) {
+          items.push(entry);
+          return;
+        }
+        entry.zones.forEach(function (zone, index) {
+          items.push({ slide: entry.slide, shape: entry.shape, text: entry.text, zone: zone, number: index + 1 });
+        });
+      });
+      return items;
+    });
+  }
+
+  function allSlides(presentation) {
+    var slides = [];
+    for (var index = 1; index <= presentation.Slides.Count; index++) slides.push(presentation.Slides.Item(index));
+    return slides;
+  }
+
+  /* The formula an agent id names: "vtx:<id>" or "ppt:<slide id>:<shape id>:<n>". */
+  function agentFind(presentation, id) {
+    id = String(id || "");
+    if (id.indexOf("vtx:") === 0) {
+      var wanted = id.slice(4);
+      var slides = allSlides(presentation);
+      for (var s = 0; s < slides.length; s++) {
+        for (var index = 1; index <= slides[s].Shapes.Count; index++) {
+          var shape = slides[s].Shapes.Item(index);
+          if (isFormulaShape(shape) && shapeFormulaId(shape) === wanted) return Promise.resolve({ slide: slides[s], shape: shape });
+        }
+      }
+      agentFail("formula_not_found", "No VisualTeX formula in this presentation has that id.");
+    }
+    var parts = id.split(":");
+    if (parts.length !== 4 || parts[0] !== "ppt") agentFail("formula_not_found", "This is not a formula id from list_formulas.");
+    var slide = safe(function () { return slideById(presentation, Number(parts[1])); }, null);
+    var box = slide && shapeById(slide, Number(parts[2]));
+    var number = Number(parts[3]);
+    if (!box || !isTextShape(box)) agentFail("stale_formula_id", "The presentation changed; call list_formulas again.");
+    var text = liveText(box);
+    return savedEquations(presentation, slide, box, text).then(function (zones) {
+      if (!(number >= 1 && number <= zones.length) || liveText(box) !== text) {
+        agentFail("stale_formula_id", "The presentation changed; call list_formulas again.");
+      }
+      return { slide: slide, shape: box, text: text, zone: zones[number - 1], number: number };
+    });
+  }
+
+  /* The formula shown and selected (an equation's characters). */
+  function agentSelect(item) {
+    agentShowSlide(item.slide);
+    if (item.zone) characters(item.shape, item.zone.start, item.zone.length).Select();
+    else item.shape.Select();
+  }
+
+  function agentDone(message) {
+    var parts = [];
+    if (message) parts.push(message);
+    if (agentRun) parts = parts.concat(agentRun.notes);
+    return { message: parts.length ? parts.join(" ") : null };
+  }
+
+  /* The session the command started, once VisualTeX has it: its id and (for the hidden editor) its
+     request. A command that did not start one says why in its notes. */
+  function agentStarted(withRequest) {
+    var run = agentRun;
+    var waited = 0;
+    return new Promise(function (resolve, reject) {
+      var check = function () {
+        if (run.started) {
+          run.started.then(function (reply) {
+            resolve({ session_id: reply.sessionId || null, request: withRequest ? reply.request || null : null,
+              slide: Number(safe(function () { return app().ActiveWindow.View.Slide.SlideIndex; }, 0)) || null,
+              message: run.notes.length ? run.notes.join(" ") : null });
+          }, reject);
+          return;
+        }
+        if (run.notes.length || waited >= 120000) {
+          reject(new Error(run.notes.length ? run.notes.join(" ") : "WPS did not start the operation"));
+          run.notes = [];
+          return;
+        }
+        waited += 100;
+        setTimeout(check, 100);
+      };
+      check();
+    });
+  }
+
+  var SHAPE_TYPES = { 14: "placeholder", 17: "text_box", 13: "picture", 11: "picture", 6: "group", 19: "table", 3: "chart",
+    24: "smart_art", 9: "line", 16: "media", 7: "ole_object", 10: "ole_object", 12: "ole_object", 1: "shape", 5: "shape" };
+  var PLACEHOLDER_TYPES = { 1: "title", 3: "title", 5: "title", 4: "subtitle", 2: "body", 6: "body", 7: "content",
+    18: "picture", 15: "footer", 13: "slide_number", 16: "date" };
+
+  var AGENT_OPERATIONS = {
+    list_documents: function () {
+      var presentations = app().Presentations;
+      var activeKey = safe(function () { return presentationIdentity(app().ActivePresentation); }, "");
+      var list = [];
+      for (var index = 1; index <= presentations.Count; index++) {
+        var presentation = presentations.Item(index);
+        var key = presentationIdentity(presentation);
+        var path = String(safe(function () { return presentation.Path; }, "") || "");
+        list.push({
+          key: key, name: String(safe(function () { return presentation.Name; }, "") || ""),
+          path: path ? String(safe(function () { return presentation.FullName; }, "") || "") || null : null,
+          active: key === activeKey,
+          saved: Number(safe(function () { return presentation.Saved; }, MSO_TRUE)) !== MSO_FALSE,
+          read_only: Number(safe(function () { return presentation.ReadOnly; }, MSO_FALSE)) === MSO_TRUE,
+          slide_count: Number(presentation.Slides.Count),
+          slide_width_pt: round2(presentation.PageSetup.SlideWidth),
+          slide_height_pt: round2(presentation.PageSetup.SlideHeight)
+        });
+      }
+      return { documents: list };
+    },
+
+    list_formulas: function (args) {
+      var presentation = agentPresentation(args);
+      var offset = Number(args.offset) || 0;
+      var limit = args.limit === undefined ? 50 : Number(args.limit);
+      var contextChars = args.contextChars === undefined ? 40 : Number(args.contextChars);
+      var kinds = args.kinds || [];
+      return agentFormulas(presentation, allSlides(presentation)).then(function (items) {
+        var listed = [];
+        var revision = "";
+        var total = 0;
+        items.forEach(function (item) {
+          var kind = item.zone ? "office_equation" : "picture";
+          if (kinds.length && kinds.indexOf(kind) < 0) return;
+          revision += item.slide.SlideID + "." + item.shape.Id + (item.zone ? "." + item.number + "@" + item.zone.start : "") + ";";
+          if (total >= offset && listed.length < limit) listed.push(agentFormula(item, contextChars));
+          total++;
+        });
+        return { revision: revision, total: total, offset: offset, formulas: listed };
+      });
+    },
+
+    read_formula: function (args) {
+      return agentFind(agentPresentation(args), args.formulaId).then(function (item) { return agentFormula(item, 120); });
+    },
+
+    find_vtx_formula: function (args) {
+      var presentation = agentPresentation(args);
+      return agentFind(presentation, "vtx:" + String(args.vtxId || "")).then(function (item) {
+        return { formula: agentFormula(item, 0) };
+      }, function (error) {
+        if (error && error.agentCode === "formula_not_found") return { formula: null };
+        throw error;
+      });
+    },
+
+    get_slide_layout: function (args) {
+      var presentation = agentPresentation(args);
+      var number = Number(args.slide) || Number(safe(function () { return app().ActiveWindow.View.Slide.SlideIndex; }, 0)) || 1;
+      if (!(number >= 1 && number <= presentation.Slides.Count)) {
+        agentFail("invalid_arguments", "The presentation has " + presentation.Slides.Count + " slides.");
+      }
+      var slide = presentation.Slides.Item(number);
+      return agentFormulas(presentation, [slide]).then(function (items) {
+        var ids = {};
+        items.forEach(function (item) {
+          var key = String(item.shape.Id);
+          (ids[key] = ids[key] || []).push(item.zone ? "ppt:" + slide.SlideID + ":" + item.shape.Id + ":" + item.number
+            : "vtx:" + shapeFormulaId(item.shape));
+        });
+        var shapes = [];
+        for (var index = 1; index <= slide.Shapes.Count; index++) {
+          var shape = slide.Shapes.Item(index);
+          var type = Number(safe(function () { return shape.Type; }, 0));
+          var text = liveText(shape).replace(/[\r\u000b]/g, "\n");
+          if (text.length > 200) text = text.slice(0, 200) + "…";
+          shapes.push({
+            shape_id: Number(shape.Id), name: String(safe(function () { return shape.Name; }, "") || ""),
+            type: isFormulaShape(shape) ? "formula" : SHAPE_TYPES[type] || "other",
+            placeholder: type === 14 ? PLACEHOLDER_TYPES[Number(safe(function () { return shape.PlaceholderFormat.Type; }, 0))] || "other" : null,
+            frame: agentFrame(shape), text: text || null, formula_ids: ids[String(shape.Id)] || null
+          });
+        }
+        return {
+          slide: number, slide_id: Number(slide.SlideID), slide_count: Number(presentation.Slides.Count),
+          layout: safe(function () { return String(slide.CustomLayout.Name); }, null) || null,
+          slide_width_pt: round2(presentation.PageSetup.SlideWidth), slide_height_pt: round2(presentation.PageSetup.SlideHeight),
+          shapes: shapes
+        };
+      });
+    },
+
+    get_selection: function (args) {
+      var presentation = agentPresentation(args);
+      var pane = app().ActiveWindow;
+      var slide = safe(function () { return pane.View.Slide; }, null);
+      var selection = safe(function () { return pane.Selection; }, null);
+      var type = Number(safe(function () { return selection.Type; }, 0));
+      var answer = {
+        document: presentationIdentity(presentation), kind: type === PP_SELECTION_SLIDES ? "slide" : "none",
+        formula: null, text_preview: null,
+        location: { slide: slide ? Number(slide.SlideIndex) : null, slide_id: slide ? Number(slide.SlideID) : null, shape_id: null },
+        read_only: Number(safe(function () { return presentation.ReadOnly; }, MSO_FALSE)) === MSO_TRUE
+      };
+      var shape = (type === PP_SELECTION_SHAPES || type === PP_SELECTION_TEXT) && selection.ShapeRange.Count === 1
+        ? selection.ShapeRange.Item(1) : null;
+      if (!shape || !slide) return answer;
+      answer.kind = "shape";
+      answer.location.shape_id = Number(shape.Id);
+      if (isFormulaShape(shape)) {
+        answer.kind = "formula";
+        answer.formula = agentFormula({ slide: slide, shape: shape }, 0);
+        return answer;
+      }
+      if (type === PP_SELECTION_TEXT) {
+        answer.kind = "text";
+        var preview = String(safe(function () { return selection.TextRange.Text; }, "") || "").replace(/[\r\u000b]/g, "\n");
+        answer.text_preview = preview.length > 200 ? preview.slice(0, 200) + "…" : preview;
+      }
+      var text = isTextShape(shape) ? liveText(shape) : "";
+      if (!mayContainMath(text)) return answer;
+      var start = type === PP_SELECTION_TEXT ? Number(selection.TextRange.Start) : 0;
+      var length = type === PP_SELECTION_TEXT ? Number(selection.TextRange.Length) : 0;
+      return savedEquations(presentation, slide, shape, text).then(function (zones) {
+        var index = type === PP_SELECTION_TEXT ? zoneAt(zones, start, length) : zones.length === 1 ? 0 : -1;
+        if (index >= 0) {
+          answer.kind = "formula";
+          answer.text_preview = null;
+          answer.formula = agentFormula({ slide: slide, shape: shape, text: text, zone: zones[index], number: index + 1 }, 60);
+        }
+        return answer;
+      });
+    },
+
+    select_formula: function (args) {
+      var presentation = agentPresentation(args);
+      if (presentationIdentity(app().ActivePresentation) !== presentationIdentity(presentation)) {
+        safe(function () { presentation.Windows.Item(1).Activate(); });
+      }
+      return agentFind(presentation, args.formulaId).then(function (item) {
+        agentSelect(item);
+        return { formula: agentFormula(item, 0) };
+      });
+    },
+
+    /* A native equation alone in its text box goes with the box. */
+    delete_formula: function (args) {
+      return agentFind(agentWritable(args), args.formulaId).then(function (item) {
+        safe(function () { app().StartNewUndoEntry(); });
+        if (!item.zone || item.text.replace(/[\r\u000b\s]/g, "").length <= item.zone.length) item.shape.Delete();
+        else characters(item.shape, item.zone.start, item.zone.length).Delete();
+        return agentDone("Deleted the formula.");
+      });
+    },
+
+    set_formula_font_size: function (args) {
+      var size = Number(args.font_size_pt);
+      if (!(size >= 5 && size <= 200)) agentFail("invalid_arguments", "font_size_pt must be from 5 to 200.");
+      return agentFind(agentWritable(args), args.formulaId).then(function (item) {
+        safe(function () { app().StartNewUndoEntry(); });
+        if (item.zone) characters(item.shape, item.zone.start, item.zone.length).Font.Size = size;
+        else resizeFormula(item.shape, size);
+        return agentDone("The formula is " + size + " pt.");
+      });
+    },
+
+    /* position: the new frame in points; what is left out stays. width or height alone keeps a
+       formula's proportions (a text box only takes the size given). */
+    set_frame: function (args) {
+      var position = args.position || {};
+      return agentFind(agentWritable(args), args.formulaId).then(function (item) {
+        var shape = item.shape;
+        var picture = !item.zone;
+        var locked = shape.LockAspectRatio;
+        var ratio = Number(shape.Height) > 0 ? Number(shape.Width) / Number(shape.Height) : 0;
+        var has = function (name) { return typeof position[name] === "number" && isFinite(position[name]); };
+        safe(function () { app().StartNewUndoEntry(); });
+        shape.LockAspectRatio = MSO_FALSE;
+        if (has("width_pt")) shape.Width = position.width_pt;
+        if (has("height_pt")) shape.Height = position.height_pt;
+        if (picture && ratio > 0 && has("width_pt") !== has("height_pt")) {
+          if (has("width_pt")) shape.Height = position.width_pt / ratio;
+          else shape.Width = position.height_pt * ratio;
+        }
+        if (has("left_pt")) shape.Left = position.left_pt;
+        if (has("top_pt")) shape.Top = position.top_pt;
+        shape.LockAspectRatio = locked;
+        if (picture && (has("width_pt") || has("height_pt"))) {
+          /* the point size follows the new height */
+          safe(function () { scaleOf(shape, true); });
+        }
+        return { frame: agentFrame(shape), frame_of: picture ? "formula" : "text_box" };
+      });
+    },
+
+    /* location: "cursor" (the text box's cursor, or a new formula on the current slide) or {slide, ...}
+       (a new formula on that slide; the app moves it to left_pt/top_pt afterwards). */
+    begin_insert: function (args) {
+      var presentation = agentWritable(args);
+      var location = args.location;
+      if (location && typeof location === "object" && location.slide !== undefined && location.slide !== null) {
+        var number = Number(location.slide);
+        if (!(number >= 1 && number <= presentation.Slides.Count)) {
+          agentFail("invalid_arguments", "The presentation has " + presentation.Slides.Count + " slides.");
+        }
+        agentShowSlide(presentation.Slides.Item(number));
+        safe(function () { app().ActiveWindow.Selection.Unselect(); });
+      } else if (location && typeof location !== "object" && location !== "cursor") {
+        agentFail("invalid_arguments", "Unknown location " + location + ".");
+      }
+      if (args.format === "office_equation") createNative(args.display === "block" ? "block" : "inline");
+      else create();
+      return agentStarted(true);
+    },
+
+    begin_update: function (args) {
+      return agentFind(agentWritable(args), args.formulaId).then(function (item) {
+        agentSelect(item);
+        if (!item.zone) {
+          editShape(item.shape);
+          return agentStarted(true);
+        }
+        return editNative(true, false).then(function (opened) {
+          if (!opened && !agentRun.notes.length) agentFail("operation_failed", "WPS did not open the equation.");
+          return agentStarted(true);
+        });
+      });
+    },
+
+    /* The ribbon's LaTeX redraw and formulas-to-LaTeX, which open VisualTeX's progress window; the app
+       waits for the session they start. */
+    latex_text_to_formulas: function (args) {
+      agentWritable(args);
+      redraw(args.format === "office_equation" ? "omml" : "image", agentScope(args.scope));
+      return agentStarted(false);
+    },
+
+    formulas_to_latex_text: function (args) {
+      agentWritable(args);
+      restoreToLatex(agentScope(args.scope));
+      return agentStarted(false);
+    }
+  };
+
+  function agentScope(scope) {
+    return scope === "selection" || scope === "slide" ? scope : "presentation";
+  }
+
+  function runAgentCommand(command) {
+    agentRun = { notes: [], started: null };
+    var run = agentRun;
+    var operation = AGENT_OPERATIONS[command.op];
+    return Promise.resolve().then(function () {
+      if (!operation) agentFail("unknown_operation", "WPS Presentation has no agent operation " + command.op + ".");
+      return operation(command.arguments || {});
+    }).then(function (data) {
+      return { id: command.id, ok: true, data: data || {} };
+    }, function (error) {
+      var message = String(error && error.message || error);
+      if (run.notes.length) message += " " + run.notes.join(" ");
+      log("agent " + command.op + " failed: " + (error && error.stack || error));
+      return { id: command.id, ok: false, error: { code: error && error.agentCode || "operation_failed", message: message } };
+    }).then(function (answer) {
+      agentRun = null;
+      return call("POST", "/agent/results", answer, 30000).catch(function (error) {
+        log("agent answer not delivered: " + error.message);
+      });
+    });
+  }
+
+  /* Asks VisualTeX for the next operation while this module is the add-in's (main.js loads a newer one
+     when VisualTeX is updated). Off: asks again now and then. */
+  function startAgentLoop() {
+    if (agentLoopStarted) return;
+    agentLoopStarted = true;
+    var version = encodeURIComponent(String(safe(function () { return app().Version; }, "") || ""));
+    var next = function (delay) { setTimeout(ask, delay); };
+    var ask = function () {
+      if (!host || host.module !== api) return;
+      /* a VisualTeX update brings a newer module without the user touching WPS (main.js) */
+      if (typeof vtxRefreshSoon === "function") safe(vtxRefreshSoon);
+      call("GET", "/agent/commands?host=presentation&wait=" + AGENT_POLL_SECONDS + "&version=" + version, undefined,
+        (AGENT_POLL_SECONDS + 10) * 1000).then(function (reply) {
+        var commands = reply.commands || [];
+        if (!commands.length) {
+          next(reply.enabled ? 0 : 30000);
+          return;
+        }
+        runAgentCommand(commands[0]).then(function () { next(0); });
+      }, function () {
+        next(10000);
+      });
+    };
+    next(1000);
+  }
+
   /* Ribbon commands by control id (addin-wpp/ribbon.xml). */
   var COMMANDS = {
     vtxRedrawOmmlSelection: function () { redraw("omml", "selection"); },
@@ -1821,6 +2374,7 @@
       /* The bootstrap sets host.module to this module before init; the
          listener stops once a newer module replaces it. */
       listen(null, 0);
+      startAgentLoop();
       log("module loaded");
     },
     onAction: function (id) {
@@ -1874,7 +2428,7 @@
     },
     /* No formula is being edited (main.js may swap in a newer module). */
     isIdle: function () {
-      return !active;
+      return !active && !agentRun;
     }
   };
   window.VisualTeXWpsModule = api;

@@ -70,7 +70,14 @@ fn font_size(arguments: &Map<String, Value>) -> Result<Option<f64>, CommandError
 fn host_lock(host_id: &str) -> &'static tokio::sync::Mutex<()> {
     static WORD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     static POWERPOINT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    if host_id == "p" { &POWERPOINT } else { &WORD }
+    static WPS_WRITER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static WPS_PRESENTATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    match host_id {
+        "p" => &POWERPOINT,
+        "ww" => &WPS_WRITER,
+        "wp" => &WPS_PRESENTATION,
+        _ => &WORD,
+    }
 }
 
 /// What the add-in's write left: `{message?, formula?, ...}`, with `message` joined from the steps.
@@ -92,6 +99,16 @@ impl Outcome {
 
     fn say(&mut self, message: impl Into<String>) {
         self.messages.push(message.into());
+    }
+
+    fn warn(&mut self, warnings: Vec<String>) {
+        if warnings.is_empty() {
+            return;
+        }
+        let list = self.data.entry("warnings").or_insert_with(|| json!([]));
+        if let Some(list) = list.as_array_mut() {
+            list.extend(warnings.into_iter().map(Value::String));
+        }
     }
 
     fn finish(mut self) -> Value {
@@ -118,12 +135,14 @@ impl Writer<'_> {
     }
 
     /// Waits for a session the add-in's command started (a formula drawn in the hidden editor, or a
-    /// document operation's window) until it has written.
-    async fn wait(&self, session_id: &str, deadline: Duration) -> Result<(), CommandError> {
+    /// document operation's window) until it has written; what its window would have shown the user
+    /// (the formulas it skipped and why).
+    async fn wait(&self, session_id: &str, deadline: Duration) -> Result<Vec<String>, CommandError> {
         let started = Instant::now();
         loop {
             if let Some(outcome) = macos_offline::take_agent_session_outcome(session_id) {
-                return outcome.map_err(|error| CommandError::new("operation_failed", error));
+                let notes = macos_offline::take_agent_session_notes(session_id);
+                return outcome.map(|()| notes).map_err(|error| CommandError::new("operation_failed", error));
             }
             if started.elapsed() > deadline {
                 macos_offline::forget_agent_session(session_id);
@@ -134,7 +153,7 @@ impl Writer<'_> {
     }
 
     /// The formula session a command prepared, drawn with `lines` (none: a conversion keeps the formula's).
-    async fn draw(&self, begun: &Value, lines: Option<Vec<String>>, font_size_pt: Option<f64>) -> Result<(), CommandError> {
+    async fn draw(&self, begun: &Value, lines: Option<Vec<String>>, font_size_pt: Option<f64>) -> Result<Vec<String>, CommandError> {
         let Some(request) = begun.get("request").filter(|request| request.is_object()).cloned() else {
             return Err(CommandError::new("operation_failed", "The add-in did not prepare the formula"));
         };
@@ -147,13 +166,13 @@ impl Writer<'_> {
     }
 
     /// A document operation the command started in its own window, if it needed one.
-    async fn follow(&self, begun: &Value) -> Result<(), CommandError> {
+    async fn follow(&self, begun: &Value) -> Result<Vec<String>, CommandError> {
         match begun.get("session_id").and_then(Value::as_str) {
             Some(session_id) => {
                 macos_offline::watch_agent_session(session_id);
                 self.wait(session_id, WRITE_DEADLINE).await
             }
-            None => Ok(()),
+            None => Ok(Vec::new()),
         }
     }
 
@@ -240,6 +259,13 @@ impl Writer<'_> {
         } else {
             None
         };
+        // WPS Writer's request names no formula id (the editor gives the picture one): the new picture is
+        // the one that was not there before
+        let wps_pictures = if !self.powerpoint() && format == "picture" && self.host.vendor == "kingsoft" {
+            Some(self.all_formulas(&["picture"]).await?)
+        } else {
+            None
+        };
         let begun = self
             .call("begin_insert", json!({ "display": display, "format": format, "numbered": numbered, "location": location }), STEP_DEADLINE)
             .await?;
@@ -259,6 +285,14 @@ impl Writer<'_> {
             }
             _ => None,
         };
+        if let (None, Some(earlier)) = (&formula, &wps_pictures) {
+            let known: HashSet<&str> = earlier.iter().filter_map(|item| item.get("formula_id").and_then(Value::as_str)).collect();
+            formula = self
+                .all_formulas(&["picture"])
+                .await?
+                .into_iter()
+                .find(|item| item.get("formula_id").and_then(Value::as_str).is_some_and(|id| !known.contains(id)));
+        }
         if let (None, Some(earlier)) = (&formula, &word_equations) {
             let now = self.equations().await?;
             formula = now
@@ -425,10 +459,11 @@ impl Writer<'_> {
                 return Err(invalid("In Word, from is picture or office_equation"));
             }
             let begun = self.call("convert_formulas", Value::Object(arguments.clone()), STEP_DEADLINE).await?;
-            self.follow(&begun).await?;
+            let skipped = self.follow(&begun).await?;
             let mut outcome = Outcome::new();
             outcome.note(&begun);
             outcome.say("Converted the formulas.");
+            outcome.warn(skipped);
             return Ok(outcome.finish());
         }
         if from != "any" && !FORMULA_KINDS.contains(&from.as_str()) {
@@ -490,9 +525,10 @@ impl Writer<'_> {
             format_of(arguments, "from")?.ok_or_else(|| invalid("from is required"))?;
         }
         let begun = self.call(tool, Value::Object(arguments.clone()), STEP_DEADLINE).await?;
-        self.follow(&begun).await?;
+        let skipped = self.follow(&begun).await?;
         let mut outcome = Outcome::new();
         outcome.note(&begun);
+        outcome.warn(skipped);
         if tool == "latex_text_to_formulas" && arguments.get("number_display_formulas").and_then(Value::as_bool) == Some(true) {
             if self.powerpoint() {
                 outcome.say("Slides have no equation numbers.");
@@ -541,9 +577,10 @@ impl Writer<'_> {
             .await
             .map_err(|error| CommandError::new("internal", error.to_string()))?
             .map_err(|error| CommandError::new("operation_failed", error))?;
-        self.wait(&session_id, WRITE_DEADLINE).await?;
+        let skipped = self.wait(&session_id, WRITE_DEADLINE).await?;
         let mut outcome = Outcome::new();
         outcome.say("Inserted the text.");
+        outcome.warn(skipped);
         Ok(outcome.finish())
     }
 }

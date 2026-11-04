@@ -6,6 +6,7 @@ import {
   commitMacosDocumentImport,
   focusMacosDocumentImportTarget,
   getMacosDocumentImportRequest,
+  noteMacosAgentSession,
   reportMacosLatexRedrawStage,
   resolveMacosLatexRedrawFontSizes,
   restoreMacosDocumentImportWindow,
@@ -37,6 +38,12 @@ let documentNoun = { zh: "文档", en: "document" };
 function excerpt(latex: string, limit = 80) {
   const text = latex.replace(/\s+/g, " ").trim();
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+// What an AI agent is told about the formulas the window skipped (it waits instead of the user).
+function skippedForAgent(failures: WordLatexRedrawFailure[]) {
+  return `Skipped ${failures.length} formula(s): ` +
+    failures.map((failure) => `${excerpt(failure.latex)} (${failure.reason})`).join("; ");
 }
 
 function restoreTargetLatex(target: MacosFormulaRestoreTarget, index: number) {
@@ -160,6 +167,7 @@ export function WordLatexRedrawApp() {
               (current, total) => setStatus(t(`正在渲染公式 ${current}/${total}…`, `Rendering ${current}/${total} formulas…`)),
             );
             if (!items.length) throw allFormulasFailed(failures);
+            const forAgent = failures.length > 0 && (await noteMacosAgentSession(sessionId, skippedForAgent(failures)));
             setStatus(
               formulaOutputKind === "omml"
                 ? t(`正在把 ${items.length} 个 OMML 公式写回 ${office}…`, `Writing ${items.length} OMML formulas back to ${office}…`)
@@ -169,7 +177,7 @@ export function WordLatexRedrawApp() {
               outputKind: formulaOutputKind,
               items,
             });
-            if (failures.length) {
+            if (failures.length && !forAgent) {
               await showSkipped(items.length, failures);
               return;
             }
@@ -228,6 +236,11 @@ export function WordLatexRedrawApp() {
             return alone;
           });
           if (!spans.length) {
+            if (await noteMacosAgentSession(sessionId, skippedForAgent(skippedInText))) {
+              await cancelMacosDocumentImport(sessionId).catch(() => undefined);
+              await closeMacosDocumentImportWindow();
+              return;
+            }
             setStatus("");
             setSkipped({ written: 0, failures: skippedInText });
             await restoreMacosDocumentImportWindow().catch(() => undefined);
@@ -271,26 +284,33 @@ export function WordLatexRedrawApp() {
         const failures = [...rendered.failures, ...skippedInText].sort((left, right) => left.sourceStart - right.sourceStart);
         await reportStage("latex-redraw-render-complete", items.length);
         if (!items.length) throw allFormulasFailed(failures);
+        const forAgent = failures.length > 0 && (await noteMacosAgentSession(sessionId, skippedForAgent(failures)));
         setStatus(t(`正在把 ${items.length} 个公式写回 ${office}…`, `Writing ${items.length} formulas back to ${office}…`));
         await commitMacosDocumentImport(sessionId, { outputKind, items });
         await reportStage("latex-redraw-commit-complete", items.length);
-        if (failures.length) {
+        if (failures.length && !forAgent) {
           await showSkipped(items.length, failures);
           return;
         }
         await closeMacosDocumentImportWindow();
       } catch (reason) {
-        // The operation is over: end the session now so Word drops its
-        // temporary VT_D_ anchor, even while this message stays open.
-        await cancelMacosDocumentImport(sessionId).catch(() => undefined);
-        setError(
+        const message =
           reason instanceof OfficeConversionError
             ? reason.message
             : documentImportErrorMessage(
                 describeConversionFailure(reason, isEnglish()),
                 t(`${office} 公式操作失败（原因未知）。`, `The ${office} formula operation failed (unknown reason).`),
-              ),
-        );
+              );
+        // an agent gets the reason in its answer; the window closes
+        const forAgent = await noteMacosAgentSession(sessionId, message);
+        // The operation is over: end the session now so Word drops its
+        // temporary VT_D_ anchor, even while this message stays open.
+        await cancelMacosDocumentImport(sessionId).catch(() => undefined);
+        if (forAgent) {
+          await closeMacosDocumentImportWindow().catch(() => undefined);
+          return;
+        }
+        setError(message);
         setStatus("");
         await restoreMacosDocumentImportWindow().catch(() => undefined);
       }

@@ -4179,6 +4179,30 @@ pub(crate) fn forget_agent_session(session_id: &str) {
     if let Ok(mut sessions) = agent_sessions().lock() {
         sessions.remove(session_id);
     }
+    take_agent_session_notes(session_id);
+}
+
+/// What a watched session's window would have shown the user (formulas it skipped, why it failed).
+fn agent_notes() -> &'static Mutex<std::collections::HashMap<String, Vec<String>>> {
+    static NOTES: OnceLock<Mutex<std::collections::HashMap<String, Vec<String>>>> = OnceLock::new();
+    NOTES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+pub(crate) fn take_agent_session_notes(session_id: &str) -> Vec<String> {
+    agent_notes().lock().ok().and_then(|mut notes| notes.remove(session_id)).unwrap_or_default()
+}
+
+/// A document window's message for the agent waiting for its session: true when an agent waits (the
+/// window then closes instead of showing it), false when the user started the operation.
+#[tauri::command]
+pub fn note_macos_agent_session(session_id: String, note: String) -> bool {
+    let watched = agent_sessions().lock().is_ok_and(|sessions| matches!(sessions.get(&session_id), Some(None)));
+    if watched {
+        if let Ok(mut notes) = agent_notes().lock() {
+            notes.entry(session_id).or_default().push(note.chars().take(4000).collect());
+        }
+    }
+    watched
 }
 
 /// Opens an agent's formula: `request` is what the add-in's command wrote for
@@ -8612,7 +8636,9 @@ pub async fn commit_macos_offline_document_import(
 
 #[tauri::command]
 pub async fn cancel_macos_offline_document_import(session_id: String) -> Result<(), String> {
-    finish_agent_session(&session_id, Err("The operation was cancelled".to_string()));
+    let notes = take_agent_session_notes(&session_id);
+    let reason = if notes.is_empty() { "The operation was cancelled".to_string() } else { notes.join(" ") };
+    finish_agent_session(&session_id, Err(reason));
     tokio::task::spawn_blocking(move || cancel_document_import_blocking(session_id))
         .await
         .map_err(|error| format!("Offline document import cancel task failed: {error}"))?

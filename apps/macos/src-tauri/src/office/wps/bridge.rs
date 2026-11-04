@@ -75,6 +75,9 @@ struct Entry {
     /// The ranges of a font-size preflight, and the add-in's answer.
     query: Option<Value>,
     answer: Option<Result<Vec<f64>, String>>,
+    /// An AI agent's formula or import (office::automation::writes): the app opens it a moment after the
+    /// add-in registered it (macos_offline::open_agent_session, open_agent_import).
+    agent: bool,
 }
 
 struct Bridge {
@@ -85,6 +88,36 @@ struct Bridge {
     changed: Condvar,
     status: Mutex<BridgeStatus>,
     events: Mutex<EventLog>,
+    agent: Mutex<AgentChannel>,
+}
+
+// AI agents (office::automation::hosts, docs/office-mcp/MACOS.md): WPS cannot be scripted from outside, so the
+// add-ins ask here for an agent's commands, run them with WPS's own API and post the results.
+
+/// How long an add-in waits for a command before it asks again.
+const AGENT_POLL_SECONDS: u64 = 20;
+/// An add-in that has not asked for this long is gone (WPS quit, or the add-in is not loaded).
+const AGENT_HOST_LIFETIME: Duration = Duration::from_secs(AGENT_POLL_SECONDS + 25);
+/// How long a command may wait for an add-in to take it.
+const AGENT_TAKE_TIMEOUT: Duration = Duration::from_secs(AGENT_POLL_SECONDS + 15);
+/// How long an agent's formula or import may wait for the app to open it.
+const AGENT_OPEN_GRACE: Duration = Duration::from_secs(60);
+
+struct AgentCommand {
+    id: String,
+    host: String,
+    operation: String,
+    arguments: Value,
+}
+
+#[derive(Default)]
+struct AgentChannel {
+    /// When each add-in ("writer", "presentation") last asked, and what it said about itself.
+    seen: HashMap<String, (Instant, Value)>,
+    queue: VecDeque<AgentCommand>,
+    /// Commands an add-in has taken and not answered yet.
+    taken: HashMap<String, Instant>,
+    results: HashMap<String, Value>,
 }
 
 /// What the add-ins learn from VisualTeX rather than from WPS: WPS
@@ -137,6 +170,7 @@ pub(crate) fn start(app: AppHandle, token: String, log_path: PathBuf) {
         changed: Condvar::new(),
         status: Mutex::new(BridgeStatus::default()),
         events: Mutex::new(EventLog::default()),
+        agent: Mutex::new(AgentChannel::default()),
     });
     if BRIDGE.set(bridge.clone()).is_err() {
         return;
@@ -185,6 +219,7 @@ impl Bridge {
                 document: false,
                 query: None,
                 answer: None,
+                agent: false,
             });
             change(entry);
         }
@@ -340,6 +375,148 @@ pub(crate) fn deliver_cancel(session_id: &str) {
     }
 }
 
+/// The WPS add-ins that take agent commands now ("writer", "presentation"), with what each said about itself
+/// (its WPS version).
+pub(crate) fn agent_hosts() -> Vec<(String, Value)> {
+    let Some(bridge) = BRIDGE.get() else { return Vec::new() };
+    let Ok(channel) = bridge.agent.lock() else { return Vec::new() };
+    channel
+        .seen
+        .iter()
+        .filter(|(_, (at, _))| at.elapsed() < AGENT_HOST_LIFETIME)
+        .map(|(host, (_, info))| (host.clone(), info.clone()))
+        .collect()
+}
+
+/// Runs one agent operation in a WPS add-in and returns its data; the error is (code, message).
+pub(crate) async fn agent_run(host: &str, operation: &str, arguments: Value, deadline: Duration)
+    -> Result<Value, (String, String)> {
+    let bridge = BRIDGE.get().ok_or_else(|| ("internal".to_string(), "The WPS connection of VisualTeX is not running".to_string()))?;
+    let id = Uuid::new_v4().to_string();
+    if let Ok(mut channel) = bridge.agent.lock() {
+        channel.queue.push_back(AgentCommand {
+            id: id.clone(),
+            host: host.to_string(),
+            operation: operation.to_string(),
+            arguments,
+        });
+    }
+    bridge.log(&format!("agent command={id} host={host} op={operation}"));
+    let started = Instant::now();
+    loop {
+        let (result, waiting, taken) = match bridge.agent.lock() {
+            Ok(mut channel) => {
+                let result = channel.results.remove(&id);
+                let waiting = channel.queue.iter().any(|command| command.id == id);
+                let taken = channel.taken.contains_key(&id);
+                (result, waiting, taken)
+            }
+            Err(_) => return Err(("internal".into(), "The WPS agent channel is unavailable".into())),
+        };
+        if let Some(result) = result {
+            return agent_answer(result);
+        }
+        let late = (waiting && started.elapsed() > AGENT_TAKE_TIMEOUT.min(deadline)) || started.elapsed() > deadline;
+        if late {
+            if let Ok(mut channel) = bridge.agent.lock() {
+                channel.queue.retain(|command| command.id != id);
+                channel.taken.remove(&id);
+            }
+            bridge.log(&format!("agent command={id} timeout taken={taken}"));
+            return Err(if taken {
+                ("host_unresponsive".into(), "WPS did not finish in time (a dialog may be open in WPS)".into())
+            } else {
+                ("addin_not_loaded".into(), "The VisualTeX add-in in WPS does not answer; show the VisualTeX tab in WPS, or restart WPS".into())
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+}
+
+fn agent_answer(result: Value) -> Result<Value, (String, String)> {
+    if result.get("ok").and_then(Value::as_bool) == Some(true) {
+        return Ok(result.get("data").cloned().unwrap_or(Value::Null));
+    }
+    let error = result.get("error");
+    let field = |name: &str, fallback: &str| {
+        error.and_then(|error| error.get(name)).and_then(Value::as_str).unwrap_or(fallback).to_string()
+    };
+    Err((field("code", "operation_failed"), field("message", "WPS reported a failure")))
+}
+
+fn agent_enabled(bridge: &Bridge) -> bool {
+    bridge
+        .app
+        .try_state::<OfficeCompanionState>()
+        .is_some_and(|state| crate::office::automation::settings::settings(&state.paths.root).enabled)
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentPollQuery {
+    /// "writer" or "presentation"
+    host: String,
+    #[serde(default)]
+    wait: Option<u64>,
+    /// what the add-in says about itself (the WPS version)
+    #[serde(default)]
+    version: Option<String>,
+}
+
+/// The add-in asks for its next command; it is told when agent access is off (and asks again later).
+async fn agent_commands(State(bridge): State<Arc<Bridge>>, Query(query): Query<AgentPollQuery>) -> Response {
+    if !matches!(query.host.as_str(), "writer" | "presentation") {
+        return bad_request("Unknown WPS add-in");
+    }
+    let enabled = agent_enabled(&bridge);
+    if let Ok(mut channel) = bridge.agent.lock() {
+        let info = json!({ "version": query.version.clone().unwrap_or_default() });
+        if enabled {
+            channel.seen.insert(query.host.clone(), (Instant::now(), info));
+        } else {
+            channel.seen.remove(&query.host);
+        }
+    }
+    if !enabled {
+        return Json(json!({ "enabled": false, "commands": [] })).into_response();
+    }
+    let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(AGENT_POLL_SECONDS));
+    loop {
+        let next = bridge.agent.lock().ok().and_then(|mut channel| {
+            let index = channel.queue.iter().position(|command| command.host == query.host)?;
+            let command = channel.queue.remove(index)?;
+            channel.taken.insert(command.id.clone(), Instant::now());
+            channel.seen.insert(query.host.clone(), (Instant::now(), json!({ "version": query.version.clone().unwrap_or_default() })));
+            Some(command)
+        });
+        if let Some(command) = next {
+            bridge.log(&format!("agent command={} taken", command.id));
+            return Json(json!({
+                "enabled": true,
+                "commands": [{ "id": command.id, "op": command.operation, "arguments": command.arguments }],
+            }))
+            .into_response();
+        }
+        if Instant::now() >= deadline {
+            return Json(json!({ "enabled": true, "commands": [] })).into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+}
+
+/// `{id, ok, data}` or `{id, ok: false, error: {code, message}}`.
+async fn agent_result(State(bridge): State<Arc<Bridge>>, Json(body): Json<Value>) -> Response {
+    let Some(id) = body.get("id").and_then(Value::as_str).map(str::to_string) else {
+        return bad_request("The agent result has no id");
+    };
+    bridge.log(&format!("agent command={id} answered ok={}", body.get("ok").and_then(Value::as_bool).unwrap_or(false)));
+    if let Ok(mut channel) = bridge.agent.lock() {
+        if channel.taken.remove(&id).is_some() {
+            channel.results.insert(id, body);
+        }
+    }
+    Json(json!({ "ok": true })).into_response()
+}
+
 fn router(bridge: Arc<Bridge>) -> Router {
     Router::new()
         .route("/wps/v1/hello", get(hello))
@@ -367,6 +544,8 @@ fn router(bridge: Arc<Bridge>) -> Router {
         .route("/wps/v1/sessions/{id}/progress", post(progress))
         .route("/wps/v1/events", get(events))
         .route("/wps/v1/presentation/equations", post(presentation_equations))
+        .route("/wps/v1/agent/commands", get(agent_commands))
+        .route("/wps/v1/agent/results", post(agent_result).layer(DefaultBodyLimit::max(MAX_DOCUMENT_BODY_BYTES)))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(middleware::from_fn_with_state(bridge.clone(), cors_and_token))
         .with_state(bridge)
@@ -532,6 +711,10 @@ struct CreateSessionBody {
     /// (VTShouldForkPowerPointFormulaCopy).
     #[serde(default)]
     fork_copied_formula: bool,
+    /// An AI agent's formula: the request goes back to the add-in, and the app draws the agent's LaTeX in
+    /// the hidden editor (office::automation::writes) instead of opening the editor.
+    #[serde(default)]
+    agent: bool,
 }
 
 fn bad_request(message: impl Into<String>) -> Response {
@@ -697,14 +880,19 @@ async fn create_session(State(bridge): State<Arc<Bridge>>, Json(body): Json<Crea
         Err(error) => return bad_request(error),
     };
     let session_id = body.session_id.clone();
-    bridge.log(&format!("session={session_id} open mode={} display={} native={}", body.mode, body.display_mode, body.native_equation));
+    bridge.log(&format!("session={session_id} open mode={} display={} native={} agent={}", body.mode, body.display_mode, body.native_equation, body.agent));
     // The add-in runs one Session at a time and stops polling a finished one.
     forget_finished(&bridge);
     bridge.update(&session_id, |entry| {
         entry.stage = Stage::Editing;
         entry.payload = None;
         entry.files.clear();
+        entry.agent = body.agent;
+        entry.opened = Instant::now();
     });
+    if body.agent {
+        return Json(json!({ "sessionId": session_id, "request": request })).into_response();
+    }
     let app = bridge.app.clone();
     let opened = tokio::task::spawn_blocking(move || open_on_main_thread(&app, request))
         .await
@@ -755,6 +943,10 @@ struct CreateDocumentBody {
     source: Option<String>,
     #[serde(default)]
     math_font: Option<String>,
+    /// An AI agent's import: the request goes back to the add-in and the app opens the import window with the
+    /// agent's text (macos_offline::open_agent_import).
+    #[serde(default)]
+    agent: bool,
 }
 
 /// The request the Word-for-Mac add-in writes for a document operation
@@ -895,7 +1087,15 @@ async fn create_document(State(bridge): State<Arc<Bridge>>, Json(body): Json<Cre
         entry.files.clear();
         entry.document = true;
         entry.opened = Instant::now();
+        entry.agent = body.agent;
     });
+    if body.agent && body.operation == "documentImport" {
+        return Json(json!({ "sessionId": session_id, "request": request })).into_response();
+    }
+    if body.agent {
+        // the window tells the agent what it skipped instead of showing it (note_macos_agent_session)
+        crate::office::macos_offline::watch_agent_session(&session_id);
+    }
     let app = bridge.app.clone();
     let source = body.source;
     let opened = tokio::task::spawn_blocking(move || open_document_on_main_thread(&app, request, source))
@@ -978,7 +1178,8 @@ fn snapshot(bridge: &Bridge, session_id: &str) -> Option<Value> {
         Stage::Cancelled => Some(json!({ "status": "cancelled" })),
         // A document operation lasts while its window is open.
         Stage::Editing if entry.document => {
-            if document_window_open(bridge, session_id) || entry.opened.elapsed() < Duration::from_secs(5) {
+            let grace = if entry.agent { AGENT_OPEN_GRACE } else { Duration::from_secs(5) };
+            if document_window_open(bridge, session_id) || entry.opened.elapsed() < grace {
                 None
             } else {
                 Some(json!({ "status": "cancelled" }))
@@ -993,6 +1194,8 @@ fn snapshot(bridge: &Bridge, session_id: &str) -> Option<Value> {
                     OfficeSessionStatus::Failed => Some(json!({ "status": "failed", "error": session.error })),
                     _ => None,
                 },
+                // an agent's formula until the app has opened it
+                Err(_) if entry.agent && entry.opened.elapsed() < AGENT_OPEN_GRACE => None,
                 Err(_) => Some(json!({ "status": "cancelled", "error": "VisualTeX no longer has this formula session" })),
             }
         }
@@ -1604,6 +1807,7 @@ mod tests {
             operation: None,
             power_point: None,
             fork_copied_formula: false,
+            agent: false,
         }
     }
 

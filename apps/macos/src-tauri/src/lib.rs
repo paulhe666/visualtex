@@ -2238,6 +2238,7 @@ pub fn run() {
             office::macos_offline::get_macos_offline_document_import_progress,
             office::macos_offline::commit_macos_offline_document_import,
             office::macos_offline::cancel_macos_offline_document_import,
+            office::macos_offline::note_macos_agent_session,
             office::macos_offline::get_macos_offline_office_session,
             office::macos_offline::report_macos_offline_office_editor_prewarm_diagnostic,
             office::macos_offline::report_macos_offline_office_editor_prewarmed,

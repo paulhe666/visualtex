@@ -199,6 +199,12 @@ export function cancelMacosDocumentImport(sessionId: string) {
   });
 }
 
+/** Tells the agent waiting for this session what the window would show; true when an agent waits
+ *  (the window then closes instead). */
+export function noteMacosAgentSession(sessionId: string, note: string) {
+  return invokeTauri<boolean>("note_macos_agent_session", { sessionId, note }).catch(() => false);
+}
+
 export function closeMacosDocumentImportWindow() {
   return invokeTauri<void>("close_macos_offline_office_editor_window", {});
 }

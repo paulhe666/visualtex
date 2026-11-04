@@ -2,7 +2,8 @@
 //! channel to poll: an operation is one call of the add-in's `VisualTeX_AgentRun` macro through
 //! AppleScript (`run VB macro`), with the request and the answer as files in the host's VisualTeX
 //! runtime folder (the add-in reads that folder directly and writes it through its AppleScriptTask
-//! file bridge).
+//! file bridge). WPS Writer and WPS Presentation cannot be scripted from outside: their add-ins ask
+//! VisualTeX for the operations over the WPS connection (office::wps::bridge) and answer the same way.
 use crate::office::macos_offline;
 use crate::office::sessions::OfficeHost;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL, Engine as _};
@@ -61,11 +62,17 @@ struct HostKind {
     app: &'static str,
     process: &'static str,
     bundle: &'static str,
+    /// The WPS add-in ("writer", "presentation") that runs the operations, for WPS.
+    wps: Option<&'static str>,
 }
 
-const HOSTS: [HostKind; 2] = [
-    HostKind { host: OfficeHost::Word, id: "w", app: "word", process: "Microsoft Word", bundle: "/Applications/Microsoft Word.app" },
-    HostKind { host: OfficeHost::Powerpoint, id: "p", app: "powerpoint", process: "Microsoft PowerPoint", bundle: "/Applications/Microsoft PowerPoint.app" },
+const WPS_BUNDLE: &str = "/Applications/WPS Office.app";
+
+const HOSTS: [HostKind; 4] = [
+    HostKind { host: OfficeHost::Word, id: "w", app: "word", process: "Microsoft Word", bundle: "/Applications/Microsoft Word.app", wps: None },
+    HostKind { host: OfficeHost::Powerpoint, id: "p", app: "powerpoint", process: "Microsoft PowerPoint", bundle: "/Applications/Microsoft PowerPoint.app", wps: None },
+    HostKind { host: OfficeHost::Word, id: "ww", app: "word", process: "wpsoffice", bundle: WPS_BUNDLE, wps: Some("writer") },
+    HostKind { host: OfficeHost::Powerpoint, id: "wp", app: "powerpoint", process: "wpsoffice", bundle: WPS_BUNDLE, wps: Some("presentation") },
 ];
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
@@ -100,16 +107,21 @@ fn bundle_version(bundle: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Word and PowerPoint while they run (the add-in is checked by the first call).
+/// Word and PowerPoint while they run (the add-in is checked by the first call); WPS Writer and WPS
+/// Presentation while their add-in asks for operations.
 pub fn hosts() -> Vec<HostInfo> {
+    let wps = crate::office::wps::bridge::agent_hosts();
     HOSTS
         .iter()
         .filter_map(|kind| {
+            if let Some(addin) = kind.wps {
+                wps.iter().find(|(name, _)| name == addin)?;
+            }
             let pid = pid_of(kind.process)?;
             Some(HostInfo {
                 host_id: kind.id.to_string(),
                 app: kind.app.to_string(),
-                vendor: "microsoft".to_string(),
+                vendor: if kind.wps.is_some() { "kingsoft" } else { "microsoft" }.to_string(),
                 product_version: bundle_version(kind.bundle),
                 addin_version: crate::office::state::OFFICE_UI_VERSION.to_string(),
                 pid,
@@ -351,6 +363,22 @@ pub async fn dispatch(host_id: &str, operation: &str, arguments: Value, deadline
         _ => return Err(CommandError::new("invalid_arguments", "arguments must be an object")),
     };
     let operation = operation.to_string();
+    if let Some(addin) = kind.wps {
+        let mut data = crate::office::wps::bridge::agent_run(addin, &operation, Value::Object(arguments), deadline)
+            .await
+            .map_err(|(code, message)| CommandError::new(&code, message))?;
+        // WPS Presentation's equations come as the a14:m zone its saved copy holds
+        for_each_formula(&operation, &mut data, &mut |formula| {
+            if let Some(Value::String(zone)) = formula.as_object_mut().and_then(|item| item.remove("zone")) {
+                match crate::office::wps::presentation::zone_equation(&zone) {
+                    Ok(omml) => formula["omml"] = Value::String(omml),
+                    Err(error) => formula["omml_error"] = Value::String(error),
+                }
+            }
+        });
+        enrich(kind, &operation, &mut data);
+        return Ok(data);
+    }
     tokio::task::spawn_blocking(move || {
         let mut data = run_blocking(kind, &operation, &arguments, deadline)?;
         enrich(kind, &operation, &mut data);
@@ -450,9 +478,10 @@ fn fnv_hash8(text: &str) -> String {
 fn enrich(kind: &HostKind, operation: &str, data: &mut Value) {
     match operation {
         "list_documents" => {
-            let bundle = match kind.host {
-                OfficeHost::Word => "com.microsoft.Word",
-                OfficeHost::Powerpoint => "com.microsoft.Powerpoint",
+            let bundle = match (kind.wps, kind.host) {
+                (Some(_), _) => "com.kingsoft.wpsoffice.mac",
+                (None, OfficeHost::Word) => "com.microsoft.Word",
+                (None, OfficeHost::Powerpoint) => "com.microsoft.Powerpoint",
             };
             let foreground = frontmost_bundle().is_some_and(|front| front.eq_ignore_ascii_case(bundle));
             if let Some(documents) = data.get_mut("documents").and_then(Value::as_array_mut) {

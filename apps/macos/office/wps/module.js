@@ -64,6 +64,12 @@
   /* An alert, or the host's own notifier (the test harness passes one: a WPS
      alert is modal and stops every add-in until it is answered). */
   function notify(message) {
+    /* An agent's command (or a formula it started) says it in its answer instead. */
+    if (agentRun || (active && active.agent)) {
+      if (agentRun) agentRun.notes.push(String(message));
+      else log("agent notice: " + message);
+      return;
+    }
     if (host && typeof host.notify === "function") {
       host.notify(String(message));
       return;
@@ -215,7 +221,8 @@
       nativeEquation: spec.nativeEquation,
       displayMode: spec.displayMode,
       conversion: spec.operation || null,
-      sourceNumbered: !!spec.sourceNumbered
+      sourceNumbered: !!spec.sourceNumbered,
+      agent: !!agentRun
     };
     var body = {
       sessionId: sessionId,
@@ -227,9 +234,13 @@
     ["numbered", "formulaId", "sourceObjectId", "encodedMetadata", "nativeEditXml", "fontSizePt", "operation"].forEach(function (key) {
       if (spec[key] !== undefined && spec[key] !== null) body[key] = spec[key];
     });
+    /* An agent's formula: VisualTeX gives the request back and draws the agent's LaTeX itself. */
+    if (agentRun) body.agent = true;
     var doc = spec.doc;
     var anchor = spec.anchor;
-    call("POST", "/sessions", body, 25000).then(function () {
+    var posting = call("POST", "/sessions", body, 25000);
+    if (agentRun) agentRun.started = posting;
+    posting.then(function () {
       poll(sessionId, 0);
     }, function (error) {
       if (active && active.sessionId === sessionId) forgetActive(true);
@@ -1851,6 +1862,8 @@
   }
 
   function confirmWithUser(message) {
+    /* An agent asked for it: yes. */
+    if (agentRun) return true;
     if (host && typeof host.confirm === "function") return host.confirm(String(message));
     try { return confirm(message); } catch (error) { return true; }
   }
@@ -2457,7 +2470,8 @@
       anchor: spec.anchor,
       document: true,
       operation: spec.operation,
-      targets: spec.targets || null
+      targets: spec.targets || null,
+      agent: !!agentRun
     };
     var body = {
       sessionId: sessionId,
@@ -2469,7 +2483,15 @@
     ["redrawScope", "outputKind", "sourceKind", "source"].forEach(function (key) {
       if (spec[key] !== undefined && spec[key] !== null) body[key] = spec[key];
     });
-    call("POST", "/documents", body, 60000).then(function () {
+    /* An agent's operation: VisualTeX opens an import window with the agent's text itself, and the other
+       windows tell the agent what they skipped instead of showing it. */
+    if (agentRun) body.agent = true;
+    var posting = call("POST", "/documents", body, 60000);
+    if (agentRun) agentRun.started = posting.then(function (reply) {
+      reply.sessionId = reply.sessionId || sessionId;
+      return reply;
+    });
+    posting.then(function () {
       poll(sessionId, 0);
     }, function (error) {
       if (active && active.sessionId === sessionId) forgetActive(true);
@@ -2711,15 +2733,17 @@
 
   /* "全文图片公式 → Word OMML" and "全文 OMML → 图片公式"
      (VTStartWordFormulaRestore "document"). */
-  function convertDocument(sourceKind) {
+  function convertDocument(sourceKind, selectionOnly) {
     var doc = safe(function () { return app().ActiveDocument; }, null);
     if (!doc) {
       notify("请先打开一个 WPS 文字文档。");
       return;
     }
-    var content = doc.Content;
-    var start = content.Start;
-    var end = content.End;
+    /* An agent can convert the selection's formulas only. */
+    var bounds = selectionOnly ? commandScope(false) : null;
+    var scopeOf = function () { return bounds || { start: doc.Content.Start, end: doc.Content.End }; };
+    var start = scopeOf().start;
+    var end = scopeOf().end;
     var targets = restoreTargets(doc, start, end, sourceKind);
     if (!targets.length) {
       notify(sourceKind === "omml" ? "当前文档中没有可转换的 OMML 公式。" : "当前文档中没有可转换的 VisualTeX 图片公式。");
@@ -2733,8 +2757,8 @@
       return { inline: 0, display: 0 };
     }).then(function (presets) {
       run(function () {
-        start = doc.Content.Start;
-        end = doc.Content.End;
+        start = scopeOf().start;
+        end = scopeOf().end;
         targets = restoreTargets(doc, start, end, sourceKind);
         if (!targets.length) return;
         var sessionId = newUuid();
@@ -2745,7 +2769,7 @@
         doc.Bookmarks.Add(anchor, doc.Range(start, end));
         startDocumentSession({
           sessionId: sessionId, doc: doc, anchor: anchor, operation: "formulaRestore",
-          redrawScope: "document", sourceKind: sourceKind, outputKind: sourceKind === "omml" ? "image" : "omml",
+          redrawScope: bounds ? "selection" : "document", sourceKind: sourceKind, outputKind: sourceKind === "omml" ? "image" : "omml",
           source: manifest, defaultFontSizePt: preferredFontSize(doc, doc.Range(start, end)),
           targets: targets.map(function (target) {
             return { sourceStart: target.sourceStart, formulaId: target.formulaId, numbered: target.numbered };
@@ -3520,7 +3544,7 @@
     call("POST", "/sessions/" + sessionId + "/applied", result, 10000).catch(function () {});
   }
 
-  function create(nativeEquation, displayMode) {
+  function create(nativeEquation, displayMode, numbered) {
     var target = selectionTarget();
     var doc = target.doc;
     if (!doc) {
@@ -3541,6 +3565,7 @@
       mode: "create",
       nativeEquation: nativeEquation,
       displayMode: displayMode,
+      numbered: numbered && displayMode === "block" ? true : undefined,
       fontSizePt: fontSizePt
     });
   }
@@ -3628,6 +3653,512 @@
     });
   }
 
+  /* ---- AI agents (docs/office-mcp/MACOS.md) -----------------------------------
+     VisualTeX hands the add-in an agent's operations over the WPS connection
+     (office::wps::bridge agent_commands); each answers what the Word add-in's
+     VisualTeX_AgentRun answers. A command that opens the formula editor hands
+     its request back instead: VisualTeX draws the agent's LaTeX in its hidden
+     editor, and the add-in writes the result as after Apply. While an
+     operation runs its messages are collected for the answer (a WPS alert
+     stops every add-in until it is answered) and confirmations say yes. */
+
+  var AGENT_POLL_SECONDS = 20;
+  var agentRun = null;
+  var agentLoopStarted = false;
+
+  function agentFail(code, message) {
+    var error = new Error(message);
+    error.agentCode = code;
+    throw error;
+  }
+
+  function agentDocument(args) {
+    if (!safe(function () { return app().Documents.Count; }, 0)) {
+      agentFail("document_not_found", "No document is open in WPS Writer.");
+    }
+    if (!args.document) return app().ActiveDocument;
+    var doc = findDocument(args.document);
+    if (!doc) agentFail("document_not_found", "The document is no longer open; call list_documents again.");
+    return doc;
+  }
+
+  function agentWritable(args) {
+    var doc = agentDocument(args);
+    if (safe(function () { return doc.ReadOnly; }, false)) agentFail("document_read_only", "The document is read-only.");
+    if (documentKey(app().ActiveDocument) !== documentKey(doc)) doc.Activate();
+    return doc;
+  }
+
+  function agentRange(item) {
+    return item.shape ? item.shape.Range : item.omath.Range;
+  }
+
+  /* One formula as the app reads it (VTAgentFormulaJson): kind, place, display, numbering, size and the
+     payload (a picture's metadata, the document part of an equation's WordOpenXML). */
+  function agentFormula(doc, item, contextChars) {
+    var range = agentRange(item);
+    var formula;
+    if (item.shape) {
+      var reference = parseFormulaReference(item.shape.Title);
+      formula = {
+        formula_id: "vtx:" + reference.formulaId, kind: "picture", display: reference.displayMode,
+        numbered: reference.displayMode === "block" && reference.numbered,
+        font_size_pt: formulaPictureSize(doc, item.shape) || fontSizeAt(range) || null,
+        vtx_formula_id: reference.formulaId,
+        payload_b64: base64UrlUtf8(String(safe(function () { return item.shape.AlternativeText; }, "") || ""))
+      };
+    } else {
+      var text = String(safe(function () { return range.Text; }, "") || "");
+      var numbered = text.indexOf("#") >= 0 && safe(function () { return range.Fields.Count; }, 0) > 0;
+      formula = {
+        formula_id: "w:m:" + range.Start + ":" + range.End, kind: "office_equation",
+        display: numbered ? "block" : safe(function () { return equationDisplayMode(doc, item.omath); }, "inline"),
+        numbered: numbered, font_size_pt: fontSizeAt(range) || null, vtx_formula_id: null,
+        payload_b64: base64UrlUtf8(documentPart(safe(function () { return range.WordOpenXML; }, "")))
+      };
+    }
+    formula.start = range.Start;
+    formula.end = range.End;
+    var before = "";
+    var after = "";
+    if (contextChars > 0) {
+      before = String(safe(function () { return doc.Range(Math.max(0, range.Start - contextChars), range.Start).Text; }, "") || "");
+      after = String(safe(function () { return doc.Range(range.End, Math.min(doc.Content.End, range.End + contextChars)).Text; }, "") || "");
+    }
+    formula.context_before = before.replace(/\r/g, "\n");
+    formula.context_after = after.replace(/\r/g, "\n");
+    return formula;
+  }
+
+  /* The VisualTeX pictures and the equations of the document, in reading order. */
+  function agentFormulas(doc) {
+    var items = [];
+    var shapes = doc.InlineShapes;
+    for (var index = 1; index <= shapes.Count; index++) {
+      var shape = shapes.Item(index);
+      if (isFormulaPicture(shape)) items.push({ start: shape.Range.Start, shape: shape });
+    }
+    var maths = doc.OMaths;
+    for (var k = 1; k <= maths.Count; k++) {
+      var omath = maths.Item(k);
+      var range = omath.Range;
+      if (safe(function () { return range.InlineShapes.Count; }, 0) > 0 || !textOf(range)) continue;
+      items.push({ start: range.Start, omath: omath });
+    }
+    items.sort(function (a, b) { return a.start - b.start; });
+    return items;
+  }
+
+  /* The formula an agent id names: "vtx:<id>" (a picture) or "w:m:<start>:<end>" (an equation). */
+  function agentFind(doc, id) {
+    id = String(id || "");
+    if (id.indexOf("vtx:") === 0) {
+      var shapes = doc.InlineShapes;
+      for (var index = 1; index <= shapes.Count; index++) {
+        var shape = shapes.Item(index);
+        var reference = isFormulaPicture(shape) ? parseFormulaReference(shape.Title) : null;
+        if (reference && reference.formulaId === id.slice(4)) return { shape: shape };
+      }
+      agentFail("formula_not_found", "No VisualTeX formula in this document has that id.");
+    }
+    var parts = id.split(":");
+    if (parts.length < 4 || parts[0] !== "w" || parts[1] !== "m") {
+      agentFail("formula_not_found", "This is not a WPS formula id from list_formulas.");
+    }
+    var start = Number(parts[2]);
+    var end = Number(parts[3]);
+    var omath = start >= 0 && end > start ? safe(function () { return equationAt(doc, start); }, null) : null;
+    if (!omath || omath.Range.Start !== start || omath.Range.End !== end) {
+      agentFail("stale_formula_id", "The document changed; call list_formulas again.");
+    }
+    return { omath: omath };
+  }
+
+  function agentIsDisplay(doc, item) {
+    return agentFormula(doc, item, 0).display === "block";
+  }
+
+  /* location: "cursor" (default), "document_end", {after_formula}, {before_formula} or {paragraph_end}
+     (VTAgentPlaceInsertion). */
+  function agentPlaceInsertion(doc, args) {
+    var location = args.location;
+    var target = null;
+    if (location && typeof location === "object") {
+      if (location.after_formula || location.before_formula) {
+        var after = !!location.after_formula;
+        var item = agentFind(doc, after ? location.after_formula : location.before_formula);
+        var range = agentRange(item);
+        if (agentIsDisplay(doc, item)) {
+          var paragraph = range.Paragraphs.Item(1).Range;
+          target = after ? paragraph.End - 1 : paragraph.Start;
+        } else {
+          target = after ? range.End : range.Start;
+        }
+      } else if (location.paragraph_end !== undefined && location.paragraph_end !== null) {
+        var number = Number(location.paragraph_end);
+        var count = doc.Paragraphs.Count;
+        if (!(number >= 1 && number <= count)) {
+          agentFail("invalid_arguments", "The document has " + count + " paragraphs.");
+        }
+        target = doc.Paragraphs.Item(number).Range.End - 1;
+      }
+    } else if (location === "document_end") {
+      target = doc.Content.End - 1;
+    } else if (location && location !== "cursor") {
+      agentFail("invalid_arguments", "Unknown location " + location + ".");
+    } else {
+      /* a new formula goes after the user's selection, never over it */
+      var selection = app().ActiveWindow.Selection;
+      if (selection.Start !== selection.End) target = selection.End;
+    }
+    if (target !== null) doc.Range(target, target).Select();
+  }
+
+  function agentDone(message) {
+    var parts = [];
+    if (message) parts.push(message);
+    if (agentRun) parts = parts.concat(agentRun.notes);
+    return { message: parts.length ? parts.join(" ") : null };
+  }
+
+  /* The session the command started, once VisualTeX has it: its id and (for the hidden editor or an
+     import) its request. A command that did not start one says why in its notes. */
+  function agentStarted(withRequest) {
+    var run = agentRun;
+    var waited = 0;
+    return new Promise(function (resolve, reject) {
+      var check = function () {
+        if (run.started) {
+          run.started.then(function (reply) {
+            resolve({ session_id: reply.sessionId || null, request: withRequest ? reply.request || null : null,
+              message: run.notes.length ? run.notes.join(" ") : null });
+          }, reject);
+          return;
+        }
+        if (run.notes.length || waited >= 120000) {
+          reject(new Error(run.notes.length ? run.notes.join(" ") : "WPS did not start the operation"));
+          run.notes = [];
+          return;
+        }
+        waited += 100;
+        setTimeout(check, 100);
+      };
+      check();
+    });
+  }
+
+  var NUMBER_FORMATS = {
+    "continuous": { mode: "sequence", separator: "." },
+    "heading1-dot": { mode: "chapter", separator: "." },
+    "heading1-dash": { mode: "chapter", separator: "-" },
+    "heading2-dot": { mode: "section", separator: "." },
+    "heading2-dash": { mode: "section", separator: "-" }
+  };
+
+  var AGENT_OPERATIONS = {
+    list_documents: function () {
+      var documents = app().Documents;
+      var activeKey = safe(function () { return documentKey(app().ActiveDocument); }, "");
+      var list = [];
+      for (var index = 1; index <= documents.Count; index++) {
+        var doc = documents.Item(index);
+        var key = documentKey(doc);
+        list.push({
+          key: key, name: String(safe(function () { return doc.Name; }, "") || ""),
+          path: safe(function () { return String(doc.FullName || "") || null; }, null),
+          active: key === activeKey, saved: !!safe(function () { return doc.Saved; }, true),
+          read_only: !!safe(function () { return doc.ReadOnly; }, false)
+        });
+      }
+      return { documents: list };
+    },
+
+    list_formulas: function (args) {
+      var doc = agentDocument(args);
+      var offset = Number(args.offset) || 0;
+      var limit = args.limit === undefined ? 50 : Number(args.limit);
+      var contextChars = args.contextChars === undefined ? 40 : Number(args.contextChars);
+      var kinds = args.kinds || [];
+      var listed = [];
+      var revision = "";
+      var total = 0;
+      agentFormulas(doc).forEach(function (item) {
+        var kind = item.shape ? "picture" : "office_equation";
+        if (kinds.length && kinds.indexOf(kind) < 0) return;
+        revision += item.start + ";";
+        if (total >= offset && listed.length < limit) listed.push(agentFormula(doc, item, contextChars));
+        total++;
+      });
+      return { revision: revision, total: total, offset: offset, formulas: listed };
+    },
+
+    read_formula: function (args) {
+      var doc = agentDocument(args);
+      return agentFormula(doc, agentFind(doc, args.formulaId), 120);
+    },
+
+    /* A VisualTeX picture by its own id (WPS equations carry none). */
+    find_vtx_formula: function (args) {
+      var doc = agentDocument(args);
+      var wanted = String(args.vtxId || "");
+      var found = agentFormulas(doc).filter(function (item) {
+        return item.shape && parseFormulaReference(item.shape.Title).formulaId === wanted;
+      })[0];
+      return { formula: found ? agentFormula(doc, found, 120) : null };
+    },
+
+    get_selection: function (args) {
+      var doc = args.document ? agentDocument(args) : app().ActiveDocument;
+      if (!doc) agentFail("document_not_found", "No document is open in WPS Writer.");
+      var selection = documentKey(doc) === documentKey(app().ActiveDocument)
+        ? app().ActiveWindow.Selection : doc.ActiveWindow.Selection;
+      var kind = "none";
+      var formula = null;
+      var preview = null;
+      var shapes = safe(function () { return selection.InlineShapes; }, null);
+      if (shapes && shapes.Count === 1 && isFormulaPicture(shapes.Item(1))) {
+        kind = "formula";
+        formula = agentFormula(doc, { shape: shapes.Item(1) }, 60);
+      }
+      if (kind === "none" && safe(function () { return selection.OMaths.Count; }, 0) >= 1) {
+        var omath = safe(function () { return equationAt(doc, selection.Start); }, null);
+        if (omath && safe(function () { return omath.Range.InlineShapes.Count; }, 0) === 0) {
+          kind = "formula";
+          formula = agentFormula(doc, { omath: omath }, 60);
+        }
+      }
+      if (kind === "none" && selection.End > selection.Start) {
+        kind = "text";
+        preview = String(safe(function () { return selection.Range.Text; }, "") || "").replace(/\r/g, "\n");
+        if (preview.length > 200) preview = preview.slice(0, 200) + "…";
+      }
+      return {
+        document: documentKey(doc), kind: kind, formula: formula, text_preview: preview,
+        location: { start: selection.Start, end: selection.End },
+        read_only: !!safe(function () { return doc.ReadOnly; }, false)
+      };
+    },
+
+    select_formula: function (args) {
+      var doc = agentDocument(args);
+      if (documentKey(app().ActiveDocument) !== documentKey(doc)) doc.Activate();
+      var item = agentFind(doc, args.formulaId);
+      agentRange(item).Select();
+      safe(function () { app().ActiveWindow.ScrollIntoView(agentRange(item), true); });
+      return { formula: agentFormula(doc, item, 0) };
+    },
+
+    /* A display formula goes with its paragraph (and its number); the numbers after it follow. */
+    delete_formula: function (args) {
+      var doc = agentWritable(args);
+      var item = agentFind(doc, args.formulaId);
+      var described = agentFormula(doc, item, 0);
+      var range = agentRange(item);
+      var target = described.display === "block" ? range.Paragraphs.Item(1).Range : range;
+      withUndo("VisualTeX 删除公式", function () {
+        if (item.shape) {
+          var compactId = String(described.vtx_formula_id).replace(/-/g, "");
+          ["VT_I_", "VT_N_", "VT_R_"].forEach(function (prefix) { deleteBookmark(doc, prefix + compactId); });
+        }
+        target.Delete();
+        if (described.numbered) updateAllNumberFields(doc);
+      });
+      return agentDone("Deleted the formula.");
+    },
+
+    set_formula_font_size: function (args) {
+      var size = Number(args.font_size_pt);
+      if (!(size >= 5 && size <= 200)) agentFail("invalid_arguments", "font_size_pt must be from 5 to 200.");
+      var doc = agentWritable(args);
+      if (args.kind) {
+        /* every inline or every display formula, as the ribbon's conversion sizes do */
+        var count = resizeDocumentFormulas(args.kind === "display" ? "block" : "inline", size);
+        return agentDone("Resized " + count + " " + args.kind + " formula(s) to " + size + " pt.");
+      }
+      var item = agentFind(doc, args.formulaId);
+      withUndo("VisualTeX 公式字号", function () {
+        if (item.shape) {
+          resizeFormulaPicture(doc, item.shape, size);
+        } else {
+          var font = item.omath.Range.Font;
+          font.Size = size;
+          safe(function () { font.SizeBi = size; });
+        }
+      });
+      return agentDone("The formula is " + size + " pt.");
+    },
+
+    number_display_formulas: function (args) {
+      var doc = agentWritable(args);
+      var selection = app().ActiveWindow.Selection;
+      var scope = args.scope === "selection" ? { start: selection.Start, end: selection.End } : null;
+      var found = displayNumberingCandidates(doc, scope);
+      var total = found.equations.length + found.images.length;
+      var skipped = [];
+      if (found.table) skipped.push(found.table + " in tables");
+      if (found.other) skipped.push(found.other + " sharing their paragraph");
+      var left = skipped.length ? " Not numbered: " + skipped.join(", ") + "." : "";
+      if (!total) return agentDone("No unnumbered display formula to number." + left);
+      return renumberDocument({ doc: doc, equations: found.equations, images: found.images, undoLabel: "VisualTeX 批量编号" })
+        .then(function (summary) {
+          var failed = summary.failures.length ? " " + summary.failures.length + " failed: " + summary.failures[0] : "";
+          return agentDone("Numbered " + total + " display formula(s)." + left + failed);
+        });
+    },
+
+    update_equation_numbers: function (args) {
+      var doc = agentWritable(args);
+      return renumberDocument({ doc: doc }).then(function (summary) {
+        var failed = summary.failures.length ? " " + summary.failures.length + " failed: " + summary.failures[0] : "";
+        return agentDone("Updated " + summary.total + " equation numbers." + failed);
+      });
+    },
+
+    set_equation_number_format: function (args) {
+      var style = NUMBER_FORMATS[args.format_id];
+      if (!style) agentFail("invalid_arguments", "Unknown format_id " + args.format_id + ".");
+      var doc = agentWritable(args);
+      call("POST", "/numbering/preference", style, 10000).catch(function (error) {
+        log("numbering preference not saved: " + error.message);
+      });
+      chosenStyles[documentKey(doc)] = style;
+      return renumberDocument({ doc: doc, chosen: style }).then(function () { return agentDone(""); });
+    },
+
+    /* The ribbon's equation-reference menu with the equation named by its number. */
+    insert_equation_reference: function (args) {
+      var wanted = "(" + String(args.number || "").replace(/[()]/g, "").trim() + ")";
+      var doc = agentWritable(args);
+      agentPlaceInsertion(doc, args);
+      var targets = { omml: numberTargets(doc, "omml"), image: numberTargets(doc, "image") };
+      var sources = { omml: "office_equation", image: "picture" };
+      var available = [];
+      var matches = [];
+      ["omml", "image"].forEach(function (kind) {
+        targets[kind].forEach(function (target, index) {
+          var text = "(" + String(doc.Range(target.start, target.end).Text).replace(/[\r\n\t\x07\x13\x14\x15]/g, " ").trim() + ")";
+          available.push(text + " " + sources[kind]);
+          if (text === wanted && (!args.source || args.source === sources[kind])) matches.push({ kind: kind, index: index });
+        });
+      });
+      if (!matches.length) {
+        agentFail("formula_not_found", "No numbered equation " + wanted + " in this document. Numbered equations: " +
+          (available.join(", ") || "none") + ".");
+      }
+      if (matches.length > 1) {
+        agentFail("invalid_arguments", "Several numbered equations are " + wanted +
+          "; give source to choose one. Numbered equations: " + available.join(", ") + ".");
+      }
+      var selection = app().ActiveWindow.Selection;
+      referenceMenu = { docKey: documentKey(doc), start: selection.Start, end: selection.End, targets: targets };
+      insertReference(matches[0].kind, matches[0].index);
+      return agentDone("Inserted a reference to equation " + wanted + ".");
+    },
+
+    begin_insert: function (args) {
+      var doc = agentWritable(args);
+      agentPlaceInsertion(doc, args);
+      var display = args.display === "block" ? "block" : "inline";
+      create(args.format === "office_equation", display, !!args.numbered);
+      return agentStarted(true);
+    },
+
+    /* New LaTeX and/or another format: the editor's session for the formula, or the conversion of it. */
+    begin_update: function (args) {
+      var doc = agentWritable(args);
+      var item = agentFind(doc, args.formulaId);
+      agentRange(item).Select();
+      if (args.format === "office_equation" && item.shape) convertSelected(false);
+      else if (args.format === "picture" && item.omath) convertSelected(true);
+      else editSelection(true);
+      return agentStarted(true);
+    },
+
+    /* Redraw and conversion of many formulas open VisualTeX's progress window, as from the ribbon; the app
+       waits for the session they start. A restore to LaTeX is written here at once. */
+    latex_text_to_formulas: function (args) {
+      agentWritable(args);
+      redrawLatex(args.scope !== "selection", args.format === "office_equation" ? "omml" : "image");
+      return agentStarted(false);
+    },
+
+    formulas_to_latex_text: function (args) {
+      agentWritable(args);
+      var whole = args.scope !== "selection";
+      var restore = args.from === "office_equation" ? restoreEquationsToLatex(whole)
+        : args.from === "picture" ? restorePicturesToLatex(whole)
+          : agentFail("invalid_arguments", "from must be picture or office_equation.");
+      return Promise.resolve(restore).then(function () {
+        return { session_id: null, message: agentRun.notes.length ? agentRun.notes.join(" ") : null };
+      });
+    },
+
+    convert_formulas: function (args) {
+      agentWritable(args);
+      var pair = args.from + ">" + args.to;
+      var source = pair === "picture>office_equation" ? "image" : pair === "office_equation>picture" ? "omml" : null;
+      if (!source) agentFail("invalid_arguments", "In WPS Writer, from and to are picture and office_equation, one of each.");
+      convertDocument(source, args.scope === "selection");
+      return agentStarted(false);
+    },
+
+    /* Markdown or LaTeX prose: the import at the location; the app gives the text to its import window. */
+    begin_import: function (args) {
+      var doc = agentWritable(args);
+      agentPlaceInsertion(doc, args);
+      importDocument();
+      return agentStarted(true);
+    }
+  };
+
+  function runAgentCommand(command) {
+    agentRun = { notes: [], started: null };
+    var run = agentRun;
+    var operation = AGENT_OPERATIONS[command.op];
+    return Promise.resolve().then(function () {
+      if (!operation) agentFail("unknown_operation", "WPS Writer has no agent operation " + command.op + ".");
+      return operation(command.arguments || {});
+    }).then(function (data) {
+      return { id: command.id, ok: true, data: data || {} };
+    }, function (error) {
+      var message = String(error && error.message || error);
+      if (run.notes.length) message += " " + run.notes.join(" ");
+      log("agent " + command.op + " failed: " + (error && error.stack || error));
+      return { id: command.id, ok: false, error: { code: error && error.agentCode || "operation_failed", message: message } };
+    }).then(function (answer) {
+      agentRun = null;
+      return call("POST", "/agent/results", answer, 30000).catch(function (error) {
+        log("agent answer not delivered: " + error.message);
+      });
+    });
+  }
+
+  /* Asks VisualTeX for the next operation, as long as this module is the add-in's (main.js loads a newer one
+     when VisualTeX is updated). Off: asks again now and then. */
+  function startAgentLoop(module) {
+    if (agentLoopStarted) return;
+    agentLoopStarted = true;
+    var version = encodeURIComponent(String(safe(function () { return app().Version; }, "") || ""));
+    var next = function (delay) { setTimeout(ask, delay); };
+    var ask = function () {
+      if (window.VisualTeXWpsModule !== module) return;
+      /* a VisualTeX update brings a newer module without the user touching WPS (main.js) */
+      if (typeof vtxRefreshSoon === "function") safe(vtxRefreshSoon);
+      call("GET", "/agent/commands?host=writer&wait=" + AGENT_POLL_SECONDS + "&version=" + version, undefined,
+        (AGENT_POLL_SECONDS + 10) * 1000).then(function (reply) {
+        var commands = reply.commands || [];
+        if (!commands.length) {
+          next(reply.enabled ? 0 : 30000);
+          return;
+        }
+        runAgentCommand(commands[0]).then(function () { next(0); });
+      }, function () {
+        next(10000);
+      });
+    };
+    next(1000);
+  }
+
   /* Ribbon commands by control id (addin/ribbon.xml). */
   var COMMANDS = {
     vtxImageInline: function () { create(false, "inline"); },
@@ -3674,6 +4205,7 @@
         };
       }
       log("module loaded");
+      startAgentLoop(window.VisualTeXWpsModule);
     },
     onAction: function (id) {
       run(function () {
@@ -3736,7 +4268,7 @@
     },
     /* No formula is being edited (main.js may swap in a newer module). */
     isIdle: function () {
-      return !active;
+      return !active && !agentRun;
     }
   };
 })();
