@@ -103,10 +103,21 @@ const TEXT_GROUP_COMMAND =
   /^\\(?:text|textrm|textnormal|textup|textmd|textbf|textit|textsl|textsf|texttt|mbox|hbox)\s*(?=\{)/;
 
 export function normalizeChineseLatex(source: string): string {
-  const normalizedTextCommands = normalizeContextualUprightSymbols(
-    normalizeCanonicalUprightCommands(
-      normalizeExtendedIntegralLatexCommands(source),
-    ),
+  return normalizeLatexSource(source, true);
+}
+
+/** normalizeChineseLatex without the upright judgment: the letters as written (a document's formula leaves the app
+ *  as its page shows it). */
+export function normalizeChineseLatexAsWritten(source: string): string {
+  return normalizeLatexSource(source, false);
+}
+
+function normalizeLatexSource(source: string, judge: boolean): string {
+  const canonical = normalizeCanonicalUprightCommands(
+    normalizeExtendedIntegralLatexCommands(source),
+  );
+  const normalizedTextCommands = (
+    judge ? normalizeContextualUprightSymbols(canonical) : canonical
   ).replace(
     /\\(mathrm|textrm)\s*\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
     // spaces inside \mathrm are math mode's (not drawn); inside \textrm they are text

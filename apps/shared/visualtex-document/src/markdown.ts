@@ -350,12 +350,38 @@ function titleLines(state: StateCore) {
   }
 }
 
+/** <p align="center|right">…</p> on lines of its own (Typora's, and how aligned paragraphs are written): an aligned
+ *  paragraph, its text read as Markdown (an image line is the image rule's). */
+function alignedParagraphs(state: StateCore) {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== "html_block") continue;
+    const match = /^\s*<p\s+align\s*=\s*["']?(center|right|left)["']?\s*>([\s\S]*?)<\/p>\s*$/i.exec(token.content);
+    if (!match || /<img\b/i.test(match[2])) continue;
+    const open = new state.Token("paragraph_open", "p", 1);
+    open.map = token.map;
+    open.block = true;
+    const align = match[1].toLowerCase();
+    if (align !== "left") open.attrSet("align", align);
+    const inline = new state.Token("inline", "", 0);
+    inline.content = match[2].replace(/\s*\n\s*/g, " ").trim();
+    inline.map = token.map;
+    inline.children = [];
+    const close = new state.Token("paragraph_close", "p", -1);
+    close.block = true;
+    tokens.splice(i, 1, open, inline, close);
+    i += 2;
+  }
+}
+
 function createMarkdownIt(): MarkdownIt {
   const md = new MarkdownIt("default", { html: true, linkify: true, breaks: false });
   md.block.ruler.before("fence", "math_block", mathBlock, { alt: ["paragraph", "reference", "blockquote", "list"] });
   md.inline.ruler.before("escape", "math_inline", mathInline);
   md.inline.ruler.before("emphasis", "highlight", highlight);
   md.core.ruler.before("inline", "vtx_title", titleLines);
+  md.core.ruler.before("inline", "vtx_aligned", alignedParagraphs);
   md.core.ruler.push("vtx_tidy", tidy);
   return md;
 }

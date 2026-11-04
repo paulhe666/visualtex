@@ -16,11 +16,17 @@ import { svgToPng } from "../export/svgToPng";
 import { createFormulaMetadata, encodeFormulaMetadata } from "../office/shared/formulaMetadata";
 import { useEditorStore } from "../stores/editorStore";
 import { portableFormulaLatex } from "./DocumentEditor";
+import { codeHighlighter } from "./codeHighlighter";
 
 import type { WordFormulaFormat } from "../stores/documentFormatStore";
 export type { WordFormulaFormat };
 
 const PX_TO_PT = 0.75;
+
+/** font-family="Times New Roman, serif": WPS reads no quoted names in a picture's SVG and draws its letters in a sans. */
+function unquotedFontFamilies(svg: string): string {
+  return svg.replace(/font-family="([^"]*)"/g, (_all, value: string) => `font-family="${value.replace(/&quot;|'/g, "")}"`);
+}
 
 /** VisualTeX formulas: the editor engine's SVG (and a 3× PNG for programs without SVG), sized at the text's size. */
 async function pictureFormula(request: DocxFormulaRequest, sizePt: number): Promise<DocxFormula> {
@@ -37,7 +43,8 @@ async function pictureFormula(request: DocxFormulaRequest, sizePt: number): Prom
     color: "#000000",
   });
   const png = await svgToPng(svg, { scale: 3, background: "transparent" });
-  const formulaId = crypto.randomUUID();
+  // a numbered one's id is the one the Word add-ins name its number by (references point to that name)
+  const formulaId = request.number?.formulaId ?? crypto.randomUUID();
   const metadata = createFormulaMetadata({
     formulaId,
     title: "",
@@ -57,7 +64,7 @@ async function pictureFormula(request: DocxFormulaRequest, sizePt: number): Prom
   return {
     kind: "picture",
     png: base64Bytes(png.base64),
-    svg: new TextEncoder().encode(svg.svg),
+    svg: new TextEncoder().encode(unquotedFontFamilies(svg.svg)),
     widthPt: svg.width * PX_TO_PT,
     heightPt: svg.height * PX_TO_PT,
     depthPt: Math.max(0, svg.height - svg.baseline) * PX_TO_PT,
@@ -137,7 +144,7 @@ export async function documentToWord(doc: Node, format: WordFormulaFormat, label
     }
     onProgress?.(++done, requests.length);
   }
-  const files = documentToDocx(doc, formulas, { bibliographyTitle: labels.bibliographyTitle, title: labels.title, mathFont: "Cambria Math" });
+  const files = documentToDocx(doc, formulas, { bibliographyTitle: labels.bibliographyTitle, title: labels.title, mathFont: "Cambria Math", codeTokens: (code, language) => codeHighlighter.tokens(code, language) });
   const ordered: Record<string, Uint8Array> = { "[Content_Types].xml": files["[Content_Types].xml"] };
   for (const [path, bytes] of Object.entries(files)) if (path !== "[Content_Types].xml") ordered[path] = bytes;
   return { bytes: zipSync(ordered, { level: 6 }), fallbacks };
