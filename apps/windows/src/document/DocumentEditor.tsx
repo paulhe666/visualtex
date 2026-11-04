@@ -52,7 +52,7 @@ import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customS
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
@@ -84,7 +84,8 @@ const LARGE_BODY_FONTS = /arial|helvetica|calibri|segoe|verdana|tahoma|yahei|den
 export function portableFormulaLatex(latex: string): string {
   // An unfilled slot (\placeholder{}) leaves its group empty.
   const filled = latex.replace(/\\placeholder(?:\[[^\]]*\])?\{\}/g, "");
-  return toPortableBoldLatex(stripVisualTexAlignmentMarkers(normalizeChineseLatex(filled)));
+  // the letters as written: the page shows the stored formula, and exports must say the same (no upright judgment)
+  return toPortableBoldLatex(stripVisualTexAlignmentMarkers(normalizeChineseLatexAsWritten(filled)));
 }
 
 

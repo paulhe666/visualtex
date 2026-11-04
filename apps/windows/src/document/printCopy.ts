@@ -23,6 +23,8 @@ const EDITOR_ONLY = [
   ".vtx-drop-marker",
   ".vtx-code-copy",
   ".vtx-page-command-label",
+  // the code block's language menu and copy button
+  ".vtx-code-header",
 ].join(",");
 
 /** The child indices from `root` down to `el`. */
@@ -62,6 +64,7 @@ export function buildPrintCopy(view: EditorView, gap: number): PrintCopy | null 
 
   // the blocks' places on the sheet, to leave out of a page what is not on it
   const top = (el: Element) => el.getBoundingClientRect().top - sheetRect.top;
+  const editorPath = pathOf(view.dom, sheet);
   const blocks = Array.from(view.dom.children) as HTMLElement[];
   const places = blocks.map((el) => ({ top: top(el), bottom: el.getBoundingClientRect().bottom - sheetRect.top, height: el.offsetHeight, style: getComputedStyle(el) }));
 
@@ -98,12 +101,21 @@ export function buildPrintCopy(view: EditorView, gap: number): PrintCopy | null 
     const to = from + pageHeight;
     const copy = sheet.cloneNode(true) as HTMLElement;
     for (const tag of tagged) atPath(copy, tag.path)?.setAttribute(tag.name, tag.value);
-    const editor = copy.querySelector<HTMLElement>(".ProseMirror, .vtx-document");
+    // the editor's own element (found by its place in the sheet: the sheet holds other elements before it)
+    const editor = (editorPath ? atPath(copy, editorPath) : null) as HTMLElement | null;
     if (editor) {
       const children = Array.from(editor.children) as HTMLElement[];
       children.forEach((child, index) => {
         const place = places[index];
         if (!place || (place.bottom > from - 1 && place.top < to + 1)) return;
+        // a paragraph with a wrapped image: its float reaches past the paragraph and pushes what clears it down, so
+        // it stays (unseen) as it is
+        if (child.querySelector(".is-wrap-left, .is-wrap-right")) {
+          child.style.visibility = "hidden";
+          child.setAttribute("data-print-hidden", "");
+          child.removeAttribute("data-id");
+          return;
+        }
         // off this page: an empty, unseen box of its kind (headings keep counting) with its height and margins keeps
         // everything else where it is
         const stub = child.cloneNode(false) as HTMLElement;
@@ -147,7 +159,8 @@ export function buildPrintCopy(view: EditorView, gap: number): PrintCopy | null 
 /** Ids on the targets and <a> on the references, each id once in the whole copy. */
 function linkTargets(root: HTMLElement, targets: Set<string>, footnoteIds: Map<string, string>, used: Set<string>) {
   const setId = (el: Element, id: string) => {
-    if (used.has(id)) return;
+    // an unseen block (kept for a wrapped image's float) is not a target: the page it is seen on has it
+    if (used.has(id) || el.closest("[data-print-hidden]")) return;
     used.add(id);
     el.id = id;
   };

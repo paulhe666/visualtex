@@ -11,6 +11,7 @@ import { splitInlineMath } from "./mathText.ts";
 import { FONT_SIZES } from "./schema.ts";
 import { IMAGE_GAP, imageAspect, imageEntry, isImage, isImageLine, sha256Hex } from "./images.ts";
 import { isPageBreak } from "./pageCommands.ts";
+import type { CodeToken } from "./codeBlocks.ts";
 
 /** A formula the app has to provide, by key. */
 export interface DocxFormulaRequest {
@@ -35,6 +36,8 @@ export interface DocxEquationNumber {
   /** the whole label, as the editor shows it ("2.3") */
   label: string;
   brackets: "()" | "[]";
+  /** the formula id a picture of it carries (equationFormulaId) */
+  formulaId: string;
 }
 
 export type DocxFormula =
@@ -63,6 +66,8 @@ export interface DocxExportOptions {
   bibliographyTitle?: string;
   /** the math font named in the document's settings (Word's default math font) */
   mathFont?: string;
+  /** the app's code highlighter (the colours the code blocks show) */
+  codeTokens?: (code: string, language: string) => CodeToken[][] | null;
 }
 
 /** A section's page numbers (\pagenumbering, \pagestyle, \setcounter{page}). */
@@ -76,6 +81,22 @@ interface PageSection {
   type: "nextPage" | "continuous";
 }
 
+/** What the page view starts below a wrapped image (document.css: everything but a plain text paragraph). */
+function clearsWrap(node: Node): boolean {
+  if (node.type.name !== "paragraph") return node.type.name !== "page_command";
+  return isImageLine(node) || (!!node.firstChild && isImage(node.firstChild) && !!node.firstChild.attrs.wrap);
+}
+
+/** A text-wrapping break that clears both sides at the end of the last paragraph written (else a paragraph of it). */
+function clearAfterLastParagraph(xml: string): string {
+  const BREAK = '<w:r><w:br w:type="textWrapping" w:clear="all"/></w:r>';
+  const at = xml.lastIndexOf("</w:p>");
+  if (at < 0 || at + 6 !== xml.length) return xml + `<w:p>${BREAK}</w:p>`;
+  return xml.slice(0, at) + BREAK + xml.slice(at);
+}
+
+/** a code block's text from the margins: the box's border 10 pt outside it */
+const CODE_INSET = 220;
 const PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
 
 const WORD_PAGE_FORMATS: Record<string, string> = { arabic: "decimal", roman: "lowerRoman", Roman: "upperRoman", alph: "lowerLetter", Alph: "upperLetter" };
@@ -108,6 +129,14 @@ export function equationBookmark(id: string): string {
   return `VTEqNum_${sha256Hex(new TextEncoder().encode(`visualtex-equation:${id}`)).slice(0, 32)}`;
 }
 
+/** The formula id (a UUID) a numbered display formula's picture carries in its VisualTeX data. */
+export function equationFormulaId(id: string): string {
+  const hex = equationBookmark(id).slice("VTEqNum_".length);
+  // a version-4 UUID's form, which the add-ins check
+  const variant = ((parseInt(hex[16], 16) & 3) | 8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 /** The formulas a document needs (body and footnotes), with the numbers of the numbered ones. */
 export function docxFormulaRequests(doc: Node): DocxFormulaRequest[] {
   const settings = documentSettings(doc);
@@ -135,6 +164,7 @@ export function docxFormulaRequests(doc: Node): DocxFormulaRequest[] {
           literalPrefix: chapter && (settings.headingNumbering === "none" || !headingSeen) ? prefix : null,
           label,
           brackets: settings.equationBrackets,
+          formulaId: equationFormulaId(node.attrs.id),
         };
       }
       requests.push(request);
@@ -182,12 +212,16 @@ class DocxWriter {
   /** the page numbering of the section being written (page commands start new sections) */
   private section: PageSection = { fmt: "arabic", start: null, shown: true, firstEmpty: false, type: "continuous" };
   private sectionHasContent = false;
+  /** a wrapped image's text is still beside it (top level) */
+  private wrapOpen = false;
   /** a page break was written in the section: its first page is behind */
   private sectionPaged = false;
   /** a \newpage / \clearpage not yet written (it becomes the next section's start or a page break) */
   private pageBreak = false;
   readonly footers: string[] = [];
   private footerRels = new Map<string, string>();
+  /** numbered display formulas drawn as pictures (or objects) */
+  private pictureNumbers = new Set<string>();
 
 
   constructor(
@@ -200,6 +234,11 @@ class DocxWriter {
     const paper = PAPER_SIZES[this.settings.paper];
     this.textWidthTwips = Math.round((paper.width - this.settings.marginLeft - this.settings.marginRight) * MM_TWIPS);
     this.labels = equationLabels(doc);
+    doc.descendants((node) => {
+      if (node.type.name === "math_display" && node.attrs.numbered && node.attrs.id && this.formulas.get(formulaKey(node))?.kind !== "omml")
+        this.pictureNumbers.add(node.attrs.id);
+      return node.type.name !== "math_display";
+    });
     this.bibNumbers = new Map(bibliographyEntries(doc).map((entry) => [entry.id, entry.number]));
     doc.descendants((node) => {
       for (const mark of node.marks) {
@@ -311,13 +350,23 @@ class DocxWriter {
 
   /** An inline formula among runs: OMML between the runs, a picture or an object in a run. */
   inlineFormula(node: Node): string {
+    const script = /^\s*([\^_])\s*\{\s*\\text(?:rm|normal)?\s*\{([^{}$\\]*)\}\s*\}\s*$/.exec(String(node.attrs.latex ?? ""));
+    if (script) return this.run(script[2], `${this.rPr(node.marks)}<w:vertAlign w:val="${script[1] === "^" ? "superscript" : "subscript"}"/>`);
     const formula = this.formula(formulaKey(node));
     if (!formula) return this.run(`$${node.attrs.latex}$`);
     return this.formulaRun(formula, false);
   }
 
   formulaRun(formula: DocxFormula, display: boolean): string {
-    if (formula.kind === "omml") return display ? `<m:oMathPara>${formula.xml}</m:oMathPara>` : formula.xml;
+    if (formula.kind === "omml") {
+      // the writer gives every number's bookmark the same id; each needs its own
+      const ids = new Map<string, number>();
+      const xml = canonicalOmml(formula.xml).replace(/(<w:bookmark(?:Start|End)\b[^>]*?\bw:id=")(\d+)"/g, (_all, head: string, id: string) => {
+        if (!ids.has(id)) ids.set(id, ++this.bookmarkId);
+        return `${head}${ids.get(id)}"`;
+      });
+      return display ? `<m:oMathPara>${xml}</m:oMathPara>` : xml;
+    }
     if (formula.kind === "object") return formula.runXml((target, type) => this.rel(target, type));
     return this.picture(formula);
   }
@@ -364,12 +413,25 @@ class DocxWriter {
     const formula = this.formula(formulaKey(node));
     const label = node.attrs.numbered && node.attrs.id ? this.labels.get(node.attrs.id) : undefined;
     if (!formula) return this.paragraph(this.run(`$$${node.attrs.latex}$$`), '<w:jc w:val="center"/>');
-    if (formula.kind === "omml") return `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/></w:pPr>${this.formulaRun(formula, true)}</w:p>`;
-    if (!label) return this.paragraph(this.formulaRun(formula, true), '<w:jc w:val="center"/>');
+    if (formula.kind === "omml") return `<w:p><w:pPr>${this.displaySpacing()}<w:jc w:val="center"/></w:pPr>${this.formulaRun(formula, true)}</w:p>`;
+    if (!label) return this.paragraph(this.formulaRun(formula, true), this.displaySpacing() + '<w:jc w:val="center"/>');
     // a picture (or object) and its number: centred by a centre tab, the number at a right tab
     const tabs = `<w:tabs><w:tab w:val="center" w:pos="${Math.round(this.textWidthTwips / 2)}"/><w:tab w:val="right" w:pos="${this.textWidthTwips}"/></w:tabs>`;
     const number = this.bodyEquationNumber(node.attrs.id, label);
-    return this.paragraph(`<w:r><w:tab/></w:r>${this.formulaRun(formula, true)}<w:r><w:tab/></w:r>${number}`, tabs + '<w:jc w:val="left"/>');
+    return this.paragraph(`<w:r><w:tab/></w:r>${this.formulaRun(formula, true)}<w:r><w:tab/></w:r>${number}`, tabs + this.displaySpacing() + '<w:jc w:val="left"/>');
+  }
+
+  /** The bookmark references point to: Word's own number's (VTEqNum_) for a Word equation; for a picture the
+   * VisualTeX Word add-ins' (VT_N_ + the picture's formula id, equationFormulaId): they take such a picture as their
+   * own when the document opens and renumber it under that name, so references keep their target. */
+  private numberBookmark(id: string): string {
+    return this.pictureNumbers.has(id) ? `VT_N_${equationFormulaId(id).replace(/-/g, "")}` : equationBookmark(id);
+  }
+
+  /** The page view's room above and below a display formula: 0.3 em of the formula's size (1.04 × the text's). */
+  private displaySpacing(): string {
+    const twips = Math.round(0.3 * 1.04 * this.bodySizePt * 20);
+    return `<w:spacing w:before="${twips}" w:after="${twips}"/>`;
   }
 
   /** "(2.3)" in body text: SEQ (and the chapter) fields with the bookmark references point to. */
@@ -385,7 +447,7 @@ class DocxWriter {
       const chapter = this.settings.headingNumbering === "none" || prefix === "0" ? this.run(prefix) : this.field("STYLEREF 1 \\w", prefix);
       inner = chapter + this.run(separator) + this.field("SEQ Equation \\s 1 \\* ARABIC", sequence);
     }
-    return this.run(open) + this.bookmark(equationBookmark(id), inner) + this.run(close);
+    return this.run(open) + this.bookmark(this.numberBookmark(id), inner) + this.run(close);
   }
 
   // ------------------------------------------------------------------- inline --
@@ -421,6 +483,12 @@ class DocxWriter {
       } else out += piece;
     });
     flush();
+    // Word (and WPS) take an equation alone in its paragraph as a display one, centred; a zero-width space keeps it in the line
+    let alone = node.childCount > 0;
+    node.forEach((child) => {
+      if (!(child.type.name === "math_inline" || (child.isText && !child.text?.trim()))) alone = false;
+    });
+    if (alone && out.includes("<m:oMath")) out += this.run("\u200b");
     return out;
   }
 
@@ -430,7 +498,7 @@ class DocxWriter {
     const label = target ? this.labels.get(target) : undefined;
     if (!target || !label) return this.run("(??)");
     const [open, close] = this.settings.equationBrackets === "[]" ? ["[", "]"] : ["(", ")"];
-    return this.run(open) + this.field(`REF ${equationBookmark(target)} \\h`, label) + this.run(close);
+    return this.run(open) + this.field(`REF ${this.numberBookmark(target)} \\h`, label) + this.run(close);
   }
 
   private citation(node: Node): string {
@@ -551,7 +619,15 @@ class DocxWriter {
       this.pageBreak = false;
       this.sectionHasContent = true;
       if (previousTable && child.type.name === "table") out += "<w:p/>";
+      // a block the page view puts below a wrapped image (not a plain paragraph): the text before it ends below the
+      // image (wrapfig's \vtxwrapclear in the LaTeX)
+      const top = node === this.doc;
+      if (top && this.wrapOpen && clearsWrap(child)) {
+        out = clearAfterLastParagraph(out);
+        this.wrapOpen = false;
+      }
       out += this.block(child, indent, quote);
+      if (top && child.type.name === "paragraph" && child.firstChild && isImage(child.firstChild) && child.firstChild.attrs.wrap) this.wrapOpen = true;
       previousTable = child.type.name === "table";
     });
     return out;
@@ -629,10 +705,7 @@ class DocxWriter {
       case "horizontal_rule":
         return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="9E9E9E"/></w:pBdr></w:pPr></w:p>';
       case "code_block":
-        return node.textContent
-          .split("\n")
-          .map((line) => this.paragraph(this.run(line), `<w:pStyle w:val="SourceCode"/>${indent ? `<w:ind w:left="${indent}"/>` : ""}`))
-          .join("");
+        return this.codeBlock(node, indent);
       case "table":
         return this.table(node);
       case "bibliography":
@@ -640,6 +713,35 @@ class DocxWriter {
       default:
         return node.isTextblock ? this.paragraph(this.inline(node)) : node.isBlock ? this.blocks(node, indent, quote) : "";
     }
+  }
+
+  /** A code block as the page shows it: VS Code's Dark+ box with the highlighter's colours, a paragraph a line. */
+  private codeBlock(node: Node, indent: number): string {
+    const code = node.textContent;
+    let lines: CodeToken[][] | null = null;
+    try {
+      lines = this.options.codeTokens?.(code, String(node.attrs.language ?? "")) ?? null;
+    } catch {
+      lines = null;
+    }
+    // the box's border (the code's colour) stands 10 pt beside the text
+    const pPr = `<w:pStyle w:val="SourceCode"/>${indent ? `<w:ind w:left="${indent + CODE_INSET}" w:right="${CODE_INSET}"/>` : ""}`;
+    return code
+      .split("\n")
+      .map((line, index) => {
+        const tokens = lines?.[index];
+        if (!tokens || tokens.map((t) => t.content).join("") !== line) return this.paragraph(this.run(line), pPr);
+        const runs = tokens
+          .map((token) => {
+            const color = cssHex(token.color);
+            const style = token.fontStyle ?? 0;
+            const rPr = `${style & 2 ? "<w:b/><w:bCs/>" : ""}${style & 1 ? "<w:i/><w:iCs/>" : ""}${color ? `<w:color w:val="${color}"/>` : ""}${style & 4 ? '<w:u w:val="single"/>' : ""}`;
+            return this.run(token.content, rPr);
+          })
+          .join("");
+        return this.paragraph(runs, pPr);
+      })
+      .join("");
   }
 
   private list(node: Node, indent: number, depth: number, quote: boolean): string {
@@ -670,10 +772,15 @@ class DocxWriter {
     return out;
   }
 
+  /** A table cell's padding: half an em of the text (the page view's 7 px at 14 px). */
+  private cellPad(): number {
+    return Math.round(0.5 * this.bodySizePt * 20);
+  }
+
   private table(table: Node): string {
     const map = TableMap.get(table);
     const columnWidth = Math.floor(this.textWidthTwips / map.width);
-    let out = `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="pct"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>`;
+    let out = `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="pct"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${this.cellPad()}" w:type="dxa"/><w:left w:w="${this.cellPad()}" w:type="dxa"/><w:bottom w:w="${this.cellPad()}" w:type="dxa"/><w:right w:w="${this.cellPad()}" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>`;
     out += `<w:tblGrid>${Array.from({ length: map.width }, () => `<w:gridCol w:w="${columnWidth}"/>`).join("")}</w:tblGrid>`;
     for (let row = 0; row < map.height; row++) {
       const rowNode = table.child(row);
@@ -761,6 +868,8 @@ class DocxWriter {
       `<w:style w:type="${kind}" w:styleId="${id}"><w:name w:val="${name}"/>${based ? `<w:basedOn w:val="${based}"/>` : ""}${next ? `<w:next w:val="${next}"/>` : ""}${extra}${pPr ? `<w:pPr>${pPr}</w:pPr>` : ""}${rPr ? `<w:rPr>${rPr}</w:rPr>` : ""}</w:style>`;
     // the editor's "single" is 1.3 × the size (ctex); atLeast lets a line with a tall formula grow (\lineskip)
     const line = Math.round(1.3 * body * s.lineSpacing * 20);
+    /** twips of `em` ems of the text */
+    const pt20 = (em: number) => Math.round(em * body * 20);
     const numbered = s.headingNumbering !== "none";
     const headingNum = (level: number) => (numbered ? `<w:numPr>${level ? `<w:ilvl w:val="${level}"/>` : ""}<w:numId w:val="1"/></w:numPr>` : "");
     return (
@@ -768,22 +877,24 @@ class DocxWriter {
       `<w:rFonts w:ascii="${esc(s.latinFont)}" w:eastAsia="${esc(s.cjkFont)}" w:hAnsi="${esc(s.latinFont)}" w:cs="${esc(s.latinFont)}"/>` +
       `<w:kern w:val="2"/><w:sz w:val="${half(1)}"/><w:szCs w:val="${half(1)}"/><w:lang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="${line}" w:lineRule="atLeast"/></w:pPr></w:pPrDefault></w:docDefaults>` +
-      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:widowControl w:val="0"/><w:jc w:val="both"/></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:widowControl w:val="0"/><w:jc w:val="left"/></w:pPr></w:style>' +
       '<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>' +
       '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>' +
       '<w:style w:type="numbering" w:default="1" w:styleId="NoList"><w:name w:val="No List"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/></w:style>' +
-      style("paragraph", "Title", "Title", '<w:spacing w:before="120" w:after="180"/><w:jc w:val="center"/><w:outlineLvl w:val="0"/>', `<w:b/><w:bCs/><w:sz w:val="${half(1.728)}"/><w:szCs w:val="${half(1.728)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
-      style("paragraph", "Heading1", "heading 1", `<w:keepNext/><w:keepLines/>${headingNum(0)}<w:spacing w:before="240" w:after="120"/><w:jc w:val="left"/><w:outlineLvl w:val="0"/>`, `<w:b/><w:bCs/><w:sz w:val="${half(1.44)}"/><w:szCs w:val="${half(1.44)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
-      style("paragraph", "Heading2", "heading 2", `<w:keepNext/><w:keepLines/>${headingNum(1)}<w:spacing w:before="200" w:after="100"/><w:jc w:val="left"/><w:outlineLvl w:val="1"/>`, `<w:b/><w:bCs/><w:sz w:val="${half(1.2)}"/><w:szCs w:val="${half(1.2)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
-      style("paragraph", "Heading3", "heading 3", `<w:keepNext/><w:keepLines/>${headingNum(2)}<w:spacing w:before="160" w:after="80"/><w:jc w:val="left"/><w:outlineLvl w:val="2"/>`, "<w:b/><w:bCs/>", "Normal", "<w:qFormat/>", "Normal") +
+      // as the page view sets them (document.css): the title \LARGE-like 1.728 em, not bold, 0.6 / 0.9 em around it;
+      // headings 1.2 / 1.1 / 1 em, bold, half an em above and below; every line 1.3 × its own size at least
+      style("paragraph", "Title", "Title", `<w:spacing w:before="${pt20(0.6 * 1.728)}" w:after="${pt20(0.9 * 1.728)}" w:line="${pt20(1.3 * 1.728 * s.lineSpacing)}" w:lineRule="atLeast"/><w:jc w:val="center"/><w:outlineLvl w:val="0"/>`, `<w:sz w:val="${half(1.728)}"/><w:szCs w:val="${half(1.728)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
+      style("paragraph", "Heading1", "heading 1", `<w:keepNext/><w:keepLines/>${headingNum(0)}<w:spacing w:before="${pt20(0.6)}" w:after="${pt20(0.6)}" w:line="${pt20(1.3 * 1.2 * s.lineSpacing)}" w:lineRule="atLeast"/><w:jc w:val="left"/><w:outlineLvl w:val="0"/>`, `<w:b/><w:bCs/><w:sz w:val="${half(1.2)}"/><w:szCs w:val="${half(1.2)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
+      style("paragraph", "Heading2", "heading 2", `<w:keepNext/><w:keepLines/>${headingNum(1)}<w:spacing w:before="${pt20(0.55)}" w:after="${pt20(0.55)}" w:line="${pt20(1.3 * 1.1 * s.lineSpacing)}" w:lineRule="atLeast"/><w:jc w:val="left"/><w:outlineLvl w:val="1"/>`, `<w:b/><w:bCs/><w:sz w:val="${half(1.1)}"/><w:szCs w:val="${half(1.1)}"/>`, "Normal", "<w:qFormat/>", "Normal") +
+      style("paragraph", "Heading3", "heading 3", `<w:keepNext/><w:keepLines/>${headingNum(2)}<w:spacing w:before="${pt20(0.5)}" w:after="${pt20(0.5)}"/><w:jc w:val="left"/><w:outlineLvl w:val="2"/>`, "<w:b/><w:bCs/>", "Normal", "<w:qFormat/>", "Normal") +
       style("paragraph", "ListParagraph", "List Paragraph", "<w:contextualSpacing/>", "", "Normal", "<w:qFormat/>") +
       style("paragraph", "Quote", "Quote", '<w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="CCCCCC"/></w:pBdr><w:spacing w:before="60" w:after="60"/><w:ind w:left="420" w:right="420"/>', "", "Normal", "<w:qFormat/>", "Normal") +
-      style("paragraph", "SourceCode", "Source Code", '<w:shd w:val="clear" w:color="auto" w:fill="F6F8FA"/><w:wordWrap w:val="0"/><w:spacing w:line="240" w:lineRule="auto"/><w:jc w:val="left"/>', `<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:noProof/><w:sz w:val="${half(14 / 15)}"/>`) +
+      style("paragraph", "SourceCode", "Source Code", `<w:pBdr>${["top", "left", "bottom", "right"].map((side) => `<w:${side} w:val="single" w:sz="4" w:space="${side === "top" || side === "bottom" ? 7 : 10}" w:color="1E1E1E"/>`).join("")}</w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="1E1E1E"/><w:wordWrap w:val="0"/><w:spacing w:before="${pt20(0.5)}" w:after="${pt20(0.5)}" w:line="${pt20(1.27)}" w:lineRule="exact"/><w:ind w:left="${CODE_INSET}" w:right="${CODE_INSET}"/><w:contextualSpacing/><w:jc w:val="left"/>`, `<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:noProof/><w:color w:val="D4D4D4"/><w:sz w:val="${half(14 / 15)}"/>`) +
       style("character", "VerbatimChar", "Verbatim Char", "", '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>', "DefaultParagraphFont") +
       style("character", "Hyperlink", "Hyperlink", "", '<w:color w:val="0563C1"/><w:u w:val="single"/>', "DefaultParagraphFont", '<w:uiPriority w:val="99"/><w:unhideWhenUsed/>') +
       style("paragraph", "FootnoteText", "footnote text", '<w:snapToGrid w:val="0"/><w:jc w:val="left"/>', `<w:sz w:val="${half(0.8)}"/><w:szCs w:val="${half(0.8)}"/>`, "Normal", '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>') +
       style("character", "FootnoteReference", "footnote reference", "", '<w:vertAlign w:val="superscript"/>', "DefaultParagraphFont", '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>') +
-      style("paragraph", "BibliographyHeading", "Bibliography Heading", '<w:keepNext/><w:spacing w:before="240" w:after="120"/><w:jc w:val="left"/>', `<w:b/><w:sz w:val="${half(1.2)}"/>`, "Normal", "", "Bibliography") +
+      style("paragraph", "BibliographyHeading", "Bibliography Heading", `<w:keepNext/><w:spacing w:before="${pt20(0.8)}" w:after="${pt20(0.3)}"/><w:jc w:val="left"/>`, "<w:b/><w:bCs/>", "Normal", "", "Bibliography") +
       style("paragraph", "Bibliography", "Bibliography", '<w:jc w:val="left"/>', "", "Normal", '<w:uiPriority w:val="37"/><w:unhideWhenUsed/>') +
       style(
         "table",
@@ -832,6 +943,15 @@ const HIGHLIGHTS: Record<string, string> = {
 };
 
 /** A CSS colour as Word's RRGGBB (null: not a colour Word can take). */
+/** CSS colour names a document may carry (\textcolor{red}, a pasted style): their hex. */
+const CSS_COLORS: Record<string, string> = {
+  black: "000000", white: "FFFFFF", red: "FF0000", green: "008000", blue: "0000FF", yellow: "FFFF00", cyan: "00FFFF",
+  magenta: "FF00FF", gray: "808080", grey: "808080", darkgray: "A9A9A9", lightgray: "D3D3D3", orange: "FFA500",
+  purple: "800080", brown: "A52A2A", pink: "FFC0CB", olive: "808000", teal: "008080", navy: "000080", maroon: "800000",
+  lime: "00FF00", violet: "EE82EE", silver: "C0C0C0", gold: "FFD700", darkred: "8B0000", darkgreen: "006400",
+  darkblue: "00008B", lightblue: "ADD8E6", lightgreen: "90EE90",
+};
+
 function cssHex(color: unknown): string | null {
   const value = String(color ?? "").trim();
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value);
@@ -839,9 +959,42 @@ function cssHex(color: unknown): string | null {
     const h = hex[1].length === 3 ? hex[1].split("").map((c) => c + c).join("") : hex[1];
     return h.toUpperCase();
   }
+  const named = CSS_COLORS[value.toLowerCase()];
+  if (named) return named;
   const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(value);
   if (rgb) return [rgb[1], rgb[2], rgb[3]].map((n) => Math.min(255, Number(n)).toString(16).padStart(2, "0")).join("").toUpperCase();
   return null;
+}
+
+const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+const XML_NS = "http://www.w3.org/XML/1998/namespace";
+const PREFIXES: Record<string, string> = { [MATH_NS]: "m", [W_NS]: "w", [XML_NS]: "xml" };
+
+/** OMML with the document's m:/w: prefixes. The writer's numbered equations use default namespaces and p6:-style
+ * prefixes; Word reads them, WPS stops reading the document there. */
+function canonicalOmml(xml: string): string {
+  if (!/xmlns="|xmlns:p\d/.test(xml) || typeof DOMParser === "undefined") return xml;
+  const parsed = new DOMParser().parseFromString(`<vtx-root xmlns:m="${MATH_NS}" xmlns:w="${W_NS}">${xml}</vtx-root>`, "application/xml");
+  if (parsed.getElementsByTagName("parsererror").length) return xml;
+  const name = (namespace: string | null, local: string, fallback: string) => {
+    const prefix = namespace ? PREFIXES[namespace] : undefined;
+    return prefix ? `${prefix}:${local}` : fallback;
+  };
+  const write = (element: Element): string => {
+    let attributes = "";
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name === "xmlns" || attribute.name.startsWith("xmlns:")) continue;
+      attributes += ` ${name(attribute.namespaceURI, attribute.localName, attribute.name)}="${esc(attribute.value)}"`;
+    }
+    let inner = "";
+    element.childNodes.forEach((child) => {
+      if (child.nodeType === 1) inner += write(child as Element);
+      else if (child.nodeType === 3 || child.nodeType === 4) inner += esc(child.nodeValue ?? "");
+    });
+    const tag = name(element.namespaceURI, element.localName, element.tagName);
+    return inner ? `<${tag}${attributes}>${inner}</${tag}>` : `<${tag}${attributes}/>`;
+  };
+  return Array.from(parsed.documentElement.children).map(write).join("");
 }
 
 const strToU8 = (text: string) => new TextEncoder().encode(text);

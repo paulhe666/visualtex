@@ -44,3 +44,13 @@ a.vtx-print-link {
 .vtx-print-window .vtx-page-number {
   color: #000 !important;
 }
+/* bold and italic Chinese the printer would draw regular (print-main.ts) */
+.vtx-print-bold,
+.vtx-print-bold-before::before {
+  -webkit-text-stroke: 0.035em currentColor;
+}
+.vtx-print-italic {
+  display: inline-block;
+  transform: skewX(-14deg);
+  transform-origin: 50% 80%;
+}

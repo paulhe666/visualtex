@@ -449,6 +449,19 @@
 }
 
 /* ---- document text (Arial 15px, line height 1.4, no paragraph spacing) ---- */
+/* bold and italic for fonts without such faces (SimSun, most CJK fonts): the app turns synthesis off elsewhere, and
+   the PDF printer drops it then */
+.vtx-sheet,
+.vtx-document {
+  font-synthesis: weight style;
+}
+/* formulas draw their own faces */
+.vtx-math-inline,
+.vtx-math-display,
+.vtx-note-math,
+.vtx-formula-editor {
+  font-synthesis: none;
+}
 .vtx-document {
   outline: none;
   color: #000;

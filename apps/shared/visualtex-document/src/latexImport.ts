@@ -178,16 +178,15 @@ function protectCode(text: string, kept: string[]): string {
 
 /** Commands with one argument turned into Markdown, innermost first so nesting works. */
 const WRAPPERS: Record<string, (arg: string) => string> = {
-  textbf: (a) => `**${a}**`,
-  textit: (a) => `*${a}*`,
-  emph: (a) => `*${a}*`,
-  textsl: (a) => `*${a}*`,
+  // HTML tags rather than **…** / *…*: Markdown's emphasis does not open or close beside CJK punctuation (、**粗体**、)
+  textbf: (a) => `<b>${a}</b>`,
+  textit: (a) => `<i>${a}</i>`,
+  emph: (a) => `<i>${a}</i>`,
+  textsl: (a) => `<i>${a}</i>`,
   underline: (a) => `<u>${a}</u>`,
   uline: (a) => `<u>${a}</u>`,
   texttt: (a) => `\`${a}\``,
-  sout: (a) => `~~${a}~~`,
-  textsuperscript: (a) => `<sup>${a}</sup>`,
-  textsubscript: (a) => `<sub>${a}</sub>`,
+  sout: (a) => `<s>${a}</s>`,
   url: (a) => `<${a}>`,
   caption: (a) => `*${a}*`,
   mbox: (a) => a,
@@ -233,7 +232,7 @@ function plainText(markdown: string, kept: string[]): string {
   // marks and grouping braces go before the formulas come back (they keep theirs)
   let text = finishText(
     markdown
-      .replace(/\*\*|<\/?(u|sup|sub)>|<\/?span[^>]*>|[*`]/g, "")
+      .replace(/\*\*|<\/?(u|sup|sub|b|i|s)>|<\/?span[^>]*>|[*`]/g, "")
       .replace(/<((?:https?|ftp|mailto):[^>\s]+)>/g, "$1")
       .replace(/\[([^\]]*)\]\(([^)\s]*)\)/g, "$1"),
   ).replace(/\\\n/g, " ");
@@ -362,6 +361,16 @@ function inline(text: string, kept: string[]): string {
       out += sign;
       i = text[j] === " " ? j + 1 : j;
       continue;
+    }
+    if (command === "textsuperscript" || command === "textsubscript") {
+      // the document has no raised text: a formula with the text raised or lowered
+      const arg = group(text, skipSpaces(text, j));
+      if (arg) {
+        const inner = plainText(inline(arg.content, kept), kept).replace(/[{}\\]/g, "");
+        out += keep(`$${command === "textsuperscript" ? "^" : "_"}{\\text{${inner}}}$`);
+        i = arg.end;
+        continue;
+      }
     }
     if (command === "footnote") {
       const arg = group(text, skipSpaces(text, skipOptional(text, j)));
@@ -516,6 +525,19 @@ function blocks(text: string): string {
   const lists: Array<"-" | "1."> = [];
   let quote = 0;
   const prefix = () => "> ".repeat(quote);
+  // center / flushright: their paragraphs aligned (<p align>, what the Markdown reader takes as an aligned paragraph)
+  const aligns: Array<"center" | "right" | null> = [];
+  let aligned: string[] = [];
+  const flushAligned = () => {
+    if (!aligned.length) return;
+    const align = aligns[aligns.length - 1];
+    const body = aligned.join(" ").trim();
+    aligned = [];
+    if (!body) return;
+    // a block kept aside (a figure, a display formula) is not a paragraph
+    if (!align || /^\u0000\d+\u0000$/.test(body)) out.push(`${prefix()}${body}`);
+    else out.push("", `${prefix()}<p align="${align}">${body.replace(/\\\\\s*/g, "<br>")}</p>`, "");
+  };
   for (const raw of text.split("\n")) {
     let line = raw;
     // Several \begin / \end / \item on one line are taken apart first.
@@ -524,6 +546,8 @@ function blocks(text: string): string {
       const begin = /^\\begin\{(itemize|enumerate|description|quote|quotation|center|flushleft|flushright|abstract|figure|table|minipage)\*?\}(\[[^\]]*\])?(\{[^}]*\})?/.exec(piece);
       if (begin) {
         const env = begin[1];
+        flushAligned();
+        if (env === "center" || env === "flushright" || env === "flushleft") aligns.push(env === "center" ? "center" : env === "flushright" ? "right" : null);
         if (env === "itemize" || env === "description") lists.push("-");
         else if (env === "enumerate") lists.push("1.");
         else if (env === "quote" || env === "quotation") quote++;
@@ -533,6 +557,10 @@ function blocks(text: string): string {
       const end = /^\\end\{(itemize|enumerate|description|quote|quotation|center|flushleft|flushright|abstract|figure|table|minipage)\*?\}/.exec(piece);
       if (end) {
         const env = end[1];
+        if (env === "center" || env === "flushright" || env === "flushleft") {
+          flushAligned();
+          aligns.pop();
+        }
         if (env === "itemize" || env === "description" || env === "enumerate") lists.pop();
         else if (env === "quote" || env === "quotation") quote = Math.max(0, quote - 1);
         out.push("");
@@ -547,11 +575,19 @@ function blocks(text: string): string {
         continue;
       }
       if (!piece.trim()) continue;
+      if (aligns.length && aligns[aligns.length - 1] && !lists.length) {
+        aligned.push(piece.trim());
+        continue;
+      }
       const indent = lists.length ? lists.map((m) => (m === "-" ? "  " : "   ")).join("") : "";
       out.push(`${prefix()}${indent}${piece.trim()}`);
     }
-    if (!raw.trim()) out.push(prefix().trim());
+    if (!raw.trim()) {
+      flushAligned();
+      out.push(prefix().trim());
+    }
   }
+  flushAligned();
   return out.join("\n");
 }
 

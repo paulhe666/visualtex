@@ -170,6 +170,9 @@ mod windows_pdf {
     /// header or footer; the file must be there afterwards.
     pub async fn print_to_pdf(window: &tauri::WebviewWindow, out: PathBuf, paper_in: (f64, f64)) -> Result<(), String> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        // shared by the completion handler and the setup's error path (which says what failed)
+        let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+        let tx_error = tx.clone();
         let written = out.clone();
         window
             .with_webview(move |platform| {
@@ -190,7 +193,6 @@ mod windows_pdf {
                         settings.SetShouldPrintBackgrounds(true).map_err(|e| e.to_string())?;
                         settings.SetShouldPrintHeaderAndFooter(false).map_err(|e| e.to_string())?;
                     }
-                    let tx = std::sync::Mutex::new(Some(tx));
                     let file = written.clone();
                     let handler = PrintToPdfCompletedHandler::create(Box::new(move |error_code, success| {
                         let ok = error_code.is_ok() && success;
@@ -205,7 +207,9 @@ mod windows_pdf {
                     Ok(())
                 })();
                 if let Err(error) = result {
-                    eprintln!("PDF print: {error}");
+                    if let Some(tx) = tx_error.lock().ok().and_then(|mut t| t.take()) {
+                        let _ = tx.send(Err(format!("WebView2 could not print: {error}")));
+                    }
                 }
             })
             .map_err(|error| error.to_string())?;

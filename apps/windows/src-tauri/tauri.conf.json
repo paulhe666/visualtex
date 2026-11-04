@@ -12,7 +12,7 @@
   "app": {
     "windows": [],
     "security": {
-      "capabilities": ["default", "silent-ocr-hud", "anywhere"],
+      "capabilities": ["default", "silent-ocr-hud", "anywhere", "pdf-print"],
       "csp": null
     }
   },
