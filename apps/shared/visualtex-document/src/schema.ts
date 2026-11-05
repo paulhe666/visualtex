@@ -6,6 +6,7 @@ import { tableNodes } from "prosemirror-tables";
 import { DOCUMENT_SETTING_ATTRS } from "./settings.ts";
 import { noteNodes } from "./notes.ts";
 import { imageNodeSpec } from "./images.ts";
+import { imageBoardNodes } from "./imageBoards.ts";
 import { pageCommandNodeSpec } from "./pageCommands.ts";
 
 /** The kinds of alert (GitHub's, which Typora reads). */
@@ -300,6 +301,8 @@ const nodes: Record<string, NodeSpec> = {
   },
 
   ...noteNodes,
+
+  ...imageBoardNodes,
 
   ...tableNodes({
     tableGroup: "block",

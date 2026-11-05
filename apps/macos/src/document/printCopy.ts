@@ -27,6 +27,8 @@ const EDITOR_ONLY = [
   ".vtx-code-header",
   // an HTML comment's label; an empty [toc]'s placeholder is its ::before (left as it is)
   ".vtx-html-comment",
+  ".vtx-board-handle",
+  ".vtx-board-guide",
 ].join(",");
 
 /** The child indices from `root` down to `el`. */

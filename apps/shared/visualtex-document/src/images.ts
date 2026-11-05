@@ -242,7 +242,7 @@ export async function registerImageFile(file: Blob): Promise<string | null> {
 export function documentImageKeys(doc: Node): string[] {
   const keys: string[] = [];
   doc.descendants((node) => {
-    if (node.type.name === "image" && node.attrs.src && !keys.includes(node.attrs.src)) keys.push(node.attrs.src);
+    if ((node.type.name === "image" || node.type.name === "board_image") && node.attrs.src && !keys.includes(node.attrs.src)) keys.push(node.attrs.src);
     return true;
   });
   return keys;
@@ -434,6 +434,32 @@ export function insertImageNodes(state: EditorState, images: Node[], schema: Sch
   const tr = closeHistory(state.tr);
   const sel = state.selection;
   const $from = sel.$from;
+  // a selected board image: the new ones on its board, right of it (then below the board's images)
+  if (sel instanceof NodeSelection && sel.node.type.name === "board_image" && schema.nodes.board_image) {
+    const boardPos = $from.before();
+    let x = sel.node.attrs.x + sel.node.attrs.width + IMAGE_GAP;
+    let top = sel.node.attrs.top as number;
+    let at = boardPos + $from.parent.nodeSize - 1;
+    let first = -1;
+    for (const image of images) {
+      const width = Math.min(1, image.attrs.width);
+      if (x + width > 1) {
+        const board = tr.doc.nodeAt(boardPos)!;
+        let bottom = 0;
+        board.forEach((child) => {
+          bottom = Math.max(bottom, child.attrs.top + child.attrs.width / imageAspect(child.attrs.src));
+        });
+        x = 0;
+        top = bottom + IMAGE_GAP;
+      }
+      tr.insert(at, schema.nodes.board_image.create({ src: image.attrs.src, alt: image.attrs.alt, width, x: Math.round(x * 1000) / 1000, top: Math.round(top * 1000) / 1000 }));
+      if (first < 0) first = at;
+      at += 1;
+      x += width + IMAGE_GAP;
+    }
+    tr.setSelection(NodeSelection.create(tr.doc, first));
+    return tr;
+  }
   // a selected image: beside it
   if (sel instanceof NodeSelection && isImage(sel.node)) {
     const parent = $from.parent;
@@ -494,7 +520,9 @@ export type ImageDropTarget =
   /** a line of its own, between two blocks (pos: the boundary) */
   | { kind: "line"; pos: number }
   /** the wrapped image moved to the start of the body paragraph at `pos`, on that side */
-  | { kind: "wrap"; pos: number; side: "left" | "right" };
+  | { kind: "wrap"; pos: number; side: "left" | "right" }
+  /** a place on the image board at `pos` (its left and top edges, fractions of the line width; imageBoards.ts) */
+  | { kind: "board"; pos: number; x: number; top: number };
 
 /** The block (outermost below a list, quote… at the pointer's textblock) whose boundary a "line" drop uses. */
 function lineTarget(view: EditorView, pos: number, depth: number, y: number): ImageDropTarget {
@@ -607,7 +635,7 @@ export function imageDropMarker(view: EditorView, target: ImageDropTarget | null
     if (!rect) return false;
     const y = after ? rect.top - 2 : rect.bottom + 1;
     style = { left: `${rect.left}px`, top: `${y}px`, width: `${rect.width}px`, height: "2px" };
-  } else {
+  } else if (target.kind === "wrap") {
     const dom = view.nodeDOM(target.pos) as HTMLElement | null;
     const rect = dom?.getBoundingClientRect();
     if (!rect) return false;
@@ -615,13 +643,13 @@ export function imageDropMarker(view: EditorView, target: ImageDropTarget | null
     // the paragraph's start on that side: a bar the height of its first line at that edge
     const x = target.side === "left" ? rect.left : rect.right - 3;
     style = { left: `${x}px`, top: `${first.top}px`, width: "3px", height: `${Math.max(10, first.bottom - first.top) * 2}px` };
-  }
+  } else return false;
   Object.assign(element.style, style);
   return true;
 }
 
 /** Text size and line width (px) of the paragraph a position is in. */
-function lineMetrics(view: EditorView, pos: number): { font: number; width: number } | null {
+export function lineMetrics(view: EditorView, pos: number): { font: number; width: number } | null {
   const $pos = view.state.doc.resolve(pos);
   if (!$pos.parent.isTextblock) return null;
   const dom = view.nodeDOM($pos.before()) as HTMLElement | null;
@@ -661,6 +689,15 @@ export function moveImage(view: EditorView, target: ImageDropTarget, from: numbe
   }
   // a line-high image (from a sentence) on a line of its own: its inserted size
   const lineHigh = sourceMetrics && !isImageLine(sourceLine) ? (image.attrs.width * sourceMetrics.width) / aspect <= sourceMetrics.font * 2 : false;
+  if (target.kind === "board") {
+    const boardPos = tr.mapping.map(target.pos);
+    const board = tr.doc.nodeAt(boardPos)!;
+    const at = boardPos + board.nodeSize - 1;
+    const width = lineHigh || image.attrs.wrap ? defaultImageWidth(state.doc, image.attrs.src) : image.attrs.width;
+    tr.insert(at, schema.nodes.board_image.create({ src: image.attrs.src, alt: image.attrs.alt, width: Math.min(1, width), x: target.x, top: target.top }));
+    tr.setSelection(NodeSelection.create(tr.doc, at));
+    return tr;
+  }
   if (target.kind === "line") {
     attrs = { ...attrs, wrap: null, width: lineHigh || image.attrs.wrap ? defaultImageWidth(state.doc, image.attrs.src) : attrs.width };
     const pos = tr.mapping.map(target.pos);
@@ -1139,12 +1176,16 @@ export function imagesPlugin(options: ImagesPluginOptions): Plugin<DecorationSet
       handlePaste(view, _event, slice) {
         const images: Node[] = [];
         let other = false;
+        let board = false;
         slice.content.descendants((node) => {
+          if (node.type.name === "image_board") board = true;
+          if (node.type.name === "board_image") images.push(node.type.schema.nodes.image.create({ src: node.attrs.src, alt: node.attrs.alt, width: node.attrs.width }));
           if (isImage(node)) images.push(node.type.create({ ...node.attrs, wrap: null, id: null }));
           else if (node.isText ? !!node.text?.trim() : node.isLeaf || (node.isTextblock && false)) other = true;
           return !isImage(node);
         });
-        if (!images.length || other) return false;
+        // a whole board pastes as a board
+        if (!images.length || other || board) return false;
         const tr = insertImageNodes(view.state, images, view.state.schema);
         if (!tr) return false;
         view.dispatch(tr.scrollIntoView());
@@ -1163,7 +1204,7 @@ export function imagesPlugin(options: ImagesPluginOptions): Plugin<DecorationSet
 export function sliceImages(content: Fragment): number {
   let count = 0;
   content.descendants((node) => {
-    if (isImage(node)) count++;
+    if (isImage(node) || node.type.name === "board_image") count++;
     return true;
   });
   return count;

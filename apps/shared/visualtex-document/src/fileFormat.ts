@@ -3,8 +3,8 @@ import type { Node, Schema } from "prosemirror-model";
 import { documentImagesForFile, loadDocumentImages } from "./images.ts";
 
 export const DOCUMENT_FILE_FORMAT = "visualtex-document";
-/** 2: the file carries images (`images`); a document without images is still written as 1. */
-export const DOCUMENT_FILE_VERSION = 2;
+/** 2: the file carries images (`images`); 3: it has image boards. A document without them is still written as 1. */
+export const DOCUMENT_FILE_VERSION = 3;
 
 export interface DocumentFile {
   format: typeof DOCUMENT_FILE_FORMAT;
@@ -15,12 +15,21 @@ export interface DocumentFile {
   images?: Record<string, string>;
 }
 
+function hasBoards(doc: Node): boolean {
+  let found = false;
+  doc.descendants((node) => {
+    if (node.type.name === "image_board") found = true;
+    return !found;
+  });
+  return found;
+}
+
 export function serializeDocument(doc: Node, meta: DocumentFile["meta"] = {}): string {
   const images = documentImagesForFile(doc);
   const hasImages = Object.keys(images).length > 0;
   const file: DocumentFile = {
     format: DOCUMENT_FILE_FORMAT,
-    version: hasImages ? 2 : 1,
+    version: hasBoards(doc) ? 3 : hasImages ? 2 : 1,
     doc: doc.toJSON(),
     meta: { ...meta, modified: new Date().toISOString() },
     ...(hasImages ? { images } : {}),

@@ -5,8 +5,9 @@
 // for it). ProseMirror's own Markdown bridge (prosemirror-markdown on markdown-it)
 // with VisualTeX's rules for math, highlight and the few HTML tags Markdown writers use.
 import MarkdownIt, { type StateBlock, type StateCore, type StateInline, type Token } from "markdown-it";
-import { DEFAULT_IMAGE_WIDTH, imageEntry, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
+import { DEFAULT_IMAGE_WIDTH, imageAspect, imageEntry, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
 import { emojiOf } from "./emoji.ts";
+import { boardHeight, boardItems, boardRows, canonicalRow } from "./imageBoards.ts";
 import { ALERTS } from "./schema.ts";
 import { pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
 import { MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
@@ -188,6 +189,12 @@ function tidy(state: StateCore) {
       const page = pageCommandToken(state, token.content);
       if (page) {
         tokens.splice(i, 1, page);
+        continue;
+      }
+      const board = boardTokens(state, token.content);
+      if (board) {
+        tokens.splice(i, 1, ...board);
+        i += board.length - 1;
         continue;
       }
       const line = imageLineTokens(state, token.content);
@@ -433,6 +440,40 @@ function imageLineTokens(state: StateCore, html: string): Token[] | null {
   inline.children = images;
   inline.content = "";
   return [open, inline, new state.Token("paragraph_close", "p", -1)];
+}
+
+/**
+ * An image board as VisualTeX writes it (<div data-vtx-board> with images carrying data-x and data-top, or, from
+ * LaTeX's picture, data-y above the bottom of a board data-height high): the board, or null (then it is kept as HTML).
+ */
+function boardTokens(state: StateCore, html: string): Token[] | null {
+  const open = /^\s*<div\b[^>]*\bdata-vtx-board\b[^>]*>/i.exec(html);
+  if (!open) return null;
+  const height = Number(tagAttr(open[0], "data-height"));
+  const images: Token[] = [];
+  for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
+    const key = resolveImageSource(tagAttr(tag, "src") ?? "");
+    const width = widthFraction(tagAttr(tag, "width"));
+    const x = Number(tagAttr(tag, "data-x"));
+    if (!key || !width || !Number.isFinite(x)) return null;
+    let top = Number(tagAttr(tag, "data-top"));
+    const y = tagAttr(tag, "data-y");
+    if (y !== null && Number.isFinite(height)) top = height - Number(y) - width / imageAspect(key);
+    if (!Number.isFinite(top)) return null;
+    const token = new state.Token("vtx_board_image", "img", 0);
+    token.attrSet("src", key);
+    token.attrSet("alt", tagAttr(tag, "alt") ?? "");
+    token.attrSet("width", String(width));
+    token.attrSet("x", String(x));
+    token.attrSet("top", String(Math.round(top * 1000) / 1000));
+    images.push(token);
+  }
+  if (!images.length) return null;
+  const start = new state.Token("vtx_board_open", "div", 1);
+  start.block = true;
+  const end = new state.Token("vtx_board_close", "div", -1);
+  end.block = true;
+  return [start, ...images, end];
 }
 
 /** A page command block: <!-- \newpage --> and the like, or <div style="page-break-after: always"></div>. */
@@ -690,6 +731,12 @@ function parserFor(schema: Schema): MarkdownParser {
   parser = new MarkdownParser(schema, createMarkdownIt(), {
     blockquote: { block: "blockquote", getAttrs: (tok) => ({ alert: tok.attrGet("alert") }) },
     vtx_toc: { node: "toc", noCloseToken: true },
+    vtx_board: { block: "image_board" },
+    vtx_board_image: {
+      node: "board_image",
+      getAttrs: (tok) => ({ src: tok.attrGet("src"), alt: tok.attrGet("alt") ?? "", width: Number(tok.attrGet("width")), x: Number(tok.attrGet("x")), top: Number(tok.attrGet("top")) }),
+      noCloseToken: true,
+    },
     vtx_html_inline: { node: "html_inline", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
     vtx_html: { node: "html_block", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
     vtx_footnote: { node: "footnote", getAttrs: (tok) => ({ text: tok.attrGet("text") ?? "" }), noCloseToken: true },
@@ -935,6 +982,51 @@ function serializerFor(
         state.renderContent(node);
       });
     },
+    image_board(state, node) {
+      // a plain row as an image line; otherwise rows of images with their margins (Typora, Obsidian, VS Code show
+      // them exactly; GitHub keeps the rows), or, when images overlap, one group with each image placed; every image
+      // carries its place (data-x, data-top) for VisualTeX
+      const row = canonicalRow(node);
+      if (row) {
+        state.write(`<p align="${row.align}">${row.items.map((item) => imageHtml(item.node)).join("&emsp;")}</p>`);
+        state.closeBlock(node);
+        return;
+      }
+      const pct = (value: number) => `${Math.round(value * 10000) / 100}%`;
+      const f3 = (value: number) => String(Math.round(value * 1000) / 1000);
+      const img = (item: ReturnType<typeof boardItems>[number], style: string) =>
+        `<img src="${htmlAttr(pathOf(item.node.attrs.src))}" alt="${htmlAttr(item.node.attrs.alt || "")}" width="${percent(item.width)}" data-x="${f3(item.x)}" data-top="${f3(item.top)}" style="${style}">`;
+      const rows = boardRows(node);
+      let html: string;
+      if (rows) {
+        let previousBottom = 0;
+        html = `<div data-vtx-board="1">${rows
+          .map((items) => {
+            const rowTop = Math.min(...items.map((item) => item.top));
+            const rowBottom = Math.max(...items.map((item) => item.top + item.height));
+            const marginTop = rowTop - previousBottom;
+            previousBottom = rowBottom;
+            let right = 0;
+            const images = items
+              .map((item) => {
+                const gap = item.x - right;
+                right = item.x + item.width;
+                return img(item, `margin:0 0 ${pct(rowBottom - item.top - item.height)} ${pct(gap)};vertical-align:baseline`);
+              })
+              .join("");
+            return `<p style="margin:${pct(marginTop)} 0 0 0;line-height:0">${images}</p>`;
+          })
+          .join("")}</div>`;
+      } else {
+        const height = boardHeight(node);
+        html = `<div data-vtx-board="1" style="position:relative;height:0;padding-bottom:${pct(height)}">${boardItems(node)
+          .map((item) => img(item, `position:absolute;left:${pct(item.x)};top:${pct(item.top / height)};width:${pct(item.width)}`))
+          .join("")}</div>`;
+      }
+      state.write(html);
+      state.closeBlock(node);
+    },
+    board_image() {},
     toc(state, node) {
       state.write("[toc]");
       state.closeBlock(node);
