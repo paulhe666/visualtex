@@ -203,6 +203,14 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
+            // an agent's insert_rich_text names the text box (and the text) it wrote: no selection to read
+            // (WPS Presentation does not report a text box selected through its object model as PowerPoint does)
+            if (AutomationConversionTarget is { } target)
+            {
+                if (target.TextLength > 0) plan.SelectedText = (target.ShapeId, target.TextStart, target.TextLength);
+                result.Add((target.SlideId, SlideIndexOf(slides, target.SlideId), new HashSet<int> { target.ShapeId }));
+                return result;
+            }
             switch (plan.Request.Scope)
             {
                 case PowerPointConversionScope.Presentation:
