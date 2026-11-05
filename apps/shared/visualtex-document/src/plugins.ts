@@ -483,6 +483,8 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
   return [
     idsPlugin(),
     markdownSourcePlugin(),
+    // before the drag and selection gestures: a press on a task's box ticks it
+    richBlocksPlugin(),
     documentDragPlugin(),
     // a selection that takes parts of formulas: its deletion, typing over it, its clipboard (before the rules)
     mixedSelectionPlugin(),
@@ -503,7 +505,6 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     imageBoardsPlugin({ labels: options.boardLabels ?? (() => DEFAULT_BOARD_LABELS) }),
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS, diagram: options.codeDiagram ?? null }),
-    richBlocksPlugin(),
     keymap(codeBlockKeys),
     markdownKeymap(inputMode),
     documentKeymap(schema, inputMode, rules),

@@ -114,6 +114,75 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
     ],
   },
   {
+    title: ["Markdown", "Markdown"],
+    tutorials: [
+      {
+        id: "markdown",
+        title: ["Markdown 输入", "Markdown input"],
+        summary: [
+          "切换到 Markdown 输入后，# 标题、**加粗**、- 列表、$$ 公式、| 表格 | 都像 Typora 一样即时转换；/ 打开命令菜单。",
+          "In Markdown input, # headings, **bold**, - lists, $$ formulas and | tables | turn into the real thing as you type, as in Typora; / opens the menu.",
+        ],
+      },
+      {
+        id: "md-blocks",
+        title: ["Markdown：标题、列表与引用", "Markdown: headings, lists and quotes"],
+        summary: [
+          "行首输入 #、-、1.、> 加空格，分别得到标题、无序列表、有序列表和引用；- [ ] 是待办事项，--- 回车是分隔线。",
+          "At a line start, #, -, 1. and > with a space make headings, bullet and numbered lists and quotes; - [ ] is a to-do item, --- and Enter a rule.",
+        ],
+      },
+      {
+        id: "md-inline",
+        title: ["Markdown：粗体、斜体与链接", "Markdown: bold, italic and links"],
+        summary: [
+          "**粗体**、*斜体*、~~删除线~~、==高亮==、`代码` 输完结束符号即转换；[文字](网址) 变成链接；\\* 输入字面字符。",
+          "**bold**, *italic*, ~~strike~~, ==highlight== and `code` convert when you type the closing mark; [text](url) becomes a link; \\* types the character itself.",
+        ],
+      },
+      {
+        id: "md-math",
+        title: ["Markdown：公式", "Markdown: formulas"],
+        summary: [
+          "$ 后紧跟公式内容开始行内公式（$5 这样的金额保持为文字）；$$ 开始行间公式；斜杠菜单里有带编号的公式和公式引用。",
+          "$ followed by the formula starts an inline formula ($5 stays a price); $$ starts a display formula; the / menu has numbered formulas and references.",
+        ],
+      },
+      {
+        id: "md-tables-code",
+        title: ["Markdown：表格与代码", "Markdown: tables and code"],
+        summary: [
+          "一行 | a | b | 回车变成表格，表格里回车到下一行；```语言 回车开始代码块；Ctrl+T 直接插入表格。",
+          "A line | a | b | and Enter becomes a table, Enter in it goes down; ```language and Enter starts code; Ctrl+T inserts a table.",
+        ],
+      },
+      {
+        id: "md-slash",
+        title: ["Markdown：斜杠菜单", "Markdown: the / menu"],
+        summary: [
+          "/ 打开菜单，可用英文、中文或拼音首字母查找：标题、表格、公式、脚注、图片、分隔线……",
+          "/ opens the menu; find entries in English, Chinese or pinyin initials: headings, tables, formulas, footnotes, pictures, rules…",
+        ],
+      },
+      {
+        id: "md-keys",
+        title: ["Markdown：Typora 快捷键", "Markdown: Typora's keys"],
+        summary: [
+          "Markdown 输入支持 Typora 的快捷键：Ctrl+1/2/3 标题，Ctrl+Shift+Q 引用，Ctrl+Shift+[ / ] 列表，Ctrl+T 表格，Ctrl+Shift+M 行间公式。",
+          "Markdown input has Typora's keys: Ctrl+1/2/3 headings, Ctrl+Shift+Q quote, Ctrl+Shift+[ / ] lists, Ctrl+T table, Ctrl+Shift+M display formula.",
+        ],
+      },
+      {
+        id: "md-source",
+        title: ["Markdown：源码与文件", "Markdown: source and files"],
+        summary: [
+          "源码面板把“输出”切换到 Markdown，实时查看生成的 Markdown；打开 .md 文件后，没有改动的部分按原样写回；也可以导出或复制为 Markdown。",
+          "Switch the source panel's Output to Markdown to see the Markdown live; a .md file you open is written back as it was where you did not change it; export or copy as Markdown.",
+        ],
+      },
+    ],
+  },
+  {
     title: ["页面与文件", "Pages and files"],
     tutorials: [
       {
@@ -122,14 +191,6 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         summary: [
           "“页面设置”选择纸张、页边距和行距；中文、西文字体和字号分别设置；\\newpage 另起一页。",
           "Page setup picks the paper, margins and line spacing; Chinese and Latin fonts and the size are set apart; \\newpage starts a new page.",
-        ],
-      },
-      {
-        id: "markdown",
-        title: ["Markdown 输入", "Markdown input"],
-        summary: [
-          "切换到 Markdown 输入后，# 标题、**加粗**、- 列表、$$ 公式、| 表格 | 都像 Typora 一样即时转换；/ 打开命令菜单。",
-          "In Markdown input, # headings, **bold**, - lists, $$ formulas and | tables | turn into the real thing as you type, as in Typora; / opens the menu.",
         ],
       },
       {

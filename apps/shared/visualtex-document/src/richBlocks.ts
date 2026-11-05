@@ -273,8 +273,8 @@ export function richBlocksPlugin(): Plugin {
         mousedown(view, event) {
           const item = (event.target as HTMLElement).closest?.("li.vtx-task");
           if (!item || !view.editable) return false;
-          // the box: the item's marker area, left of its text
-          const box = item.getBoundingClientRect();
+          // the box: drawn in the item's marker area, left of its text (its first paragraph)
+          const box = (item.firstElementChild ?? item).getBoundingClientRect();
           const line = parseFloat(getComputedStyle(item).lineHeight) || 20;
           if (event.clientX >= box.left || event.clientX < box.left - line * 1.6 || event.clientY > box.top + line) return false;
           const pos = view.posAtDOM(item, 0) - 1;

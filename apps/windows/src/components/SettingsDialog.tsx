@@ -1191,7 +1191,7 @@ export function SettingsDialog({
                       aria-pressed={candidateStyle === "list"}
                       onClick={() => setCandidateStyle("list")}
                     >
-                      {isEn ? "List" : "列表"}
+                      {isEn ? "Default" : "默认"}
                     </button>
                     <button
                       type="button"
@@ -1199,7 +1199,7 @@ export function SettingsDialog({
                       aria-pressed={candidateStyle === "bar"}
                       onClick={() => setCandidateStyle("bar")}
                     >
-                      {isEn ? "Input method" : "输入法"}
+                      {isEn ? "AxMath style" : "AxMath 风格"}
                     </button>
                   </div>
                 </div>
