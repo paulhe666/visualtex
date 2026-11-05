@@ -7,6 +7,7 @@ import { bibliographyEntries } from "./notes.ts";
 import { chosenSettings, documentSettings, settingsPreamble } from "./settings.ts";
 import { IMAGE_GAP, imageFiles, isImage, isImageLine } from "./images.ts";
 import { pageCommandLatex } from "./pageCommands.ts";
+import { boardHeight, boardItems, canonicalRow } from "./imageBoards.ts";
 
 export interface LatexExportOptions {
   /** The formula's LaTeX made portable (the app's own conventions -> plain amsmath). */
@@ -246,6 +247,25 @@ class LatexWriter {
     return `\\noindent${indent}%\n${line}\\par\n`;
   }
 
+  /**
+   * An image board: a plain row as an image line; otherwise a picture with \unitlength = \linewidth and one \put
+   * per image at its bottom-left corner (kernel LaTeX; the same places as the editor's).
+   */
+  private imageBoard(node: Node): string {
+    const row = canonicalRow(node);
+    if (row) {
+      const line = row.items.map((item) => this.image(item.node)).join(`\\hspace{${widthOf(IMAGE_GAP)}\\linewidth}%\n`);
+      if (row.align === "center") return `{\\centering\n${line}\\par}\n`;
+      if (row.align === "right") return `{\\raggedleft\n${line}\\par}\n`;
+      return `\\noindent%\n${line}\\par\n`;
+    }
+    const f = (value: number) => (Math.round(value * 1000) / 1000).toFixed(3);
+    // the height rounded up: no image above the picture's box
+    const height = Math.ceil(boardHeight(node) * 1000 - 1e-6) / 1000;
+    const puts = boardItems(node).map((item) => `\\put(${f(item.x)},${f(Math.max(0, height - item.top - item.height))}){${this.image(item.node)}}`);
+    return `{\\noindent\\setlength{\\unitlength}{\\linewidth}%\n\\begin{picture}(1,${f(height)})\n${puts.join("\n")}\n\\end{picture}\\par}\n`;
+  }
+
   /** A body paragraph that starts with a wrapped image: wrapfig's environment before it (DESIGN.md §11.1). */
   private wrapFigure(image: Node): string {
     // a wrap still going on ends first (wrapfig would collide), as the editor starts this paragraph below it
@@ -295,6 +315,8 @@ class LatexWriter {
         const alert = node.attrs.alert ? `\\textbf{${String(node.attrs.alert).replace(/^./, (c) => c.toUpperCase())}.}\n` : "";
         return `\\begin{quote}\n${alert}${this.blocks(node)}\\end{quote}\n`;
       }
+      case "image_board":
+        return this.imageBoard(node);
       case "toc":
         return "\\tableofcontents\n";
       case "html_block": {

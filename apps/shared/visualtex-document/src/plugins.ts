@@ -54,6 +54,7 @@ import { bibliographyEntries, insertFootnote, noteText, notesPlugin } from "./no
 import { bracketLabel, equationLabels } from "./settings.ts";
 import { paginationPlugin, type PaginationOptions } from "./pagination.ts";
 import { imagesPlugin, type ImageLabels } from "./images.ts";
+import { boardFixes, DEFAULT_BOARD_LABELS, imageBoardsPlugin, type BoardLabels } from "./imageBoards.ts";
 import { pageCommandLatex } from "./pageCommands.ts";
 
 // --------------------------------------------------------------- triggers --
@@ -422,6 +423,8 @@ export interface DocumentPluginOptions {
   pagination?: PaginationOptions | null;
   /** The image bar's button names in the app's language. */
   imageLabels?: () => ImageLabels;
+  /** the image board's bar */
+  boardLabels?: () => BoardLabels;
 }
 
 const DEFAULT_IMAGE_LABELS: ImageLabels = { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text, image left", wrapRight: "Wrap text, image right" };
@@ -497,6 +500,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     numberingPlugin(),
     notesPlugin(),
     imagesPlugin({ labels: options.imageLabels ?? (() => DEFAULT_IMAGE_LABELS) }),
+    imageBoardsPlugin({ labels: options.boardLabels ?? (() => DEFAULT_BOARD_LABELS) }),
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS, diagram: options.codeDiagram ?? null }),
     richBlocksPlugin(),
@@ -561,7 +565,10 @@ export function footnoteEditorPlugins(schema: Schema, options: FootnoteEditorOpt
 
 /** The editor state of a document; nodes without an id (older files, pasted JSON) get one, outside the history. */
 export function createDocumentState(schema: Schema, doc: Node, options: DocumentPluginOptions): EditorState {
-  const state = EditorState.create({ doc, plugins: documentPlugins(schema, options) });
+  let state = EditorState.create({ doc, plugins: documentPlugins(schema, options) });
+  // image lines of two or more images are boards (a document from before boards)
+  const boards = boardFixes(state);
+  if (boards) state = state.apply(boards.setMeta("addToHistory", false));
   const tr = assignIds(state.doc, null, () => state.tr);
   return tr ? state.apply(tr.setMeta("addToHistory", false)) : state;
 }

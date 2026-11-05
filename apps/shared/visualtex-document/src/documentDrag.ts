@@ -11,7 +11,19 @@ import { isFormulaNodeName } from "./schema.ts";
 import { formulaParts, formulaViewOf, openFormula } from "./formulas.ts";
 import { deleteSelectionWithParts, selectionSliceWithParts, wholeFormulasRange } from "./mixedSelection.ts";
 import { DropMarker, dropPlace } from "./dropPlace.ts";
-import { imageDropMarker, imageDropTarget, isImage, moveImage, type ImageDropTarget } from "./images.ts";
+import { imageAspect, imageDropMarker, imageDropTarget, isImage, moveImage, type ImageDropTarget } from "./images.ts";
+import { BoardDrag, boardDropMarker, boardDropTarget, isBoardImage, selectBoardImage } from "./imageBoards.ts";
+
+/** Where a dragged image lands: a place on an image board under the pointer, else the image rules (images.ts). */
+function anyImageTarget(view: EditorView, x: number, y: number, image: Node, from: number, to: number, exceptBoard = -1): ImageDropTarget | null {
+  const aspect = imageAspect(image.attrs.src);
+  return boardDropTarget(view, x, y, image.attrs.width, aspect, exceptBoard) ?? imageDropTarget(view, x, y, image, from, to);
+}
+
+function anyImageMarker(view: EditorView, target: ImageDropTarget | null, image: Node, element: HTMLElement): boolean {
+  if (target?.kind === "board") return boardDropMarker(view, target, image.attrs.width, imageAspect(image.attrs.src), element);
+  return imageDropMarker(view, target, element);
+}
 
 export const documentDragKey = new PluginKey("visualtex-document-drag");
 
@@ -139,14 +151,15 @@ class SelectionDrag {
     if (!last) return;
     if (this.image) {
       const node = this.view.state.doc.nodeAt(this.from)!;
-      this.imageTarget = imageDropTarget(this.view, last.x, last.y, node, this.from, this.to);
+      this.imageTarget = anyImageTarget(this.view, last.x, last.y, node, this.from, this.to);
       if (!this.imageMarker) {
         this.imageMarker = document.createElement("div");
         this.imageMarker.className = "vtx-drop-marker is-caret";
         document.body.append(this.imageMarker);
       }
       this.imageMarker.classList.toggle("is-wrap", this.imageTarget?.kind === "wrap");
-      this.imageMarker.hidden = !imageDropMarker(this.view, this.imageTarget, this.imageMarker);
+      this.imageMarker.classList.toggle("is-box", this.imageTarget?.kind === "board");
+      this.imageMarker.hidden = !anyImageMarker(this.view, this.imageTarget, node, this.imageMarker);
       return;
     }
     this.target = dropPlace(this.view, last.x, last.y, this.slice, this.from, this.to);
@@ -273,7 +286,32 @@ export function documentDragPlugin(): Plugin {
     props: {
       handleDOMEvents: {
         pointerdown(view, event) {
-          if (event.button !== 0 || event.shiftKey || !event.isPrimary) return false;
+          if (event.button !== 0 || !event.isPrimary) return false;
+          // an image on a board: selected (Shift/Ctrl: added to the selection) and moved as on a slide
+          const boardImage = (event.target as Element | null)?.closest?.(".vtx-board-image");
+          if (boardImage && !(event.target as Element).classList.contains("vtx-board-handle")) {
+            const pos = view.posAtDOM(boardImage, 0);
+            const node = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+            if (node && isBoardImage(node)) {
+              const add = event.shiftKey || event.ctrlKey || event.metaKey;
+              selectBoardImage(view, pos, add);
+              if (!add) {
+                const boardPos = view.state.doc.resolve(pos).before();
+                new BoardDrag(
+                  view,
+                  event,
+                  boardPos,
+                  pos,
+                  (x, y, image, from) => anyImageTarget(view, x, y, image, from, from + image.nodeSize, boardPos),
+                  (target, element) => anyImageMarker(view, target, view.state.doc.nodeAt(pos) ?? node, element),
+                );
+              }
+              event.preventDefault();
+              view.focus();
+              return true;
+            }
+          }
+          if (event.shiftKey) return false;
           // An open formula (its editor, its number) handles its own presses; one showing a part is the document's.
           if ((event.target as Element | null)?.closest?.(".is-open")) return false;
           // a press on an image selects it and may drag it at once (Notion, Word)

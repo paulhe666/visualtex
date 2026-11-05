@@ -143,3 +143,4 @@ export { IMAGE_REQUEST_EVENT, requestImage } from "./images.ts";
 export { formatPageNumber, hasPageNumbering, pageCommandLatex, pageLabels, parsePageCommand, PAGE_NUMBER_STYLES } from "./pageCommands.ts";
 export { richBlockViews, richBlocksPlugin, safeHtml } from "./richBlocks.ts";
 export { emojiOf } from "./emoji.ts";
+export { boardCommand, boardFixes, boardHeight, boardItems, boardRows, canonicalRow, isBoard, isBoardImage, lineAsBoard, DEFAULT_BOARD_LABELS, type BoardLabels, type BoardCommand } from "./imageBoards.ts";

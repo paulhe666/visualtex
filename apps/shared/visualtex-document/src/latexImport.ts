@@ -107,6 +107,19 @@ function figures(text: string, kept: string[]): string {
     const at = /\\caption\s*(?:\[[^\]]*\])?\s*(?=\{)/.exec(body);
     return at ? group(body, at.index + at[0].length)?.content.trim() ?? "" : "";
   };
+  // an image board as VisualTeX writes it: a picture of \linewidth units, one \put per image
+  text = text.replace(
+    /\{\\noindent\s*\\setlength\s*\{\\unitlength\}\s*\{\\linewidth\}%?\s*\\begin\{picture\}\s*\(\s*1\s*,\s*([\d.]+)\s*\)([\s\S]*?)\\end\{picture\}\s*\\par\s*\}/g,
+    (whole, height: string, body: string) => {
+      const images: string[] = [];
+      for (const put of body.matchAll(/\\put\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)\s*\{\s*\\includegraphics\*?\s*(?:\[([^\]]*)\])?\s*\{([^{}]*)\}\s*\}/g)) {
+        const html = graphicsHtml(put[3] ?? "", put[4]);
+        if (!html) return whole;
+        images.push(html.replace(/^<img/, `<img data-x="${put[1]}" data-y="${put[2]}"`));
+      }
+      return images.length ? keep(`\n\n<div data-vtx-board="1" data-height="${height}">${images.join("")}</div>\n\n`) : whole;
+    },
+  );
   // wrapfigure: its image goes to the start of the paragraph after it
   text = text.replace(/\\begin\{wrapfigure\}\s*(?:\[[^\]]*\])?\s*\{([rlioRLIO])\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}([\s\S]*?)\\end\{wrapfigure\}\s*/g, (_m, side: string, width: string, body: string) => {
     const graphics = [...body.matchAll(GRAPHICS)][0];

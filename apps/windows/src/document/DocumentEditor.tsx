@@ -12,6 +12,7 @@ import type { Node } from "prosemirror-model";
 import {
   createDocumentState,
   documentSchema,
+  DEFAULT_BOARD_LABELS,
   documentToLatex,
   documentToMarkdown,
   markdownSourceKey,
@@ -322,6 +323,24 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         lang === "en"
           ? { plainText: "Plain Text", copy: "Copy", copied: "Copied", language: "Language" }
           : { plainText: "纯文本", copy: "复制", copied: "已复制", language: "语言" },
+      boardLabels: () =>
+        lang === "en"
+          ? DEFAULT_BOARD_LABELS
+          : {
+              alignLeft: "左对齐",
+              alignCenter: "水平居中",
+              alignRight: "右对齐",
+              alignTop: "顶端对齐",
+              alignMiddle: "垂直居中",
+              alignBottom: "底端对齐",
+              distributeH: "横向分布",
+              distributeV: "纵向分布",
+              sameWidth: "等宽",
+              tidyRow: "排成一行",
+              tidyGrid: "排成网格",
+              front: "置于顶层",
+              back: "置于底层",
+            },
       imageLabels: () =>
         lang === "en"
           ? { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text (image left)", wrapRight: "Wrap text (image right)" }

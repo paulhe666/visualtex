@@ -186,7 +186,8 @@ function collectUnits(view: EditorView): Unit[] {
       return;
     }
     // a list, a quote, a reference list, a list item: their blocks
-    if (!node.isAtom && !node.isTextblock && node.type.name !== "table" && node.childCount && node.firstChild!.isBlock) {
+    // (a table and an image board are one unit each)
+    if (!node.isAtom && !node.isTextblock && node.type.name !== "table" && node.type.name !== "image_board" && node.childCount && node.firstChild!.isBlock) {
       node.forEach((child, offset) => visit(child, pos + 1 + offset));
       return;
     }

@@ -2175,6 +2175,79 @@
   border-radius: 2px;
 }
 
+/* ---- image boards (imageBoards.ts): images placed freely in a block as wide as the line; places in fractions of
+   the line width (cqw: the board's width), the board as high as its lowest image (padding-bottom, set by its view) ---- */
+.vtx-document .vtx-image-board {
+  position: relative;
+  height: 0;
+  margin: 0.15em 0 0.3em;
+  container-type: inline-size;
+  clear: both;
+  user-select: none;
+}
+.vtx-document .vtx-image-board.is-arranging {
+  outline: 1px dashed #b8bec8;
+  outline-offset: 2px;
+}
+.vtx-document .vtx-board-image {
+  position: absolute;
+  line-height: 0;
+  cursor: move;
+}
+.vtx-document .vtx-board-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.vtx-document .vtx-board-image.is-missing {
+  background: repeating-linear-gradient(45deg, #f1f3f6 0 6px, #e6e9ee 6px 12px);
+}
+.vtx-document .vtx-board-image.is-selected,
+.vtx-document .vtx-board-image.is-also-selected {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 1px;
+  z-index: 1;
+}
+.vtx-document .vtx-board-image.is-leaving {
+  opacity: 0.4;
+}
+.vtx-board-handle {
+  display: none;
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #fff;
+  border-radius: 2px;
+  background: var(--accent, #2f6fde);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+}
+.vtx-board-handle.is-nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.vtx-board-handle.is-ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.vtx-board-handle.is-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.vtx-board-handle.is-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.vtx-document .vtx-board-image.is-selected .vtx-board-handle {
+  display: block;
+}
+/* guides while an image moves: aligned edges and centres, equal gaps */
+.vtx-board-guide {
+  position: fixed;
+  z-index: 2147483000;
+  background: #e5484d;
+  pointer-events: none;
+}
+.vtx-board-guide.is-gap {
+  background: #e5484d;
+  box-shadow: 0 -3px 0 -2px #e5484d, 0 3px 0 -2px #e5484d;
+}
+.vtx-drop-marker.is-box {
+  border: 2px dashed var(--accent, #2f6fde);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent, #2f6fde) 8%, transparent);
+  box-shadow: none;
+}
+
 /* ---- page commands (\newpage, \pagenumbering{…}…): no height, as in TeX; the command in the left margin ---- */
 .vtx-document .vtx-page-command {
   position: relative;
