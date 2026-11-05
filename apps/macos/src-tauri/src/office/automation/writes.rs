@@ -549,6 +549,9 @@ impl Writer<'_> {
     // insert_rich_text
 
     async fn rich_text(&self, arguments: &Map<String, Value>) -> Result<Value, CommandError> {
+        if self.powerpoint() {
+            return self.rich_text_on_slide(arguments).await;
+        }
         let text = required(arguments, "text")?.to_string();
         let source_format = match text_or(arguments, "source_format", "auto") {
             "markdown" | "latex" | "auto" => text_or(arguments, "source_format", "auto").to_string(),
@@ -585,12 +588,130 @@ impl Writer<'_> {
     }
 }
 
+impl Writer<'_> {
+    /// insert_rich_text on a slide (PowerPoint, WPS Presentation), as on Windows: the add-in writes the paragraphs into a
+    /// new text box (or at the text caret) and leaves them selected; the LaTeX redraw then makes native equations of their
+    /// $...$ / $$...$$ in place, in that text box only.
+    async fn rich_text_on_slide(&self, arguments: &Map<String, Value>) -> Result<Value, CommandError> {
+        let source = required(arguments, "text")?;
+        if let Some(format) = text(arguments, "format") {
+            if format != "office_equation" {
+                return Err(invalid("On a slide the formulas in text are native equations: leave format out or use office_equation"));
+            }
+        }
+        let paragraphs = slide_paragraphs(source)?;
+        let has_latex = paragraphs
+            .iter()
+            .filter_map(|paragraph| paragraph.get("text").and_then(Value::as_str))
+            .any(|text| text.contains('$') || text.contains("\\(") || text.contains("\\["));
+        let mut write = json!({ "paragraphs": paragraphs });
+        if let Some(location) = arguments.get("location").filter(|location| !location.is_null()) {
+            write["location"] = location.clone();
+        }
+        if let Some(size) = font_size(arguments)? {
+            write["font_size_pt"] = json!(size);
+        }
+        let written = self.call("write_text_box", write, STEP_DEADLINE).await?;
+        let mut outcome = Outcome::new();
+        if has_latex {
+            let begun = self
+                .call("latex_text_to_formulas", json!({ "format": "office_equation", "scope": "selection", "target": written.clone() }), STEP_DEADLINE)
+                .await?;
+            let skipped = self.follow(&begun).await?;
+            outcome.note(&begun);
+            outcome.warn(skipped);
+        }
+        let slide = written.get("slide").and_then(Value::as_u64);
+        let shape_id = written.get("shapeId").and_then(Value::as_u64);
+        let layout = self.call("get_slide_layout", json!({ "slide": slide }), STEP_DEADLINE).await?;
+        let shape = layout
+            .get("shapes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|shape| shape.get("shape_id").and_then(Value::as_u64) == shape_id)
+            .cloned()
+            .unwrap_or(Value::Null);
+        let mut formulas = Vec::new();
+        for id in shape.get("formula_ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            formulas.push(self.read(id).await?);
+        }
+        outcome.say(format!("Wrote the text box with {} formula(s).", formulas.len()));
+        outcome.data.insert(
+            "result".into(),
+            json!({
+                "slide": slide,
+                "text_box": shape.get("name"),
+                "new_text_box": written.get("newBox").and_then(Value::as_bool).unwrap_or(false),
+                "frame": shape.get("frame"),
+                "text_preview": shape.get("text"),
+                "formulas": formulas,
+            }),
+        );
+        Ok(outcome.finish())
+    }
+}
+
+/// An agent's text as slide paragraphs `{text, kind, bold: [{start, length}]}` (offsets in UTF-16 units, as VBA and
+/// JavaScript count): each line a paragraph, a $$...$$ or \[...\] block over several lines one "display" paragraph,
+/// "- " / "* " / "+ " bullets, "1. " / "1) " numbered items, "#" headings, **bold** (the markers go).
+fn slide_paragraphs(text: &str) -> Result<Vec<Value>, CommandError> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = normalized.split('\n').collect();
+    let list = regex::Regex::new(r"^\s*(?:([-*+])|(\d+)[.)])\s+(.*)$").expect("list pattern");
+    let heading = regex::Regex::new(r"^\s*#{1,6}\s+(.*)$").expect("heading pattern");
+    let bold = regex::Regex::new(r"\*\*(.+?)\*\*").expect("bold pattern");
+    let mut result = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index].trim_end();
+        index += 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some((open, close)) = [("$$", "$$"), ("\\[", "\\]")].into_iter().find(|(open, _)| trimmed.starts_with(open)) {
+            let mut block = trimmed.to_string();
+            while !(block.len() > open.len() + 1 && block.ends_with(close)) && index < lines.len() {
+                block.push(' ');
+                block.push_str(lines[index].trim());
+                index += 1;
+            }
+            result.push(json!({ "text": block, "kind": "display", "bold": [] }));
+            continue;
+        }
+        let (kind, body) = if let Some(found) = heading.captures(line) {
+            ("heading", found.get(1).map_or("", |m| m.as_str()).to_string())
+        } else if let Some(found) = list.captures(line) {
+            (if found.get(1).is_some() { "bullet" } else { "numbered" }, found.get(3).map_or("", |m| m.as_str()).to_string())
+        } else {
+            ("text", trimmed.to_string())
+        };
+        let mut plain = String::new();
+        let mut spans = Vec::new();
+        let mut last = 0;
+        for found in bold.captures_iter(&body) {
+            let whole = found.get(0).expect("match");
+            let inner = found.get(1).expect("group").as_str();
+            plain.push_str(&body[last..whole.start()]);
+            spans.push(json!({ "start": plain.encode_utf16().count(), "length": inner.encode_utf16().count() }));
+            plain.push_str(inner);
+            last = whole.end();
+        }
+        plain.push_str(&body[last..]);
+        result.push(json!({ "text": plain, "kind": kind, "bold": spans }));
+    }
+    if result.is_empty() {
+        return Err(invalid("text is empty"));
+    }
+    Ok(result)
+}
+
 fn text_or<'a>(arguments: &'a Map<String, Value>, name: &str, fallback: &'a str) -> &'a str {
     text(arguments, name).unwrap_or(fallback)
 }
 
-const WORD_ONLY: [&str; 5] = [
-    "insert_rich_text",
+const WORD_ONLY: [&str; 4] = [
     "insert_equation_reference",
     "number_display_formulas",
     "update_equation_numbers",
@@ -675,6 +796,17 @@ mod tests {
 
     fn arguments(value: Value) -> Map<String, Value> {
         value.as_object().cloned().unwrap()
+    }
+
+    #[test]
+    fn slide_text_becomes_paragraphs() {
+        let paragraphs = slide_paragraphs("# Plan\n\nEnergy $E=mc^2$ is **key**.\n- one\n2. two\n$$\n\\int_0^1 x\\,dx\n$$").unwrap();
+        let kinds: Vec<&str> = paragraphs.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["heading", "text", "bullet", "numbered", "display"]);
+        assert_eq!(paragraphs[1]["text"], "Energy $E=mc^2$ is key.");
+        assert_eq!(paragraphs[1]["bold"][0], json!({ "start": 19, "length": 3 }));
+        assert_eq!(paragraphs[4]["text"], "$$ \\int_0^1 x\\,dx $$");
+        assert!(slide_paragraphs(" \n ").is_err());
     }
 
     #[test]

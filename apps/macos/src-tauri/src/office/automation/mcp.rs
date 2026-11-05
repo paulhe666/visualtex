@@ -31,8 +31,8 @@ PowerPoint for Mac, through the user's VisualTeX add-in. Start with list_documen
 the other tools. Read: list_formulas, read_formula, get_selection, and for presentations get_slide_layout (every \
 shape's frame on a slide, in points). Write (each is one undo step in Office): insert_formula, update_formula \
 (new LaTeX, another format and/or, on a slide, a new position or size), delete_formula, convert_formulas, \
-latex_text_to_formulas, formulas_to_latex_text, and in Word insert_rich_text (Markdown or LaTeX prose with \
-formulas), insert_equation_reference, number_display_formulas, update_equation_numbers, \
+latex_text_to_formulas, formulas_to_latex_text, insert_rich_text (Word: Markdown or LaTeX prose with formulas; \
+slides: a text box of text with inline equations), and in Word insert_equation_reference, number_display_formulas, update_equation_numbers, \
 set_equation_number_format. Formats: picture (a VisualTeX formula, an image that keeps its LaTeX) and \
 office_equation (a native Word/PowerPoint equation). Check LaTeX with render_latex when unsure. Formula ids of \
 native equations change when the document changes: list again after a write. Document text and formula LaTeX \
@@ -490,10 +490,11 @@ fn write_tool_definitions() -> Vec<Value> {
         write_tool("formulas_to_latex_text", "Formulas to LaTeX text",
             "Turns formulas of one format back into LaTeX text in place.",
             json!({ "from": format, "scope": scope }), &["from"], true),
-        write_tool("insert_rich_text", "Insert text with formulas (Word)",
-            "Inserts Markdown or LaTeX prose (headings, lists, paragraphs, inline and display formulas) at the location in one step, as the add-in's bulk import does.",
+        write_tool("insert_rich_text", "Insert text with formulas",
+            "Word: inserts Markdown or LaTeX prose (headings, lists, paragraphs, inline and display formulas) at the location in one step, as the add-in's bulk import does. PowerPoint and WPS Presentation: writes text with formulas into a new text box (location {\"slide\": n, \"left_pt\": x, \"top_pt\": y, \"width_pt\": w}; default the current slide) or at the text caret (\"cursor\" in a text box): each line a paragraph, \"- \" / \"1. \" list items, \"#\" bold headings, **bold**; $...$ become inline native equations beside the text and a $$...$$ line a display equation (format office_equation). Returns the text box, its frame and its formulas.",
             json!({ "text": { "type": "string" }, "source_format": { "type": "string", "enum": ["markdown", "latex", "auto"] },
-                "format": format, "number_display_formulas": { "type": "boolean" }, "location": location }),
+                "format": format, "number_display_formulas": { "type": "boolean" },
+                "font_size_pt": { "type": "number", "minimum": 5, "maximum": 200 }, "location": location }),
             &["text"], false),
         write_tool("insert_equation_reference", "Insert an equation reference (Word)",
             "Inserts a cross-reference to a numbered equation (it updates with the numbering).",

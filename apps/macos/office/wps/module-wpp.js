@@ -1222,12 +1222,13 @@
   }
 
   /* "LaTeX 重绘为 OMML / VisualTeX": the LaTeX in the text of the scope. */
-  function redraw(outputKind, scope) {
+  function redraw(outputKind, scope, targets) {
     var presentation = activePresentation();
     if (scope === "presentation" && !confirmWithUser("将在整个演示文稿中查找 LaTeX 公式并原位重绘，开始吗？")) return;
     var segments = [];
     var texts = {};
-    scopeTargets(presentation, scope).forEach(function (target) {
+    /* an agent's insert_rich_text names the text box (and the text) it wrote: no selection to read */
+    (targets || scopeTargets(presentation, scope)).forEach(function (target) {
       var shape = target.shape;
       if (!isTextShape(shape)) return;
       var text = liveText(shape);
@@ -2276,9 +2277,64 @@
     /* The ribbon's LaTeX redraw and formulas-to-LaTeX, which open VisualTeX's progress window; the app
        waits for the session they start. */
     latex_text_to_formulas: function (args) {
-      agentWritable(args);
-      redraw(args.format === "office_equation" ? "omml" : "image", agentScope(args.scope));
+      var presentation = agentWritable(args);
+      var targets = null;
+      if (args.target && args.target.shapeId) {
+        var slide = slideById(presentation, Number(args.target.slideId));
+        var shape = shapeById(slide, Number(args.target.shapeId));
+        if (!shape) agentFail("operation_failed", "The text box is no longer on the slide.");
+        var length = Number(args.target.length) || 0;
+        targets = [{ slide: slide, shape: shape, start: length > 0 ? Number(args.target.start) : 0, length: length }];
+      }
+      redraw(args.format === "office_equation" ? "omml" : "image", agentScope(args.scope), targets);
       return agentStarted(false);
+    },
+
+    /* insert_rich_text on a slide: the app's paragraphs [{text, kind, bold: [{start, length}]}] into a new text box,
+       or at the text caret; the LaTeX redraw that follows gets the box (and the text) from the answer. */
+    write_text_box: function (args) {
+      var presentation = agentWritable(args);
+      var paragraphs = args.paragraphs || [];
+      if (!paragraphs.length) agentFail("invalid_arguments", "text is empty.");
+      var location = args.location;
+      var slideNumber = location && typeof location === "object" && location.slide ? Number(location.slide) : 0;
+      var selection = safe(function () { return app().ActiveWindow.Selection; }, null);
+      var box, slide, start = 0, length = 0, newBox = false;
+      if (!slideNumber && selection && Number(safe(function () { return selection.Type; }, 0)) === PP_SELECTION_TEXT) {
+        /* at the caret, a paragraph break at a time (a "\r" inside a longer insertion stays a character) */
+        box = selection.ShapeRange.Item(1);
+        slide = slideOfShape(box);
+        var inserted = selection.TextRange.InsertAfter(String(paragraphs[0].text));
+        start = Number(inserted.Start);
+        for (var k = 1; k < paragraphs.length; k++) {
+          inserted = inserted.InsertAfter("\r");
+          inserted = inserted.InsertAfter(String(paragraphs[k].text));
+        }
+        length = Number(inserted.Start) + Number(inserted.Length) - start;
+        formatParagraphs(box, paragraphs, start, false, args.font_size_pt);
+        characters(box, start, length).Select();
+      } else {
+        slide = slideNumber ? presentation.Slides.Item(slideNumber) : currentSlide();
+        if (slideNumber && !(slideNumber >= 1 && slideNumber <= presentation.Slides.Count)) {
+          agentFail("invalid_arguments", "The presentation has " + presentation.Slides.Count + " slides.");
+        }
+        agentShowSlide(slide);
+        var left = location && location.left_pt !== undefined ? Number(location.left_pt) : 60;
+        var top = location && location.top_pt !== undefined ? Number(location.top_pt) : 60;
+        var width = location && location.width_pt !== undefined ? Number(location.width_pt)
+          : Math.max(120, Number(presentation.PageSetup.SlideWidth) - left - 60);
+        box = slide.Shapes.AddTextbox(1, left, top, width, 40);
+        safe(function () { box.TextFrame.WordWrap = MSO_TRUE; });
+        safe(function () { box.TextFrame.AutoSize = 1; });
+        /* all at once with single breaks: WPS makes paragraphs of them */
+        box.TextFrame.TextRange.Text = paragraphs.map(function (paragraph) { return String(paragraph.text); }).join("\r");
+        formatParagraphs(box, paragraphs, 1, true, args.font_size_pt);
+        newBox = true;
+        safe(function () { app().ActiveWindow.Selection.Unselect(); });
+        safe(function () { box.Select(); });
+      }
+      return { slide: Number(slide.SlideIndex), slideId: Number(slide.SlideID), shapeId: Number(box.Id), newBox: newBox,
+        start: start, length: length };
     },
 
     formulas_to_latex_text: function (args) {
@@ -2287,6 +2343,35 @@
       return agentStarted(false);
     }
   };
+
+  /* Lists, headings, bold spans and the size of written paragraphs (they start at character `start` of the box). */
+  function formatParagraphs(box, paragraphs, start, wholeBox, fontSize) {
+    var text = box.TextFrame.TextRange;
+    var position = start;
+    paragraphs.forEach(function (paragraph, index) {
+      var body = String(paragraph.text);
+      var piece = text.Characters(position, body.length);
+      if (fontSize > 0) safe(function () { piece.Font.Size = Number(fontSize); });
+      if (wholeBox) {
+        safe(function () {
+          var format = text.Paragraphs(index + 1, 1).ParagraphFormat;
+          if (paragraph.kind === "bullet" || paragraph.kind === "numbered") {
+            format.Bullet.Visible = MSO_TRUE;
+            format.Bullet.Type = paragraph.kind === "bullet" ? 1 : 2;
+          } else if (paragraph.kind === "display") {
+            format.Alignment = PP_ALIGN_CENTER;
+          }
+        });
+      }
+      if (paragraph.kind === "heading") {
+        safe(function () { piece.Font.Bold = MSO_TRUE; piece.Font.Size = Number(piece.Font.Size) * 1.2; });
+      }
+      (paragraph.bold || []).forEach(function (span) {
+        safe(function () { text.Characters(position + Number(span.start), Number(span.length)).Font.Bold = MSO_TRUE; });
+      });
+      position += body.length + 1;
+    });
+  }
 
   function agentScope(scope) {
     return scope === "selection" || scope === "slide" ? scope : "presentation";

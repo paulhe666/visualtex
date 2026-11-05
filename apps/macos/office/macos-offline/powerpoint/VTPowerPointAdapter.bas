@@ -77,6 +77,7 @@ Public Sub VisualTeX_AgentRun()
         Case "set_formula_font_size": data = VTPptAgentSetFontSize()
         Case "set_frame": data = VTPptAgentSetFrame()
         Case "latex_text_to_formulas", "formulas_to_latex_text": data = VTPptAgentDocumentOperation(operation)
+        Case "write_text_box": data = VTPptAgentWriteTextBox()
         Case Else
             Err.Raise vbObjectError + 7900, "VisualTeX", "unknown_operation|PowerPoint has no agent operation " & operation & "."
     End Select
@@ -276,6 +277,8 @@ Private Function VTPptAgentFormulaJson( _
     Dim after As String
     Dim fromIndex As Long
     Dim display As String
+    Dim paragraphStart As Long
+    Dim paragraphEnd As Long
 
     display = "inline"
     If zone = 0 Then
@@ -295,7 +298,12 @@ Private Function VTPptAgentFormulaJson( _
         zoneStart = mathZone.Start
         zoneLength = mathZone.Length
         fontSizePt = mathZone.Font.Size
-        If Len(Trim$(Replace$(mathZone.Paragraphs(1).Text, vbCr, ""))) <= zoneLength Then display = "block"
+        ' The paragraph around the zone (a zone range's own Paragraphs(1) is only the zone on the Mac)
+        paragraphStart = 1
+        If zoneStart > 1 Then paragraphStart = InStrRev(textValue, vbCr, zoneStart - 1) + 1
+        paragraphEnd = InStr(zoneStart + zoneLength, textValue, vbCr)
+        If paragraphEnd = 0 Then paragraphEnd = Len(textValue) + 1
+        If Len(Trim$(Mid$(textValue, paragraphStart, paragraphEnd - paragraphStart))) <= zoneLength Then display = "block"
         On Error GoTo 0
         If contextChars > 0 Then
             If zoneStart > 0 Then
@@ -863,6 +871,125 @@ End Function
 
 ' The Ribbon's LaTeX redraw and formulas-to-LaTeX, which open VisualTeX's progress window; the app waits for
 ' the session they start.
+' insert_rich_text on a slide: the app's paragraphs (c.paragraphs; paragraphs.<i>.text / .kind / .bold.<k>.start, .length,
+' 0-based) into a new text box, or at the text caret (location "cursor" with a caret in a text box). The written text is
+' left selected for the LaTeX redraw that follows; the answer names the box and the text.
+Private Function VTPptAgentWriteTextBox() As String
+    Dim target As Presentation
+    Dim onSlide As Slide
+    Dim box As Shape
+    Dim inserted As TextRange
+    Dim count As Long
+    Dim index As Long
+    Dim slideNumber As Long
+    Dim joined As String
+    Dim startAt As Long
+    Dim lengthOf As Long
+    Dim newBox As Boolean
+    Dim boxLeft As Single
+    Dim boxTop As Single
+    Dim boxWidth As Single
+
+    Set target = VTPptAgentWritablePresentation()
+    count = VTPptAgentCount("paragraphs")
+    If count = 0 Then Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|text is empty."
+    slideNumber = CLng(VTPptAgentNumber("location.slide", 0))
+    If slideNumber = 0 And ActiveWindow.Selection.Type = ppSelectionText Then
+        ' at the caret: a paragraph break at a time
+        Set box = ActiveWindow.Selection.ShapeRange(1)
+        Set onSlide = box.Parent
+        Set inserted = ActiveWindow.Selection.TextRange.InsertAfter(VTPptAgentString("paragraphs.0.text"))
+        startAt = inserted.Start
+        For index = 1 To count - 1
+            Set inserted = inserted.InsertAfter(vbCr)
+            Set inserted = inserted.InsertAfter(VTPptAgentString("paragraphs." & index & ".text"))
+        Next index
+        lengthOf = inserted.Start + inserted.Length - startAt
+        VTPptAgentFormatParagraphs box, startAt, False
+        box.TextFrame.TextRange.Characters(startAt, lengthOf).Select
+    Else
+        If slideNumber = 0 Then slideNumber = ActiveWindow.View.Slide.SlideIndex
+        If slideNumber < 1 Or slideNumber > target.Slides.Count Then
+            Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|The presentation has " & _
+                CStr(target.Slides.Count) & " slides."
+        End If
+        VTPptAgentShowSlide slideNumber
+        Set onSlide = target.Slides(slideNumber)
+        boxLeft = CSng(VTPptAgentNumber("location.left_pt", 60))
+        boxTop = CSng(VTPptAgentNumber("location.top_pt", 60))
+        boxWidth = CSng(VTPptAgentNumber("location.width_pt", target.PageSetup.SlideWidth - boxLeft - 60))
+        If boxWidth < 120 Then boxWidth = 120
+        Set box = onSlide.Shapes.AddTextbox(msoTextOrientationHorizontal, boxLeft, boxTop, boxWidth, 40)
+        box.TextFrame.WordWrap = msoTrue
+        box.TextFrame.AutoSize = ppAutoSizeShapeToFitText
+        For index = 0 To count - 1
+            If index > 0 Then joined = joined & vbCr
+            joined = joined & VTPptAgentString("paragraphs." & index & ".text")
+        Next index
+        box.TextFrame.TextRange.Text = joined
+        VTPptAgentFormatParagraphs box, 1, True
+        newBox = True
+        ActiveWindow.Selection.Unselect
+        box.Select
+    End If
+    VTPptAgentWriteTextBox = "{""slide"":" & CStr(onSlide.SlideIndex) & ",""slideId"":" & CStr(onSlide.SlideID) & _
+        ",""shapeId"":" & CStr(box.Id) & ",""newBox"":" & IIf(newBox, "true", "false") & _
+        ",""start"":" & CStr(startAt) & ",""length"":" & CStr(lengthOf) & "}"
+End Function
+
+' Lists, headings, bold spans and the size of the written paragraphs (they start at character startAt of the box).
+Private Sub VTPptAgentFormatParagraphs(ByVal box As Shape, ByVal startAt As Long, ByVal wholeBox As Boolean)
+    Dim count As Long
+    Dim index As Long
+    Dim spans As Long
+    Dim span As Long
+    Dim position As Long
+    Dim body As String
+    Dim kind As String
+    Dim size As Double
+    Dim piece As TextRange
+
+    count = VTPptAgentCount("paragraphs")
+    size = VTPptAgentNumber("font_size_pt", 0)
+    position = startAt
+    For index = 0 To count - 1
+        body = VTPptAgentString("paragraphs." & index & ".text")
+        kind = VTPptAgentString("paragraphs." & index & ".kind")
+        Set piece = box.TextFrame.TextRange.Characters(position, Len(body))
+        If size > 0 Then piece.Font.Size = size
+        If wholeBox Then
+            With box.TextFrame.TextRange.Paragraphs(index + 1, 1).ParagraphFormat
+                Select Case kind
+                    Case "bullet"
+                        .Bullet.Visible = msoTrue
+                        .Bullet.Type = ppBulletUnnumbered
+                    Case "numbered"
+                        .Bullet.Visible = msoTrue
+                        .Bullet.Type = ppBulletNumbered
+                    Case "display"
+                        .Alignment = ppAlignCenter
+                End Select
+            End With
+            If kind = "bullet" Or kind = "numbered" Then
+                On Error Resume Next
+                box.TextFrame2.TextRange.Paragraphs(index + 1, 1).ParagraphFormat.LeftIndent = 18
+                box.TextFrame2.TextRange.Paragraphs(index + 1, 1).ParagraphFormat.FirstLineIndent = -18
+                On Error GoTo 0
+            End If
+        End If
+        If kind = "heading" Then
+            piece.Font.Bold = msoTrue
+            piece.Font.Size = piece.Font.Size * 1.2
+        End If
+        spans = VTPptAgentCount("paragraphs." & index & ".bold")
+        For span = 0 To spans - 1
+            box.TextFrame.TextRange.Characters(position + CLng(VTPptAgentNumber("paragraphs." & index & ".bold." & span & ".start", 0)), _
+                CLng(VTPptAgentNumber("paragraphs." & index & ".bold." & span & ".length", 0))).Font.Bold = msoTrue
+        Next span
+        position = position + Len(body) + 1
+    Next index
+End Sub
+
 Private Function VTPptAgentDocumentOperation(ByVal operation As String) As String
     Dim scope As String
 
