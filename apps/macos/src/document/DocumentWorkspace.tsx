@@ -8,6 +8,7 @@ import { TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
 import { strToU8, unzipSync, zipSync } from "fflate";
+import { GraduationCap } from "lucide-react";
 import {
   decodeText,
   documentSchema,
@@ -57,7 +58,9 @@ import {
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
+  DOCUMENT_TUTORIAL_EVENT,
 } from "./documentEvents";
+import { TutorialDialog } from "./TutorialDialog";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
 
 // Before the library the one document was kept here; the first start with the library takes it in (once; the key
@@ -215,6 +218,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const isEn = language === "en";
   const t = (en: string, zh: string) => (isEn ? en : zh);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const noticeTimer = useRef(0);
   const api = useMemo(documentLibrary, []);
   const libraryOpen = useDocumentLibraryStore((state) => state.open);
@@ -618,6 +622,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
       [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
+      [DOCUMENT_TUTORIAL_EVENT, () => setTutorialOpen(true)],
     ];
     for (const [name, fn] of bind) window.addEventListener(name, fn);
     return () => {
@@ -630,7 +635,20 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
       <div className="vtx-document-main">
         {/* the document's own buttons above it; the formula tools stay in the bottom dock */}
-        <DocumentTextToolbar leading={libraryOpen ? null : <DocumentLibraryToggle isEn={isEn} />} />
+        <DocumentTextToolbar
+          leading={libraryOpen ? null : <DocumentLibraryToggle isEn={isEn} />}
+          trailing={
+            <button
+              type="button"
+              className="icon-button compact formula-formatting-button vtx-tutorial-button"
+              title={t("Tutorials", "教程")}
+              aria-label={t("Tutorials", "教程")}
+              onClick={() => setTutorialOpen(true)}
+            >
+              <GraduationCap size={16} />
+            </button>
+          }
+        />
         <DocumentEditor
           ref={documentRef}
           onChange={onChange}
@@ -645,6 +663,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         />
       </div>
       {notice && <div className="mc-notice" role="status">{notice}</div>}
+      <TutorialDialog open={tutorialOpen} isEn={isEn} onClose={() => setTutorialOpen(false)} />
       <input
         ref={fileRef}
         type="file"

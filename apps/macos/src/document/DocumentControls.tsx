@@ -700,12 +700,12 @@ export function DocumentControls() {
 }
 
 /** The document's own buttons, above the document: paragraph, lists, table, code, size, marks, colours. */
-export function DocumentTextToolbar(props: { leading?: ReactNode } = {}) {
+export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: ReactNode } = {}) {
   const view = useDocumentEditorStore((store) => store.view);
   const state = useDocumentEditorStore((store) => store.state);
   const lang = useLang();
   const markdownInput = useDocumentFormatStore((store) => store.inputMode) === "markdown";
-  if (!state) return <div className="document-controls document-top-toolbar">{props.leading}</div>;
+  if (!state) return <div className="document-controls document-top-toolbar">{props.leading}{props.trailing}</div>;
   const inMath = !!openFormulaId(state);
   const align = currentAlign(state);
   const list = currentListKind(state);
@@ -841,6 +841,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode } = {}) {
         title={t(lang, "Text background", "文字背景颜色")}
         onApply={(c) => run(view, setAttrMark("highlight", c ? { color: c } : null))}
       />
+      {props.trailing}
     </div>
   );
 }
