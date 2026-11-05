@@ -361,8 +361,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     public string DiagnosticLastError { get; private set; } = string.Empty;
 
+    // No ribbon in a host the user did not install the add-in for (OfficeHostSelection).
     public string GetCustomUI(string ribbonId) =>
-        WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml);
+        OfficeHostSelection.IsCurrentHostEnabled()
+            ? WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml)
+            : string.Empty;
 
     public void OnConnection(
         object application,
@@ -370,6 +373,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         object addInInstance,
         ref Array custom)
     {
+        // Microsoft Office or WPS left out at installation: stay inert in this host.
+        if (!OfficeHostSelection.IsCurrentHostEnabled()) return;
         _application = (Application)application;
         _comAddIn = addInInstance as Office.COMAddIn;
         if (_comAddIn is not null)

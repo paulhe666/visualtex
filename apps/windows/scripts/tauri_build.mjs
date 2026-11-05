@@ -213,7 +213,7 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
     "Page custom PageReinstall PageLeaveReinstall",
   ].join("\n");
   const newMaintenancePageAnchor = [
-    "; 4. VisualTeX native Office integration choice and Office-process guard",
+    "; 4. VisualTeX components (Office and WPS add-ins, input method, OCR) and the Office-process guard",
     ";    This must run before Tauri maintenance can uninstall an existing build.",
     "Page custom VisualTeXOfficePageCreate VisualTeXOfficePageLeave",
     "",
@@ -237,26 +237,15 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
     "; 6. Start menu shortcut page",
     "Var AppStartMenuFolder",
   ].join("\n");
-  const newInstallerPageSequence = noOcrBundle
-    ? [
-        "; 6. Choose install directory page",
-        "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
-        "!insertmacro MUI_PAGE_DIRECTORY",
-        "",
-        "; 7. Start menu shortcut page",
-        "Var AppStartMenuFolder",
-      ].join("\n")
-    : [
-        "; 6. Choose install directory page",
-        "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
-        "!insertmacro MUI_PAGE_DIRECTORY",
-        "",
-        "; 7. VisualTeX optional offline OCR resources choice",
-        "Page custom VisualTeXOcrPageCreate VisualTeXOcrPageLeave",
-        "",
-        "; 8. Start menu shortcut page",
-        "Var AppStartMenuFolder",
-      ].join("\n");
+  // The OCR choice is a box on the components page (hooks.nsh VisualTeXOfficePageCreate).
+  const newInstallerPageSequence = [
+    "; 6. Choose install directory page",
+    "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
+    "!insertmacro MUI_PAGE_DIRECTORY",
+    "",
+    "; 7. Start menu shortcut page",
+    "Var AppStartMenuFolder",
+  ].join("\n");
   if (!template.includes(oldInstallerPageSequence)) {
     throw new Error(
       "The Tauri NSIS installer page sequence changed unexpectedly; refusing a build where the VisualTeX OCR choice might be hidden",

@@ -7,8 +7,13 @@
 !define VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\office_process_guard.ps1"
 
 Var VisualTeXOfficeChoice
-Var VisualTeXOfficeOnlyRadio
-Var VisualTeXOfficeNativeRadio
+Var VisualTeXMsOfficeCheckbox
+Var VisualTeXWpsCheckbox
+Var VisualTeXImeCheckbox
+; "1" / "0": the add-ins run in Microsoft Office / WPS Office (OfficeHostSelection), the input method
+Var VisualTeXMsOfficeChoice
+Var VisualTeXWpsChoice
+Var VisualTeXImeChoice
 Var VisualTeXOcrChoice
 Var VisualTeXOcrCheckbox
 Var VisualTeXOcrResourcePrefix
@@ -101,6 +106,9 @@ Function VisualTeXRepairMainUninstallRegistration
 visualtex_repair_uninstall_done:
 FunctionEnd
 
+; The components page: every optional part of VisualTeX as a check box. Microsoft Office and WPS Office
+; load the same COM add-ins and formula renderer, so either box installs them; the add-ins stay inert in a
+; host whose box is clear (HKCU\Software\VisualTeX\OfficeIntegration MicrosoftOffice / Wps).
 Function VisualTeXOfficePageCreate
   Call VisualTeXRepairMainUninstallRegistration
   nsDialogs::Create 1018
@@ -109,73 +117,81 @@ Function VisualTeXOfficePageCreate
     Abort
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "Office 集成" "选择是否安装 VisualTeX 的 Word / PowerPoint 原生集成"
-  ${NSD_CreateLabel} 0 0 100% 24u "请选择是否启用 Windows 原生 Office 集成 / Choose Windows native Office integration"
+  !insertmacro MUI_HEADER_TEXT "选择组件 / Components" "勾选要安装的组件，VisualTeX 主程序总会安装"
+
+  ${NSD_CreateLabel} 0 0 100% 12u "Office 插件 / Office add-ins"
   Pop $0
+  ${NSD_CreateCheckbox} 8u 13u 100% 13u "Microsoft Office 插件（Word、PowerPoint）"
+  Pop $VisualTeXMsOfficeCheckbox
+  ${If} $VisualTeXMsOfficeChoice != "0"
+    ${NSD_Check} $VisualTeXMsOfficeCheckbox
+  ${EndIf}
+  ${NSD_CreateCheckbox} 8u 27u 100% 13u "WPS Office 插件（WPS 文字、WPS 演示）"
+  Pop $VisualTeXWpsCheckbox
+  ${If} $VisualTeXWpsChoice != "0"
+    ${NSD_Check} $VisualTeXWpsCheckbox
+  ${EndIf}
 
-  ${NSD_CreateRadioButton} 0 34u 100% 16u "仅 VisualTeX（不安装 Office 插件） / VisualTeX only"
-  Pop $VisualTeXOfficeOnlyRadio
+  ${NSD_CreateLabel} 0 46u 100% 12u "其他组件 / Other components"
+  Pop $0
+  ${NSD_CreateCheckbox} 8u 59u 100% 13u "VisualTeX 输入法（在任意软件中输入拼音、英文和公式）"
+  Pop $VisualTeXImeCheckbox
+  ${If} $VisualTeXImeChoice != "0"
+    ${NSD_Check} $VisualTeXImeCheckbox
+  ${EndIf}
+!ifndef VISUALTEX_NO_OCR_BUNDLE
+  ${NSD_CreateCheckbox} 8u 73u 100% 13u "OCR 离线资源（截图识别公式；S/M/L 模型另行下载）"
+  Pop $VisualTeXOcrCheckbox
+  ${If} $VisualTeXOcrChoice != "none"
+    ${NSD_Check} $VisualTeXOcrCheckbox
+  ${EndIf}
+!endif
 
-  ${NSD_CreateRadioButton} 0 58u 100% 16u "VisualTeX + 原生 Office 集成（推荐）"
-  Pop $VisualTeXOfficeNativeRadio
-  ${NSD_Check} $VisualTeXOfficeNativeRadio
-
-  ${NSD_CreateLabel} 0 88u 100% 44u "原生模式统一使用 Word/PowerPoint Ribbon COM 加载项与 ATL OLE LocalServer。安装过程不会启动 Office，并会清理旧 Office.js Trusted Catalog 残留。"
+  ${NSD_CreateLabel} 0 96u 100% 36u "安装 Office 或 WPS 插件、输入法时可能出现管理员权限确认。未勾选的组件不会安装；已安装过的会被移除。以后可以重新运行安装包更改选择。"
   Pop $0
 
   nsDialogs::Show
 FunctionEnd
 
 Function VisualTeXOfficePageLeave
-  ${NSD_GetState} $VisualTeXOfficeNativeRadio $0
+  ${NSD_GetState} $VisualTeXMsOfficeCheckbox $0
+  ${NSD_GetState} $VisualTeXWpsCheckbox $1
+  StrCpy $VisualTeXMsOfficeChoice "0"
+  StrCpy $VisualTeXWpsChoice "0"
   ${If} $0 == ${BST_CHECKED}
+    StrCpy $VisualTeXMsOfficeChoice "1"
+  ${EndIf}
+  ${If} $1 == ${BST_CHECKED}
+    StrCpy $VisualTeXWpsChoice "1"
+  ${EndIf}
+  ${NSD_GetState} $VisualTeXImeCheckbox $2
+  ${If} $2 == ${BST_CHECKED}
+    StrCpy $VisualTeXImeChoice "1"
+  ${Else}
+    StrCpy $VisualTeXImeChoice "0"
+  ${EndIf}
+!ifndef VISUALTEX_NO_OCR_BUNDLE
+  ${NSD_GetState} $VisualTeXOcrCheckbox $2
+  ${If} $2 == ${BST_CHECKED}
+    StrCpy $VisualTeXOcrChoice "install"
+  ${Else}
+    StrCpy $VisualTeXOcrChoice "none"
+  ${EndIf}
+!endif
+
+  ${If} $VisualTeXMsOfficeChoice == "1"
+  ${OrIf} $VisualTeXWpsChoice == "1"
     ; First interactive guard. This catches both visible Office applications and
     ; hidden COM/OLE servers such as POWERPNT.EXE -Embedding before payload work.
     ; Choosing No must leave the user on this page and must never terminate Office.
     Call VisualTeXEnsureOfficeProcessesClosed
-    Pop $1
-    ${If} $1 != "0"
+    Pop $3
+    ${If} $3 != "0"
       Abort
     ${EndIf}
     StrCpy $VisualTeXOfficeChoice "native"
-    Goto visualtex_office_choice_done
-  ${EndIf}
-  StrCpy $VisualTeXOfficeChoice "none"
-visualtex_office_choice_done:
-FunctionEnd
-
-Function VisualTeXOcrPageCreate
-  nsDialogs::Create 1018
-  Pop $0
-  ${If} $0 == error
-    Abort
-  ${EndIf}
-
-  !insertmacro MUI_HEADER_TEXT "OCR 离线资源" "选择是否随 VisualTeX 安装本地 OCR 运行资源"
-  ${NSD_CreateLabel} 0 0 100% 28u "VisualTeX 的 OCR 为可选组件。默认安装后可在应用内配置 OCR 环境；如果暂时不需要 OCR，可以取消下面的勾选以节省磁盘空间。"
-  Pop $0
-
-  ${NSD_CreateCheckbox} 0 38u 100% 18u "安装 OCR 离线资源（推荐） / Install offline OCR resources (recommended)"
-  Pop $VisualTeXOcrCheckbox
-  ${If} $VisualTeXOcrChoice != "none"
-    ${NSD_Check} $VisualTeXOcrCheckbox
-  ${EndIf}
-
-  ${NSD_CreateLabel} 0 66u 100% 48u "包含 VisualTeX 私有 Python 3.12.10、离线 wheel 依赖、OCR worker 与模型目录索引。S/M/L OCR 模型仍按需单独下载。"
-  Pop $0
-
-  ${NSD_CreateLabel} 0 116u 100% 20u "取消勾选后这些 OCR 文件不会写入安装目录；以后可重新运行安装包并勾选此项补装。"
-  Pop $0
-
-  nsDialogs::Show
-FunctionEnd
-
-Function VisualTeXOcrPageLeave
-  ${NSD_GetState} $VisualTeXOcrCheckbox $0
-  ${If} $0 == ${BST_CHECKED}
-    StrCpy $VisualTeXOcrChoice "install"
   ${Else}
-    StrCpy $VisualTeXOcrChoice "none"
+    StrCpy $VisualTeXOfficeChoice "none"
   ${EndIf}
 FunctionEnd
 
@@ -311,6 +327,37 @@ FunctionEnd
   ${If} $VisualTeXOfficeChoice == ""
     StrCpy $VisualTeXOfficeChoice "native"
   ${EndIf}
+  ; /VISUALTEXMSOFFICE=0|1, /VISUALTEXWPS=0|1, /VISUALTEXIME=0|1 (unattended installs; the components page
+  ; sets them interactively). Office or WPS alone still installs the shared add-ins.
+  ${If} $VisualTeXMsOfficeChoice == ""
+    StrCpy $VisualTeXMsOfficeChoice "1"
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXMSOFFICE=" $1
+    ${IfNot} ${Errors}
+      StrCpy $VisualTeXMsOfficeChoice $1
+    ${EndIf}
+  ${EndIf}
+  ${If} $VisualTeXWpsChoice == ""
+    StrCpy $VisualTeXWpsChoice "1"
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXWPS=" $1
+    ${IfNot} ${Errors}
+      StrCpy $VisualTeXWpsChoice $1
+    ${EndIf}
+  ${EndIf}
+  ${If} $VisualTeXImeChoice == ""
+    StrCpy $VisualTeXImeChoice "1"
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXIME=" $1
+    ${IfNot} ${Errors}
+      StrCpy $VisualTeXImeChoice $1
+    ${EndIf}
+  ${EndIf}
+  ${If} $VisualTeXOfficeChoice == "native"
+  ${AndIf} $VisualTeXMsOfficeChoice == "0"
+  ${AndIf} $VisualTeXWpsChoice == "0"
+    StrCpy $VisualTeXOfficeChoice "none"
+  ${EndIf}
 
   !ifdef VISUALTEX_NO_OCR_BUNDLE
     ; The lightweight installer is compiled without worker/Python/wheel/model
@@ -348,6 +395,18 @@ FunctionEnd
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
   ${If} $VisualTeXOfficeChoice == "native"
+    ; the hosts the add-ins run in (read by the add-ins at startup)
+    ${If} $VisualTeXMsOfficeChoice == "0"
+      WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "MicrosoftOffice" 0
+    ${Else}
+      WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "MicrosoftOffice" 1
+    ${EndIf}
+    ${If} $VisualTeXWpsChoice == "0"
+      WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "Wps" 0
+    ${Else}
+      WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "Wps" 1
+    ${EndIf}
+    DetailPrint "Office add-in hosts: Microsoft Office=$VisualTeXMsOfficeChoice WPS=$VisualTeXWpsChoice"
     DetailPrint "Installing the machine-wide VisualTeX Ribbon add-ins and native Formula OLE LocalServer. A UAC prompt may appear."
     IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 visualtex_main_binary_missing
     IfFileExists "$INSTDIR\scripts\ensure_windows_office_certificate.ps1" 0 visualtex_office_missing
@@ -473,6 +532,16 @@ visualtex_office_done:
   ; VisualTeX's input method (VisualTeX Anywhere: pinyin, English and formulas in any
   ; application) is a machine-wide text service: registering it may show one UAC prompt.
   ; The script leaves a current registration alone. Acceptance installs skip it.
+  ${If} $VisualTeXAcceptanceMode != "1"
+  ${AndIf} $VisualTeXImeChoice == "0"
+    ; left out on the components page: an earlier installation's input method goes (UAC only if registered)
+    IfFileExists "$INSTDIR\scripts\install_windows_input_method.ps1" 0 visualtex_input_method_done
+    DetailPrint "The VisualTeX input method was not selected; removing an earlier registration if there is one."
+    System::Call 'kernel32::SetEnvironmentVariable(t "VISUALTEX_REINSTALL", p 0)'
+    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_input_method.ps1" -Uninstall`
+    Pop $0
+    Goto visualtex_input_method_done
+  ${EndIf}
   ${If} $VisualTeXAcceptanceMode != "1"
     IfFileExists "$INSTDIR\input-method\visualtex_tip.dll" 0 visualtex_input_method_done
     IfFileExists "$INSTDIR\scripts\install_windows_input_method.ps1" 0 visualtex_input_method_done

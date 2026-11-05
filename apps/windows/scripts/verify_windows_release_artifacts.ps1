@@ -393,7 +393,6 @@ foreach ($requiredMarker in @(
     'Same version: always remove the installed payload before reinstalling',
     '/VISUALTEXACCEPTANCE',
     'Page custom VisualTeXOfficePageCreate VisualTeXOfficePageLeave',
-    'Page custom VisualTeXOcrPageCreate VisualTeXOcrPageLeave',
     'VisualTeXCreateBundledResourceDirectory',
     'VisualTeXInstallBundledResource'
 )) {
@@ -404,16 +403,15 @@ foreach ($requiredMarker in @(
 $officePageMarker = 'Page custom VisualTeXOfficePageCreate VisualTeXOfficePageLeave'
 $maintenancePageMarker = 'Page custom PageReinstall PageLeaveReinstall'
 $directoryPageMarker = '!insertmacro MUI_PAGE_DIRECTORY'
-$ocrPageMarker = 'Page custom VisualTeXOcrPageCreate VisualTeXOcrPageLeave'
 $officePageIndex = $customNsisSource.IndexOf($officePageMarker, [System.StringComparison]::Ordinal)
 $maintenancePageIndex = $customNsisSource.IndexOf($maintenancePageMarker, [System.StringComparison]::Ordinal)
 $directoryPageIndex = $customNsisSource.IndexOf($directoryPageMarker, [System.StringComparison]::Ordinal)
-$ocrPageIndex = $customNsisSource.IndexOf($ocrPageMarker, [System.StringComparison]::Ordinal)
 if ($officePageIndex -lt 0 -or $maintenancePageIndex -lt 0 -or $officePageIndex -ge $maintenancePageIndex) {
     throw "The Office integration/process-guard page must run before Tauri's reinstall/uninstall maintenance page."
 }
-if ($directoryPageIndex -lt 0 -or $ocrPageIndex -lt 0 -or $ocrPageIndex -le $directoryPageIndex) {
-    throw "The optional OCR page must remain in the normal install flow after the directory page."
+# The OCR choice is a box on the components page, not a page of its own.
+if ($directoryPageIndex -lt 0 -or $customNsisSource.Contains('VisualTeXOcrPageCreate')) {
+    throw "The installer must have the directory page and choose OCR on the components page."
 }
 $tauriConfig = Get-Content -LiteralPath (Join-Path $root "src-tauri\tauri.conf.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([string]$tauriConfig.bundle.windows.nsis.template -ne "./target/nsis-template/visualtex-installer.nsi") {
@@ -432,10 +430,14 @@ foreach ($requiredHookMarker in @(
     'Remove only known legacy application payloads.',
     '%APPDATA%\VisualTeX\ocr-storage.json',
     'preserve %APPDATA%\com.visualtex.studio.',
-    'Function VisualTeXOcrPageCreate',
-    '${NSD_CreateCheckbox} 0 38u 100% 18u',
-    'Install offline OCR resources (recommended)',
-    'Function VisualTeXOcrPageLeave',
+    'Function VisualTeXOfficePageCreate',
+    'Pop $VisualTeXOcrCheckbox',
+    'Pop $VisualTeXMsOfficeCheckbox',
+    'Pop $VisualTeXWpsCheckbox',
+    'Pop $VisualTeXImeCheckbox',
+    'Function VisualTeXOfficePageLeave',
+    '/VISUALTEXWPS=',
+    '"Software\VisualTeX\OfficeIntegration" "Wps"',
     '/VISUALTEXOCR=',
     '!macro VisualTeXCreateBundledResourceDirectory DESTINATION',
     '!macro VisualTeXInstallBundledResource DESTINATION SOURCE',

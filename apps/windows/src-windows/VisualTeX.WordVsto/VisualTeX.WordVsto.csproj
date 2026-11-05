@@ -52,6 +52,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOleObjectAccessor.cs" Link="WordOleObjectAccessor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordBulkImportParser.cs" Link="WordBulkImportParser.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostSelection.cs" Link="OfficeHostSelection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeAutomationAgent.cs" Link="OfficeAutomationAgent.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <COMReference Include="Extensibility">

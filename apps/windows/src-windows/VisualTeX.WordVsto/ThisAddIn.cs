@@ -502,8 +502,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
 
+    // No ribbon in a host the user did not install the add-in for (OfficeHostSelection).
     public string GetCustomUI(string ribbonId) =>
-        WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml);
+        OfficeHostSelection.IsCurrentHostEnabled()
+            ? WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml)
+            : string.Empty;
 
     public void OnConnection(
         object application,
@@ -524,6 +527,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             WordDoubleClickHook.TraceMessage(
                 "installed-addin-suppressed-for-manual-acceptance");
+            return;
+        }
+        // Microsoft Office or WPS left out at installation: stay inert in this host.
+        if (!OfficeHostSelection.IsCurrentHostEnabled())
+        {
+            WordDoubleClickHook.TraceMessage("addin-disabled-for-host");
             return;
         }
 

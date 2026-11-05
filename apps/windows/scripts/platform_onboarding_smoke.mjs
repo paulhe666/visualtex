@@ -100,7 +100,7 @@ assert(!windowsBackendSource.includes('HKCU\\Software\\Microsoft\\Office\\Word\\
 assert(!windowsBackendSource.includes('HKCU\\Software\\Classes\\CLSID'));
 assert(!windowsBackendSource.includes("OLE_CATALOG_KEY"));
 assert(!windowsBackendSource.includes("register_ole_catalog"));
-assert(hooksSource.includes("${NSD_Check} $VisualTeXOfficeNativeRadio"));
+assert(hooksSource.includes("${NSD_Check} $VisualTeXMsOfficeCheckbox"));
 assert(hooksSource.includes("VisualTeXRepairMainUninstallRegistration"));
 assert(hooksSource.includes('$INSTDIR == "$PROFILE\\AppData\\VisualTeX"'));
 assert(hooksSource.includes("vsto-uninstall-bootstrap"));
