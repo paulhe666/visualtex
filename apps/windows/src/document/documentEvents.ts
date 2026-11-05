@@ -8,3 +8,4 @@ export const DOCUMENT_COPY_LATEX_EVENT = "visualtex-document-copy-latex";
 export const DOCUMENT_EXPORT_MARKDOWN_EVENT = "visualtex-document-export-markdown";
 export const DOCUMENT_COPY_MARKDOWN_EVENT = "visualtex-document-copy-markdown";
 export const DOCUMENT_EXPORT_PDF_EVENT = "visualtex-document-export-pdf";
+export const DOCUMENT_TUTORIAL_EVENT = "visualtex-document-tutorial";

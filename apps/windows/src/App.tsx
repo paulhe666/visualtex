@@ -12,6 +12,7 @@ import {
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
+  DOCUMENT_TUTORIAL_EVENT,
 } from "./document/documentEvents";
 import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
 
@@ -31,6 +32,7 @@ import {
   FileDown,
   FilePlus2,
   FolderOpen,
+  GraduationCap,
   History,
   Keyboard,
   Languages,
@@ -1865,6 +1867,12 @@ function App() {
                 <Settings2 size={16} />
                 <span>{isEn ? "Settings" : "设置"}</span>
               </button>
+              {workspaceContent === "document" && (
+                <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_TUTORIAL_EVENT)))}>
+                  <GraduationCap size={16} />
+                  <span>{isEn ? "Document tutorials" : "文档教程"}</span>
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

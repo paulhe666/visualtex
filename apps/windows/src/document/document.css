@@ -2367,3 +2367,91 @@
 :root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-copy {
   background: #7d5226;
 }
+
+/* ---- tutorials (TutorialDialog.tsx): the tasks on the left, the video and what it shows on the right ---- */
+.vtx-tutorial-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1240px, calc(100vw - 28px));
+  height: min(880px, calc(100vh - 28px));
+  border-radius: 12px;
+}
+.vtx-tutorial-body {
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+.vtx-tutorial-group + .vtx-tutorial-group {
+  margin-top: 10px;
+}
+.vtx-tutorial-group-title {
+  padding: 6px 9px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vtx-tutorial-list button {
+  font-size: 13px;
+}
+.vtx-tutorial-list button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.vtx-tutorial-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  overflow: hidden;
+}
+.vtx-tutorial-video {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+.vtx-tutorial-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #f3f4f6;
+}
+.vtx-tutorial-missing {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.vtx-tutorial-text h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 16px;
+}
+.vtx-tutorial-text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.vtx-tutorial-steps {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.vtx-tutorial-steps button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.vtx-tutorial-button {
+  margin-left: auto;
+}
