@@ -181,7 +181,7 @@ public sealed partial class PowerPointFormulaService
                 DisplayMode = formula.DisplayMode,
                 // The size the audience sees: the code's size, shrunk as PowerPoint
                 // shrinks the box's text when it does not fit.
-                EffectiveFontSizePt = (size ?? 20f) * PowerPointLatexText.AutofitFontScale(saved),
+                EffectiveFontSizePt = PowerPointFormulaFontSizeSetting.Resolve(formula.DisplayMode, (size ?? 20f) * PowerPointLatexText.AutofitFontScale(saved)),
                 BaseColor = color,
                 CenterX = shape.Left + width / 2f,
                 CenterY = shape.Top + height / 2f,

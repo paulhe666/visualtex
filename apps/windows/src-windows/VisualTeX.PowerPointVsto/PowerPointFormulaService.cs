@@ -495,34 +495,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (slide is null || shape is null)
                 throw new InvalidOperationException("The selected PowerPoint formula no longer exists.");
 
-            var metadata = selected.Metadata;
-            var currentFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
-            var fontScale = target / Math.Max(0.5f, currentFontSize);
-            var size = ScaleCurrentShapeSize(
-                shape.Width,
-                shape.Height,
-                fontScale,
-                600f,
-                400f);
-            metadata.FontSizePt = target;
-            // Persist the semantic size before changing PowerPoint geometry.
-            // Width/Height mutations can synchronously dispatch selection events;
-            // those event handlers must not observe and re-save the old font size.
-            Configure(shape, metadata);
-            var centerX = shape.Left + shape.Width / 2f;
-            var centerY = shape.Top + shape.Height / 2f;
-            if (IsNativeOle(shape))
-                ApplyOleSizeAndRefresh(shape, size.Width, size.Height);
-            else
-            {
-                shape.LockAspectRatio = MsoTriState.msoFalse;
-                shape.Width = size.Width;
-                shape.Height = size.Height;
-                shape.LockAspectRatio = MsoTriState.msoTrue;
-            }
-            shape.Left = centerX - size.Width / 2f;
-            shape.Top = centerY - size.Height / 2f;
-            Configure(shape, metadata);
+            ResizeFormulaShape(shape, selected.Metadata, target);
             return target;
         }
         finally
@@ -532,6 +505,38 @@ public sealed partial class PowerPointFormulaService : IDisposable
             Release(slide);
             Release(presentation);
         }
+    }
+
+    // A VisualTeX object or picture at a new size, scaled about its centre.
+    private static void ResizeFormulaShape(Shape shape, FormulaMetadata metadata, float target)
+    {
+        var currentFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
+        var fontScale = target / Math.Max(0.5f, currentFontSize);
+        var size = ScaleCurrentShapeSize(
+            shape.Width,
+            shape.Height,
+            fontScale,
+            600f,
+            400f);
+        metadata.FontSizePt = target;
+        // Persist the semantic size before changing PowerPoint geometry.
+        // Width/Height mutations can synchronously dispatch selection events;
+        // those event handlers must not observe and re-save the old font size.
+        Configure(shape, metadata);
+        var centerX = shape.Left + shape.Width / 2f;
+        var centerY = shape.Top + shape.Height / 2f;
+        if (IsNativeOle(shape))
+            ApplyOleSizeAndRefresh(shape, size.Width, size.Height);
+        else
+        {
+            shape.LockAspectRatio = MsoTriState.msoFalse;
+            shape.Width = size.Width;
+            shape.Height = size.Height;
+            shape.LockAspectRatio = MsoTriState.msoTrue;
+        }
+        shape.Left = centerX - size.Width / 2f;
+        shape.Top = centerY - size.Height / 2f;
+        Configure(shape, metadata);
     }
 
     private bool SetSelectedMathZoneFontSize(float target)

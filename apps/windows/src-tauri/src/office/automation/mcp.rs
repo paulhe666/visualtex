@@ -479,7 +479,7 @@ fn write_tool_definitions() -> Vec<Value> {
         write_tool("select_formula", "Select a formula", "Scrolls to a formula and selects it, to show it to the user.",
             json!({ "formula_id": formula_id }), &["formula_id"], false),
         write_tool("set_formula_font_size", "Set formula font sizes",
-            "Sets a formula's font size in points; or, with kind instead of formula_id, the size of every inline or every display formula of a Word document at once (one undo step; numbered formulas are display formulas).",
+            "Sets a formula's font size in points; or, with kind instead of formula_id, the size of every inline or every display formula of the document or presentation at once (one undo step; numbered formulas are display formulas; MathType objects on slides keep their size).",
             json!({ "formula_id": formula_id, "kind": { "type": "string", "enum": ["inline", "display"] }, "font_size_pt": font_size }),
             &["font_size_pt"], false),
         write_tool("convert_formulas", "Convert formulas",
@@ -612,9 +612,6 @@ async fn write(context: &ServerContext, name: &str, mut arguments: Map<String, V
         let by_kind = arguments.get("kind").is_some_and(|value| !value.is_null());
         if by_id == by_kind {
             return Err(invalid("Give formula_id (one formula) or kind (every inline or display formula), not both"));
-        }
-        if by_kind && host.app == "powerpoint" {
-            return Err(CommandError::new("unsupported_in_host", "kind sets the formulas of a Word document; on slides, give formula_id"));
         }
     }
     for field in ["latex", "text"] {

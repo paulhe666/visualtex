@@ -153,6 +153,74 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.PowerPointVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.PowerPointVsto.FontSizeIncrease" label="Increase" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
+          <comboBox id="VisualTeX.PowerPointVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current presentation takes this size at once (undoable), and LaTeX redraw and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeFollow" label="Follow Text" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeChu" label="42 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoChu" label="36 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeYi" label="26 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoYi" label="24 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeEr" label="22 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoEr" label="18 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeSan" label="16 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoSan" label="15 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeSi" label="14 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoSi" label="12 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeWu" label="10.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoWu" label="9 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeLiu" label="7.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoLiu" label="6.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeQi" label="5.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeBa" label="5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize8" label="8" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize9" label="9" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize10" label="10" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize10_5" label="10.5" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize11" label="11" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize12" label="12" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize14" label="14" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize16" label="16" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize18" label="18" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize20" label="20" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize24" label="24" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize28" label="28" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize36" label="36" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize48" label="48" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize72" label="72" />
+          </comboBox>
+          <comboBox id="VisualTeX.PowerPointVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula of the current presentation takes this size at once (undoable), and LaTeX redraw and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeFollow" label="Follow Text" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeChu" label="42 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoChu" label="36 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeYi" label="26 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoYi" label="24 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeEr" label="22 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoEr" label="18 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeSan" label="16 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoSan" label="15 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeSi" label="14 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoSi" label="12 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeWu" label="10.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoWu" label="9 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeLiu" label="7.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoLiu" label="6.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeQi" label="5.5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeBa" label="5 pt (CN preset)" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize8" label="8" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize9" label="9" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize10" label="10" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize10_5" label="10.5" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize11" label="11" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize12" label="12" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize14" label="14" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize16" label="16" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize18" label="18" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize20" label="20" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize24" label="24" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize28" label="28" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize36" label="36" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize48" label="48" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize72" label="72" />
+          </comboBox>
         </group>
       </tab>
     </tabs>

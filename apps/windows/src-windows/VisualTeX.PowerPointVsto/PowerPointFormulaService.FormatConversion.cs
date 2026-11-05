@@ -478,7 +478,7 @@ public sealed partial class PowerPointFormulaService
             Lines = metadata.Lines?.Count > 0 ? metadata.Lines : null,
             CodeFormat = string.IsNullOrWhiteSpace(metadata.CodeFormat) ? "raw" : metadata.CodeFormat,
             DisplayMode = string.Equals(metadata.DisplayMode, "inline", StringComparison.Ordinal) ? "inline" : "block",
-            EffectiveFontSizePt = InferPowerPointFormulaFontSize(width, height, metadata),
+            EffectiveFontSizePt = PowerPointFormulaFontSizeSetting.Resolve(metadata.DisplayMode, InferPowerPointFormulaFontSize(width, height, metadata)),
             SourceMetadata = metadata,
             BaseColor = PowerPointConversionColors.Black,
             CenterX = shape.Left + width / 2f,
@@ -520,8 +520,8 @@ public sealed partial class PowerPointFormulaService
                 SourceMathMl = mathMl,
                 DisplayMode = "block",
                 BaseColor = PowerPointConversionColors.Black,
-                EffectiveFontSizePt = PowerPointConversionRules.ScaledFontSize(
-                    nativeSize, width, height, equation.WidthPt, equation.HeightPt),
+                EffectiveFontSizePt = PowerPointFormulaFontSizeSetting.Resolve(true, PowerPointConversionRules.ScaledFontSize(
+                    nativeSize, width, height, equation.WidthPt, equation.HeightPt)),
                 CenterX = shape.Left + width / 2f,
                 CenterY = shape.Top + height / 2f,
                 VisualWidth = width,
@@ -601,7 +601,7 @@ public sealed partial class PowerPointFormulaService
                     SourceMathMl = mathMl,
                     DisplayMode = equation.Display ? "block" : "inline",
                     BaseColor = baseColor,
-                    EffectiveFontSizePt = zone.FontSize > 0 ? zone.FontSize : fallbackSize,
+                    EffectiveFontSizePt = PowerPointFormulaFontSizeSetting.Resolve(equation.Display, zone.FontSize > 0 ? zone.FontSize : fallbackSize),
                     CenterX = useShapeBox ? shape.Left + shape.Width / 2f : zone.Left + zone.Width / 2f,
                     CenterY = useShapeBox ? shape.Top + shape.Height / 2f : zone.Top + zone.Height / 2f,
                     VisualWidth = useShapeBox ? shape.Width : zone.Width,

@@ -85,6 +85,15 @@ public interface IPowerPointRibbonCallbacks
 
     [DispId(24)]
     string GetVisualTeXTargetFormLabel(Office.IRibbonControl control);
+
+    [DispId(25)]
+    string GetFormulaKindFontSizeText(Office.IRibbonControl control);
+
+    [DispId(26)]
+    bool GetFormulaKindFontSizeEnabled(Office.IRibbonControl control);
+
+    [DispId(27)]
+    void OnFormulaKindFontSizeChanged(Office.IRibbonControl control, string value);
 }
 
 [ComVisible(true)]
@@ -256,6 +265,74 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <item id="VisualTeX.PowerPointVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.PowerPointVsto.FontSizeIncrease" label="增大" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
+          <comboBox id="VisualTeX.PowerPointVsto.InlineFontSize" label="行内" sizeString="初号（42 磅）" screentip="行内公式字号" supertip="选择字号后，当前演示文稿中所有行内公式立即改为这个字号，可撤销；之后 LaTeX 重绘和格式转换生成的行内公式也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeFollow" label="跟随正文" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeChu" label="初号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoChu" label="小初" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeYi" label="一号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoYi" label="小一" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeEr" label="二号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoEr" label="小二" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeSan" label="三号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoSan" label="小三" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeSi" label="四号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoSi" label="小四" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeWu" label="五号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoWu" label="小五" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeLiu" label="六号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeXiaoLiu" label="小六" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeQi" label="七号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSizeBa" label="八号" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize8" label="8" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize9" label="9" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize10" label="10" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize10_5" label="10.5" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize11" label="11" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize12" label="12" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize14" label="14" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize16" label="16" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize18" label="18" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize20" label="20" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize24" label="24" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize28" label="28" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize36" label="36" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize48" label="48" />
+            <item id="VisualTeX.PowerPointVsto.InlineFontSize72" label="72" />
+          </comboBox>
+          <comboBox id="VisualTeX.PowerPointVsto.DisplayFontSize" label="行间" sizeString="初号（42 磅）" screentip="行间公式字号" supertip="选择字号后，当前演示文稿中所有行间公式立即改为这个字号，可撤销；之后 LaTeX 重绘和格式转换生成的行间公式也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeFollow" label="跟随正文" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeChu" label="初号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoChu" label="小初" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeYi" label="一号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoYi" label="小一" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeEr" label="二号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoEr" label="小二" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeSan" label="三号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoSan" label="小三" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeSi" label="四号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoSi" label="小四" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeWu" label="五号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoWu" label="小五" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeLiu" label="六号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeXiaoLiu" label="小六" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeQi" label="七号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSizeBa" label="八号" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize8" label="8" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize9" label="9" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize10" label="10" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize10_5" label="10.5" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize11" label="11" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize12" label="12" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize14" label="14" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize16" label="16" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize18" label="18" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize20" label="20" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize24" label="24" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize28" label="28" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize36" label="36" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize48" label="48" />
+            <item id="VisualTeX.PowerPointVsto.DisplayFontSize72" label="72" />
+          </comboBox>
         </group>
       </tab>
     </tabs>
