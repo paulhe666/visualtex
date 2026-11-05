@@ -110,6 +110,9 @@ function paragraphAfter(tr: Transaction, inside: number) {
   if (after >= tr.doc.content.size || !tr.doc.resolve(after).nodeAfter) tr.insert(after, tr.doc.type.schema.nodes.paragraph.create());
 }
 
+const TASK_PLAIN = /^\[([ xX])\][ \u00a0]$/;
+const TASK_CHINESE = /^[\[【]([ xX])[\]】][ \u00a0\u3000]$/;
+
 function lineStartConversion(state: EditorState, $cursor: ResolvedPos, before: string, rules: MarkdownRuleSwitches): Transaction | null {
   if ($cursor.parentOffset > 16 || !rules.blocks) return null;
   const block = $cursor.parent;
@@ -125,7 +128,7 @@ function lineStartConversion(state: EditorState, $cursor: ResolvedPos, before: s
   }
   if (block.type !== nodes.paragraph) return null;
   // "[ ] " / "[x] " opening a list item: a task (a Chinese input method types 【 】)
-  const task = (rules.chinese ? /^[\[【]([ xX])[\]】][ \u00a0\u3000]$/ : /^\[([ xX])\][ \u00a0]$/).exec(before);
+  const task = (rules.chinese ? TASK_CHINESE : TASK_PLAIN).exec(before);
   if (task && $cursor.depth >= 2 && $cursor.node(-1).type === nodes.list_item && $cursor.index(-1) === 0 && $cursor.node(-1).attrs.checked === null) {
     return state.tr.delete(start, $cursor.pos).setNodeAttribute($cursor.before(-1), "checked", task[1] !== " ");
   }
@@ -210,7 +213,7 @@ function conversionAtCaret(state: EditorState, rules: MarkdownRuleSwitches): Tra
 
 /** Whether a conversion could follow the text `before` (a quick test before the typed text goes in). */
 function mayConvert(before: string): boolean {
-  if (before.length <= 17 && Object.values(LINE_START.chinese).some((rule) => rule.test(before))) return true;
+  if (before.length <= 17 && (Object.values(LINE_START.chinese).some((rule) => rule.test(before)) || TASK_CHINESE.test(before))) return true;
   return LINK.test(before) || MARK_RULES.some((rule) => rule.pattern.test(before));
 }
 
