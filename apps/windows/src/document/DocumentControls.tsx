@@ -74,6 +74,7 @@ import { useDocumentFormatStore, type DocumentFormat } from "../stores/documentF
 import { useEditorStore } from "../stores/editorStore";
 import { openDocumentFormula } from "./openDocumentFormula";
 import { ColorMenuButton } from "./ColorPalette";
+import { setMathLivePersistentTypingStyle, type MathLivePersistentTypingStyle } from "../editor/mathLiveKernelCommands";
 import { portableFormulaLatex } from "./DocumentEditor";
 
 type Lang = "en" | "zh";
@@ -599,7 +600,17 @@ function setFormulaStyle(style: { color?: string; backgroundColor?: string }) {
     const [[start, end]] = field.selection.ranges;
     const range: [number, number] = [Math.min(start, end), Math.max(start, end)];
     if (range[0] === range[1]) {
-      field.applyStyle(style, { operation: "set" });
+      // what is typed next takes its colours from the field's typing style (the kernel ignores applyStyle here)
+      const current =
+        (field as unknown as { visualTexPersistentTypingStyle?: Partial<MathLivePersistentTypingStyle> }).visualTexPersistentTypingStyle ?? {};
+      const pick = (value: string | undefined, kept: string | null | undefined) =>
+        value === undefined ? (kept ?? null) : value === "none" ? null : value;
+      setMathLivePersistentTypingStyle(field, {
+        bold: false,
+        italic: null,
+        color: pick(style.color, current.color),
+        backgroundColor: pick(style.backgroundColor, current.backgroundColor),
+      });
       return false;
     }
     field.applyStyle(style, { range, operation: "set" });

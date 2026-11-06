@@ -343,7 +343,13 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
   /** A formula command (shortcut, Greek letter) at the caret, as the formula rows insert it. */
   const insertCommand = (field: MathfieldElement, command: LatexCommand) =>
     insertCommandIntoFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) }, command);
-  useEffect(() => () => setOpenDocumentFormula(null, fieldRef.current ?? undefined), []);
+  // only this formula's own field: by the time an earlier formula goes, the next one may already be open
+  useEffect(
+    () => () => {
+      if (fieldRef.current) setOpenDocumentFormula(null, fieldRef.current);
+    },
+    [],
+  );
 
   /** Enter in a display formula: two formulas at the caret (at the formula's top level), else a text line after it. */
   const splitAtCaret = (field: MathfieldElement) => {

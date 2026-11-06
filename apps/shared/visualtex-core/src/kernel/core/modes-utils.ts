@@ -152,32 +152,34 @@ function emitColorRun(run: readonly Atom[], options: ToLatexOptions): string[] {
   const parentColor = parent?.style.color;
 
   const result: string[] = [];
-  // Since `\textcolor{}` applies to both text and math mode, wrap mode first, then
-  // textcolor
-  for (const modeRun of getModeRuns(run)) {
-    const mode = options.defaultMode;
-
-    for (const colorRun of getPropertyRuns(modeRun, 'color')) {
-      const style = colorRun[0].style;
-      const body = Mode._registry[colorRun[0].mode].serialize(colorRun, {
-        ...options,
-        defaultMode: mode === 'text' ? 'text' : 'math',
-      });
-      if (
-        !options.skipStyles &&
-        style.color &&
-        style.color !== 'none' &&
-        (!parent || parentColor !== style.color)
-      ) {
-        result.push(
-          latexCommand(
-            '\\textcolor',
-            style.verbatimColor ?? style.color,
-            joinLatex(body)
-          )
-        );
-      } else result.push(joinLatex(body));
+  // `\textcolor{}` applies to both text and math mode: one colour group around the colour's text and math runs
+  // (\textcolor{red}{\text{area}=\pi}), so a colour does not cut a relation or an operation off its neighbours
+  const mode = options.defaultMode;
+  for (const colorRun of getPropertyRuns(run, 'color')) {
+    const style = colorRun[0].style;
+    const body: string[] = [];
+    for (const modeRun of getModeRuns(colorRun)) {
+      body.push(
+        ...Mode._registry[modeRun[0].mode].serialize(modeRun, {
+          ...options,
+          defaultMode: mode === 'text' ? 'text' : 'math',
+        })
+      );
     }
+    if (
+      !options.skipStyles &&
+      style.color &&
+      style.color !== 'none' &&
+      (!parent || parentColor !== style.color)
+    ) {
+      result.push(
+        latexCommand(
+          '\\textcolor',
+          style.verbatimColor ?? style.color,
+          joinLatex(body)
+        )
+      );
+    } else result.push(joinLatex(body));
   }
 
   return result;

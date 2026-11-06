@@ -97,5 +97,21 @@ export function applyStyle(
 
   for (const atom of atoms) atom.applyStyle(style);
 
+  // A script carrier (the ^3 of c^3) chosen without its base keeps its base's style; only its scripts take the new
+  // one, so the LaTeX reads c^{\textcolor{red}{3}}, not c\textcolor{red}{^3} (a script on an empty base in LaTeX).
+  const chosen = new Set(atoms);
+  for (const atom of atoms) {
+    const base = atom.leftSibling;
+    if (atom.type !== 'subsup' || !base || chosen.has(base)) continue;
+    const next = { ...atom.style } as Record<string, unknown>;
+    for (const key of Object.keys(style)) {
+      const value = (base.style as Record<string, unknown>)[key];
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+    }
+    atom.style = next as PrivateStyle;
+    atom.isDirty = true;
+  }
+
   return true;
 }
