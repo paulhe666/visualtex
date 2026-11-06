@@ -696,7 +696,7 @@ export class LatexAdapter {
         out.push(this.accent(a, ctx));
         break;
       case "leftright":
-        out.push(this.leftRight(a, ctx));
+        out.push(...this.leftRightOrFence(a, ctx));
         break;
       case "delim": // \middle inside \left...\right
         out.push(this.middle(a));
@@ -1339,6 +1339,18 @@ export class LatexAdapter {
    * bracket of a bracket just typed) is the matching delimiter, which the
    * editor draws faded.
    */
+  /**
+   * The kernel reads `\exp(x)` as a smart fence (a leftright without \left/\right) and writes it back as `\exp(x)`:
+   * in LaTeX those are the plain characters, an open and a close noad at their natural size.
+   */
+  private leftRightOrFence(a: AtomLike, ctx: Ctx): MItem[] {
+    const plain = a.variant === "" && a.leftDelim && a.leftDelim !== "?" && a.rightDelim && a.rightDelim !== "?";
+    const open = plain ? this.mathCodeOf(a.leftDelim, ctx) : null;
+    const close = plain ? this.mathCodeOf(a.rightDelim, ctx) : null;
+    if (open === null || close === null) return [this.leftRight(a, ctx)];
+    return [this.mathChar(open, ctx, a), ...this.list(a.branch("body"), ctx), this.mathChar(close, ctx, a)];
+  }
+
   private leftRight(a: AtomLike, ctx: Ctx): Noad {
     const left = newNoad(LEFT_NOAD, a);
     left.delim = this.delimiter(a.leftDelim === "?" ? LEFT_FENCE[a.rightDelim] ?? "." : a.leftDelim ?? ".");

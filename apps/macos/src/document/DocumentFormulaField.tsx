@@ -41,6 +41,10 @@ export interface DocumentFormulaFieldApi {
   flush(): void;
   typeKey(key: FormulaKey): void;
   focus(): void;
+  /** The formula opened: the field takes the focus, the caret where `entry` says. */
+  enter(entry: FormulaEntry): void;
+  /** The formula closed: the field rests (no focus, nothing selected); it stays on the page. */
+  rest(): void;
   /** A drag that began in the field left the formula: the field stops following the pointer. */
   stopPointerTracking(): void;
   /** Show a part of the formula selected (a selection through the text takes it); null: none. */
@@ -183,6 +187,8 @@ function applyEntry(field: MathfieldElement, entry: FormulaEntry) {
 
 export function DocumentFormulaField({ id, latex, display, entry, fontSize, callbacks, apiRef, passive = false, onPasteImage }: Props) {
   const [currentLatex, setCurrentLatex] = useState(latex);
+  // a value the document gave the field (undo, a split) that the field has not taken yet: nothing to report until then
+  const incomingRef = useRef<string | null>(null);
   const fieldRef = useRef<MathfieldElement | null>(null);
   const pendingSelection = useRef<FormulaSelection | null>(null);
   const callbacksRef = useRef(callbacks);
@@ -207,7 +213,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
   /** Report the field's LaTeX if the document does not have it yet (an edit whose input event is still due). */
   const flush = () => {
     const field = fieldRef.current;
-    if (!field) return;
+    if (!field || incomingRef.current !== null) return;
     const value = normalizeChineseLatex(field.value);
     if (value === reportedRef.current) return;
     reportedRef.current = value;
@@ -248,11 +254,34 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     update(next, selection) {
       reportedRef.current = next;
       pendingSelection.current = selection;
+      if (next !== currentLatex) incomingRef.current = next;
       setCurrentLatex(next);
     },
     focus() {
       passiveRef.current = false;
-      if (fieldRef.current) focusWithoutScroll(fieldRef.current);
+      const field = fieldRef.current;
+      if (!field) return;
+      setOpenDocumentFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) });
+      focusWithoutScroll(field);
+    },
+    enter(entry) {
+      const field = fieldRef.current;
+      entryRef.current = entry;
+      passiveRef.current = false;
+      if (field) activateRef.current(field, entry);
+    },
+    rest() {
+      passiveRef.current = true;
+      leftRef.current = false;
+      readyRef.current = true;
+      pendingKeys.current = [];
+      greekPrefixRef.current = false;
+      const field = fieldRef.current;
+      if (!field) return;
+      flush();
+      setOpenDocumentFormula(null, field);
+      if (field.shadowRoot?.activeElement) field.blur();
+      showPart(field, null);
     },
     stopPointerTracking() {
       fieldRef.current?.visualTexStopPointerTracking?.();
@@ -313,6 +342,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
 
   // After the field took a document change (undo/redo), its caret goes where it was at that state.
   useLayoutEffect(() => {
+    incomingRef.current = null;
     const field = fieldRef.current;
     const selection = pendingSelection.current;
     pendingSelection.current = null;
@@ -491,6 +521,42 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
   typedDollarRef.current = typedDollar;
   // "$" that an input method types ("￥" with Chinese punctuation) reaches the field as text, not as a key.
   const detachDollar = useRef<(() => void) | null>(null);
+  /** The formula opened: the field takes the focus, the caret where `entry` says; keys typed meanwhile are replayed. */
+  const activate = (field: MathfieldElement, entry: FormulaEntry) => {
+    passiveRef.current = false;
+    leftRef.current = false;
+    readyRef.current = false;
+    partRef.current = null;
+    field.classList.remove("has-visualtex-multi-line-selection");
+    setOpenDocumentFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) });
+    focusWithoutScroll(field);
+    applyEntry(field, entry);
+    requestAnimationFrame(() => {
+      if (!field.isConnected || entry.kind !== "point") return;
+      applyEntry(field, entry);
+    });
+    // The kernel takes the focus only after a timeout (and drops keys until then): keys pressed meanwhile reach
+    // the document, which hands them over (typeKey); they are replayed in order right after the kernel's focus,
+    // before any later key.
+    const replay = () => {
+      if (readyRef.current || !field.isConnected) return;
+      readyRef.current = true;
+      const keys = pendingKeys.current;
+      pendingKeys.current = [];
+      for (let i = 0; i < keys.length; i++) {
+        // A key left the formula (Tab, an arrow at its edge, Enter): the document takes the rest.
+        if (leftRef.current) {
+          callbacksRef.current.handBack(keys.slice(i));
+          return;
+        }
+        typeKeyInto(field, keys[i]);
+      }
+    };
+    if (field.shadowRoot?.activeElement) queueMicrotask(replay);
+    else field.addEventListener("focusin", () => queueMicrotask(replay), { once: true, capture: true });
+  };
+  const activateRef = useRef(activate);
+  activateRef.current = activate;
   const register = useCallback((_lineId: string, field: MathfieldElement | null, expected?: MathfieldElement) => {
     fieldRef.current = field;
     detachDollar.current?.();
@@ -525,6 +591,9 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       field.removeEventListener("beforeinput", onBeforeInput, true);
       field.removeEventListener("visualtex-command-accepted", onAccepted);
     };
+    // exactly the formula's picture: no room kept around it for the caret (drawn over what is around it)
+    const kernel = kernelOf(field) as { visualTexNoCaretRoom?: boolean } | null;
+    if (kernel) kernel.visualTexNoCaretRoom = true;
     // An inline formula is set in text style, as in the text (and as its static markup).
     if (!displayRef.current) field.defaultMode = "inline-math";
     installDocumentFieldStyle(field);
@@ -539,34 +608,8 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       });
       return;
     }
-    setOpenDocumentFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) });
-    focusWithoutScroll(field);
     // The engine draws the field on its next frame; the caret is placed in that geometry.
-    const entry = entryRef.current;
-    applyEntry(field, entry);
-    requestAnimationFrame(() => {
-      if (!field.isConnected || entry.kind !== "point") return;
-      applyEntry(field, entry);
-    });
-    // The kernel takes the focus only after a timeout (and drops keys until then): keys pressed meanwhile reach
-    // the document, which hands them over (typeKey); they are replayed in order right after the kernel's focus,
-    // before any later key.
-    const replay = () => {
-      if (readyRef.current || !field.isConnected) return;
-      readyRef.current = true;
-      const keys = pendingKeys.current;
-      pendingKeys.current = [];
-      for (let i = 0; i < keys.length; i++) {
-        // A key left the formula (Tab, an arrow at its edge, Enter): the document takes the rest.
-        if (leftRef.current) {
-          callbacksRef.current.handBack(keys.slice(i));
-          return;
-        }
-        typeKeyInto(field, keys[i]);
-      }
-    };
-    if (field.shadowRoot?.activeElement) queueMicrotask(replay);
-    else field.addEventListener("focusin", () => queueMicrotask(replay), { once: true, capture: true });
+    activateRef.current(field, entryRef.current);
   }, []);
 
   const onEdit = useCallback((edit: FormulaFieldEdit) => {

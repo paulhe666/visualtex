@@ -810,26 +810,25 @@
 .vtx-math-display.is-in-selection .vtx-formula-static {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.vtx-math-inline.is-open .vtx-formula-static,
-.vtx-math-display.is-open .vtx-formula-static,
-.vtx-math-inline.is-partial .vtx-formula-static,
-.vtx-math-display.is-partial .vtx-formula-static {
+/* Mathcha's model: near the screen a formula is its live editor (is-live), resting until it is opened; the picture
+   stands in only before the editor has drawn (or far from the screen). The editor is drawn out of the flow and
+   unseen (is-pending) until it takes the picture's place, in one frame. */
+.vtx-math-inline.is-live .vtx-formula-static,
+.vtx-math-display.is-live .vtx-formula-static {
   display: none;
 }
-/* a formula's editor that is starting: the formula's picture stays in its place, over the editor, until the editor
-   has drawn the formula (a new editor's first frame is unstyled) */
-.vtx-math-inline.is-opening {
+.vtx-math-inline {
   position: relative;
 }
-.vtx-math-inline.is-opening .vtx-formula-static,
-.vtx-math-display.is-opening .vtx-formula-static {
-  display: block;
-  position: absolute;
+.vtx-formula-editor.is-pending {
+  position: absolute !important;
+  left: 0;
+  top: 0;
+  visibility: hidden;
   pointer-events: none;
 }
-.vtx-math-inline.is-opening .vtx-formula-editor,
-.vtx-math-display.is-opening .vtx-formula-editor {
-  opacity: 0;
+.vtx-math-display.is-in-selection .vtx-formula-editor {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 /* a formula a selection through the text takes a part of: its editor only shows that part selected; a press on it
    is the document's (it opens the formula, or drags the selection) */

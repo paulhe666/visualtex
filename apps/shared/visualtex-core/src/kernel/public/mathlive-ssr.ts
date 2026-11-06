@@ -80,7 +80,10 @@ export function convertLatexToMarkup(
   //
   // 2. The layout engine lays out and draws the formula
   //
-  return visualTexLayoutEngine.renderAtoms(atoms, { display });
+  return visualTexLayoutEngine.renderAtoms(atoms, {
+    display,
+    editor: (options as { visualTexEditorLayout?: boolean } | undefined)?.visualTexEditorLayout === true,
+  });
 }
 
 /**

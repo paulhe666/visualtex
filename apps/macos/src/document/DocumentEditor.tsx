@@ -47,6 +47,7 @@ import {
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { cachedPreviewMarkup } from "../components/MathPreview";
+import { convertVisualTexLatexToFieldMarkup } from "../editor/mathLiveIntegralCompatibility";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
 import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customSymbolRegistry";
@@ -143,11 +144,34 @@ async function insertImageFiles(view: EditorView, files: Blob[], at?: { x: numbe
   view.focus();
 }
 
+const documentMarkupCache = new Map<string, string>();
+
+/**
+ * A formula of the document drawn as its resting editor draws it (the editor's own layout, inline formulas in text
+ * style): the live editor takes the picture's place without a pixel's change.
+ */
+function documentFormulaMarkup(latex: string, display: boolean): string {
+  const key = `${getCustomSymbolRevision()}\u0000${getFormulaFontRevision()}\u0000${display ? "d" : "i"}\u0000${latex}`;
+  const cached = documentMarkupCache.get(key);
+  if (cached !== undefined) return cached;
+  let markup = "";
+  try {
+    markup = convertVisualTexLatexToFieldMarkup(latex, {
+      defaultMode: display ? "math" : "inline-math",
+      visualTexEditorLayout: true,
+    } as Parameters<typeof convertVisualTexLatexToFieldMarkup>[1]);
+  } catch (error) {
+    console.warn("VisualTeX could not draw a document formula.", error);
+  }
+  if (documentMarkupCache.size > 2000) documentMarkupCache.delete(documentMarkupCache.keys().next().value!);
+  documentMarkupCache.set(key, markup);
+  return markup;
+}
+
 function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) => void) | undefined): FormulaHost {
   return {
     renderStatic(latex, display) {
-      const source = display ? latex : `{\\textstyle ${latex}}`;
-      const markup = cachedPreviewMarkup(source, getCustomSymbolRevision(), getFormulaFontRevision());
+      const markup = documentFormulaMarkup(latex, display);
       if (!markup) return "";
       const holder = document.createElement("span");
       holder.innerHTML = markup;
@@ -186,10 +210,12 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
         styled: (range, _kind, enable) => apiRef.current?.styled(range, enable) ?? null,
         rangeBold: (range) => apiRef.current?.rangeBold(range) ?? null,
         toggleBold: () => apiRef.current?.toggleBold() ?? false,
+        enter: (entry) => apiRef.current?.enter(entry),
+        rest: () => apiRef.current?.rest(),
         whenDrawn(done) {
           // The editor's first frame is not styled yet (its shadow styles apply a frame later): drawn once its formula
-          // is laid out with them. And it shows only once it has the focus: until then the document's selection (the
-          // formula node, from the press) still spans it, and WebKit would paint that selection in it for a frame.
+          // is laid out with them. (An editor opened at once shows only once it has the focus: until then the
+          // document's selection still spans it, and WebKit would paint that selection in it for a frame.)
           let frames = 0;
           const check = () => {
             const root = container.querySelector("math-field")?.shadowRoot;
