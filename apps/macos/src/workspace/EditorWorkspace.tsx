@@ -1133,6 +1133,8 @@ export function EditorWorkspace({
         <section className="editor-surface document-editor-surface">
           {/* the document library, the document's own buttons and the page; the formula tools stay in the bottom dock */}
           <DocumentWorkspace editorRef={editorRef} onPasteImage={showOcrActions ? onPasteImage : undefined} />
+          {/* OCR's progress, as over the formula rows */}
+          {ocrOverlay}
         </section>
       );
     }

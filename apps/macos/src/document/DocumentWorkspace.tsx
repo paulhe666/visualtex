@@ -26,6 +26,8 @@ import {
   serializeDocument,
 } from "../../../shared/visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
+import type { FormulaEditSource } from "../history/historyTypes";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
 import { createSafeStorage } from "../runtime/safeStorage";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
@@ -123,6 +125,23 @@ function insertRecognized(view: EditorView, latex: string, place: { from: number
   return command(view.state, view.dispatch, view);
 }
 
+/**
+ * A recognised formula as the app hands it over (OCR): a row a line, the formula rows' alignment markers at the rows'
+ * top-level &. In a document it is one formula: its rows in an aligned environment (gathered when no row has an
+ * alignment point), so the rows and their alignment stay as recognised.
+ */
+function recognizedRowsLatex(latex: string): string {
+  const rows = latex
+    .split(/\n+/)
+    .map((row) => row.trim())
+    .filter(Boolean);
+  if (rows.length <= 1) return (rows[0] ?? "").split(VISUALTEX_ALIGNMENT_MARKER_LATEX).join("");
+  const aligned = rows.some((row) => row.includes(VISUALTEX_ALIGNMENT_MARKER_LATEX));
+  const environment = aligned ? "aligned" : "gathered";
+  const body = rows.map((row) => row.split(VISUALTEX_ALIGNMENT_MARKER_LATEX).join("&")).join(" \\\\ ");
+  return `\\begin{${environment}}${body}\\end{${environment}}`;
+}
+
 /** A recognised formula's LaTeX without its delimiters ($…$, $$…$$, \(…\), \[…\]); lines joined as rows. */
 function bareFormulaLatex(latex: string): string {
   let source = latex.trim();
@@ -171,7 +190,9 @@ function createDocumentEditorAdapter(document: () => DocumentEditorHandle | null
     places.set(lineId, { doc: view.state.doc, from, to, formula });
     return formula?.selection ?? { lineId, ranges: [[from, to]], direction: "forward" };
   };
-  const insertLatexAt = (target: MathEditorInsertionTarget, latex: string) => {
+  const insertLatexAt = (target: MathEditorInsertionTarget, given: string, source?: FormulaEditSource) => {
+    // rows recognised by OCR: one formula of those rows (text with $…$ around formulas is pasted as it is)
+    const latex = source === "ocr" && !/\$|\\\(|\\\[/.test(given) ? recognizedRowsLatex(given) : given;
     const view = document()?.view();
     if (!view) return false;
     const place = places.get(target.lineId);
