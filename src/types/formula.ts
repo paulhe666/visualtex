@@ -108,6 +108,12 @@ export interface FormulaDocument {
       | "palatino"
       | "helvetica";
     formulaChineseFont?: "system" | "pingfang" | "songti" | "kaiti" | "heiti";
+    /** spacing configurations per formula font (editor/formulaSpacingPreferences.ts); normalized when read */
+    formulaSpacing?: unknown;
+    /** letters, Greek letters and digits in fonts of their own (editor/formulaFontPreferences.ts); normalized when read */
+    formulaFaces?: unknown;
+    /** chords of common buttons (shortcuts/buttonShortcuts.ts); normalized when read */
+    buttonShortcuts?: unknown;
     inputBehavior?: InputBehaviorSettings;
     personalize?: boolean;
     suggestionCount?: number;
@@ -128,19 +134,18 @@ export interface FormulaHistoryItem {
 
 export interface InputBehaviorSettings {
   autoEscapeShortcuts: boolean;
+  /** Automatic upright typography: units, function names, d, e, i, labels. */
+  autoUprightTypography: boolean;
   autoExitSuperscript: boolean;
   autoExitSubscript: boolean;
   autoExitAccent: boolean;
   autoExitWrapperCommand: boolean;
-  showStructuredCommandSuggestions: boolean;
-  showOtherCommandSuggestions: boolean;
 }
 
 export type InputBehaviorSettingKey =
   | "autoEscapeShortcuts"
+  | "autoUprightTypography"
   | "autoExitSuperscript"
   | "autoExitSubscript"
   | "autoExitAccent"
-  | "autoExitWrapperCommand"
-  | "showStructuredCommandSuggestions"
-  | "showOtherCommandSuggestions";
+  | "autoExitWrapperCommand";

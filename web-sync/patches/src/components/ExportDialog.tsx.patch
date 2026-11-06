@@ -1,19 +1,8 @@
 diff --git a/src/components/ExportDialog.tsx b/src/components/ExportDialog.tsx
-index e689644..3645fd4 100644
+index cf35707..315e867 100644
 --- a/src/components/ExportDialog.tsx
 +++ b/src/components/ExportDialog.tsx
-@@ -224,8 +224,8 @@ export function ExportDialog({
- 
-       onNotify(
-         isEn
--          ? `${definition.labelEn} exported successfully`
--          : `${definition.labelZh} 已成功导出`,
-+          ? `${definition.labelEn} exported`
-+          : `已导出 ${definition.labelZh}`,
-       );
-       onClose();
-     } catch (cause) {
-@@ -334,6 +334,7 @@ export function ExportDialog({
+@@ -335,6 +335,7 @@ export function ExportDialog({
            </button>
          </div>
  

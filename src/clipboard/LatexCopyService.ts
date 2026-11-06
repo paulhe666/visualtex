@@ -25,6 +25,7 @@ import type {
   LatexFormatProfile,
 } from "../types/formula";
 import { resolveFormulaDisplayStyle } from "./latexFormatProfile";
+import { toPortableBoldLatex } from "./portableBoldLatex";
 
 export type LatexCodeFormatGroup = "single" | "multi";
 
@@ -58,9 +59,9 @@ export const latexCodeFormats: readonly LatexCodeFormatDefinition[] = [
     titleEn: "Mixed LaTeX · inline / display",
     hint: "文字$x$  /  $$y$$",
     descriptionZh:
-      "每行独立选择行内/行间；回车继承，Shift+回车行内，Alt+回车行间；行内文字放在 $...$ 外",
+      "每行独立选择行内/行间；回车继承，新建行内/行间行与切换当前行的快捷键见快捷键设置；行内文字放在 $...$ 外",
     descriptionEn:
-      "Choose per row; Enter inherits, Shift+Enter is inline, Alt+Enter is display; inline text stays outside $...$",
+      "Choose per row; Enter inherits; new inline/display rows and switching a row use the shortcuts in the hotkey settings; inline text stays outside $...$",
   },
   {
     id: "inline-dollar",
@@ -2059,6 +2060,6 @@ export async function copyFormulaLinesUniversal(
   profile: LatexFormatProfile,
 ) {
   await navigator.clipboard.writeText(
-    formatFormulaLinesUniversal(lines, profile),
+    toPortableBoldLatex(formatFormulaLinesUniversal(lines, profile)),
   );
 }

@@ -1,0 +1,2466 @@
+/* The document mode: Mathcha's editor (docs/document-editor/MATHCHA-SPEC.md). Sizes inside the page are in
+   em of the document's text size (15px at zoom 1), so the zoom scales everything together. */
+
+/* ---- the Formulas | Document switch in the main window's header ---- */
+.workspace-content-switch {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  margin-left: 6px;
+  border: 1px solid var(--border, #d5dae0);
+  border-radius: 8px;
+  background: var(--surface-sunken, #e9edf1);
+}
+.workspace-content-switch button {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #4e5967);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.workspace-content-switch button.is-active {
+  background: var(--surface, #fff);
+  color: var(--text, #1d232b);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(24, 31, 40, 0.07));
+}
+
+/* ---- the link dialog (Ctrl+K) ---- */
+.vtx-link-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 340px;
+  padding: 10px 12px;
+}
+.vtx-link-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.vtx-link-dialog label span {
+  flex: none;
+  width: 34px;
+}
+.vtx-link-dialog input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.vtx-link-dialog input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.vtx-link-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vtx-link-dialog-hint {
+  flex: 1 1 auto;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* ---- links ([text](url)): the address shows on hover ---- */
+.vtx-document a.vtx-link {
+  color: #1f6fd0;
+  text-decoration: underline;
+  text-decoration-color: rgba(31, 111, 208, 0.45);
+  text-underline-offset: 2px;
+  cursor: text;
+}
+
+/* ---- LaTeX | Markdown input, in the header's middle in document mode (DESIGN.md §7.1) ---- */
+.document-input-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.document-input-caption {
+  color: var(--text-faint, #7a8494);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.document-input-switch .workspace-content-switch {
+  margin-left: 0;
+}
+/* ---- document mode in the workspace (DESIGN.md §6.4): the document takes the formula rows' card ---- */
+.workspace.is-document-mode .editor-pane-scroll {
+  overflow: hidden;
+}
+.workspace.is-document-mode .editor-pane-scroll > .document-editor-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.vtx-document-workspace {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.vtx-document-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.mc-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  background: #fff;
+  color: #000;
+  font-family: "Segoe UI", Arial, Verdana, sans-serif;
+}
+
+/* ---- the document's own toolbar, above the page (the formula tools stay in the bottom dock) ---- */
+.document-top-toolbar {
+  flex: none;
+  align-self: stretch;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.document-top-toolbar .icon-button.compact {
+  width: 30px;
+  height: 30px;
+}
+.document-top-toolbar.is-in-formula {
+  opacity: 0.55;
+}
+/* the collapsed formula tiles' button in the top bar */
+.document-tile-expand {
+  color: var(--accent);
+}
+
+/* ---- the document's controls in the bottom bar (the formula controls' look) ---- */
+.document-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* a button with a panel: its icon and caret side by side (the strip makes its icon buttons 28px squares) */
+.document-controls .icon-button.compact.document-control-popover-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: auto;
+  min-width: 36px;
+  padding: 0 3px;
+}
+.document-controls .icon-button.compact.document-control-popover-button.is-wide {
+  min-width: 96px;
+  justify-content: space-between;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.document-control-caret {
+  flex: none;
+  opacity: 0.6;
+}
+.document-size-value {
+  font-size: 12px;
+  color: var(--text);
+}
+.document-section-icon {
+  font: 700 8px/1 Arial, sans-serif;
+  text-align: left;
+}
+.document-control-text {
+  font: 12px/1 "Times New Roman", serif;
+  white-space: nowrap;
+}
+.document-big-sigma {
+  font-size: 15px;
+}
+.document-control-dismiss {
+  position: fixed;
+  inset: 0;
+  z-index: 188;
+}
+.document-control-panel {
+  position: fixed;
+  z-index: var(--z-popover, 190);
+  min-width: 132px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 13px;
+}
+.document-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.document-menu-item:hover,
+.document-menu-item.is-current {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.document-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.document-swatch-none {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.document-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 22px);
+  gap: 5px;
+}
+.document-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.document-swatch:hover {
+  outline: 2px solid var(--accent-border);
+}
+.document-table-picker {
+  padding: 2px;
+}
+.document-table-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 16px);
+  gap: 2px;
+}
+.document-table-cell {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.document-table-cell.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.document-table-size {
+  margin-top: 6px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* ---- the source tab: the document as LaTeX or Markdown (the output format), read-only ---- */
+.document-source-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.document-source-view-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.document-source-view-note {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.document-format-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.document-format-switch-label {
+  padding: 0 5px;
+  color: var(--text-faint);
+}
+.document-format-switch button {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.document-format-switch button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.document-source-view-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.document-source-view-host .cm-editor {
+  height: 100%;
+}
+
+/* ---- the right-click menu ---- */
+.mc-dismiss {
+  position: fixed;
+  inset: 0;
+  z-index: 189;
+}
+.mc-panel {
+  position: absolute;
+  z-index: 190;
+  min-width: 130px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 13px;
+}
+.mc-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mc-menu-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.mc-menu-item:disabled {
+  color: var(--text-faint);
+  opacity: 0.6;
+  cursor: default;
+}
+.mc-menu-item kbd {
+  margin-left: auto;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12px;
+}
+.mc-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+/* ---- canvas, page ---- */
+.mc-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The writing surface is the whole window, as a canvas without edges: white from side to side, as tall as the
+   window at least, and always with room below the last line to go on writing (a click there goes on there). */
+.mc-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  /* a scroll bar that takes room ("always show scroll bars") has its room kept: the page's width (and the fitted
+     zoom) never changes as it comes and goes */
+  scrollbar-gutter: stable;
+  padding: 0;
+  background: #fff;
+}
+.mc-page {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 1em 48px 45vh;
+  background: #fff;
+  cursor: text;
+}
+
+/* ---- document text (Arial 15px, line height 1.4, no paragraph spacing) ---- */
+/* bold and italic for fonts without such faces (SimSun, most CJK fonts): the app turns synthesis off elsewhere, and
+   the PDF printer drops it then */
+.vtx-sheet,
+.vtx-document {
+  font-synthesis: weight style;
+}
+/* formulas draw their own faces */
+.vtx-math-inline,
+.vtx-math-display,
+.vtx-note-math,
+.vtx-formula-editor {
+  font-synthesis: none;
+}
+.vtx-document {
+  outline: none;
+  color: #000;
+  font-family: Arial, Helvetica, "Microsoft YaHei", "PingFang SC", sans-serif;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  tab-size: 4;
+  counter-reset: vtx-s1 vtx-s2 vtx-s3;
+  caret-color: #000;
+}
+.vtx-document p {
+  margin: 0;
+  padding-left: calc(var(--vtx-indent, 0) * 2em);
+}
+
+/* the document's title (\title + \maketitle): centred, LaTeX's \LARGE, unnumbered */
+.vtx-document p.vtx-title {
+  margin: 0;
+  padding: 0.6em 0 0.9em;
+  font-size: 1.728em;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* sections: Mathcha's three numbered levels */
+.vtx-document h1,
+.vtx-document h2,
+.vtx-document h3 {
+  margin: 0;
+  padding: 0.5em 0 0.5em calc(var(--vtx-indent, 0) * 2em);
+  font-weight: bold;
+  line-height: 1.4;
+}
+.vtx-document h1 {
+  font-size: 1.2em;
+  counter-increment: vtx-s1;
+  counter-reset: vtx-s2 vtx-s3;
+}
+.vtx-document h2 {
+  font-size: 1.1em;
+  counter-increment: vtx-s2;
+  counter-reset: vtx-s3;
+}
+.vtx-document h3 {
+  font-size: 1em;
+  counter-increment: vtx-s3;
+}
+.vtx-document h1::before {
+  content: counter(vtx-s1) ". ";
+  padding-right: 0.5em;
+  white-space: pre;
+}
+.vtx-document h2::before {
+  content: counter(vtx-s1) "." counter(vtx-s2) ". ";
+  padding-right: 0.25em;
+  white-space: pre;
+}
+.vtx-document h3::before {
+  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) ". ";
+  padding-right: 0.25em;
+  white-space: pre;
+}
+/* WebKit (macOS) draws the caret of an empty line before generated content that flows inline (and none at all in a
+   flex row), so the number never flows inline: it floats at the start of a left-aligned heading; in a centred or
+   right-aligned one it is taken out of the line where it would start and drawn just before the text. */
+.vtx-document :is(h1, h2, h3)::before {
+  float: left;
+}
+.vtx-document :is(h1, h2, h3):is([data-align="center"], [data-align="right"])::before {
+  position: absolute;
+  float: none;
+  transform: translateX(-100%);
+}
+/* room for the number inside the text area (both sides, so the text stays centred) */
+.vtx-document :is(h1, h2, h3)[data-align="center"] {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
+  padding-right: 3em;
+}
+.vtx-document :is(h1, h2, h3)[data-align="right"] {
+  padding-left: calc(3em + var(--vtx-indent, 0) * 2em);
+}
+
+/* lists: Mathcha's prefix at 30px (2em), the text after it (bullet 45px, number 49px); a nested level 20px further */
+.vtx-document ul,
+.vtx-document ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vtx-document ol {
+  counter-reset: vtx-item;
+}
+.vtx-document li {
+  position: relative;
+  padding-left: 3em;
+}
+.vtx-document ol > li {
+  counter-increment: vtx-item;
+  padding-left: calc(49em / 15);
+}
+.vtx-document li::before {
+  position: absolute;
+  left: 2em;
+  top: 0;
+  line-height: 1.4;
+}
+.vtx-document ul > li::before {
+  content: "•";
+}
+.vtx-document ol > li::before {
+  content: counter(vtx-item) ".";
+}
+.vtx-document li li {
+  padding-left: calc(2.333em);
+}
+.vtx-document li ol > li {
+  padding-left: calc(2.6em);
+}
+.vtx-document li li::before {
+  left: 1.333em;
+}
+.vtx-document li ul > li::before {
+  content: "–";
+}
+.vtx-document li ol > li::before {
+  content: counter(vtx-item, lower-alpha) ".";
+}
+.vtx-document li li ul > li::before {
+  content: "◦";
+}
+.vtx-document li li ol > li::before {
+  content: counter(vtx-item, lower-roman) ".";
+}
+.vtx-document li > p {
+  margin: 0;
+  padding-left: 0;
+}
+.vtx-document blockquote {
+  margin: 0;
+  padding-left: 1em;
+  border-left: 3px solid #ccc;
+}
+.vtx-document hr {
+  margin: 0.5em 0;
+  border: none;
+  border-top: 1px solid #9e9e9e;
+}
+
+/* ---- what Markdown files bring (markdown.ts, richBlocks.ts) ---- */
+/* headings 4-6 (Markdown's ####…): unnumbered, bold, as LaTeX's \paragraph */
+.vtx-document h4,
+.vtx-document h5,
+.vtx-document h6 {
+  margin: 0;
+  padding: 0.4em 0 0.3em calc(var(--vtx-indent, 0) * 2em);
+  font-size: 1em;
+  font-weight: bold;
+  line-height: inherit;
+}
+.vtx-document h6 {
+  color: #555;
+}
+/* a task: a box in place of the bullet (a click ticks it) */
+.vtx-document li.vtx-task::before {
+  content: "";
+  box-sizing: border-box;
+  left: calc(2em - 0.15em);
+  top: 0.32em;
+  width: 0.85em;
+  height: 0.85em;
+  border: 1px solid #6b7280;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.vtx-document li li.vtx-task::before {
+  left: calc(1.333em - 0.15em);
+}
+.vtx-document li.vtx-task[data-checked="true"]::before {
+  border-color: var(--accent, #2f6fde);
+  background: var(--accent, #2f6fde) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% no-repeat;
+}
+.vtx-document li.vtx-task[data-checked="true"] > p {
+  color: #6b7280;
+}
+/* an alert (> [!NOTE]): GitHub's colours and name */
+.vtx-document blockquote[data-alert] {
+  padding: 0.2em 0 0.2em 1em;
+  border-left-width: 3px;
+}
+.vtx-document blockquote[data-alert]::before {
+  display: block;
+  font-weight: bold;
+}
+.vtx-document blockquote[data-alert="note"] { border-left-color: #0969da; }
+.vtx-document blockquote[data-alert="note"]::before { content: "ⓘ Note"; color: #0969da; }
+.vtx-document blockquote[data-alert="tip"] { border-left-color: #1a7f37; }
+.vtx-document blockquote[data-alert="tip"]::before { content: "💡 Tip"; color: #1a7f37; }
+.vtx-document blockquote[data-alert="important"] { border-left-color: #8250df; }
+.vtx-document blockquote[data-alert="important"]::before { content: "❗ Important"; color: #8250df; }
+.vtx-document blockquote[data-alert="warning"] { border-left-color: #9a6700; }
+.vtx-document blockquote[data-alert="warning"]::before { content: "⚠ Warning"; color: #9a6700; }
+.vtx-document blockquote[data-alert="caution"] { border-left-color: #d1242f; }
+.vtx-document blockquote[data-alert="caution"]::before { content: "⛔ Caution"; color: #d1242f; }
+/* x^2^, H~2~O: no taller lines */
+.vtx-document sup,
+.vtx-document sub {
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document kbd {
+  padding: 0 0.3em;
+  border: 1px solid #c8ccd2;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f6f8fa;
+  font: 0.85em ui-monospace, "SF Mono", Consolas, monospace;
+}
+/* [toc]: the headings, a click goes there */
+.vtx-document .vtx-toc {
+  margin: 0.3em 0;
+  padding: 0.3em 0;
+  user-select: none;
+}
+.vtx-document .vtx-toc[data-empty]::before {
+  content: "[toc]";
+  color: #8a8f98;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+}
+.vtx-document .vtx-toc-entry {
+  cursor: pointer;
+}
+.vtx-document .vtx-toc-entry:hover {
+  color: var(--accent, #2f6fde);
+}
+.vtx-document .vtx-toc-entry[data-level="2"] { padding-left: 1.5em; }
+.vtx-document .vtx-toc-entry[data-level="3"] { padding-left: 3em; }
+.vtx-document .vtx-toc-entry[data-level="4"] { padding-left: 4.5em; }
+.vtx-document .vtx-toc-entry[data-level="5"] { padding-left: 6em; }
+.vtx-document .vtx-toc-entry[data-level="6"] { padding-left: 7.5em; }
+.vtx-document .vtx-toc-number {
+  margin-right: 0.5em;
+}
+.vtx-document .vtx-toc.ProseMirror-selectednode,
+.vtx-document .vtx-html.ProseMirror-selectednode {
+  outline: 1px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+/* HTML kept from a file: drawn as it is; a comment only as a faint label */
+.vtx-document .vtx-html {
+  margin: 0.2em 0;
+  white-space: normal;
+}
+.vtx-document .vtx-html.is-comment {
+  margin: 0;
+  line-height: 1.2;
+}
+.vtx-document .vtx-html-comment {
+  color: #9aa0a8;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+}
+.vtx-document .vtx-html img,
+.vtx-document .vtx-html-inline img {
+  max-width: 100%;
+}
+.vtx-document .vtx-html-source {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--accent, #2f6fde);
+  border-radius: 4px;
+  font: 12px/1.5 ui-monospace, "SF Mono", Consolas, monospace;
+  resize: vertical;
+}
+/* a Mermaid block: its diagram under the code */
+.vtx-document .vtx-code-diagram {
+  padding: 12px;
+  border-top: 1px solid #2b2b2b;
+  background: #fff;
+  text-align: center;
+  white-space: normal;
+}
+.vtx-document .vtx-code-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.vtx-document .vtx-code-diagram.is-error {
+  background: #1e1e1e;
+  color: #f48771;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+  text-align: left;
+}
+
+/* ---- formulas: 17px (17/15 of the text; on a page, --vtx-math-scale of the body size), line height 1.2 ---- */
+.vtx-math-inline,
+.vtx-math-display {
+  font-size: calc(var(--vtx-math-scale, 1.1333) * 1em);
+  line-height: 1.2;
+  cursor: text;
+}
+.vtx-math-inline {
+  display: inline-block;
+  white-space: nowrap;
+}
+.vtx-math-inline.is-empty:not(.is-open) .vtx-formula-static::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.9em;
+  vertical-align: -0.15em;
+  outline: 1px dashed #b0b0b0;
+}
+/* the formula being edited or selected: a light blue, the same for inline and display formulas (inline: with an
+   outline while it is edited) */
+.vtx-math-inline.is-open,
+.vtx-math-inline.is-selected,
+.vtx-math-display.is-open,
+.vtx-math-display.is-selected {
+  background-color: rgba(33, 150, 243, 0.08);
+}
+.vtx-math-inline.is-open {
+  outline: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+/* Selected text has the formula rows' selection colour. A formula in the selection is highlighted whole in that
+   colour, not glyph box by glyph box (its parts are absolutely placed boxes the browser would paint one by one). */
+.vtx-document::selection,
+.vtx-document ::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.vtx-math-inline::selection,
+.vtx-math-inline ::selection,
+.vtx-math-display::selection,
+.vtx-math-display ::selection {
+  background: transparent;
+}
+/* A formula's picture and number take no part in the browser's selection at all (nothing of it is ever painted on
+   them, whatever the selection's state): the formula is highlighted whole by is-in-selection / is-selected. */
+.vtx-formula-static,
+.vtx-formula-number {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.vtx-math-inline.is-in-selection,
+.vtx-math-display.is-in-selection .vtx-formula-static {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* Mathcha's model: near the screen a formula is its live editor (is-live), resting until it is opened; the picture
+   stands in only before the editor has drawn (or far from the screen). The editor is drawn out of the flow and
+   unseen (is-pending) until it takes the picture's place, in one frame. */
+.vtx-math-inline.is-live .vtx-formula-static,
+.vtx-math-display.is-live .vtx-formula-static {
+  display: none;
+}
+.vtx-math-inline {
+  position: relative;
+}
+.vtx-formula-editor.is-pending {
+  position: absolute !important;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.vtx-math-display.is-in-selection .vtx-formula-editor {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* a formula a selection through the text takes a part of: its editor only shows that part selected; a press on it
+   is the document's (it opens the formula, or drags the selection) */
+.vtx-math-inline.is-partial .vtx-formula-editor,
+.vtx-math-display.is-partial .vtx-formula-editor,
+.vtx-math-inline.is-partial .vtx-formula-editor *,
+.vtx-math-display.is-partial .vtx-formula-editor * {
+  pointer-events: none !important;
+}
+/* with formulas partly selected the selection is a range: no text caret */
+.vtx-document.vtx-has-formula-parts,
+.ProseMirror.vtx-has-formula-parts {
+  caret-color: transparent;
+}
+/* Mathcha's display line: 0.3em above and below, the formula centred, room at the right for the tag */
+.vtx-math-display {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0.3em 0;
+  padding: 0 3em;
+  min-height: 1.2em;
+}
+.vtx-math-display.is-empty:not(.is-open) .vtx-formula-static::before {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  height: 1em;
+  outline: 1px dashed #b0b0b0;
+}
+.vtx-math-display .vtx-formula-number {
+  position: absolute;
+  right: 0.6em;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: "Times New Roman", serif;
+  font-size: calc(15em / 17);
+  color: #000;
+}
+.vtx-math-display .vtx-formula-number.is-placeholder {
+  color: #9e9e9e;
+}
+.vtx-math-display.is-open .vtx-formula-number {
+  cursor: pointer;
+}
+
+/* the live formula editor inside a document formula: the formula's own size, VisualTeX's caret */
+.vtx-formula-editor {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.vtx-math-display .vtx-formula-editor {
+  display: block;
+  min-width: 4em;
+}
+.vtx-formula-editor .mathfield-host {
+  display: inline-block;
+}
+.vtx-formula-editor math-field.visual-mathfield {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ---- code blocks: VS Code's Dark+ (editor #1e1e1e, text #d4d4d4, header #252526, selection #264f78; Consolas
+   14px with 19px lines at zoom 1); the colours of the code come from the grammar (codeHighlighter.ts) ---- */
+.vtx-document .vtx-code-block {
+  margin: 0.5em 0;
+  border: 1px solid #2b2b2b;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+.vtx-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 6px 0 4px;
+  border-bottom: 1px solid #2b2b2b;
+  background: #252526;
+  color: #cccccc;
+  font: 12px/1 "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+.vtx-code-language {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #cccccc;
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.vtx-code-language:hover,
+.vtx-code-language:focus-visible {
+  border-color: #3c3c3c;
+  background: #2a2d2e;
+}
+.vtx-code-language option {
+  background: #252526;
+  color: #cccccc;
+}
+.vtx-code-copy {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #cccccc;
+  font: inherit;
+  cursor: pointer;
+}
+.vtx-code-copy:hover {
+  border-color: #3c3c3c;
+  background: #2a2d2e;
+}
+.vtx-document .vtx-code-pre {
+  margin: 0;
+  padding: 10px 14px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: calc(14em / 15);
+  line-height: 1.357;
+  tab-size: 4;
+  caret-color: #aeafad;
+  scrollbar-color: #424242 #1e1e1e;
+}
+.vtx-document .vtx-code-content {
+  display: block;
+  min-height: 1.357em;
+  font: inherit;
+  white-space: pre;
+}
+.vtx-document .vtx-code-block ::selection {
+  background: #264f78;
+}
+
+/* ---- tables: Mathcha's ruled grid ---- */
+.vtx-document .tableWrapper {
+  margin: 0.3em 0;
+  overflow-x: auto;
+}
+.vtx-document table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.vtx-document td,
+.vtx-document th {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 2em;
+  padding: 0.5em;
+  border: 1px solid #000;
+  vertical-align: top;
+  text-align: left;
+  font-weight: normal;
+}
+.vtx-document td > p,
+.vtx-document th > p {
+  padding-left: 0;
+}
+.vtx-document .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #90caf9;
+  pointer-events: none;
+}
+.vtx-document.resize-cursor {
+  cursor: col-resize;
+}
+.vtx-document .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(33, 150, 243, 0.18);
+  pointer-events: none;
+}
+
+/* ---- the LaTeX command menu under a "\" command typed in the text: the formula editor's suggestion look ---- */
+.vtx-cmd-menu {
+  position: absolute;
+  z-index: 40;
+  width: 380px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  font: 13px/1.3 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.vtx-cmd-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  overscroll-behavior: contain;
+}
+.vtx-cmd-item {
+  display: grid;
+  grid-template-columns: 1.1em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.vtx-cmd-item + .vtx-cmd-item {
+  margin-top: 3px;
+}
+.vtx-cmd-item:hover {
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+}
+.vtx-cmd-item.is-current {
+  border-color: var(--accent-border);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.vtx-cmd-index {
+  color: var(--text-faint);
+  font: 600 12px/1 system-ui, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.vtx-cmd-item.is-current .vtx-cmd-index {
+  color: var(--accent);
+}
+.vtx-cmd-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vtx-cmd-label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vtx-cmd-item.is-current .vtx-cmd-label {
+  color: var(--text);
+}
+.vtx-cmd-desc {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vtx-cmd-preview {
+  min-width: 64px;
+  max-width: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--text);
+}
+.vtx-cmd-formula {
+  font-size: 17px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.vtx-cmd-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.vtx-cmd-display .vtx-cmd-formula {
+  font-size: 13px;
+}
+.vtx-cmd-tag {
+  color: var(--text-muted);
+  font: 12px "Times New Roman", serif;
+}
+.vtx-cmd-sample {
+  font: 14px/1 Arial, "Microsoft YaHei", sans-serif;
+  white-space: nowrap;
+}
+.vtx-cmd-sample.is-bold { font-weight: 700; }
+.vtx-cmd-sample.is-italic { font-style: italic; }
+.vtx-cmd-sample.is-underline { text-decoration: underline; }
+.vtx-cmd-sample.is-strike { text-decoration: line-through; }
+.vtx-cmd-sample.is-mono { font-family: "JetBrains Mono", Consolas, monospace; font-size: 13px; }
+.vtx-cmd-line {
+  display: inline-block;
+  height: 3px;
+  width: 30px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  vertical-align: middle;
+}
+.vtx-cmd-section {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 700 13px/1 Arial, sans-serif;
+}
+.vtx-cmd-section.is-level-2 { font-size: 12px; }
+.vtx-cmd-section.is-level-3 { font-size: 11px; }
+.vtx-cmd-section .vtx-cmd-line { height: 4px; background: var(--text-muted); }
+.vtx-cmd-title {
+  display: inline-flex;
+  justify-content: center;
+  width: 52px;
+}
+.vtx-cmd-title .vtx-cmd-line { width: 34px; height: 6px; background: var(--text-muted); }
+.vtx-cmd-list-mock,
+.vtx-cmd-align,
+.vtx-cmd-quote {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 52px;
+}
+.vtx-cmd-list-mock > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: 11px/1 Arial, sans-serif;
+  color: var(--text-muted);
+}
+.vtx-cmd-marker { min-width: 10px; text-align: right; }
+.vtx-cmd-align .vtx-cmd-line.is-long { width: 52px; }
+.vtx-cmd-align .vtx-cmd-line.is-mid { width: 38px; }
+.vtx-cmd-align .vtx-cmd-line.is-short { width: 26px; }
+.vtx-cmd-align.is-center { align-items: center; }
+.vtx-cmd-align.is-right { align-items: flex-end; }
+.vtx-cmd-quote {
+  padding-left: 6px;
+  border-left: 3px solid var(--border-strong);
+}
+.vtx-cmd-quote .vtx-cmd-line.is-long { width: 40px; }
+.vtx-cmd-quote .vtx-cmd-line.is-mid { width: 28px; }
+.vtx-cmd-table {
+  display: grid;
+  grid-template-columns: repeat(3, 14px);
+  grid-auto-rows: 9px;
+  border-top: 1px solid var(--text-muted);
+  border-left: 1px solid var(--text-muted);
+}
+.vtx-cmd-table > span {
+  border-right: 1px solid var(--text-muted);
+  border-bottom: 1px solid var(--text-muted);
+}
+.vtx-cmd-code {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #1e1e1e;
+  color: #569cd6;
+  font: 12px/1 Consolas, monospace;
+}
+.vtx-cmd-rule {
+  display: inline-block;
+  width: 52px;
+  border-top: 1.5px solid var(--text-muted);
+}
+
+/* ---- context menu ---- */
+.mc-context {
+  position: fixed;
+  top: auto;
+  left: auto;
+  min-width: 220px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+.mc-context .mc-menu-item {
+  padding: 7px 16px;
+}
+
+/* ---- where a dragged document selection lands: a caret in the text ---- */
+.vtx-drop-marker {
+  position: fixed;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+.vtx-drop-marker.is-caret {
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+}
+
+/* ---- notice ---- */
+.mc-notice {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 200;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- ProseMirror's own required styles ---- */
+.ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+.ProseMirror-gapcursor:after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid #000;
+  animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+@keyframes ProseMirror-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+.ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+.ProseMirror-selectednode {
+  outline: none;
+}
+.vtx-document .vtx-eqref {
+  font-family: "Times New Roman", serif;
+}
+
+/* ---- the page view (DESIGN.md §8.2): a sheet of the paper's size on a grey desk; its background draws the pages
+   and the gaps between them, the page layer prints the footnotes and page numbers on it ---- */
+.mc-canvas.is-paged {
+  background: #e8e9ec;
+}
+.vtx-sheet {
+  position: relative;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.08);
+  cursor: text;
+}
+.vtx-sheet .vtx-document {
+  font-family: var(--vtx-body-font);
+  line-height: var(--vtx-line-height, 1.3);
+}
+.vtx-sheet .vtx-document h1,
+.vtx-sheet .vtx-document h2,
+.vtx-sheet .vtx-document h3 {
+  line-height: var(--vtx-line-height, 1.3);
+}
+.vtx-page-break {
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+.vtx-page-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--vtx-body-font);
+  line-height: var(--vtx-line-height, 1.3);
+}
+.vtx-page-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  color: #8a8f98;
+  font-size: 0.75em;
+  text-align: center;
+}
+/* a page's footnotes: their bottom at the foot of the text area, a short rule above them */
+.vtx-page-footnotes {
+  position: absolute;
+  box-sizing: border-box;
+  padding-top: 0.9em;
+  transform: translateY(-100%);
+  background: linear-gradient(#222, #222) 0 0.45em / 33% 0.06em no-repeat;
+  pointer-events: auto;
+}
+.vtx-page-footnotes.is-measuring {
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  transform: none;
+}
+.vtx-page-footnote {
+  font-size: 0.8em;
+  cursor: text;
+}
+.vtx-page-footnote sup {
+  margin-right: 0.25em;
+  font-size: 0.75em;
+}
+.vtx-page-footnote:hover {
+  background: rgba(33, 150, 243, 0.06);
+}
+.vtx-note-math {
+  display: inline-block;
+  font-size: calc(var(--vtx-math-scale, 1.1333) * 1em);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* a footnote's number in the text */
+.vtx-document sup.vtx-footnote {
+  padding: 0 0.08em;
+  color: #1f6fd0;
+  font-size: 0.7em;
+  line-height: 0;
+  vertical-align: super;
+  cursor: pointer;
+}
+.vtx-document sup.vtx-footnote.ProseMirror-selectednode {
+  outline: 1px solid rgba(33, 150, 243, 0.5);
+}
+/* a citation: [1], [2, 3] */
+.vtx-document .vtx-cite {
+  color: #1f6fd0;
+  cursor: default;
+}
+.vtx-document .vtx-cite.is-broken {
+  color: #c62828;
+}
+.vtx-document .vtx-cite.ProseMirror-selectednode {
+  outline: 1px solid rgba(33, 150, 243, 0.5);
+}
+/* the reference list: its title, then [1] … */
+.vtx-document .vtx-bibliography {
+  margin-top: 0.8em;
+}
+.vtx-document .vtx-bibliography-title::before {
+  content: var(--vtx-bibliography-title, "References");
+  display: block;
+  margin: 0.4em 0;
+  font-size: 1.1em;
+  font-weight: bold;
+}
+.vtx-document .vtx-bibliography ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: vtx-bib;
+}
+.vtx-document .vtx-bib-entry {
+  position: relative;
+  padding-left: 2.6em;
+  counter-increment: vtx-bib;
+}
+.vtx-document .vtx-bib-entry::before {
+  content: "[" counter(vtx-bib) "]";
+  position: absolute;
+  left: 0;
+}
+/* the document's citation picker and page setup panels */
+.vtx-footnote-dialog {
+  width: 380px;
+}
+.vtx-footnote-dialog-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vtx-footnote-dialog {
+  overflow: visible;
+}
+.vtx-footnote-input .vtx-footnote-editor {
+  min-height: 64px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font-family: var(--vtx-body-font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.vtx-footnote-input .vtx-footnote-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ---- body fonts, size, page setup, citations in the document's toolbar (DESIGN.md §8) ---- */
+.document-controls .icon-button.compact.document-control-popover-button.document-font-button {
+  min-width: 112px;
+  max-width: 170px;
+}
+.document-font-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.document-font-caption {
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 12px;
+}
+.document-controls .icon-button.compact.document-control-popover-button.document-body-size-button {
+  min-width: 64px;
+}
+/* a fixed height: the panel is placed once, before the system's fonts have been read */
+.document-font-list {
+  display: flex;
+  flex-direction: column;
+  width: 250px;
+  height: min(420px, calc(100vh - 150px));
+  overflow-y: auto;
+}
+.document-font-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+}
+.document-font-search,
+.document-page-field input {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.document-font-search {
+  margin: 2px 2px 6px;
+}
+.document-font-search:focus,
+.document-page-field input:focus,
+.document-citation-new:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.document-font-item {
+  font-size: 14px;
+}
+.document-menu-heading {
+  margin: 6px 6px 3px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+.document-menu-note {
+  margin: 4px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: normal;
+}
+.document-menu-hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.document-size-columns {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr 1.2fr;
+  gap: 6px;
+  width: 420px;
+}
+.document-page-setup {
+  display: flex;
+  flex-direction: column;
+  width: 318px;
+}
+.document-page-papers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.document-page-papers .document-menu-item {
+  width: auto;
+  justify-content: center;
+  min-width: 52px;
+}
+.document-page-margins {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  padding: 0 4px;
+}
+.document-page-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.document-page-field input {
+  width: 64px;
+  height: 26px;
+  padding: 0 4px;
+}
+.document-page-unit {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.document-citation-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 340px;
+}
+.document-citation-entries {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.document-citation-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.document-citation-entry:hover {
+  background: var(--accent-soft);
+}
+.document-citation-number {
+  flex: none;
+  color: var(--text-faint);
+}
+.document-citation-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.document-citation-new {
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+.document-citation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.document-citation-picker > .primary-small-button {
+  align-self: flex-end;
+}
+/* the picker's buttons: one height, one baseline */
+.document-citation-actions > button,
+.document-citation-picker > .primary-small-button,
+.vtx-link-dialog-actions > button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 14px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ---- the page margins, dragged on the sheet (MarginGuides) ---- */
+.vtx-margin-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.vtx-margin-guide {
+  position: absolute;
+  pointer-events: auto;
+}
+.vtx-margin-guide.is-vertical {
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+.vtx-margin-guide.is-horizontal {
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+}
+.vtx-margin-guide::after {
+  content: "";
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* the dashed line on the text area's edge: the grip's inner side */
+.vtx-margin-guide.is-vertical::after {
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--accent, #1f638e);
+}
+.vtx-margin-guide.is-vertical.is-start::after {
+  right: 0;
+}
+.vtx-margin-guide.is-vertical.is-end::after {
+  left: 0;
+}
+.vtx-margin-guide.is-horizontal::after {
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--accent, #1f638e);
+}
+.vtx-margin-guide.is-horizontal.is-start::after {
+  bottom: 0;
+}
+.vtx-margin-guide.is-horizontal.is-end::after {
+  top: 0;
+}
+.vtx-margin-guide:hover::after {
+  opacity: 0.6;
+}
+.vtx-margin-guides.is-dragging .vtx-margin-guide::after {
+  opacity: 0;
+}
+.vtx-margin-line {
+  position: absolute;
+  pointer-events: none;
+}
+.vtx-margin-line.is-vertical {
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--accent, #1f638e);
+}
+.vtx-margin-line.is-horizontal {
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--accent, #1f638e);
+}
+.vtx-margin-value {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent, #1f638e);
+  color: #fff;
+  font: 12px/1.4 var(--font-ui, "Segoe UI", sans-serif);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- section numbers in the document's format: 1 / 1.1 (no final dot), or none ---- */
+.vtx-sheet.is-headings-plain .vtx-document h1::before {
+  content: counter(vtx-s1) " ";
+}
+.vtx-sheet.is-headings-plain .vtx-document h2::before {
+  content: counter(vtx-s1) "." counter(vtx-s2) " ";
+}
+.vtx-sheet.is-headings-plain .vtx-document h3::before {
+  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) " ";
+}
+.vtx-sheet.is-headings-none .vtx-document h1::before,
+.vtx-sheet.is-headings-none .vtx-document h2::before,
+.vtx-sheet.is-headings-none .vtx-document h3::before {
+  content: none;
+}
+
+/* a margin's exact value, typed after a double-click on its grip */
+.vtx-margin-edit {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.14);
+  color: var(--text-muted);
+  font: 12px/1.4 var(--font-ui, "Segoe UI", sans-serif);
+  pointer-events: auto;
+}
+.vtx-margin-edit input {
+  box-sizing: border-box;
+  width: 64px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+/* ---- the document library beside the page (DocumentLibrary.tsx) ---- */
+.document-library {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 236px;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.document-library-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px 4px 12px;
+}
+.document-library-heading {
+  flex: 1 1 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.document-library-icon,
+.document-library-item-more,
+.document-library-item-action,
+.document-library-search-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.document-library-icon {
+  width: 26px;
+  height: 26px;
+}
+.document-library-icon:hover,
+.document-library-item-more:hover,
+.document-library-item-action:hover,
+.document-library-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.document-library-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 2px 8px 6px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-faint);
+}
+.document-library-search:focus-within {
+  border-color: var(--accent);
+}
+.document-library-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.document-library-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.document-library-search-clear {
+  width: 18px;
+  height: 18px;
+}
+.document-library-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 6px 8px;
+  overflow-y: auto;
+}
+.document-library-root {
+  min-height: 24px;
+  border-radius: 6px;
+}
+.document-library-folder,
+.document-library-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  cursor: default;
+}
+.document-library-item.is-nested {
+  padding-left: 27px;
+}
+.document-library-folder:hover,
+.document-library-item:hover {
+  background: var(--surface-hover);
+}
+.document-library-item.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.document-library-folder.is-drop,
+.document-library-root.is-drop {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+.document-library-chevron {
+  flex: none;
+  margin: 0 -2px 0 -4px;
+  color: var(--text-faint);
+}
+.document-library-item-icon {
+  flex: none;
+  color: var(--text-faint);
+}
+.document-library-item.is-current .document-library-item-icon {
+  color: var(--accent);
+}
+.document-library-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-library-item.is-untitled .document-library-item-name {
+  color: var(--text-faint);
+}
+.document-library-item-time {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.document-library-item-more,
+.document-library-item-action {
+  width: 22px;
+  height: 22px;
+}
+.document-library-item-more {
+  display: none;
+}
+.document-library-folder:hover .document-library-item-more,
+.document-library-item:hover .document-library-item-more {
+  display: inline-flex;
+}
+.document-library-folder:hover .document-library-item-time,
+.document-library-item:hover .document-library-item-time {
+  display: none;
+}
+.document-library-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.document-library-empty {
+  padding: 12px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+.document-library-trash {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 40%;
+  padding: 4px 6px 6px;
+  border-top: 1px solid var(--border);
+}
+.document-library-trash-head {
+  cursor: pointer;
+}
+.document-library-trash-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.document-library-item.is-trashed {
+  color: var(--text-muted);
+}
+.document-library-text-button {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.document-library-text-button:hover {
+  background: var(--surface-active);
+}
+.document-library-menu {
+  position: fixed;
+  z-index: var(--z-popover, 190);
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 13px;
+}
+.document-library-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.document-library-menu-item:hover {
+  background: var(--surface-hover);
+}
+.document-library-menu-item.is-danger {
+  color: var(--danger);
+}
+.document-library-menu-item.is-checked {
+  color: var(--accent);
+  font-weight: 600;
+}
+.document-library-menu-icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.document-library-menu-item.is-danger .document-library-menu-icon {
+  color: var(--danger);
+}
+.document-library-menu-rule {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+/* a narrow window: the library over the page */
+@media (max-width: 760px) {
+  .vtx-document-workspace .document-library {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 120;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* ---- images (DESIGN.md §11): a box in the line, bottom on the baseline, as \includegraphics ---- */
+.vtx-document .vtx-image {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+  max-width: 100%;
+  line-height: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--vtx-image-aspect, auto);
+  pointer-events: none;
+}
+.vtx-document .vtx-image.is-missing {
+  min-height: 2em;
+  background: repeating-linear-gradient(45deg, #f1f3f6 0 6px, #e6e9ee 6px 12px);
+}
+/* an image line: the images 0.02\linewidth apart (\hspace{0.02\linewidth}) */
+.vtx-document p.vtx-image-line .vtx-image.has-gap {
+  margin-left: 2%;
+}
+/* wrapfigure: \columnsep (10pt) beside the text, \intextsep (12pt) below; the top \intextsep − 1.4ex under the first
+   baseline (wrapfig mid-page) */
+.vtx-document .vtx-image.is-wrap-left,
+.vtx-document .vtx-image.is-wrap-right {
+  margin-top: calc((var(--vtx-line-height, 1.3) - 1) * 0.5em + 0.85em + 12 * var(--vtx-pt, 1.333px) - 0.6em);
+  margin-bottom: calc(12 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-left {
+  float: left;
+  margin-right: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-image.is-wrap-right {
+  float: right;
+  margin-left: calc(10 * var(--vtx-pt, 1.333px));
+}
+/* wrapfig wraps paragraphs only: other blocks, image lines and the next wrapped paragraph start below a wrapped
+   image (the export's \vtxwrapclear) */
+.vtx-document > :not(p),
+.vtx-document > p.vtx-image-line,
+.vtx-document > p:has(> .vtx-image.is-wrap-left, > .vtx-image.is-wrap-right) {
+  clear: both;
+}
+.vtx-document .vtx-image.is-selected {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 1px;
+}
+.vtx-image-handle {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 28px;
+  max-height: 80%;
+  transform: translateY(-50%);
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: var(--accent, #2f6fde);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+.vtx-image-handle.is-left {
+  left: -5px;
+}
+.vtx-image-handle.is-right {
+  right: -5px;
+}
+.vtx-document .vtx-image.is-selected .vtx-image-handle,
+.vtx-document .vtx-image.is-resizing .vtx-image-handle {
+  display: block;
+}
+.vtx-image-size {
+  position: fixed;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(30, 34, 40, 0.86);
+  color: #fff;
+  font: 12px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}
+.vtx-image-bar {
+  position: fixed;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.vtx-image-bar[hidden] {
+  display: none;
+}
+.vtx-image-bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #2b3038);
+  cursor: pointer;
+}
+.vtx-image-bar-button:hover:not(:disabled) {
+  background: var(--hover, #eef1f5);
+}
+.vtx-image-bar-button.is-on {
+  background: var(--active, #e2ebfb);
+  color: var(--accent, #2f6fde);
+}
+.vtx-image-bar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vtx-image-bar-gap {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border, #d8dce3);
+}
+.vtx-drop-marker.is-wrap {
+  border-radius: 2px;
+}
+
+/* ---- image boards (imageBoards.ts): images placed freely in a block as wide as the line; places in fractions of
+   the line width (cqw: the board's width), the board as high as its lowest image (padding-bottom, set by its view) ---- */
+.vtx-document .vtx-image-board {
+  position: relative;
+  height: 0;
+  margin: 0.15em 0 0.3em;
+  container-type: inline-size;
+  clear: both;
+  user-select: none;
+}
+.vtx-document .vtx-image-board.is-arranging {
+  outline: 1px dashed #b8bec8;
+  outline-offset: 2px;
+}
+.vtx-document .vtx-board-image {
+  position: absolute;
+  line-height: 0;
+  cursor: move;
+}
+.vtx-document .vtx-board-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.vtx-document .vtx-board-image.is-missing {
+  background: repeating-linear-gradient(45deg, #f1f3f6 0 6px, #e6e9ee 6px 12px);
+}
+.vtx-document .vtx-board-image.is-selected,
+.vtx-document .vtx-board-image.is-also-selected {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 1px;
+  z-index: 1;
+}
+.vtx-document .vtx-board-image.is-leaving {
+  opacity: 0.4;
+}
+.vtx-board-handle {
+  display: none;
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #fff;
+  border-radius: 2px;
+  background: var(--accent, #2f6fde);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+}
+.vtx-board-handle.is-nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.vtx-board-handle.is-ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.vtx-board-handle.is-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.vtx-board-handle.is-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.vtx-document .vtx-board-image.is-selected .vtx-board-handle {
+  display: block;
+}
+/* guides while an image moves: aligned edges and centres, equal gaps */
+.vtx-board-guide {
+  position: fixed;
+  z-index: 2147483000;
+  background: #e5484d;
+  pointer-events: none;
+}
+.vtx-board-guide.is-gap {
+  background: #e5484d;
+  box-shadow: 0 -3px 0 -2px #e5484d, 0 3px 0 -2px #e5484d;
+}
+.vtx-drop-marker.is-box {
+  border: 2px dashed var(--accent, #2f6fde);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent, #2f6fde) 8%, transparent);
+  box-shadow: none;
+}
+
+/* ---- page commands (\newpage, \pagenumbering{…}…): no height, as in TeX; the command in the left margin ---- */
+.vtx-document .vtx-page-command {
+  position: relative;
+  height: 0;
+  margin: 0;
+  cursor: default;
+  user-select: none;
+}
+.vtx-document .vtx-page-command .vtx-page-command-label {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: -0.7em;
+  /* within the left margin: a long command ends in "…" (its whole text is the label's title) */
+  max-width: calc(var(--vtx-margin-left, 120px) - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8a8f98;
+  font: 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+.vtx-document .vtx-page-command[data-command="newpage"],
+.vtx-document .vtx-page-command[data-command="clearpage"] {
+  border-top: 1px dashed #b8bec8;
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode .vtx-page-command-label {
+  color: var(--accent, #2f6fde);
+}
+.vtx-document .vtx-page-command.ProseMirror-selectednode {
+  outline: 1px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+
+/* ---- candidate bar (Settings > Formula editor > Candidates): the "\" menu in one row ---- */
+:root[data-candidate-style="bar"] .vtx-cmd-menu {
+  width: auto;
+  max-width: min(calc(100% - 8px), 760px);
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+}
+:root[data-candidate-style="bar"] .vtx-cmd-list {
+  display: flex;
+  flex-direction: row;
+  column-gap: 1px;
+  max-height: none;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #ffffff;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item,
+:root[data-candidate-style="bar"] .vtx-cmd-item + .vtx-cmd-item {
+  flex: none;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-copy {
+  grid-row: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  background: #5c3b18;
+  color: #ffffff;
+  font: 13px/1.2 Menlo, Consolas, "JetBrains Mono", monospace;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index {
+  grid-column: 1;
+  padding-left: 7px;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-index:not(:empty)::after {
+  content: ".";
+}
+:root[data-candidate-style="bar"] .vtx-cmd-copy {
+  grid-column: 2;
+  padding-right: 8px;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-label,
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-label {
+  overflow: visible;
+  color: #ffffff;
+  font: inherit;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-desc {
+  display: none;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-preview {
+  grid-row: 2;
+  grid-column: 1 / span 2;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  padding: 4px 8px;
+  background: #ede4e4;
+  color: #1e232a;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-copy {
+  background: #a66a2f;
+  color: #ffffff;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-preview {
+  background: #f6ecda;
+}
+:root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-index,
+:root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-copy {
+  background: #7d5226;
+}
+
+/* ---- tutorials (TutorialDialog.tsx): the tasks on the left, the video and what it shows on the right ---- */
+.vtx-tutorial-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1240px, calc(100vw - 28px));
+  height: min(880px, calc(100vh - 28px));
+  border-radius: 12px;
+}
+.vtx-tutorial-body {
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+.vtx-tutorial-group + .vtx-tutorial-group {
+  margin-top: 10px;
+}
+.vtx-tutorial-group-title {
+  padding: 6px 9px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vtx-tutorial-list button {
+  font-size: 13px;
+}
+.vtx-tutorial-list button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.vtx-tutorial-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  overflow: hidden;
+}
+.vtx-tutorial-video {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+.vtx-tutorial-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #f3f4f6;
+}
+.vtx-tutorial-missing {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.vtx-tutorial-text h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 16px;
+}
+.vtx-tutorial-text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.vtx-tutorial-steps {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.vtx-tutorial-steps button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.vtx-tutorial-button {
+  margin-left: auto;
+}

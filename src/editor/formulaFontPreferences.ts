@@ -1,12 +1,22 @@
 import { safeStorage } from "../runtime/safeStorage";
 
-export type FormulaLetterFont =
-  | "katex"
-  | "times"
-  | "cambria"
-  | "stix"
-  | "palatino"
-  | "helvetica";
+// The formula fonts of the main app: the math font, KaTeX (LaTeX's Computer
+// Modern) or newtxmath (LaTeX's newtxtext + newtxmath; stored as "times"),
+// with letters, Greek letters and digits optionally in fonts of their own. Earlier versions offered
+// more; formulas saved with those carry the old names (LegacyFormulaLetterFont)
+// and are shown in KaTeX.
+export type FormulaLetterFont = "katex" | "times";
+export type LegacyFormulaLetterFont = FormulaLetterFont | "cambria" | "stix" | "palatino" | "helvetica";
+
+/** Every letter font a saved formula may name (validated as such, shown via normalizeFormulaLetterFont). */
+export const LEGACY_FORMULA_LETTER_FONTS: readonly LegacyFormulaLetterFont[] = [
+  "katex",
+  "times",
+  "cambria",
+  "stix",
+  "palatino",
+  "helvetica",
+];
 
 export type FormulaChineseFont =
   | "system"
@@ -32,18 +42,76 @@ const VISUALTEX_FORMULA_CHINESE_GLYPH_PATTERN =
 
 const FORMULA_LETTER_FONT_STORAGE_KEY = "visualtex.formula-letter-font";
 const FORMULA_CHINESE_FONT_STORAGE_KEY = "visualtex.formula-chinese-font";
+export const FORMULA_FONT_PREFERENCES_CHANGED_EVENT =
+  "visualtex-formula-font-preferences-changed";
+
+// Formulas are laid out again on the change notification, so it is sent only
+// when the stored value changes (the Office window applies the main app's
+// preferences on every sync).
+function notifyFormulaFontPreferencesChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(FORMULA_FONT_PREFERENCES_CHANGED_EVENT));
+}
 
 export const FORMULA_LETTER_FONT_OPTIONS: ReadonlyArray<{
   id: FormulaLetterFont;
   label: string;
 }> = [
   { id: "katex", label: "KaTeX / Computer Modern" },
-  { id: "times", label: "Times New Roman" },
-  { id: "cambria", label: "Cambria Math" },
-  { id: "stix", label: "STIX" },
-  { id: "palatino", label: "Palatino" },
-  { id: "helvetica", label: "Helvetica" },
+  { id: "times", label: "newtxmath" },
 ];
+
+/**
+ * Characters set in a font of their own instead of the math font (AxMath's letter, symbol and digit fonts):
+ * Latin letters, Greek letters, digits. "" follows the math font.
+ */
+export type FormulaFaceRole = "letter" | "greek" | "digit";
+export type FormulaFaces = Record<FormulaFaceRole, string>;
+export const FORMULA_FACE_ROLES: readonly FormulaFaceRole[] = ["letter", "greek", "digit"];
+export const DEFAULT_FORMULA_FACES: FormulaFaces = { letter: "", greek: "", digit: "" };
+const FORMULA_FACES_STORAGE_KEY = "visualtex.formula-faces";
+
+/** A font family name as stored: no characters that could leave a CSS string. */
+function normalizeFaceName(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const name = value.replace(/["'\\;{}<>\n\r]/g, "").trim();
+  return name.length <= 128 ? name : "";
+}
+
+export function normalizeFormulaFaces(value: unknown): FormulaFaces {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    letter: normalizeFaceName(source.letter),
+    greek: normalizeFaceName(source.greek),
+    digit: normalizeFaceName(source.digit),
+  };
+}
+
+export function readPersistedFormulaFaces(): FormulaFaces {
+  try {
+    return normalizeFormulaFaces(JSON.parse(safeStorage.getItem(FORMULA_FACES_STORAGE_KEY) ?? "null"));
+  } catch {
+    return { ...DEFAULT_FORMULA_FACES };
+  }
+}
+
+export function persistFormulaFaces(value: FormulaFaces) {
+  const next = JSON.stringify(normalizeFormulaFaces(value));
+  if (safeStorage.getItem(FORMULA_FACES_STORAGE_KEY) === next) return;
+  safeStorage.setItem(FORMULA_FACES_STORAGE_KEY, next);
+  notifyFormulaFontPreferencesChanged();
+}
+
+/** The storage key other windows watch for a change of the faces. */
+export const FORMULA_FACES_STORAGE = FORMULA_FACES_STORAGE_KEY;
+
+/** The CSS families of a chosen face (its own italic and bold), or null: the math font's. */
+export function formulaFaceFamilies(name: string): { upright: string; italic: string } | null {
+  const face = normalizeFaceName(name);
+  if (!face) return null;
+  const family = `"${face}", serif`;
+  return { upright: family, italic: family };
+}
 
 export const FORMULA_CHINESE_FONT_OPTIONS: ReadonlyArray<{
   id: FormulaChineseFont;
@@ -69,31 +137,11 @@ const LETTER_FONT_FAMILIES: Record<
     upright: '"Times New Roman", Times, serif',
     italic: '"Times New Roman", Times, serif',
   },
-  cambria: {
-    upright: '"Cambria Math", Cambria, "Times New Roman", Times, serif',
-    italic: '"Cambria Math", Cambria, "Times New Roman", Times, serif',
-  },
-  stix: {
-    upright: '"STIX Two Math", "STIX Two Text", STIXGeneral, "Times New Roman", Times, serif',
-    italic: '"STIX Two Math", "STIX Two Text", STIXGeneral, "Times New Roman", Times, serif',
-  },
-  palatino: {
-    upright: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
-    italic: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
-  },
-  helvetica: {
-    upright: '"Helvetica Neue", Helvetica, Arial, sans-serif',
-    italic: '"Helvetica Neue", Helvetica, Arial, sans-serif',
-  },
 };
 
 const LETTER_PRIMARY_FONT_NAMES: Record<FormulaLetterFont, string> = {
   katex: "KaTeX_Math",
   times: "Times New Roman",
-  cambria: "Cambria Math",
-  stix: "STIX Two Math",
-  palatino: "Palatino",
-  helvetica: "Helvetica Neue",
 };
 
 const CHINESE_PRIMARY_FONT_NAMES: Record<FormulaChineseFont, string> = {
@@ -204,17 +252,17 @@ export function readPersistedFormulaFontPreferences(): {
 }
 
 export function persistFormulaLetterFontPreference(value: FormulaLetterFont) {
-  safeStorage.setItem(
-    FORMULA_LETTER_FONT_STORAGE_KEY,
-    normalizeFormulaLetterFont(value),
-  );
+  const next = normalizeFormulaLetterFont(value);
+  if (safeStorage.getItem(FORMULA_LETTER_FONT_STORAGE_KEY) === next) return;
+  safeStorage.setItem(FORMULA_LETTER_FONT_STORAGE_KEY, next);
+  notifyFormulaFontPreferencesChanged();
 }
 
 export function persistFormulaChineseFontPreference(value: FormulaChineseFont) {
-  safeStorage.setItem(
-    FORMULA_CHINESE_FONT_STORAGE_KEY,
-    normalizeFormulaChineseFont(value),
-  );
+  const next = normalizeFormulaChineseFont(value);
+  if (safeStorage.getItem(FORMULA_CHINESE_FONT_STORAGE_KEY) === next) return;
+  safeStorage.setItem(FORMULA_CHINESE_FONT_STORAGE_KEY, next);
+  notifyFormulaFontPreferencesChanged();
 }
 
 export function persistFormulaFontPreferences(

@@ -1,0 +1,25 @@
+diff --git a/src/shortcuts/buttonShortcuts.ts b/src/shortcuts/buttonShortcuts.ts
+index 1107ed9..b27ac87 100644
+--- a/src/shortcuts/buttonShortcuts.ts
++++ b/src/shortcuts/buttonShortcuts.ts
+@@ -36,8 +36,8 @@ export interface ButtonShortcutDefinition {
+   labelEn: string;
+ }
+ 
++// (the web build has no screenshot OCR, silent OCR or Office editor window)
+ export const BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = [
+-  { id: "quick-ocr", scope: "both", labelZh: "快捷截图识别（快捷 OCR）", labelEn: "Quick screenshot OCR" },
+   { id: "ocr", scope: "both", labelZh: "打开 OCR 识别窗口", labelEn: "Open OCR" },
+   { id: "copy-latex", scope: "both", labelZh: "复制 LaTeX", labelEn: "Copy LaTeX" },
+   { id: "copy-image", scope: "both", labelZh: "复制为图片", labelEn: "Copy as image" },
+@@ -45,10 +45,8 @@ export const BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = [
+   { id: "export", scope: "main", labelZh: "导出", labelEn: "Export" },
+   { id: "history", scope: "main", labelZh: "历史记录", labelEn: "History" },
+   { id: "toggle-tiles", scope: "main", labelZh: "显示 / 隐藏公式面板", labelEn: "Show / hide formula panel" },
+-  { id: "silent-ocr", scope: "main", labelZh: "开启 / 关闭静默 OCR", labelEn: "Turn silent OCR on / off" },
+   { id: "settings", scope: "main", labelZh: "设置", labelEn: "Settings" },
+   { id: "help", scope: "main", labelZh: "帮助", labelEn: "Help" },
+-  { id: "office-cancel", scope: "office", labelZh: "取消编辑（编辑器窗口）", labelEn: "Cancel editing (editor window)" },
+ ];
+ 
+ const ACTION_IDS = new Set<string>(BUTTON_SHORTCUT_ACTIONS.map((a) => a.id));

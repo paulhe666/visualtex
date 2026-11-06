@@ -564,12 +564,29 @@ function normalizeDesignerSource(
     throw new Error("Custom symbol designer layer has an invalid kind.");
   });
 
+  const baseLayerId =
+    value.baseLayerId === null ? null : typeof value.baseLayerId === "string" && layerIds.has(value.baseLayerId) ? value.baseLayerId : undefined;
   return {
     version: 1,
     ...(value.metrics == null ? {} : { metrics: normalizeMetrics(value.metrics) }),
+    ...(baseLayerId !== undefined ? { baseLayerId } : {}),
     assets,
     layers,
   };
+}
+
+/** An operator's italic correction and where the artwork reaches beyond the box (both optional). */
+function normalizeOperatorGeometry(value: Record<string, unknown>) {
+  const result: Pick<CustomSymbolDefinition, "italicCorrectionEm" | "artworkBounds"> = {};
+  const italic = Number(value.italicCorrectionEm);
+  if (value.italicCorrectionEm !== undefined && Number.isFinite(italic) && italic > 0 && italic <= 4) {
+    result.italicCorrectionEm = italic;
+  }
+  if (isRecord(value.artworkBounds)) {
+    const bounds = normalizeClipRect(value.artworkBounds);
+    if (bounds) result.artworkBounds = bounds;
+  }
+  return result;
 }
 
 function normalizeDefinition(
@@ -637,6 +654,7 @@ function normalizeDefinition(
     artwork: {
       shapes: value.artwork.shapes.map(normalizeShape),
     },
+    ...normalizeOperatorGeometry(value),
     ommlFallback,
     designerSource: normalizeDesignerSource(value.designerSource),
     createdAt: Number.isFinite(Number(value.createdAt)) ? Number(value.createdAt) : now,

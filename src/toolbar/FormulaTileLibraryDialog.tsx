@@ -215,15 +215,7 @@ export function FormulaTileLibraryDialog({
                         }
                         aria-pressed={isAdded}
                         data-formula-library-tile={tile.id}
-                        title={
-                          isAdded
-                            ? isEn
-                              ? `${label} · click to remove`
-                              : `${label} · 点击移除`
-                            : isEn
-                              ? `${label} · click to add`
-                              : `${label} · 点击添加`
-                        }
+                        title={label}
                         onClick={() => onToggle(tile.id)}
                       >
                         <MathPreview
@@ -253,8 +245,8 @@ export function FormulaTileLibraryDialog({
         <footer className="formula-tile-library-footer">
           <span>
             {isEn
-              ? `${selectedIds.length} tiles in Common · click a formula to add or remove it`
-              : `常用中已有 ${selectedIds.length} 个磁贴 · 点击公式即可添加或移除`}
+              ? `Common: ${selectedIds.length}`
+              : `常用：${selectedIds.length}`}
           </span>
           <button type="button" className="secondary-button" onClick={onClose}>
             {isEn ? "Done" : "完成"}

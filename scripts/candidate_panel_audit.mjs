@@ -511,6 +511,74 @@ async function runSourceChecks({ evaluate, key, typeText, client }) {
   check("\\s ranks \\sum first", ranked?.labels[0] === "\\sum", ranked?.labels.slice(0, 8));
   await key("Escape", "Escape", 27);
 
+  // 8. Number keys pick from the numbered page, like the visual editor.
+  const numbered = () =>
+    evaluate(`[...document.querySelectorAll(".cm-tooltip-autocomplete li")].map((li) => ({
+      label: li.querySelector(".cm-completionLabel")?.textContent ?? "",
+      number: li.querySelector(".cm-vt-completion-index")?.textContent ?? "",
+    }))`);
+  const pick = async (query, moves, finish) => {
+    await reset();
+    await typeText(query);
+    await sleep(250);
+    for (let i = 0; i < moves; i++) await key("ArrowDown", "ArrowDown", 40);
+    await sleep(120);
+    const rows = await numbered();
+    if (finish === "Enter") await key("Enter", "Enter", 13);
+    else if (finish === "Escape") await key("Escape", "Escape", 27);
+    else await key(finish, `Digit${finish}`, finish.charCodeAt(0));
+    await sleep(200);
+    return { rows, text: (await sourceText()).trim(), panelAfter: await panel() };
+  };
+  const firstPage = await pick("\\s", 0, "Escape");
+  const firstNumbers = firstPage.rows.map((row) => row.number);
+  await reset();
+  await typeText("\\s");
+  await sleep(250);
+  const numberLayout = await evaluate(`[...document.querySelectorAll(".cm-tooltip-autocomplete li")].slice(0, 9).map((li) => {
+    const row = li.getBoundingClientRect();
+    const number = li.querySelector(".cm-vt-completion-index").getBoundingClientRect();
+    const label = li.querySelector(".cm-completionLabel").getBoundingClientRect();
+    return { width: number.width, gap: label.left - number.right, offCenter: Math.abs((number.top + number.bottom) / 2 - (row.top + row.bottom) / 2) };
+  })`);
+  check("source: numbers sit in their own column left of the label",
+    numberLayout.length === 9 && numberLayout.every((r) => r.width >= 10 && r.gap >= 4 && r.offCenter <= 2), numberLayout);
+  await key("Escape", "Escape", 27);
+  check("source: first page numbered 1-9",
+    firstNumbers.slice(0, 9).join(",") === "1,2,3,4,5,6,7,8,9" && firstNumbers.slice(9).every((n) => n === ""), firstNumbers);
+  for (const digit of ["1", "2", "5", "9"]) {
+    const byDigit = await pick("\\s", 0, digit);
+    const byEnter = await pick("\\s", Number(digit) - 1, "Enter");
+    check(`source: \\s + ${digit} equals Enter on row ${digit}`,
+      byDigit.text !== "" && byDigit.text === byEnter.text && !byDigit.text.endsWith(digit) && byDigit.panelAfter === null,
+      { digit: byDigit.text, enter: byEnter.text, panelAfter: Boolean(byDigit.panelAfter) });
+  }
+  const secondPage = await pick("\\s", 10, "2");
+  const secondEnter = await pick("\\s", 10, "Enter");
+  const secondNumbers = secondPage.rows.map((row) => row.number);
+  check("source: second page numbered after arrowing",
+    secondNumbers.slice(9, 18).join(",") === "1,2,3,4,5,6,7,8,9" && secondNumbers.slice(0, 9).every((n) => n === ""), secondNumbers);
+  check("source: digit on second page picks row 11",
+    secondPage.text === secondEnter.text && secondPage.text.startsWith(secondPage.rows[10]?.label ?? "?"),
+    { digit: secondPage.text, enter: secondEnter.text, row11: secondPage.rows[10]?.label });
+  // The fuzzy match keeps short queries long (\bet has dozens of rows), so
+  // take the first query whose list ends before row 9.
+  let shortPage = null;
+  let shortQuery = "";
+  for (const query of ["\\varepsilo", "\\rightleftharpoo", "\\overbrac", "\\mathbb"]) {
+    shortPage = await pick(query, 0, "9");
+    shortQuery = query;
+    if (shortPage.rows.length && shortPage.rows.length < 9) break;
+  }
+  check(`source: digit past the last candidate is ignored (${shortQuery})`,
+    shortPage.rows.length && shortPage.rows.length < 9 && shortPage.text === shortQuery && shortPage.panelAfter !== null,
+    { rows: shortPage.rows.length, text: shortPage.text, open: Boolean(shortPage.panelAfter) });
+  await reset();
+  await typeText("x2");
+  await sleep(150);
+  const plainDigits = (await sourceText()).trim();
+  check("source: digits outside the panel still type", plainDigits === "x2", plainDigits);
+
   if (results.some((result) => !result.ok)) process.exitCode = 1;
 }
 

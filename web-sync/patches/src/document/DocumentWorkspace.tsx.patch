@@ -1,0 +1,25 @@
+diff --git a/src/document/DocumentWorkspace.tsx b/src/document/DocumentWorkspace.tsx
+index 192072c..55d1878 100644
+--- a/src/document/DocumentWorkspace.tsx
++++ b/src/document/DocumentWorkspace.tsx
+@@ -48,7 +48,7 @@ import {
+ } from "./documentLibraryApi";
+ import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
+ import { openDocumentFormula } from "./openDocumentFormula";
+-import { documentToPdf } from "./documentPdf";
++import { documentToPdf, printDocumentInBrowser } from "./documentPdf";
+ import { imagePathKey, loadImportImages } from "./importImages";
+ import {
+   DOCUMENT_COPY_LATEX_EVENT,
+@@ -621,6 +621,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
+       pdfBusy.current = true;
+       void (async () => {
+         try {
++          // in a browser: its print dialog ("Save as PDF")
++          if (!isTauri()) {
++            await printDocumentInBrowser(view, fileName(""));
++            return;
++          }
+           const path = await chooseExportPath(fileName(".pdf"), "pdf", isEn);
+           if (!path) return;
+           flash(t("Exporting PDF…", "正在导出 PDF…"));

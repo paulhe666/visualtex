@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -54,11 +52,8 @@ import { useEditorStore } from "../stores/editorStore";
 import { writeLocalStorage } from "../runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useCustomSymbolDesignerStore } from "../stores/customSymbolDesignerStore";
 
-const LazyCustomSymbolDesignerDialog = lazy(async () => {
-  const module = await import("../components/CustomSymbolDesignerDialog");
-  return { default: module.CustomSymbolDesignerDialog };
-});
 
 type MatrixDelimiter =
   | "matrix"
@@ -744,7 +739,8 @@ const calculusPreviewById: Record<string, string> = {
   "lim-right": "\\lim_{x\\to a^+}",
   derivative: "\\frac{\\mathrm{d}}{\\mathrm{d}x}",
   secondderivative: "\\frac{\\mathrm{d}^{2}}{\\mathrm{d}x^{2}}",
-  partial: "\\frac{\\partial}{\\partial x}",
+  "partialderivative-frac": "\\frac{\\partial}{\\partial x}",
+  dd: "\\mathrm{d}",
   partialsecond: "\\frac{\\partial^{2}}{\\partial x^{2}}",
   mixedpartial: "\\frac{\\partial^{2}}{\\partial x\\partial y}",
   evalbar: "\\left.\\vphantom{F}\\right|_a^b",
@@ -862,9 +858,7 @@ export function FormulaToolbar({
     useState<FormulaContextMenuState | null>(null);
   const [hotkeyTarget, setHotkeyTarget] =
     useState<FormulaHotkeyTarget | null>(null);
-  const [customSymbolDesignerOpen, setCustomSymbolDesignerOpen] = useState(false);
-  const [customSymbolDesignerActivated, setCustomSymbolDesignerActivated] =
-    useState(false);
+  const openCustomSymbolDesigner = useCustomSymbolDesignerStore((state) => state.openDesigner);
   const [activeCategory, setActiveCategory] =
     useState<ToolbarCategory>("common");
   const [fullPreviewCategories, setFullPreviewCategories] = useState<
@@ -1677,15 +1671,15 @@ export function FormulaToolbar({
     setTileSaveNotice(
       !duplicate
         ? isEn
-          ? `Saved to “${sectionName}”.`
-          : `已保存到「${sectionName}」。`
+          ? `Saved to “${sectionName}”`
+          : `已保存到「${sectionName}」`
         : duplicate.sectionId === activeCustomSection.id
           ? isEn
-            ? "This formula is already a tile; moved it to the front."
-            : "这个公式已经是磁贴了，已把它移到最前面。"
+            ? "Already a tile; moved to the front"
+            : "磁贴已存在，已移到最前"
           : isEn
-            ? `This formula is already a tile; moved it to “${sectionName}”.`
-            : `这个公式已经是磁贴了，已把它移到「${sectionName}」。`,
+            ? `Already a tile; moved to “${sectionName}”`
+            : `磁贴已存在，已移到「${sectionName}」`,
     );
     updateCustomTileLibrary((current) => {
       const existing = current.tiles.find(
@@ -1927,8 +1921,8 @@ export function FormulaToolbar({
           }
           title={
             isEn
-              ? "Insert the selected matrix · Right-click to set a hotkey"
-              : "插入当前矩阵 · 右键设置快捷键"
+              ? "Insert matrix"
+              : "插入矩阵"
           }
         >
           {isEn
@@ -2000,10 +1994,7 @@ export function FormulaToolbar({
         title={
           (isEn ? command.labelEn : command.labelZh) +
           " · " +
-          command.command +
-          (isEn
-            ? " · Right-click to set a hotkey"
-            : " · 右键设置快捷键")
+          command.command
         }
       >
         <MathPreview
@@ -2238,10 +2229,9 @@ export function FormulaToolbar({
                   data-open-custom-symbol-designer
                   onClick={() => {
                     setContextMenu(null);
-                    setCustomSymbolDesignerActivated(true);
-                    setCustomSymbolDesignerOpen(true);
+                    openCustomSymbolDesigner();
                   }}
-                  title={isEn ? "Open custom symbol designer" : "打开自定义字符设计器"}
+                  title={isEn ? "Symbol designer" : "字符设计器"}
                 >
                   <Pencil size={14} />
                   {isEn ? "Symbol designer" : "字符设计器"}
@@ -2250,13 +2240,15 @@ export function FormulaToolbar({
               <span role="status" data-tile-save-notice={tileSaveNotice ? "" : undefined}>
                 {tileSaveNotice ?? (!activeCustomSection
                   ? isEn
-                    ? "Create a section before saving formula tiles."
-                    : "请先新建一个分区，再保存公式磁贴。"
+                    ? "No section"
+                    : "无分区"
                   : activeLineLatex
-                    ? ""
+                    ? isEn
+                      ? ""
+                      : ""
                     : isEn
-                      ? "Select a non-empty formula line first."
-                      : "请先选择一个非空公式行。")}
+                      ? "Select a non-empty formula line"
+                      : "请先选择非空公式行")}
               </span>
               {sectionEditor && (
                 <div className="custom-formula-section-editor">
@@ -2320,8 +2312,8 @@ export function FormulaToolbar({
                     aria-label={isEn ? tile.labelEn : tile.labelZh}
                     title={
                       isEn
-                        ? `${tile.labelEn} · Right-click for more`
-                        : `${tile.labelZh} · 右键查看更多操作`
+                        ? tile.labelEn
+                        : tile.labelZh
                     }
                   >
                     <MathPreview
@@ -2357,8 +2349,8 @@ export function FormulaToolbar({
                 }}
                 title={
                   isEn
-                    ? "Add tiles from the formula library"
-                    : "从公式库添加磁贴"
+                    ? "Add tile"
+                    : "添加磁贴"
                 }
               >
                 <Plus size={13} />
@@ -2431,8 +2423,8 @@ export function FormulaToolbar({
                             title={
                               pendingDelete
                                 ? isEn
-                                  ? "Click again to confirm"
-                                  : "再次点击确认删除"
+                                  ? "Confirm delete"
+                                  : "确认删除"
                                 : isEn
                                   ? "Delete custom symbol"
                                   : "删除自定义字符"
@@ -2450,12 +2442,7 @@ export function FormulaToolbar({
               {customTileDefinitions.length === 0 &&
                 customTileLibrary.sections.length === 0 && (
                   <div className="formula-tile-empty">
-                    <strong>{isEn ? "No custom tiles yet" : "还没有自定义磁贴"}</strong>
-                    <span>
-                      {isEn
-                        ? "Select a formula line, then save it to a section."
-                        : "选中一个公式行，然后保存到分区中。"}
-                    </span>
+                    <strong>{isEn ? "No custom tiles" : "无自定义磁贴"}</strong>
                   </div>
                 )}
               <div
@@ -2556,8 +2543,8 @@ export function FormulaToolbar({
                                   }
                                   title={
                                     isEn
-                                      ? "Delete this section and all of its tiles"
-                                      : "删除整个分区及其中所有磁贴"
+                                      ? "Delete section"
+                                      : "删除分区"
                                   }
                                 >
                                   <Trash2 size={13} />
@@ -2577,7 +2564,9 @@ export function FormulaToolbar({
                             className="custom-formula-section-empty"
                             onClick={() => setActiveCustomSectionId(section.id)}
                           >
-                            {isEn ? "No tiles yet" : "还没有磁贴"}
+                            {isEn
+                              ? "Empty section"
+                              : "空分区"}
                           </button>
                         )}
                         {sectionRows.map((row) => (
@@ -2624,8 +2613,8 @@ export function FormulaToolbar({
                                   aria-label={isEn ? tile.labelEn : tile.labelZh}
                                   title={
                                     isEn
-                                      ? `${tile.labelEn} · Right-click for hotkey, color and section`
-                                      : `${tile.labelZh} · 右键设置快捷键、颜色和分区`
+                                      ? tile.labelEn
+                                      : tile.labelZh
                                   }
                                 >
                                   <MathPreview
@@ -2837,15 +2826,6 @@ export function FormulaToolbar({
         </div>
       )}
 
-      {customSymbolDesignerActivated ? (
-        <Suspense fallback={null}>
-          <LazyCustomSymbolDesignerDialog
-            open={customSymbolDesignerOpen}
-            language={language}
-            onClose={() => setCustomSymbolDesignerOpen(false)}
-          />
-        </Suspense>
-      ) : null}
       <FormulaTileLibraryDialog
         open={tileLibraryOpen}
         language={language}

@@ -465,6 +465,12 @@
   border-right: 0;
 }
 
+/* Without the capture-mode half (the Office editor window) it is a whole button */
+.quick-ocr-split > .quick-ocr-primary:only-child {
+  border-radius: 9px;
+  border-right: 1px solid var(--border);
+}
+
 .quick-ocr-mode-trigger {
   width: 26px;
   padding: 0;
@@ -2034,132 +2040,6 @@
    Windows-only enlargement made the inspector taller than the available
    WebView and clipped the registration section instead of letting the sidebars
    scroll independently. */
-.custom-symbol-designer-backdrop {
-  display: grid;
-  place-items: center;
-  padding: 10px;
-  overflow: hidden;
-}
-
-.custom-symbol-designer-dialog {
-  width: min(1180px, calc(100vw - 20px));
-  height: min(760px, calc(100vh - 20px));
-  min-width: 0;
-  min-height: 0;
-  max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 20px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.custom-symbol-designer-header,
-.custom-symbol-designer-footer {
-  flex: 0 0 auto;
-}
-
-.custom-symbol-designer-body {
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  grid-template-columns: 250px minmax(320px, 1fr) 238px;
-  overflow: hidden;
-}
-
-.custom-symbol-designer-sidebar {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-
-.custom-symbol-designer-stage-column,
-.custom-symbol-designer-stage,
-.custom-symbol-designer-canvas-shell {
-  min-height: 0;
-}
-
-.custom-symbol-designer-header,
-.custom-symbol-designer-footer {
-  padding: 11px 14px;
-}
-
-.custom-symbol-designer-header strong {
-  font-size: 16px;
-}
-
-.custom-symbol-designer-header span,
-.custom-symbol-designer-footer span {
-  font-size: 11px;
-}
-
-.custom-symbol-designer-sidebar {
-  gap: 10px;
-  padding: 10px;
-}
-
-.custom-symbol-designer-panel {
-  gap: 9px;
-  padding: 10px;
-  border-radius: 10px;
-}
-
-.custom-symbol-designer-panel > header,
-.custom-symbol-crop-heading {
-  font-size: 11px;
-}
-
-.custom-symbol-designer-panel > header span,
-.custom-symbol-crop-heading span,
-.custom-symbol-geometry-heading {
-  font-size: 10px;
-}
-
-.custom-symbol-material-input-row input,
-.custom-symbol-registration-field input,
-.custom-symbol-registration-field select,
-.custom-symbol-designer-number-field input,
-.custom-symbol-reference-selector select {
-  min-height: 34px;
-  font-size: 11px;
-}
-
-.custom-symbol-material-input-row button,
-.custom-symbol-quick-materials button,
-.custom-symbol-geometry-materials button,
-.custom-symbol-designer-inspector-actions button,
-.custom-symbol-crop-presets button,
-.custom-symbol-split-actions button,
-.custom-symbol-metric-presets button,
-.custom-symbol-designer-stage-toolbar button,
-.custom-symbol-register-button,
-.custom-symbol-designer-footer button {
-  font-size: 10px;
-}
-
-.custom-symbol-quick-materials button {
-  height: 42px;
-}
-
-.custom-symbol-geometry-materials button {
-  min-height: 42px;
-  font-size: 10px;
-}
-
-.custom-symbol-layer-item {
-  min-height: 46px;
-}
-
-.custom-symbol-layer-label strong,
-.custom-symbol-registered-copy strong {
-  font-size: 10px;
-}
-
-.custom-symbol-layer-label span,
-.custom-symbol-registered-copy code,
-.custom-symbol-designer-number-field span,
-.custom-symbol-registration-field span {
-  font-size: 9px;
-}
 
 .registered-custom-symbol-toolbar-item {
   position: relative;
@@ -2196,114 +2076,6 @@
 .registered-custom-symbol-toolbar-delete.is-confirming {
   border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
   background: color-mix(in srgb, var(--danger) 12%, var(--surface));
-}
-
-.custom-symbol-delete-warning,
-.custom-symbol-designer-legacy-warning,
-.custom-symbol-registration-status,
-.custom-symbol-metric-hint,
-.custom-symbol-designer-inspector-empty,
-.custom-symbol-layer-empty,
-.custom-symbol-registered-empty {
-  font-size: 10px;
-}
-
-.custom-symbol-designer-stage-toolbar {
-  min-height: 42px;
-  padding: 6px 10px;
-  font-size: 10px;
-}
-
-.custom-symbol-reference-selector select {
-  min-height: 28px;
-  font-size: 10px;
-}
-
-.custom-symbol-designer-stage-toolbar button {
-  min-height: 28px;
-  font-size: 10px;
-}
-
-.custom-symbol-eraser-size input[type="number"] {
-  min-height: 27px;
-  font-size: 10px;
-}
-
-.custom-symbol-designer-viewport-controls {
-  right: 12px;
-  bottom: 12px;
-  gap: 4px;
-  padding: 5px;
-}
-
-.custom-symbol-designer-viewport-controls button {
-  min-width: 29px;
-  height: 28px;
-  font-size: 10px;
-}
-
-.custom-symbol-designer-viewport-controls span {
-  min-width: 48px;
-  font-size: 10px;
-}
-
-.custom-symbol-designer-inspector-actions button,
-.custom-symbol-crop-presets button,
-.custom-symbol-split-actions button,
-.custom-symbol-metric-presets button {
-  min-height: 29px;
-  font-size: 9px;
-}
-
-.custom-symbol-register-button {
-  min-height: 36px;
-  font-size: 11px;
-}
-
-@media (max-width: 1120px) {
-  .custom-symbol-designer-dialog {
-    width: calc(100vw - 16px);
-    height: calc(100vh - 16px);
-    max-width: calc(100vw - 16px);
-    max-height: calc(100vh - 16px);
-  }
-
-  .custom-symbol-designer-body {
-    grid-template-columns: 220px minmax(300px, 1fr) 220px;
-  }
-}
-
-@media (max-width: 940px) {
-  .custom-symbol-designer-body {
-    grid-template-columns: 200px minmax(280px, 1fr) 200px;
-  }
-
-  .custom-symbol-designer-sidebar,
-  .custom-symbol-designer-panel {
-    padding: 7px;
-  }
-}
-
-@media (max-height: 720px) {
-  .custom-symbol-designer-dialog {
-    height: calc(100vh - 12px);
-    max-height: calc(100vh - 12px);
-  }
-
-  .custom-symbol-designer-header,
-  .custom-symbol-designer-footer {
-    padding-block: 7px;
-  }
-
-  .custom-symbol-designer-sidebar {
-    gap: 7px;
-    padding-block: 7px;
-  }
-
-  .custom-symbol-designer-panel {
-    gap: 7px;
-    padding-block: 7px;
-  }
 }
 
 /* Desktop compact-width parity. The classic tile rail can leave only ~500px

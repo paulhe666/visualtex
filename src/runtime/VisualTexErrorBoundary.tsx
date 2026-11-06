@@ -43,7 +43,7 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
       >
         <strong style={{ fontSize: 18 }}>VisualTeX 界面加载失败</strong>
         <p style={{ margin: 0, maxWidth: 760, color: "#4b5563" }}>
-          应用已经启动，但当前 WebView 在加载界面时遇到了异常。重新打开后若仍出现此页面，请把下面的错误信息发送给开发者。
+          界面加载失败。
         </p>
         <pre
           style={{

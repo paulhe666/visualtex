@@ -14,6 +14,8 @@ export interface FormulaPngRenderPreferences {
   background: PngExportBackground;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** The formula's ink (#rrggbb); near-black when absent. */
+  color?: string;
 }
 
 export async function renderFormulaDocumentPng(
@@ -27,13 +29,14 @@ export async function renderFormulaDocumentPng(
     throw new Error("There is no formula to export.");
   }
 
-  const svg = latexToSvg(nonEmptyFormulas.join("\n"), {
+  const svg = await latexToSvg(nonEmptyFormulas.join("\n"), {
     displayMode: true,
     fontSizePt: 18,
     paddingPx: 18,
     background: "transparent",
     formulaLetterFont: preferences.formulaLetterFont,
     formulaChineseFont: preferences.formulaChineseFont,
+    color: preferences.color,
   });
   return svgToPng(svg, {
     scale: 3,

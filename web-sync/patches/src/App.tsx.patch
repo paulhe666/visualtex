@@ -1,0 +1,1692 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index d0fa7d2..f761c97 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,8 +1,10 @@
+-import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
++// Web shell for the macOS app. Mirrors apps/macos/src/App.tsx, minus the
++// desktop-only parts (Office, updates, keypad window, local/quick/silent OCR),
++// plus the web-only parts (API OCR, landing showcase, tutorial, default zoom).
++import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+ import { useDocumentModeStore } from "./stores/documentModeStore";
+ import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
+ import { useDocumentLibraryStore } from "./document/documentLibraryApi";
+-import { installMcpRenderBridge } from "./office/shared/mcpRenderBridge";
+ import {
+   DOCUMENT_COPY_LATEX_EVENT,
+   DOCUMENT_COPY_MARKDOWN_EVENT,
+@@ -34,14 +36,12 @@ import {
+   FolderOpen,
+   GraduationCap,
+   History,
+-  Keyboard,
+   Languages,
+   LoaderCircle,
+   Menu,
+   PanelLeftClose,
+   PanelLeftOpen,
+   Redo2,
+-  RefreshCw,
+   Save,
+   ScanLine,
+   Settings2,
+@@ -55,25 +55,8 @@ import {
+ import { SettingsDialog } from "./components/SettingsDialog";
+ import { HistoryPanel } from "./components/HistoryPanel";
+ import { HelpManualDialog } from "./components/HelpManualDialog";
+-import { OcrDialog } from "./components/OcrDialog";
+ import { ExportDialog } from "./components/ExportDialog";
+-import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
+-import {
+-  decodeMacOfflineOfficeStatus,
+-  isMacOfficeStatusUnavailable,
+-  type MacOfflineOfficeStatus,
+-} from "./components/macOfficeStatusValidation";
+-import {
+-  MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+-  MAC_OFFICE_FIRST_RUN_STORAGE_KEY,
+-  macOfficeAutoInstallErrorText,
+-  MAC_POWERPOINT_REGISTRATION_RETRIES,
+-  MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
+-  macPowerPointRegistrationNeeded,
+-  resolveMacOfficeAutoInstall,
+-  resolveMacOfficeOnboarding,
+-} from "./components/macOfficeOnboarding";
+-import { UpdateDialog } from "./components/UpdateDialog";
++import { WebOcrDialog } from "./components/WebOcrDialog";
+ import { EditorWorkspace } from "./workspace/EditorWorkspace";
+ import {
+   EDITOR_ZOOM_STEP,
+@@ -98,69 +81,37 @@ import type {
+ import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
+ import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
+ import { formulaExportErrorMessage } from "./math/latexCompatibility";
+-import { ask } from "@tauri-apps/plugin-dialog";
+-import {
+-  DEFAULT_OCR_MODEL,
+-  OCR_MODELS,
+-  OCR_RECOGNIZER_OPTIONS,
+-  cancelOcrRecognition,
+-  fileToOcrRequest,
+-  formatOcrError,
+-  getOcrProviderConfiguration,
+-  isTauriEnvironment,
+-  listenOcrRecognitionProgress,
+-  normalizeOcrFormulaLines,
+-  ocrProviderDisplayLabel,
+-  ocrRecognizerSelection,
+-  parseOcrRecognizerSelection,
+-  recognizeFormulaImage,
+-  setActiveOcrProvider,
+-  warmupOcrModel,
+-  type OcrModelName,
+-  type OcrProviderId,
+-} from "./ocr/ocrService";
+-import {
+-  checkForUpdates,
+-  openReleasePage,
+-  PROJECT_URL,
+-  type UpdateCheckResult,
+-} from "./update/updateService";
++import { formatOcrError } from "./ocr/ocrService";
+ import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+ import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
+-import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
+-import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
+-import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
++import { isMacKeyboardPlatform } from "./shortcuts/formulaHotkeys";
++import { isLandingPreview, LANDING_PREVIEW_ZOOM, tutorialLanguage, tutorialLessonId } from "./runtime/landingPreview";
++import { findTutorialLesson, type TutorialSnapshot } from "./tutorial/lessons";
++import { useFormulaHotkeyStore } from "./stores/formulaHotkeyStore";
+ import {
+-  captureQuickOcrScreenshot,
+-  configureSilentOcr,
+-  normalizeQuickOcrCaptureMode,
+-  quickOcrCaptureToFile,
+-  restoreQuickOcrWindow,
+-  waitForQuickOcrSystemScreenshot,
+-  QUICK_OCR_CAPTURE_MODE_STORAGE_KEY,
+-  SILENT_OCR_SHORTCUT,
+-  SILENT_OCR_STORAGE_KEY,
+-  type QuickOcrCaptureMode,
+-} from "./ocr/quickOcr";
++  loadWebOcrConfiguration,
++  recognizeFormulaWithWebApi,
++} from "./ocr/webOcrService";
+ import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
+ 
+-type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
++type InlineOcrStatus = "running" | "success" | "error";
+ 
+ interface InlineOcrState {
+   status: InlineOcrStatus;
+   message: string;
+   seconds: number;
+-  model: OcrModelName;
+-  sourceLabel?: string;
+ }
+ 
+-const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+-const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
+-const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
+-const MAC_OFFICE_QUIT_POLL_MS = 5_000;
+-const MAC_POWERPOINT_REGISTRATION_DELAY_MS = 8_000;
+-const MAC_POWERPOINT_REGISTRATION_ATTEMPTS = 3;
++const WEB_DEFAULT_ZOOM = 0.45;
+ const APP_HEADER_COLLAPSE_LEVELS = 8;
++const TUTORIAL_ZOOM = 0.6;
++const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
++const LANDING_PREVIEW_LINES = [
++  String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
++  String.raw`R_{\mu\nu}-\frac{1}{2}Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\frac{8\pi G}{c^4}T_{\mu\nu}`,
++  String.raw`\mathrm{d}s^2=-\left(1-\frac{2GMr}{c^2\Sigma}\right)c^2\mathrm{d}t^2-\frac{4GMar\sin^2\theta}{c^2\Sigma}c\mathrm{d}t\mathrm{d}\phi+\frac{\Sigma}{\Delta}\mathrm{d}r^2+\Sigma\mathrm{d}\theta^2+\left(r^2+a^2+\frac{2GMa^2r\sin^2\theta}{c^2\Sigma}\right)\sin^2\theta\mathrm{d}\phi^2`,
++  String.raw`\mathcal{L}_{\mathrm{SM}}=-\frac{1}{4}F^a_{\mu\nu}F^{a\mu\nu}+i\bar{\psi}\gamma^\mu D_\mu\psi+(D_\mu\Phi)^\dagger(D^\mu\Phi)-V(\Phi)-\left(y_{ij}\bar{\psi}_{Li}\Phi\psi_{Rj}+\mathrm{h.c.}\right)`,
++] as const;
+ 
+ function documentContentKey() {
+   const { title, lines } = useEditorStore.getState();
+@@ -170,18 +121,30 @@ function documentContentKey() {
+   ]);
+ }
+ 
++// Custom tiles live in localStorage (in-memory inside the tutorial sandbox).
++function readTutorialCustomTiles() {
++  try {
++    const library = JSON.parse(localStorage.getItem("visualtex-custom-formula-tiles") ?? "{}");
++    return {
++      customTiles: Array.isArray(library?.tiles) ? library.tiles : [],
++      customSectionCount: Array.isArray(library?.sections) ? library.sections.length : 0,
++    };
++  } catch {
++    return { customTiles: [], customSectionCount: 0 };
++  }
++}
++
+ function App() {
+-  // draws formulas for AI agents (render_latex)
+-  useEffect(() => installMcpRenderBridge(), []);
+   const editorRef = useRef<MathEditorHandle>(null);
+   const historyManager = useHistoryManager();
+   const { openDocumentWithHistory,
+     replaceDocumentWithHistory: replaceDocumentTransaction } = useDocumentSession(editorRef);
++  const ocrInsertionTargetRef = useRef<MathEditorInsertionTarget | null>(null);
+   const fileInputRef = useRef<HTMLInputElement>(null);
+   // Formula content as last saved, opened or newly created; New asks before
+   // discarding anything else.
+   const savedContentRef = useRef<string | null>(null);
+-  const newFormulaPendingRef = useRef(false);
++  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
+   const menuButtonRef = useRef<HTMLButtonElement>(null);
+   const appMenuRef = useRef<HTMLDivElement>(null);
+   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
+@@ -194,54 +157,14 @@ function App() {
+   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
+   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
+   const [menuOpen, setMenuOpen] = useState(false);
+-  const [keypadMode, setKeypadMode] = useState(false);
+-  const [updateOpen, setUpdateOpen] = useState(false);
+-  const [updateChecking, setUpdateChecking] = useState(false);
+-  const [updateError, setUpdateError] = useState("");
+-  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+-  const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
+-  const [macOfficeFirstRunOpen, setMacOfficeFirstRunOpen] = useState(false);
+-  const [macOfficePromptMode, setMacOfficePromptMode] = useState<
+-    "setup" | "update" | "repair"
+-  >("setup");
+-  const [powerpointRegistrationRequired, setPowerpointRegistrationRequired] =
+-    useState(false);
+-  const [macOfficePromptError, setMacOfficePromptError] = useState("");
+   const [toast, setToast] = useState("");
+-  const officeHotkeyBindings = useOfficeHotkeyStore(
+-    (state) => state.bindings,
+-  );
+   const [savedPulse, setSavedPulse] = useState(false);
+   const [desktopTopToolsMount, setDesktopTopToolsMount] =
+     useState<HTMLDivElement | null>(null);
+-  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
+   const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
+-  const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
+-    const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
+-    return OCR_MODELS.some((item) => item.id === stored)
+-      ? (stored as OcrModelName)
+-      : DEFAULT_OCR_MODEL;
+-  });
+-  const [activeOcrProvider, setActiveOcrProviderId] =
+-    useState<OcrProviderId>("local");
+-  const [ocrProviderLoaded, setOcrProviderLoaded] = useState(false);
+-  const [silentOcrEnabled, setSilentOcrEnabled] = useState(
+-    () => readLocalStorage(SILENT_OCR_STORAGE_KEY) === "true",
+-  );
+-  const [silentOcrShortcut, setSilentOcrShortcut] = useState(SILENT_OCR_SHORTCUT);
+-  const [quickOcrCaptureMode, setQuickOcrCaptureMode] = useState<QuickOcrCaptureMode>(() => {
+-    const stored = readLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY);
+-    return normalizeQuickOcrCaptureMode(stored) ?? "immediate";
+-  });
+-  const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
+   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+-  const startupOcrModelRef = useRef(ocrModel);
+   const inlineOcrBusyRef = useRef(false);
+-  const inlineOcrCancelRequestedRef = useRef(false);
+-  const inlineOcrRunIdRef = useRef(0);
+   const inlineOcrClearTimerRef = useRef<number | null>(null);
+-  const automaticUpdateCheckRef = useRef(false);
+-  const macOfficeInstallStatusCheckedRef = useRef(false);
+   const initialEditorFocusDoneRef = useRef(false);
+   const pngClipboardBusyRef = useRef(false);
+ 
+@@ -257,26 +180,20 @@ function App() {
+   const setLanguage = useEditorStore((state) => state.setLanguage);
+   const zoom = useEditorStore((state) => state.zoom);
+   const setZoom = useEditorStore((state) => state.setZoom);
++  const setSourceOpen = useEditorStore((state) => state.setSourceOpen);
++  const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
+   const editorLayout = useEditorStore((state) => state.editorLayout);
+   const pngExportBackground = useEditorStore(
+     (state) => state.pngExportBackground,
+   );
+   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
+   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
+-  const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+   const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
+   const setLatexFormatProfile = useEditorStore(
+     (state) => state.setLatexFormatProfile,
+   );
+   const addHistory = useEditorStore((state) => state.addHistory);
+-  const keypadMinimizeOnCopy = useEditorStore((state) => state.keypadMinimizeOnCopy);
+   const toDocument = useEditorStore((state) => state.toDocument);
+-  const checkUpdatesOnStartup = useEditorStore(
+-    (state) => state.checkUpdatesOnStartup,
+-  );
+-  const setCheckUpdatesOnStartup = useEditorStore(
+-    (state) => state.setCheckUpdatesOnStartup,
+-  );
+   const historyState = useHistorySnapshot();
+   const isEn = language === "en";
+   const latex = joinFormulaLines(lines);
+@@ -295,25 +212,90 @@ function App() {
+     (latexFormatProfile.numbered ? "" : "*");
+   const latexProfileSummary =
+     `${inlineProfileLabel} · ${displayProfileLabel} · ${multilineProfileLabel}`;
+-  const selectedOcrModel =
+-    OCR_MODELS.find((item) => item.id === ocrModel) ??
+-    OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!;
+-  const selectedOcrRecognizer = ocrRecognizerSelection(
+-    activeOcrProvider,
+-    ocrModel,
+-  );
+-  const inlineOcrModel =
+-    OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
+-  const inlineOcrIsBusy =
+-    inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
++  const inlineOcrIsBusy = inlineOcr?.status === "running";
+ 
+   const replaceDocumentWithHistory = (after: DocumentSnapshot, source: ReplaceDocumentEntry["source"]) => {
+     if (source !== "source-apply") setSourceDocumentRevision(revision => revision + 1);
+     return replaceDocumentTransaction(after, source);
+   };
+ 
++  // The landing page embeds /editor?landing-preview as a read-only showcase.
++  // Its storage is in-memory (see runtime/landingPreview), so this never
++  // touches the visitor's own document.
++  useLayoutEffect(() => {
++    if (!isLandingPreview) return;
++    replaceDocumentState({
++      title: "示例公式",
++      lines: LANDING_PREVIEW_LINES.map((latex, index) => ({
++        id: `landing-preview-${index + 1}`,
++        latex,
++      })),
++      activeLineId: "landing-preview-1",
++      formulaAlignment,
++      selectionByLineId: {},
++    });
++    setSourceOpen(false);
++    setZoom(LANDING_PREVIEW_ZOOM);
++    setSourceDocumentRevision((revision) => revision + 1);
++    // The showcase is always drawn at the same scale.
++    return useEditorStore.subscribe((state) => {
++      if (state.zoom !== LANDING_PREVIEW_ZOOM) setZoom(LANDING_PREVIEW_ZOOM);
++    });
++  }, []);
++
++  // The tutorial page embeds /editor?tutorial=<lesson> as a practice editor
++  // (in-memory storage, see runtime/landingPreview) and polls its state.
++  useLayoutEffect(() => {
++    const lesson = findTutorialLesson(tutorialLessonId);
++    if (!lesson) return;
++    setLanguage(tutorialLanguage);
++    replaceDocumentState({
++      title: lesson.title[tutorialLanguage === "en" ? "en" : "zh"],
++      lines: lesson.start.map((line, index) => ({
++        id: `tutorial-${lesson.id}-${index + 1}`,
++        latex: line.latex,
++        mode: line.mode,
++      })),
++      activeLineId: `tutorial-${lesson.id}-${lesson.start.length}`,
++      formulaAlignment,
++      selectionByLineId: {},
++    });
++    setSourceDocumentRevision((revision) => revision + 1);
++    setZoom(TUTORIAL_ZOOM);
++    const host = window as Window & { visualtexTutorial?: { snapshot: () => TutorialSnapshot } };
++    let copiedText = "";
++    const clipboard = navigator.clipboard;
++    if (clipboard) {
++      const writeText = clipboard.writeText.bind(clipboard);
++      clipboard.writeText = (text: string) => {
++        copiedText = text;
++        return writeText(text);
++      };
++    }
++    host.visualtexTutorial = {
++      snapshot: () => {
++        const state = useEditorStore.getState();
++        return {
++          lines: state.lines.map((line) => ({ latex: line.latex, mode: line.mode === "inline" ? "inline" : "display" })),
++          profile: state.latexFormatProfile,
++          copiedText,
++          hotkeyIds: useFormulaHotkeyStore.getState().bindings.map((binding) => binding.id),
++          ...readTutorialCustomTiles(),
++        };
++      },
++    };
++  }, []);
++
++  // The web editor defaults to a smaller zoom than the desktop window.
++  useLayoutEffect(() => {
++    if (isLandingPreview || tutorialLessonId) return;
++    if (readLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY) === "true") return;
++    if (useEditorStore.getState().zoom === 0.6) setZoom(WEB_DEFAULT_ZOOM);
++    writeLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY, "true");
++  }, [setZoom]);
++
+   useEffect(() => {
+-    if (initialEditorFocusDoneRef.current) return;
++    if (isLandingPreview || initialEditorFocusDoneRef.current) return;
+     initialEditorFocusDoneRef.current = true;
+     const frame = window.requestAnimationFrame(() => {
+       const active = document.activeElement;
+@@ -327,224 +309,6 @@ function App() {
+     return () => window.cancelAnimationFrame(frame);
+   }, []);
+ 
+-  useEffect(() => {
+-    if (
+-      !isTauriEnvironment() ||
+-      macOfficeInstallStatusCheckedRef.current
+-    ) {
+-      return;
+-    }
+-    macOfficeInstallStatusCheckedRef.current = true;
+-    let cancelled = false;
+-    let retryTimer: number | undefined;
+-    let attempt = 0;
+-
+-    let waitTimer: number | undefined;
+-    const english = () => useEditorStore.getState().language === "en";
+-
+-    const showPrompt = (status: MacOfflineOfficeStatus, error = "") => {
+-      setMacOfficePromptError(error);
+-      const prompt = resolveMacOfficeOnboarding(
+-        status,
+-        readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+-      );
+-      setPowerpointRegistrationRequired(
+-        prompt?.powerpointRegistrationRequired ?? false,
+-      );
+-      if (prompt) setMacOfficePromptMode(prompt.mode);
+-      setMacOfficeFirstRunOpen(prompt !== null);
+-    };
+-
+-    // New and updated add-ins are installed without a prompt. The prompt
+-    // only appears when the install fails, so the user can see why and retry.
+-    const installAutomatically = async (status: MacOfflineOfficeStatus) => {
+-      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
+-      try {
+-        decodeMacOfflineOfficeStatus(
+-          await invoke<unknown>("install_macos_offline_office_addins"),
+-        );
+-        if (cancelled) return;
+-        writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
+-        setToast(
+-          updating
+-            ? english()
+-              ? "Office add-ins updated"
+-              : "Office 插件已更新"
+-            : english()
+-              ? "Word and PowerPoint add-ins installed"
+-              : "已安装 Word 与 PowerPoint 插件",
+-        );
+-      } catch (reason) {
+-        if (!cancelled) showPrompt(status, macOfficeAutoInstallErrorText(reason, english()));
+-      }
+-    };
+-
+-    // VBA that Office has loaded cannot be replaced; update once both quit.
+-    const installAfterOfficeQuits = (status: MacOfflineOfficeStatus) => {
+-      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
+-      setToast(
+-        english()
+-          ? updating
+-            ? "Office add-ins will be updated after Word and PowerPoint quit"
+-            : "Office add-ins will be installed after Word and PowerPoint quit"
+-          : updating
+-            ? "Word 和 PowerPoint 退出后更新 Office 插件"
+-            : "Word 和 PowerPoint 退出后安装 Office 插件",
+-      );
+-      const poll = () => {
+-        void invoke<{ word: boolean; powerpoint: boolean }>("get_macos_office_hosts_running")
+-          .then(async (hosts) => {
+-            if (cancelled) return;
+-            if (hosts.word || hosts.powerpoint) {
+-              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+-              return;
+-            }
+-            const current = decodeMacOfflineOfficeStatus(
+-              await invoke<unknown>("get_macos_offline_office_install_status"),
+-            );
+-            if (cancelled) return;
+-            const next = resolveMacOfficeAutoInstall(
+-              current,
+-              readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
+-            );
+-            if (next === "install") void installAutomatically(current);
+-            else if (next === "wait-for-office") {
+-              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+-            }
+-          })
+-          .catch(() => {
+-            if (!cancelled) waitTimer = window.setTimeout(poll, MAC_OFFICE_STATUS_RETRY_MS);
+-          });
+-      };
+-      waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+-    };
+-
+-    const check = () => {
+-      attempt += 1;
+-      void invoke<unknown>("get_macos_offline_office_install_status")
+-        .then(decodeMacOfflineOfficeStatus)
+-        .then((status) => {
+-          if (cancelled || !status.compiledArtifactsAvailable) return;
+-
+-          const automatic = resolveMacOfficeAutoInstall(
+-            status,
+-            readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
+-          );
+-          if (automatic === "install") {
+-            void installAutomatically(status);
+-          } else if (automatic === "wait-for-office") {
+-            installAfterOfficeQuits(status);
+-          } else {
+-            showPrompt(status);
+-          }
+-        })
+-        .catch((reason) => {
+-          if (cancelled) return;
+-          // An unfinished check (macOS privacy prompt, Office still holding its
+-          // containers) is not evidence of missing files: retry quietly instead
+-          // of opening a false repair prompt.
+-          if (isMacOfficeStatusUnavailable(reason)) {
+-            if (attempt < MAC_OFFICE_STATUS_CHECK_ATTEMPTS) {
+-              retryTimer = window.setTimeout(check, MAC_OFFICE_STATUS_RETRY_MS);
+-            }
+-            return;
+-          }
+-          setPowerpointRegistrationRequired(false);
+-          setMacOfficePromptMode("repair");
+-          setMacOfficeFirstRunOpen(true);
+-        });
+-    };
+-    check();
+-
+-    return () => {
+-      cancelled = true;
+-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+-      if (waitTimer !== undefined) window.clearTimeout(waitTimer);
+-    };
+-  }, []);
+-
+-  // PowerPoint has no Startup folder: the first time it is open with the
+-  // current PPAM installed but not loaded, VisualTeX registers the PPAM through
+-  // PowerPoint's own scripting command. Once per PowerPoint session; PowerPoint
+-  // is never launched for it.
+-  useEffect(() => {
+-    if (!isTauriEnvironment()) return;
+-    let cancelled = false;
+-    let timer: number | undefined;
+-    let runningSince: number | null = null;
+-    let attempts = 0;
+-    const english = () => useEditorStore.getState().language === "en";
+-
+-    const poll = async () => {
+-      try {
+-        if (readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true") return;
+-        const hosts = await invoke<{ word: boolean; powerpoint: boolean }>(
+-          "get_macos_office_hosts_running",
+-        );
+-        if (!hosts.powerpoint) {
+-          runningSince = null;
+-          attempts = 0;
+-          return;
+-        }
+-        runningSince ??= Date.now();
+-        // Let PowerPoint load its registered add-ins first.
+-        if (attempts >= MAC_POWERPOINT_REGISTRATION_ATTEMPTS ||
+-            Date.now() - runningSince < MAC_POWERPOINT_REGISTRATION_DELAY_MS) return;
+-        attempts += 1;
+-        const status = decodeMacOfflineOfficeStatus(
+-          await invoke<unknown>("get_macos_offline_office_install_status"),
+-        );
+-        const registration = readLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY) ?? "";
+-        if (!macPowerPointRegistrationNeeded(status)) {
+-          if (status.powerpoint.loaded && registration.startsWith("pending")) {
+-            writeLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY, "confirmed");
+-          }
+-          attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
+-          return;
+-        }
+-        // pending:N counts the PowerPoint sessions in which VisualTeX's own
+-        // registration has been retried.
+-        const retries = registration.startsWith("pending")
+-          ? Number(registration.split(":")[1] ?? "0") || 0
+-          : 0;
+-        const retry = registration.startsWith("pending") &&
+-          retries < MAC_POWERPOINT_REGISTRATION_RETRIES;
+-        const result = await invoke<{ outcome: string; disabledCopies: string[] }>(
+-          "register_macos_powerpoint_addin",
+-          { retry },
+-        );
+-        if (cancelled) return;
+-        if (result.outcome !== "notRunning") attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
+-        if (result.outcome === "registered" || result.outcome === "pending") {
+-          writeLocalStorage(
+-            MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
+-            `pending:${retry ? retries + 1 : retries}`,
+-          );
+-        }
+-        if (result.outcome === "registered") {
+-          setToast(english() ? "VisualTeX was added to PowerPoint" : "已将 VisualTeX 加入 PowerPoint");
+-        } else if (result.outcome === "pending") {
+-          setToast(
+-            english()
+-              ? "Enable macros for the VisualTeX add-in in PowerPoint"
+-              : "请在 PowerPoint 中启用 VisualTeX 加载项的宏",
+-          );
+-        }
+-      } catch {
+-        // Status unavailable or registration refused: retry a few times in this
+-        // PowerPoint session; Settings keeps the manual steps.
+-      } finally {
+-        if (!cancelled) timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
+-      }
+-    };
+-    timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
+-    return () => {
+-      cancelled = true;
+-      if (timer !== undefined) window.clearTimeout(timer);
+-    };
+-  }, []);
+-
+-
+   useEffect(() => {
+     const checkpointTimer = window.setInterval(() => {
+       historyManager.commitPendingTransaction();
+@@ -568,17 +332,12 @@ function App() {
+       synchronizedThemeRef.current = theme;
+       publishSynchronizedTheme(theme);
+     }
+-    if (isTauriEnvironment()) {
+-      void invoke<string>("set_app_theme", { theme }).catch(() => undefined);
+-    }
+   }, [theme]);
+ 
+   useEffect(() => {
+     document.documentElement.lang = isEn ? "en" : "zh-CN";
+   }, [isEn]);
+ 
+-  // The header hides its least important items first, and only when the row
+-  // has no room left (levels are listed in styles-macos-responsive.css).
+   useEffect(() => {
+     if (!appHeader) return;
+     return trackPriorityCollapse(appHeader, {
+@@ -612,110 +371,6 @@ function App() {
+     return () => window.clearTimeout(timeout);
+   }, [toast]);
+ 
+-  // The formula input method's system-wide shortcuts (Settings > Keyboard
+-  // shortcuts); macOS keeps the last ones registered across restarts.
+-  const anywhereToggleChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-toggle"]);
+-  const anywhereDisplayChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-open-display"]);
+-  useEffect(() => {
+-    if (!isTauri() || !anywhereToggleChord) return;
+-    void configureAnywhereGlobalHotkey("anywhere-toggle", anywhereToggleChord).catch((error) => {
+-      setToast(error instanceof Error ? error.message : String(error));
+-    });
+-  }, [anywhereToggleChord]);
+-  useEffect(() => {
+-    if (!isTauri()) return;
+-    void configureAnywhereGlobalHotkey("anywhere-open-display", anywhereDisplayChord).catch((error) => {
+-      setToast(error instanceof Error ? error.message : String(error));
+-    });
+-  }, [anywhereDisplayChord]);
+-
+-  useEffect(() => {
+-    if (!isTauri()) return;
+-    let cancelled = false;
+-    void configureOfficeHotkeys(officeHotkeyBindings).catch((error) => {
+-      if (cancelled) return;
+-      setToast(
+-        error instanceof Error
+-          ? error.message
+-          : String(
+-              error ||
+-                (isEn
+-                  ? "Unable to register Office hotkeys"
+-                  : "无法注册 Office 快捷键"),
+-            ),
+-      );
+-    });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, [officeHotkeyBindings, isEn]);
+-
+-  useEffect(() => {
+-    if (!isTauriEnvironment()) {
+-      setOcrProviderLoaded(true);
+-      return;
+-    }
+-    let cancelled = false;
+-    void getOcrProviderConfiguration()
+-      .then((configuration) => {
+-        if (!cancelled) setActiveOcrProviderId(configuration.activeProvider);
+-      })
+-      .catch(() => undefined)
+-      .finally(() => {
+-        if (!cancelled) setOcrProviderLoaded(true);
+-      });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, []);
+-
+-  useEffect(() => {
+-    if (
+-      !isTauriEnvironment() ||
+-      !ocrProviderLoaded ||
+-      activeOcrProvider !== "local"
+-    ) {
+-      return;
+-    }
+-    const timer = window.setTimeout(() => {
+-      void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
+-    }, 50);
+-    return () => window.clearTimeout(timer);
+-  }, [activeOcrProvider, ocrProviderLoaded]);
+-
+-  useEffect(() => {
+-    if (!isTauriEnvironment()) return;
+-    let cancelled = false;
+-    void configureSilentOcr(
+-      silentOcrEnabled,
+-      ocrModel,
+-      latexCodeFormat,
+-      quickOcrCaptureMode,
+-    )
+-      .then((shortcut) => {
+-        if (cancelled || !silentOcrEnabled || !shortcut) return;
+-        setSilentOcrShortcut(shortcut);
+-      })
+-      .catch((error) => {
+-        if (cancelled || !silentOcrEnabled) return;
+-        setSilentOcrEnabled(false);
+-        writeLocalStorage(SILENT_OCR_STORAGE_KEY, "false");
+-        setToast(
+-          error instanceof Error
+-            ? error.message
+-            : String(
+-                error ||
+-                  (isEn
+-                    ? "Unable to enable silent OCR"
+-                    : "无法启用静默 OCR"),
+-              ),
+-        );
+-      });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, [silentOcrEnabled, ocrModel, latexCodeFormat, quickOcrCaptureMode, isEn]);
+-
+   useEffect(() => {
+     const menu = menuOpen ? appMenuRef.current : copyMenuOpen ? copyMenuRef.current : null;
+     const trigger = menuOpen ? menuButtonRef.current : copyMenuButtonRef.current;
+@@ -754,9 +409,7 @@ function App() {
+ 
+   const inlineOcrStatus = inlineOcr?.status;
+   useEffect(() => {
+-    if (inlineOcrStatus !== "running" && inlineOcrStatus !== "cancelling") {
+-      return;
+-    }
++    if (inlineOcrStatus !== "running") return;
+     const timer = window.setInterval(() => {
+       setInlineOcr((current) =>
+         current
+@@ -789,149 +442,43 @@ function App() {
+     }, delay);
+   };
+ 
+-  const handleOcrModelChange = (nextModel: OcrModelName) => {
+-    if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+-    startupOcrModelRef.current = nextModel;
+-    setOcrModel(nextModel);
+-    writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
+-    if (activeOcrProvider === "local") {
+-      void warmupOcrModel(nextModel).catch(() => undefined);
+-    }
+-  };
+-
+-  const handleOcrRecognizerChange = async (selection: string) => {
+-    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) return;
+-    const parsed = parseOcrRecognizerSelection(selection);
+-    if (!parsed) return;
+-    try {
+-      if (parsed.provider === "local") {
+-        const saved = await setActiveOcrProvider("local");
+-        setActiveOcrProviderId(saved.activeProvider);
+-        if (parsed.model) {
+-          startupOcrModelRef.current = parsed.model;
+-          setOcrModel(parsed.model);
+-          writeLocalStorage(OCR_MODEL_STORAGE_KEY, parsed.model);
+-          void warmupOcrModel(parsed.model).catch(() => undefined);
+-        }
+-        return;
+-      }
+-      const saved = await setActiveOcrProvider(parsed.provider);
+-      setActiveOcrProviderId(saved.activeProvider);
+-      setToast(
+-        isEn
+-          ? `OCR recognizer: ${ocrProviderDisplayLabel(saved.activeProvider, true)}`
+-          : `OCR 识别器：${ocrProviderDisplayLabel(saved.activeProvider, false)}`,
+-      );
+-    } catch (error) {
+-      const message =
+-        error instanceof Error
+-          ? error.message
+-          : typeof error === "string"
+-            ? error
+-            : isEn
+-              ? "Unable to switch OCR recognizer"
+-              : "无法切换 OCR 识别器";
+-      setToast(message);
+-      setOcrOpen(true);
+-    }
+-  };
+-
+-  const cancelInlineOcr = async () => {
+-    if (!inlineOcrBusyRef.current) return;
+-    inlineOcrCancelRequestedRef.current = true;
+-    setInlineOcr((current) =>
+-      current
+-        ? {
+-            ...current,
+-            status: "cancelling",
+-            message: isEn ? "Cancelling OCR…" : "正在取消 OCR…",
+-          }
+-        : current,
+-    );
+-    try {
+-      await cancelOcrRecognition();
+-    } catch {
+-      // The recognition promise will surface the final state. A worker that
+-      // already exited is equivalent to a successful cancellation.
+-    }
+-  };
+-
+-  const handleEditorImagePaste = async (
++  // Images pasted into a formula field are recognized through the configured
++  // web OCR API and inserted at the caret captured when the paste happened.
++  const handleEditorImagePaste = useCallback(async (
+     file: File,
+     target: MathEditorInsertionTarget,
+-    source: "paste" | "quick" = "paste",
+   ) => {
+     if (inlineOcrBusyRef.current) {
+       setToast(isEn ? "Another pasted image is being recognized" : "已有一张粘贴图片正在识别");
+       return;
+     }
+-    if (!isTauriEnvironment()) {
+-      setToast(isEn ? "OCR is available in the desktop app" : "OCR 仅在桌面应用中可用");
+-      return;
+-    }
+ 
+     if (inlineOcrClearTimerRef.current !== null) {
+       window.clearTimeout(inlineOcrClearTimerRef.current);
+       inlineOcrClearTimerRef.current = null;
+     }
+ 
+-    const runId = ++inlineOcrRunIdRef.current;
+     inlineOcrBusyRef.current = true;
+-    inlineOcrCancelRequestedRef.current = false;
+-    const usingLocalProvider = activeOcrProvider === "local";
+-    const remoteSourceLabel = usingLocalProvider
+-      ? undefined
+-      : ocrProviderDisplayLabel(activeOcrProvider, isEn);
+     setInlineOcr({
+       status: "running",
+-      message: usingLocalProvider
+-        ? isEn
+-          ? "Starting local formula recognition…"
+-          : "正在启动本地公式识别…"
+-        : isEn
+-          ? `Sending the image to ${remoteSourceLabel}…`
+-          : `正在通过 ${remoteSourceLabel} 识别公式…`,
++      message: isEn ? "Recognizing the pasted image…" : "正在识别粘贴的图片…",
+       seconds: 0,
+-      model: ocrModel,
+-      sourceLabel: remoteSourceLabel,
+     });
+-
+-    let unlisten: (() => void) | undefined;
+     try {
+-      // The native recognition command owns provider/runtime validation. The old
+-      // frontend preflight called getOcrRuntimeStatus() here and recognize_local()
+-      // immediately called runtime_status() again, scanning Python metadata and
+-      // model storage twice before every local OCR request.
+-      const availableOcrModel = ocrModel;
+-
+-      unlisten = await listenOcrRecognitionProgress((progress) => {
+-        if (
+-          inlineOcrRunIdRef.current !== runId ||
+-          progress.model !== ocrModel
+-        ) {
+-          return;
+-        }
+-        setInlineOcr((current) =>
+-          current
+-            ? {
+-                ...current,
+-                message: progress.message,
+-              }
+-            : current,
+-        );
+-      });
+-
+-      const request = await fileToOcrRequest(file, availableOcrModel);
+-      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+-      const result = await recognizeFormulaImage(request);
+-      if (
+-        inlineOcrCancelRequestedRef.current ||
+-        inlineOcrRunIdRef.current !== runId
+-      ) {
+-        throw new Error("OCR_CANCELLED");
+-      }
+-
+-      const recognizedLatex = normalizeOcrFormulaLines(result.formulas).join("\n");
++      const result = await recognizeFormulaWithWebApi(
++        file,
++        loadWebOcrConfiguration(),
++        (progress) =>
++          setInlineOcr((current) =>
++            current
++              ? { ...current, message: isEn ? progress.messageEn : progress.messageZh }
++              : current,
++          ),
++      );
++      const recognizedLatex = result.formulas
++        .map((formula) => formula.trim())
++        .filter(Boolean)
++        .join("\n");
+       if (!recognizedLatex) {
+         throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
+       }
+@@ -948,173 +495,73 @@ function App() {
+ 
+       setInlineOcr((current) => ({
+         status: "success",
+-        message: result.backgroundInverted
+-          ? isEn
+-            ? "Inserted (background inverted)"
+-            : "已插入（已反色）"
+-          : isEn
+-            ? "Inserted"
+-            : "已插入",
++        message: isEn ? "Inserted" : "已插入",
+         seconds: current?.seconds ?? 0,
+-        model: ocrModel,
+-        sourceLabel: current?.sourceLabel,
+       }));
+-      setToast(
+-        source === "quick"
+-          ? isEn
+-            ? "Screenshot converted to LaTeX"
+-            : "截图已转换为 LaTeX"
+-          : isEn
+-            ? "Pasted image converted to LaTeX"
+-            : "粘贴图片已转换为 LaTeX",
+-      );
++      setToast(isEn ? "Image recognized" : "图片已识别");
+       scheduleInlineOcrClear(1800);
+     } catch (error) {
+-      const errorMessage = formatOcrError(
++      const message = formatOcrError(
+         error,
+         isEn ? "Image OCR failed" : "图片 OCR 失败",
+       );
+-      const cancelled =
+-        inlineOcrCancelRequestedRef.current || errorMessage.includes("OCR_CANCELLED");
+-      if (cancelled) {
+-        setInlineOcr((current) => ({
+-          status: "cancelled",
+-          message: isEn ? "OCR cancelled" : "OCR 已取消",
+-          seconds: current?.seconds ?? 0,
+-          model: ocrModel,
+-          sourceLabel: current?.sourceLabel,
+-        }));
+-        scheduleInlineOcrClear(1200);
+-      } else {
+-        const message =
+-          errorMessage || (isEn ? "Image OCR failed" : "图片 OCR 失败");
+-        setInlineOcr((current) => ({
+-          status: "error",
+-          message,
+-          seconds: current?.seconds ?? 0,
+-          model: ocrModel,
+-          sourceLabel: current?.sourceLabel,
+-        }));
+-        if (
+-          usingLocalProvider &&
+-          /(runtime is not installed|python executable is missing|model .* is not installed|package metadata is missing)/i.test(
+-            message,
+-          )
+-        ) {
+-          setOcrOpen(true);
+-        }
+-        setToast(message);
+-        scheduleInlineOcrClear(4500);
+-      }
++      setInlineOcr((current) => ({
++        status: "error",
++        message,
++        seconds: current?.seconds ?? 0,
++      }));
++      setToast(message);
++      scheduleInlineOcrClear(4500);
+     } finally {
+-      unlisten?.();
+-      if (inlineOcrRunIdRef.current === runId) {
+-        inlineOcrBusyRef.current = false;
+-        inlineOcrCancelRequestedRef.current = false;
+-      }
+-    }
+-  };
+-
+-  const handleQuickOcr = async () => {
+-    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
+-      setToast(isEn ? "OCR is running" : "OCR 正在进行");
+-      return;
+-    }
+-    const target = editorRef.current?.captureInsertionTarget();
+-    if (!target) {
+-      setToast(
+-        isEn
+-          ? "Select a formula row first"
+-          : "请先选择公式行",
+-      );
+-      return;
++      inlineOcrBusyRef.current = false;
+     }
++  }, [isEn]);
+ 
+-    setQuickOcrCaptureBusy(true);
+-    try {
+-      const waitingForSystemScreenshot =
+-        quickOcrCaptureMode === "system-screenshot";
+-      setToast(
+-        waitingForSystemScreenshot
+-          ? isEn
+-            ? "Take a screenshot within 60 seconds"
+-            : "请在 60 秒内截图"
+-          : isEn
+-            ? "Select the formula"
+-            : "框选公式",
++  // Browsers deliver clipboard images to the document rather than reliably to
++  // the MathLive keyboard sink, so catch them here before MathLive reads text.
++  useEffect(() => {
++    const handleFormulaImagePaste = (event: ClipboardEvent) => {
++      const formulaField = event.composedPath().find(
++        (target): target is HTMLElement =>
++          target instanceof HTMLElement && target.tagName === "MATH-FIELD",
+       );
+-      let capture: Awaited<ReturnType<typeof captureQuickOcrScreenshot>> = null;
+-      try {
+-        capture = waitingForSystemScreenshot
+-          ? await waitForQuickOcrSystemScreenshot()
+-          : await captureQuickOcrScreenshot("immediate");
+-      } finally {
+-        await restoreQuickOcrWindow();
+-      }
+-      if (!capture) {
+-        setToast(
+-          waitingForSystemScreenshot
+-            ? isEn
+-              ? "No screenshot within 60 seconds"
+-              : "60 秒内未收到系统截图"
+-            : isEn
+-              ? "Screenshot cancelled"
+-              : "已取消截图",
+-        );
++      if (!formulaField && document.activeElement?.tagName !== "MATH-FIELD") {
+         return;
+       }
+-      await handleEditorImagePaste(
+-        quickOcrCaptureToFile(capture),
+-        target,
+-        "quick",
+-      );
+-    } catch (error) {
+-      setToast(
+-        formatOcrError(
+-          error,
+-          isEn ? "Quick OCR failed" : "快捷 OCR 失败",
+-        ),
++
++      const clipboard = event.clipboardData;
++      const item = Array.from(clipboard?.items ?? []).find(
++        (candidate) =>
++          candidate.kind === "file" && candidate.type.startsWith("image/"),
+       );
+-    } finally {
+-      setQuickOcrCaptureBusy(false);
+-    }
+-  };
++      const image =
++        item?.getAsFile() ??
++        Array.from(clipboard?.files ?? []).find((file) =>
++          file.type.startsWith("image/"),
++        );
++      if (!image) return;
+ 
+-  const handleQuickOcrCaptureModeChange = (mode: QuickOcrCaptureMode) => {
+-    setQuickOcrCaptureMode(mode);
+-    writeLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY, mode);
+-    setToast(
+-      mode === "system-screenshot"
+-        ? isEn
+-          ? "Quick OCR: wait for a screenshot"
+-          : "快捷 OCR：等待系统截图"
+-        : isEn
+-          ? "Quick OCR: select at once"
+-          : "快捷 OCR：立即框选",
+-    );
+-  };
++      const target = editorRef.current?.captureInsertionTarget();
++      if (!target) return;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++      void handleEditorImagePaste(image, target);
++    };
+ 
+-  const handleSilentOcrEnabledChange = (enabled: boolean) => {
+-    setSilentOcrEnabled(enabled);
+-    writeLocalStorage(SILENT_OCR_STORAGE_KEY, String(enabled));
+-    setToast(
+-      enabled
+-        ? isEn
+-          ? `Background OCR on (${silentOcrShortcut})`
+-          : `后台识别已开启（${silentOcrShortcut}）`
+-        : isEn
+-          ? "Silent OCR disabled"
+-          : "静默 OCR 已关闭",
+-    );
++    document.addEventListener("paste", handleFormulaImagePaste, true);
++    return () =>
++      document.removeEventListener("paste", handleFormulaImagePaste, true);
++  }, [handleEditorImagePaste]);
++
++  const captureOcrInsertionTarget = () => {
++    const target = editorRef.current?.captureInsertionTarget() ?? null;
++    if (target) ocrInsertionTargetRef.current = target;
+   };
+ 
+-  useEffect(() => {
+-    const runQuick = () => void handleQuickOcr();
+-    window.addEventListener("visualtex-quick-ocr", runQuick);
+-    return () => {
+-      window.removeEventListener("visualtex-quick-ocr", runQuick);
+-    };
+-  });
++  const openOcrDialog = () => {
++    captureOcrInsertionTarget();
++    setOcrOpen(true);
++  };
+ 
+   // the chords the user gave the main window's buttons (Settings > Keyboard shortcuts)
+   useEffect(
+@@ -1125,10 +572,8 @@ function App() {
+     onButtonShortcut((action) => {
+       switch (action) {
+         case "quick-ocr":
+-          void handleQuickOcr();
+-          break;
+         case "ocr":
+-          setOcrOpen(true);
++          openOcrDialog();
+           break;
+         case "copy-latex":
+           void handleCopy();
+@@ -1145,9 +590,6 @@ function App() {
+         case "toggle-tiles":
+           setSidebarOpen((open) => !open);
+           break;
+-        case "silent-ocr":
+-          handleSilentOcrEnabledChange(!silentOcrEnabled);
+-          break;
+         case "settings":
+           setSettingsOpen(true);
+           break;
+@@ -1174,53 +616,16 @@ function App() {
+           : `已复制（${latexProfileSummary}）`,
+       );
+       return true;
+-    } catch (reason) {
+-      setToast(
+-        reason instanceof Error ? reason.message : isEn
+-          ? "Could not copy formula source."
+-          : "无法复制公式源码。",
+-      );
+-      return false;
+-    }
+-  };
+-
+-  const handleKeypadCopy = async () => {
+-    const copied = await handleCopy();
+-    if (!copied || !keypadMinimizeOnCopy || !isTauriEnvironment()) return;
+-    try {
+-      await invoke("minimize_visualtex_main_window");
+     } catch {
+       setToast(
+         isEn
+-          ? "Copied; the window could not be minimized."
+-          : "已复制；窗口最小化失败。",
++          ? "Copy failed: the browser blocked the clipboard."
++          : "复制失败：浏览器不允许写入剪贴板。",
+       );
++      return false;
+     }
+   };
+ 
+-  const handleKeypadModeToggle = async () => {
+-    const nextMode = !keypadMode;
+-    setMenuOpen(false);
+-    setCopyMenuOpen(false);
+-    if (isTauriEnvironment()) {
+-      try {
+-        await invoke("set_main_window_keypad_mode", { enabled: nextMode });
+-      } catch (cause) {
+-        const message = cause instanceof Error ? cause.message : String(cause);
+-        setToast(
+-          isEn
+-            ? `Unable to switch keypad window size: ${message}`
+-            : `切换小键盘窗口尺寸失败：${message}`,
+-        );
+-        return;
+-      }
+-    }
+-    setKeypadMode(nextMode);
+-    window.requestAnimationFrame(() =>
+-      editorRef.current?.focus({ target: "last", moveToEnd: false }),
+-    );
+-  };
+-
+   const handleCopyPng = async () => {
+     if (pngClipboardBusyRef.current) return;
+     pngClipboardBusyRef.current = true;
+@@ -1291,30 +696,21 @@ function App() {
+     }
+   };
+ 
+-  const confirmDiscardUnsaved = async () => {
++  // The landing showcase and tutorial run in a sandbox; only the real editor
++  // asks before discarding unsaved work.
++  const confirmDiscardUnsaved = () => {
++    if (isLandingPreview || tutorialLessonId) return true;
+     const { lines: currentLines } = useEditorStore.getState();
+     if (!currentLines.some((line) => line.latex.trim())) return true;
+     if (documentContentKey() === savedContentRef.current) return true;
+     const message = isEn
+       ? "The current formula is not saved. Create a new one?"
+       : "当前公式未保存。是否新建？";
+-    if (!isTauriEnvironment()) return window.confirm(message);
+-    return ask(message, {
+-      title: "VisualTeX",
+-      kind: "warning",
+-      okLabel: isEn ? "New" : "新建",
+-      cancelLabel: isEn ? "Cancel" : "取消",
+-    });
++    return window.confirm(message);
+   };
+ 
+-  const newFormula = async () => {
+-    if (newFormulaPendingRef.current) return;
+-    newFormulaPendingRef.current = true;
+-    try {
+-      if (!(await confirmDiscardUnsaved())) return;
+-    } finally {
+-      newFormulaPendingRef.current = false;
+-    }
++  const newFormula = () => {
++    if (!confirmDiscardUnsaved()) return;
+     addHistory(latex);
+     const after = createBlankDocumentSnapshot(
+       isEn ? "Untitled Formula" : "未命名公式",
+@@ -1338,87 +734,6 @@ function App() {
+     action();
+   };
+ 
+-  const finishMacOfficeFirstRun = useCallback((installed: boolean) => {
+-    writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
+-    setMacOfficeFirstRunOpen(false);
+-    setToast(
+-      installed
+-        ? macOfficePromptMode === "update"
+-          ? isEn
+-            ? "Office add-ins updated"
+-            : "Office 插件已更新"
+-          : isEn
+-            ? "Office add-ins are ready"
+-            : "Office 插件已就绪"
+-        : isEn
+-          ? "Office add-ins not installed"
+-          : "未安装 Office 插件",
+-    );
+-  }, [isEn, macOfficePromptMode]);
+-
+-  const runUpdateCheck = useCallback(async (manual = true) => {
+-    if (manual) {
+-      setAutomaticUpdatePrompt(false);
+-      setUpdateResult(null);
+-      setUpdateOpen(true);
+-    }
+-    setUpdateChecking(true);
+-    setUpdateError("");
+-    try {
+-      const result = await checkForUpdates();
+-      setUpdateResult(result);
+-      if (manual || result.updateAvailable) {
+-        setAutomaticUpdatePrompt(!manual && result.updateAvailable);
+-        setUpdateOpen(true);
+-      }
+-    } catch (error) {
+-      if (manual) {
+-        setUpdateError(
+-          error instanceof Error
+-            ? error.message
+-            : isEn
+-              ? "Unable to connect to the update server"
+-              : "无法连接更新服务器",
+-        );
+-        setUpdateOpen(true);
+-      } else {
+-        automaticUpdateCheckRef.current = false;
+-      }
+-    } finally {
+-      setUpdateChecking(false);
+-    }
+-  }, [isEn]);
+-
+-  useEffect(() => {
+-    if (
+-      !checkUpdatesOnStartup ||
+-      macOfficeFirstRunOpen ||
+-      automaticUpdateCheckRef.current
+-    ) {
+-      return;
+-    }
+-
+-    let timer = 0;
+-    const runWhenOnline = () => {
+-      if (
+-        automaticUpdateCheckRef.current ||
+-        !useEditorStore.getState().checkUpdatesOnStartup
+-      ) {
+-        return;
+-      }
+-      automaticUpdateCheckRef.current = true;
+-      timer = window.setTimeout(() => void runUpdateCheck(false), 1200);
+-    };
+-
+-    window.addEventListener("online", runWhenOnline);
+-    if (navigator.onLine) runWhenOnline();
+-
+-    return () => {
+-      window.clearTimeout(timer);
+-      window.removeEventListener("online", runWhenOnline);
+-    };
+-  }, [checkUpdatesOnStartup, macOfficeFirstRunOpen, runUpdateCheck]);
+-
+   useEffect(() => {
+     const handleWindowKeyDown = (event: KeyboardEvent) => {
+       if (event.key === "Escape") {
+@@ -1431,9 +746,8 @@ function App() {
+         settingsOpen ||
+         ocrOpen ||
+         historyOpen ||
+-        exportOpen ||
+-        macOfficeFirstRunOpen ||
+-        updateOpen
++        helpOpen ||
++        exportOpen
+       ) {
+         return;
+       }
+@@ -1479,19 +793,15 @@ function App() {
+       }
+ 
+       if (!primaryModifier) return;
+-      if (key === "k" && event.shiftKey) {
+-        event.preventDefault();
+-        void handleKeypadModeToggle();
+-      } else if (key === "n") {
++      if (key === "n") {
+         event.preventDefault();
+-        void newFormula();
++        newFormula();
+       } else if (key === "o") {
+         event.preventDefault();
+         fileInputRef.current?.click();
+       } else if (key === "s") {
+         event.preventDefault();
+-        if (keypadMode) void handleKeypadCopy();
+-        else saveDocument();
++        saveDocument();
+       } else if (key === ",") {
+         event.preventDefault();
+         setSettingsOpen(true);
+@@ -1514,15 +824,12 @@ function App() {
+     title,
+     isEn,
+     zoom,
+-    keypadMode,
+-    keypadMinimizeOnCopy,
+     latexFormatProfile,
+     settingsOpen,
+     ocrOpen,
+     historyOpen,
++    helpOpen,
+     exportOpen,
+-    macOfficeFirstRunOpen,
+-    updateOpen,
+   ]);
+ 
+   const renderLatexProfileMenu = () =>
+@@ -1536,7 +843,7 @@ function App() {
+       >
+         <div className="code-format-menu-header">
+           <span className="copy-menu-label">
+-            {isEn ? "Universal LaTeX format" : "通用 LaTeX 格式"}
++            {isEn ? "LaTeX format" : "LaTeX 格式"}
+           </span>
+         </div>
+ 
+@@ -1728,20 +1035,11 @@ function App() {
+             </div>
+           </div>
+         </div>
+-
+-        <div className="latex-profile-summary" data-latex-profile-summary>
+-          {latexProfileSummary}
+-        </div>
+       </div>
+     ) : null;
+ 
+   const codeFormatControl = (
+-    <div
+-      className={
+-        "copy-control code-format-control" +
+-        (keypadMode ? " editor-code-format-control" : "")
+-      }
+-    >
++    <div className="copy-control code-format-control">
+       <button
+         ref={copyMenuButtonRef}
+         type="button"
+@@ -1765,44 +1063,14 @@ function App() {
+     </div>
+   );
+ 
+-  const keypadToggleControl = (
+-    <button
+-      type="button"
+-      className={`keypad-mode-toggle${keypadMode ? " is-active" : ""}`}
+-      aria-pressed={keypadMode}
+-      aria-keyshortcuts="Meta+Shift+K Control+Shift+K"
+-      data-keypad-mode-toggle
+-      title={
+-        keypadMode
+-          ? isEn
+-            ? "Exit keypad (Ctrl+Shift+K)"
+-            : "退出小键盘（Ctrl+Shift+K）"
+-          : isEn
+-            ? "Keypad (Ctrl+Shift+K)"
+-            : "小键盘（Ctrl+Shift+K）"
+-      }
+-      onClick={() => void handleKeypadModeToggle()}
+-    >
+-      <Keyboard size={17} />
+-    </button>
+-  );
+-
+   const workspaceContent = useDocumentModeStore((state) => state.content);
+   const setWorkspaceContent = useDocumentModeStore((state) => state.setContent);
+   const documentLibraryOpen = useDocumentLibraryStore((state) => state.open);
+ 
+-  const desktopHeaderControls = (
+-    <>
+-      {keypadMode ? codeFormatControl : null}
+-      {keypadToggleControl}
+-    </>
+-  );
+-
+   return (
+     <div
+       className={
+-        `app-shell ${editorLayout === "classic" ? "is-classic-app-layout" : "is-standard-app-layout"}` +
+-        (keypadMode ? " is-keypad-mode" : "")
++        `app-shell ${editorLayout === "classic" ? "is-classic-app-layout" : "is-standard-app-layout"}`
+       }
+     >
+       <input
+@@ -1813,13 +1081,11 @@ function App() {
+         onChange={openDocument}
+       />
+ 
+-      {!keypadMode && (
+       <header
+         ref={setAppHeader}
+         className={
+           "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
+         }
+-        data-vt-app-header
+       >
+         <div className="brand-area">
+           <button
+@@ -1949,7 +1215,6 @@ function App() {
+               <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
+                 <FilePlus2 size={16} />
+                 <span>{isEn ? "New formula" : "新建公式"}</span>
+-                <kbd>Ctrl+N</kbd>
+               </button>
+               <button
+                 type="button"
+@@ -1974,7 +1239,6 @@ function App() {
+               >
+                 <FileDown size={16} />
+                 <span>{isEn ? "Export…" : "导出…"}</span>
+-                <kbd>MD/SVG/PNG</kbd>
+               </button>
+               </>)}
+               <div className="app-menu-divider" />
+@@ -1989,7 +1253,8 @@ function App() {
+               <button
+                 type="button"
+                 role="menuitem"
+-                onClick={() => runMenuAction(() => setOcrOpen(true))}
++                onPointerDown={captureOcrInsertionTarget}
++                onClick={() => runMenuAction(openOcrDialog)}
+               >
+                 <ScanLine size={16} />
+                 <span>{isEn ? "Formula image OCR" : "图片公式识别"}</span>
+@@ -2019,10 +1284,10 @@ function App() {
+               <button
+                 type="button"
+                 role="menuitem"
+-                onClick={() => runMenuAction(() => void runUpdateCheck(true))}
++                onClick={() => runMenuAction(() => (window.top ?? window).location.assign("/tutorial"))}
+               >
+-                <RefreshCw size={16} />
+-                <span>{isEn ? "Check for updates" : "检查更新"}</span>
++                <GraduationCap size={16} />
++                <span>{isEn ? "Tutorial" : "新手教程"}</span>
+               </button>
+               <div className="app-menu-divider" />
+               <div className="app-menu-language">
+@@ -2126,7 +1391,7 @@ function App() {
+             <History size={17} />
+           </button>
+           )}
+-          <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
++          <button type="button" className="icon-button workspace-action" onPointerDown={captureOcrInsertionTarget} onClick={openOcrDialog} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
+             <ScanLine size={17} />
+           </button>
+           <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings (Ctrl+,)" : "设置 (Ctrl+,)"}>
+@@ -2140,9 +1405,8 @@ function App() {
+           />
+         </div>
+       </header>
+-      )}
+ 
+-      {(menuOpen || (!keypadMode && copyMenuOpen)) && (
++      {(menuOpen || copyMenuOpen) && (
+         <button
+           type="button"
+           className="menu-dismiss-layer"
+@@ -2157,10 +1421,8 @@ function App() {
+       <EditorWorkspace
+         mode="desktop"
+         showFileActions
+-        desktopHeaderControls={desktopHeaderControls}
+         desktopTopToolsMount={desktopTopToolsMount}
+-        keypadMode={keypadMode}
+-        showUpdateActions
++        showUpdateActions={false}
+         showOfficeActions={false}
+         showOcrActions
+         onOpenExport={() => setExportOpen(true)}
+@@ -2174,18 +1436,7 @@ function App() {
+         }}
+         onReplaceDocument={replaceDocumentWithHistory}
+         sourceDocumentRevision={sourceDocumentRevision}
+-        ocrRecognizer={selectedOcrRecognizer}
+-        ocrRecognizers={OCR_RECOGNIZER_OPTIONS}
+-        ocrBusy={inlineOcrIsBusy || quickOcrCaptureBusy}
+-        onOcrRecognizerChange={(recognizer) =>
+-          void handleOcrRecognizerChange(recognizer)
+-        }
+-        onQuickOcr={() => void handleQuickOcr()}
+-        quickOcrCaptureMode={quickOcrCaptureMode}
+-        onQuickOcrCaptureModeChange={handleQuickOcrCaptureModeChange}
+-        silentOcrEnabled={silentOcrEnabled}
+-        silentOcrShortcut={silentOcrShortcut}
+-        onSilentOcrEnabledChange={handleSilentOcrEnabledChange}
++        ocrBusy={inlineOcrIsBusy}
+         ocrOverlay={
+           inlineOcr ? (
+             <div
+@@ -2194,38 +1445,24 @@ function App() {
+               aria-live="polite"
+             >
+               <span className="inline-ocr-progress-icon">
+-                {inlineOcr.status === "running" ||
+-                inlineOcr.status === "cancelling" ? (
++                {inlineOcr.status === "running" ? (
+                   <LoaderCircle size={17} className="is-spinning" />
+                 ) : inlineOcr.status === "success" ? (
+                   <Check size={17} />
+-                ) : inlineOcr.status === "error" ? (
+-                  <AlertCircle size={17} />
+                 ) : (
+-                  <X size={17} />
++                  <AlertCircle size={17} />
+                 )}
+               </span>
+               <div>
+                 <strong>{inlineOcr.message}</strong>
+                 <span>
+-                  {inlineOcr.sourceLabel ??
+-                    (isEn ? inlineOcrModel.labelEn : inlineOcrModel.labelZh)}
++                  {isEn ? "Web OCR" : "网页 OCR"}
+                   {" · "}
+                   {inlineOcr.seconds}
+                   {isEn ? "s" : " 秒"}
+                 </span>
+               </div>
+-              {inlineOcrIsBusy ? (
+-                <button
+-                  type="button"
+-                  className="inline-ocr-cancel"
+-                  onClick={cancelInlineOcr}
+-                  disabled={inlineOcr.status === "cancelling"}
+-                >
+-                  <X size={13} />
+-                  {isEn ? "Cancel" : "取消"}
+-                </button>
+-              ) : (
++              {inlineOcrIsBusy ? null : (
+                 <button
+                   type="button"
+                   className="inline-ocr-dismiss"
+@@ -2256,10 +1493,6 @@ function App() {
+       <SettingsDialog
+         open={settingsOpen}
+         onClose={() => setSettingsOpen(false)}
+-        onCheckForUpdates={() => {
+-          setSettingsOpen(false);
+-          void runUpdateCheck(true);
+-        }}
+       />
+       <HistoryPanel
+         open={historyOpen}
+@@ -2299,61 +1532,22 @@ function App() {
+           setToast(isEn ? "Formula restored" : "已恢复历史公式");
+         }}
+       />
+-      <OcrDialog
++      <WebOcrDialog
+         open={ocrOpen}
+         language={language}
+-        model={ocrModel}
+-        onModelChange={handleOcrModelChange}
+-        onClose={() => setOcrOpen(false)}
+-        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+-        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
+-        onNotify={setToast}
+-        onProviderConfigurationChange={(configuration) =>
+-          setActiveOcrProviderId(configuration.activeProvider)
+-        }
+-      />
+-      <MacOfficeFirstRunPrompt
+-        open={macOfficeFirstRunOpen}
+-        language={language}
+-        mode={macOfficePromptMode}
+-        powerpointRegistrationRequired={powerpointRegistrationRequired}
+-        initialError={macOfficePromptError}
+-        onComplete={finishMacOfficeFirstRun}
+-      />
+-      <UpdateDialog
+-        open={updateOpen}
+-        language={language}
+-        checking={updateChecking}
+-        error={updateError}
+-        result={updateResult}
+-        checkOnStartup={checkUpdatesOnStartup}
+-        automaticPrompt={automaticUpdatePrompt}
+-        onCheckOnStartupChange={setCheckUpdatesOnStartup}
+-        onRetry={() => void runUpdateCheck(true)}
+-        onOpenRelease={() => {
+-          if (!updateResult) return;
+-          void openReleasePage(updateResult.releaseUrl).catch((error) => {
+-            setUpdateError(
+-              error instanceof Error
+-                ? error.message
+-                : isEn
+-                  ? "Unable to open the download page"
+-                  : "无法打开下载页面",
+-            );
+-          });
++        onClose={() => {
++          ocrInsertionTargetRef.current = null;
++          setOcrOpen(false);
+         }}
+-        onOpenProject={() => {
+-          void openReleasePage(PROJECT_URL).catch((error) => {
+-            setUpdateError(
+-              error instanceof Error
+-                ? error.message
+-                : isEn
+-                  ? "Unable to open the project page"
+-                  : "无法打开项目页面",
+-            );
+-          });
++        onInsert={(value) => {
++          const target = ocrInsertionTargetRef.current;
++          const inserted = target
++            ? editorRef.current?.insertLatexAt(target, value, "ocr")
++            : false;
++          if (!inserted) editorRef.current?.insertLatex(value, "ocr");
+         }}
+-        onClose={() => setUpdateOpen(false)}
++        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
++        onNotify={setToast}
+       />
+ 
+       {historyOpen && (

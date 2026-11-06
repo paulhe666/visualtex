@@ -11,8 +11,8 @@ import {
   normalizeMathLiveCanonicalUprightCommands,
   resolveVisualTexInlineShortcuts,
   visualTexAutoEscapeInlineShortcuts,
-  visualTexUprightInlineShortcuts,
 } from "../src/editor/normalizeChineseLatex.ts";
+import { applyInputJudgment } from "../src/editor/inputJudgment.ts";
 
 const formulas = [
   "a=b+c",
@@ -120,39 +120,32 @@ assert.equal(
   String.raw`\mathrm{d}x+\mathrm{D}y+\mathrm{e}^{\mathrm{i}x}+\mathrm{j}`,
   "copied LaTeX must never expose MathLive-only upright commands",
 );
-for (const shortcut of Object.values(visualTexUprightInlineShortcuts)) {
-  assert.doesNotMatch(
-    shortcut.after,
-    /(?:^|\+)letter(?:\+|$)|(?:^|\+)digit(?:\+|$)/,
-    "VisualTeX upright shortcuts must not trigger inside identifiers",
-  );
-}
+// Typed words are decided by the one input judgment once finished
+// (src/editor/inputJudgment.ts); MathLive converts only symbol sequences as
+// they are typed.
+const typed = (latex, escapes = true) =>
+  applyInputJudgment(latex, { upright: true, escapes, typed: true });
+assert.equal(typed("dtheta"), String.raw`\mathrm{d}\theta`);
 assert.equal(
-  visualTexUprightInlineShortcuts.dtheta.value,
-  String.raw`\mathrm{d}\theta`,
-);
-assert.equal(
-  visualTexUprightInlineShortcuts.dx.value,
+  typed("dx"),
   String.raw`\mathrm{d}x`,
   "dx must keep x in the normal italic math alphabet",
 );
-assert.equal(
-  visualTexUprightInlineShortcuts.dy.value,
-  String.raw`\mathrm{d}y`,
-);
-assert.equal(
-  visualTexUprightInlineShortcuts.dt.value,
-  String.raw`\mathrm{d}t`,
-);
-assert.equal(
-  visualTexUprightInlineShortcuts.dr,
-  undefined,
-  "VisualTeX must not introduce new two-character shortcuts such as dr",
-);
+assert.equal(typed("dy"), String.raw`\mathrm{d}y`);
+assert.equal(typed("dt"), String.raw`\mathrm{d}t`);
+for (const word of ["spin", "point", "hnu"]) {
+  assert.equal(typed(word), word, "a name inside other letters must not convert");
+}
 assert.deepEqual(
   resolveVisualTexInlineShortcuts({ alpha: String.raw`\alpha` }, false),
-  visualTexUprightInlineShortcuts,
-  "disabling general shortcuts must preserve only the independent upright differential rules",
+  {},
+  "with quick escapes off nothing converts as it is typed",
+);
+assert.equal(typed("alpha", false), "alpha");
+assert.equal(
+  typed("dx", false),
+  String.raw`\mathrm{d}x`,
+  "upright differential detection must stay active when quick escapes are off",
 );
 const enabledShortcuts = resolveVisualTexInlineShortcuts(
   {
@@ -163,35 +156,32 @@ const enabledShortcuts = resolveVisualTexInlineShortcuts(
   },
   true,
 );
-assert.equal(enabledShortcuts.nativeOnly, String.raw`\star`);
+assert.equal(enabledShortcuts[">="], String.raw`\ge`);
+for (const word of ["nativeOnly", "xx", "mathbb", "mathcal", "alpha"]) {
+  assert.equal(enabledShortcuts[word], undefined, word + " must not convert as it is typed");
+}
 assert.equal(
-  enabledShortcuts.xx,
-  undefined,
+  typed("xx"),
+  "xx",
   "xx must remain ordinary x input instead of becoming a multiplication sign",
 );
 assert.equal(
-  enabledShortcuts.mathbb,
-  undefined,
+  typed("mathbb"),
+  "mathbb",
   "font-variant commands must require a backslash or toolbar action",
 );
-assert.equal(enabledShortcuts.mathcal, undefined);
-assert.equal(enabledShortcuts.pp, "+");
-assert.equal(enabledShortcuts.ss, "-");
-assert.equal(enabledShortcuts.mm, String.raw`\times`);
-assert.equal(enabledShortcuts.dd, String.raw`\div`);
-assert.equal(enabledShortcuts.eq, "=");
-assert.equal(enabledShortcuts[">="], String.raw`\ge`);
-assert.equal(enabledShortcuts.geq, String.raw`\geq`);
-assert.equal(enabledShortcuts.leq, String.raw`\leq`);
-assert.equal(enabledShortcuts.neq, String.raw`\neq`);
-assert.equal(enabledShortcuts.varphi, String.raw`\varphi`);
-assert.equal(enabledShortcuts.hat, String.raw`\hat{#?}`);
+assert.equal(typed("mathcal"), "mathcal");
+for (const word of ["pp", "ss", "dd"]) {
+  assert.equal(typed(word), word, "products of variables are not shortcuts");
+}
+assert.equal(typed("eq"), "=");
+assert.equal(typed("geq"), String.raw`\geq`);
+assert.equal(typed("leq"), String.raw`\leq`);
+assert.equal(typed("neq"), String.raw`\neq`);
+assert.equal(typed("varphi"), String.raw`\varphi`);
+assert.equal(typed("hat"), String.raw`\hat{\placeholder{}}`);
 assert.equal(visualTexAutoEscapeInlineShortcuts.mathbf, undefined);
 assert.equal(visualTexAutoEscapeInlineShortcuts.mathbb, undefined);
-assert.equal(
-  visualTexUprightInlineShortcuts.dx.value,
-  String.raw`\mathrm{d}x`,
-);
 const contextualDifferentialCases = [
   [
     String.raw`dr/d\theta`,

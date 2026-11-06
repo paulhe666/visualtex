@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mathLiveKernelData } from "../vite.mathlive.ts";
+import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
 import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
@@ -29,10 +29,11 @@ for (const macro of VISUALTEX_PHYSICS_KERNEL_MACROS) {
     false,
     `\\${macro.name} replaces an existing VisualTeX command`,
   );
-  assert.ok(
-    validateLatex(`\\${macro.name}`).some((error) => error.code === "unknown-command"),
-    `\\${macro.name} already has a MathLive meaning`,
-  );
+  // The shared kernel defines the physics macros itself (host module): a
+  // native meaning is fine as long as none of the forbidden names is redefined.
+  if (!validateLatex(`\\${macro.name}`).some((error) => error.code === "unknown-command")) {
+    assert.equal(forbidden.has(macro.name), false);
+  }
 
   const args = ["{x}", "{y}", "{z}"].slice(0, macro.args);
   const latex = `\\${macro.name}${args.join("")}`;
@@ -107,12 +108,20 @@ assert.equal(
   "Matrix validation masked an unknown command inside a cell",
 );
 
-const { macros } = mathLiveKernelData();
+const host = kernelHostModuleSource();
+const macroStart = host.indexOf("export const visualTexDefaultMacros = {");
+const addedMacros = host.slice(
+  macroStart + "export const visualTexDefaultMacros = {".length,
+  host.indexOf("\n};", macroStart),
+);
 for (const macro of VISUALTEX_PHYSICS_KERNEL_MACROS) {
-  assert.deepEqual(macros[macro.name], {
-    def: macro.def, args: macro.args, expand: false, captureSelection: false,
-  });
+  assert.ok(
+    addedMacros.includes(`${JSON.stringify(macro.name)}: { def: ${JSON.stringify(macro.def)}`),
+    `\\${macro.name} missing from the kernel`,
+  );
 }
-for (const name of forbidden) assert.equal(name in macros, false);
+for (const name of forbidden) {
+  assert.equal(addedMacros.includes(`${JSON.stringify(name)}: {`), false, `\\${name} is redefined`);
+}
 
 console.log(`Physics kernel compatibility passed (${seen.size} non-conflicting command names).`);

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// Copies the macOS editor into the web build and re-applies the web patches.
+// Copies the macOS app (apps/macos) and the packages it shares (apps/shared) into the web build and re-applies the
+// web patches.
 //
-//   node scripts/sync-mac-editor.mjs [commit]   copy files from apps/macos at <commit>
+//   node scripts/sync-mac-editor.mjs [commit]   copy files from <commit>
 //   node scripts/sync-mac-editor.mjs --check    verify the tree matches manifest + patches
 //   node scripts/sync-mac-editor.mjs --save-patch <path>
 //                                               record local edits of a synced file
 //
-// Every file listed in web-sync/manifest.json is a byte-for-byte copy of
-// apps/macos/<path>, except for the unified diffs kept in web-sync/patches/.
+// Every file listed in web-sync/manifest.json is a copy of apps/macos/<path> (and every file of apps/shared a copy
+// at shared/<path>), except for the unified diffs kept in web-sync/patches/. Two mechanical rewrites happen before
+// the patches: the manifest's transforms, and imports of apps/shared, which point at shared/ in this repository.
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -19,43 +21,75 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 
 const root = join(dirname(new URL(import.meta.url).pathname), "..");
 const manifestPath = join(root, "web-sync/manifest.json");
 const patchDir = join(root, "web-sync/patches");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const shared = manifest.shared ?? null;
 
 const git = (args, options = {}) =>
   execFileSync("git", args, { cwd: root, maxBuffer: 1 << 28, ...options });
 
+const excluded = (path) =>
+  (manifest.exclude ?? []).some((rule) => (rule.endsWith("/") ? path.startsWith(rule) : path === rule || (rule.startsWith("*") && path.endsWith(rule.slice(1)))));
+
+function listTree(commit, sourcePath) {
+  return git(["ls-tree", "-r", "--name-only", commit, sourcePath]).toString().trim().split("\n").filter(Boolean);
+}
+
+/** Every synced file: its path here and its path in the main repository. */
 function listSourceFiles(commit) {
   const files = [];
   for (const entry of manifest.files) {
     if (!entry.endsWith("/")) {
-      files.push(entry);
+      files.push({ path: entry, source: `${manifest.sourceRoot}/${entry}` });
       continue;
     }
-    const listed = git([
-      "ls-tree", "-r", "--name-only", commit, `${manifest.sourceRoot}/${entry}`,
-    ]).toString().trim().split("\n").filter(Boolean);
-    files.push(...listed.map((path) => path.slice(manifest.sourceRoot.length + 1)));
+    for (const source of listTree(commit, `${manifest.sourceRoot}/${entry}`)) {
+      const path = source.slice(manifest.sourceRoot.length + 1);
+      if (!excluded(path)) files.push({ path, source });
+    }
+  }
+  if (shared) {
+    for (const source of listTree(commit, shared.sourceRoot)) {
+      const path = `${shared.dest}/${source.slice(shared.sourceRoot.length + 1)}`;
+      if (!excluded(path)) files.push({ path, source });
+    }
   }
   return files;
 }
 
-function readSource(commit, path) {
-  return git(["show", `${commit}:${manifest.sourceRoot}/${path}`]);
+function sourceOf(path) {
+  if (shared && path.startsWith(`${shared.dest}/`)) return `${shared.sourceRoot}/${path.slice(shared.dest.length + 1)}`;
+  return `${manifest.sourceRoot}/${path}`;
 }
 
-// Mechanical rewrites listed in the manifest (for example the macOS Chrome
-// path in browser tests). Patches are recorded on top of the rewritten text.
+const TEXT = /\.(?:[cm]?[jt]sx?|css|json|html|md)$/;
+
+// A relative import from apps/macos into apps/shared ("../../../shared/...") becomes the same import of shared/ here.
+function rewriteSharedImports(text, source, path) {
+  if (!shared) return text;
+  const sharedParent = posix.dirname(shared.sourceRoot);
+  return text.replace(/((?:\.\.\/)+)shared\//g, (match, dots, offset) => {
+    if (posix.normalize(posix.join(posix.dirname(source), dots)).replace(/\/$/, "") !== sharedParent) return match;
+    void offset;
+    const target = posix.relative(posix.dirname(path), shared.dest) || ".";
+    return `${target.startsWith(".") ? target : `./${target}`}/`;
+  });
+}
+
+// Mechanical rewrites (the manifest's transforms, imports of apps/shared). Patches are recorded on top of them.
 function sourceContent(commit, path) {
-  const raw = readSource(commit, path);
-  const rules = (manifest.transforms ?? []).filter((rule) => path.startsWith(rule.prefix));
-  if (!rules.length) return raw;
+  const source = sourceOf(path);
+  const raw = git(["show", `${commit}:${source}`]);
+  if (!TEXT.test(path)) return raw;
   let text = raw.toString();
-  for (const rule of rules) text = text.split(rule.from).join(rule.to);
+  if (source.startsWith(`${manifest.sourceRoot}/`)) text = rewriteSharedImports(text, source, path);
+  for (const rule of (manifest.transforms ?? []).filter((rule) => path.startsWith(rule.prefix))) {
+    text = text.split(rule.from).join(rule.to);
+  }
   return Buffer.from(text);
 }
 
@@ -73,18 +107,20 @@ function patchFiles() {
   return result.sort();
 }
 
-// Writes pristine sources into `target`, then applies every patch there.
-function materialize(commit, target) {
+// Writes pristine sources into `target`, then applies every patch there (unless `pristine`).
+function materialize(commit, target, { pristine = false } = {}) {
   const files = listSourceFiles(commit);
-  for (const path of files) {
+  for (const { path } of files) {
     const destination = join(target, path);
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, sourceContent(commit, path));
   }
-  for (const patch of patchFiles()) {
-    execFileSync("git", ["apply", "--whitespace=nowarn", patch], { cwd: target });
+  if (!pristine) {
+    for (const patch of patchFiles()) {
+      execFileSync("git", ["apply", "--whitespace=nowarn", patch], { cwd: target });
+    }
   }
-  return files;
+  return files.map((file) => file.path);
 }
 
 const [mode, argument] = process.argv.slice(2);
@@ -132,9 +168,12 @@ if (mode === "--save-patch") {
   }
   console.log(`${files.length} files match ${manifest.sourceRoot}@${manifest.commit.slice(0, 7)} + ${patchFiles().length} patches`);
 } else {
-  const commit = git(["rev-parse", mode || manifest.commit]).toString().trim();
-  const files = materialize(commit, root);
+  // --pristine <commit>: copy without the patches (to port them onto a new base)
+  const pristine = mode === "--pristine";
+  const commitArg = pristine ? argument : mode;
+  const commit = git(["rev-parse", commitArg || manifest.commit]).toString().trim();
+  const files = materialize(commit, root, { pristine });
   manifest.commit = commit;
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-  console.log(`synced ${files.length} files from ${manifest.sourceRoot}@${commit.slice(0, 7)}`);
+  console.log(`synced ${files.length} files from ${manifest.sourceRoot}@${commit.slice(0, 7)}${pristine ? " (no patches)" : ""}`);
 }

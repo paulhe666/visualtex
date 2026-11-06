@@ -1,18 +1,20 @@
 diff --git a/src/workspace/EditorWorkspace.tsx b/src/workspace/EditorWorkspace.tsx
-index fb98972..6103276 100644
+index f28d3e2..8613b8c 100644
 --- a/src/workspace/EditorWorkspace.tsx
 +++ b/src/workspace/EditorWorkspace.tsx
-@@ -69,6 +69,9 @@ import {
+@@ -79,6 +79,11 @@ import {
    readWorkspacePanelOpen,
    writeWorkspacePanelOpen,
  } from "./workspacePanelPreferences";
 +import { isMacKeyboardPlatform } from "../shortcuts/formulaHotkeys";
 +
++// the web build runs everywhere: Ctrl+\ outside macOS
 +const sourceShortcutLabel = isMacKeyboardPlatform() ? "⌘\\" : "Ctrl+\\";
++const sourceShortcutKeys = isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash";
  
  const formulaTextColorPresets = [
    "#111827",
-@@ -419,8 +422,7 @@ export function EditorWorkspace({
+@@ -449,8 +454,7 @@ export function EditorWorkspace({
      const toggleFormulaSourceFocus = (event: KeyboardEvent) => {
        if (
          event.isComposing ||
@@ -22,208 +24,57 @@ index fb98972..6103276 100644
          event.altKey ||
          event.shiftKey ||
          event.code !== "Backslash"
-@@ -1302,13 +1304,13 @@ export function EditorWorkspace({
-                         className="icon-button compact formula-formatting-button is-selection-action"
-                         aria-label={
-                           isEn
--                            ? "Toggle bold for selected content"
--                            : "切换选中内容的粗体状态"
-+                            ? "Bold (selection)"
-+                            : "粗体（选中内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Toggle bold while preserving math italic/upright shape"
--                            : "切换粗体 · 保留原有数学斜体/正体 · 仅作用于选中内容"
-+                            ? "Bold (selection)"
-+                            : "粗体（选中内容）"
-                         }
-                         data-formula-selection-bold
-                         onPointerEnter={rememberFormulaSelection}
-@@ -1326,13 +1328,13 @@ export function EditorWorkspace({
-                         className="icon-button compact formula-formatting-button is-selection-action"
-                         aria-label={
-                           isEn
--                            ? "Toggle italic or upright for selected content"
--                            : "切换选中内容的斜体或正体状态"
-+                            ? "Italic / upright (selection)"
-+                            : "斜体 / 正体（选中内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Toggle default math italic and \\mathrm upright"
--                            : "切换默认数学斜体与 \\mathrm 正体 · 仅作用于选中内容"
-+                            ? "Italic / upright (selection)"
-+                            : "斜体 / 正体（选中内容）"
-                         }
-                         data-formula-selection-italic
-                         onPointerEnter={rememberFormulaSelection}
-@@ -1356,11 +1358,11 @@ export function EditorWorkspace({
-                             "--formula-format-color": formulaTextColor,
-                           } as CSSProperties
-                         }
--                        aria-label={isEn ? "Selected text color" : "选中内容字体颜色"}
-+                        aria-label={isEn ? "Text colour (selection)" : "文字颜色（选中内容）"}
-                         title={
-                           isEn
--                            ? "Apply a font color to the selection only"
--                            : "字体颜色 · 仅应用于选中内容"
-+                            ? "Text colour (selection)"
-+                            : "文字颜色（选中内容）"
-                         }
-                         aria-pressed={formulaColorMenu === "color"}
-                         data-formula-selection-color
-@@ -1386,13 +1388,13 @@ export function EditorWorkspace({
-                         }
-                         aria-label={
-                           isEn
--                            ? "Selected text background color"
--                            : "选中内容字体背景颜色"
-+                            ? "Background colour (selection)"
-+                            : "背景色（选中内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Apply a background color to the selection only"
--                            : "字体背景颜色 · 仅应用于选中内容"
-+                            ? "Background colour (selection)"
-+                            : "背景色（选中内容）"
-                         }
-                         aria-pressed={formulaColorMenu === "backgroundColor"}
-                         data-formula-selection-background
-@@ -1416,12 +1418,12 @@ export function EditorWorkspace({
-                           (persistentFormulaBold ? " is-active" : "")
-                         }
-                         aria-label={
--                          isEn ? "Persistent bold input" : "持久化粗体输入"
-+                          isEn ? "Bold for what you type next" : "粗体（之后输入的内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Persistent bold · affects newly entered glyphs only"
--                            : "持久化粗体 · 仅作用于之后新输入的字符"
-+                            ? "Bold for what you type next"
-+                            : "粗体（之后输入的内容）"
-                         }
-                         aria-pressed={persistentFormulaBold}
-                         data-formula-persistent-bold
-@@ -1442,20 +1444,20 @@ export function EditorWorkspace({
-                         aria-label={
-                           isEn
-                             ? `Persistent input shape: ${persistentFormulaShape}`
--                            : `输入字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "持久斜体" : "持久正体"}`
-+                            : `字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "斜体" : "正体"}`
-                         }
-                         title={
-                           isEn
-                             ? persistentFormulaShape === "auto"
--                              ? "Automatic math shape · click for persistent italic"
-+                              ? "Shape: automatic · click for italic"
-                               : persistentFormulaShape === "italic"
--                                ? "Persistent italic · click for persistent upright"
--                                : "Persistent upright · click to restore automatic math shape"
-+                                ? "Shape: italic · click for upright"
-+                                : "Shape: upright · click for automatic"
-                             : persistentFormulaShape === "auto"
--                              ? "自动数学字形 · 点击启用持久斜体"
-+                              ? "字形：自动 · 点击改为斜体"
-                               : persistentFormulaShape === "italic"
--                                ? "持久斜体 · 点击切换为持久正体"
--                                : "持久正体 · 点击恢复自动数学字形"
-+                                ? "字形：斜体 · 点击改为正体"
-+                                : "字形：正体 · 点击恢复自动"
-                         }
-                         aria-pressed={persistentFormulaShape !== "auto"}
-                         data-formula-persistent-italic
-@@ -1491,13 +1493,13 @@ export function EditorWorkspace({
-                         }
-                         aria-label={
-                           isEn
--                            ? "Persistent font color input"
--                            : "持久化字体颜色输入"
-+                            ? "Text colour for what you type next"
-+                            : "文字颜色（之后输入的内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Persistent font color · uses the current font color and affects new glyphs only"
--                            : "持久化字体颜色 · 使用当前字体颜色，仅作用于之后新输入的字符"
-+                            ? "Text colour for what you type next"
-+                            : "文字颜色（之后输入的内容）"
-                         }
-                         aria-pressed={persistentFormulaTextColorEnabled}
-                         data-formula-persistent-color
-@@ -1526,13 +1528,13 @@ export function EditorWorkspace({
-                         }
-                         aria-label={
-                           isEn
--                            ? "Persistent background color input"
--                            : "持久化背景颜色输入"
-+                            ? "Background colour for what you type next"
-+                            : "背景色（之后输入的内容）"
-                         }
-                         title={
-                           isEn
--                            ? "Persistent background color · uses the current background color and affects new glyphs only"
--                            : "持久化背景颜色 · 使用当前背景颜色，仅作用于之后新输入的字符"
-+                            ? "Background colour for what you type next"
-+                            : "背景色（之后输入的内容）"
-                         }
-                         aria-pressed={persistentFormulaBackgroundColorEnabled}
-                         data-formula-persistent-background
-@@ -1716,8 +1718,8 @@ export function EditorWorkspace({
-                               ) : (
-                                 <span className="formula-custom-colors-empty">
-                                   {isEn
--                                    ? "Pick + to save a color, then click its swatch to apply."
--                                    : "点击 + 保存颜色，再点击色块应用。"}
-+                                    ? "Press + to save a colour."
-+                                    : "点 + 保存颜色。"}
-                                 </span>
-                               )}
-                             </section>
-@@ -1751,7 +1753,7 @@ export function EditorWorkspace({
-                   className="export-trigger-button workspace-export-trigger"
-                   onClick={onOpenExport}
-                   aria-label={isEn ? "Export" : "导出"}
--                  title={isEn ? "Export Markdown, SVG or PNG" : "导出 Markdown、SVG 或 PNG"}
-+                  title={isEn ? "Export" : "导出"}
-                 >
-                   <FileDown size={16} />
-                   <span>{isEn ? "Export" : "导出"}</span>
-@@ -2086,11 +2088,11 @@ export function EditorWorkspace({
+@@ -2173,15 +2177,15 @@ export function EditorWorkspace({
                          setSourceOpen(true);
                          setClassicDockOpen(true);
                        }}
 -                      aria-keyshortcuts="Meta+Backslash"
-+                      aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
++                      aria-keyshortcuts={sourceShortcutKeys}
                        title={
-                         isEn
--                          ? "LaTeX source (⌘\\)"
--                          : "LaTeX 源码（⌘\\）"
-+                          ? `LaTeX source (${sourceShortcutLabel})`
-+                          : `LaTeX 源码（${sourceShortcutLabel}）`
+                         documentMode
+                           ? isEn
+-                            ? "Source (⌘\\)"
+-                            : "源码（⌘\\）"
++                            ? `Source (${sourceShortcutLabel})`
++                            : `源码（${sourceShortcutLabel}）`
+                           : isEn
+-                            ? "LaTeX source (⌘\\)"
+-                            : "LaTeX 源码（⌘\\）"
++                            ? `LaTeX source (${sourceShortcutLabel})`
++                            : `LaTeX 源码（${sourceShortcutLabel}）`
                        }
                      >
                        <Code2 size={16} />
-@@ -2211,15 +2213,15 @@ export function EditorWorkspace({
+@@ -2304,23 +2308,23 @@ export function EditorWorkspace({
                        }
                        data-source-toggle
                        aria-expanded={sourceOpen}
 -                      aria-keyshortcuts="Meta+Backslash"
-+                      aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
++                      aria-keyshortcuts={sourceShortcutKeys}
                        title={
-                         sourceOpen
-                           ? isEn
--                            ? "Hide LaTeX source (⌘\\)"
--                            : "收起 LaTeX 源码（⌘\\）"
-+                            ? `Hide LaTeX source (${sourceShortcutLabel})`
-+                            : `收起 LaTeX 源码（${sourceShortcutLabel}）`
-                           : isEn
--                            ? "Show LaTeX source (⌘\\)"
--                            : "展开 LaTeX 源码（⌘\\）"
-+                            ? `Show LaTeX source (${sourceShortcutLabel})`
-+                            : `展开 LaTeX 源码（${sourceShortcutLabel}）`
+                         documentMode
+                           ? sourceOpen
+                             ? isEn
+-                              ? "Hide the source (⌘\\)"
+-                              : "收起源码（⌘\\）"
++                              ? `Hide the source (${sourceShortcutLabel})`
++                              : `收起源码（${sourceShortcutLabel}）`
+                             : isEn
+-                              ? "Show the source (⌘\\)"
+-                              : "展开源码（⌘\\）"
++                              ? `Show the source (${sourceShortcutLabel})`
++                              : `展开源码（${sourceShortcutLabel}）`
+                           : sourceOpen
+                             ? isEn
+-                              ? "Hide LaTeX source (⌘\\)"
+-                              : "收起 LaTeX 源码（⌘\\）"
++                              ? `Hide LaTeX source (${sourceShortcutLabel})`
++                              : `收起 LaTeX 源码（${sourceShortcutLabel}）`
+                             : isEn
+-                              ? "Show LaTeX source (⌘\\)"
+-                              : "展开 LaTeX 源码（⌘\\）"
++                              ? `Show LaTeX source (${sourceShortcutLabel})`
++                              : `展开 LaTeX 源码（${sourceShortcutLabel}）`
                        }
                        onClick={() => setSourceOpen(!sourceOpen)}
                      >

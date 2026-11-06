@@ -1,0 +1,58 @@
+@font-face{font-family:"VTX Roman 5";src:url("./vtx-roman-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman 6";src:url("./vtx-roman-6.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman 7";src:url("./vtx-roman-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman 8";src:url("./vtx-roman-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman 9";src:url("./vtx-roman-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman 10";src:url("./vtx-roman-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 5";src:url("./vtx-math-italic-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 6";src:url("./vtx-math-italic-6.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 7";src:url("./vtx-math-italic-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 8";src:url("./vtx-math-italic-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 9";src:url("./vtx-math-italic-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic 10";src:url("./vtx-math-italic-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 5";src:url("./vtx-math-symbols-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 6";src:url("./vtx-math-symbols-6.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 7";src:url("./vtx-math-symbols-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 8";src:url("./vtx-math-symbols-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 9";src:url("./vtx-math-symbols-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols 10";src:url("./vtx-math-symbols-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Extension 7";src:url("./vtx-math-extension-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Extension 8";src:url("./vtx-math-extension-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Extension 9";src:url("./vtx-math-extension-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Extension 10";src:url("./vtx-math-extension-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols A 5";src:url("./vtx-ams-a-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols A 7";src:url("./vtx-ams-a-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols A 10";src:url("./vtx-ams-a-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols B 5";src:url("./vtx-ams-b-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols B 7";src:url("./vtx-ams-b-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX AMS Symbols B 10";src:url("./vtx-ams-b-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Script 5";src:url("./vtx-script-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Script 7";src:url("./vtx-script-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Script 10";src:url("./vtx-script-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Fraktur 5";src:url("./vtx-fraktur-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Fraktur 7";src:url("./vtx-fraktur-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Fraktur 10";src:url("./vtx-fraktur-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 5";src:url("./vtx-roman-bold-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 6";src:url("./vtx-roman-bold-6.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 7";src:url("./vtx-roman-bold-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 8";src:url("./vtx-roman-bold-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 9";src:url("./vtx-roman-bold-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Bold 10";src:url("./vtx-roman-bold-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic Bold 5";src:url("./vtx-math-italic-bold-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic Bold 7";src:url("./vtx-math-italic-bold-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Italic Bold 10";src:url("./vtx-math-italic-bold-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols Bold 5";src:url("./vtx-math-symbols-bold-5.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols Bold 7";src:url("./vtx-math-symbols-bold-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Math Symbols Bold 10";src:url("./vtx-math-symbols-bold-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Italic 7";src:url("./vtx-roman-italic-7.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Italic 8";src:url("./vtx-roman-italic-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Italic 9";src:url("./vtx-roman-italic-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Roman Italic 10";src:url("./vtx-roman-italic-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Sans 8";src:url("./vtx-sans-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Sans 9";src:url("./vtx-sans-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Sans 10";src:url("./vtx-sans-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Typewriter 8";src:url("./vtx-typewriter-8.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Typewriter 9";src:url("./vtx-typewriter-9.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Typewriter 10";src:url("./vtx-typewriter-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Line 10";src:url("./vtx-line-10.otf") format("opentype");font-display:block}
+@font-face{font-family:"VTX Esint 10";src:url("./vtx-esint-10.otf") format("opentype");font-display:block}

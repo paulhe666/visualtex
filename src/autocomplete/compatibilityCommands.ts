@@ -76,9 +76,9 @@ const specs: CompatibilityCommandSpec[] = [
   { id: "legacy-cal", command: "\\cal", insertTemplate: "\\mathcal{\\placeholder{}}", previewLatex: "\\mathcal{ABC}", labelZh: "旧式花体", labelEn: "Legacy calligraphic", aliases: ["cal"], keywords: ["旧式", "花体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathcal" },
   { id: "legacy-Bbb", command: "\\Bbb", insertTemplate: "\\mathbb{\\placeholder{}}", previewLatex: "\\mathbb{ABC}", labelZh: "黑板粗体简称", labelEn: "Blackboard bold alias", aliases: ["Bbb"], keywords: ["简称", "黑板粗体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbb" },
   { id: "legacy-frak", command: "\\frak", insertTemplate: "\\mathfrak{\\placeholder{}}", previewLatex: "\\mathfrak{ABC}", labelZh: "哥特体简称", labelEn: "Fraktur alias", aliases: ["frak"], keywords: ["简称", "哥特体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathfrak" },
-  { id: "legacy-bold", command: "\\bold", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "数学粗体简称", labelEn: "Bold math alias", aliases: ["bold"], keywords: ["简称", "粗斜体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
-  { id: "legacy-boldmath", command: "\\boldmath", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "粗数学声明", labelEn: "Bold math declaration", aliases: ["boldmath"], keywords: ["粗斜体", "数学版本", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
-  { id: "poor-mans-bold", command: "\\pmb", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "模拟数学粗体", labelEn: "Poor man's bold", aliases: ["pmb"], keywords: ["粗斜体", "粗体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
+  { id: "legacy-bold", command: "\\bold", insertTemplate: "\\bm{\\placeholder{}}", previewLatex: "\\bm{A\\alpha}", labelZh: "数学粗体简称", labelEn: "Bold math alias", aliases: [], keywords: ["简称", "粗斜体", "字体"], wrapper: true, canonicalWrapperCommand: "\\bm" },
+  { id: "legacy-boldmath", command: "\\boldmath", insertTemplate: "\\bm{\\placeholder{}}", previewLatex: "\\bm{A\\alpha}", labelZh: "粗数学声明", labelEn: "Bold math declaration", aliases: ["boldmath"], keywords: ["粗斜体", "数学版本", "字体"], wrapper: true, canonicalWrapperCommand: "\\bm" },
+  { id: "poor-mans-bold", command: "\\pmb", insertTemplate: "\\bm{\\placeholder{}}", previewLatex: "\\bm{A\\alpha}", labelZh: "模拟数学粗体", labelEn: "Poor man's bold", aliases: ["pmb"], keywords: ["粗斜体", "粗体", "字体"], wrapper: true, canonicalWrapperCommand: "\\bm" },
 
   // Common package shorthand commands already supported by the compatibility
   // macro layer. Registering them here makes raw-command completion and Space
@@ -142,6 +142,30 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
       : [];
   }),
 ]);
+
+// The shared editing kernel reads these through the kernel host module
+// (vite.visualtexKernelHost.ts via editor/sourceWrapperRegistry.ts).
+export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
+  specs
+    .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)
+    .map((spec) => [spec.command, spec.canonicalWrapperCommand!]),
+);
+
+export const compatibilitySourceWrapperKinds = new Map<
+  string,
+  "variant" | "accent"
+>(
+  specs
+    .filter(
+      (spec) =>
+        spec.wrapper &&
+        !spec.directPlaceholderWrapper,
+    )
+    .map((spec) => [
+      spec.command,
+      spec.sourceWrapperKind ?? "variant",
+    ]),
+);
 
 // \\braket supports both physics-style two arguments and braket.sty-style one
 // balanced argument containing one or more | separators. One outer argument is

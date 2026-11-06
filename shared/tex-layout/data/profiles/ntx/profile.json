@@ -1,0 +1,321 @@
+{
+ "bold": {
+  "0": 9,
+  "1": 10,
+  "2": 11,
+  "3": 12
+ },
+ "boldmath": {
+  "0": [
+   "ntx-Bold-tlf-ot1",
+   "ntx-Bold-tlf-ot1 at 7.3pt",
+   "ntx-Bold-tlf-ot1 at 5.5pt"
+  ],
+  "1": [
+   "ntxbmi",
+   "ntxbmi7 at 7.3pt",
+   "ntxbmi5 at 5.5pt"
+  ],
+  "2": [
+   "ntxbsy",
+   "ntxbsy7 at 7.3pt",
+   "ntxbsy5 at 5.5pt"
+  ],
+  "3": [
+   "ntxbexx",
+   "ntxbexx at 7.3pt",
+   "ntxbexx at 5.5pt"
+  ],
+  "4": [
+   "ntxbmia",
+   "ntxbmia at 7.3pt",
+   "ntxbmia at 5.5pt"
+  ],
+  "5": [
+   "ntxbsym",
+   "ntxbsym at 7.3pt",
+   "ntxbsym at 5.5pt"
+  ],
+  "6": [
+   "ntxbsyc",
+   "ntxbsyc at 7.3pt",
+   "ntxbsyc at 5.5pt"
+  ],
+  "7": [
+   "ntxbexa",
+   "ntxbexa at 7.3pt",
+   "ntxbexa at 5.5pt"
+  ]
+ },
+ "fams": {
+  "0": [
+   "ntx-Regular-tlf-ot1",
+   "ntx-Regular-tlf-ot1 at 7.3pt",
+   "ntx-Regular-tlf-ot1 at 5.5pt"
+  ],
+  "1": [
+   "ntxmi",
+   "ntxmi7 at 7.3pt",
+   "ntxmi5 at 5.5pt"
+  ],
+  "10": [
+   "ntxbmi",
+   "ntxbmi7 at 7.3pt",
+   "ntxbmi5 at 5.5pt"
+  ],
+  "11": [
+   "ntxbsy",
+   "ntxbsy7 at 7.3pt",
+   "ntxbsy5 at 5.5pt"
+  ],
+  "12": [
+   "ntxbexx",
+   "ntxbexx at 7.3pt",
+   "ntxbexx at 5.5pt"
+  ],
+  "13": [
+   "rm-qhvr at 9.40002pt",
+   "rm-qhvr at 6.86201pt",
+   "rm-qhvr at 5.17001pt"
+  ],
+  "14": [
+   "ntx-Italic-tlf-ot1",
+   "ntx-Italic-tlf-ot1 at 7.3pt",
+   "ntx-Italic-tlf-ot1 at 5.5pt"
+  ],
+  "15": [
+   "txtt",
+   "txtt at 7.3pt",
+   "txtt at 5.5pt"
+  ],
+  "2": [
+   "ntxsy",
+   "ntxsy7 at 7.3pt",
+   "ntxsy5 at 5.5pt"
+  ],
+  "3": [
+   "ntxexx",
+   "ntxexx at 7.3pt",
+   "ntxexx at 5.5pt"
+  ],
+  "4": [
+   "ntxmia",
+   "ntxmia at 7.3pt",
+   "ntxmia at 5.5pt"
+  ],
+  "5": [
+   "ntxsym",
+   "ntxsym at 7.3pt",
+   "ntxsym at 5.5pt"
+  ],
+  "6": [
+   "ntxsyc",
+   "ntxsyc at 7.3pt",
+   "ntxsyc at 5.5pt"
+  ],
+  "7": [
+   "ntxexa",
+   "ntxexa at 7.3pt",
+   "ntxexa at 5.5pt"
+  ],
+  "8": [
+   "rsfs10",
+   "rsfs7",
+   "rsfs5"
+  ],
+  "9": [
+   "ntx-Bold-tlf-ot1",
+   "ntx-Bold-tlf-ot1 at 7.3pt",
+   "ntx-Bold-tlf-ot1 at 5.5pt"
+  ]
+ },
+ "math": {
+  "binoppenalty": "700",
+  "delimiterfactor": "901",
+  "delimitershortfall": "5.0pt",
+  "medmuskip": "4.0mu plus 2.0mu minus 4.0mu",
+  "nulldelimiterspace": "1.2pt",
+  "relpenalty": "500",
+  "scriptspace": "0.5pt",
+  "thickmuskip": "5.0mu plus 5.0mu",
+  "thinmuskip": "3.0mu"
+ },
+ "params": {
+  "ntx-Bold-tlf-ot1": {
+   "3": 131070,
+   "4": 65540
+  },
+  "ntx-Bold-tlf-ot1 at 5.5pt": {
+   "3": 72088,
+   "4": 36047
+  },
+  "ntx-Bold-tlf-ot1 at 7.3pt": {
+   "3": 95681,
+   "4": 47844
+  },
+  "ntx-BoldItalic-tlf-ot1": {
+   "3": 131070,
+   "4": 65540
+  },
+  "ntx-BoldItalic-tlf-ot1 at 5.5pt": {
+   "3": 72088,
+   "4": 36047
+  },
+  "ntx-BoldItalic-tlf-ot1 at 7.3pt": {
+   "3": 95681,
+   "4": 47844
+  },
+  "ntx-BoldItalic-tlf-sc-ot1": {
+   "1": 0,
+   "3": 131070,
+   "4": 65540,
+   "5": 302121
+  },
+  "ntx-BoldItalic-tlf-sc-ot1 at 5.5pt": {
+   "1": 0,
+   "3": 72088,
+   "4": 36047,
+   "5": 166166
+  },
+  "ntx-BoldItalic-tlf-sc-ot1 at 7.3pt": {
+   "1": 0,
+   "3": 95681,
+   "4": 47844,
+   "5": 220548
+  },
+  "ntx-Italic-tlf-ot1": {
+   "3": 131070,
+   "4": 65540
+  },
+  "ntx-Italic-tlf-ot1 at 5.5pt": {
+   "3": 72088,
+   "4": 36047
+  },
+  "ntx-Italic-tlf-ot1 at 7.3pt": {
+   "3": 95681,
+   "4": 47844
+  },
+  "ntx-Italic-tlf-sc-ot1": {
+   "1": 0,
+   "3": 131070,
+   "4": 65540,
+   "5": 294911
+  },
+  "ntx-Italic-tlf-sc-ot1 at 5.5pt": {
+   "1": 0,
+   "3": 72088,
+   "4": 36047,
+   "5": 162201
+  },
+  "ntx-Italic-tlf-sc-ot1 at 7.3pt": {
+   "1": 0,
+   "3": 95681,
+   "4": 47844,
+   "5": 215285
+  },
+  "ntx-Regular-tlf-ot1": {
+   "3": 131070,
+   "4": 65540
+  },
+  "ntx-Regular-tlf-ot1 at 5.5pt": {
+   "3": 72088,
+   "4": 36047
+  },
+  "ntx-Regular-tlf-ot1 at 7.3pt": {
+   "3": 95681,
+   "4": 47844
+  },
+  "ntxth-Italic-tlf-ot1": {
+   "3": 131070,
+   "4": 65540
+  },
+  "ntxth-Italic-tlf-ot1 at 5.5pt": {
+   "3": 72088,
+   "4": 36047
+  },
+  "ntxth-Italic-tlf-ot1 at 7.3pt": {
+   "3": 95681,
+   "4": 47844
+  },
+  "rm-qhvbi-sc at 5.17001pt": {
+   "1": 0
+  },
+  "rm-qhvbi-sc at 6.86201pt": {
+   "1": 0
+  },
+  "rm-qhvbi-sc at 9.40002pt": {
+   "1": 0
+  },
+  "rm-qhvri-sc at 5.17001pt": {
+   "1": 0
+  },
+  "rm-qhvri-sc at 6.86201pt": {
+   "1": 0
+  },
+  "rm-qhvri-sc at 9.40002pt": {
+   "1": 0
+  }
+ },
+ "profile": "ntx",
+ "roles": {
+  "bb": 5,
+  "bf": 9,
+  "bm": 10,
+  "bmex": 12,
+  "bmsy": 11,
+  "cal": 2,
+  "ex": 3,
+  "frak": 4,
+  "it": 14,
+  "mi": 1,
+  "rm": 0,
+  "scr": 8,
+  "sf": 13,
+  "sy": 2,
+  "tt": 15
+ },
+ "skewchar": {
+  "ntx-Bold-tlf-ot1": -1,
+  "ntx-Italic-tlf-ot1": -1,
+  "ntx-Regular-tlf-ot1": -1,
+  "ntxbexa": -1,
+  "ntxbexx": -1,
+  "ntxbmi": 127,
+  "ntxbmi5": 127,
+  "ntxbmi7": 127,
+  "ntxbmia": 127,
+  "ntxbsy": 120,
+  "ntxbsy5": 120,
+  "ntxbsy7": 120,
+  "ntxbsyc": -1,
+  "ntxbsym": -1,
+  "ntxexa": -1,
+  "ntxexx": -1,
+  "ntxmi": 127,
+  "ntxmi5": 127,
+  "ntxmi7": 127,
+  "ntxmia": 127,
+  "ntxsy": 120,
+  "ntxsy5": 120,
+  "ntxsy7": 120,
+  "ntxsyc": -1,
+  "ntxsym": -1,
+  "rm-qhvr": -1,
+  "rsfs10": 127,
+  "rsfs5": 127,
+  "rsfs7": 127,
+  "txtt": -1
+ },
+ "text": {
+  "bf": "b",
+  "encoding": "OT1",
+  "rm": "ntxtlf",
+  "sf": "qhv",
+  "sizes": [
+   "10",
+   "7.3",
+   "5.5"
+  ],
+  "tt": "ntxtt"
+ }
+}

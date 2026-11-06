@@ -133,6 +133,20 @@ export function installMathLiveContourIntegralShadowStyle(
   shadowRoot.append(style);
 }
 
+/**
+ * The source the kernel parses for a static formula (previews, exported
+ * images): VisualTeX's compatibility macros and the custom symbols expanded
+ * (macros the caller defines itself are left to the caller).
+ */
+export function expandVisualTexLatexForLayout(
+  text: string,
+  callerMacroNames: ReadonlySet<string> = new Set(),
+) {
+  return expandCustomSymbolsForMathLiveMarkup(
+    expandVisualTexMathLiveCompatibilityMacros(text, new Set(callerMacroNames)),
+  );
+}
+
 export function convertVisualTexLatexToMarkup(
   ...args: Parameters<typeof convertLatexToMarkup>
 ) {
@@ -156,6 +170,18 @@ export function convertVisualTexLatexToMarkup(
   // default macro dictionary. Passing an empty/custom dictionary replaces it.
   const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
   return convertLatexToMarkup(expandedSource, optionsWithoutMacros);
+}
+
+/**
+ * The formula drawn as an editor field draws it: the field reads the LaTeX as it is (no compatibility rewriting:
+ * \pod, \sideset, \substack… are the engine's own), custom symbols expanded.
+ */
+export function convertVisualTexLatexToFieldMarkup(...args: Parameters<typeof convertLatexToMarkup>) {
+  installMathLiveContourIntegralGlobalStyle();
+  const [text, options] = args;
+  installCustomSymbolGlobalStyle(text);
+  const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
+  return convertLatexToMarkup(expandCustomSymbolsForMathLiveMarkup(text), optionsWithoutMacros);
 }
 
 installMathLiveContourIntegralGlobalStyle();

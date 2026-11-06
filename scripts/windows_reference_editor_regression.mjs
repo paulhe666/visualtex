@@ -7460,11 +7460,14 @@ async function main() {
     }
 
     if (scenario === "direct-shortcut-placeholder") {
+      // A typed word converts once finished (input judgment, 2026-10-15);
+      // sum and int insert bare, defint is the integral with limit slots.
       const cases = [
-        { input: "frac", command: "\\\\frac", expected: 2 },
-        { input: "sqrt", command: "\\\\sqrt", expected: 1 },
-        { input: "sum", command: "\\\\sum", expected: 2 },
-        { input: "int", command: "\\\\int", expected: 2 },
+        { input: "frac ", command: "\\\\frac", expected: 2 },
+        { input: "sqrt ", command: "\\\\sqrt", expected: 1 },
+        { input: "sum ", command: "\\\\sum", expected: 0 },
+        { input: "int ", command: "\\\\int", expected: 0 },
+        { input: "defint ", command: "\\\\int", expected: 2 },
       ];
       const results = [];
       for (const testCase of cases) {
@@ -7579,7 +7582,8 @@ async function main() {
     if (scenario === "toolbar-placeholder-overflow") {
       await clearField();
       await focusField();
-      await typeText("frac");
+      // A typed word converts once finished (input judgment, 2026-10-15).
+      await typeText("frac ");
       const directShortcutState = await waitForEvaluation(`(() => {
         const field = document.querySelector(".formula-line.is-active math-field");
         const root = field?.shadowRoot;

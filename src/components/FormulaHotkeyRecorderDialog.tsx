@@ -14,6 +14,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import {
@@ -21,6 +22,12 @@ import {
   officeHotkeyActionLabel,
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import {
+  formulaRowHotkeyAction,
+  formulaRowHotkeyActionLabel,
+  formulaRowHotkeyChordId,
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;
@@ -35,7 +42,13 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const removeOfficeBinding = useOfficeHotkeyStore(
     (state) => state.removeBinding,
   );
+  const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
+  const removeRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.removeBinding,
+  );
   const language = useEditorStore((state) => state.language);
+  const buttonShortcuts = useEditorStore((state) => state.buttonShortcuts);
+  const setButtonShortcut = useEditorStore((state) => state.setButtonShortcut);
   const isEn = language === "en";
   const existingBinding = target
     ? bindings.find((binding) => binding.target.id === target.id) ?? null
@@ -83,9 +96,18 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   }, [target, onClose]);
 
   const conflicts = useMemo(() => {
-    if (!target || !capturedChord) return { formula: null, office: null };
+    if (!target || !capturedChord) return { formula: null, office: null, row: null };
     const chordId = formulaHotkeyChordId(capturedChord);
+    const rowChordId = formulaRowHotkeyChordId(capturedChord);
     return {
+      // A formula-row shortcut is checked first in the editor, so the same
+      // chord can only belong to one of them.
+      row:
+        rowBindings.find(
+          (binding) =>
+            binding.chord !== null &&
+            formulaRowHotkeyChordId(binding.chord) === rowChordId,
+        ) ?? null,
       formula:
         bindings.find(
         (binding) =>
@@ -97,9 +119,10 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
           (binding) => formulaHotkeyChordId(binding.chord) === chordId,
         ) ?? null,
     };
-  }, [bindings, capturedChord, officeBindings, target]);
+  }, [bindings, capturedChord, officeBindings, rowBindings, target]);
 
   if (!target) return null;
+  const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
 
   const protectedAction = capturedChord
     ? protectedFormulaHotkeyAction(capturedChord, language)
@@ -111,14 +134,21 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     capturedChord && hasModifier && !protectedAction && !saving,
   );
   const targetLabel = formulaHotkeyTargetLabel(target, language);
-  const conflictLabel = conflicts.formula
+  const conflictLabel = conflicts.row
+    ? formulaRowHotkeyActionLabel(
+        formulaRowHotkeyAction(conflicts.row.actionId),
+        language,
+      )
+    : conflicts.formula
     ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
     : conflicts.office
       ? officeHotkeyActionLabel(
           officeHotkeyAction(conflicts.office.actionId),
           language,
         )
-      : null;
+      : buttonConflict
+        ? buttonShortcutLabel(buttonConflict, language)
+        : null;
 
   const saveBinding = async () => {
     if (!capturedChord || !canSave) return;
@@ -133,6 +163,9 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
         );
       }
       if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
+      if (conflicts.row) removeRowBinding(conflicts.row.actionId);
+      // a button shortcut is matched first: it gives the chord up
+      if (buttonConflict) setButtonShortcut(buttonConflict, null);
       setBinding(target, capturedChord);
       onClose();
     } catch (error) {
@@ -197,14 +230,9 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
               <strong>
-                {isEn ? "Press a shortcut now" : "现在按下需要绑定的快捷键"}
+                {isEn ? "Press a shortcut" : "请按快捷键"}
               </strong>
             )}
-            <span>
-              {isEn
-                ? "Include Ctrl, Option/Alt or Command. Press Esc to cancel."
-                : "请加入 Ctrl、Option/Alt 或 Command；按 Esc 取消。"}
-            </span>
           </div>
 
           {capturedChord && !hasModifier && (
@@ -212,8 +240,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? "This would interfere with normal formula input. Add Ctrl, Option/Alt or Command; Shift can be used in addition."
-                  : "该组合会影响正常公式输入，请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。"}
+                  ? "Requires Ctrl, Alt or Command."
+                  : "须包含 Ctrl、Alt 或 Command。"}
               </span>
             </div>
           )}
@@ -223,8 +251,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `This shortcut is reserved for ${protectedAction} and cannot be overridden.`
-                  : `该快捷键已保留用于“${protectedAction}”，不能被公式快捷键覆盖。`}
+                  ? `Reserved for ${protectedAction}.`
+                  : `已保留给“${protectedAction}”。`}
               </span>
             </div>
           )}
@@ -234,8 +262,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”.`
+                  : `已分配给“${conflictLabel}”。`}
               </span>
             </div>
           )}
@@ -245,8 +273,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <Check size={16} />
               <span>
                 {isEn
-                  ? "Available."
-                  : "可以使用。"}
+                  ? "Available"
+                  : "可用"}
               </span>
             </div>
           )}
@@ -265,8 +293,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
                 ? `Current: ${formatFormulaHotkeyChord(existingBinding.chord)}`
                 : `当前：${formatFormulaHotkeyChord(existingBinding.chord)}`
               : isEn
-                ? "No hotkey assigned"
-                : "尚未设置快捷键"}
+                ? "Not set"
+                : "未设置"}
           </span>
           <div>
             <button type="button" className="secondary-button" onClick={onClose}>

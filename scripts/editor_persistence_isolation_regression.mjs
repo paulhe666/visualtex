@@ -112,13 +112,15 @@ for (const location of [
   { pathname: "/", search: "?view=office-formula&officeHost=word" },
   { pathname: "/", search: "?view=office-document-import" },
   { pathname: "/", search: "?view=office-word-latex-redraw" },
+  { pathname: "/anywhere.html", search: "?transport=tauri&theme=light" },
 ]) assert.equal(isOfficeEditorPersistenceScope(location), true);
 for (const location of [
   null, { pathname: "/", search: "" },
   { pathname: "/", search: "?view=desktop" },
   { pathname: "/office-native-dialog.html-unrelated", search: "" },
+  { pathname: "/anywhere.html-unrelated", search: "" },
 ]) assert.equal(isOfficeEditorPersistenceScope(location), false);
-completed.push("native-dialog and resident Office URLs are isolated, ordinary desktop URLs are not");
+completed.push("native-dialog, resident Office and Anywhere URLs are isolated, ordinary desktop URLs are not");
 {
   for (const office of [false, true]) {
     const { adapter, writes } = fixture(undefined, office);

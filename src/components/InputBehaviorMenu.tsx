@@ -37,8 +37,15 @@ const AUTO_ESCAPE_OPTIONS: InputBehaviorOption[] = [
     key: "autoEscapeShortcuts",
     titleZh: "常用数学快捷转义",
     titleEn: "Common math shortcuts",
-    descriptionZh: "控制 alpha、>=、hat 等快捷映射；微分元、函数名等正体自动检测独立运行，不受此开关影响",
-    descriptionEn: "Controls shortcuts such as alpha, >= and hat; upright detection for differentials and function names remains independent",
+    descriptionZh: "按确认转义键（默认 Space，可在快捷键设置中修改）只转换光标前的命令名：alpha→α、frac→分式，thetaalpha 只转换 alpha；紧接着按 Backspace 撤销。Tab、运算符和方向键不会转义；>=、-> 等符号组合即时转换",
+    descriptionEn: "The confirm-escape key (Space by default, changeable in the shortcut settings) converts only the name right before the caret: alpha → α, frac → fraction, and thetaalpha converts only alpha; Backspace right after undoes it. Tab, operators and arrows never escape; symbol sequences such as >= and -> convert as typed",
+  },
+  {
+    key: "autoUprightTypography",
+    titleZh: "自动正体排版",
+    titleEn: "Automatic upright typography",
+    descriptionZh: "按 SI/ISO 规则把单位（km/h）、函数名（sin、lg(x)）、常数 e 和 i、微分 d、描述性下标（v_max）排成正体。关闭后完全不做正体判断；工具栏和候选框插入的内容不受影响",
+    descriptionEn: "Sets units (km/h), function names (sin, lg(x)), the constants e and i, the differential d and descriptive subscripts (v_max) upright, following SI/ISO. Off: no upright judgment at all; toolbar and candidate insertions are unaffected",
   },
 ];
 
@@ -70,23 +77,6 @@ const CARET_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
     titleEn: "Exit font command after input",
     descriptionZh: "开启时输入一个字符后自动结束；关闭后可连续输入，并按 Enter 确认 mathbb、mathbf、mathcal 等字体作用域",
     descriptionEn: "When enabled, exit after one character; when disabled, keep typing and press Enter to confirm mathbb, mathbf, mathcal and similar font scopes",
-  },
-];
-
-const COMMAND_SUGGESTION_OPTIONS: InputBehaviorOption[] = [
-  {
-    key: "showStructuredCommandSuggestions",
-    titleZh: "求和、积分等结构候选框",
-    titleEn: "Structured command suggestions",
-    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启",
-    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures",
-  },
-  {
-    key: "showOtherCommandSuggestions",
-    titleZh: "其他命令候选框",
-    titleEn: "Other command suggestions",
-    descriptionZh: "控制除求和、积分等结构外的 VisualTeX 大型候选框，默认关闭",
-    descriptionEn: "Controls the large VisualTeX panel for commands other than sums, integrals and similar structures; off by default",
   },
 ];
 
@@ -403,8 +393,8 @@ export function InputBehaviorMenu() {
                         <span
                           title={
                             isEn
-                              ? "These only apply after certain structures"
-                              : "只在特定结构后面生效"
+                              ? "Context condition"
+                              : "有前置条件"
                           }
                         >
                           {isEn ? "context" : "有前置条件"}
@@ -511,25 +501,6 @@ export function InputBehaviorMenu() {
                 ))}
               </div>
 
-              <div className="input-behavior-heading input-behavior-section-heading">
-                <strong>{isEn ? "Command suggestion panels" : "命令候选框"}</strong>
-              </div>
-
-              <div className="input-behavior-options">
-                {COMMAND_SUGGESTION_OPTIONS.map((option) => (
-                  <label className="input-behavior-option" key={option.key}>
-                    <span>
-                      <strong>{isEn ? option.titleEn : option.titleZh}</strong>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={inputBehavior[option.key]}
-                      onChange={(event) => setInputBehavior(option.key, event.target.checked)}
-                    />
-                    <span className="input-behavior-switch" aria-hidden="true" />
-                  </label>
-                ))}
-              </div>
             </>
           )}
         </div>,

@@ -216,6 +216,9 @@ async function main() {
         await sleep(55);
       }
       await sleep(160);
+      // A typed word is judged once finished; leaving the field finishes it.
+      await evaluate(`document.querySelector("math-field").blur()`);
+      await sleep(120);
       return evaluate(`document.querySelector("math-field").value`);
     };
 
@@ -292,10 +295,10 @@ async function main() {
     assert.match(await typeText("geq"), /\\(?:ge|geq)/);
     assert.match(await typeText("leq"), /\\(?:le|leq)/);
     assert.match(await typeText("neq"), /\\(?:ne|neq)/);
-    assert.equal(await typeText("pp"), "+");
-    assert.equal(await typeText("ss"), "-");
-    assert.equal(await typeText("mm"), "\\times");
-    assert.equal(await typeText("dd"), "\\div");
+    // Products of variables are not shortcuts (input judgment, 2026-10-15).
+    assert.equal(await typeText("pp"), "pp");
+    assert.equal(await typeText("ss"), "ss");
+    assert.equal(await typeText("dd"), "dd");
     assert.equal(await typeText("eq"), "=");
     assert.match(await typeText("hat"), /\\hat/);
     assert.equal(await typeText("varphi"), "\\varphi");

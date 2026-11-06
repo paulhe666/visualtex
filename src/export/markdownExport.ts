@@ -1,3 +1,5 @@
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+
 export interface MarkdownExportOptions {
   includeTitle?: boolean;
 }
@@ -19,7 +21,7 @@ export function buildMarkdownDocument(
   }
 
   for (const formula of formulas) {
-    const normalizedFormula = formula.trim();
+    const normalizedFormula = toPortableBoldLatex(formula.trim());
     if (!normalizedFormula) continue;
     sections.push(`$$\n${normalizedFormula}\n$$`);
   }

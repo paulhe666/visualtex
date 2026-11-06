@@ -26,7 +26,11 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
  */
 export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
   ...VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS,
-  ...VISUALTEX_MATHLIVE_PACKAGE_MACROS,
+  // \bm is the kernel's own command (symbol-wide bold whose content stays
+  // editable); a macro wrapper would hide its content from editing and styling.
+  ...Object.fromEntries(
+    Object.entries(VISUALTEX_MATHLIVE_PACKAGE_MACROS).filter(([name]) => name !== "bm"),
+  ),
 
   // MathLive accepts \nicefrac as source but does not expose its two
   // arguments as stable editable atoms in every Windows runtime. Define the
@@ -38,10 +42,9 @@ export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
     captureSelection: false,
   },
 
-  // The default MathLive bold wrapper is upright. Force mathematical bold
-  // aliases through mathbfit so Latin variables retain their italic shape.
-  boldsymbol: macro("\\mathbfit{#1}"),
-  bm: macro("\\mathbfit{#1}"),
+  // \bm, \boldsymbol and \bold are the kernel's own symbol-wide bold (every
+  // symbol in its bold font, letters keeping their slant, as bm.sty sets them);
+  // no alias here (\mathbfit would bold only Latin letters and digits).
 
   // unicode-math alphabet aliases. MathLive 0.109 natively exposes mathbfit but
   // does not cover the full unicode-math `\\sym...` command family.

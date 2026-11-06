@@ -8,8 +8,7 @@ import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAv
 import { VisualTexErrorBoundary } from "./runtime/VisualTexErrorBoundary";
 import { applyLandingDocumentMeta, detectLandingLang } from "./landing/i18n";
 // Same stylesheets as apps/macos/src/desktop/main.tsx. The landing page also
-// relies on their base rules (box sizing, body font, MathLive fonts).
-import "mathlive/static.css";
+// relies on their base rules (box sizing, body font).
 import "./styles.css";
 import "./styles-editor-parity.css";
 import "./styles-windows-shared-latest.css";

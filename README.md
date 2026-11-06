@@ -22,7 +22,7 @@ VisualTeX 是一款面向数学、物理、工程和科研写作场景的可视�
 
 ### 编辑器与 macOS 版同步
 
-网页编辑器直接使用 macOS 版（`main` 分支 `apps/macos`）的编辑器代码。`web-sync/manifest.json` 列出原样复制的文件和来源提交，网页版自己的改动放在 `web-sync/patches/`（去掉 Office、更新、小键盘等桌面功能）。
+网页版直接使用 macOS 版（`main` 分支 `apps/macos`）的主应用代码（公式编辑和文档模式），以及它共用的 `apps/shared`（编辑内核、TeX 排版引擎、文档编辑器、自定义字符设计器，复制到 `shared/`）。`web-sync/manifest.json` 列出复制的文件和来源提交，网页版自己的改动放在 `web-sync/patches/`（去掉 Office、更新、小键盘、Anywhere、本地 OCR 等桌面功能；文档的 PDF 导出改用浏览器打印）。
 
 ```bash
 git fetch origin

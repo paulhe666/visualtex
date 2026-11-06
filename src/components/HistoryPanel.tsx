@@ -75,12 +75,7 @@ export function HistoryPanel({ open, onClose, onRestore }: Props) {
         {history.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon"><Clock3 size={24} /></span>
-            <h3>{isEn ? "No formula history yet" : "还没有历史公式"}</h3>
-            <p>
-              {isEn
-                ? "The current formula will be saved here after you pause editing."
-                : "停止编辑片刻后，当前公式会自动保存在这里。"}
-            </p>
+            <h3>{isEn ? "No history" : "无历史记录"}</h3>
           </div>
         ) : (
           history.map((item) => {

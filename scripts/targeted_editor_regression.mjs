@@ -50,6 +50,7 @@ const supportedScenarios = [
   "cursor-placement",
   "font-settings",
   "output-fonts",
+  "text-command-fonts",
   "configuration",
   "ocr-model-selection",
   "ocr-empty-environment",
@@ -10702,6 +10703,65 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
 
       console.log(JSON.stringify({ switchedState, dismissedState, stableDismissedState, returnedState }, null, 2));
       console.log("Targeted formula-line navigation regression passed");
+      return;
+    }
+
+    if (scenario === "text-command-fonts") {
+      // \text{} picks the font per character, as the exported formula does:
+      // Chinese with the formula Chinese font, Latin letters and digits with
+      // the upright letter font, never with the Chinese font's own Latin glyphs.
+      await client.send("DOM.enable");
+      await client.send("CSS.enable");
+      const renderedFontOf = async (text, property) => {
+        const probe = await client.send("Runtime.evaluate", {
+          expression: `(() => {
+            const span = document.createElement("span");
+            span.textContent = ${JSON.stringify(text)};
+            span.style.fontFamily = getComputedStyle(document.querySelector("math-field")).getPropertyValue(${JSON.stringify(property)});
+            document.body.append(span);
+            return span;
+          })()`,
+          returnByValue: false,
+        });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const { nodeId } = await client.send("DOM.requestNode", { objectId: probe.result.objectId });
+        const family = (await client.send("CSS.getPlatformFontsForNode", { nodeId })).fonts.map((font) => font.familyName)[0];
+        await evaluate(`[...document.body.children].at(-1).remove()`);
+        return family;
+      };
+      await clearField();
+      const expectedChineseFont = await renderedFontOf("便", "--visualtex-formula-chinese-font-family");
+      const expectedLatinFont = await renderedFontOf("Ab12", "--visualtex-formula-upright-font-family");
+      const states = { expectedChineseFont, expectedLatinFont };
+      const textScriptCases = { "\\text{Ab12}": { latin: 4, chinese: 0 }, "\\text{Ab中文12}": { latin: 4, chinese: 2 } };
+      for (const latex of Object.keys(textScriptCases)) {
+        await evaluate(`document.querySelector("math-field").setValue(${JSON.stringify(latex)}, { format: "latex", insertionMode: "replaceAll" })`);
+        await sleep(200);
+        const listedText = await client.send("Runtime.evaluate", {
+          expression: `[...document.querySelector("math-field").shadowRoot.querySelectorAll(".ML__text")].filter((span) => [...span.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim()))`,
+          returnByValue: false,
+        });
+        const textProperties = await client.send("Runtime.getProperties", { objectId: listedText.result.objectId, ownProperties: true });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const glyphCounts = {};
+        for (const property of textProperties.result) {
+          if (!/^\d+$/.test(property.name) || !property.value?.objectId) continue;
+          const { nodeId } = await client.send("DOM.requestNode", { objectId: property.value.objectId });
+          for (const font of (await client.send("CSS.getPlatformFontsForNode", { nodeId })).fonts) {
+            glyphCounts[font.familyName] = (glyphCounts[font.familyName] ?? 0) + font.glyphCount;
+          }
+        }
+        states[latex] = glyphCounts;
+      }
+      console.log(JSON.stringify(states, null, 2));
+      const textScriptsWrong = Object.entries(textScriptCases).filter(([latex, expected]) =>
+        (states[latex][expectedLatinFont] ?? 0) !== expected.latin ||
+        (states[latex][expectedChineseFont] ?? 0) !== expected.chinese,
+      );
+      if (!expectedLatinFont || !expectedChineseFont || expectedLatinFont === expectedChineseFont || textScriptsWrong.length) {
+        throw new Error(`\\text{} did not draw Latin with ${expectedLatinFont} and Chinese with ${expectedChineseFont}: ${JSON.stringify(states)}`);
+      }
+      console.log("Targeted \\text{} font regression passed");
       return;
     }
 

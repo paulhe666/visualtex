@@ -140,6 +140,13 @@ function shapeMarkup(shape: CustomSymbolVectorShape, paintColor: string) {
   return userTransform ? `<g${userTransform}>${clipped}</g>` : clipped;
 }
 
+/** Where the artwork may reach, from the box's top left (units): the box, or artworkBounds beyond it. */
+function artworkExtent(symbol: CustomSymbolDefinition) {
+  const width = Math.max(1, symbol.metrics.widthEm * 1000);
+  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+  return { box: { width, height }, extent: symbol.artworkBounds ?? { x: 0, y: 0, width, height } };
+}
+
 function artworkHasErase(symbol: CustomSymbolDefinition) {
   return symbol.artwork.shapes.some((shape) => shape.operation === "erase");
 }
@@ -147,14 +154,14 @@ function artworkHasErase(symbol: CustomSymbolDefinition) {
 function artworkMaskMarkup(
   symbol: CustomSymbolDefinition,
   maskId: string,
-  width: number,
-  height: number,
 ) {
+  const { extent } = artworkExtent(symbol);
+  const area = `x="${number(extent.x)}" y="${number(extent.y)}" width="${number(extent.width)}" height="${number(extent.height)}"`;
   const paintShapes = symbol.artwork.shapes.filter((shape) => shape.operation !== "erase");
   const eraseShapes = symbol.artwork.shapes.filter((shape) => shape.operation === "erase");
   return (
-    `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${number(width)}" height="${number(height)}" style="mask-type:luminance">` +
-    `<rect x="0" y="0" width="${number(width)}" height="${number(height)}" fill="black"></rect>` +
+    `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" ${area} style="mask-type:luminance">` +
+    `<rect ${area} fill="black"></rect>` +
     paintShapes.map((shape) => shapeMarkup(shape, "white")).join("") +
     eraseShapes.map((shape) => shapeMarkup(shape, "black")).join("") +
     `</mask></defs>`
@@ -165,21 +172,21 @@ export function customSymbolArtworkSvg(
   symbol: CustomSymbolDefinition,
   monochromeMask = true,
 ) {
-  const width = Math.max(1, symbol.metrics.widthEm * 1000);
-  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+  const { extent } = artworkExtent(symbol);
+  const viewBox = `${number(extent.x)} ${number(extent.y)} ${number(extent.width)} ${number(extent.height)}`;
   const paint = monochromeMask ? "black" : "inherit";
   if (!artworkHasErase(symbol)) {
     return (
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">` +
       symbol.artwork.shapes.map((shape) => shapeMarkup(shape, paint)).join("") +
       "</svg>"
     );
   }
   const maskId = "visualtex-custom-symbol-erase";
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
-    artworkMaskMarkup(symbol, maskId, width, height) +
-    `<rect x="0" y="0" width="${number(width)}" height="${number(height)}" fill="${paint}" mask="url(#${maskId})"></rect>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">` +
+    artworkMaskMarkup(symbol, maskId) +
+    `<rect x="${number(extent.x)}" y="${number(extent.y)}" width="${number(extent.width)}" height="${number(extent.height)}" fill="${paint}" mask="url(#${maskId})"></rect>` +
     "</svg>"
   );
 }
@@ -188,13 +195,12 @@ function maskLayerSvg(
   symbol: CustomSymbolDefinition,
   operation: "paint" | "erase",
 ) {
-  const width = Math.max(1, symbol.metrics.widthEm * 1000);
-  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+  const { extent } = artworkExtent(symbol);
   const shapes = symbol.artwork.shapes.filter((shape) =>
     operation === "erase" ? shape.operation === "erase" : shape.operation !== "erase",
   );
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${number(extent.x)} ${number(extent.y)} ${number(extent.width)} ${number(extent.height)}">` +
     shapes.map((shape) => shapeMarkup(shape, "black")).join("") +
     "</svg>"
   );
@@ -223,6 +229,22 @@ export function customSymbolRuntimeCss(symbols = getActiveCustomSymbols()) {
   -webkit-mask-composite: source-out;
   mask-composite: subtract;`
         : "";
+      const { box, extent } = artworkExtent(symbol);
+      // the box is the base character's: overlays reaching outside it are
+      // painted on a layer of their own, placed relative to the box
+      const overflow = Boolean(symbol.artworkBounds);
+      const percent = (value: number, of: number) => `${number((value / of) * 100)}%`;
+      const painted = overflow ? `.${className} .ML__rule::after` : `.${className} .ML__rule`;
+      const placement = overflow
+        ? `
+  content: "";
+  position: absolute;
+  left: ${percent(extent.x, box.width)};
+  top: ${percent(extent.y, box.height)};
+  width: ${percent(extent.width, box.width)};
+  height: ${percent(extent.height, box.height)};
+  pointer-events: none;`
+        : "";
       return `
 .${className} .ML__inner,
 .${className} .ML__inner * {
@@ -231,7 +253,11 @@ export function customSymbolRuntimeCss(symbols = getActiveCustomSymbols()) {
 .${className} .ML__rule {
   opacity: 1 !important;
   border-top-color: transparent !important;
-  border-right-color: transparent !important;
+  border-right-color: transparent !important;${overflow ? `
+  overflow: visible;
+  background-color: transparent;
+}
+${painted} {${placement}` : ""}
   background-color: currentColor;
   background-clip: border-box;
   -webkit-mask-image: ${maskImages};
@@ -488,15 +514,14 @@ function markerPattern(className: string) {
 
 function exportedArtworkGroup(symbol: CustomSymbolDefinition, occurrence = 0) {
   const baseline = number(symbol.metrics.ascentEm * 1000);
-  const width = Math.max(1, symbol.metrics.widthEm * 1000);
-  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+  const { extent } = artworkExtent(symbol);
   let artwork: string;
   if (artworkHasErase(symbol)) {
     const safeId = symbol.id.replace(/[^A-Za-z0-9_-]/g, "-");
     const maskId = `visualtex-custom-symbol-erase-${safeId}-${occurrence}`;
     artwork =
-      artworkMaskMarkup(symbol, maskId, width, height) +
-      `<rect x="0" y="0" width="${number(width)}" height="${number(height)}" fill="inherit" mask="url(#${maskId})"></rect>`;
+      artworkMaskMarkup(symbol, maskId) +
+      `<rect x="${number(extent.x)}" y="${number(extent.y)}" width="${number(extent.width)}" height="${number(extent.height)}" fill="inherit" mask="url(#${maskId})"></rect>`;
   } else {
     artwork = symbol.artwork.shapes
       .map((shape) => shapeMarkup(shape, "inherit"))
@@ -508,6 +533,36 @@ function exportedArtworkGroup(symbol: CustomSymbolDefinition, occurrence = 0) {
     artwork +
     "</g>"
   );
+}
+
+/**
+ * The artwork of the custom symbol whose editor class is `className`, for the
+ * layout engine's SVG images: drawn into the symbol's box (`width` x `height`
+ * px, top-left corner at the origin). Null for other classes.
+ */
+export function customSymbolArtworkForClass(className: string) {
+  const symbol = getActiveCustomSymbols().find((s) => customSymbolCssClass(s) === className);
+  if (!symbol) return null;
+  let occurrence = 0;
+  return (width: number, height: number) => {
+    const { box, extent } = artworkExtent(symbol);
+    const w = box.width;
+    const h = box.height;
+    let artwork: string;
+    if (artworkHasErase(symbol)) {
+      const safeId = symbol.id.replace(/[^A-Za-z0-9_-]/g, "-");
+      const maskId = `visualtex-custom-symbol-erase-${safeId}-${occurrence++}`;
+      artwork =
+        artworkMaskMarkup(symbol, maskId) +
+        `<rect x="${number(extent.x)}" y="${number(extent.y)}" width="${number(extent.width)}" height="${number(extent.height)}" fill="inherit" mask="url(#${maskId})"></rect>`;
+    } else {
+      artwork = symbol.artwork.shapes.map((shape) => shapeMarkup(shape, "inherit")).join("");
+    }
+    return (
+      `<g data-visualtex-custom-symbol="${escapeAttribute(symbol.id)}" ` +
+      `transform="scale(${number(width / w)} ${number(height / h)})">${artwork}</g>`
+    );
+  };
 }
 
 export function applyCustomSymbolArtworkToSvg(svg: string) {

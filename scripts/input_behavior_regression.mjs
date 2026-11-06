@@ -788,11 +788,12 @@ async function main() {
       }), 50);
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
-    assert.equal(menu.options.length, 7);
+    assert.equal(menu.options.length, 8);
     assert.equal(menu.headingDescriptionCount, 0);
     assert.ok(menu.options.every(({ hasDescription }) => !hasDescription));
     for (const expectedTitle of [
       /常用数学快捷转义|Common math shortcuts/,
+      /自动正体排版|Automatic upright typography/,
       /上标输入后跳出|Exit superscript after input/,
       /下标输入后跳出|Exit subscript after input/,
       /重音内容输入后跳出|Exit accent after input/,

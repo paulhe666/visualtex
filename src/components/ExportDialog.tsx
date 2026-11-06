@@ -189,7 +189,7 @@ export function ExportDialog({
         dataBase64 = encodeUtf8Base64(markdown);
         browserPayload = markdown;
       } else if (format === "svg") {
-        const svg = latexToSvg(nonEmptyFormulas.join("\n"), {
+        const svg = await latexToSvg(nonEmptyFormulas.join("\n"), {
           displayMode: true,
           fontSizePt: 18,
           paddingPx: 18,
@@ -343,7 +343,6 @@ export function ExportDialog({
               value={path}
               disabled={busy}
               onChange={(event) => setPath(event.target.value)}
-              placeholder={`/Users/name/Documents/${suggestedFilename}`}
               spellCheck={false}
               autoComplete="off"
             />

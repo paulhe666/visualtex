@@ -1,11 +1,35 @@
-// Web shell for the macOS editor. Mirrors apps/macos/src/App.tsx, minus the
+// Web shell for the macOS app. Mirrors apps/macos/src/App.tsx, minus the
 // desktop-only parts (Office, updates, keypad window, local/quick/silent OCR),
-// plus the web-only parts (API OCR, landing showcase, default zoom).
-import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+// plus the web-only parts (API OCR, landing showcase, tutorial, default zoom).
+import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useDocumentModeStore } from "./stores/documentModeStore";
+import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
+import { useDocumentLibraryStore } from "./document/documentLibraryApi";
+import {
+  DOCUMENT_COPY_LATEX_EVENT,
+  DOCUMENT_COPY_MARKDOWN_EVENT,
+  DOCUMENT_EXPORT_FILE_EVENT,
+  DOCUMENT_EXPORT_LATEX_EVENT,
+  DOCUMENT_EXPORT_PDF_EVENT,
+  DOCUMENT_EXPORT_MARKDOWN_EVENT,
+  DOCUMENT_NEW_REQUEST_EVENT,
+  DOCUMENT_OPEN_REQUEST_EVENT,
+  DOCUMENT_SAVE_REQUEST_EVENT,
+  DOCUMENT_TUTORIAL_EVENT,
+} from "./document/documentEvents";
+import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
+
+// The custom symbol designer, loaded the first time it is opened.
+const LazyCustomSymbolDesignerDialog = lazy(async () => {
+  const module = await import("./components/CustomSymbolDesignerDialog");
+  return { default: module.CustomSymbolDesignerDialog };
+});
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BookOpenText,
   Check,
+  ClipboardCopy,
   Code2,
   FileDown,
   FilePlus2,
@@ -29,7 +53,6 @@ import {
   type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
 import { ExportDialog } from "./components/ExportDialog";
@@ -69,6 +92,7 @@ import {
   loadWebOcrConfiguration,
   recognizeFormulaWithWebApi,
 } from "./ocr/webOcrService";
+import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
 
 type InlineOcrStatus = "running" | "success" | "error";
 
@@ -126,7 +150,6 @@ function App() {
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
   const copyMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [formulaHotkeyManagerOpen, setFormulaHotkeyManagerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
@@ -153,6 +176,7 @@ function App() {
   const theme = useEditorStore((state) => state.theme);
   const synchronizedThemeRef = useRef(theme);
   const language = useEditorStore((state) => state.language);
+  const customSymbolDesigner = useCustomSymbolDesignerStore();
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
@@ -464,14 +488,14 @@ function App() {
       if (!inserted) {
         throw new Error(
           isEn
-            ? "The formula row was deleted, so the result was not inserted"
-            : "原公式行已删除，识别结果未插入",
+            ? "The formula line was deleted; nothing was inserted"
+            : "原公式行已删除，未插入",
         );
       }
 
       setInlineOcr((current) => ({
         status: "success",
-        message: isEn ? "Recognized and inserted" : "已识别并插入",
+        message: isEn ? "Inserted" : "已插入",
         seconds: current?.seconds ?? 0,
       }));
       setToast(isEn ? "Image recognized" : "图片已识别");
@@ -539,6 +563,43 @@ function App() {
     setOcrOpen(true);
   };
 
+  // the chords the user gave the main window's buttons (Settings > Keyboard shortcuts)
+  useEffect(
+    () => installButtonShortcuts("main", () => useEditorStore.getState().buttonShortcuts),
+    [],
+  );
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      switch (action) {
+        case "quick-ocr":
+        case "ocr":
+          openOcrDialog();
+          break;
+        case "copy-latex":
+          void handleCopy();
+          break;
+        case "copy-image":
+          void handleCopyPng();
+          break;
+        case "export":
+          setExportOpen(true);
+          break;
+        case "history":
+          setHistoryOpen(true);
+          break;
+        case "toggle-tiles":
+          setSidebarOpen((open) => !open);
+          break;
+        case "settings":
+          setSettingsOpen(true);
+          break;
+        case "help":
+          setHelpOpen(true);
+          break;
+      }
+    }),
+  );
+
   const updateLatexFormatProfile = (
     patch: Partial<LatexFormatProfile>,
   ) => {
@@ -549,7 +610,11 @@ function App() {
     try {
       await copyFormulaLinesUniversal(lines, latexFormatProfile);
       addHistory(latex);
-      setToast(isEn ? "LaTeX copied" : "已复制 LaTeX");
+      setToast(
+        isEn
+          ? `Copied (${latexProfileSummary})`
+          : `已复制（${latexProfileSummary}）`,
+      );
       return true;
     } catch {
       setToast(
@@ -638,12 +703,10 @@ function App() {
     const { lines: currentLines } = useEditorStore.getState();
     if (!currentLines.some((line) => line.latex.trim())) return true;
     if (documentContentKey() === savedContentRef.current) return true;
-    const undoKey = isMacKeyboardPlatform() ? "⌘Z" : "Ctrl+Z";
-    return window.confirm(
-      isEn
-        ? `The current formula document has not been saved. Create a new one anyway? (${undoKey} brings it back.)`
-        : `当前公式文档还没有保存。仍要新建吗？（新建后可以按 ${undoKey} 找回）`,
-    );
+    const message = isEn
+      ? "The current formula is not saved. Create a new one?"
+      : "当前公式未保存。是否新建？";
+    return window.confirm(message);
   };
 
   const newFormula = () => {
@@ -681,7 +744,6 @@ function App() {
 
       if (
         settingsOpen ||
-        formulaHotkeyManagerOpen ||
         ocrOpen ||
         historyOpen ||
         helpOpen ||
@@ -693,6 +755,24 @@ function App() {
       const target = event.target instanceof Element ? event.target : null;
       const focusedElement =
         document.activeElement instanceof Element ? document.activeElement : null;
+      // Document mode: the document has its own history and file actions.
+      if (useDocumentModeStore.getState().content === "document") {
+        const documentKey = event.key.toLowerCase();
+        const primary = (event.metaKey || event.ctrlKey) && !event.altKey;
+        if (primary && ["z", "y", "n", "o", "s"].includes(documentKey)) {
+          if (documentKey === "s") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT));
+          } else if (documentKey === "o") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT));
+          } else if (documentKey === "n") {
+            event.preventDefault();
+            window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT));
+          }
+          return;
+        }
+      }
       const inCodeMirror = Boolean(
         target?.closest(".cm-editor") || focusedElement?.closest(".cm-editor"),
       );
@@ -746,7 +826,6 @@ function App() {
     zoom,
     latexFormatProfile,
     settingsOpen,
-    formulaHotkeyManagerOpen,
     ocrOpen,
     historyOpen,
     helpOpen,
@@ -968,7 +1047,11 @@ function App() {
         aria-expanded={copyMenuOpen}
         aria-haspopup="menu"
         aria-controls="copy-format-menu"
-        title={isEn ? `LaTeX format: ${latexProfileSummary}` : `LaTeX 格式：${latexProfileSummary}`}
+        title={
+          isEn
+            ? `LaTeX format: ${latexProfileSummary}`
+            : `LaTeX 格式：${latexProfileSummary}`
+        }
         onClick={() => {
           setMenuOpen(false);
           setCopyMenuOpen((open) => !open);
@@ -979,6 +1062,10 @@ function App() {
       {renderLatexProfileMenu()}
     </div>
   );
+
+  const workspaceContent = useDocumentModeStore((state) => state.content);
+  const setWorkspaceContent = useDocumentModeStore((state) => state.setContent);
+  const documentLibraryOpen = useDocumentLibraryStore((state) => state.open);
 
   return (
     <div
@@ -1039,6 +1126,26 @@ function App() {
               )}
             </button>
           ) : null}
+          <div className="workspace-content-switch" role="tablist" aria-label={isEn ? "Workspace" : "工作区"}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceContent === "formula"}
+              className={workspaceContent === "formula" ? "is-active" : ""}
+              onClick={() => setWorkspaceContent("formula")}
+            >
+              {isEn ? "Formulas" : "公式"}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceContent === "document"}
+              className={workspaceContent === "document" ? "is-active" : ""}
+              onClick={() => setWorkspaceContent("document")}
+            >
+              {isEn ? "Document" : "文档"}
+            </button>
+          </div>
 
           {menuOpen && (
             <div
@@ -1050,8 +1157,62 @@ function App() {
             >
               <div className="app-menu-heading">
                 <strong>VisualTeX</strong>
+                <span>
+                  {workspaceContent === "document"
+                    ? isEn ? "Document" : "文档"
+                    : isEn ? "Formula workspace" : "公式工作区"}
+                </span>
               </div>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
+              {workspaceContent === "document" ? (<>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => useDocumentLibraryStore.getState().setOpen(!documentLibraryOpen))}>
+                {documentLibraryOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                <span>{documentLibraryOpen ? (isEn ? "Hide documents" : "隐藏文档库") : isEn ? "Show documents" : "显示文档库"}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT)))}>
+                <FilePlus2 size={16} />
+                <span>{isEn ? "New document" : "新建文档"}</span>
+                <kbd>Ctrl+N</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT)))}>
+                <FolderOpen size={16} />
+                <span>{isEn ? "Open document" : "打开文档"}</span>
+                <kbd>Ctrl+O</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT)))}>
+                <Save size={16} />
+                <span>{isEn ? "Save document" : "保存文档"}</span>
+                <kbd>Ctrl+S</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_FILE_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export document" : "导出文档"}</span>
+                <kbd>.vtxdoc</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_LATEX_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export LaTeX" : "导出 LaTeX"}</span>
+                <kbd>.tex</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_LATEX_EVENT)))}>
+                <ClipboardCopy size={16} />
+                <span>{isEn ? "Copy as LaTeX" : "复制为 LaTeX"}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_MARKDOWN_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
+                <kbd>.md</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_MARKDOWN_EVENT)))}>
+                <ClipboardCopy size={16} />
+                <span>{isEn ? "Copy as Markdown" : "复制为 Markdown"}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_PDF_EVENT)))}>
+                <FileDown size={16} />
+                <span>{isEn ? "Export PDF" : "导出 PDF"}</span>
+                <kbd>.pdf</kbd>
+              </button>
+              </>) : (<>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
               </button>
@@ -1079,6 +1240,7 @@ function App() {
                 <FileDown size={16} />
                 <span>{isEn ? "Export…" : "导出…"}</span>
               </button>
+              </>)}
               <div className="app-menu-divider" />
               <button
                 type="button"
@@ -1105,6 +1267,12 @@ function App() {
                 <Settings2 size={16} />
                 <span>{isEn ? "Settings" : "设置"}</span>
               </button>
+              {workspaceContent === "document" && (
+                <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_TUTORIAL_EVENT)))}>
+                  <GraduationCap size={16} />
+                  <span>{isEn ? "Document tutorials" : "文档教程"}</span>
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
@@ -1153,6 +1321,8 @@ function App() {
         </div>
 
         <div className="document-title-area">
+          {workspaceContent === "document" && <DocumentInputModeSwitch isEn={isEn} />}
+          {workspaceContent === "formula" && (<>
           <input
             value={title}
             onChange={(event) => handleTitleChange(event.target.value)}
@@ -1166,17 +1336,24 @@ function App() {
           >
             <Check size={13} />
           </span>
+          </>)}
         </div>
 
         <div className="header-actions">
+          {workspaceContent === "document" && (
+          <div className="action-group edit-actions">
+            <DocumentHistoryButtons isEn={isEn} />
+          </div>
+          )}
+          {workspaceContent === "formula" && (<>
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New" : "新建"}>
+            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? "New (Ctrl+N)" : "新建 (Ctrl+N)"}>
               <FilePlus2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · Ctrl+O" : "打开 · Ctrl+O"}>
+            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open (Ctrl+O)" : "打开 (Ctrl+O)"}>
               <FolderOpen size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · Ctrl+S" : "保存到本地 · Ctrl+S"}>
+            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save (Ctrl+S)" : "保存 (Ctrl+S)"}>
               <Save size={17} />
             </button>
           </div>
@@ -1190,7 +1367,7 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Undo" : "撤销"}
-              title={isEn ? "Undo · Ctrl+Z" : "撤销 · Ctrl+Z"}
+              title={isEn ? "Undo (Ctrl+Z)" : "撤销 (Ctrl+Z)"}
             >
               <Undo2 size={17} />
             </button>
@@ -1203,21 +1380,24 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Redo" : "重做"}
-              title={isEn ? "Redo · Ctrl+Y / Ctrl+Shift+Z" : "重做 · Ctrl+Y / Ctrl+Shift+Z"}
+              title={isEn ? "Redo (Ctrl+Y / Ctrl+Shift+Z)" : "重做 (Ctrl+Y / Ctrl+Shift+Z)"}
             >
               <Redo2 size={17} />
             </button>
           </div>
+          </>)}
+          {workspaceContent === "formula" && (
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
+          )}
           <button type="button" className="icon-button workspace-action" onPointerDown={captureOcrInsertionTarget} onClick={openOcrDialog} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
             <ScanLine size={17} />
           </button>
-          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · Ctrl+," : "设置 · Ctrl+,"}>
+          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings (Ctrl+,)" : "设置 (Ctrl+,)"}>
             <Settings2 size={17} />
           </button>
-          {codeFormatControl}
+          {workspaceContent === "formula" && codeFormatControl}
           <div
             ref={setDesktopTopToolsMount}
             className="desktop-top-tools-mount"
@@ -1313,14 +1493,6 @@ function App() {
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        onOpenFormulaHotkeys={() => {
-          setSettingsOpen(false);
-          setFormulaHotkeyManagerOpen(true);
-        }}
-      />
-      <FormulaHotkeyManagerDialog
-        open={formulaHotkeyManagerOpen}
-        onClose={() => setFormulaHotkeyManagerOpen(false)}
       />
       <HistoryPanel
         open={historyOpen}
@@ -1381,6 +1553,15 @@ function App() {
       {historyOpen && (
         <div className="panel-backdrop" onClick={() => setHistoryOpen(false)} />
       )}
+      {customSymbolDesigner.activated ? (
+        <Suspense fallback={null}>
+          <LazyCustomSymbolDesignerDialog
+            open={customSymbolDesigner.open}
+            language={language}
+            onClose={customSymbolDesigner.closeDesigner}
+          />
+        </Suspense>
+      ) : null}
       {toast && (
         <div className="toast">
           <Check size={15} />

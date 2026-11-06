@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
 import type { LatexCodeFormat } from "../types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 import {
@@ -265,6 +266,21 @@ export function LatexSourceEditor({
         }),
         editorTheme,
         EditorView.lineWrapping,
+        // Copied source leaves the app as portable LaTeX (\mathbfit and \bm
+        // become \boldsymbol); the source itself is left as it is.
+        EditorView.domEventHandlers({
+          copy(event, view) {
+            const selected = view.state.selection.ranges
+              .filter((range) => !range.empty)
+              .map((range) => view.state.sliceDoc(range.from, range.to))
+              .join(view.state.lineBreak);
+            const portable = toPortableBoldLatex(selected);
+            if (!selected || portable === selected || !event.clipboardData) return false;
+            event.clipboardData.setData("text/plain", portable);
+            event.preventDefault();
+            return true;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.focusChanged) {
             if (focusReleaseFrameRef.current !== null) {

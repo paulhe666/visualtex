@@ -1,0 +1,166 @@
+[
+{
+"tfm": "ntx-Bold-tlf-ot1",
+"family": "VTX N ntx-Bold-tlf-ot1"
+},
+{
+"tfm": "ntx-BoldItalic-tlf-ot1",
+"family": "VTX N ntx-BoldItalic-tlf-ot1"
+},
+{
+"tfm": "ntx-BoldItalic-tlf-sc-ot1",
+"family": "VTX N ntx-BoldItalic-tlf-sc-ot1"
+},
+{
+"tfm": "ntx-Italic-tlf-ot1",
+"family": "VTX N ntx-Italic-tlf-ot1"
+},
+{
+"tfm": "ntx-Italic-tlf-sc-ot1",
+"family": "VTX N ntx-Italic-tlf-sc-ot1"
+},
+{
+"tfm": "ntx-Regular-tlf-ot1",
+"family": "VTX N ntx-Regular-tlf-ot1"
+},
+{
+"tfm": "ntxbexx",
+"family": "VTX N ntxbexx"
+},
+{
+"tfm": "ntxbmi",
+"family": "VTX N ntxbmi"
+},
+{
+"tfm": "ntxbmi5",
+"family": "VTX N ntxbmi5"
+},
+{
+"tfm": "ntxbmi7",
+"family": "VTX N ntxbmi7"
+},
+{
+"tfm": "ntxbsy",
+"family": "VTX N ntxbsy"
+},
+{
+"tfm": "ntxbsy5",
+"family": "VTX N ntxbsy5"
+},
+{
+"tfm": "ntxbsy7",
+"family": "VTX N ntxbsy7"
+},
+{
+"tfm": "ntxexa",
+"family": "VTX N ntxexa"
+},
+{
+"tfm": "ntxexx",
+"family": "VTX N ntxexx"
+},
+{
+"tfm": "ntxmi",
+"family": "VTX N ntxmi"
+},
+{
+"tfm": "ntxmi5",
+"family": "VTX N ntxmi5"
+},
+{
+"tfm": "ntxmi7",
+"family": "VTX N ntxmi7"
+},
+{
+"tfm": "ntxmia",
+"family": "VTX N ntxmia"
+},
+{
+"tfm": "ntxsy",
+"family": "VTX N ntxsy"
+},
+{
+"tfm": "ntxsy5",
+"family": "VTX N ntxsy5"
+},
+{
+"tfm": "ntxsy7",
+"family": "VTX N ntxsy7"
+},
+{
+"tfm": "ntxsyc",
+"family": "VTX N ntxsyc"
+},
+{
+"tfm": "ntxsym",
+"family": "VTX N ntxsym"
+},
+{
+"tfm": "ntxth-Italic-tlf-ot1",
+"family": "VTX N ntxth-Italic-tlf-ot1"
+},
+{
+"tfm": "rm-qhvb",
+"family": "VTX N rm-qhvb"
+},
+{
+"tfm": "rm-qhvbi-sc",
+"family": "VTX N rm-qhvbi-sc"
+},
+{
+"tfm": "rm-qhvbi",
+"family": "VTX N rm-qhvbi"
+},
+{
+"tfm": "rm-qhvr",
+"family": "VTX N rm-qhvr"
+},
+{
+"tfm": "rm-qhvri-sc",
+"family": "VTX N rm-qhvri-sc"
+},
+{
+"tfm": "rm-qhvri",
+"family": "VTX N rm-qhvri"
+},
+{
+"tfm": "txbtt",
+"family": "VTX N txbtt"
+},
+{
+"tfm": "txbttsc",
+"family": "VTX N txbttsc"
+},
+{
+"tfm": "txbttsl",
+"family": "VTX N txbttsl"
+},
+{
+"tfm": "txtt",
+"family": "VTX N txtt"
+},
+{
+"tfm": "txttsc",
+"family": "VTX N txttsc"
+},
+{
+"tfm": "txttsl",
+"family": "VTX N txttsl"
+},
+{
+"tfm": "ntxbmia",
+"family": "VTX N ntxbmia"
+},
+{
+"tfm": "ntxbsym",
+"family": "VTX N ntxbsym"
+},
+{
+"tfm": "ntxbsyc",
+"family": "VTX N ntxbsyc"
+},
+{
+"tfm": "ntxbexa",
+"family": "VTX N ntxbexa"
+}
+]

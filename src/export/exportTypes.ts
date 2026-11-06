@@ -7,6 +7,10 @@ export interface SvgExportOptions {
   displayMode: boolean;
   fontSizePt: number;
   paddingPx: number;
+  /** Optional horizontal padding override. Defaults to paddingPx. */
+  paddingXPx?: number;
+  /** Optional vertical padding override. Defaults to paddingPx. */
+  paddingYPx?: number;
   background: "transparent" | "white";
   /**
    * Word for Mac can defer resolving inherited/currentColor SVG paint until the
@@ -17,6 +21,13 @@ export interface SvgExportOptions {
   forceExplicitBlack?: boolean;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** The formula's ink (#rrggbb); near-black when absent. */
+  color?: string;
+  /**
+   * Who draws the image: the editor's layout engine (default; the image is
+   * the editor's formula exactly) or MathJax.
+   */
+  renderer?: "engine" | "mathjax";
 }
 
 export interface SvgExportResult {
