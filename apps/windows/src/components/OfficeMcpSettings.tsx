@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, History, KeyRound, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import { mcpClientGuides } from "./mcpClientGuides";
 
 // Settings → Office integration → AI agents (MCP): docs/office-mcp/DESIGN.md §9.3, §10.
 
@@ -48,6 +49,7 @@ export function OfficeMcpSettings() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [clientKey, setClientKey] = useState("agent");
 
   const refresh = useCallback(async () => {
     try {
@@ -101,18 +103,8 @@ export function OfficeMcpSettings() {
   const enabled = Boolean(status?.settings.enabled);
   const mode = status?.settings.mode ?? "allow";
   const launcher = status?.launcherPath ?? "";
-  const quoted = `"${launcher}"`;
-  const clientConfigs: { key: string; label: string; text: string }[] = [
-    {
-      key: "desktop",
-      label: "Claude Desktop",
-      text: JSON.stringify({ mcpServers: { visualtex: { command: launcher } } }, null, 2),
-    },
-    { key: "code", label: "Claude Code", text: `claude mcp add --scope user visualtex -- ${quoted}` },
-    // Codex: ~/.codex/config.toml (a literal string keeps the path's backslashes); writes can take minutes
-    { key: "codex", label: "Codex", text: `[mcp_servers.visualtex]\ncommand = '${launcher}'\nstartup_timeout_sec = 30\ntool_timeout_sec = 600\n` },
-    { key: "command", label: isEn ? "Command" : "命令", text: quoted },
-  ];
+  const guides = mcpClientGuides(launcher, [], "windows", isEn);
+  const guide = guides.find((item) => item.key === clientKey) ?? guides[0];
 
   return (
     <section className="settings-section office-integration-section office-mcp-section">
@@ -166,22 +158,36 @@ export function OfficeMcpSettings() {
           </div>
 
           <div className="office-mcp-clients">
-            <strong>{isEn ? "Connect a client" : "连接客户端"}</strong>
-            <div className="office-primary-actions">
-              {clientConfigs.map((config) => (
-                <button
-                  key={config.key}
-                  type="button"
-                  className="secondary-button"
-                  disabled={!launcher}
-                  title={config.text}
-                  onClick={() => void copy(config.key, config.text)}
-                >
-                  <Copy size={15} />
-                  {copied === config.key ? (isEn ? "Copied" : "已复制") : config.label}
-                </button>
-              ))}
+            <div className="office-mcp-client-head">
+              <strong>{isEn ? "Connect a client" : "连接客户端"}</strong>
+              <select
+                className="office-mcp-select"
+                value={guide.key}
+                aria-label={isEn ? "Client" : "客户端"}
+                onChange={(event) => setClientKey(event.target.value)}
+              >
+                {guides.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="office-mcp-client-where">
+              <span>{guide.where}</span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!launcher}
+                onClick={() => void copy(guide.key, guide.text)}
+              >
+                <Copy size={15} />
+                {copied === guide.key ? (isEn ? "Copied" : "已复制") : isEn ? "Copy" : "复制"}
+              </button>
+            </div>
+            <pre className={guide.key === "agent" ? "office-mcp-snippet is-prose" : "office-mcp-snippet"}>
+              {launcher ? guide.text : "—"}
+            </pre>
           </div>
 
           <dl className="office-mcp-connections">
