@@ -241,6 +241,7 @@ mod tests {
             numbered: false,
             render_width_px: Some(80.0),
             render_height_px: Some(20.0),
+            render_font_size_pt: None,
             font_size_pt: Some(12.0),
             formula_letter_font: None,
             formula_chinese_font: None,

@@ -2301,7 +2301,8 @@ pub(crate) fn canonical_document_formula_latex(metadata: &VisualTeXFormulaMetada
     }
     let joined = lines.join("\n");
     let formatted = match metadata.code_format.as_str() {
-        "raw" => joined,
+        // VisualTeX for Windows writes "latex" for its formulas' rows as they are
+        "raw" | "latex" => joined,
         // the main app's default copy format (formatLatexLines: one $$row$$ per line)
         "mixed-inline-display" => lines
             .iter()
@@ -2639,6 +2640,7 @@ fn import_request(
         .unwrap_or_else(|| if native_edit_source.is_some() { "raw" } else { "latex" }.to_string());
     let font_size_pt = request
         .font_size_pt
+        .or_else(|| windows_picture_font_size(request.power_point.as_ref(), original_metadata.as_ref()))
         .or_else(|| {
             request
                 .power_point
@@ -4992,6 +4994,25 @@ fn calculate_word_geometry(
         font_size_pt,
         Some(session.formula_letter_font.as_str()),
     )
+}
+
+/// A picture formula VisualTeX for Windows drew (its metadata has renderFontSizePt; the Mac's never does) that has
+/// none of the Mac's scale tags reaches the app at the add-in's default size: its own size is the one its render
+/// size was drawn at, scaled by the picture's height.
+fn windows_picture_font_size(
+    powerpoint: Option<&MacOfflinePowerPointRequest>,
+    metadata: Option<&VisualTeXFormulaMetadata>,
+) -> Option<f64> {
+    let powerpoint = powerpoint?;
+    let metadata = metadata?;
+    let assumed = powerpoint.font_size_pt?;
+    if (assumed - DEFAULT_POWERPOINT_FONT_SIZE_PT).abs() > 0.001 {
+        return None;
+    }
+    let render_font_size = metadata.render_font_size_pt.filter(|value| value.is_finite() && *value > 0.0)?;
+    let natural_height = metadata.render_height_px.filter(|value| value.is_finite() && *value > 0.0)? * 0.75;
+    let size = (render_font_size * powerpoint.height / natural_height * 100.0).round() / 100.0;
+    (size.is_finite() && (MIN_POWERPOINT_FONT_SIZE_PT..=MAX_POWERPOINT_FONT_SIZE_PT).contains(&size)).then_some(size)
 }
 
 fn calculate_powerpoint_geometry(
@@ -10309,6 +10330,7 @@ mod tests {
             numbered: false,
             render_width_px: Some(50.0),
             render_height_px: Some(20.0),
+            render_font_size_pt: None,
             font_size_pt: Some(10.5),
             formula_letter_font: None,
             formula_chinese_font: None,
@@ -10374,6 +10396,7 @@ mod tests {
             numbered,
             render_width_px: None,
             render_height_px: None,
+            render_font_size_pt: None,
             font_size_pt: Some(14.0),
             formula_letter_font: None,
             formula_chinese_font: None,
@@ -10562,6 +10585,54 @@ mod tests {
         assert!(validate_request(&request, &session_id)
             .unwrap_err()
             .contains("matching Word edit output request"));
+    }
+
+    #[test]
+    fn windows_picture_keeps_its_font_size() {
+        // E=mc^2 VisualTeX for Windows drew at 20 pt: 105.69 x 24.37 px, a 79.27 x 18.28 pt picture without the
+        // Mac's scale tags (the add-in then reports its default 18 pt)
+        let mut metadata = document_formula_metadata("latex", &["E=mc^2"], "E=mc^2", "inline", false);
+        metadata.render_width_px = Some(105.694);
+        metadata.render_height_px = Some(24.373);
+        metadata.font_size_pt = Some(20.0);
+        metadata.render_font_size_pt = Some(20.0);
+        let mut powerpoint = MacOfflinePowerPointRequest {
+            native_text_target: None,
+            language_id: None,
+            presentation_identity: "Deck".to_string(),
+            slide_index: 1,
+            slide_id: 2,
+            shape_index: 3,
+            shape_id: 3,
+            shape_name: "VisualTeX_12345678-1234-4234-9234-123456789abc".to_string(),
+            left: 60.0,
+            top: 140.0,
+            width: 79.27,
+            height: 18.28,
+            rotation: 0.0,
+            z_order: 2,
+            font_size_pt: Some(18.0),
+            reference_width_pt: Some(61.65),
+            reference_height_pt: Some(14.22),
+        };
+        assert_eq!(windows_picture_font_size(Some(&powerpoint), Some(&metadata)), Some(20.0));
+        // twice as tall: resized to 40 pt
+        powerpoint.height = 36.56;
+        assert_eq!(windows_picture_font_size(Some(&powerpoint), Some(&metadata)), Some(40.0));
+        // its scale tags were there (another size than the default): they stand
+        powerpoint.font_size_pt = Some(24.0);
+        assert_eq!(windows_picture_font_size(Some(&powerpoint), Some(&metadata)), None);
+        // a Mac picture (no renderFontSizePt): the add-in's size stands
+        powerpoint.font_size_pt = Some(18.0);
+        metadata.render_font_size_pt = None;
+        assert_eq!(windows_picture_font_size(Some(&powerpoint), Some(&metadata)), None);
+    }
+
+    #[test]
+    fn canonical_latex_of_a_windows_formula() {
+        // VisualTeX for Windows stores codeFormat "latex": the rows as they are
+        let metadata = document_formula_metadata("latex", &["a&=b+c", "d&=e-f"], "a&=b+c\nd&=e-f", "block", false);
+        assert_eq!(canonical_document_formula_latex(&metadata).unwrap(), "a&=b+c\nd&=e-f");
     }
 
     #[test]
@@ -10891,6 +10962,7 @@ c &= e
                 numbered: false,
                 render_width_px: Some(120.0),
                 render_height_px: Some(40.0),
+                render_font_size_pt: None,
                 font_size_pt: None,
                 formula_letter_font: None,
                 formula_chinese_font: None,

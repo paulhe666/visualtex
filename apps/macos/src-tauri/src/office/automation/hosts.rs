@@ -415,11 +415,13 @@ fn enrich_formula(value: &mut Value) {
         _ => None,
     };
     let mut lines: Option<Vec<String>> = None;
+    let mut windows_size: Option<f64> = None;
     let converted: Option<Result<String, String>> = copied.or_else(|| payload.map(|payload| {
         let payload = payload?;
         match kind.as_str() {
             "picture" => {
                 let metadata = macos_offline::decode_metadata(&payload)?;
+                windows_size = windows_picture_size(&metadata, item.get("frame"), item.get("font_size_pt"));
                 lines = Some(metadata.lines.iter().map(|line| line.latex.clone()).filter(|line| !line.is_empty()).collect());
                 macos_offline::canonical_document_formula_latex(&metadata)
             }
@@ -442,6 +444,9 @@ fn enrich_formula(value: &mut Value) {
         }
         None => {}
     }
+    if let Some(size) = windows_size {
+        item.insert("font_size_pt".into(), serde_json::json!(size));
+    }
     let mut location = Map::new();
     for key in ["start", "end", "slide", "slide_id", "shape_id", "shape_name", "equation"] {
         if let Some(value) = item.remove(key) {
@@ -452,6 +457,24 @@ fn enrich_formula(value: &mut Value) {
         location.insert("formula_id".into(), id);
     }
     item.insert("location".into(), Value::Object(location));
+}
+
+/// A picture VisualTeX for Windows drew, without the Mac's scale tags (no size, or the add-in's 18 pt default): its
+/// size is the one its render size was drawn at (renderFontSizePt), scaled by the picture's height.
+fn windows_picture_size(
+    metadata: &crate::office::sessions::VisualTeXFormulaMetadata,
+    frame: Option<&Value>,
+    reported: Option<&Value>,
+) -> Option<f64> {
+    let reported = reported.and_then(Value::as_f64);
+    if reported.is_some_and(|size| (size - 18.0).abs() > 0.001) {
+        return None;
+    }
+    let render = metadata.render_font_size_pt.filter(|value| value.is_finite() && *value > 0.0)?;
+    let natural = metadata.render_height_px.filter(|value| value.is_finite() && *value > 0.0)? * 0.75;
+    let height = frame?.get("height_pt")?.as_f64()?;
+    let size = (render * height / natural * 100.0).round() / 100.0;
+    (size.is_finite() && size > 0.0).then_some(size)
 }
 
 /// The bundle id of the application the user is working in (`lsappinfo`; no permission prompt).

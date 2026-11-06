@@ -552,6 +552,8 @@ pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
             .as_ref()
             .map(|value| value.height)
             .filter(|value| value.is_finite() && *value > 0.0),
+        // (the Mac draws at its 14 pt reference size: no Windows render font size)
+        render_font_size_pt: None,
         font_size_pt: original.and_then(|value| value.font_size_pt),
         formula_letter_font: Some(session.formula_letter_font.clone()),
         formula_chinese_font: Some(session.formula_chinese_font.clone()),
