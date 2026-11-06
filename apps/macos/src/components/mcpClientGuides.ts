@@ -15,6 +15,8 @@ export function mcpClientGuides(launcher: string, args: string[], platform: McpP
   const quote = (value: string) => (windows ? `"${value}"` : `'${value.replace(/'/g, `'\\''`)}'`);
   const commandLine = [quote(launcher), ...args].join(" ");
   const json = (value: unknown) => JSON.stringify(value, null, 2);
+  // a TOML literal string keeps a Windows path's backslashes as they are
+  const toml = (value: string) => (value.includes("'") ? JSON.stringify(value) : `'${value}'`);
   const server = { command: launcher, args };
   return [
     {
@@ -22,8 +24,8 @@ export function mcpClientGuides(launcher: string, args: string[], platform: McpP
       label: t("Ask your agent", "让智能体配置"),
       where: t("Send to the agent you use", "发给你使用的智能体"),
       text: t(
-        `Add VisualTeX as a stdio MCP server named visualtex: command "${launcher}", arguments ${args.length ? args.join(" ") : "none"}, tool timeout ${TOOL_TIMEOUT_SECONDS} seconds. Then reload the MCP servers.`,
-        `把 VisualTeX 加为 stdio MCP 服务器，名称 visualtex，命令 "${launcher}"，参数 ${args.length ? args.join(" ") : "无"}，工具超时 ${TOOL_TIMEOUT_SECONDS} 秒，然后重新加载 MCP 服务器。`,
+        `Add VisualTeX as a stdio MCP server named visualtex: command "${launcher}"${args.length ? `, arguments ${args.join(" ")}` : ""}, tool timeout ${TOOL_TIMEOUT_SECONDS} seconds. Then reload the MCP servers.`,
+        `把 VisualTeX 加为 stdio MCP 服务器，名称 visualtex，命令 "${launcher}"${args.length ? `，参数 ${args.join(" ")}` : ""}，工具超时 ${TOOL_TIMEOUT_SECONDS} 秒，然后重新加载 MCP 服务器。`,
       ),
     },
     {
@@ -47,8 +49,8 @@ export function mcpClientGuides(launcher: string, args: string[], platform: McpP
       where: home(".codex/config.toml"),
       text: [
         "[mcp_servers.visualtex]",
-        `command = ${JSON.stringify(launcher)}`,
-        `args = ${JSON.stringify(args)}`,
+        `command = ${toml(launcher)}`,
+        `args = [${args.map(toml).join(", ")}]`,
         "startup_timeout_sec = 30",
         `tool_timeout_sec = ${TOOL_TIMEOUT_SECONDS}`,
         "",
