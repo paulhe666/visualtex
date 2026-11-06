@@ -10400,6 +10400,49 @@ small:not(:is([class*="-demo"], [class*="-preview"]) small) {
   color: var(--text);
   font-size: 13px;
 }
+.office-mcp-client-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.office-mcp-client-head > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.office-mcp-client-where {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.office-mcp-client-where > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.office-mcp-client-where > button {
+  flex: 0 0 auto;
+}
+.office-mcp-snippet {
+  max-height: 300px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.office-mcp-snippet.is-prose {
+  font-family: inherit;
+  font-size: 13px;
+}
 .office-mcp-actions {
   display: flex;
   flex-wrap: wrap;

@@ -68,8 +68,13 @@ import { getEditorDocumentSnapshot } from "../history/documentHistory";
 const AUTOSAVE_KEY = "visualtex.document.autosave.v1";
 const AUTOSAVE_TAKEN_KEY = "visualtex.document.autosave.taken";
 const storage = createSafeStorage();
-// set once the tutorials have opened by themselves (the first time document mode opens)
+// set the first time document mode opens; the tutorials open by themselves then, unless document mode was used before
 const TUTORIAL_SHOWN_KEY = "visualtex.document.tutorial-shown.v1";
+
+// Document mode was opened in a version before the tutorials (the library, or the single autosave before it).
+function documentModeUsedBefore(): boolean {
+  return storage.getItem(AUTOSAVE_TAKEN_KEY) !== null || storage.getItem(AUTOSAVE_KEY) !== null;
+}
 
 function readAutosave(): unknown {
   try {
@@ -220,10 +225,12 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const isEn = language === "en";
   const t = (en: string, zh: string) => (isEn ? en : zh);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tutorialOpen, setTutorialOpen] = useState(() => storage.getItem(TUTORIAL_SHOWN_KEY) !== "1");
+  const [tutorialOpen, setTutorialOpen] = useState(
+    () => storage.getItem(TUTORIAL_SHOWN_KEY) !== "1" && !documentModeUsedBefore(),
+  );
   useEffect(() => {
-    if (tutorialOpen) storage.setItem(TUTORIAL_SHOWN_KEY, "1");
-  }, [tutorialOpen]);
+    storage.setItem(TUTORIAL_SHOWN_KEY, "1");
+  }, []);
   const noticeTimer = useRef(0);
   const api = useMemo(documentLibrary, []);
   const libraryOpen = useDocumentLibraryStore((state) => state.open);

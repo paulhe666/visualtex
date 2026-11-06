@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, History, KeyRound, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import { mcpClientGuides } from "./mcpClientGuides";
 
 // Settings → Office integration → AI agents (MCP): docs/office-mcp/MACOS.md. A client starts the VisualTeX
 // executable with --mcp-stdio, which relays to the companion's /mcp.
@@ -38,8 +39,6 @@ function localTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-
 export function MacOfficeMcpSettings() {
   const isEn = useEditorStore((state) => state.language) === "en";
   const [status, setStatus] = useState<McpStatus | null>(null);
@@ -47,6 +46,7 @@ export function MacOfficeMcpSettings() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [clientKey, setClientKey] = useState("agent");
 
   const refresh = useCallback(async () => {
     try {
@@ -101,21 +101,8 @@ export function MacOfficeMcpSettings() {
   const mode = status?.settings.mode ?? "allow";
   const launcher = status?.launcherPath ?? "";
   const args = status?.launcherArgs ?? ["--mcp-stdio"];
-  const clientConfigs: { key: string; label: string; text: string }[] = [
-    {
-      key: "desktop",
-      label: "Claude Desktop",
-      text: JSON.stringify({ mcpServers: { visualtex: { command: launcher, args } } }, null, 2),
-    },
-    { key: "code", label: "Claude Code", text: `claude mcp add --scope user visualtex -- ${shellQuote(launcher)} ${args.join(" ")}` },
-    // ~/.codex/config.toml; writes can take minutes
-    {
-      key: "codex",
-      label: "Codex",
-      text: `[mcp_servers.visualtex]\ncommand = ${JSON.stringify(launcher)}\nargs = ${JSON.stringify(args)}\nstartup_timeout_sec = 30\ntool_timeout_sec = 600\n`,
-    },
-    { key: "command", label: isEn ? "Command" : "命令", text: `${shellQuote(launcher)} ${args.join(" ")}` },
-  ];
+  const guides = mcpClientGuides(launcher, args, "mac", isEn);
+  const guide = guides.find((item) => item.key === clientKey) ?? guides[0];
 
   return (
     <section className="settings-section office-integration-section office-mcp-section">
@@ -165,22 +152,36 @@ export function MacOfficeMcpSettings() {
           </div>
 
           <div className="office-mcp-clients">
-            <strong>{isEn ? "Connect a client" : "连接客户端"}</strong>
-            <div className="office-mcp-actions">
-              {clientConfigs.map((config) => (
-                <button
-                  key={config.key}
-                  type="button"
-                  className="secondary-button"
-                  disabled={!launcher}
-                  title={config.text}
-                  onClick={() => void copy(config.key, config.text)}
-                >
-                  <Copy size={15} />
-                  {copied === config.key ? (isEn ? "Copied" : "已复制") : config.label}
-                </button>
-              ))}
+            <div className="office-mcp-client-head">
+              <strong>{isEn ? "Connect a client" : "连接客户端"}</strong>
+              <select
+                className="office-mcp-select"
+                value={guide.key}
+                aria-label={isEn ? "Client" : "客户端"}
+                onChange={(event) => setClientKey(event.target.value)}
+              >
+                {guides.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="office-mcp-client-where">
+              <span>{guide.where}</span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!launcher}
+                onClick={() => void copy(guide.key, guide.text)}
+              >
+                <Copy size={15} />
+                {copied === guide.key ? (isEn ? "Copied" : "已复制") : isEn ? "Copy" : "复制"}
+              </button>
+            </div>
+            <pre className={guide.key === "agent" ? "office-mcp-snippet is-prose" : "office-mcp-snippet"}>
+              {launcher ? guide.text : "—"}
+            </pre>
           </div>
 
           <dl className="office-mcp-connections">
