@@ -448,7 +448,7 @@ export class LatexAdapter {
     for (const run of this.styleRuns(visible, ctx, true)) {
       const bg = this.backgroundOf(run[0]);
       if (!bg) {
-        for (const r of this.styleRuns(run, ctx, false)) this.styledRun(r, ctx, out);
+        this.colouredRuns(run, ctx, out);
         continue;
       }
       // xcolor \colorbox{c}{...}: its argument is set in text mode
@@ -456,7 +456,7 @@ export class LatexAdapter {
       if (run[0].mode === "text") content = this.textRunBox(run, 0);
       else {
         const items: MItem[] = [];
-        for (const r of this.styleRuns(run, ctx, false)) this.styledRun(r, ctx, items);
+        this.colouredRuns(run, ctx, items);
         content = this.mathBox(items, TEXT_STYLE, runTag(run));
       }
       out.push(...this.colorBox(content, bg, runTag(run)));
@@ -503,7 +503,8 @@ export class LatexAdapter {
     let cur: AtomLike[] = [];
     let key = "";
     for (const a of atoms) {
-      const k = background ? (this.backgroundOf(a) ?? "") + "|" + (a.mode === "text" ? "text" : "math") : this.styleKey(a, ctx);
+      const bg = background ? this.backgroundOf(a) : null;
+      const k = background ? (bg ? bg + "|" + (a.mode === "text" ? "text" : "math") : "") : this.styleKey(a, ctx);
       if (cur.length > 0 && k !== key) {
         runs.push(cur);
         cur = [];
@@ -516,7 +517,9 @@ export class LatexAdapter {
   }
 
   private styleKey(a: AtomLike, ctx?: Ctx): string {
-    if (a.type === "subsup") return "subsup"; // scripts attach outside style groups
+    // A script carrier (the ^3 of c^3) styled like its base stays in the base's run, so the script attaches to the
+    // base inside the style group, as the kernel serializes it (\textcolor{red}{\int_a^bc^3}); styled otherwise it
+    // starts a run and attaches to the group before it (\textcolor{red}{c}^3).
     if (ctx?.operator) return "op";
     const s = a.style ?? {};
     if (a.mode === "text") return "text|" + (s.color ?? "") + "|" + (s.fontSeries ?? "") + "|" + (s.fontShape ?? "") + "|" + (s.fontFamily ?? "");
@@ -559,11 +562,61 @@ export class LatexAdapter {
     return "\\bm";
   }
 
-  /** Convert a style run; wrap it in the group its style command makes. */
-  private styledRun(run: AtomLike[], ctx: Ctx, out: MItem[]): void {
+  /**
+   * Atoms of one background as the kernel serializes their styles: \textcolor groups (text and math together) around
+   * the alphabet and weight groups, so a colour does not split a + b, and each script stays with its base.
+   */
+  private colouredRuns(atoms: AtomLike[], ctx: Ctx, out: MItem[]): void {
+    for (const run of this.colourRuns(atoms, ctx)) {
+      const first = run[0];
+      const color = first.style?.color;
+      // a colour its parent already has makes no group (the serializer writes no \textcolor for it)
+      const inherited = !!color && color === first.parent?.style?.color;
+      if (!color || inherited || ctx.operator || first.type === "latex" || first.mode === "latex") {
+        for (const r of this.styleRuns(run, ctx, false)) this.styledRun(r, ctx, out, inherited);
+        continue;
+      }
+      let rest = run;
+      if (rest[0].type === "subsup") {
+        // a script coloured apart from its base attaches to what is before it
+        this.atom(rest[0], ctx, out);
+        rest = rest.slice(1);
+        if (rest.length === 0) continue;
+      }
+      const items: MItem[] = [];
+      for (const r of this.styleRuns(rest, ctx, false)) this.styledRun(r, ctx, items, true);
+      out.push(this.groupNoad(items, runTag(rest)));
+    }
+  }
+
+  private colourRuns(atoms: AtomLike[], ctx: Ctx): AtomLike[][] {
+    const runs: AtomLike[][] = [];
+    let cur: AtomLike[] = [];
+    let key = "";
+    for (const a of atoms) {
+      const k = ctx.operator ? "op" : a.style?.color ?? "";
+      if (cur.length > 0 && k !== key) {
+        runs.push(cur);
+        cur = [];
+      }
+      key = k;
+      cur.push(a);
+    }
+    if (cur.length > 0) runs.push(cur);
+    return runs;
+  }
+
+  /** Convert a style run; wrap it in the group its style command makes (`colourDone`: inside its colour group). */
+  private styledRun(run: AtomLike[], ctx: Ctx, out: MItem[], colourDone = false): void {
     const first = run[0];
-    if (first.type === "subsup" || ctx.operator) {
+    if (ctx.operator) {
       for (const a of run) this.atom(a, ctx, out);
+      return;
+    }
+    if (first.type === "subsup") {
+      // a script styled apart from its base attaches to what is before it; the rest of the run is styled as usual
+      this.atom(first, ctx, out);
+      if (run.length > 1) this.styledRun(run.slice(1), ctx, out, colourDone);
       return;
     }
     if (first.mode === "text") {
@@ -576,7 +629,7 @@ export class LatexAdapter {
     }
     const alphabet = this.alphabetCommand(first);
     const bold = this.boldCommand(first);
-    const color = first.style?.color;
+    const color = colourDone ? undefined : first.style?.color;
     if (!alphabet && !bold && !color) {
       for (const a of run) this.atom(a, ctx, out);
       return;
@@ -1673,7 +1726,7 @@ export class LatexAdapter {
       if (run[0].mode === "text") parts.push(this.textRunBox(run, 0));
       else {
         const items: MItem[] = [];
-        for (const r of this.styleRuns(run, ctx, false)) this.styledRun(r, ctx, items);
+        this.colouredRuns(run, ctx, items);
         parts.push(this.mathBox(items, TEXT_STYLE, run[0]));
       }
     }
