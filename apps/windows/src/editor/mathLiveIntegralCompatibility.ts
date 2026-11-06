@@ -168,5 +168,17 @@ export function convertVisualTexLatexToMarkup(
   return convertLatexToMarkup(expandedSource, optionsWithoutMacros);
 }
 
+/**
+ * The formula drawn as an editor field draws it: the field reads the LaTeX as it is (no compatibility rewriting:
+ * \pod, \sideset, \substack… are the engine's own), custom symbols expanded.
+ */
+export function convertVisualTexLatexToFieldMarkup(...args: Parameters<typeof convertLatexToMarkup>) {
+  installMathLiveContourIntegralGlobalStyle();
+  const [text, options] = args;
+  installCustomSymbolGlobalStyle(text);
+  const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
+  return convertLatexToMarkup(expandCustomSymbolsForMathLiveMarkup(text), optionsWithoutMacros);
+}
+
 installMathLiveContourIntegralGlobalStyle();
 installCustomSymbolGlobalStyle();

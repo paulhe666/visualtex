@@ -88,6 +88,10 @@ export interface FormulaSession {
   /** The document changed the formula (undo/redo); `selection` is where its caret was at that state. */
   update(latex: string, selection: FormulaSelection | null): void;
   focus(): void;
+  /** The formula is opened: the editor takes the focus, the caret where `entry` says. */
+  enter?(entry: FormulaEntry): void;
+  /** The formula is closed: the editor rests (no focus, no caret, nothing selected). */
+  rest?(): void;
   /** A drag that began in the editor left the formula: the editor stops following the pointer. */
   stopPointerTracking?(): void;
   /** Report an edit the editor has made but not reported yet. */
@@ -610,9 +614,7 @@ export class FormulaView implements NodeView {
   private numberBox: HTMLElement | null = null;
   private editorBox: HTMLElement | null = null;
   private session: FormulaSession | null = null;
-  private generation = -1;
   private renderedLatex: string | null = null;
-  private pendingOpen: { entry: FormulaEntry; generation: number } | null = null;
   private destroyed = false;
 
   constructor(
@@ -651,11 +653,13 @@ export class FormulaView implements NodeView {
     if (this.registeredId) formulaViewsOf(view).set(this.registeredId, this);
     this.renderStatic();
     this.applyDecorations(decorations);
+    // near the screen it keeps a live editor (Residency)
+    queueMicrotask(() => !this.destroyed && residencyOf(view).watch(this));
   }
 
   /** the id this view is registered under (formulaViewOf) */
   private registeredId: string | null = null;
-  /** the editor only shows a part of the formula selected by a selection through the text */
+  /** the editor rests (no focus, no caret) or only shows a part of the formula a selection through the text takes */
   private passive = false;
   private dragOut: FormulaDragOut | null = null;
 
@@ -816,37 +820,11 @@ export class FormulaView implements NodeView {
       if (spec.formulaPart) part = spec.formulaPart;
     }
     this.equationNumber = number;
-    this.renderTag(!!open);
     this.dom.classList.toggle("is-numbered", number !== null);
-    if (open && this.session && this.passive && open.generation === this.generation) {
-      // back into it during a drag: the editor that showed its part edits it again
-      this.activate();
-      return;
-    }
-    if (!open && part) {
-      // a selection through the text takes a part of it: the editor shows that part (started for it if need be)
-      this.pendingOpen = null;
-      if (!this.session) this.startSession({ kind: "end" }, -1, true);
-      else this.passivate();
-      this.session?.showPart?.(part.range);
-      return;
-    }
-    if (open && (!this.session || open.generation !== this.generation)) {
-      // A formula created by this very transaction is not in the page yet: its editor starts once it is.
-      if (this.dom.isConnected) this.startSession(open.entry, open.generation);
-      else {
-        const pending = open;
-        this.pendingOpen = pending;
-        queueMicrotask(() => {
-          if (this.pendingOpen !== pending) return;
-          this.pendingOpen = null;
-          if (this.dom.isConnected && !this.destroyed) this.startSession(pending.entry, pending.generation);
-        });
-      }
-    } else if (!open) {
-      this.pendingOpen = null;
-      if (this.session) this.endSession();
-    }
+    this.wanted = { open, part: open ? null : part };
+    // A formula created by this very transaction is not in the page yet: it goes live once it is.
+    if (this.dom.isConnected) this.applyState();
+    else queueMicrotask(() => !this.destroyed && this.applyState());
   }
 
   private equationNumber: string | null = null;
@@ -859,22 +837,87 @@ export class FormulaView implements NodeView {
     this.numberBox.title = number !== null ? "Remove the number" : "Number this formula";
   }
 
-  private startSession(entry: FormulaEntry, generation: number, passive = false) {
-    this.endSession();
-    this.generation = generation;
-    this.passive = passive;
-    // Until the editor has drawn the formula, the formula's picture stays where it is, over the (transparent) editor:
-    // a new editor's first frame is not styled yet.
-    this.holdStatic();
-    this.editorBox = document.createElement(this.display ? "div" : "span");
-    this.editorBox.className = "vtx-formula-editor";
-    this.editorBox.addEventListener("pointerdown", this.onEditorPointerDown, true);
-    // showing a part, the editor takes no press (a press on it is the document's: it drags or opens the formula)
-    this.editorBox.inert = passive;
-    this.dom.insertBefore(this.editorBox, this.staticBox);
-    this.dom.classList.add(passive ? "is-partial" : "is-open");
-    this.renderTag(!passive);
-    if (!passive) openViews.set(this.view, this);
+  /**
+   * Mathcha's model: the formula on the page is the editable formula. Near the screen a formula keeps a live editor
+   * (resting: no focus, no caret); opening it only focuses that editor and places the caret, closing it only lets it
+   * rest — nothing is built, removed or swapped by a click, a key or the window's focus. The editor is built ahead of
+   * the screen (Residency) and drawn out of the flow; it takes the picture's place in one frame once it has drawn.
+   */
+  private wanted: { open: { entry: FormulaEntry; generation: number } | null; part: { range: [number, number] | null } | null } = {
+    open: null,
+    part: null,
+  };
+  /** The editor has drawn the formula and stands in the picture's place. */
+  private drawn = false;
+  /** The open request (its generation) the editor last entered. */
+  private enteredGeneration = -1;
+  /** Near the screen (Residency): the editor stays. */
+  near = false;
+  private releaseTimer = 0;
+
+  private applyState() {
+    if (this.destroyed) return;
+    const { open, part } = this.wanted;
+    if ((open || part) && !this.session) this.goLive();
+    this.renderTag(!!open);
+    if (!this.session) return;
+    const session = this.session;
+    if (open) {
+      window.clearTimeout(this.releaseTimer);
+      openViews.set(this.view, this);
+      this.dom.classList.remove("is-partial");
+      this.dom.classList.add("is-open");
+      if (this.editorBox) this.editorBox.inert = false;
+      // A formula that only now got its editor (opened while far from the screen) is entered once that has drawn.
+      if (!this.drawn) return;
+      if (this.passive) {
+        this.passive = false;
+        if (open.generation === this.enteredGeneration) {
+          // back into it during a drag: the selection made so far stays
+          session.showPart?.(null);
+          session.focus();
+        } else {
+          this.enteredGeneration = open.generation;
+          session.enter?.(open.entry);
+        }
+      } else if (open.generation !== this.enteredGeneration) {
+        this.enteredGeneration = open.generation;
+        session.enter?.(open.entry);
+      }
+      // Keys handed back by a formula left just before this one opened.
+      const waiting = waitingKeys.get(this.view);
+      if (waiting?.length) {
+        waitingKeys.delete(this.view);
+        for (const key of waiting) session.typeKey(key);
+      }
+      return;
+    }
+    if (openViews.get(this.view) === this) openViews.delete(this.view);
+    this.dom.classList.remove("is-open");
+    this.dom.classList.toggle("is-partial", !!part);
+    if (this.editorBox) this.editorBox.inert = true;
+    if (!this.passive) {
+      this.passive = true;
+      session.rest?.();
+    }
+    if (this.drawn) session.showPart?.(part ? part.range : null);
+    if (!part && !this.near) this.scheduleRelease();
+  }
+
+  /** The formula's live editor: built out of the flow, it takes the picture's place once it has drawn the formula. */
+  goLive() {
+    if (this.session || this.destroyed || !this.dom.isConnected) return;
+    window.clearTimeout(this.releaseTimer);
+    this.drawn = false;
+    this.passive = true;
+    this.enteredGeneration = -1;
+    const editor: HTMLElement = document.createElement(this.display ? "div" : "span");
+    editor.className = "vtx-formula-editor is-pending";
+    editor.addEventListener("pointerdown", this.onEditorPointerDown, true);
+    // resting, the editor takes no press: a press on the formula is the document's (it opens it, or drags)
+    editor.inert = true;
+    this.editorBox = editor;
+    this.dom.insertBefore(editor, this.staticBox);
     const id = this.node.attrs.id as string;
     const view = this.view;
     const getPos = this.getPos;
@@ -884,11 +927,11 @@ export class FormulaView implements NodeView {
       const node = pos === undefined ? null : view.state.doc.nodeAt(pos);
       return pos === undefined || !node ? null : { pos, node };
     };
-    this.session = this.host.open(this.editorBox, {
+    this.session = this.host.open(editor, {
       latex: this.node.attrs.latex,
       display: this.display,
-      entry,
-      passive,
+      entry: { kind: "end" },
+      passive: true,
       callbacks: {
         edit: (afterLatex, before, after) => {
           const at = current();
@@ -951,44 +994,47 @@ export class FormulaView implements NodeView {
     });
     const session = this.session;
     const reveal = () => {
-      if (this.session === session) this.releaseStatic();
+      if (this.session !== session || this.destroyed) return;
+      // one frame: the editor into the flow, the picture out
+      editor.classList.remove("is-pending");
+      this.dom.classList.add("is-live");
+      this.drawn = true;
+      this.applyState();
     };
     if (session.whenDrawn) session.whenDrawn(reveal);
     else reveal();
-    // Keys handed back by a formula left just before this one opened.
-    const waiting = waitingKeys.get(view);
-    if (waiting?.length) {
-      waitingKeys.delete(view);
-      for (const key of waiting) this.session.typeKey(key);
-    }
+  }
+
+  /** The formula has something to show (an empty one keeps its dashed box until it is opened). */
+  hasContent(): boolean {
+    return !!String(this.node.attrs.latex ?? "").trim();
+  }
+
+  /** Far from the screen and not in use: the editor goes, the picture stands in again. */
+  release() {
+    window.clearTimeout(this.releaseTimer);
+    if (!this.session || this.near || this.wanted.open || this.wanted.part) return;
+    const session = this.session;
+    this.session = null;
+    this.drawn = false;
+    this.passive = false;
+    this.enteredGeneration = -1;
+    if (openViews.get(this.view) === this) openViews.delete(this.view);
+    this.renderStatic();
+    this.dom.classList.remove("is-live", "is-open", "is-partial");
+    session.destroy();
+    this.editorBox?.remove();
+    this.editorBox = null;
+  }
+
+  scheduleRelease() {
+    window.clearTimeout(this.releaseTimer);
+    if (!this.session) return;
+    this.releaseTimer = window.setTimeout(() => this.release(), RELEASE_DELAY_MS);
   }
 
   hasSession(): boolean {
     return !!this.session;
-  }
-
-  /** The editor stops editing and only shows the part a selection through the text takes. */
-  private passivate() {
-    if (!this.session || this.passive) return;
-    this.passive = true;
-    if (openViews.get(this.view) === this) openViews.delete(this.view);
-    this.dom.classList.remove("is-open");
-    this.dom.classList.add("is-partial");
-    if (this.editorBox) this.editorBox.inert = true;
-    this.renderTag(false);
-  }
-
-  /** The editor that showed a part edits the formula again (a drag came back into it). */
-  private activate() {
-    if (!this.session) return;
-    this.passive = false;
-    openViews.set(this.view, this);
-    this.dom.classList.remove("is-partial");
-    this.dom.classList.add("is-open");
-    if (this.editorBox) this.editorBox.inert = false;
-    this.renderTag(true);
-    this.session.showPart?.(null);
-    this.session.focus();
   }
 
   typeKey(key: FormulaKey) {
@@ -1014,39 +1060,10 @@ export class FormulaView implements NodeView {
     return true;
   }
 
-  /** The formula's picture stays in place, over the editor that is starting (holdStatic) until it has drawn. */
-  private holdStatic() {
-    const box = this.staticBox.getBoundingClientRect();
-    const own = this.dom.getBoundingClientRect();
-    if (!box.width && !box.height) return;
-    this.staticBox.style.left = `${box.left - own.left}px`;
-    this.staticBox.style.top = `${box.top - own.top}px`;
-    this.dom.classList.add("is-opening");
-  }
-
-  private releaseStatic() {
-    this.dom.classList.remove("is-opening");
-    this.staticBox.style.left = "";
-    this.staticBox.style.top = "";
-  }
-
-  private endSession() {
-    this.releaseStatic();
-    if (!this.session) return;
-    const session = this.session;
-    this.session = null;
-    this.passive = false;
-    if (openViews.get(this.view) === this) openViews.delete(this.view);
-    session.destroy();
-    this.editorBox?.remove();
-    this.editorBox = null;
-    this.dom.classList.remove("is-open", "is-partial");
-    this.renderTag(false);
-    this.renderStatic();
-  }
-
   update(node: Node, decorations: readonly Decoration[]): boolean {
     if (node.type !== this.node.type) return false;
+    // another formula (a document loaded in place of this one): a view of its own, not this one's editor redrawn
+    if (this.registeredId && node.attrs.id && node.attrs.id !== this.registeredId) return false;
     const latexChanged = node.attrs.latex !== this.node.attrs.latex;
     this.node = node;
     if (this.registeredId !== (node.attrs.id ?? null)) {
@@ -1056,9 +1073,10 @@ export class FormulaView implements NodeView {
       if (this.registeredId) views.set(this.registeredId, this);
     }
     if (this.session && latexChanged) {
-      // The document changed the open formula (undo/redo): the editor follows with the caret it had then.
+      // The document changed the formula (undo/redo, a late edit): the editor follows, with the caret it had then.
       this.session.update(node.attrs.latex, selectionMemory.get(memoryKey(node.attrs.id, node.attrs.latex)) ?? null);
     }
+    // (a live formula's picture is drawn again when its editor goes)
     if (!this.session) this.renderStatic();
     this.applyDecorations(decorations);
     return true;
@@ -1072,7 +1090,7 @@ export class FormulaView implements NodeView {
     this.dom.classList.remove("is-selected");
   }
 
-  // Events inside the live editor belong to it; a click on a closed formula (or one showing a part) is ours.
+  // Events inside the open editor belong to it; a press on a resting formula (or one showing a part) is ours.
   stopEvent(event: Event) {
     if (this.session && !this.passive) return true;
     return event.type === "mousedown";
@@ -1084,13 +1102,113 @@ export class FormulaView implements NodeView {
 
   destroy() {
     this.destroyed = true;
+    window.clearTimeout(this.releaseTimer);
+    residencyOf(this.view).unwatch(this);
     const views = formulaViewsOf(this.view);
     if (this.registeredId && views.get(this.registeredId) === this) views.delete(this.registeredId);
     this.dom.removeEventListener("mousedown", this.onMouseDown);
     this.numberBox?.removeEventListener("mousedown", this.onTagMouseDown);
     window.removeEventListener(FORMULAS_REFRESH_EVENT, this.onRefresh);
-    this.endSession();
+    if (openViews.get(this.view) === this) openViews.delete(this.view);
+    const session = this.session;
+    const typing = !!session && !this.passive;
+    this.session = null;
+    session?.destroy();
+    this.editorBox?.remove();
+    this.editorBox = null;
+    // the open formula went (undo, a deletion): the keys stay with the document, not with the page
+    const view = this.view;
+    if (typing)
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        if (view.dom.isConnected && (!active || active === document.body)) view.focus();
+      });
   }
+}
+
+/** How long a formula far from the screen keeps its editor (scrolling back and forth does not rebuild it). */
+const RELEASE_DELAY_MS = 4000;
+/** Editors started per frame while formulas come near the screen. */
+const STARTS_PER_FRAME = 3;
+
+/**
+ * Which formulas are near the screen (an IntersectionObserver on the document's scroller, a screen and a half ahead):
+ * their editors are started a few per frame, before they come into view; those far away are let go after a while.
+ */
+class Residency {
+  private observer: IntersectionObserver | null = null;
+  private readonly views = new Map<Element, FormulaView>();
+  private readonly queue = new Set<FormulaView>();
+  private frame = 0;
+
+  constructor(private readonly view: EditorView) {}
+
+  watch(formula: FormulaView) {
+    this.views.set(formula.dom, formula);
+    const observer = this.ensureObserver();
+    if (observer) observer.observe(formula.dom);
+    else {
+      formula.near = true;
+      this.start(formula);
+    }
+  }
+
+  unwatch(formula: FormulaView) {
+    this.views.delete(formula.dom);
+    this.queue.delete(formula);
+    this.observer?.unobserve(formula.dom);
+  }
+
+  private ensureObserver(): IntersectionObserver | null {
+    if (this.observer || typeof IntersectionObserver === "undefined") return this.observer;
+    const root = scrollParent(this.view.dom);
+    const margin = Math.round((root?.clientHeight || window.innerHeight || 800) * 1.5);
+    this.observer = new IntersectionObserver(this.changed, { root, rootMargin: `${margin}px 0px` });
+    return this.observer;
+  }
+
+  private changed = (entries: IntersectionObserverEntry[]) => {
+    for (const entry of entries) {
+      const formula = this.views.get(entry.target);
+      if (!formula) continue;
+      formula.near = entry.isIntersecting;
+      if (entry.isIntersecting) this.start(formula);
+      else {
+        this.queue.delete(formula);
+        formula.scheduleRelease();
+      }
+    }
+  };
+
+  private start(formula: FormulaView) {
+    this.queue.add(formula);
+    if (!this.frame) this.frame = requestAnimationFrame(this.run);
+  }
+
+  private run = () => {
+    this.frame = 0;
+    let started = 0;
+    for (const formula of this.queue) {
+      this.queue.delete(formula);
+      if (!formula.near || formula.hasSession() || !formula.dom.isConnected) continue;
+      // an empty formula keeps its dashed box until it is opened
+      if (!formula.hasContent()) continue;
+      formula.goLive();
+      if (++started >= STARTS_PER_FRAME) break;
+    }
+    if (this.queue.size) this.frame = requestAnimationFrame(this.run);
+  };
+}
+
+const residencies = new WeakMap<EditorView, Residency>();
+
+function residencyOf(view: EditorView): Residency {
+  let residency = residencies.get(view);
+  if (!residency) {
+    residency = new Residency(view);
+    residencies.set(view, residency);
+  }
+  return residency;
 }
 
 /** The transaction that closes the formula at `pos` and puts the text caret where `how` says. */

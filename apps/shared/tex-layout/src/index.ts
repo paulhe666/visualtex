@@ -435,9 +435,12 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     return roots.flatMap(build);
   }
 
-  /** Static markup (previews, tiles, palettes): no caret, no atom ids. */
-  function renderAtoms(atoms: AtomLike[], opts: { display?: boolean } = {}): string {
-    const { box, ship, regions } = layout(atoms, opts.display !== false);
+  /**
+   * Static markup (previews, tiles, palettes): no caret, no atom ids. `editor`: laid out as an editor lays it out
+   * (a formula of a document, whose resting editor takes its place).
+   */
+  function renderAtoms(atoms: AtomLike[], opts: { display?: boolean; editor?: boolean } = {}): string {
+    const { box, ship, regions } = layout(atoms, opts.display !== false, opts.editor === true);
     propagateRegions(regions, null);
     return formulaHtml(box, ship, {
       fontFamily,
@@ -541,7 +544,11 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       hideGlyph: isPlaceholder,
       elements,
       caret: rootCaret,
-      extent: { height: geometry.height, depth: geometry.depth, right: geometry.right },
+      // (a field that is a formula of a text keeps no room for its caret: it is exactly the formula's picture, the
+      // caret drawn over what is around it)
+      extent: (mathfield as { visualTexNoCaretRoom?: boolean }).visualTexNoCaretRoom
+        ? undefined
+        : { height: geometry.height, depth: geometry.depth, right: geometry.right },
       rootClass: "ML__latex ML__vtx" + (mathfield.hasEditablePrompts ? " ML__prompting" : ""),
     });
   }
