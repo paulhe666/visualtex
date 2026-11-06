@@ -188,14 +188,16 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
         toggleBold: () => apiRef.current?.toggleBold() ?? false,
         whenDrawn(done) {
           // The editor's first frame is not styled yet (its shadow styles apply a frame later): drawn once its formula
-          // is laid out with them.
+          // is laid out with them. And it shows only once it has the focus: until then the document's selection (the
+          // formula node, from the press) still spans it, and WebKit would paint that selection in it for a frame.
           let frames = 0;
           const check = () => {
             const root = container.querySelector("math-field")?.shadowRoot;
             const ink = root?.querySelector(".ML__latex");
             const speech = root?.querySelector<HTMLElement>(".ML__sr-only");
             const styled = !speech || getComputedStyle(speech).position === "absolute";
-            if ((ink && styled) || ++frames > 30 || !container.isConnected) done();
+            const focused = passive || !!root?.activeElement;
+            if ((ink && styled && focused) || ++frames > 30 || !container.isConnected) done();
             else requestAnimationFrame(check);
           };
           requestAnimationFrame(check);

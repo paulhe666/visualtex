@@ -10,6 +10,11 @@
 :host {
   display: block;
 }
+/* The field draws its own selection (.ML__selection and the editing core's marks); the browser's selection never
+   shows in it, also while a document's selection spans the field (a formula opening in a text). */
+::selection {
+  background: transparent;
+}
 .ML__container {
   display: inline-flex;
   flex-flow: row;
