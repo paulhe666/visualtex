@@ -434,6 +434,9 @@
   position: absolute;
   inset: 0;
   overflow: auto;
+  /* a scroll bar that takes room ("always show scroll bars") has its room kept: the page's width (and the fitted
+     zoom) never changes as it comes and goes */
+  scrollbar-gutter: stable;
   padding: 0;
   background: #fff;
 }

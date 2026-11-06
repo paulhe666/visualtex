@@ -209,6 +209,8 @@ class PaginationView {
   private readonly layer: HTMLElement;
   private readonly measurer: HTMLElement;
   private lastKey = "";
+  /** The page breaks measured since the document or the page last changed: one of them again is not taken. */
+  private seen = new Set<string>();
 
   constructor(
     private view: EditorView,
@@ -222,8 +224,8 @@ class PaginationView {
     this.layer.addEventListener("mousedown", this.onLayerMouseDown);
     this.sheet()?.append(this.layer);
     this.schedule();
-    window.addEventListener("resize", this.schedule);
-    document.fonts?.addEventListener?.("loadingdone", this.schedule);
+    window.addEventListener("resize", this.changed);
+    document.fonts?.addEventListener?.("loadingdone", this.changed);
   }
 
   /** The sheet the editor lies on (its pages are drawn by its background; the layer is placed on it). */
@@ -242,6 +244,7 @@ class PaginationView {
   update(view: EditorView, previous: EditorState) {
     this.view = view;
     if (this.layer.parentElement !== this.sheet()) this.sheet()?.append(this.layer);
+    if (view.state.doc !== previous.doc) this.seen.clear();
     if (view.state.doc !== previous.doc || paginationKey.getState(view.state) !== paginationKey.getState(previous)) this.schedule();
   }
 
@@ -256,8 +259,14 @@ class PaginationView {
 
   /** Measure again now (the geometry or the fonts changed). */
   refresh() {
+    this.seen.clear();
     this.schedule();
   }
+
+  private changed = () => {
+    this.seen.clear();
+    this.schedule();
+  };
 
   private measure() {
     const view = this.view;
@@ -279,8 +288,12 @@ class PaginationView {
     // the spacers now on the screen: what is below them is that much lower than it would be without them
     const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break, [data-page-break]")).map((el) => {
       const r = el.getBoundingClientRect();
-      // a block's top border: from its top
-      return el.dataset.pageBreak !== undefined ? { top: r.top, height: Number(el.dataset.pageBreak) || 0 } : { top: r.top, height: r.height };
+      // a block's top border: from its top, as wide as it is drawn (the browser rounds a border to whole device pixels:
+      // what it asked for would put everything below a fraction of a pixel off, and the next measurement would move
+      // a line on a page's edge back and forth)
+      if (el.dataset.pageBreak === undefined) return { top: r.top, height: r.height };
+      const drawn = parseFloat(getComputedStyle(el).borderTopWidth);
+      return { top: r.top, height: Number.isFinite(drawn) ? drawn : Number(el.dataset.pageBreak) || 0 };
     });
     const natural = (y: number) => {
       let shift = 0;
@@ -393,7 +406,13 @@ class PaginationView {
     const pages = page + 1;
     const state = paginationKey.getState(view.state);
     if (state && !sameBreaks(state.breaks, breaks)) {
-      view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
+      // breaks measured before with nothing changed since: the pages would only go back and forth between them
+      const key = breaks.map((b) => `${b.pos}${b.inline ? "i" : "b"}${b.block ?? ""}:${Math.round(b.height)}`).join(" ");
+      if (!this.seen.has(key)) {
+        this.seen.add(state.breaks.map((b) => `${b.pos}${b.inline ? "i" : "b"}${b.block ?? ""}:${Math.round(b.height)}`).join(" "));
+        this.seen.add(key);
+        view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
+      }
     }
     // the pages' numbers: LaTeX's when the document has page-numbering commands
     const labels = hasPageNumbering(view.state.doc) ? pageLabels(pages, pageCommands).map((l) => l.text) : null;
@@ -455,12 +474,14 @@ class PaginationView {
   destroy() {
     window.clearTimeout(this.timer);
     cancelAnimationFrame(this.frame);
-    window.removeEventListener("resize", this.schedule);
-    document.fonts?.removeEventListener?.("loadingdone", this.schedule);
+    window.removeEventListener("resize", this.changed);
+    document.fonts?.removeEventListener?.("loadingdone", this.changed);
     this.layer.removeEventListener("mousedown", this.onLayerMouseDown);
     this.layer.remove();
   }
 }
+
+const pageViews = new WeakMap<EditorView, PaginationView>();
 
 /** The page view's pages: spacers where pages end, footnotes at their feet, page numbers. */
 export function paginationPlugin(options: PaginationOptions): Plugin<PaginationState> {
@@ -481,6 +502,7 @@ export function paginationPlugin(options: PaginationOptions): Plugin<PaginationS
     },
     view: (view) => {
       pageView = new PaginationView(view, options);
+      pageViews.set(view, pageView);
       return pageView;
     },
     props: {
@@ -491,5 +513,6 @@ export function paginationPlugin(options: PaginationOptions): Plugin<PaginationS
 
 /** Measure the pages again (the zoom, the fonts or the window changed). */
 export function refreshPagination(view: EditorView) {
+  pageViews.get(view)?.refresh();
   view.dispatch(view.state.tr.setMeta(paginationKey, paginationKey.getState(view.state)?.breaks ?? []).setMeta("addToHistory", false));
 }
