@@ -54,7 +54,11 @@ public static class FormulaMetadataCodec
         {
             using var input = new MemoryStream(Base64UrlDecode(encoded));
             using var deflate = new DeflateStream(input, CompressionMode.Decompress);
-            var metadata = JsonSerializer.Deserialize<FormulaMetadata>(deflate, JsonOptions.Default);
+            using var json = new MemoryStream();
+            deflate.CopyTo(json);
+            var bytes = json.ToArray();
+            var metadata = JsonSerializer.Deserialize<FormulaMetadata>(bytes, JsonOptions.Default);
+            if (metadata is not null) AdoptReferenceRenderSize(metadata, bytes);
             metadata?.Validate();
             return metadata;
         }
@@ -62,6 +66,34 @@ public static class FormulaMetadataCodec
         {
             return null;
         }
+    }
+
+    /// <summary>The 14 pt size at which VisualTeX for Mac measures a formula's picture.</summary>
+    private const double MacReferenceFontSizePt = 14;
+
+    /// <summary>
+    /// VisualTeX for Mac stores a formula's render size at its 14 pt reference size (with that size in points as
+    /// referenceWidthPt) and no renderFontSizePt; here render pixels are at renderFontSizePt (else fontSizePt). Its
+    /// formulas get the font size their render pixels were measured at, so they keep their size when edited here.
+    /// </summary>
+    private static void AdoptReferenceRenderSize(FormulaMetadata metadata, byte[] json)
+    {
+        if (metadata.RenderFontSizePt.HasValue || metadata.RenderWidthPx is not > 0) return;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("referenceWidthPt", out var reference)
+                || reference.ValueKind != JsonValueKind.Number
+                || !reference.TryGetDouble(out var referenceWidthPt)
+                || referenceWidthPt <= 0)
+                return;
+            var renderFontSizePt = MacReferenceFontSizePt * metadata.RenderWidthPx.Value * 0.75 / referenceWidthPt;
+            if (double.IsNaN(renderFontSizePt) || double.IsInfinity(renderFontSizePt)
+                || renderFontSizePt < FormulaFontSize.MinimumPt || renderFontSizePt > FormulaFontSize.MaximumPt)
+                return;
+            metadata.RenderFontSizePt = Math.Round(renderFontSizePt, 3);
+        }
+        catch (JsonException) { }
     }
 
     private static string Base64UrlEncode(byte[] bytes) =>

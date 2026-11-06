@@ -16,6 +16,10 @@ public sealed partial class PowerPointFormulaService : IDisposable
     private const string FormulaIdTag = "VisualTeXFormulaId";
     private const string MetadataTag = "VisualTeXMetadata";
     private const string IdentityOwnerTag = "VisualTeXIdentityOwner";
+    // VisualTeX for Mac's picture scale (VTPowerPointAdapter.bas)
+    private const string MacFontSizeTag = "VisualTeXFontSizePt";
+    private const string MacReferenceWidthTag = "VisualTeXReferenceWidthPt";
+    private const string MacReferenceHeightTag = "VisualTeXReferenceHeightPt";
     private const string SlideReferencePrefix = "visualtex-ppt-vsto-slide:";
     private const string TextInsertionReferencePrefix = "visualtex-ppt-vsto-text:";
     private const uint WmSetRedraw = 0x000B;
@@ -2134,6 +2138,33 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 shape.AlternativeText = encoded;
         }
         catch { }
+        WritePictureScale(shape, metadata);
+    }
+
+    /// <summary>
+    /// A picture formula's size as VisualTeX for Mac reads it (VTPowerPointAdapter.bas): its font size and its size
+    /// at the 14 pt reference. Without them the Mac takes 18 pt and redraws the formula at another size.
+    /// </summary>
+    private static void WritePictureScale(Shape shape, FormulaMetadata metadata)
+    {
+        Tags? tags = null;
+        try
+        {
+            var type = shape.Type;
+            if (type != MsoShapeType.msoPicture && (int)type != 28 /* msoGraphic: an SVG picture */) return;
+            var width = shape.Width;
+            var height = shape.Height;
+            if (width <= 0 || height <= 0) return;
+            var fontSizePt = FormulaFontSize.InferOleFontSize(width, height, metadata);
+            if (fontSizePt <= 0) return;
+            var reference = 14f / fontSizePt;
+            tags = shape.Tags;
+            tags.Add(MacFontSizeTag, fontSizePt.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+            tags.Add(MacReferenceWidthTag, (width * reference).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
+            tags.Add(MacReferenceHeightTag, (height * reference).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch { }
+        finally { Release(tags); }
     }
 
     private static void TryApplyRotation(Shape shape, float rotation)
