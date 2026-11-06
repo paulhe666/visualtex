@@ -799,6 +799,13 @@
 .vtx-math-display ::selection {
   background: transparent;
 }
+/* A formula's picture and number take no part in the browser's selection at all (nothing of it is ever painted on
+   them, whatever the selection's state): the formula is highlighted whole by is-in-selection / is-selected. */
+.vtx-formula-static,
+.vtx-formula-number {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .vtx-math-inline.is-in-selection,
 .vtx-math-display.is-in-selection .vtx-formula-static {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
