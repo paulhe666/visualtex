@@ -5,7 +5,6 @@ using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Application = Microsoft.Office.Interop.Word.Application;
-using Task = System.Threading.Tasks.Task;
 
 namespace VisualTeX.WpsWriterVsto;
 
@@ -36,7 +35,9 @@ internal sealed class WpsWriterFormulaService : IDisposable
         _dispatcher = dispatcher;
     }
 
-    internal async Task CreateAsync(string displayMode, CancellationToken cancellationToken)
+    internal async System.Threading.Tasks.Task CreateAsync(
+        string displayMode,
+        CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -86,7 +87,8 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
-    internal async Task EditSelectedAsync(CancellationToken cancellationToken)
+    internal async System.Threading.Tasks.Task EditSelectedAsync(
+        CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -158,7 +160,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
-    private async Task<OfficeSessionDocument?> RunEditorSessionAsync(
+    private async System.Threading.Tasks.Task<OfficeSessionDocument?> RunEditorSessionAsync(
         CreateVstoSessionRequest request,
         CancellationToken cancellationToken)
     {
@@ -1037,7 +1039,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
         return FormulaFontSize.DefaultPt;
     }
 
-    private async Task TryFailAsync(string sessionId, Exception error)
+    private async System.Threading.Tasks.Task TryFailAsync(string sessionId, Exception error)
     {
         try
         {
@@ -1052,7 +1054,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
-    private async Task TryCloseEditorAsync(string sessionId)
+    private async System.Threading.Tasks.Task TryCloseEditorAsync(string sessionId)
     {
         try
         {
