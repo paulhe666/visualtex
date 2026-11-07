@@ -120,24 +120,24 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "markdown",
         title: ["Markdown 输入", "Markdown input"],
         summary: [
-          "切换到 Markdown 输入后，# 标题、**加粗**、- 列表、$$ 公式、| 表格 | 都像 Typora 一样即时转换；/ 打开命令菜单。",
-          "In Markdown input, # headings, **bold**, - lists, $$ formulas and | tables | turn into the real thing as you type, as in Typora; / opens the menu.",
+          "切换到 Markdown 输入后，输入方式与 Typora 相同：**加粗**、- 列表、# 标题（回车）、$$ 公式、| 表格 | 都会转换；/ 打开命令菜单。",
+          "In Markdown input you type as in Typora: **bold**, - lists, # headings (on Enter), $$ formulas and | tables | turn into the real thing; / opens the menu.",
         ],
       },
       {
         id: "md-blocks",
         title: ["Markdown：标题、列表与引用", "Markdown: headings, lists and quotes"],
         summary: [
-          "行首输入 #、-、1.、> 加空格，分别得到标题、无序列表、有序列表和引用；- [ ] 是待办事项，--- 回车是分隔线。",
-          "At a line start, #, -, 1. and > with a space make headings, bullet and numbered lists and quotes; - [ ] is a to-do item, --- and Enter a rule.",
+          "行首输入 -、1.、> 加空格，得到无序列表、有序列表和引用；# 标题 回车或离开这一行变成标题；- [ ] 是待办事项，--- 回车是分隔线。",
+          "At a line start, -, 1. and > with a space make bullet and numbered lists and quotes; # Title becomes a heading on Enter or when you leave the line; - [ ] is a to-do item, --- and Enter a rule.",
         ],
       },
       {
         id: "md-inline",
         title: ["Markdown：粗体、斜体与链接", "Markdown: bold, italic and links"],
         summary: [
-          "**粗体**、*斜体*、~~删除线~~、==高亮==、`代码` 输完结束符号即转换；[文字](网址) 变成链接；\\* 输入字面字符。",
-          "**bold**, *italic*, ~~strike~~, ==highlight== and `code` convert when you type the closing mark; [text](url) becomes a link; \\* types the character itself.",
+          "**粗体**、*斜体*、~~删除线~~、==高亮==、`代码` 输完结束符号即转换，光标回到其中时显示标记，可直接修改；[文字](网址) 变成链接；\\* 输入字面字符。",
+          "**bold**, *italic*, ~~strike~~, ==highlight== and `code` convert when you type the closing mark and show their marks again when the caret is back in them; [text](url) becomes a link; \\* types the character itself.",
         ],
       },
       {
@@ -168,8 +168,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "md-keys",
         title: ["Markdown：Typora 快捷键", "Markdown: Typora's keys"],
         summary: [
-          "Markdown 输入支持 Typora 的快捷键：Ctrl+1/2/3 标题，Ctrl+Shift+Q 引用，Ctrl+Shift+[ / ] 列表，Ctrl+T 表格，Ctrl+Shift+M 行间公式。",
-          "Markdown input has Typora's keys: Ctrl+1/2/3 headings, Ctrl+Shift+Q quote, Ctrl+Shift+[ / ] lists, Ctrl+T table, Ctrl+Shift+M display formula.",
+          "Markdown 输入支持 Typora 的快捷键：Ctrl+1–6 标题，Ctrl+0 正文，Ctrl+B/I/U，Ctrl+K 链接，Ctrl+\\ 清除格式，Ctrl+Shift+Q 引用，Ctrl+Shift+[ / ] 列表，Ctrl+Shift+K 代码块，Ctrl+T 表格，Ctrl+Shift+M 行间公式。",
+          "Markdown input has Typora's keys: Ctrl+1–6 headings, Ctrl+0 body text, Ctrl+B/I/U, Ctrl+K link, Ctrl+\\ clear format, Ctrl+Shift+Q quote, Ctrl+Shift+[ / ] lists, Ctrl+Shift+K code block, Ctrl+T table, Ctrl+Shift+M display formula.",
         ],
       },
       {

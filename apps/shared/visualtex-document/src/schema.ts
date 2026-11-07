@@ -438,6 +438,15 @@ const marks: Record<string, MarkSpec> = {
       return ["span", { "data-size": mark.attrs.size, style: `font-size:${ratio}em` }, 0];
     },
   },
+  /** Markdown shown while the caret is in a span ("**" of **bold**, markdownLive.ts): characters that exist only then.
+   *  Never read from HTML (a copy leaves them out), never saved; last, so it sits inside the other marks. */
+  md_syntax: {
+    /** "url": a link's address and title (between "](" and ")") */
+    attrs: { role: { default: null as string | null } },
+    inclusive: false,
+    parseDOM: [],
+    toDOM: (mark): DOMOutputSpec => ["span", { class: mark.attrs.role === "url" ? "vtx-md-syntax is-url" : "vtx-md-syntax" }, 0],
+  },
 };
 
 export const documentSchema = new Schema({ nodes, marks });

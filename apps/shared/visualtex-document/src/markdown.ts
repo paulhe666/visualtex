@@ -20,6 +20,7 @@ import { bibliographyEntries, citeLabel } from "./notes.ts";
 import { documentSettings, equationLabels } from "./settings.ts";
 import { MARKDOWN_TITLE_CLOSE, MARKDOWN_TITLE_OPEN } from "./latexImport.ts";
 import { resolveLatexMarkers } from "./latexMarkers.ts";
+import { sliceWithoutMarkdownSyntax, withoutMarkdownSyntax } from "./markdownLive.ts";
 
 /** The highlight colour ==text== gets (the first of the highlight swatches). */
 export const MARKDOWN_HIGHLIGHT = "#fff59d";
@@ -1186,6 +1187,8 @@ function serializerFor(
       open: (_state, mark) => `<span style="font-size:${FONT_SIZES.find((size) => size.name === mark.attrs.size)?.ratio ?? 1}em">`,
       close: "</span>",
     },
+    // never reaches the writer (withoutMarkdownSyntax): the Markdown shown in a span while the caret is there
+    md_syntax: { open: "", close: "" },
   };
   // A wrapped image floats beside the paragraphs after it, as in the editor; what the editor starts below it (a
   // heading, a list, an image line, the next wrapped paragraph…) gets <br clear="all"> first (GitHub keeps it).
@@ -1272,6 +1275,7 @@ function backticks(text: string, side: -1 | 1): string {
 
 /** The document as Markdown. */
 export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {}): string {
+  doc = withoutMarkdownSyntax(doc);
   if (!options.imagePath) {
     const paths = imageFiles(doc, "assets").paths;
     options = { ...options, imagePath: (key) => paths.get(key) ?? null };
@@ -1474,6 +1478,7 @@ function childrenOf(node: Node): Node[] {
 
 /** A selection's content as Markdown (Copy as Markdown). */
 export function sliceToMarkdown(slice: Slice, schema: Schema, options: MarkdownExportOptions = {}): string {
+  slice = sliceWithoutMarkdownSyntax(slice, schema);
   const doc = schema.topNodeType.createAndFill(null, slice.content);
   if (!doc) {
     // Inline content: in a paragraph.

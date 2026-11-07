@@ -1345,6 +1345,8 @@ function App() {
       }
 
       if (!primaryModifier) return;
+      // a key the document editor used (Markdown input: Ctrl+0, Ctrl+= / Ctrl+- and Ctrl+Shift+K are Typora's)
+      if (event.defaultPrevented) return;
       if (key === "k" && event.shiftKey) {
         event.preventDefault();
         void handleKeypadModeToggle();
