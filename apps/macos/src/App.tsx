@@ -1479,6 +1479,8 @@ function App() {
       }
 
       if (!primaryModifier) return;
+      // a key the document editor used (Markdown input: ⌘0 and ⌘= / ⌘- are heading levels, as in Typora)
+      if (event.defaultPrevented) return;
       if (key === "k" && event.shiftKey) {
         event.preventDefault();
         void handleKeypadModeToggle();

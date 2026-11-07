@@ -205,37 +205,62 @@ The strip's first control switches the input, persisted in `stores/documentForma
 triggers, §6.1) or Markdown (Typora and the note apps). Both edit the same document; the mode only changes what typing
 converts, what the command menu offers and how Markdown pastes. The output format is chosen on its own (§7.5).
 
-### 7.2 Typing Markdown (`markdownInput.ts`)
+### 7.2 Typing Markdown (`markdownInput.ts`, `markdownLive.ts`, `inlineMarkdown.ts`) — Typora's input (2026-11-07)
 
-- Line start + Space: `#` `##` `###` (deeper: level 3), `-` `*` `+`, `1.` / `1)` (the list starts at that number),
-  `>`, ```` ```lang ````; a Chinese input method's `1。`, `》`, `···` and full-width space count the same.
-- Enter at the end of a line: ```` ```lang ```` / `~~~` → code block, `---` `***` `___` → rule, `| a | b |` (two cells
-  or more) → a table with that header row and an empty row, the caret in it.
-- The closing delimiter: `**` / `__` bold, `*` / `_` italic (`_` not inside a word), `~~` strike, `==` highlight,
-  `` ` `` code, `[text](url "title")` link — not inside code, a backtick span still open or a link address.
-- Formulas: `$` typed in a formula closes it; `$$` makes a display formula (Enter in it while empty keeps the caret
-  there: Typora's `$$` + Enter); the closing `$$` of a display formula leaves it; Ctrl+Enter leaves any formula
-  (`￥` from a Chinese input method counts as `$`). In LaTeX input `$` opens an inline formula at once (LaTeX: `$`
-  always starts math); in Markdown input the next character decides, as in Typora and Pandoc: a digit or a space
-  keeps `$5`, `$ 5`, `￥50` text, `$` makes a display formula, anything else opens the formula with it.
+The user's request (2026-11-06): Markdown input follows Typora's input logic exactly, the formula environment apart.
+Measured on Typora 1.14.15 (and Obsidian) with scripted keyboard runs: ~/claude/block-editor-research (report, `handson/*.jsonl`).
+
+- Inline Markdown is live, as in Typora: `**` / `__` bold, `*` / `_` italic, `***` both, `~~` strike, `==` highlight,
+  `` ` `` code, `[text](url "title")`, `<url>`, `https://…` / `www.…` (linked when a space follows), `<u>` `<sup>` `<sub>`
+  `<kbd>` `<mark>` `<s>` `<b>` `<i>`, `\` escapes. A span is formatted once the delimiter that closes (or opens) it is
+  typed. While the caret is in a span or at its edges its Markdown is shown as grey characters (a link's address as an
+  address); the caret steps through them, Backspace deletes them, and the line is read again after every change
+  (deleting one `*` of `**bold**` makes it italic, the other plain text; typing `**` round text makes it bold); when the
+  caret leaves, the characters go and the formatting stays. The shown characters are text with the `md_syntax` mark,
+  one region at a time, outside the undo history (Ctrl+Z hides them first); saving, exports and the clipboard leave them
+  out (`withoutMarkdownSyntax`). An input method's text and a mouse press are read when they are done.
+- Reading is CommonMark's with Typora's leniency: a closer may follow a space (`**x **`), punctuation and CJK next to a
+  delimiter do not stop it (`前**“引号”**后`), `__b__c` closes, an opener never has a space after it (`** x**`, `a * b`
+  stay text), `_` never opens inside a word (`snake_case`), `**a *b** c*` is bold "a *b", `*it**` stays text. A code
+  span closed round formatted text keeps that Markdown as code.
+- Typora's format keys (Ctrl+B/I/U, Ctrl+Shift+`, Alt+Shift+5; Mac ⌃` / ⌃⇧`): a selection in one line takes the
+  formatting, or loses it when all of it has it, and the caret goes to its end inside the span; with no selection, in a
+  span of that kind its markers go, in a word (the system's word cutting, Chinese too) the word takes it, elsewhere an
+  empty pair `****` with the caret inside. Ctrl+K: `[selection]()` with the caret where the address goes (`[]()` with
+  none); in a link, the link dialog. Ctrl+\: the formatting goes.
+- Line start + Space: `-` `*` `+`, `1.` / `1)` (the list starts at that number), `>` (`>>` nests), `[ ]` / `[x]` in a
+  list item (a task); a list marker at the start of a later item nests the item (in that kind of list); `[!NOTE]` as a
+  quote's first line makes it an alert (on `]`). A Chinese input method's `1。`, `》` and full-width space count too.
+- Enter, or the caret leaving a line just typed: `# Title` … `###### Title` (closing `#`s dropped) → section, the text
+  after the caret going on as body text; ```` ```lang ```` / `~~~` → code block; `---` `***` `___` → rule. Enter only:
+  `| a | b |` → table (header row and an empty row, the caret in it); `[toc]`; a line of HTML that opens a CommonMark HTML
+  block (`<div …>`, `<details>`, a comment) → HTML block; `[^1]: text` gives an empty footnote its text.
+- `[^1]` makes a footnote (its text is asked for at once), `![alt](picture)` the picture when it is found, `:smile:` the
+  emoji (`:` and letters open Typora's emoji list; Enter takes one), `</` completes the open tag. `( [ { " '` come in
+  pairs (not before a word; `'` not after one); a closing character typed over its pair steps over it, Backspace
+  between them deletes both, a selection is wrapped.
+- Enter in a section goes on with body text; at a section's start an empty line goes before it. Backspace at the start
+  of a later list item: the item joins the one before as a paragraph of its own (again: the two lines join); right
+  after a list or a quote: the line joins its last line; at a cell's start: the end of the cell before; in an empty first
+  line of the document: the line goes. Enter on an empty list item outdents it / leaves the list; on an empty quote line
+  leaves the quote; in a table goes to the cell below and leaves the table from its last row; a new task is unticked.
+- Formulas are VisualTeX's (not Typora's): `$` typed in a formula closes it; `$$` makes a display formula (Enter in it
+  while empty keeps the caret there); the closing `$$` of a display formula leaves it; Ctrl+Enter leaves any formula
+  (`￥` from a Chinese input method counts as `$`). In LaTeX input `$` opens an inline formula at once; in Markdown input
+  the next character decides, as in Typora and Pandoc: a digit or a space keeps `$5`, `$ 5`, `￥50` text, `$` makes a
+  display formula, anything else opens the formula with it.
+- Typora's keys — Windows: Ctrl+1…6, Ctrl+0 (body text), Ctrl+= / Ctrl+- (a level up / down), Ctrl+T, Ctrl+Shift+K
+  (code block), Ctrl+Shift+M (display formula), Ctrl+Shift+Q, Ctrl+Shift+[ / ], Ctrl+] / Ctrl+[ (list level),
+  Ctrl+Shift+I (picture), Ctrl+L / E / D (select the line, the formatted span or cell, the word). Mac: ⌘1…6, ⌘0, ⌘= / ⌘-,
+  ⌥⌘T, ⌥⌘C, ⌥⌘B, ⌥⌘Q, ⌥⌘O / ⌥⌘U, ⌥⌘X (task), ⌘] / ⌘[, ⌃⌘I, ⌘L / E / D (the ⌘⇧ keys of before stay). In Markdown input
+  these are the document's (the app's zoom and keypad keys act elsewhere).
 - In the "/" menu Space takes the highlighted entry once a name is typed, once the highlight was moved with ↑/↓, or
   after a lone "/" at the start of a line (mid-line "km / h" stays text).
 - `\` + an ASCII punctuation character types the character, which then never acts as Markdown (Markdown's escape).
-- Each conversion is an undo step of its own after the characters typed: Ctrl+Z gives back exactly what was typed;
-  the change after a conversion starts a new step.
-- Typora's keys: Ctrl+1/2/3 heading (again: body text), Ctrl+T table, Ctrl+Shift+M display formula, Ctrl+Shift+Q
-  quote, Ctrl+Shift+[ / ] lists, Ctrl+Shift+` code, Alt+Shift+5 strike (Ctrl+0 and Ctrl+Shift+K stay the app's zoom
-  and keypad keys). The strip's tooltips name the Markdown and the keys; the ? next to the input switch is a cheat
-  sheet of the current input, with the Markdown rule switches (line starts and Enter blocks, inline marks, Chinese
-  punctuation variants — SiYuan had to add such switches after false positives).
-- Marks do not open right after a Latin letter, a digit, `:` or `/` (Milkdown's guard): `2*3*`, addresses stay text.
-- Both inputs: Enter on an empty quote line leaves the quote; Ctrl+Enter leaves a code block or a formula and adds a
-  table row; in Markdown input Enter in a table goes to the cell below and leaves the table from its last row
-  (Typora). Backspace / Delete next to a display formula or a rule selects it first (a second press deletes it); next
+- A line-start or Enter conversion is an undo step of its own after the characters typed; the change after it starts a
+  new step (another plugin's follow-up — ids, the shown Markdown — does not).
+- Both inputs: Backspace / Delete next to a display formula or a rule selects it first (a second press deletes it); next
   to a code block the caret goes into it (Typora deletes such blocks silently, a reported data loss).
-- Ctrl+K (and the menus' link entries) open the link dialog: a link on the selection, a new linked text, or the link
-  at the caret changed or removed; "example.com" gets https://.
-- The rules run on typed text and once an input method commits (compositionend), never during a composition.
 
 ### 7.3 The "/" menu
 

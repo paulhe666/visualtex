@@ -14,6 +14,7 @@ import {
   documentSchema,
   DEFAULT_BOARD_LABELS,
   documentToLatex,
+  withoutMarkdownSyntax,
   documentToMarkdown,
   markdownSourceKey,
   markdownSourceOf,
@@ -422,7 +423,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         }
         setPmState(next);
         useDocumentEditorStore.getState().setEditor(view, next);
-        if (tr.docChanged) onChangeRef.current?.(next.doc);
+        // the Markdown shown around the caret (markdownLive.ts) is not part of the document
+        if (tr.docChanged) onChangeRef.current?.(withoutMarkdownSyntax(next.doc));
       },
     });
     viewRef.current = view;

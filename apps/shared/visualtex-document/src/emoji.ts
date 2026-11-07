@@ -1907,8 +1907,24 @@ wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿`;
 
 let codes: Map<string, string> | null = null;
 
+function table(): Map<string, string> {
+  if (!codes) codes = new Map(TABLE.split("\n").map((line) => [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)]));
+  return codes;
+}
+
 /** The emoji a short code (without its colons) stands for. */
 export function emojiOf(name: string): string | undefined {
-  if (!codes) codes = new Map(TABLE.split("\n").map((line) => [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)]));
-  return codes.get(name);
+  return table().get(name);
+}
+
+/** The short codes a typed ":query" may be (Typora's list): those starting with it, then those containing it. */
+export function searchEmoji(query: string, limit = 60): Array<{ name: string; emoji: string }> {
+  if (!query) return [];
+  const starts: Array<{ name: string; emoji: string }> = [];
+  const contains: Array<{ name: string; emoji: string }> = [];
+  for (const [name, emoji] of table()) {
+    if (name.startsWith(query)) starts.push({ name, emoji });
+    else if (name.includes(query)) contains.push({ name, emoji });
+  }
+  return [...starts, ...contains].slice(0, limit);
 }

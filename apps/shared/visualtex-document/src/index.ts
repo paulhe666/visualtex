@@ -70,7 +70,22 @@ export { documentDragKey, documentDragPlugin } from "./documentDrag.ts";
 export { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 export { decodeText, findMarkdownFile, readLatexProject, type LatexProject, type ProjectFile } from "./latexProject.ts";
 export { LINK_REQUEST_EVENT, insertLink, linkAt, normalizeHref, removeLink, requestLink, setLink, type LinkRange } from "./links.ts";
-export { markdownEnter, markdownInputKey, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
+export { markdownEnter, markdownHeadingEnter, markdownInputKey, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
+export {
+  clearFormat,
+  collapseTransaction,
+  markdownLiveKey,
+  markdownLivePlugin,
+  markdownRedo,
+  markdownUndo,
+  shownMarkdown,
+  sliceWithoutMarkdownSyntax,
+  typoraFormat,
+  typoraLink,
+  withMarkdownHidden,
+  withoutMarkdownSyntax,
+} from "./markdownLive.ts";
+export { parseInline, writeInline, type InlineKind, type InlineSpan } from "./inlineMarkdown.ts";
 export { deleteSelectionWithParts, mixedSelectionPlugin, selectionHasFormulaParts, selectionSliceWithParts, toggleDocumentBold } from "./mixedSelection.ts";
 export { SelectGesture } from "./formulas.ts";
 export {

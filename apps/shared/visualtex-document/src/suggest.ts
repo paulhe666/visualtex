@@ -19,13 +19,14 @@ import { openFormulaId } from "./formulas.ts";
 import { MARKDOWN_HIGHLIGHT } from "./markdown.ts";
 import type { InputMode, MarkdownRuleSwitches } from "./markdownInput.ts";
 import { FONT_SIZES } from "./schema.ts";
+import { emojiOf, searchEmoji } from "./emoji.ts";
 import { addReferenceEntry, bibliographyEntries, insertCitation, insertFootnote, requestCitation } from "./notes.ts";
 
 /** The command being typed. */
 export interface CommandToken {
   /** the position of its "\" (or "/") */
   from: number;
-  trigger: "\\" | "/" | "、" | "／";
+  trigger: "\\" | "/" | "、" | "／" | ":";
   /** LaTeX commands or Markdown's (the input mode when the command was started) */
   mode: InputMode;
   /** what follows the trigger: a name, "name{argument" or "begin{environment" */
@@ -110,7 +111,11 @@ const ESCAPED = "$%&#_{}";
  *  Markdown it writes ("#", "##", "-", ">", "```", "---", "|", "**") */
 const SLASH_NAME = /^(?:[A-Za-z]*|[\u3400-\u9fff\uf900-\ufaff]+|[#*\-+>`|$=~[\]^<!\\]{1,6})$/;
 
+/** an emoji's short code being typed after ":" (Typora): lower-case letters, digits, "_", "+", "-" */
+const EMOJI_NAME = /^[a-z0-9_+-]*$/;
+
 function validQuery(query: string, trigger: CommandToken["trigger"], mode: InputMode): boolean {
+  if (trigger === ":") return mode === "markdown" && EMOJI_NAME.test(query);
   if (trigger !== "\\") return mode === "markdown" && SLASH_NAME.test(query);
   return NAME.test(query) || ENVIRONMENT.test(query) || ARGUMENT.test(query);
 }
@@ -424,8 +429,24 @@ function matchMarkdown(query: string, doc: Node): CommandEntry[] {
 }
 
 /** The menu's entries for a command being typed, best first. */
+/** The emoji whose short codes start with (or hold) what follows ":" (Typora's emoji list). */
+function emojiEntries(query: string): CommandEntry[] {
+  return searchEmoji(query).map(({ name, emoji }) => ({
+    id: `emoji-${name}`,
+    label: `:${name}:`,
+    names: [name],
+    description: { en: "", zh: "" },
+    preview: { kind: "text", text: emoji, scale: 1.3 },
+    run(view) {
+      view.dispatch(view.state.tr.insertText(emoji).scrollIntoView());
+      return true;
+    },
+  }));
+}
+
 export function matchCommands(token: CommandToken, doc: Node, math: MathCommandProvider | null): CommandEntry[] {
   const query = token.query;
+  if (token.trigger === ":") return emojiEntries(query);
   if (token.mode === "markdown") return matchMarkdown(query, doc);
   const environment = ENVIRONMENT.exec(query);
   if (environment) {
@@ -541,7 +562,9 @@ function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: b
   // In Markdown input a Chinese input method's "／", and "、" (its "\" or "/") at the start of a line, are "/" too.
   // In LaTeX input only "\" starts a command.
   const slash = mode === "markdown" && (trigger === "/" || (chinese && (trigger === "／" || (trigger === "、" && $head.parentOffset === 1))));
-  if (trigger !== "\\" && !slash) return null;
+  // ":" in Markdown input starts an emoji's short code (Typora), at a word's start
+  const colon = mode === "markdown" && trigger === ":";
+  if (trigger !== "\\" && !slash && !colon) return null;
   if (!insertedBy(tr, $head.pos - 1)) return null;
   // Code is literal text.
   if (state.doc.resolve($head.pos - 1).marks().some((m) => m.type.name === "code")) return null;
@@ -549,6 +572,7 @@ function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: b
   // In Markdown input only "/" starts a command ("\" escapes the character after it).
   if (mode === "markdown" && trigger === "\\") return null;
   if (slash && before && !/\s/.test(before) && !(mode === "markdown" && CJK.test(before))) return null;
+  if (colon && before && !/[\s(\[{"'“‘]/.test(before) && !CJK.test(before)) return null;
   if (trigger === "\\" && before === "\\") return null;
   return { from: $head.pos - 1, trigger: trigger as CommandToken["trigger"], mode, query: "", index: 0, dismissed: false };
 }
@@ -617,8 +641,9 @@ export function commandMenuPlugin(
           runCommandEntry(view, entries[index], { via: "menu" });
           return true;
         }
-        // 1-9 pick from the numbered page, as in the formula editor's suggestions (not in an argument: \textbf{12}).
-        if (/^[1-9]$/.test(event.key) && (ENVIRONMENT.test(token.query) || !ARGUMENT.test(token.query))) {
+        // 1-9 pick from the numbered page, as in the formula editor's suggestions (not in an argument: \textbf{12}; not
+        // in an emoji's name: :100:).
+        if (/^[1-9]$/.test(event.key) && token.trigger !== ":" && (ENVIRONMENT.test(token.query) || !ARGUMENT.test(token.query))) {
           const pick = index - (index % 9) + Number(event.key) - 1;
           if (pick < entries.length) {
             runCommandEntry(view, entries[pick], { via: "menu" });
@@ -634,6 +659,13 @@ export function commandMenuPlugin(
         const done = (entry: CommandEntry | undefined, how: CommandRun) => (entry && (!only || only(entry)) ? runCommandEntry(view, entry, how) : false);
         // After Escape the typed text is just text.
         if (token.dismissed) return false;
+        // an emoji's short code: the closing ":" makes the emoji (":smile:" -> 😄); a space ends it as text
+        if (token.trigger === ":") {
+          const emoji = text === ":" ? emojiOf(query) : undefined;
+          if (!emoji) return false;
+          view.dispatch(view.state.tr.insertText(emoji, token.from, from).setMeta(commandMenuKey, { end: true } satisfies CommandMeta).scrollIntoView());
+          return true;
+        }
         if (token.trigger === "\\" && query === "") {
           if (text === "(") return done(DOCUMENT_COMMANDS.find((e) => e.id === "inline-math"), { via: "complete" });
           if (text === "[") return done(DOCUMENT_COMMANDS.find((e) => e.id === "display-math"), { via: "complete" });
