@@ -4,7 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import type { EditorView } from "prosemirror-view";
-import { closeFormula, openFormulaId } from "../../shared/visualtex-document/src/index.ts";
+import { closeFormula, collapseTransaction, openFormulaId } from "../../shared/visualtex-document/src/index.ts";
 import { buildPrintCopy } from "./printCopy";
 import { PAGE_GAP } from "./DocumentEditor";
 
@@ -31,13 +31,19 @@ function once<T>(event: string, timeoutMs: number): { promise: Promise<T>; ready
   return { promise, ready };
 }
 
+/** Every formula closed (the copy shows their static markup) and no Markdown shown around the caret; the pages laid
+ *  out again after that. */
+async function settleForPrint(view: EditorView) {
+  const hide = collapseTransaction(view.state);
+  if (hide) view.dispatch(hide);
+  const open = openFormulaId(view.state);
+  if (open) view.dispatch(closeFormula(view.state.tr));
+  if (hide || open) await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
 /** Print the document's pages to `path`. */
 export async function documentToPdf(view: EditorView, path: string, title: string): Promise<number> {
-  // every formula closed: the copy shows their static markup
-  if (openFormulaId(view.state)) {
-    view.dispatch(closeFormula(view.state.tr));
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  }
+  await settleForPrint(view);
   const copy = buildPrintCopy(view, PAGE_GAP);
   if (!copy) throw new Error("The page view is not shown");
   const loaded = once<void>("pdf-print-loaded", 20000);
@@ -62,10 +68,7 @@ export async function documentToPdf(view: EditorView, path: string, title: strin
  * then the browser's print dialog, whose "Save as PDF" makes the file.
  */
 export async function printDocumentInBrowser(view: EditorView, title: string): Promise<void> {
-  if (openFormulaId(view.state)) {
-    view.dispatch(closeFormula(view.state.tr));
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  }
+  await settleForPrint(view);
   const copy = buildPrintCopy(view, PAGE_GAP);
   if (!copy) throw new Error("The page view is not shown");
   const frame = document.createElement("iframe");

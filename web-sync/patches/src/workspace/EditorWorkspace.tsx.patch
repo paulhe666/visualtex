@@ -1,5 +1,5 @@
 diff --git a/src/workspace/EditorWorkspace.tsx b/src/workspace/EditorWorkspace.tsx
-index f28d3e2..8613b8c 100644
+index c3a57ba..8a3ec97 100644
 --- a/src/workspace/EditorWorkspace.tsx
 +++ b/src/workspace/EditorWorkspace.tsx
 @@ -79,6 +79,11 @@ import {
@@ -24,7 +24,16 @@ index f28d3e2..8613b8c 100644
          event.altKey ||
          event.shiftKey ||
          event.code !== "Backslash"
-@@ -2173,15 +2177,15 @@ export function EditorWorkspace({
+@@ -464,7 +468,7 @@ export function EditorWorkspace({
+       ) {
+         return;
+       }
+-      // the document's own ⌘\ (Markdown input: clear the formatting, as in Typora)
++      // the document's own Ctrl+\ (Markdown input: clear the formatting, as in Typora)
+       if (event.target instanceof Element && event.target.closest(".vtx-document")) return;
+ 
+       event.preventDefault();
+@@ -2175,15 +2179,15 @@ export function EditorWorkspace({
                          setSourceOpen(true);
                          setClassicDockOpen(true);
                        }}
@@ -45,7 +54,7 @@ index f28d3e2..8613b8c 100644
                        }
                      >
                        <Code2 size={16} />
-@@ -2304,23 +2308,23 @@ export function EditorWorkspace({
+@@ -2306,23 +2310,23 @@ export function EditorWorkspace({
                        }
                        data-source-toggle
                        aria-expanded={sourceOpen}

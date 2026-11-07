@@ -468,6 +468,8 @@ export function EditorWorkspace({
       ) {
         return;
       }
+      // the document's own Ctrl+\ (Markdown input: clear the formatting, as in Typora)
+      if (event.target instanceof Element && event.target.closest(".vtx-document")) return;
 
       event.preventDefault();
       event.stopImmediatePropagation();

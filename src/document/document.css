@@ -86,6 +86,19 @@
   cursor: text;
 }
 
+/* ---- Markdown shown while the caret is in a formatted span (Typora): its markers light grey, a link's address as an
+   address ---- */
+.vtx-document .vtx-md-syntax {
+  color: #b4b9c1;
+  text-decoration: none;
+}
+.vtx-document .vtx-md-syntax.is-url {
+  color: #5b7896;
+  text-decoration: underline;
+  text-decoration-color: rgba(91, 120, 150, 0.45);
+  text-underline-offset: 2px;
+}
+
 /* ---- LaTeX | Markdown input, in the header's middle in document mode (DESIGN.md §7.1) ---- */
 .document-input-switch {
   display: inline-flex;

@@ -1,6 +1,6 @@
 {
   "sourceRoot": "apps/macos",
-  "commit": "e5d892a5a159a9ae57cb9ed64496cec8564c12e7",
+  "commit": "b95c669940f3fa80aabf8448cdee316256672021",
   "note": "Copies of apps/macos/<path> (and of apps/shared/<path> at shared/<path>); web-only edits live in web-sync/patches. Run scripts/sync-mac-editor.mjs.",
   "files": [
     "docs/help/VisualTeX_帮助手册.md",

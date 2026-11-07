@@ -8,6 +8,7 @@ import { chosenSettings, documentSettings, settingsPreamble } from "./settings.t
 import { IMAGE_GAP, imageFiles, isImage, isImageLine } from "./images.ts";
 import { pageCommandLatex } from "./pageCommands.ts";
 import { boardHeight, boardItems, canonicalRow } from "./imageBoards.ts";
+import { sliceWithoutMarkdownSyntax, withoutMarkdownSyntax } from "./markdownLive.ts";
 
 export interface LatexExportOptions {
   /** The formula's LaTeX made portable (the app's own conventions -> plain amsmath). */
@@ -486,6 +487,7 @@ class LatexWriter {
 
 /** The document as LaTeX. */
 export function documentToLatex(doc: Node, options: LatexExportOptions = {}): string {
+  doc = withoutMarkdownSyntax(doc);
   const numbers = new Map<string, number>();
   const citeKeys = new Map(bibliographyEntries(doc).map((entry) => [entry.id, entry.key]));
   // the images' files: figures/fig-1.png, … in the order they appear
@@ -510,6 +512,7 @@ export function documentToLatex(doc: Node, options: LatexExportOptions = {}): st
 
 /** A copied selection as LaTeX (Copy Latex): its blocks, or the inline content as one paragraph's text. */
 export function sliceToLatex(slice: Slice, schema: Schema, options: LatexExportOptions = {}): string {
+  slice = sliceWithoutMarkdownSyntax(slice, schema);
   const blocks: Node[] = [];
   let inline: Node[] = [];
   const flush = () => {

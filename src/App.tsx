@@ -793,6 +793,8 @@ function App() {
       }
 
       if (!primaryModifier) return;
+      // a key the document editor used (Markdown input: Ctrl+0, Ctrl+= and Ctrl+- are heading levels, as in Typora)
+      if (event.defaultPrevented) return;
       if (key === "n") {
         event.preventDefault();
         newFormula();

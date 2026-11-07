@@ -778,7 +778,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
         </Button>
       ))}
       <Divider />
-      <Button label={tip(["Section (Ctrl+Alt+1)", "章节 (Ctrl+Alt+1)"], ["Heading (Ctrl+1/2/3)", "标题 (Ctrl+1/2/3)"])} active={level > 0} className="is-text-action" onClick={() => run(view, toggleSection)}>
+      <Button label={tip(["Section (Ctrl+Alt+1)", "章节 (Ctrl+Alt+1)"], ["Heading (Ctrl+1–6)", "标题 (Ctrl+1–6)"])} active={level > 0} className="is-text-action" onClick={() => run(view, toggleSection)}>
         <span className="document-section-icon">
           1.
           <br />

@@ -46,7 +46,8 @@ import { commandMenuPlugin, type MathCommandProvider } from "./suggest.ts";
 import { codeBlockKeys, codeBlockPlugin, type CodeBlockOptions, type CodeHighlighter } from "./codeBlocks.ts";
 import { richBlocksPlugin } from "./richBlocks.ts";
 import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
-import { ALL_RULES, markdownEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
+import { ALL_RULES, markdownEnter, markdownHeadingEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
+import { markdownLivePlugin, markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
@@ -362,9 +363,10 @@ const shiftTab: Command = (state, dispatch, view) =>
 function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () => MarkdownRuleSwitches) {
   const { nodes, marks } = schema;
   return keymap({
-    "Mod-z": undo,
-    "Mod-y": redo,
-    "Shift-Mod-z": redo,
+    // the Markdown shown in a formatted span is hidden before the history steps (markdownLive.ts)
+    "Mod-z": markdownUndo,
+    "Mod-y": markdownRedo,
+    "Shift-Mod-z": markdownRedo,
     Backspace: chainCommands(clearLineStyle, deleteFormulaBackward, selectAdjacentBlock(-1)),
     Delete: chainCommands(deleteFormulaForward, selectAdjacentBlock(1)),
     ArrowRight: enterFormulaForward,
@@ -377,6 +379,8 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
       (state, dispatch, view) => inputMode() === "markdown" && tableEnter(state, dispatch, view),
       splitListItemOrLeave,
       leaveEmptyQuoteLine,
+      // Typora: after a section comes body text (Mathcha keeps the section's style)
+      markdownHeadingEnter(inputMode),
       splitKeepingStyle,
     ),
     "Mod-Enter": tableRowBelow,
@@ -433,6 +437,8 @@ const DEFAULT_CODE_LABELS: CodeBlockOptions["labels"] = { plainText: "Plain Text
 
 /** Plain text of copied content: text as it is, formulas as $...$ and $$...$$ (what the paste rule reads back). */
 export function slicePlainText(slice: Slice, formulaText: (latex: string) => string = (l) => l): string {
+  const schema = slice.content.firstChild?.type.schema;
+  if (schema) slice = sliceWithoutMarkdownSyntax(slice, schema);
   const blocks: string[] = [];
   const inline = (node: Node) => {
     let out = "";
@@ -492,12 +498,18 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     // before the Markdown rules: what follows a "$" is decided first ("\$" it leaves to them)
     dollarPlugin(inputMode),
     markdownInputPlugin(inputMode, rules),
+    // Typora's live inline Markdown: a formatted span shows its markers while the caret is in it
+    markdownLivePlugin({ enabled: () => inputMode() === "markdown" && rules().marks }),
     mathPastePlugin(schema, inputMode),
     linkClickPlugin(),
-    formulaPlugin(options.host, { undo, redo, displayFormula: insertDisplayLatex("") }),
+    formulaPlugin(options.host, { undo: markdownUndo, redo: markdownRedo, displayFormula: insertDisplayLatex("") }),
     new Plugin({
       key: new PluginKey("visualtex-document-clipboard-text"),
-      props: { clipboardTextSerializer: (slice) => slicePlainText(slice, options.formulaText) },
+      props: {
+        // a copy leaves out the Markdown shown in a formatted span (its formatting goes with it)
+        transformCopied: (slice, view) => sliceWithoutMarkdownSyntax(slice, view.state.schema),
+        clipboardTextSerializer: (slice) => slicePlainText(slice, options.formulaText),
+      },
     }),
     numberingPlugin(),
     notesPlugin(),
@@ -506,7 +518,14 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS, diagram: options.codeDiagram ?? null }),
     keymap(codeBlockKeys),
-    markdownKeymap(inputMode),
+    markdownKeymap(inputMode, {
+      bold: toggleDocumentBold,
+      italic: toggleMark(schema.marks.em),
+      underline: toggleMark(schema.marks.underline),
+      code: toggleMark(schema.marks.code),
+      strike: toggleMark(schema.marks.strike),
+      link: requestLink,
+    }),
     documentKeymap(schema, inputMode, rules),
     keymap(baseKeymap),
     columnResizing(),

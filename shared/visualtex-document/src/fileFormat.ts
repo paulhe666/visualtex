@@ -1,6 +1,7 @@
 // The .vtxdoc file: JSON with the ProseMirror document (DESIGN.md §2).
 import type { Node, Schema } from "prosemirror-model";
 import { documentImagesForFile, loadDocumentImages } from "./images.ts";
+import { withoutMarkdownSyntax } from "./markdownLive.ts";
 
 export const DOCUMENT_FILE_FORMAT = "visualtex-document";
 /** 2: the file carries images (`images`); 3: it has image boards. A document without them is still written as 1. */
@@ -25,6 +26,8 @@ function hasBoards(doc: Node): boolean {
 }
 
 export function serializeDocument(doc: Node, meta: DocumentFile["meta"] = {}): string {
+  // the Markdown shown around the caret is not part of the document
+  doc = withoutMarkdownSyntax(doc);
   const images = documentImagesForFile(doc);
   const hasImages = Object.keys(images).length > 0;
   const file: DocumentFile = {
