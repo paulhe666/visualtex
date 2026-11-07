@@ -1,0 +1,55 @@
+name: WPS add-in
+
+on:
+  push:
+    paths:
+      - "apps/windows/src-windows/VisualTeX.WpsWriterVsto/**"
+      - "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/**"
+      - "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/**"
+      - ".github/workflows/wps-addin.yml"
+  pull_request:
+    paths:
+      - "apps/windows/src-windows/VisualTeX.WpsWriterVsto/**"
+      - "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/**"
+      - "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/**"
+      - ".github/workflows/wps-addin.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, x86]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      # The add-in intentionally has no COMReference items: the Office PIAs
+      # come from NuGet and the two COM interfaces are defined in
+      # OfficeInteropShims.cs. That makes the build independent of a locally
+      # installed Office/WPS, which CI agents do not have.
+      - name: Restore and build (${{ matrix.platform }})
+        run: >
+          msbuild
+          apps/windows/src-windows/VisualTeX.WpsWriterVsto/VisualTeX.WpsWriterVsto.csproj
+          /restore
+          /p:Configuration=Release
+          /p:Platform=${{ matrix.platform }}
+          /m
+          /v:minimal
+
+      - name: List build output
+        shell: pwsh
+        run: |
+          $dir = "apps/windows/src-windows/VisualTeX.WpsWriterVsto/bin/${{ matrix.platform }}/Release/net472"
+          if (-not (Test-Path $dir)) { throw "Build output not found: $dir" }
+          Get-ChildItem $dir | Select-Object Name, Length | Format-Table -AutoSize
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VisualTeX.WpsWriterVsto-${{ matrix.platform }}
+          path: apps/windows/src-windows/VisualTeX.WpsWriterVsto/bin/${{ matrix.platform }}/Release/net472/**
+          if-no-files-found: error
