@@ -4,6 +4,7 @@ using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WordVsto;
 using Application = Microsoft.Office.Interop.Word.Application;
+using Task = System.Threading.Tasks.Task;
 
 namespace VisualTeX.WpsWriterVsto;
 
