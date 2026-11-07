@@ -336,24 +336,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
             if (!IsMathTypeShape(shape))
                 throw new InvalidOperationException("所选对象不是 MathType 公式。");
 
-            byte[] compoundFile;
-            using (var transaction = MathTypeOleStorage.BeginClipboardTransaction(() =>
-            {
-                Range? copyRange = null;
-                try
-                {
-                    copyRange = shape.Range;
-                    copyRange.Copy();
-                }
-                finally
-                {
-                    ReleaseComObject(copyRange);
-                }
-            }))
-            {
-                compoundFile = transaction.CompoundFile;
-            }
-
+            var compoundFile = ReadCompoundFile(shape);
             var native = MathTypeOleStorage.ReadEquationNative(compoundFile);
             var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(native);
             var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
@@ -760,6 +743,43 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
+    // WPS rejects the clipboard EmbeddedObject/EmbedSource FORMATETC, so read
+    // the stored compound file from WordOpenXML first and keep the clipboard
+    // transaction only as a Word-compatible fallback.
+    private static byte[] ReadCompoundFile(InlineShape shape)
+    {
+        Range? range = null;
+        try
+        {
+            range = shape.Range;
+            if (WpsMathTypeOpenXml.TryReadCompoundFile(range.WordOpenXML, out var fromOpenXml))
+                return fromOpenXml;
+        }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Reading compound file from WordOpenXML failed", error);
+        }
+        finally
+        {
+            ReleaseComObject(range);
+        }
+
+        using var transaction = MathTypeOleStorage.BeginClipboardTransaction(() =>
+        {
+            Range? copyRange = null;
+            try
+            {
+                copyRange = shape.Range;
+                copyRange.Copy();
+            }
+            finally
+            {
+                ReleaseComObject(copyRange);
+            }
+        });
+        return transaction.CompoundFile;
+    }
+
     private static bool IsMathTypeShape(InlineShape shape)
     {
         OLEFormat? format = null;
@@ -786,6 +806,25 @@ internal sealed class WpsWriterFormulaService : IDisposable
             {
                 ReleaseComObject(format);
                 format = null;
+            }
+
+            try
+            {
+                Range? shapeRange = null;
+                try
+                {
+                    shapeRange = shape.Range;
+                    if (WpsMathTypeOpenXml.TryReadCompoundFile(shapeRange.WordOpenXML, out _))
+                        return true;
+                }
+                finally
+                {
+                    ReleaseComObject(shapeRange);
+                }
+            }
+            catch (Exception error)
+            {
+                WpsLog.WriteException("WordOpenXML identity probe failed", error);
             }
 
             using var transaction = MathTypeOleStorage.BeginClipboardTransaction(() =>
@@ -923,7 +962,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
                     shape = shapes[index];
                     var start = shape.Range.Start;
                     if (start < position - 1 || start > position + 8) continue;
-                    if (IsMathTypeShape(shape)) return shape;
+                    if (IsEmbeddedOleShape(shape) || IsMathTypeShape(shape)) return shape;
                 }
                 catch
                 {
@@ -954,7 +993,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
                     shape = shapes[index];
                     var start = shape.Range.Start;
                     if (start < position - 8 || start > position + 8) continue;
-                    if (IsMathTypeShape(shape)) return shape;
+                    if (IsEmbeddedOleShape(shape) || IsMathTypeShape(shape)) return shape;
                 }
                 catch
                 {
@@ -973,16 +1012,44 @@ internal sealed class WpsWriterFormulaService : IDisposable
 
     private static void TryCacheMetadata(InlineShape shape, FormulaMetadata metadata)
     {
+        string encoded;
         try
         {
             metadata.Validate();
-            var encoded = FormulaMetadataCodec.Encode(metadata);
-            shape.Title = "VisualTeX MathType Formula";
-            shape.AlternativeText = encoded;
+            encoded = FormulaMetadataCodec.Encode(metadata);
         }
         catch (Exception error)
         {
-            WpsLog.WriteException("Cache formula metadata failed", error);
+            WpsLog.WriteException("Encoding formula metadata failed", error);
+            return;
+        }
+
+        // Identity lives in the VTMATH_ bookmark; both title and alternative
+        // text are best-effort caches. WPS fails some of these setters, so they
+        // must not block each other.
+        try { shape.AlternativeText = encoded; }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Setting formula alternative text failed (non-fatal)", error);
+        }
+
+        try { shape.Title = "VisualTeX MathType Formula"; }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Setting formula title failed (non-fatal)", error);
+        }
+    }
+
+    private static bool IsEmbeddedOleShape(InlineShape shape)
+    {
+        try
+        {
+            return shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                or WdInlineShapeType.wdInlineShapeLinkedOLEObject;
+        }
+        catch
+        {
+            return false;
         }
     }
 
