@@ -424,7 +424,11 @@ internal sealed class WpsWriterFormulaService : IDisposable
                 try { document.Bookmarks.Add(bookmark, shape.Range); }
                 catch (Exception error) { WpsLog.WriteException("Bind formula bookmark failed", error); }
                 TryCacheMetadata(shape, session.ToMetadata());
-                if (!capture.Inline)
+                if (capture.Inline)
+                {
+                    ApplyInlineBaselineCorrection(shape, session, prepared.HeightPt);
+                }
+                else
                 {
                     ConfigureDisplayParagraphLayout(
                         document,
@@ -517,6 +521,10 @@ internal sealed class WpsWriterFormulaService : IDisposable
                         session.Numbered,
                         prepared.HeightPt,
                         session.FontSizePt);
+                }
+                else
+                {
+                    ApplyInlineBaselineCorrection(shape, session, prepared.HeightPt);
                 }
             }
             finally
@@ -720,6 +728,120 @@ internal sealed class WpsWriterFormulaService : IDisposable
             (int)Math.Round(
                 (formulaHeightPt - size) / 2f,
                 MidpointRounding.AwayFromZero));
+    }
+
+    // Word anchors the bottom of an inline OLE to the prose baseline. Lower the
+    // object by the rendered descent (from the exported baseline) so the
+    // equation's own math baseline lands on the text baseline.
+    private static void ApplyInlineBaselineCorrection(
+        InlineShape shape,
+        OfficeSessionDocument session,
+        float actualHeightPt)
+    {
+        Range? range = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            var metadata = session.ToMetadata();
+            var exportedHeight = (float)(metadata.RenderHeightPx ?? 0d);
+            var exportedBaseline = metadata.Baseline.HasValue
+                ? (float?)metadata.Baseline.Value
+                : null;
+            var semanticSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
+            var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+                actualHeightPt,
+                exportedHeight,
+                exportedBaseline,
+                existingFontPosition: null,
+                sourceSemanticFontSizePoints: semanticSize,
+                targetSemanticFontSizePoints: semanticSize);
+            var clamped = Math.Max(-256, Math.Min(256, position));
+
+            range = shape.Range;
+            font = range.Font;
+            font.Position = 0;
+
+            if (TrySetEmbeddedOleResultPosition(range, clamped))
+                return;
+
+            Document? document = null;
+            Range? probe = null;
+            try
+            {
+                document = range.Document;
+                for (var index = range.Start; index < range.End; index++)
+                {
+                    ReleaseComObject(probe);
+                    probe = document.Range(index, index + 1);
+                    var text = probe.Text ?? string.Empty;
+                    if (text is not "\u0001" and not "\uFFFC") continue;
+                    ReleaseComObject(font);
+                    font = probe.Font;
+                    font.Position = clamped;
+                    return;
+                }
+
+                // Last resort: shift the whole host range.
+                ReleaseComObject(font);
+                font = range.Font;
+                font.Position = clamped;
+            }
+            finally
+            {
+                ReleaseComObject(probe);
+                ReleaseComObject(document);
+            }
+        }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Applying inline baseline correction failed", error);
+        }
+        finally
+        {
+            ReleaseComObject(font);
+            ReleaseComObject(range);
+        }
+    }
+
+    private static bool TrySetEmbeddedOleResultPosition(Range formulaRange, int position)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? result = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            fields = formulaRange.Fields;
+            if (fields.Count != 1)
+                return false;
+            field = fields[1];
+            if (field.Type != WdFieldType.wdFieldEmbed)
+                return false;
+
+            result = field.Result.Duplicate;
+            var text = result.Text ?? string.Empty;
+            if (!string.Equals(text, "\u0001", StringComparison.Ordinal)
+                && !string.Equals(text, "\uFFFC", StringComparison.Ordinal))
+                return false;
+            if (result.Start < formulaRange.Start
+                || result.End > formulaRange.End)
+                return false;
+
+            font = result.Font;
+            font.Position = position;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            ReleaseComObject(font);
+            ReleaseComObject(result);
+            ReleaseComObject(field);
+            ReleaseComObject(fields);
+        }
     }
 
     private void InsertFlatOpcOrClipboard(
