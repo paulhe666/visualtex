@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Application = Microsoft.Office.Interop.Word.Application;
 using Task = System.Threading.Tasks.Task;
@@ -60,7 +61,11 @@ internal sealed class WpsWriterFormulaService : IDisposable
             try
             {
                 await _dispatcher
-                    .InvokeAsync(() => ApplyCreate(capture, session, prepared))
+                    .InvokeAsync(() =>
+                    {
+                        ApplyCreate(capture, session, prepared);
+                        return true;
+                    })
                     .ConfigureAwait(false);
                 await _client.CompleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 WpsLog.Write($"Created MathType formula {session.FormulaId}.");
@@ -128,7 +133,11 @@ internal sealed class WpsWriterFormulaService : IDisposable
             try
             {
                 await _dispatcher
-                    .InvokeAsync(() => ApplyEdit(capture, session, prepared))
+                    .InvokeAsync(() =>
+                    {
+                        ApplyEdit(capture, session, prepared);
+                        return true;
+                    })
                     .ConfigureAwait(false);
                 await _client.CompleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 WpsLog.Write($"Updated MathType formula {session.FormulaId}.");
@@ -537,10 +546,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
             var rightEdge = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
             if (rightEdge <= 0) return;
             tabStops = paragraph.TabStops;
-            tabStop = tabStops.Add(
-                rightEdge,
-                WdTabAlignment.wdAlignTabRight,
-                WdTabLeader.wdTabLeaderSpaces);
+            tabStop = tabStops.Add(rightEdge, WdTabAlignment.wdAlignTabRight);
         }
         catch (Exception error)
         {

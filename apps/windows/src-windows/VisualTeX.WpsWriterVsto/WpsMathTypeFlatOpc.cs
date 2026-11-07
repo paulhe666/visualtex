@@ -429,7 +429,7 @@ internal static class WpsMathTypeFlatOpc
             result,
             insertionOffset + 20,
             previewWmf.Length - insertionOffset);
-        BitConverter.GetBytes(checked(declaredWords + 10)).CopyTo(result, 28);
+        BitConverter.GetBytes(checked(declaredWords + 10u)).CopyTo(result, 28);
         return result;
     }
 
