@@ -792,7 +792,8 @@ export function markdownKeymap(mode: () => InputMode, keys: { bold: Command; ita
     "Mod-+": only(headingStep(true)),
     "Mod--": only(headingStep(false)),
     "Mod-t": only(insertTable(3, 3)),
-    "Shift-Mod-k": only(insertCodeBlock("")),
+    // on the Mac ⌘⇧K stays the keypad's (Typora's code block there is ⌥⌘C)
+    ...(MAC ? {} : { "Shift-Mod-k": only(insertCodeBlock("")) }),
     "Shift-Mod-m": only(insertDisplayLatex("")),
     "Shift-Mod-q": only(quoteKey),
     "Shift-Mod-[": only(toggleList("ordered_list")),
