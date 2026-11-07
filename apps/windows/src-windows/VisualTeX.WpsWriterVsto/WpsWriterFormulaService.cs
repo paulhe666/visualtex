@@ -423,7 +423,15 @@ internal sealed class WpsWriterFormulaService : IDisposable
                 try { document.Bookmarks.Add(bookmark, shape.Range); }
                 catch (Exception error) { WpsLog.WriteException("Bind formula bookmark failed", error); }
                 TryCacheMetadata(shape, session.ToMetadata());
-                if (!capture.Inline) EnsureDisplayTabStops(document, shape);
+                if (!capture.Inline)
+                {
+                    ConfigureDisplayParagraphLayout(
+                        document,
+                        shape,
+                        session.Numbered,
+                        prepared.HeightPt,
+                        session.FontSizePt);
+                }
             }
             finally
             {
@@ -500,7 +508,15 @@ internal sealed class WpsWriterFormulaService : IDisposable
                 try { document.Bookmarks.Add(bookmark, shape.Range); }
                 catch (Exception error) { WpsLog.WriteException("Rebind formula bookmark failed", error); }
                 TryCacheMetadata(shape, session.ToMetadata());
-                if (capture.Display) EnsureDisplayTabStops(document, shape);
+                if (capture.Display)
+                {
+                    ConfigureDisplayParagraphLayout(
+                        document,
+                        shape,
+                        session.Numbered,
+                        prepared.HeightPt,
+                        session.FontSizePt);
+                }
             }
             finally
             {
@@ -515,129 +531,194 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
-    // Center tab at the middle of the text column and right tab at its right
-    // edge. Paragraph centering plus a single right tab overflows the column
-    // and pushes the number to a wrapped line.
-    private static WpsMathTypeFlatOpc.DisplayTabs? ResolveDisplayTabs(
+    // Mirrors the Word add-in's display layout: zero spacing/indents, Justify,
+    // a center tab at half of the text column and a right tab at its edge, a
+    // leading tab, and a number raised by (formulaHeight - fontSize) / 2 so the
+    // number is vertically centered with the equation.
+    private static void ConfigureDisplayParagraphLayout(
         Document document,
-        Range insertion)
+        InlineShape shape,
+        bool numbered,
+        float formulaHeightPt,
+        double fontSizePt)
     {
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? shapeRange = null;
+        ParagraphFormat? format = null;
+        TabStops? tabStops = null;
+        Range? numberRange = null;
+        Microsoft.Office.Interop.Word.Font? numberFont = null;
         try
         {
-            paragraphs = insertion.Paragraphs;
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
             paragraph = paragraphs[1];
-            return ResolveDisplayTabs(document, paragraph);
+            paragraphRange = paragraph.Range;
+
+            format = paragraph.Format;
+            format.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
+            format.SpaceBefore = 0f;
+            format.SpaceAfter = 0f;
+            format.LeftIndent = 0f;
+            format.RightIndent = 0f;
+            format.FirstLineIndent = 0f;
+
+            EnsureDisplayLeadingTab(document, paragraphRange, shapeRange);
+            ReleaseComObject(shapeRange);
+            shapeRange = shape.Range;
+
+            var availableWidth = ResolveTextColumnWidth(paragraphRange);
+            if (availableWidth > 0)
+            {
+                tabStops = format.TabStops;
+                tabStops.ClearAll();
+                tabStops.Add(
+                    availableWidth / 2f,
+                    WdTabAlignment.wdAlignTabCenter,
+                    WdTabLeader.wdTabLeaderSpaces);
+                if (numbered)
+                {
+                    tabStops.Add(
+                        availableWidth,
+                        WdTabAlignment.wdAlignTabRight,
+                        WdTabLeader.wdTabLeaderSpaces);
+                }
+            }
+
+            if (!numbered) return;
+
+            var numberStart = Math.Min(shapeRange.End, paragraphRange.End);
+            var numberEnd = Math.Max(numberStart, paragraphRange.End - 1);
+            if (numberEnd <= numberStart) return;
+
+            numberRange = document.Range(numberStart, numberEnd);
+            var normalized = FormulaFontSize.Normalize(fontSizePt);
+            numberFont = numberRange.Font;
+            numberFont.Size = normalized;
+            try { numberFont.SizeBi = normalized; } catch { }
+            numberFont.Position = CalculateNumberFontPosition(formulaHeightPt, normalized);
         }
         catch (Exception error)
         {
-            WpsLog.WriteException("Resolving display tabs from insertion failed", error);
-            return null;
+            WpsLog.WriteException("Configuring display layout failed", error);
         }
         finally
         {
+            ReleaseComObject(numberFont);
+            ReleaseComObject(numberRange);
+            ReleaseComObject(tabStops);
+            ReleaseComObject(format);
+            ReleaseComObject(shapeRange);
+            ReleaseComObject(paragraphRange);
             ReleaseComObject(paragraph);
             ReleaseComObject(paragraphs);
         }
     }
 
-    private static WpsMathTypeFlatOpc.DisplayTabs? ResolveDisplayTabs(
-        Document document,
-        Paragraph paragraph)
+    private static float ResolveTextColumnWidth(Range paragraphRange)
     {
+        Sections? sections = null;
+        Section? section = null;
         PageSetup? pageSetup = null;
         TextColumns? textColumns = null;
         try
         {
-            pageSetup = document.PageSetup;
-            var textWidth = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
-            if (!(textWidth > 0)) return null;
+            sections = paragraphRange.Sections;
+            if (sections.Count <= 0) return 0f;
+            section = sections[1];
+            pageSetup = section.PageSetup;
+            var available = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
+            if (!(available > 0)) return 0f;
 
-            var columnCount = 1;
-            var columnSpacing = 0f;
             try
             {
                 textColumns = pageSetup.TextColumns;
-                columnCount = Math.Max(1, textColumns.Count);
+                var columnCount = Math.Max(1, textColumns.Count);
                 if (columnCount > 1)
                 {
                     TextColumn? firstColumn = null;
+                    var spacing = 0f;
                     try
                     {
                         firstColumn = textColumns[1];
-                        columnSpacing = firstColumn.SpaceAfter;
+                        spacing = firstColumn.SpaceAfter;
                     }
                     finally
                     {
                         ReleaseComObject(firstColumn);
                     }
+                    available = spacing > 0
+                        ? (available - spacing * (columnCount - 1)) / columnCount
+                        : available / columnCount;
                 }
             }
             catch (Exception error)
             {
                 WpsLog.WriteException(
-                    "Reading text columns failed; assuming a single column",
+                    "Reading text columns failed; assuming one column",
                     error);
-                columnCount = 1;
             }
 
-            var columnWidth = columnCount <= 1
-                ? textWidth
-                : (textWidth - columnSpacing * (columnCount - 1)) / columnCount;
-            if (!(columnWidth > 0)) return null;
-
-            var leftEdge = Math.Min(
-                Math.Max(0f, paragraph.LeftIndent),
-                columnWidth * 0.25f);
-            var rightEdge = Math.Max(
-                columnWidth - Math.Max(0f, paragraph.RightIndent),
-                columnWidth * 0.5f);
-            return new WpsMathTypeFlatOpc.DisplayTabs(
-                (leftEdge + rightEdge) / 2f,
-                rightEdge);
+            return Math.Max(72f, available);
         }
         catch (Exception error)
         {
-            WpsLog.WriteException("Resolving display tab stops failed", error);
-            return null;
+            WpsLog.WriteException("Resolving text column width failed", error);
+            return 0f;
         }
         finally
         {
             ReleaseComObject(textColumns);
             ReleaseComObject(pageSetup);
+            ReleaseComObject(section);
+            ReleaseComObject(sections);
         }
     }
 
-    private static void EnsureDisplayTabStops(Document document, InlineShape shape)
+    private static void EnsureDisplayLeadingTab(
+        Document document,
+        Range paragraphRange,
+        Range shapeRange)
     {
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        TabStops? tabStops = null;
+        Range? prefix = null;
+        Range? insertion = null;
         try
         {
-            paragraphs = shape.Range.Paragraphs;
-            paragraph = paragraphs[1];
-            paragraph.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
-
-            var tabs = ResolveDisplayTabs(document, paragraph);
-            if (tabs is null) return;
-
-            tabStops = paragraph.TabStops;
-            tabStops.ClearAll();
-            tabStops.Add(tabs.Value.CenterPt, WdTabAlignment.wdAlignTabCenter);
-            tabStops.Add(tabs.Value.RightPt, WdTabAlignment.wdAlignTabRight);
+            prefix = document.Range(paragraphRange.Start, shapeRange.Start);
+            if ((prefix.Text ?? string.Empty).EndsWith("\t", StringComparison.Ordinal))
+                return;
+            insertion = document.Range(shapeRange.Start, shapeRange.Start);
+            insertion.Text = "\t";
         }
         catch (Exception error)
         {
-            WpsLog.WriteException("Applying display tab stops failed", error);
+            WpsLog.WriteException("Ensuring display leading tab failed", error);
         }
         finally
         {
-            ReleaseComObject(tabStops);
-            ReleaseComObject(paragraph);
-            ReleaseComObject(paragraphs);
+            ReleaseComObject(insertion);
+            ReleaseComObject(prefix);
         }
+    }
+
+    private static int CalculateNumberFontPosition(
+        float formulaHeightPt,
+        float numberFontSizePt)
+    {
+        if (!(formulaHeightPt > 0)
+            || float.IsNaN(formulaHeightPt)
+            || float.IsInfinity(formulaHeightPt))
+            return 0;
+        var size = numberFontSizePt > 0 && numberFontSizePt <= 256
+            ? numberFontSizePt
+            : 11f;
+        return Math.Max(
+            0,
+            (int)Math.Round(
+                (formulaHeightPt - size) / 2f,
+                MidpointRounding.AwayFromZero));
     }
 
     private void InsertFlatOpcOrClipboard(
@@ -648,7 +729,6 @@ internal sealed class WpsWriterFormulaService : IDisposable
         string numberFormatId,
         string bookmarkName)
     {
-        var displayTabs = display ? ResolveDisplayTabs(document, insertion) : null;
         var flatOpc = WpsMathTypeFlatOpc.Build(
             prepared.CompoundFile,
             prepared.PreviewWmf,
@@ -656,8 +736,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
             prepared.HeightPt,
             display,
             numberFormatId,
-            bookmarkName,
-            displayTabs);
+            bookmarkName);
 
         try
         {
@@ -1027,7 +1106,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
                     if (!name.StartsWith(BookmarkPrefix, StringComparison.Ordinal)) continue;
                     range = bookmark.Range;
                     if (range.Start <= shapeRange.Start && range.End >= shapeRange.End)
-                        return name.Substring(BookmarkPrefix.Length);
+                        return NormalizeFormulaId(name.Substring(BookmarkPrefix.Length));
                 }
                 finally
                 {
@@ -1041,6 +1120,17 @@ internal sealed class WpsWriterFormulaService : IDisposable
         {
             ReleaseComObject(bookmarks);
         }
+    }
+
+    // Word bookmark names cannot contain hyphens, so the formula id is stored
+    // in "N" form. The Session API accepts only the canonical hyphenated UUID.
+    private static string NormalizeFormulaId(string value)
+    {
+        if (Guid.TryParseExact(value, "N", out var compact))
+            return compact.ToString("D");
+        if (Guid.TryParse(value, out var parsed))
+            return parsed.ToString("D");
+        return value;
     }
 
     private static InlineShape? FindMathTypeShapeNear(Document document, int position)
