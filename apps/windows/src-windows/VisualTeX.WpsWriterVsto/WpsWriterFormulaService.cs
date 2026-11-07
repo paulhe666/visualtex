@@ -423,7 +423,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
                 try { document.Bookmarks.Add(bookmark, shape.Range); }
                 catch (Exception error) { WpsLog.WriteException("Bind formula bookmark failed", error); }
                 TryCacheMetadata(shape, session.ToMetadata());
-                if (!capture.Inline) FormatDisplayParagraph(document, shape);
+                if (!capture.Inline) EnsureDisplayTabStops(document, shape);
             }
             finally
             {
@@ -500,7 +500,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
                 try { document.Bookmarks.Add(bookmark, shape.Range); }
                 catch (Exception error) { WpsLog.WriteException("Rebind formula bookmark failed", error); }
                 TryCacheMetadata(shape, session.ToMetadata());
-                if (capture.Display) FormatDisplayParagraph(document, shape);
+                if (capture.Display) EnsureDisplayTabStops(document, shape);
             }
             finally
             {
@@ -515,33 +515,126 @@ internal sealed class WpsWriterFormulaService : IDisposable
         }
     }
 
-    private static void FormatDisplayParagraph(Document document, InlineShape shape)
+    // Center tab at the middle of the text column and right tab at its right
+    // edge. Paragraph centering plus a single right tab overflows the column
+    // and pushes the number to a wrapped line.
+    private static WpsMathTypeFlatOpc.DisplayTabs? ResolveDisplayTabs(
+        Document document,
+        Range insertion)
     {
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
+        try
+        {
+            paragraphs = insertion.Paragraphs;
+            paragraph = paragraphs[1];
+            return ResolveDisplayTabs(document, paragraph);
+        }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Resolving display tabs from insertion failed", error);
+            return null;
+        }
+        finally
+        {
+            ReleaseComObject(paragraph);
+            ReleaseComObject(paragraphs);
+        }
+    }
+
+    private static WpsMathTypeFlatOpc.DisplayTabs? ResolveDisplayTabs(
+        Document document,
+        Paragraph paragraph)
+    {
         PageSetup? pageSetup = null;
+        TextColumns? textColumns = null;
+        try
+        {
+            pageSetup = document.PageSetup;
+            var textWidth = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
+            if (!(textWidth > 0)) return null;
+
+            var columnCount = 1;
+            var columnSpacing = 0f;
+            try
+            {
+                textColumns = pageSetup.TextColumns;
+                columnCount = Math.Max(1, textColumns.Count);
+                if (columnCount > 1)
+                {
+                    TextColumn? firstColumn = null;
+                    try
+                    {
+                        firstColumn = textColumns[1];
+                        columnSpacing = firstColumn.SpaceAfter;
+                    }
+                    finally
+                    {
+                        ReleaseComObject(firstColumn);
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                WpsLog.WriteException(
+                    "Reading text columns failed; assuming a single column",
+                    error);
+                columnCount = 1;
+            }
+
+            var columnWidth = columnCount <= 1
+                ? textWidth
+                : (textWidth - columnSpacing * (columnCount - 1)) / columnCount;
+            if (!(columnWidth > 0)) return null;
+
+            var leftEdge = Math.Min(
+                Math.Max(0f, paragraph.LeftIndent),
+                columnWidth * 0.25f);
+            var rightEdge = Math.Max(
+                columnWidth - Math.Max(0f, paragraph.RightIndent),
+                columnWidth * 0.5f);
+            return new WpsMathTypeFlatOpc.DisplayTabs(
+                (leftEdge + rightEdge) / 2f,
+                rightEdge);
+        }
+        catch (Exception error)
+        {
+            WpsLog.WriteException("Resolving display tab stops failed", error);
+            return null;
+        }
+        finally
+        {
+            ReleaseComObject(textColumns);
+            ReleaseComObject(pageSetup);
+        }
+    }
+
+    private static void EnsureDisplayTabStops(Document document, InlineShape shape)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
         TabStops? tabStops = null;
-        TabStop? tabStop = null;
         try
         {
             paragraphs = shape.Range.Paragraphs;
             paragraph = paragraphs[1];
-            paragraph.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
-            pageSetup = document.PageSetup;
-            var rightEdge = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
-            if (rightEdge <= 0) return;
+            paragraph.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+
+            var tabs = ResolveDisplayTabs(document, paragraph);
+            if (tabs is null) return;
+
             tabStops = paragraph.TabStops;
-            tabStop = tabStops.Add(rightEdge, WdTabAlignment.wdAlignTabRight);
+            tabStops.ClearAll();
+            tabStops.Add(tabs.Value.CenterPt, WdTabAlignment.wdAlignTabCenter);
+            tabStops.Add(tabs.Value.RightPt, WdTabAlignment.wdAlignTabRight);
         }
         catch (Exception error)
         {
-            WpsLog.WriteException("Formatting display paragraph failed", error);
+            WpsLog.WriteException("Applying display tab stops failed", error);
         }
         finally
         {
-            ReleaseComObject(tabStop);
             ReleaseComObject(tabStops);
-            ReleaseComObject(pageSetup);
             ReleaseComObject(paragraph);
             ReleaseComObject(paragraphs);
         }
@@ -555,6 +648,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
         string numberFormatId,
         string bookmarkName)
     {
+        var displayTabs = display ? ResolveDisplayTabs(document, insertion) : null;
         var flatOpc = WpsMathTypeFlatOpc.Build(
             prepared.CompoundFile,
             prepared.PreviewWmf,
@@ -562,7 +656,8 @@ internal sealed class WpsWriterFormulaService : IDisposable
             prepared.HeightPt,
             display,
             numberFormatId,
-            bookmarkName);
+            bookmarkName,
+            displayTabs);
 
         try
         {

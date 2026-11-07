@@ -33,6 +33,18 @@ internal static class WpsMathTypeFlatOpc
         Left,
     }
 
+    internal readonly struct DisplayTabs
+    {
+        internal DisplayTabs(float centerPt, float rightPt)
+        {
+            CenterPt = centerPt;
+            RightPt = rightPt;
+        }
+
+        internal float CenterPt { get; }
+        internal float RightPt { get; }
+    }
+
     internal static string Build(
         byte[] compoundFile,
         byte[] previewWmf,
@@ -40,7 +52,8 @@ internal static class WpsMathTypeFlatOpc
         float heightPt,
         bool display,
         string? numberFormatId,
-        string? bookmarkName)
+        string? bookmarkName,
+        DisplayTabs? displayTabs = null)
     {
         if (compoundFile is null || compoundFile.Length == 0)
             throw new InvalidDataException("MathType Flat OPC requires a compound file.");
@@ -173,6 +186,28 @@ internal static class WpsMathTypeFlatOpc
             oleObject);
 
         var paragraph = new XElement(WordNamespace + "p");
+
+        // A centered display equation needs a center tab at the middle of the
+        // text column and a right tab at its right edge. Paragraph centering
+        // plus a single right tab overflows the column and wraps the number.
+        if (display && displayTabs is { } tabs)
+        {
+            paragraph.Add(new XElement(
+                WordNamespace + "pPr",
+                new XElement(
+                    WordNamespace + "tabs",
+                    new XElement(
+                        WordNamespace + "tab",
+                        new XAttribute(WordNamespace + "val", "center"),
+                        new XAttribute(WordNamespace + "pos", Twips(tabs.CenterPt))),
+                    new XElement(
+                        WordNamespace + "tab",
+                        new XAttribute(WordNamespace + "val", "right"),
+                        new XAttribute(WordNamespace + "pos", Twips(tabs.RightPt)))),
+                new XElement(
+                    WordNamespace + "jc",
+                    new XAttribute(WordNamespace + "val", "left"))));
+        }
 
         if (display && placement != NumberPlacement.Left)
             paragraph.Add(TabRun());
