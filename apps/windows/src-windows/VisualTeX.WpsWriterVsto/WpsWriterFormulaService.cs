@@ -17,6 +17,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
 {
     private const string NumberFormatVariable = "VT_EquationNumberFormat";
     private const string BookmarkPrefix = "VTMATH_";
+    private const float DefaultTextWidthPoints = 468f;
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(30);
 
     private readonly Application _application;
@@ -626,11 +627,11 @@ internal sealed class WpsWriterFormulaService : IDisposable
         try
         {
             sections = paragraphRange.Sections;
-            if (sections.Count <= 0) return 0f;
+            if (sections.Count <= 0) return DefaultTextWidthPoints;
             section = sections[1];
             pageSetup = section.PageSetup;
             var available = pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin;
-            if (!(available > 0)) return 0f;
+            if (!(available > 0)) return DefaultTextWidthPoints;
 
             try
             {
@@ -666,7 +667,7 @@ internal sealed class WpsWriterFormulaService : IDisposable
         catch (Exception error)
         {
             WpsLog.WriteException("Resolving text column width failed", error);
-            return 0f;
+            return DefaultTextWidthPoints;
         }
         finally
         {
