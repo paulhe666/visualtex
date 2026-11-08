@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -50,18 +50,32 @@ if (process.platform === "darwin") {
   ]) {
     rmSync(generatedPath, { recursive: true, force: true });
   }
-  // bundle/dmg: everything but the other editions' and flavours' DMGs (-personal, -no-ocr), so building one
-  // never deletes another
+  // bundle/dmg: the other editions' and flavours' DMGs (-personal, -no-ocr) are moved aside while Tauri
+  // rebuilds the folder (its DMG bundler empties it) and put back when this build ends, so building one never
+  // deletes another
   const dmgDirectory = "src-tauri/target/release/bundle/dmg";
+  const kept = [];
   try {
     for (const entry of readdirSync(dmgDirectory)) {
-      if (!/-(personal|no-ocr)\.dmg$/.test(entry)) rmSync(join(dmgDirectory, entry), { recursive: true, force: true });
+      if (/-(personal|no-ocr)\.dmg$/.test(entry)) {
+        const aside = join("src-tauri/target/release/bundle", `.kept-${entry}`);
+        renameSync(join(dmgDirectory, entry), aside);
+        kept.push([aside, join(dmgDirectory, entry)]);
+      }
     }
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
       throw error;
     }
   }
+  rmSync(dmgDirectory, { recursive: true, force: true });
+  process.on("exit", () => {
+    for (const [aside, original] of kept) {
+      if (!existsSync(aside)) continue;
+      mkdirSync(dmgDirectory, { recursive: true });
+      renameSync(aside, original);
+    }
+  });
 }
 
 const forwardedArgs = process.argv.slice(2);
