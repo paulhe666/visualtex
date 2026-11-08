@@ -230,5 +230,29 @@
 {
 "tfm": "esint10",
 "family": "VTX Esint 10"
+},
+{
+"tfm": "stmary5",
+"family": "VTX St Mary Road 5"
+},
+{
+"tfm": "stmary7",
+"family": "VTX St Mary Road 7"
+},
+{
+"tfm": "stmary10",
+"family": "VTX St Mary Road 10"
+},
+{
+"tfm": "eurm5",
+"family": "VTX Euler Roman 5"
+},
+{
+"tfm": "eurm7",
+"family": "VTX Euler Roman 7"
+},
+{
+"tfm": "eurm10",
+"family": "VTX Euler Roman 10"
 }
 ]

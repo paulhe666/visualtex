@@ -495,6 +495,8 @@ export function insertImageNodes(state: EditorState, images: Node[], schema: Sch
     const name = $from.node(d).type.name;
     if (name === "table" || name === "bibliography") depth = d;
   }
+  // a figure's or table's caption: after the figure or table (figures.ts)
+  if (depth > 1 && ["figure", "table_figure"].includes($from.node(depth - 1).type.name)) depth--;
   if (depth < 1) depth = 1;
   const after = sel instanceof NodeSelection && !sel.node.isInline ? sel.to : $from.after(depth);
   const line = schema.nodes.paragraph.create({ align: "center" }, images);
@@ -574,8 +576,9 @@ export function imageDropTarget(view: EditorView, x: number, y: number, image: N
   const hit = view.posAtCoords({ left: Math.max(left + 1, Math.min(right - 1, x)), top: y });
   if (!hit) return null;
   const $hit = state.doc.resolve(hit.pos);
-  // the textblock under the pointer (an atom block such as a display formula: its own depth)
-  const depth = $hit.depth;
+  // the textblock under the pointer (an atom block such as a display formula: its own depth); a figure's line or
+  // caption: the figure's (a line goes before or after the figure, figures.ts)
+  const depth = $hit.depth > 1 && $hit.node($hit.depth - 1).type.name === "figure" ? $hit.depth - 1 : $hit.depth;
   const atom = hit.inside >= 0 ? state.doc.nodeAt(hit.inside) : null;
   if (atom && atom.isBlock && atom.isAtom) {
     const dom = view.nodeDOM(hit.inside) as HTMLElement | null;
@@ -590,7 +593,7 @@ export function imageDropTarget(view: EditorView, x: number, y: number, image: N
   }
   // outside tables (a line before or after the table)
   for (let d = $hit.depth; d > 0; d--) {
-    if ($hit.node(d).type.name === "table") return lineTarget(view, hit.pos, d, y);
+    if ($hit.node(d).type.name === "table") return lineTarget(view, hit.pos, d > 1 && $hit.node(d - 1).type.name === "table_figure" ? d - 1 : d, y);
   }
   const parent = $hit.parent;
   if (parent.type.name !== "paragraph" || !imagesAllowedIn(state, hit.pos)) return lineTarget(view, hit.pos, depth, y);
@@ -652,8 +655,11 @@ export function imageDropMarker(view: EditorView, target: ImageDropTarget | null
 export function lineMetrics(view: EditorView, pos: number): { font: number; width: number } | null {
   const $pos = view.state.doc.resolve(pos);
   if (!$pos.parent.isTextblock) return null;
-  const dom = view.nodeDOM($pos.before()) as HTMLElement | null;
+  let dom = view.nodeDOM($pos.before()) as HTMLElement | null;
   if (!dom) return null;
+  // a wrapped figure's line is as wide as its image: the line it stands in (figures.ts)
+  const wrapped = dom.parentElement?.closest<HTMLElement>(".vtx-figure.is-wrap-left, .vtx-figure.is-wrap-right");
+  if (wrapped?.parentElement) dom = wrapped.parentElement;
   const style = getComputedStyle(dom);
   const width = dom.clientWidth - parseFloat(style.paddingLeft || "0") - parseFloat(style.paddingRight || "0");
   return { font: parseFloat(style.fontSize) || 16, width: Math.max(1, width) };
@@ -745,6 +751,11 @@ export function setImageAlign(view: EditorView, align: "left" | "center" | "righ
   if (isImageLine(paragraph) && !sel.node.attrs.wrap) {
     tr.setNodeMarkup(paragraphPos, undefined, { ...paragraph.attrs, align: align === "left" ? null : align });
     tr.setSelection(NodeSelection.create(tr.doc, sel.from));
+  } else if ($pos.depth > 1 && $pos.node($pos.depth - 1).type.name === "figure") {
+    // a wrapped figure (figures.ts): its image line again, in place, the caption with it
+    tr.setNodeMarkup(sel.from, undefined, { ...sel.node.attrs, wrap: null });
+    tr.setNodeMarkup(paragraphPos, undefined, { ...paragraph.attrs, align: align === "left" ? null : align });
+    tr.setSelection(NodeSelection.create(tr.doc, sel.from));
   } else {
     // out of the sentence (or out of the wrap): an image line of its own before the paragraph
     const attrs: Record<string, any> = { ...(sel.node.attrs as Record<string, any>), wrap: null };
@@ -784,7 +795,9 @@ export function setImageWrap(view: EditorView, side: "left" | "right"): boolean 
 export function wrapTargetFor(state: EditorState, pos: number): number | null {
   const $pos = state.doc.resolve(pos);
   if ($pos.depth === 1 && wrappable(state.doc, $pos.before())) return $pos.before();
-  if ($pos.depth !== 1) return null;
+  // an image in a figure (figures.ts): the figure's neighbours
+  const inFigure = $pos.depth === 2 && $pos.node(1).type.name === "figure";
+  if ($pos.depth !== 1 && !inFigure) return null;
   const index = $pos.index(0);
   const next = index + 1 < state.doc.childCount ? state.doc.child(index + 1) : null;
   if (next && next.type.name === "paragraph" && next.textContent.trim()) return $pos.after(1);
@@ -912,7 +925,9 @@ class ImageView implements NodeView {
     if (pos === undefined) return;
     const view = this.view;
     const $pos = view.state.doc.resolve(pos);
-    const line = view.nodeDOM($pos.before()) as HTMLElement | null;
+    // a wrapped figure (figures.ts) is as wide as its image: the line it stands in, and the figure follows the width
+    const figure = this.dom.closest<HTMLElement>(".vtx-figure.is-wrap-left, .vtx-figure.is-wrap-right");
+    const line = (figure?.parentElement ?? view.nodeDOM($pos.before())) as HTMLElement | null;
     if (!line) return;
     const style = getComputedStyle(line);
     const lineWidth = Math.max(1, line.clientWidth - parseFloat(style.paddingLeft || "0") - parseFloat(style.paddingRight || "0"));
@@ -947,6 +962,7 @@ class ImageView implements NodeView {
       }
       width = next;
       this.dom.style.width = `${(width * 100).toFixed(2)}%`;
+      if (figure) figure.style.width = `${(width * 100).toFixed(2)}%`;
       label.textContent = `${Math.round(width * 100)}%`;
       const r = this.dom.getBoundingClientRect();
       label.style.left = `${side === "left" ? r.left : r.right}px`;
@@ -1097,6 +1113,8 @@ function normalize(state: EditorState): Transaction | null {
       return false;
     }
     if (!node.attrs.wrap) return false;
+    // a wrapped image in its figure (figures.ts): the figure is placed beside its paragraph
+    if ($pos.depth === 2 && $pos.node(1).type.name === "figure") return false;
     if (!parent || $pos.depth !== 1 || !parent.textContent.trim()) fixes.push({ pos, node, kind: "unwrap" });
     else if (index !== 0) {
       // a second wrapped image in the paragraph does not wrap
@@ -1161,7 +1179,9 @@ export function imagesPlugin(options: ImagesPluginOptions): Plugin<DecorationSet
           // a paragraph after the image's line
           const $pos = view.state.doc.resolve(sel.from);
           if (isImageLine($pos.parent) || sel.node.attrs.wrap) {
-            const after = sel.node.attrs.wrap ? $pos.after() : $pos.after();
+            // after its figure (figures.ts), not between the line and the caption
+            const inFigure = $pos.depth > 1 && $pos.node($pos.depth - 1).type.name === "figure";
+            const after = inFigure ? $pos.after($pos.depth - 1) : $pos.after();
             const tr = view.state.tr.insert(after, view.state.schema.nodes.paragraph.create());
             tr.setSelection(TextSelection.create(tr.doc, after + 1));
             view.dispatch(tr.scrollIntoView());

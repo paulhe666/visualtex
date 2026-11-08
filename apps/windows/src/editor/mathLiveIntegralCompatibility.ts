@@ -1,5 +1,6 @@
 import {
   convertLatexToMarkup,
+  visualTexPackageCommands,
   type MathfieldElement,
 } from "mathlive";
 import "../math/customSymbolRegistration.ts";
@@ -143,7 +144,8 @@ export function expandVisualTexLatexForLayout(
   callerMacroNames: ReadonlySet<string> = new Set(),
 ) {
   return expandCustomSymbolsForMathLiveMarkup(
-    expandVisualTexMathLiveCompatibilityMacros(text, new Set(callerMacroNames)),
+    // the kernel reads the package commands with their packages' arguments
+    expandVisualTexMathLiveCompatibilityMacros(text, new Set([...callerMacroNames, ...visualTexPackageCommands])),
   );
 }
 

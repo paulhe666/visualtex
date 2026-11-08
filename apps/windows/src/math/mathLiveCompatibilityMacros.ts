@@ -18,7 +18,10 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
 
 // \bm is the kernel's own command (symbol-wide bold whose content stays
 // editable); a macro wrapper would hide its content from editing and styling.
-const KERNEL_NATIVE_COMMANDS = new Set(["bm"]);
+// \braket is the kernel's too: braket.sty's one argument, physics' second
+// one only when a brace group follows (a fixed two-argument macro would
+// swallow the next token).
+const KERNEL_NATIVE_COMMANDS = new Set(["bm", "braket"]);
 
 const legacyPackageMacros = Object.fromEntries(
   Object.entries(VISUALTEX_PACKAGE_COMPATIBILITY_MACROS)

@@ -374,6 +374,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         lang === "en"
           ? { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text (image left)", wrapRight: "Wrap text (image right)" }
           : { left: "左对齐", center: "居中", right: "右对齐", wrapLeft: "文字环绕（图片在左）", wrapRight: "文字环绕（图片在右）" },
+      captionLabels: () => ({ caption: lang === "en" ? "Caption" : "题注" }),
     });
 
   useEffect(() => {

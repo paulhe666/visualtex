@@ -13,6 +13,7 @@ import './functions';
 import './mhchem';
 import './styling';
 import './symbols';
+import './visualtex-commands';
 
 import './definitions-utils';
 export * from './definitions-utils';

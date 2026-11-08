@@ -57,7 +57,25 @@ export function slotOrder(atom: CoreAtom, fractionOrder: FractionOrder = "numera
   // \overset{A}{B} and its kin: the arguments in the order they are written
   const argumentOrder = ARGUMENT_ORDER[atom.command ?? ""];
   if (atom.type === "overunder" && argumentOrder) return [...argumentOrder, ...GENERIC_ORDER.filter((b) => !argumentOrder.includes(b))].filter(has);
+  // tensor.sty \tensor[pre]{T}{post}: prescripts, nucleus, indices, as written and drawn
+  if (isIndexOwner(atom) && atom.command !== "\\indices" && atom.command !== "\\indices*") return ["above", "body", "below"].filter(has);
   return GENERIC_ORDER.filter(has);
+}
+
+/** tensor.sty's \tensor and \indices: their index strings are lists of one-script items. */
+function isIndexOwner(atom: CoreAtom | undefined): boolean {
+  return /^\\(?:tensor|indices)\*?$/.test(atom?.command ?? "");
+}
+
+/**
+ * Whether an atom is an item (or the start) of a tensor index string
+ * (\tensor's prescripts and indices, \indices' argument): only the indices
+ * themselves are edited there.
+ */
+export function inIndexList(atom: CoreAtom): boolean {
+  const owner = atom.parent;
+  if (!isIndexOwner(owner)) return false;
+  return /^\\indices/.test(owner!.command!) ? atom.parentBranch === "body" : atom.parentBranch === "above" || atom.parentBranch === "below";
 }
 
 /** Over/under commands whose slots are navigated in argument order. */

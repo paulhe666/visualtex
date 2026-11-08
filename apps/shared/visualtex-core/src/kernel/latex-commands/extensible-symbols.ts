@@ -85,9 +85,9 @@ defineFunction(['underbrace'], '{:auto}', {
 defineFunction(
   [
     'xrightarrow',
-    'longrightarrow', // From mhchem.sty package
+    // VisualTeX: \longrightarrow, \longleftarrow and \longleftrightarrow are
+    // LaTeX's symbols (symbols.ts), which take no argument
     'xleftarrow',
-    'longleftarrow', // From mhchem.sty package
     'xRightarrow',
     'xLeftarrow',
     'xleftharpoonup',
@@ -98,7 +98,6 @@ defineFunction(
     'xtwoheadleftarrow',
     'xtwoheadrightarrow',
     'xleftrightarrow',
-    'longleftrightarrow', // From mhchem.sty package
     'xLeftrightarrow',
     'xrightleftharpoons', // From mhchem.sty package
     'longrightleftharpoons',
@@ -113,6 +112,13 @@ defineFunction(
     'longRightleftharpoons', // From mhchem.sty package
     'xLeftrightharpoons', // From mhchem.sty package
     'longLeftrightharpoons', // From mhchem.sty package
+    // VisualTeX: mathtools' and extarrows' long arrows
+    'xlongrightarrow',
+    'xlongleftarrow',
+    'xLongrightarrow',
+    'xLongleftarrow',
+    'xlongleftrightarrow',
+    'xLongleftrightarrow',
   ],
   '[:auto]{:auto}',
   {

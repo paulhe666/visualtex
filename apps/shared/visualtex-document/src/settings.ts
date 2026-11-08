@@ -152,8 +152,67 @@ export function documentSettings(doc: Node): DocumentSettings {
 }
 
 /**
+ * A display formula's own \tag{…} / \tag*{…} at its top level (outside \begin…\end), as amsmath sets it: it
+ * replaces the document's number for that formula (no number is taken; references show it). `label` is what
+ * \eqref shows inside its brackets.
+ */
+export function ownEquationTag(latex: string): { label: string; star: boolean } | null {
+  let depth = 0;
+  for (let i = 0; i < latex.length; i++) {
+    if (latex[i] !== "\\") continue;
+    const name = /^\\([a-zA-Z]+\*?)/.exec(latex.slice(i))?.[1];
+    if (!name) {
+      i++;
+      continue;
+    }
+    if (name === "begin") depth++;
+    else if (name === "end") depth--;
+    else if (depth === 0 && (name === "tag" || name === "tag*")) {
+      let j = i + 1 + name.length;
+      while (latex[j] === " ") j++;
+      if (latex[j] !== "{") return null;
+      let level = 0;
+      let k = j;
+      for (; k < latex.length; k++) {
+        if (latex[k] === "\\") k++;
+        else if (latex[k] === "{") level++;
+        else if (latex[k] === "}" && --level === 0) break;
+      }
+      const label = latex.slice(j + 1, k).trim().replace(/^\$(.*)\$$/, "$1");
+      return { label, star: name === "tag*" };
+    }
+    i += name.length;
+  }
+  return null;
+}
+
+/**
+ * The sections' numbers in the document's format, by the heading's position: "2.1." or "2.1" (none: no numbers).
+ * Levels 1-3 are numbered, a section resets the deeper levels; an unnumbered section (\section*) takes no number and
+ * leaves the counters as they are, as in LaTeX. Counted here, not by CSS counters: Chromium no longer carries a
+ * heading's counter-reset over to the headings after it.
+ */
+export function headingNumbers(doc: Node): Map<number, string> {
+  const style = documentSettings(doc).headingNumbering;
+  const numbers = new Map<number, string>();
+  if (style === "none") return numbers;
+  const counters = [0, 0, 0];
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "heading") return !node.isTextblock;
+    const level = node.attrs.level as number;
+    if (level > 3 || node.attrs.unnumbered) return false;
+    counters[level - 1]++;
+    for (let k = level; k < 3; k++) counters[k] = 0;
+    numbers.set(pos, counters.slice(0, level).join(".") + (style === "1." ? "." : ""));
+    return false;
+  });
+  return numbers;
+}
+
+/**
  * The numbered display formulas' labels in document order, by formula id: "3", or "2.3" / "2-3" (the 3rd in the
- * 2nd level-1 section; before the first section "0.1", as the Word add-in numbers them).
+ * 2nd level-1 section; before the first section "0.1", as the Word add-in numbers them). An unnumbered section
+ * (\section*) does not step the section, as in LaTeX.
  */
 export function equationLabels(doc: Node): Map<string, string> {
   const style = documentSettings(doc).equationNumbering;
@@ -161,9 +220,12 @@ export function equationLabels(doc: Node): Map<string, string> {
   let section = 0;
   let n = 0;
   doc.descendants((node) => {
-    if (node.type.name === "heading" && node.attrs.level === 1 && style !== "1") {
+    if (node.type.name === "heading" && node.attrs.level === 1 && !node.attrs.unnumbered && style !== "1") {
       section += 1;
       n = 0;
+    } else if (node.type.name === "math_display" && ownEquationTag(node.attrs.latex)) {
+      // a formula's own \tag: no number; references show the tag
+      if (node.attrs.id) labels.set(node.attrs.id, ownEquationTag(node.attrs.latex)!.label);
     } else if (node.type.name === "math_display" && node.attrs.numbered) {
       n += 1;
       const label = style === "1" ? String(n) : `${section}${style === "1.1" ? "." : "-"}${n}`;

@@ -56,8 +56,99 @@ export type ArrayAtomConstructorOptions = {
 
   displayEquationNumber?: boolean;
 
+  // VisualTeX: the \hline rules after the last row (`\\ \hline\end{array}`),
+  // as JSON of the starting commit had them (now in rowRules)
+  bottomRules?: number;
+
+  // VisualTeX: the environment's arguments as written after \begin{name}
+  // (`{2}` of alignat, `[t]` of aligned, `[r]` of pmatrix*), kept for saving
+  environmentArguments?: string;
+
+  // VisualTeX: the rules before each row and, last, after the last row
+  // (\hline, \cline{2-3}, \toprule, ...), as written
+  rowRules?: readonly (readonly string[])[];
+
+  // VisualTeX: the column specification as written (`|p{2cm}|c|`)
+  colSpec?: string;
+
+  // VisualTeX: the \multicolumn, \multirow and \hdotsfor around cells, by
+  // [row, column] (JSON; the parser gives TableMarkAtoms in the cells)
+  cellWrappers?: readonly [number, number, readonly CellWrapper[]][];
+
+  mode?: ParseMode;
+
   classes?: string[];
 };
+
+/**
+ * VisualTeX: what a cell's content is wrapped in, outermost first, as written:
+ * \multicolumn{columns}{spec}{…}, multirow.sty's
+ * \multirow[vpos]{rows}[bigstruts]{width}[vmove]{…} (its content is text) and
+ * amsmath's \hdotsfor[spacing]{columns} (dots over the columns; no content).
+ */
+export type CellWrapper =
+  | { command: '\\multicolumn'; columns: number; spec: string }
+  | {
+      command: '\\multirow';
+      rows: string;
+      width: string;
+      vpos?: string;
+      bigstruts?: string;
+      vmove?: string;
+    }
+  | { command: '\\hdotsfor'; columns: number; spacing?: string };
+
+/** VisualTeX: a wrapper's LaTeX before its content argument */
+export function cellWrapperLatex(w: CellWrapper): string {
+  const opt = (x: string | undefined) => (x === undefined ? '' : `[${x}]`);
+  if (w.command === '\\multicolumn')
+    return `\\multicolumn{${w.columns}}{${w.spec}}`;
+  if (w.command === '\\hdotsfor')
+    return `\\hdotsfor${opt(w.spacing)}{${w.columns}}`;
+  return `\\multirow${opt(w.vpos)}{${w.rows}}${opt(w.bigstruts)}{${w.width}}${opt(w.vmove)}`;
+}
+
+/** VisualTeX: the columns a cell spans (\multicolumn, \hdotsfor) */
+export function cellWrapperSpan(wrappers: readonly CellWrapper[] | undefined): number {
+  let span = 1;
+  for (const w of wrappers ?? [])
+    if (w.command !== '\\multirow') span = Math.max(1, w.columns);
+  return span;
+}
+
+/**
+ * VisualTeX: a rule at a row start (\hline, \cline{2-3}, \toprule, ...) or a
+ * wrapper at a cell start (\multicolumn{3}{c}, ...), as the parser meets it.
+ * The ArrayAtom takes these out of its cells: rules go to rowRules, wrappers
+ * to the cell (CELL_WRAPPERS), so the caret never stands beside them.
+ */
+export class TableMarkAtom extends Atom {
+  readonly rule?: string;
+  readonly wrapper?: CellWrapper;
+  constructor(mark: { rule: string } | { wrapper: CellWrapper }) {
+    const latex = 'rule' in mark ? mark.rule : cellWrapperLatex(mark.wrapper);
+    super({
+      type: 'error',
+      command: /^\\[a-zA-Z]+/.exec(latex)?.[0] ?? latex,
+      verbatimLatex: latex,
+    });
+    if ('rule' in mark) this.rule = mark.rule;
+    else this.wrapper = mark.wrapper;
+  }
+}
+
+/** VisualTeX: the wrappers of a cell, by the cell's `first` atom */
+const CELL_WRAPPERS = new WeakMap<Atom, readonly CellWrapper[]>();
+
+function wrappersOf(cell: readonly Atom[] | undefined): readonly CellWrapper[] | undefined {
+  return cell?.[0] ? CELL_WRAPPERS.get(cell[0]) : undefined;
+}
+
+function rowWidth(row: readonly (readonly Atom[] | undefined)[]): number {
+  let width = 0;
+  for (const cell of row) if (cell) width += cellWrapperSpan(wrappersOf(cell));
+  return width;
+}
 
 /**
  * Normalize cells:
@@ -66,18 +157,62 @@ export type ArrayAtomConstructorOptions = {
  * - ensure each cell begins with a `first` atom
  * - ensure the minimum/maximum number of cells is respected
  * - remove last row if empty (TeX behavior)
+ * - take the \hline rules that follow the last row out of it (no new row)
+ * - VisualTeX: take the rules and cell wrappers out of the cells; a spanned
+ *   cell's covered columns are `undefined`
  */
 
 function normalizeCells(
   atom: ArrayAtom,
-  cells: (readonly Atom[])[][],
+  input: (readonly Atom[])[][],
   options: {
     columns: readonly ColumnFormat[];
     minColumns: number;
     minRows: number;
     maxRows: number;
+    cellWrappers?: readonly [number, number, readonly CellWrapper[]][];
   }
-): (readonly Atom[])[][] {
+): { rows: (readonly Atom[] | undefined)[][]; rowRules: string[][] } {
+  //
+  // 0/ VisualTeX: rules at row starts and wrappers at cell starts
+  // (TableMarkAtom) leave the cells; each cell gets its `first` atom here,
+  // which carries the cell's wrappers (and, for now, its row's rules).
+  // Cells a span covers (JSON) are dropped: step 3 adds them back.
+  //
+  const rulesOf = new Map<Atom, string[]>();
+  const covered = new Set<string>();
+  const jsonWrappers = new Map<string, readonly CellWrapper[]>();
+  for (const [r, c, wrappers] of options.cellWrappers ?? []) {
+    jsonWrappers.set(`${r},${c}`, wrappers);
+    for (let k = 1; k < cellWrapperSpan(wrappers); k++) covered.add(`${r},${c + k}`);
+  }
+  const cells: (readonly Atom[])[][] = input.map((row, r) => {
+    const result: (readonly Atom[])[] = [];
+    row.forEach((cell, c) => {
+      if (covered.has(`${r},${c}`) && (cell ?? []).every((x) => x.type === 'first'))
+        return;
+      const atoms = (cell ?? []).filter((x) => x.type !== 'first');
+      const rules: string[] = [];
+      const wrappers: CellWrapper[] = [...(jsonWrappers.get(`${r},${c}`) ?? [])];
+      let k = 0;
+      for (; k < atoms.length; k++) {
+        const x = atoms[k];
+        if (x instanceof TableMarkAtom && x.rule !== undefined && wrappers.length === 0)
+          rules.push(x.rule);
+        else if (x instanceof TableMarkAtom && x.wrapper) wrappers.push(x.wrapper);
+        // a starting commit's JSON: \hline as an unknown command
+        else if (x.type === 'error' && x.command === '\\hline' && c === 0 && wrappers.length === 0)
+          rules.push('\\hline');
+        else break;
+      }
+      const first = cell?.[0]?.type === 'first' ? cell[0] : new Atom({ type: 'first', mode: atom.mode });
+      if (rules.length > 0) rulesOf.set(first, rules);
+      if (wrappers.length > 0) CELL_WRAPPERS.set(first, wrappers);
+      result.push([first, ...atoms.slice(k)]);
+    });
+    return result;
+  });
+
   //
   // 1/
   // - Fold the array so that there are no more columns of content than
@@ -103,7 +238,7 @@ function normalizeCells(
       const newRow: (readonly Atom[])[] = [];
       const lastCol = Math.min(row.length, colIndex + maxColCount);
       while (colIndex < lastCol) {
-        newRow.push(normalizeCell(row[colIndex], atom.mode));
+        newRow.push(normalizeCell(row[colIndex], atom.columnMode(colIndex % maxColCount)));
         colIndex += 1;
       }
 
@@ -118,23 +253,31 @@ function normalizeCells(
 
   //
   // 2/ If the last row is empty, ignore it (TeX behavior)
-  // (unless there's only one row)
+  // (unless there's only one row).
+  // A last row of nothing but \hline is the rules under the row before it
+  // (`\\ \hline\end{array}`): it is no row either, its rules are kept.
   //
-  if (
-    !atom.isMultiline &&
-    rows.length > 0 &&
-    rows[rows.length - 1].length === 1 &&
-    isEmptyCell(rows[rows.length - 1][0])
-  )
-    rows.pop();
+  let bottomRules: string[] = [];
+  if (!atom.isMultiline && rows.length > 0 && rows[rows.length - 1].length === 1) {
+    const last = rows[rows.length - 1][0];
+    const rules = rulesOf.get(last[0]) ?? [];
+    // (a cell with a wrapper, \hdotsfor{3}, is no empty row)
+    if (isEmptyCell(last) && !CELL_WRAPPERS.has(last[0]) && (rules.length === 0 || rows.length > 1)) {
+      bottomRules = rules;
+      rows.pop();
+    }
+  }
+
+  // VisualTeX: a span counts the columns it covers
+  for (const row of rows) colCount = Math.max(colCount, Math.min(rowWidth(row), maxColCount));
 
   //
   // 3/ Fill out any missing cells
   //
-  const result: (readonly Atom[])[][] = [];
+  const result: (readonly Atom[] | undefined)[][] = [];
   for (const row of rows) {
-    if (row.length !== colCount) {
-      for (let i = row.length; i < colCount; i++) {
+    if (rowWidth(row) !== colCount) {
+      for (let i = rowWidth(row); i < colCount; i++) {
         if (atom.isMultiline)
           row.push([new Atom({ type: 'first', mode: atom.mode })]);
         else {
@@ -145,7 +288,14 @@ function normalizeCells(
         }
       }
     }
-    result.push(row);
+    // VisualTeX: the columns a span covers are no cells (`undefined`)
+    const spanned: (readonly Atom[] | undefined)[] = [];
+    for (const cell of row) {
+      spanned.push(cell);
+      const span = Math.min(cellWrapperSpan(wrappersOf(cell)), colCount - spanned.length + 1);
+      for (let k = 1; k < span; k++) spanned.push(undefined);
+    }
+    result.push(spanned);
   }
 
   //
@@ -156,7 +306,7 @@ function normalizeCells(
   for (const row of result) {
     colIndex = 0;
     for (const cell of row) {
-      for (const element of cell) {
+      for (const element of cell ?? []) {
         element.parent = atom;
         element.parentBranch = [rowIndex, colIndex];
       }
@@ -167,7 +317,9 @@ function normalizeCells(
 
   atom.isDirty = true;
 
-  return result;
+  const rowRules = result.map((row) => rulesOf.get(row[0]?.[0] as Atom) ?? []);
+  rowRules.push(bottomRules);
+  return { rows: result, rowRules };
 }
 
 function normalizeCell(
@@ -203,11 +355,43 @@ export class ArrayAtom extends Atom {
       'split',
       'gather',
       'gathered',
+      // VisualTeX: every amsmath display environment is a list of lines
+      'align*',
+      'gather*',
+      'flalign',
+      'flalign*',
+      'alignat',
+      'alignat*',
+      'eqnarray',
+      'eqnarray*',
     ].includes(env);
   }
 
   // The array is a 2D array of cells, each cell being an array of atoms
   private _rows: (undefined | readonly Atom[])[][];
+
+  /**
+   * VisualTeX: the rules before each row (\hline, \cline{2-3}, \toprule,
+   * ...) as written (a space after an argument kept, see scanTableMark);
+   * the entry after the last row's is the rules under it
+   */
+  rowRules: string[][];
+
+  /** VisualTeX: the number of rules under the last row, whichever row is last */
+  get bottomRules(): number {
+    return this.rowRules[this._rows.length]?.length ?? 0;
+  }
+
+  /** VisualTeX: the column specification as written (array, tabular) */
+  colSpec?: string;
+
+  /** VisualTeX: the arguments after \begin{name} (`{2}`, `[t]`, `[r]`), as written */
+  environmentArguments?: string;
+
+  /** VisualTeX: mathtools' cases* family sets its second column in text mode */
+  columnMode(col: number): ParseMode {
+    return col === 1 && /^d?r?cases\*$/.test(this.environmentName) ? 'text' : this.mode;
+  }
 
   rowGaps: readonly Dimension[];
   arraystretch?: number;
@@ -233,8 +417,10 @@ export class ArrayAtom extends Atom {
     rowGaps: readonly Dimension[],
     options: Readonly<ArrayAtomConstructorOptions> = {}
   ) {
-    super({ type: 'array', isRoot: options.isRoot });
+    super({ type: 'array', isRoot: options.isRoot, mode: options.mode });
     this.environmentName = envName;
+    if (options.environmentArguments)
+      this.environmentArguments = options.environmentArguments;
 
     if (options.columns) {
       if (options.columns.length === 0) this.colFormat = [{ align: 'l' }];
@@ -269,12 +455,25 @@ export class ArrayAtom extends Atom {
     this.minRows = options.minRows ?? 1;
     this.maxRows = options.maxRows ?? Infinity;
 
-    this._rows = normalizeCells(this, array, {
+    const { rows, rowRules } = normalizeCells(this, array, {
       columns: this.colFormat,
       minColumns: this.minColumns,
       minRows: this.minRows,
       maxRows: this.maxRows,
+      cellWrappers: options.cellWrappers,
     });
+    this._rows = rows;
+    // JSON gives the rules apart from the cells
+    if (options.rowRules)
+      this.rowRules = rows.map((_row, r) => [...(options.rowRules![r] ?? [])]);
+    else this.rowRules = rowRules.slice(0, -1);
+    const bottom = options.rowRules?.[rows.length] ?? rowRules[rowRules.length - 1];
+    this.rowRules.push([
+      ...bottom,
+      ...(options.rowRules ? [] : Array<string>(options.bottomRules ?? 0).fill('\\hline')),
+    ]);
+    const colSpec = options.colSpec ?? (options.columns as { source?: string } | undefined)?.source;
+    if (colSpec !== undefined) this.colSpec = colSpec;
 
     this.rowGaps = rowGaps;
 
@@ -306,10 +505,13 @@ export class ArrayAtom extends Atom {
       ...super.toJson(),
       environmentName: this.environmentName,
       array: this._rows.map((row) =>
-        row.map((col) => col!.map((x) => x.toJson()))
+        row.map((col) => (col ?? []).map((x) => x.toJson()))
       ),
       rowGaps: this.rowGaps,
-      columns: this.colFormat,
+      // VisualTeX: the atoms of @{...} and !{...} as JSON (core/atom.ts fromJson)
+      columns: this.colFormat.map((c) =>
+        'gap' in c && Array.isArray(c.gap) ? { gap: c.gap.map((x) => x.toJson()) } : c
+      ),
       colSeparationType: this.colSeparationType,
       minColumns: this.minColumns,
       minRows: this.minRows,
@@ -326,6 +528,20 @@ export class ArrayAtom extends Atom {
     result.minRows = this.minRows;
     result.maxRows = this.maxRows;
     if (this.mathstyleName) result.mathstyleName = this.mathstyleName;
+    if (this.bottomRules > 0) result.bottomRules = this.bottomRules;
+    if (this.environmentArguments)
+      result.environmentArguments = this.environmentArguments;
+    if (this.rowRules.some((rules) => rules.length > 0))
+      result.rowRules = this.rowRules.map((rules) => [...rules]);
+    if (this.colSpec !== undefined) result.colSpec = this.colSpec;
+    const wrappers: [number, number, readonly CellWrapper[]][] = [];
+    this._rows.forEach((row, r) =>
+      row.forEach((cell, c) => {
+        const w = wrappersOf(cell);
+        if (w) wrappers.push([r, c, w]);
+      })
+    );
+    if (wrappers.length > 0) result.cellWrappers = wrappers;
     if (this.classes.length > 0) result.classes = this.classes;
 
     return result;
@@ -348,6 +564,11 @@ export class ArrayAtom extends Atom {
 
   get colCount(): number {
     return this._rows[0].length;
+  }
+
+  /** VisualTeX: the \multicolumn, \multirow or \hdotsfor around a cell, outermost first */
+  getCellWrappers(row: number, col: number): readonly CellWrapper[] | undefined {
+    return wrappersOf(this._rows[row]?.[col]);
   }
 
   get maxColumns(): number {
@@ -384,9 +605,17 @@ export class ArrayAtom extends Atom {
     else if (this.environmentName !== 'lines')
       result.push(`\\begin{${this.environmentName}}`);
 
-    if (this.environmentName === 'array') {
+    if (this.environmentArguments) result.push(this.environmentArguments);
+
+    if (
+      this.environmentName === 'array' ||
+      this.environmentName === 'subarray' ||
+      this.environmentName === 'tabular'
+    ) {
       result.push('{');
-      if (this.colFormat !== undefined) {
+      // VisualTeX: the column specification as written
+      if (this.colSpec !== undefined) result.push(this.colSpec);
+      else if (this.colFormat !== undefined) {
         for (const format of this.colFormat) {
           if ('align' in format && typeof format.align === 'string')
             result.push(format.align);
@@ -401,19 +630,34 @@ export class ArrayAtom extends Atom {
     }
 
     for (let row = 0; row < this._rows.length; row++) {
+      // VisualTeX: the rules before the row; no `&` for the columns a span
+      // covers; the cell's wrappers around its content
+      if (this.rowRules[row]?.length) result.push(this.rowRules[row].join('') + ' ');
+      let firstCell = true;
       for (let col = 0; col < this._rows[row].length; col++) {
-        if (col > 0) result.push(' & ');
-        result.push(Atom.serialize(this._rows[row][col], options));
+        const cell = this._rows[row][col];
+        if (!cell) continue;
+        if (!firstCell) result.push(' & ');
+        firstCell = false;
+        result.push(
+          serializeCell(
+            cell,
+            options,
+            this.environmentName === 'tabular' || this.columnMode(col) === 'text'
+          )
+        );
       }
 
-      // Adds a separator between rows (but not after the last row)
-      if (row < this._rows.length - 1) {
+      // Adds a separator between rows (but not after the last row, unless
+      // rules follow it)
+      if (row < this._rows.length - 1 || this.bottomRules > 0) {
         const gap = this.rowGaps[row];
         if (gap?.dimension)
           result.push(`\\\\[${gap.dimension} ${gap.unit ?? 'pt'}] `);
         else result.push('\\\\ ');
       }
     }
+    if (this.bottomRules > 0) result.push(this.rowRules[this._rows.length].join('') + ' ');
 
     // Only close \displaylines{} if there are multiple rows
     if (this.environmentName === 'lines' && this._rows.length > 1)
@@ -428,7 +672,11 @@ export class ArrayAtom extends Atom {
     callback: (cell: readonly Atom[], row: number, col: number) => void
   ): void {
     for (let i = 0; i < this.rowCount; i++)
-      for (let j = 0; j < this.colCount; j++) callback(this._rows[i][j]!, i, j);
+      for (let j = 0; j < this.colCount; j++) {
+        // VisualTeX: a column a span covers is no cell
+        const cell = this._rows[i][j];
+        if (cell) callback(cell, i, j);
+      }
   }
 
   getCell(row: number, col: number): readonly Atom[] | undefined {
@@ -447,9 +695,12 @@ export class ArrayAtom extends Atom {
     }
 
     const atoms = [
-      new Atom({ type: 'first', mode: this.mode }),
+      new Atom({ type: 'first', mode: this.columnMode(column) }),
       ...value.filter((x) => x.type !== 'first'),
     ];
+    // VisualTeX: the cell keeps its wrappers
+    const wrappers = wrappersOf(this._rows[row][column]);
+    if (wrappers) CELL_WRAPPERS.set(atoms[0], wrappers);
 
     this._rows[row][column] = atoms;
 
@@ -464,10 +715,12 @@ export class ArrayAtom extends Atom {
     this._rows.splice(
       row,
       0,
-      Array.from({ length: this.colCount }, () =>
-        makeEmptyCell(this, !this.isMultiline)
+      Array.from({ length: this.colCount }, (_, col) =>
+        makeEmptyCell(this, !this.isMultiline, this.columnMode(col))
       )
     );
+    // VisualTeX: the rules stay with the rows they are before
+    this.rowRules.splice(row, 0, []);
     adjustBranches(this);
     this.isDirty = true;
   }
@@ -478,10 +731,11 @@ export class ArrayAtom extends Atom {
     this._rows.splice(
       row + 1,
       0,
-      Array.from({ length: this.colCount }, () =>
-        makeEmptyCell(this, !this.isMultiline)
+      Array.from({ length: this.colCount }, (_, col) =>
+        makeEmptyCell(this, !this.isMultiline, this.columnMode(col))
       )
     );
+    this.rowRules.splice(row + 1, 0, []);
 
     adjustBranches(this);
     this.isDirty = true;
@@ -493,6 +747,7 @@ export class ArrayAtom extends Atom {
     );
 
     const deleted = this._rows.splice(row, 1);
+    this.rowRules.splice(row, 1);
     for (const column of deleted) {
       for (const cell of column) {
         if (cell) {
@@ -512,6 +767,7 @@ export class ArrayAtom extends Atom {
     console.assert(this.type === 'array' && Array.isArray(this._rows));
     for (const row of this._rows) row.splice(col, 0, makeEmptyCell(this));
 
+    fixSpans(this);
     adjustBranches(this);
     this.isDirty = true;
   }
@@ -520,6 +776,7 @@ export class ArrayAtom extends Atom {
     console.assert(this.type === 'array' && Array.isArray(this._rows));
     for (const row of this._rows) row.splice(col + 1, 0, makeEmptyCell(this));
 
+    fixSpans(this);
     adjustBranches(this);
     this.isDirty = true;
   }
@@ -543,6 +800,7 @@ export class ArrayAtom extends Atom {
         }
       }
     }
+    fixSpans(this);
     adjustBranches(this);
     this.isDirty = true;
   }
@@ -566,9 +824,10 @@ export class ArrayAtom extends Atom {
  */
 function makeEmptyCell(
   parent: ArrayAtom,
-  withPlaceholder = false
+  withPlaceholder = false,
+  mode: ParseMode = parent.mode
 ): readonly Atom[] {
-  const first = new Atom({ type: 'first', mode: parent.mode });
+  const first = new Atom({ type: 'first', mode });
   first.parent = parent;
   const result = [first];
   if (withPlaceholder) {
@@ -577,6 +836,41 @@ function makeEmptyCell(
     result.push(placeholder);
   }
   return result;
+}
+
+/** VisualTeX: a cell's LaTeX inside its wrappers (a tabular's cells and multirow's content are text) */
+function serializeCell(cell: readonly Atom[], options: ToLatexOptions, tabular: boolean): string {
+  const wrappers = wrappersOf(cell) ?? [];
+  const text = tabular || wrappers.some((w) => w.command === '\\multirow');
+  let latex = Atom.serialize(cell, text ? { ...options, defaultMode: 'text' } : options);
+  for (let i = wrappers.length - 1; i >= 0; i--) {
+    const head = cellWrapperLatex(wrappers[i]);
+    if (wrappers[i].command === '\\hdotsfor') latex = latex.trim() ? `${head} ${latex}` : head;
+    else latex = `${head}{${latex}}`;
+  }
+  return latex;
+}
+
+/**
+ * VisualTeX: after a column was added or removed, the columns each span
+ * covers are `undefined` again, and every other column is a cell.
+ */
+function fixSpans(array: ArrayAtom): void {
+  const rows = array.rows;
+  for (const row of rows) {
+    let covered = 0;
+    for (let c = 0; c < row.length; c++) {
+      const cell = row[c];
+      if (covered > 0 && (!cell || cell.every((x) => x.type === 'first'))) {
+        row[c] = undefined;
+        covered -= 1;
+        continue;
+      }
+      covered = 0;
+      if (!cell) row[c] = makeEmptyCell(array);
+      else covered = cellWrapperSpan(wrappersOf(cell)) - 1;
+    }
+  }
 }
 
 function adjustBranches(array: ArrayAtom): void {

@@ -486,7 +486,6 @@
   white-space: pre-wrap;
   word-wrap: break-word;
   tab-size: 4;
-  counter-reset: vtx-s1 vtx-s2 vtx-s3;
   caret-color: #000;
 }
 .vtx-document p {
@@ -502,6 +501,38 @@
   line-height: 1.3;
   text-align: center;
 }
+/* its authors and date (\author, \date): centred, \large; article.cls's \@maketitle: .5em between authors (\lineskip),
+   1em before the date, 1.5em after the title block */
+.vtx-document p.vtx-author,
+.vtx-document p.vtx-date {
+  margin: 0;
+  padding: 0 0 calc(1.5em / 1.2);
+  font-size: 1.2em;
+  line-height: 1.3;
+  text-align: center;
+}
+.vtx-document p.vtx-author:has(+ p.vtx-author) {
+  padding-bottom: calc(0.5em / 1.2);
+}
+.vtx-document p.vtx-author:has(+ p.vtx-date) {
+  padding-bottom: calc(1em / 1.2);
+}
+/* the abstract (article.cls: a centred bold \small heading, then quotation's margins in \small) */
+.vtx-document .vtx-abstract {
+  margin: 0;
+  padding: 0.3em calc(2.5em / 0.9) 0.6em;
+  font-size: 0.9em;
+}
+.vtx-document .vtx-abstract::before {
+  content: "Abstract";
+  display: block;
+  padding-bottom: 0.2em;
+  font-weight: bold;
+  text-align: center;
+}
+.vtx-document .vtx-abstract.is-zh::before {
+  content: "摘要";
+}
 
 /* sections: Mathcha's three numbered levels */
 .vtx-document h1,
@@ -514,40 +545,30 @@
 }
 .vtx-document h1 {
   font-size: 1.2em;
-  counter-increment: vtx-s1;
-  counter-reset: vtx-s2 vtx-s3;
 }
 .vtx-document h2 {
   font-size: 1.1em;
-  counter-increment: vtx-s2;
-  counter-reset: vtx-s3;
 }
 .vtx-document h3 {
   font-size: 1em;
-  counter-increment: vtx-s3;
 }
-.vtx-document h1::before {
-  content: counter(vtx-s1) ". ";
+/* the number the document gives the section (settings.ts headingNumbers, in the document's format); an unnumbered
+   section (\section*) has none */
+.vtx-document :is(h1, h2, h3)[data-number]::before {
+  content: attr(data-number) " ";
+  padding-right: 0.25em;
+  white-space: pre;
+}
+.vtx-document h1[data-number]::before {
   padding-right: 0.5em;
-  white-space: pre;
-}
-.vtx-document h2::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) ". ";
-  padding-right: 0.25em;
-  white-space: pre;
-}
-.vtx-document h3::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) ". ";
-  padding-right: 0.25em;
-  white-space: pre;
 }
 /* WebKit (macOS) draws the caret of an empty line before generated content that flows inline (and none at all in a
    flex row), so the number never flows inline: it floats at the start of a left-aligned heading; in a centred or
    right-aligned one it is taken out of the line where it would start and drawn just before the text. */
-.vtx-document :is(h1, h2, h3)::before {
+.vtx-document :is(h1, h2, h3)[data-number]::before {
   float: left;
 }
-.vtx-document :is(h1, h2, h3):is([data-align="center"], [data-align="right"])::before {
+.vtx-document :is(h1, h2, h3)[data-number]:is([data-align="center"], [data-align="right"])::before {
   position: absolute;
   float: none;
   transform: translateX(-100%);
@@ -1730,22 +1751,6 @@
   pointer-events: none;
 }
 
-/* ---- section numbers in the document's format: 1 / 1.1 (no final dot), or none ---- */
-.vtx-sheet.is-headings-plain .vtx-document h1::before {
-  content: counter(vtx-s1) " ";
-}
-.vtx-sheet.is-headings-plain .vtx-document h2::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) " ";
-}
-.vtx-sheet.is-headings-plain .vtx-document h3::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) " ";
-}
-.vtx-sheet.is-headings-none .vtx-document h1::before,
-.vtx-sheet.is-headings-none .vtx-document h2::before,
-.vtx-sheet.is-headings-none .vtx-document h3::before {
-  content: none;
-}
-
 /* a margin's exact value, typed after a double-click on its grip */
 .vtx-margin-edit {
   position: absolute;
@@ -2476,4 +2481,86 @@
 }
 .vtx-tutorial-button {
   margin-left: auto;
+}
+
+/* ---- figures and tables with their captions (figures.ts): LaTeX's [H] figure and table, \intextsep (12pt) around
+   them; the caption \abovecaptionskip (10pt) under a figure's image, above a table; a caption as \@makecaption sets
+   it: one line centred, longer ones justified across the line ---- */
+.vtx-document figure.vtx-figure,
+.vtx-document .vtx-table-figure {
+  margin: calc(12 * var(--vtx-pt, 1.333px)) 0;
+  padding: 0;
+}
+.vtx-document .vtx-caption {
+  display: block;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: 1em;
+  max-width: 100%;
+  margin: calc(10 * var(--vtx-pt, 1.333px)) auto 0;
+  text-align: justify;
+}
+.vtx-document .vtx-table-figure > .vtx-caption {
+  margin: 0 auto calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-table-figure > .tableWrapper {
+  margin: 0;
+}
+.vtx-document .vtx-caption-label {
+  position: relative;
+  white-space: pre;
+  user-select: none;
+}
+/* the hint in an empty caption while the caret is in it, after the number (out of the line: the caret stays before it) */
+.vtx-document .vtx-caption.is-empty.is-active > .vtx-caption-label::after {
+  content: attr(data-hint);
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 0.3em;
+  color: #9aa0a6;
+  white-space: pre;
+  pointer-events: none;
+}
+.vtx-document .vtx-figure.ProseMirror-selectednode,
+.vtx-document .vtx-table-figure.ProseMirror-selectednode {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+/* a wrapped figure: wrapfigure beside the paragraphs after it (as a wrapped image above), its caption under the image */
+.vtx-document figure.vtx-figure.is-wrap-left,
+.vtx-document figure.vtx-figure.is-wrap-right {
+  margin-top: calc((var(--vtx-line-height, 1.3) - 1) * 0.5em + 0.85em + 12 * var(--vtx-pt, 1.333px) - 0.6em);
+  margin-bottom: calc(12 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure.is-wrap-left {
+  float: left;
+  margin-right: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure.is-wrap-right {
+  float: right;
+  margin-left: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure:is(.is-wrap-left, .is-wrap-right) .vtx-image {
+  float: none;
+  width: 100% !important;
+  margin: 0;
+}
+/* booktabs: \toprule and \bottomrule (0.08em) at the table's edges, \midrule under the first row (0.05em), no other rules */
+.vtx-document .vtx-table-figure[data-rules="booktabs"] table {
+  border-top: 0.08em solid #000;
+  border-bottom: 0.08em solid #000;
+}
+.vtx-document .vtx-table-figure[data-rules="booktabs"] td,
+.vtx-document .vtx-table-figure[data-rules="booktabs"] th {
+  border: none;
+}
+.vtx-document .vtx-table-figure[data-rules="booktabs"] tr:first-child > :is(td, th) {
+  border-bottom: 0.05em solid #000;
+}
+/* a long table's page break (pagination.ts): a row of space, no rules through it */
+.vtx-document tr.vtx-page-break > td {
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
 }

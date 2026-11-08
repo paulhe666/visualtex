@@ -212,27 +212,31 @@ function tableCells(inner: string): string[] {
   return inner.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
 }
 
-/** "# Title" (with closing #s or not): the heading's level and where its text starts and ends in the line. */
-function headingOf(line: string, chinese: boolean): { level: number; start: number; end: number } | null {
+/** "# Title" (with closing #s or not; Pandoc's "{-}" after it: unnumbered): the heading's level and where its text
+ *  starts and ends in the line. */
+function headingOf(line: string, chinese: boolean): { level: number; start: number; end: number; unnumbered: boolean } | null {
   const match = (chinese ? HEADING_CHINESE : HEADING).exec(line);
   if (!match) return null;
   const start = match[1].length + 1;
   let end = line.length;
-  const closing = /[ \t]+#+[ \t]*$/.exec(line.slice(start));
+  const attributes = /[ \t]+\{([^{}]*)\}[ \t]*$/.exec(line.slice(start));
+  const unnumbered = !!attributes && attributes[1].trim().split(/\s+/).some((a) => a === "-" || a === ".unnumbered");
+  if (unnumbered) end = start + attributes!.index;
+  const closing = /[ \t]+#+[ \t]*$/.exec(line.slice(start, end));
   if (closing) end = start + closing.index;
-  else if (/^#+[ \t]*$/.test(line.slice(start))) end = start;
-  return { level: match[1].length, start, end };
+  else if (/^#+[ \t]*$/.test(line.slice(start, end))) end = start;
+  return { level: match[1].length, start, end, unnumbered };
 }
 
 /** The line at `pos` (a paragraph) made a section: its "# " and closing "#"s go, its text and formatting stay. */
-function headingConversion(tr: Transaction, pos: number, node: Node, heading: { level: number; start: number; end: number }): boolean {
+function headingConversion(tr: Transaction, pos: number, node: Node, heading: { level: number; start: number; end: number; unnumbered: boolean }): boolean {
   const $pos = tr.doc.resolve(pos);
   const type = tr.doc.type.schema.nodes.heading;
   if (!$pos.parent.canReplaceWith($pos.index(), $pos.index() + 1, type)) return false;
   const start = pos + 1;
   if (heading.end < node.content.size) tr.delete(start + heading.end, start + node.content.size);
   tr.delete(start, start + heading.start);
-  tr.setNodeMarkup(pos, type, { id: node.attrs.id, level: heading.level, align: node.attrs.align ?? null, indent: 0 });
+  tr.setNodeMarkup(pos, type, { id: node.attrs.id, level: heading.level, unnumbered: heading.unnumbered, align: node.attrs.align ?? null, indent: 0 });
   return true;
 }
 
@@ -636,17 +640,17 @@ const joinListItemBackward: Command = (state, dispatch, view) => {
 };
 
 /**
- * Backspace at the start of a line right after a list or a quote: the line joins the last line in it (Typora: "- a"
+ * Backspace at the start of a line right after a list, a quote or the abstract: the line joins the last line in it (Typora: "- a"
  * then "p" -> "- ap").
  */
 const joinIntoContainerBefore: Command = (state, dispatch) => {
   const { $cursor } = state.selection as TextSelection;
   if (!$cursor || $cursor.parentOffset > 0 || !$cursor.parent.isTextblock || $cursor.depth < 1) return false;
-  const { bullet_list, ordered_list, blockquote } = state.schema.nodes;
+  const { bullet_list, ordered_list, blockquote, abstract } = state.schema.nodes;
   const index = $cursor.index(-1);
   if (index === 0) return false;
   const container = $cursor.node(-1).child(index - 1);
-  if (container.type !== bullet_list && container.type !== ordered_list && container.type !== blockquote) return false;
+  if (container.type !== bullet_list && container.type !== ordered_list && container.type !== blockquote && container.type !== abstract) return false;
   // the last line inside it
   let last: Node = container;
   let end = $cursor.before() - 1;

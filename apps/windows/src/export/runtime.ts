@@ -12,6 +12,7 @@ import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
@@ -150,7 +151,7 @@ function joinFormulaRows(normalized: string) {
 function prepareLatex(latex: string) {
   const normalized = normalizeMathLiveCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(
-      normalizePackageLatexCommands(latex.replace(/\r\n?/g, "\n")),
+      normalizePackageLatexCommands(normalizeTensorIndexCommands(latex.replace(/\r\n?/g, "\n"))),
     ),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");

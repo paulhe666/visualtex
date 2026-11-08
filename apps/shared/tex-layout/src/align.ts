@@ -59,6 +59,8 @@ export class VList {
 export interface AlignRow {
   kind: "row";
   cells: Node[][];
+  /** the columns each cell spans (\span, \multispan); 1 if absent */
+  spans?: number[];
   tag?: Tag;
 }
 
@@ -70,18 +72,21 @@ export interface AlignNoalign {
 
 interface PendingRow {
   box: BoxNode; // the row (unset until fin_align)
-  cells: { list: Node[]; natural: BoxNode }[];
+  cells: { list: Node[]; natural: BoxNode; column: number; span: number }[];
   tag?: Tag;
 }
 
 /**
  * \halign in internal vertical mode, natural width (no "to"/"spread").
  * `tabskips[j]` is the tabskip glue before column j+1 (index 0 = left edge).
- * Rows and noalign material are appended to `v`.
+ * Rows and noalign material are appended to `v`; returns the rows' boxes.
  */
-export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[], v: VList, tag?: Tag): void {
-  const ncols = Math.max(0, ...items.map((it) => (it.kind === "row" ? it.cells.length : 0)));
+export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[], v: VList, tag?: Tag): BoxNode[] {
+  const spanOf = (it: AlignRow, j: number) => Math.max(1, it.spans?.[j] ?? 1);
+  const ncols = Math.max(0, ...items.map((it) => (it.kind === "row" ? it.cells.reduce((n, _c, j) => n + spanOf(it, j), 0) : 0)));
   const colW: number[] = new Array(ncols).fill(NULL_FLAG);
+  // span nodes (tex.web 798): the widest spanned box from column `from` to column `to`
+  let spanW: { from: number; to: number; width: number }[] = [];
   const tab = (j: number) => tabskips[j] ?? tabskips[tabskips.length - 1] ?? glue(0);
   const rows: PendingRow[] = [];
   const startIndex = v.items.length;
@@ -92,13 +97,18 @@ export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[],
     }
     // fin_col for each cell, fin_row for the row
     const rowList: Node[] = [{ type: GLUE_NODE, spec: tab(0), subtype: 12, tag }];
-    const cells: { list: Node[]; natural: BoxNode }[] = [];
+    const cells: PendingRow["cells"] = [];
+    let column = 0;
     it.cells.forEach((cellList, j) => {
       const natural = hpack(cellList, 0, undefined, it.tag ?? tag);
-      if (natural.width > colW[j]) colW[j] = natural.width;
-      cells.push({ list: cellList, natural });
+      const span = spanOf(it, j);
+      if (span === 1) {
+        if (natural.width > colW[column]) colW[column] = natural.width;
+      } else spanW.push({ from: column, to: column + span - 1, width: natural.width });
+      cells.push({ list: cellList, natural, column, span });
+      column += span;
       rowList.push(natural);
-      rowList.push({ type: GLUE_NODE, spec: tab(j + 1), subtype: 12, tag });
+      rowList.push({ type: GLUE_NODE, spec: tab(column), subtype: 12, tag });
     });
     const rowBox = hpack(rowList, 0, undefined, it.tag ?? tag);
     v.appendBox(rowBox);
@@ -113,6 +123,21 @@ export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[],
       colW[j] = 0;
       tabs[j + 1] = glue(0);
     }
+    // tex.web 801-803: a span from this column needs what this column and its
+    // tabskip leave of its width from the next column on (the last column
+    // spanned takes the rest)
+    const rest: typeof spanW = [];
+    for (const sp of spanW) {
+      if (sp.from !== j) {
+        rest.push(sp);
+        continue;
+      }
+      const width = sp.width - colW[j] - tabs[j + 1].width;
+      if (sp.to === j + 1) {
+        if (width > colW[j + 1]) colW[j + 1] = width;
+      } else rest.push({ from: j + 1, to: sp.to, width });
+    }
+    spanW = rest;
   }
   const proto: Node[] = [{ type: GLUE_NODE, spec: tabs[0], subtype: 12 }];
   for (let j = 0; j < ncols; j++) {
@@ -124,12 +149,15 @@ export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[],
   for (const row of rows) {
     const q = row.box;
     const newList: Node[] = [{ type: GLUE_NODE, spec: tabs[0], subtype: 12, tag }];
-    row.cells.forEach((c, j) => {
-      const r = hpack(c.list, colW[j], EXACTLY, c.natural.tag);
+    for (const c of row.cells) {
+      // a spanned cell is as wide as its columns and the tabskips between them
+      let w = colW[c.column];
+      for (let k = 1; k < c.span; k++) w += tabs[c.column + k].width + colW[c.column + k];
+      const r = hpack(c.list, w, EXACTLY, c.natural.tag);
       r.height = q.height;
       r.depth = q.depth;
-      newList.push(r, { type: GLUE_NODE, spec: tabs[j + 1], subtype: 12, tag });
-    });
+      newList.push(r, { type: GLUE_NODE, spec: tabs[c.column + c.span], subtype: 12, tag });
+    }
     q.list = newList;
     q.width = p.width;
     q.glueOrder = p.glueOrder;
@@ -144,4 +172,6 @@ export function halign(items: (AlignRow | AlignNoalign)[], tabskips: GlueSpec[],
       if (n.width === NULL_FLAG) n.width = p.width;
     }
   }
+  // the rows' boxes, in the order of the rows
+  return rows.map((row) => row.box);
 }
