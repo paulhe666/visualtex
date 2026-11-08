@@ -2,12 +2,12 @@ import { Atom } from '../core/atom-class';
 import type { AtomJson, BoxType, CreateAtomOptions } from '../core/types';
 
 export class OverlapAtom extends Atom {
-  private readonly align?: 'left' | 'right';
+  private readonly align?: 'left' | 'right' | 'center';
   private readonly boxType?: BoxType;
   constructor(
     options: CreateAtomOptions & {
       body: string | readonly Atom[];
-      align?: 'left' | 'right';
+      align?: 'left' | 'right' | 'center';
       boxType?: BoxType;
     }
   ) {

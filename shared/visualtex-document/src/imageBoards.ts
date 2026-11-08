@@ -1166,9 +1166,15 @@ export function imageBoardsPlugin(options: BoardsPluginOptions): Plugin<BoardSel
       handleKeyDown(view, event) {
         const state = view.state;
         const sel = state.selection;
+        // after the board's figure (figures.ts), not between the board and its caption
+        const afterFigure = (pos: number) => {
+          const $pos = state.doc.resolve(pos);
+          return $pos.parent.type.name === "figure" ? $pos.after() : pos;
+        };
         if (sel instanceof NodeSelection && isBoard(sel.node) && event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-          const tr = state.tr.insert(sel.to, state.schema.nodes.paragraph.create());
-          tr.setSelection(TextSelection.create(tr.doc, sel.to + 1));
+          const after = afterFigure(sel.to);
+          const tr = state.tr.insert(after, state.schema.nodes.paragraph.create());
+          tr.setSelection(TextSelection.create(tr.doc, after + 1));
           view.dispatch(tr.scrollIntoView());
           return true;
         }
@@ -1176,7 +1182,7 @@ export function imageBoardsPlugin(options: BoardsPluginOptions): Plugin<BoardSel
         if (!selected) return false;
         if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
           // a paragraph after the board
-          const after = selected.boardPos + state.doc.nodeAt(selected.boardPos)!.nodeSize;
+          const after = afterFigure(selected.boardPos + state.doc.nodeAt(selected.boardPos)!.nodeSize);
           const tr = state.tr.insert(after, state.schema.nodes.paragraph.create());
           tr.setSelection(TextSelection.create(tr.doc, after + 1)).setMeta(boardsKey, { extra: [] });
           view.dispatch(tr.scrollIntoView());

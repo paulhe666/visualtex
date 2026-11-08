@@ -8,6 +8,33 @@ import {
   parseArgAsString,
 } from './definitions-utils';
 import { atomsBoxType } from '../core/box';
+import type { Parser } from '../core/parser';
+import type { Argument } from './types';
+
+/**
+ * VisualTeX: the argument of a text accent (\'e, \' e, \'{e}, \'\i) is one
+ * token or a brace group, as TeX reads a macro argument; a `{:string}`
+ * argument took the rest of the word (\text{\'ecole} lost its letters).
+ */
+function scanAccentArgument(parser: Parser): (Argument | null)[] {
+  parser.skipFiller();
+  if (parser.match('<{>')) {
+    const s = parser.scanBalancedString();
+    parser.match('<}>');
+    return [s.trim().replace(/^\\([ij])$/, '$1'), `{${s}}`];
+  }
+  const token = parser.peek();
+  if (token === undefined || token.startsWith('<')) return [null];
+  parser.get();
+  return [token.replace(/^\\([ij])$/, '$1'), token];
+}
+
+/** A text accent as written: the command and its argument (args[1], braced or not). */
+function serializeAccent(atom: Atom): string {
+  const written = atom.args?.[1];
+  if (typeof written !== 'string') return atom.command;
+  return /^\\[a-zA-Z]+$/.test(atom.command) && /^[a-zA-Z]/.test(written) ? `${atom.command} ${written}` : atom.command + written;
+}
 
 const ACCENTS: Record<string, number> = {
   acute: 0x02ca,
@@ -93,6 +120,8 @@ defineFunction('utilde', '{body:auto}', {
  */
 
 defineFunction('^', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -117,6 +146,8 @@ defineFunction('^', '{:string}', {
 });
 
 defineFunction('`', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -141,6 +172,8 @@ defineFunction('`', '{:string}', {
 });
 
 defineFunction("'", '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -165,6 +198,8 @@ defineFunction("'", '{:string}', {
 });
 
 defineFunction('"', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -189,6 +224,8 @@ defineFunction('"', '{:string}', {
 });
 
 defineFunction('.', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -217,6 +254,8 @@ defineFunction('.', '{:string}', {
 });
 
 defineFunction('=', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,
@@ -242,6 +281,8 @@ defineFunction('=', '{:string}', {
 });
 
 defineFunction('~', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       type: 'mord',
@@ -257,6 +298,8 @@ defineFunction('~', '{:string}', {
 });
 
 defineFunction('c', '{:string}', {
+  parse: scanAccentArgument as (parser: Parser) => Argument[],
+  serialize: serializeAccent,
   createAtom: (options) =>
     new Atom({
       ...options,

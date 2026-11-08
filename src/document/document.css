@@ -324,7 +324,7 @@
   font-size: 12px;
 }
 
-/* ---- the source tab: the document as LaTeX or Markdown (the output format), read-only ---- */
+/* ---- the source tab: the document as LaTeX or Markdown (the output format), editable ---- */
 .document-source-view {
   display: flex;
   flex-direction: column;
@@ -340,9 +340,47 @@
   padding: 4px 10px;
   border-bottom: 1px solid var(--border);
 }
+.document-source-view-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-right: auto;
+}
 .document-source-view-note {
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
   color: var(--text-faint);
+  font: inherit;
   font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.document-source-view-note.is-problem {
+  color: var(--danger);
+}
+.document-source-view-note.is-lost {
+  color: var(--warning);
+}
+.document-source-view-action {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.document-format-switch button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .document-format-switch {
   display: inline-flex;
@@ -486,7 +524,6 @@
   white-space: pre-wrap;
   word-wrap: break-word;
   tab-size: 4;
-  counter-reset: vtx-s1 vtx-s2 vtx-s3;
   caret-color: #000;
 }
 .vtx-document p {
@@ -502,6 +539,38 @@
   line-height: 1.3;
   text-align: center;
 }
+/* its authors and date (\author, \date): centred, \large; article.cls's \@maketitle: .5em between authors (\lineskip),
+   1em before the date, 1.5em after the title block */
+.vtx-document p.vtx-author,
+.vtx-document p.vtx-date {
+  margin: 0;
+  padding: 0 0 calc(1.5em / 1.2);
+  font-size: 1.2em;
+  line-height: 1.3;
+  text-align: center;
+}
+.vtx-document p.vtx-author:has(+ p.vtx-author) {
+  padding-bottom: calc(0.5em / 1.2);
+}
+.vtx-document p.vtx-author:has(+ p.vtx-date) {
+  padding-bottom: calc(1em / 1.2);
+}
+/* the abstract (article.cls: a centred bold \small heading, then quotation's margins in \small) */
+.vtx-document .vtx-abstract {
+  margin: 0;
+  padding: 0.3em calc(2.5em / 0.9) 0.6em;
+  font-size: 0.9em;
+}
+.vtx-document .vtx-abstract::before {
+  content: "Abstract";
+  display: block;
+  padding-bottom: 0.2em;
+  font-weight: bold;
+  text-align: center;
+}
+.vtx-document .vtx-abstract.is-zh::before {
+  content: "摘要";
+}
 
 /* sections: Mathcha's three numbered levels */
 .vtx-document h1,
@@ -514,40 +583,30 @@
 }
 .vtx-document h1 {
   font-size: 1.2em;
-  counter-increment: vtx-s1;
-  counter-reset: vtx-s2 vtx-s3;
 }
 .vtx-document h2 {
   font-size: 1.1em;
-  counter-increment: vtx-s2;
-  counter-reset: vtx-s3;
 }
 .vtx-document h3 {
   font-size: 1em;
-  counter-increment: vtx-s3;
 }
-.vtx-document h1::before {
-  content: counter(vtx-s1) ". ";
+/* the number the document gives the section (settings.ts headingNumbers, in the document's format); an unnumbered
+   section (\section*) has none */
+.vtx-document :is(h1, h2, h3)[data-number]::before {
+  content: attr(data-number) " ";
+  padding-right: 0.25em;
+  white-space: pre;
+}
+.vtx-document h1[data-number]::before {
   padding-right: 0.5em;
-  white-space: pre;
-}
-.vtx-document h2::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) ". ";
-  padding-right: 0.25em;
-  white-space: pre;
-}
-.vtx-document h3::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) ". ";
-  padding-right: 0.25em;
-  white-space: pre;
 }
 /* WebKit (macOS) draws the caret of an empty line before generated content that flows inline (and none at all in a
    flex row), so the number never flows inline: it floats at the start of a left-aligned heading; in a centred or
    right-aligned one it is taken out of the line where it would start and drawn just before the text. */
-.vtx-document :is(h1, h2, h3)::before {
+.vtx-document :is(h1, h2, h3)[data-number]::before {
   float: left;
 }
-.vtx-document :is(h1, h2, h3):is([data-align="center"], [data-align="right"])::before {
+.vtx-document :is(h1, h2, h3)[data-number]:is([data-align="center"], [data-align="right"])::before {
   position: absolute;
   float: none;
   transform: translateX(-100%);
@@ -1730,22 +1789,6 @@
   pointer-events: none;
 }
 
-/* ---- section numbers in the document's format: 1 / 1.1 (no final dot), or none ---- */
-.vtx-sheet.is-headings-plain .vtx-document h1::before {
-  content: counter(vtx-s1) " ";
-}
-.vtx-sheet.is-headings-plain .vtx-document h2::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) " ";
-}
-.vtx-sheet.is-headings-plain .vtx-document h3::before {
-  content: counter(vtx-s1) "." counter(vtx-s2) "." counter(vtx-s3) " ";
-}
-.vtx-sheet.is-headings-none .vtx-document h1::before,
-.vtx-sheet.is-headings-none .vtx-document h2::before,
-.vtx-sheet.is-headings-none .vtx-document h3::before {
-  content: none;
-}
-
 /* a margin's exact value, typed after a double-click on its grip */
 .vtx-margin-edit {
   position: absolute;
@@ -2476,4 +2519,334 @@
 }
 .vtx-tutorial-button {
   margin-left: auto;
+}
+
+/* ---- figures and tables with their captions (figures.ts): LaTeX's [H] figure and table, \intextsep (12pt) around
+   them; the caption \abovecaptionskip (10pt) under a figure's image, above a table; a caption as \@makecaption sets
+   it: one line centred, longer ones justified across the line ---- */
+.vtx-document figure.vtx-figure,
+.vtx-document .vtx-table-figure {
+  margin: calc(12 * var(--vtx-pt, 1.333px)) 0;
+  padding: 0;
+}
+.vtx-document .vtx-caption {
+  display: block;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: 1em;
+  max-width: 100%;
+  margin: calc(10 * var(--vtx-pt, 1.333px)) auto 0;
+  text-align: justify;
+}
+.vtx-document .vtx-table-figure > .vtx-caption {
+  margin: 0 auto calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document .vtx-table-figure > .tableWrapper {
+  margin: 0;
+}
+.vtx-document .vtx-caption-label {
+  position: relative;
+  white-space: pre;
+  user-select: none;
+}
+/* the hint in an empty caption while the caret is in it, after the number (out of the line: the caret stays before it) */
+.vtx-document .vtx-caption.is-empty.is-active > .vtx-caption-label::after {
+  content: attr(data-hint);
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 0.3em;
+  color: #9aa0a6;
+  white-space: pre;
+  pointer-events: none;
+}
+.vtx-document .vtx-figure.ProseMirror-selectednode,
+.vtx-document .vtx-table-figure.ProseMirror-selectednode {
+  outline: 2px solid var(--accent, #2f6fde);
+  outline-offset: 2px;
+}
+/* a wrapped figure: wrapfigure beside the paragraphs after it (as a wrapped image above), its caption under the image */
+.vtx-document figure.vtx-figure.is-wrap-left,
+.vtx-document figure.vtx-figure.is-wrap-right {
+  margin-top: calc((var(--vtx-line-height, 1.3) - 1) * 0.5em + 0.85em + 12 * var(--vtx-pt, 1.333px) - 0.6em);
+  margin-bottom: calc(12 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure.is-wrap-left {
+  float: left;
+  margin-right: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure.is-wrap-right {
+  float: right;
+  margin-left: calc(10 * var(--vtx-pt, 1.333px));
+}
+.vtx-document figure.vtx-figure:is(.is-wrap-left, .is-wrap-right) .vtx-image {
+  float: none;
+  width: 100% !important;
+  margin: 0;
+}
+/* booktabs: \toprule and \bottomrule (0.08em) at the table's edges, \midrule under the first row (0.05em), no other rules */
+.vtx-document .vtx-table-figure[data-rules="booktabs"] table {
+  border-top: 0.08em solid #000;
+  border-bottom: 0.08em solid #000;
+}
+.vtx-document .vtx-table-figure[data-rules="booktabs"] td,
+.vtx-document .vtx-table-figure[data-rules="booktabs"] th {
+  border: none;
+}
+.vtx-document .vtx-table-figure[data-rules="booktabs"] tr:first-child > :is(td, th) {
+  border-bottom: 0.05em solid #000;
+}
+/* a long table's page break (pagination.ts): a row of space, no rules through it */
+.vtx-document tr.vtx-page-break > td {
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+/* ---- the page view as LaTeX sets the export (latex.ts; settings.ts bodyLayout): the sheet's data-class is the
+   exported class, article or ctexart (a document with Chinese text). --vtx-ex is the body's ex, --vtx-spread the
+   \linespread, --vtx-parindent the class's \parindent ---- */
+/* sections (\@startsection): \section \Large, \subsection \large, \subsubsection \normalsize, bold; the class's skips
+   before (3.5ex / 3.25ex, none at a page's top) and after (2.3ex / 1.5ex); the number, then \quad. article: all left;
+   ctexart: \section centred. Their \baselineskip: article's \Large 18/14.4, \large 14/12; ctex 1.2 x the size, both
+   times the \linespread. */
+.vtx-sheet[data-class] .vtx-document :is(h1, h2, h3) {
+  /* the skips are between baselines: the heading's taller line box takes its extra leading's share off them */
+  --vtx-heading-shift: calc(0.3 * (2 * var(--vtx-heading-leading) + 1em - var(--vtx-baseline)));
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: calc(3.25 * var(--vtx-ex) + var(--vtx-heading-shift)) 0 calc(1.5 * var(--vtx-ex) - var(--vtx-heading-shift));
+  line-height: calc(1.2 * var(--vtx-spread, 1));
+}
+.vtx-sheet[data-class] .vtx-document h1 {
+  margin: calc(3.5 * var(--vtx-ex) + var(--vtx-heading-shift)) 0 calc(2.3 * var(--vtx-ex) - var(--vtx-heading-shift));
+  font-size: 1.44em;
+}
+.vtx-sheet[data-class] .vtx-document h2 {
+  font-size: 1.2em;
+}
+.vtx-sheet[data-class="article"] .vtx-document h1 {
+  line-height: calc(1.25 * var(--vtx-spread, 1));
+}
+.vtx-sheet[data-class="article"] .vtx-document h2 {
+  line-height: calc(14 / 12 * var(--vtx-spread, 1));
+}
+.vtx-sheet[data-class="ctexart"] .vtx-document h1 {
+  font-size: calc(15.056em / 10.539);
+}
+.vtx-sheet[data-class="ctexart"] .vtx-document h2 {
+  font-size: calc(12.045em / 10.539);
+}
+/* at the document's top (after page commands only): no skip before, as at any page's top */
+.vtx-sheet[data-class] .vtx-document > :is(h1, h2, h3):not(:not(.vtx-page-command) ~ *) {
+  margin-top: 0;
+}
+.vtx-sheet[data-class] .vtx-document :is(h1, h2, h3)[data-number]::before {
+  content: attr(data-number);
+  padding-right: 1em;
+}
+.vtx-sheet[data-class="ctexart"] .vtx-document h1:not([data-align]) {
+  padding-right: 0;
+  padding-left: calc(var(--vtx-indent, 0) * 2em);
+  text-align: center;
+}
+/* a centred section's number and \quad before its title (out of the line, as in a centred heading above), the
+   title moved by their width so that number and title together are centred */
+.vtx-sheet[data-class="ctexart"] .vtx-document h1:not([data-align])[data-number] {
+  padding-left: calc(var(--vtx-number-width, 0em) + 1em + var(--vtx-indent, 0) * 2em);
+}
+.vtx-sheet[data-class="ctexart"] .vtx-document h1:not([data-align])[data-number]::before {
+  position: absolute;
+  float: none;
+  transform: translateX(-100%);
+}
+/* paragraphs: justified, indented by \parindent (ctexart: every one; article: not the first after a section); a
+   centred or right-aligned one, one indented by its own steps (\noindent\hspace*) or a line of images is not */
+.vtx-sheet[data-class] .vtx-document > p {
+  text-align: justify;
+  text-indent: var(--vtx-parindent);
+}
+/* (not inherited by what a line holds: a formula's or an image's own box) */
+.vtx-sheet[data-class] .vtx-document > p * {
+  text-indent: 0;
+}
+.vtx-sheet[data-class] .vtx-document > p:is([data-align="center"], [data-align="right"], [data-indent], .vtx-image-line),
+.vtx-sheet[data-class="article"] .vtx-document > :is(h1, h2, h3) + p,
+.vtx-sheet[data-class] .vtx-document > :is(h4, h5, h6) + p {
+  text-indent: 0;
+}
+/* tables: the tabular as the export writes it (tableColumns.ts): as wide as its columns, centred (\centering; one
+   wider than the text runs into the right margin, as LaTeX's overfull line does: no scroll bar, the page shows what
+   the PDF shows); \tabcolsep (6pt) each side of a cell, no other padding: a row is the \strut's height,
+   \baselineskip; one line per cell, but in a p{} column (.is-p: its width, the text wrapped); \arrayrulewidth (0.4pt)
+   rules in a grid */
+.vtx-sheet .vtx-document .tableWrapper {
+  margin: calc(10 * var(--vtx-pt, 1.333px)) 0;
+  overflow: visible;
+}
+.vtx-sheet .vtx-document table {
+  width: auto;
+  margin: 0 auto;
+  table-layout: auto;
+}
+.vtx-sheet .vtx-document :is(td, th) {
+  min-width: 0;
+  padding: 0 calc(6 * var(--vtx-pt, 1.333px));
+  border-width: calc(0.4 * var(--vtx-pt, 1.333px));
+  line-height: var(--vtx-line-height, 1.3);
+  white-space: pre;
+  vertical-align: baseline;
+}
+.vtx-sheet .vtx-document :is(td, th).is-p {
+  box-sizing: content-box;
+  white-space: pre-wrap;
+}
+.vtx-sheet .vtx-document :is(td, th)[rowspan]:not([rowspan="1"]) {
+  vertical-align: middle;
+}
+/* booktabs: \toprule and \bottomrule \heavyrulewidth (.08em), \midrule \lightrulewidth (.05em); \belowrulesep (.65ex)
+   under a rule, \aboverulesep (.4ex) over the mid and bottom rules */
+.vtx-sheet .vtx-document .vtx-table-figure[data-rules="booktabs"] table {
+  border-top-width: 0.08em;
+  border-bottom-width: 0.08em;
+}
+.vtx-sheet .vtx-document .vtx-table-figure[data-rules="booktabs"] tr:first-child > :is(td, th) {
+  padding-top: calc(0.65 * var(--vtx-ex));
+  padding-bottom: calc(0.4 * var(--vtx-ex));
+  border-bottom-width: 0.05em;
+}
+.vtx-sheet .vtx-document .vtx-table-figure[data-rules="booktabs"] tr:first-child + tr > :is(td, th) {
+  padding-top: calc(0.65 * var(--vtx-ex));
+}
+.vtx-sheet .vtx-document .vtx-table-figure[data-rules="booktabs"] tr:last-child > :is(td, th) {
+  padding-bottom: calc(0.4 * var(--vtx-ex));
+}
+.vtx-sheet .vtx-document .vtx-table-figure > .tableWrapper {
+  margin: 0;
+}
+/* the page style's head and foot (pagination.ts): the body's size and colour, placed by their baseline (the probe's
+   place) */
+.vtx-page-layer > .vtx-page-number,
+.vtx-page-head {
+  position: absolute;
+  right: auto;
+  color: #000;
+  font-size: 1em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: none;
+}
+.vtx-baseline-probe {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: baseline;
+}
+.vtx-page-head {
+  display: flex;
+  align-items: baseline;
+}
+.vtx-page-head > .vtx-page-mark {
+  flex: 1 1 auto;
+}
+.vtx-page-head > .vtx-page-number {
+  position: static;
+  color: inherit;
+  font-size: inherit;
+  transform: none;
+}
+/* \slshape */
+.vtx-page-mark {
+  font-style: oblique;
+}
+.vtx-page-mark .is-upright {
+  font-style: normal;
+}
+.vtx-page-quad {
+  display: inline-block;
+  width: 1em;
+}
+/* an inline formula's own line no taller than the body's (\baselineskip: a formula only makes its line taller when it
+   is taller itself) */
+.vtx-sheet[data-class] .vtx-document .vtx-math-inline {
+  line-height: min(1.2, calc(var(--vtx-line-height, 1.3) / var(--vtx-math-scale, 1.04)));
+}
+/* a display: \abovedisplayskip and \belowdisplayskip (10pt) around its line; its number at the text's right edge */
+.vtx-sheet[data-class] .vtx-document .vtx-math-display {
+  margin: calc(8 * var(--vtx-pt, 1.333px) + var(--vtx-baseline) - 1.2 * var(--vtx-size)) 0;
+}
+.vtx-sheet[data-class] .vtx-document .vtx-math-display .vtx-formula-number {
+  right: 0;
+}
+/* a section at the document's top: its baseline \topskip (10pt) under the text area's top, as LaTeX puts a page's first
+   line (the line box's half-leading and the font's ascent, about 0.85em with Times and SimSun, taken off) */
+.vtx-sheet[data-class] .vtx-document > :is(h1, h2, h3):not(:not(.vtx-page-command) ~ *) {
+  margin-top: calc(10 * var(--vtx-pt, 1.333px) - (var(--vtx-heading-leading) + 0.85em));
+}
+.vtx-sheet[data-class] .vtx-document :is(h1, h2, h3) {
+  --vtx-heading-leading: calc((1.2 * var(--vtx-spread, 1) - 1) / 2 * 1em);
+}
+.vtx-sheet[data-class="article"] .vtx-document h1 {
+  --vtx-heading-leading: calc((1.25 * var(--vtx-spread, 1) - 1) / 2 * 1em);
+}
+.vtx-sheet[data-class="article"] .vtx-document h2 {
+  --vtx-heading-leading: calc((14 / 12 * var(--vtx-spread, 1) - 1) / 2 * 1em);
+}
+/* lists (article's and ctexart's \@listi …): \leftmargin 25pt, 22pt, 18.7pt; the label right-aligned \labelsep (5pt)
+   before the text; \topsep + \partopsep (10pt) around a list, 4pt and 2pt around the deeper ones; \itemsep + \parsep
+   between items (8pt, 4pt, 2pt); the labels •, bold –, ∗ and 1., (a), i. */
+.vtx-sheet[data-class] .vtx-document :is(ul, ol) {
+  margin: calc(10 * var(--vtx-pt, 1.333px)) 0;
+}
+.vtx-sheet[data-class] .vtx-document li :is(ul, ol) {
+  margin: calc(4 * var(--vtx-pt, 1.333px)) 0;
+}
+.vtx-sheet[data-class] .vtx-document li li :is(ul, ol) {
+  margin: calc(2 * var(--vtx-pt, 1.333px)) 0;
+}
+.vtx-sheet[data-class] .vtx-document :is(ul, ol) > li {
+  padding-left: calc(25 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li :is(ul, ol) > li {
+  padding-left: calc(22 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li li :is(ul, ol) > li {
+  padding-left: calc(18.7 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li + li {
+  margin-top: calc(8 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li li + li {
+  margin-top: calc(4 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li li li + li {
+  margin-top: calc(2 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li > p + p {
+  margin-top: calc(4 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li:not(.vtx-task)::before {
+  left: 0;
+  width: calc(20 * var(--vtx-pt, 1.333px));
+  line-height: inherit;
+  text-align: right;
+}
+.vtx-sheet[data-class] .vtx-document li li:not(.vtx-task)::before {
+  width: calc(17 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li li li:not(.vtx-task)::before {
+  width: calc(13.7 * var(--vtx-pt, 1.333px));
+}
+.vtx-sheet[data-class] .vtx-document li ul > li:not(.vtx-task)::before {
+  font-weight: bold;
+}
+.vtx-sheet[data-class] .vtx-document li li ul > li:not(.vtx-task)::before {
+  content: "∗";
+  font-weight: normal;
+}
+.vtx-sheet[data-class] .vtx-document li ol > li::before {
+  content: "(" counter(vtx-item, lower-alpha) ")";
+}
+.vtx-sheet[data-class] .vtx-document li li ol > li::before {
+  content: counter(vtx-item, lower-roman) ".";
 }

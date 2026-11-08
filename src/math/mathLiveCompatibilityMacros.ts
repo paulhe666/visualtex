@@ -28,8 +28,11 @@ export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
   ...VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS,
   // \bm is the kernel's own command (symbol-wide bold whose content stays
   // editable); a macro wrapper would hide its content from editing and styling.
+  // \braket is the kernel's too: braket.sty's one argument, physics' second
+  // one only when a brace group follows (a fixed two-argument macro would
+  // swallow the next token).
   ...Object.fromEntries(
-    Object.entries(VISUALTEX_MATHLIVE_PACKAGE_MACROS).filter(([name]) => name !== "bm"),
+    Object.entries(VISUALTEX_MATHLIVE_PACKAGE_MACROS).filter(([name]) => name !== "bm" && name !== "braket"),
   ),
 
   // MathLive accepts \nicefrac as source but does not expose its two

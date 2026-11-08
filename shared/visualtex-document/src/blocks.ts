@@ -20,6 +20,7 @@ import {
   setCellAttr,
   splitCell,
 } from "prosemirror-tables";
+import { isQuoteLike, isTitleBlockLine } from "./titleBlock.ts";
 
 /** The top-level block holding the selection, with its position. */
 export function currentBlock(state: EditorState): { node: Node; pos: number } | null {
@@ -105,9 +106,9 @@ export function toggleList(kind: "ordered_list" | "bullet_list"): Command {
       }
       return true;
     }
-    // A section (or the title) becomes body text first: list items hold paragraphs.
+    // A section (or a line of the title block) becomes body text first: list items hold paragraphs.
     const block = textblockAt(state);
-    if (block?.node.type.name !== "heading" && block?.node.type.name !== "title") return wrapInList(type)(state, dispatch);
+    if (!block || (block.node.type.name !== "heading" && !isTitleBlockLine(block.node))) return wrapInList(type)(state, dispatch);
     const tr = state.tr.setBlockType(block.pos, block.pos + block.node.nodeSize, state.schema.nodes.paragraph, {
       align: block.node.attrs.align ?? null,
       indent: 0,
@@ -177,18 +178,18 @@ export const clearLineStyle: Command = (state, dispatch) => {
   const { $cursor } = state.selection as TextSelection;
   if (!$cursor || $cursor.parentOffset > 0 || !$cursor.parent.isTextblock) return false;
   const block = $cursor.parent;
-  const { heading, title, paragraph, list_item, blockquote } = state.schema.nodes;
-  if (block.type === heading || block.type === title) {
+  const { heading, title, author, date, paragraph, list_item } = state.schema.nodes;
+  if (block.type === heading || block.type === title || block.type === author || block.type === date) {
     if (dispatch) {
       const attrs = { align: block.attrs.align ?? null, indent: block.attrs.indent ?? 0 };
       dispatch(state.tr.setBlockType($cursor.pos, $cursor.pos, paragraph, attrs).scrollIntoView());
     }
     return true;
   }
-  // The first line of a list item or a quote: out of the list / quote.
+  // The first line of a list item, a quote or the abstract: out of the list / quote / abstract.
   const container = $cursor.depth >= 2 && $cursor.index(-1) === 0 ? $cursor.node(-1).type : null;
   if (container === list_item) return liftListItem(list_item)(state, dispatch);
-  if (container === blockquote) {
+  if (container && isQuoteLike(container)) {
     const range = $cursor.blockRange();
     const target = range && liftTarget(range);
     if (range && target !== null && target !== undefined) {
@@ -203,13 +204,13 @@ export const clearLineStyle: Command = (state, dispatch) => {
   return false;
 };
 
-/** Enter: a new line in the same style (a section stays a section of the same level, as in Mathcha); after the
- *  title, body text. */
+/** Enter: a new line in the same style (a section stays a section of the same level, as in Mathcha; an author line
+ *  gives the next author); after the title or the date, body text. */
 export const splitKeepingStyle: Command = (state, dispatch, view) => {
   const { $from } = state.selection;
   if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
-  const { title, paragraph } = state.schema.nodes;
-  return splitBlockAs((node) => (node.type === title ? { type: paragraph } : { type: node.type, attrs: { ...node.attrs, id: null } }))(
+  const { title, date, paragraph } = state.schema.nodes;
+  return splitBlockAs((node) => (node.type === title || node.type === date ? { type: paragraph } : { type: node.type, attrs: { ...node.attrs, id: null } }))(
     state,
     dispatch,
     view,
@@ -257,12 +258,12 @@ export function selectAdjacentBlock(direction: -1 | 1): Command {
   };
 }
 
-/** Enter on an empty line in a quote: out of the quote (as on an empty list item; Typora, Obsidian). */
+/** Enter on an empty line in a quote or the abstract: out of it (as on an empty list item; Typora, Obsidian). */
 export const leaveEmptyQuoteLine: Command = (state, dispatch) => {
   const { $cursor } = state.selection as TextSelection;
-  const { paragraph, blockquote } = state.schema.nodes;
+  const { paragraph } = state.schema.nodes;
   if (!$cursor || $cursor.parent.type !== paragraph || $cursor.parent.content.size > 0) return false;
-  if ($cursor.depth < 2 || $cursor.node(-1).type !== blockquote) return false;
+  if ($cursor.depth < 2 || !isQuoteLike($cursor.node(-1).type)) return false;
   const range = $cursor.blockRange();
   const target = range && liftTarget(range);
   if (!range || target === null || target === undefined) return false;
@@ -302,7 +303,9 @@ export const tableEnter: Command = (state, dispatch) => {
   const tr = state.tr;
   if (at.row < at.map.height - 1) caretInCell(tr, at.tableStart, at.map, at.row + 1, at.col);
   else {
-    const after = at.tablePos + at.table.nodeSize;
+    // out of the table's float (figures.ts) too: after its caption and table
+    const $table = state.doc.resolve(at.tablePos);
+    const after = $table.parent.type.name === "table_figure" ? $table.after() : at.tablePos + at.table.nodeSize;
     if (!tr.doc.resolve(after).nodeAfter?.isTextblock) tr.insert(after, state.schema.nodes.paragraph.create());
     tr.setSelection(TextSelection.create(tr.doc, after + 1));
   }

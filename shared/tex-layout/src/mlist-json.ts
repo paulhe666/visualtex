@@ -179,6 +179,9 @@ export class MlistJson {
         return { type: KERN_NODE, width: sp(it.width), subtype: it.mu ? MU_GLUE : NORMAL, tag } as Node;
       case "penalty":
         return { type: PENALTY_NODE, penalty: it.value, tag } as Node;
+      case "rule":
+        // a \vrule in math mode (amsopn's \varliminf: \vrule\@depth.2\ex@\@width\z@)
+        return { type: RULE_NODE, height: this.dim(it.height), depth: this.dim(it.depth), width: this.dim(it.width), tag } as Node;
       default:
         throw new Error("unsupported mlist item " + it.type + " " + JSON.stringify(it).slice(0, 120));
     }

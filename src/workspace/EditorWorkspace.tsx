@@ -2115,7 +2115,9 @@ export function EditorWorkspace({
                   (sourceOpen ? " is-source-panel" : " is-tools-panel")
                 }
                 aria-label={
-                  isEn ? "Formula tools and LaTeX source" : "公式工具与 LaTeX 源码"
+                  documentMode
+                    ? isEn ? "Formula tools and source" : "公式工具与源码"
+                    : isEn ? "Formula tools and LaTeX source" : "公式工具与 LaTeX 源码"
                 }
               >
                 <nav
@@ -2281,7 +2283,9 @@ export function EditorWorkspace({
               <section
                 className={"standard-source-dock" + (sourceOpen ? " is-open" : "")}
                 aria-label={
-                  isEn ? "Formatting and LaTeX source" : "公式格式与 LaTeX 源码"
+                  documentMode
+                    ? isEn ? "Formatting and source" : "公式格式与源码"
+                    : isEn ? "Formatting and LaTeX source" : "公式格式与 LaTeX 源码"
                 }
               >
                 <nav
@@ -2355,13 +2359,17 @@ export function EditorWorkspace({
                       data-standard-source-collapse
                       aria-expanded={sourceOpen}
                       aria-label={
-                        sourceOpen
-                          ? isEn
-                            ? "Hide LaTeX source"
-                            : "收起 LaTeX 源码"
-                          : isEn
-                            ? "Show LaTeX source"
-                            : "展开 LaTeX 源码"
+                        documentMode
+                          ? sourceOpen
+                            ? isEn ? "Hide the source" : "收起源码"
+                            : isEn ? "Show the source" : "展开源码"
+                          : sourceOpen
+                            ? isEn
+                              ? "Hide LaTeX source"
+                              : "收起 LaTeX 源码"
+                            : isEn
+                              ? "Show LaTeX source"
+                              : "展开 LaTeX 源码"
                       }
                       onClick={() => setSourceOpen(!sourceOpen)}
                     >

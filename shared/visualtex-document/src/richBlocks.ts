@@ -5,7 +5,7 @@ import type { Node } from "prosemirror-model";
 import { Plugin, TextSelection } from "prosemirror-state";
 import type { EditorView, NodeView } from "prosemirror-view";
 import MarkdownIt from "markdown-it";
-import { documentSettings } from "./settings.ts";
+import { headingNumbers } from "./settings.ts";
 
 // ------------------------------------------------------------------- [toc] --
 
@@ -38,19 +38,12 @@ class TocView implements NodeView {
 
   render() {
     const doc = this.view.state.doc;
-    const numbering = documentSettings(doc).headingNumbering;
-    const counters = [0, 0, 0];
+    const numbers = headingNumbers(doc);
     const entries: Array<{ level: number; text: string; number: string; pos: number }> = [];
     doc.forEach((child, offset) => {
-      if (child.type.name !== "heading") return;
-      const level = child.attrs.level as number;
-      let number = "";
-      if (level <= 3 && numbering !== "none") {
-        counters[level - 1]++;
-        for (let k = level; k < 3; k++) counters[k] = 0;
-        number = counters.slice(0, level).join(".") + (numbering === "1." ? "." : "");
-      }
-      entries.push({ level, text: child.textContent, number, pos: offset });
+      // an unnumbered section (\section*) is not in LaTeX's table of contents
+      if (child.type.name !== "heading" || child.attrs.unnumbered) return;
+      entries.push({ level: child.attrs.level as number, text: child.textContent, number: numbers.get(offset) ?? "", pos: offset });
     });
     const key = JSON.stringify(entries);
     if (key === this.shown) return;

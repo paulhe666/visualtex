@@ -103,6 +103,8 @@ export interface EditorGeometry {
   regions: Map<Tag, Region>;
   /** x of the explicit alignment markers of the main row (sp) */
   alignMarkers: number[];
+  /** the formula's pieces and their places, when it is set on several lines (LayoutOptions.lineLayout) */
+  lines?: import("./lines.ts").FormulaLines;
 }
 
 export interface GeometryModel {

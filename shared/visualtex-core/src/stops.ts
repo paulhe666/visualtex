@@ -2,7 +2,7 @@
 // position after the atom at that offset (a slot's start is the offset of its
 // "first" atom). This module is the one rule for which offsets the caret may
 // stand at; keys, Tab, extension and (later) clicks only ever produce these.
-import { inMacroInternals, isPlaceholder, slotItems, slotOf, type CoreAtom } from "./structures.ts";
+import { inIndexList, inMacroInternals, isPlaceholder, slotItems, slotOf, type CoreAtom } from "./structures.ts";
 
 /** The part of the kernel model the core reads and drives. */
 export interface CoreModel {
@@ -55,6 +55,10 @@ export function isAllowedStop(model: CoreModel, offset: number): boolean {
     if (!atom.isFirstSibling && atom.isLastSibling) return false;
     if (atom.type === "first") return false;
   }
+  // amsmath's \leftroot and \uproot draw nothing: no stop after them in a root's index
+  if (atom.command === "\\leftroot" || atom.command === "\\uproot") return false;
+  // a tensor index string has stops only in its indices (an empty one keeps its slot's stop)
+  if (inIndexList(atom) && !isEmptySlotStart(atom)) return false;
   if (model.mathfield.hasEditablePrompts && !atom.parentPrompt) return false;
   return true;
 }

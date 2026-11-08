@@ -23,6 +23,8 @@ export const version = {
 };
 
 export { setVisualTexLayoutEngine, setVisualTexEditingCore } from './editor-mathfield/visualtex-hooks';
+/** The physics, braket and siunitx commands the kernel reads with their package's arguments. */
+export { VISUALTEX_PACKAGE_COMMANDS as visualTexPackageCommands } from './latex-commands/visualtex-packages';
 export {
   EdgeScroller as VisualTexEdgeScroller,
   runAppDrag as visualTexRunSelectionDrag,

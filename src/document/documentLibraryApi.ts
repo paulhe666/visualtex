@@ -6,6 +6,7 @@ import type { Node } from "prosemirror-model";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { safeStorage } from "../runtime/safeStorage";
+import { DOCUMENT_LATEX } from "../edition";
 
 export interface LibraryDocument {
   id: string;
@@ -366,7 +367,8 @@ export async function saveTextFile(name: string, text: string, extension: string
   return true;
 }
 
-const IMPORT_EXTENSIONS = ["vtxdoc", "json", "md", "markdown", "tex", "ltx", "zip"];
+// .tex and LaTeX projects: the personal edition only
+const IMPORT_EXTENSIONS = DOCUMENT_LATEX ? ["vtxdoc", "json", "md", "markdown", "tex", "ltx", "zip"] : ["vtxdoc", "json", "md", "markdown", "zip"];
 
 /**
  * A file to open, from the system's open dialog (the app only; null when cancelled): its bytes and the folder it is

@@ -215,8 +215,11 @@ defineFunction(['cfrac'], '[:string]{:expression}{:expression}', {
   serialize: (atom, options) => {
     const numer = atom.aboveToLatex(options);
     const denom = atom.belowToLatex(options);
+    // VisualTeX: keep amsmath's [l]/[r] numerator position
+    const align = (atom as unknown as { align?: string }).align;
+    const position = align === 'left' ? '[l]' : align === 'right' ? '[r]' : '';
 
-    return latexCommand(atom.command, numer, denom);
+    return latexCommand(atom.command + position, numer, denom);
   },
 });
 
@@ -278,7 +281,8 @@ defineFunction(
         ...options,
         leftDelim: args[2] ?? '.',
         rightDelim: args[3] ?? '.',
-        hasBarLine: false,
+        // VisualTeX: \overwithdelims has the fraction bar, \atopwithdelims none
+        hasBarLine: options.command === '\\overwithdelims',
       });
     },
     serialize: (atom: GenfracAtom, options) =>
@@ -429,6 +433,8 @@ defineFunction('middle', '{:delim}', {
       delim: options.args![0] ?? '|',
       size: 1,
     }),
+  // VisualTeX: the delimiter as a token (\middle\vert, \middle|), never braced: TeX wants a delimiter
+  serialize: (atom: MiddleDelimAtom) => joinLatex([atom.command, atom.value]),
 });
 
 // TODO

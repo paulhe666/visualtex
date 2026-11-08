@@ -7,19 +7,22 @@
 import MarkdownIt, { type StateBlock, type StateCore, type StateInline, type Token } from "markdown-it";
 import { DEFAULT_IMAGE_WIDTH, imageAspect, imageEntry, imageFiles, isImage, isImageLine, resolveImageSource } from "./images.ts";
 import { emojiOf } from "./emoji.ts";
-import { boardHeight, boardItems, boardRows, canonicalRow } from "./imageBoards.ts";
+import { boardFixes, boardHeight, boardItems, boardRows, canonicalRow } from "./imageBoards.ts";
 import { ALERTS } from "./schema.ts";
 import { pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
-import { MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
+import { MarkdownParser, MarkdownSerializer, type MarkdownSerializerState } from "prosemirror-markdown";
 import { Slice, type Mark, type Node, type Schema } from "prosemirror-model";
 import { Transform } from "prosemirror-transform";
-import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
+import { EditorState, Plugin, PluginKey } from "prosemirror-state";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { FONT_SIZES } from "./schema.ts";
 import { bibliographyEntries, citeLabel } from "./notes.ts";
-import { documentSettings, equationLabels } from "./settings.ts";
+import { documentSettings, equationLabels, ownEquationTag } from "./settings.ts";
 import { MARKDOWN_TITLE_CLOSE, MARKDOWN_TITLE_OPEN } from "./latexImport.ts";
 import { resolveLatexMarkers } from "./latexMarkers.ts";
+import { captionLabelLength, captionLabels, figureFixes, figureParts, figureWrap, isFigure, isTableFigure, tableFigureParts, type CaptionLabel } from "./figures.ts";
+import { resolveTableMarkers } from "./latexTables.ts";
+import { TableMap } from "prosemirror-tables";
 import { sliceWithoutMarkdownSyntax, withoutMarkdownSyntax } from "./markdownLive.ts";
 
 /** The highlight colour ==text== gets (the first of the highlight swatches). */
@@ -194,12 +197,16 @@ function tidy(state: StateCore) {
       }
       const board = boardTokens(state, token.content);
       if (board) {
+        // the block's place in the file (a figure's, figures.ts)
+        board[0].map = token.map;
         tokens.splice(i, 1, ...board);
         i += board.length - 1;
         continue;
       }
       const line = imageLineTokens(state, token.content);
       if (line) {
+        line[0].map = token.map;
+        for (const part of line) part.level += token.level;
         tokens.splice(i, 1, ...line);
         i += line.length - 1;
         continue;
@@ -407,6 +414,13 @@ function markdownImageToken(state: StateCore, child: Token): Token | null {
 
 function htmlImageToken(state: StateCore, tag: string, align: string | null = tagAttr(tag, "align")): Token | null {
   const token = imageToken(state, tagAttr(tag, "src") ?? "", tagAttr(tag, "alt") ?? "", widthFraction(tagAttr(tag, "width") ?? cssWidth(tag)), align);
+  // a title that starts with a figure's label ("Figure 2: …"): the caption of a wrapped image (figures.ts)
+  const title = tagAttr(tag, "title");
+  if (token && title) {
+    const text = title.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+    const label = captionLabelLength(text, "figure");
+    if (label) token.attrSet("caption", text.slice(label));
+  }
   // Typora's <img style="zoom:50%">: half the picture's own width (on an A4 page's text width)
   const zoom = /zoom\s*:\s*([\d.]+)\s*(%?)/i.exec(tagAttr(tag, "style") ?? "");
   if (token && zoom && !tagAttr(tag, "width")) {
@@ -625,6 +639,86 @@ function footnoteReference(state: StateInline, silent: boolean): boolean {
  * Before the inline text is read: "[ ] " / "[x] " opening a list item (a task), "> [!NOTE]" opening a quote (an
  * alert, its kind on the quote) and a paragraph of just [toc] (the table of contents).
  */
+/** A heading's Pandoc attributes at its end: "{-}", "{.unnumbered}", "{#id .unnumbered}". */
+const UNNUMBERED_HEADING = /[ \t]+\{([^{}]*)\}[ \t]*$/;
+
+/** The title block's lines after the title: <p align="center" class="author">…</p> (one per author) and
+ *  <p align="center" class="date">…</p>, their text read as Markdown (<br>: a line break in an author). */
+const TITLE_BLOCK_LINE = /<p\b([^>]*)>([\s\S]*?)<\/p>/gi;
+
+function titleBlockLines(state: StateCore) {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== "html_block" || token.level !== 0) continue;
+    const lines: Array<{ kind: string; text: string }> = [];
+    const rest = token.content.replace(TITLE_BLOCK_LINE, (whole, attributes: string, text: string) => {
+      const kind = /\bclass\s*=\s*["']?(author|date)\b/i.exec(attributes)?.[1]?.toLowerCase();
+      if (!kind) return whole;
+      lines.push({ kind, text });
+      return "";
+    });
+    if (!lines.length || rest.trim()) continue;
+    const replaced: Token[] = [];
+    for (const line of lines) {
+      const open = new state.Token(`${line.kind}_open`, "p", 1);
+      open.map = token.map;
+      open.block = true;
+      const inline = new state.Token("inline", "", 0);
+      inline.level = 1;
+      inline.content = line.text.replace(/\s*\n\s*/g, " ").trim();
+      inline.map = token.map;
+      inline.children = [];
+      const close = new state.Token(`${line.kind}_close`, "p", -1);
+      close.block = true;
+      replaced.push(open, inline, close);
+    }
+    tokens.splice(i, 1, ...replaced);
+    i += replaced.length - 1;
+  }
+}
+
+const ABSTRACT_OPEN = /^\s*<div\b[^>]*\bclass\s*=\s*["']?abstract["']?[^>]*>/i;
+
+/** What an abstract may hold (schema.ts): paragraphs, display formulas and lists. */
+const ABSTRACT_CONTENT = new Set(["paragraph_open", "math_block", "bullet_list_open", "ordered_list_open"]);
+
+/**
+ * <div class="abstract"> … </div> (the Markdown between them after blank lines, so that GitHub, Typora and Obsidian
+ * show it as Markdown; on one line or without blank lines, read all the same): the abstract.
+ */
+function abstracts(state: StateCore) {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== "html_block" || token.level !== 0 || !ABSTRACT_OPEN.test(token.content)) continue;
+    const head = token.content.replace(ABSTRACT_OPEN, "");
+    let inner: Token[];
+    let last: number;
+    const closed = /<\/div>\s*$/i.exec(head);
+    if (closed) {
+      // the whole abstract in one HTML block
+      inner = [];
+      state.md.block.parse(head.slice(0, closed.index), state.md, state.env, inner);
+      last = i;
+    } else {
+      if (head.trim()) continue;
+      last = tokens.findIndex((t, k) => k > i && t.type === "html_block" && t.level === 0 && /^\s*<\/div>\s*$/i.test(t.content));
+      if (last < 0) continue;
+      inner = tokens.slice(i + 1, last);
+    }
+    if (inner.some((t) => t.level === 0 && t.nesting >= 0 && !ABSTRACT_CONTENT.has(t.type))) continue;
+    for (const t of inner) t.level += 1;
+    const open = new state.Token("abstract_open", "div", 1);
+    open.block = true;
+    open.map = token.map && tokens[last].map ? [token.map[0], tokens[last].map![1]] : token.map;
+    const close = new state.Token("abstract_close", "div", -1);
+    close.block = true;
+    tokens.splice(i, last - i + 1, open, ...inner, close);
+    i += inner.length + 1;
+  }
+}
+
 function blockMarkers(state: StateCore) {
   const tokens = state.tokens;
   for (let i = 0; i < tokens.length; i++) {
@@ -635,6 +729,14 @@ function blockMarkers(state: StateCore) {
       if (task) {
         token.attrSet("checked", task[1] === " " ? "false" : "true");
         inline.content = inline.content.slice(task[0].length);
+      }
+    }
+    // Pandoc's "# Heading {-}" (or {.unnumbered}): an unnumbered section
+    if (token.type === "heading_open" && tokens[i + 1]?.type === "inline") {
+      const attributes = UNNUMBERED_HEADING.exec(tokens[i + 1].content);
+      if (attributes && attributes[1].trim().split(/\s+/).some((a) => a === "-" || a === ".unnumbered")) {
+        token.attrSet("unnumbered", "true");
+        tokens[i + 1].content = tokens[i + 1].content.slice(0, attributes.index);
       }
     }
     if (token.type === "blockquote_open" && tokens[i + 1]?.type === "paragraph_open" && inline?.type === "inline") {
@@ -657,6 +759,137 @@ function blockMarkers(state: StateCore) {
   }
 }
 
+/** The index of the token that closes the block opening at `i` (the token itself for a block of one token). */
+function blockEnd(tokens: Token[], i: number): number {
+  if (tokens[i].nesting <= 0) return i;
+  let depth = 0;
+  for (let k = i; k < tokens.length; k++) {
+    depth += tokens[k].nesting;
+    if (depth === 0) return k;
+  }
+  return tokens.length - 1;
+}
+
+/** Whether the paragraph opening at `i` holds images and nothing else (a figure's line); `wrapped`: one wrapped image. */
+function imageParagraph(tokens: Token[], i: number, wrapped: boolean): boolean {
+  const inline = tokens[i + 1];
+  if (tokens[i].type !== "paragraph_open" || inline?.type !== "inline" || tokens[i + 2]?.type !== "paragraph_close") return false;
+  const children = (inline.children ?? []).filter((child) => !(child.type === "text" && !child.content.trim()) && child.type !== "softbreak");
+  return children.length > 0 && children.every((child) => child.type === "vtx_image" && !!child.attrGet("wrap") === wrapped) && (!wrapped || children.length === 1);
+}
+
+/** A paragraph that starts with a caption's label of this kind: the label taken off its text (true), or false. */
+function takeCaptionLabel(tokens: Token[], i: number, kind: "figure" | "table"): boolean {
+  if (tokens[i]?.type !== "paragraph_open" || tokens[i + 1]?.type !== "inline") return false;
+  const children = tokens[i + 1].children ?? [];
+  // the label alone in bold or italic: *Figure 1:* text
+  if (/^(em|strong)_open$/.test(children[0]?.type ?? "") && children[1]?.type === "text" && children[2]?.type === children[0].type.replace("open", "close")) {
+    if (captionLabelLength(children[1].content, kind) === children[1].content.length) {
+      children.splice(0, 3);
+      if (children[0]?.type === "text") children[0].content = children[0].content.replace(/^\s+/, "");
+      return true;
+    }
+  }
+  const text = children[0];
+  if (text?.type !== "text") return false;
+  const length = captionLabelLength(text.content, kind);
+  if (!length) return false;
+  text.content = text.content.slice(length);
+  if (!text.content) children.shift();
+  return true;
+}
+
+/**
+ * Figures and tables with their captions (figures.ts): an image line or board, with the centred paragraph after it
+ * that starts with its label as its caption ("Figure 1: …", what documentToMarkdown writes); a table, with a paragraph
+ * "Table: …" (Pandoc's caption) before or after it; a wrapped image opening a paragraph, as its figure before that
+ * paragraph (its title "Figure 1: …" the caption). Every image line, board and table is a figure or a table float,
+ * as in the editor (its caption empty when the file has none).
+ */
+function figureCaptions(state: StateCore) {
+  const tokens = state.tokens;
+  const Token = state.Token;
+  const out: Token[] = [];
+  const shift = (list: Token[]) => list.forEach((token) => (token.level += 1));
+  const open = (type: string, tag: string, level: number, map: [number, number] | null) => {
+    const token = new Token(`${type}_open`, tag, 1);
+    token.block = true;
+    token.level = level;
+    if (map) token.map = map;
+    return token;
+  };
+  const close = (type: string, tag: string, level: number) => {
+    const token = new Token(`${type}_close`, tag, -1);
+    token.block = true;
+    token.level = level;
+    return token;
+  };
+  const caption = (level: number, inline: Token | null) => {
+    const parts = [open("vtx_caption", "figcaption", level + 1, null)];
+    if (inline) {
+      inline.level = level + 2;
+      parts.push(inline);
+    }
+    parts.push(close("vtx_caption", "figcaption", level + 1));
+    return parts;
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const level = token.level;
+    // a list item starts with a paragraph: its first line stays a line
+    const firstInItem = tokens[i - 1]?.type === "list_item_open";
+    const inCell = tokens.slice(Math.max(0, i - 3), i).some((t) => t.type === "td_open" || t.type === "th_open");
+    if (!firstInItem && !inCell && (imageParagraph(tokens, i, false) || token.type === "vtx_board_open")) {
+      const end = blockEnd(tokens, i);
+      const body = tokens.slice(i, end + 1);
+      const next = end + 1;
+      const captioned = tokens[next]?.level === level && takeCaptionLabel(tokens, next, "figure");
+      const map: [number, number] | null = token.map ? [token.map[0], captioned && tokens[next].map ? tokens[next].map![1] : token.map[1]] : null;
+      shift(body);
+      out.push(open("vtx_figure", "figure", level, map), ...body, ...caption(level, captioned ? tokens[next + 1] : null), close("vtx_figure", "figure", level));
+      i = captioned ? next + 2 : end;
+      continue;
+    }
+    if (token.type === "table_open") {
+      const end = blockEnd(tokens, i);
+      const table = tokens.slice(i, end + 1);
+      // Pandoc's caption: a paragraph "Table: …" just before the table (already written out) or just after it
+      const before = out.length >= 3 ? out.length - 3 : -1;
+      let inline: Token | null = null;
+      let start = token.map?.[0] ?? null;
+      let last = end;
+      if (before >= 0 && out[before].level === level && !out.slice(before).some((t) => t.type.startsWith("vtx_")) && takeCaptionLabel(out, before, "table")) {
+        inline = out[before + 1];
+        start = out[before].map?.[0] ?? start;
+        out.splice(before, 3);
+      } else if (tokens[end + 1]?.level === level && takeCaptionLabel(tokens, end + 1, "table")) {
+        inline = tokens[end + 2];
+        last = end + 3;
+      }
+      const stop = last === end ? token.map?.[1] : tokens[end + 1].map?.[1];
+      shift(table);
+      const float = open("vtx_table_figure", "div", level, start !== null && stop !== undefined && stop !== null ? [start, stop] : token.map);
+      out.push(float, ...caption(level, inline), ...table, close("vtx_table_figure", "div", level));
+      i = last;
+      continue;
+    }
+    // a wrapped image opening a body paragraph: its figure before the paragraph (the figure takes no lines of the file)
+    if (level === 0 && token.type === "paragraph_open" && tokens[i + 1]?.type === "inline") {
+      const children = tokens[i + 1].children ?? [];
+      const image = children[0];
+      if (image?.type === "vtx_image" && image.attrGet("wrap") && children.slice(1).some((child) => child.type !== "text" || child.content.trim())) {
+        children.shift();
+        const line = [open("paragraph", "p", 1, null), Object.assign(new Token("inline", "", 0), { children: [image], content: "", level: 2 }), close("paragraph", "p", 1)];
+        const text = image.attrGet("caption");
+        const inline = text ? state.md.parseInline(text, state.env)[0] ?? null : null;
+        out.push(open("vtx_figure", "figure", 0, token.map ? [token.map[0], token.map[0]] : null), ...line, ...caption(0, inline), close("vtx_figure", "figure", 0));
+      }
+    }
+    out.push(token);
+  }
+  state.tokens = out;
+}
+
 function createMarkdownIt(): MarkdownIt {
   const md = new MarkdownIt("default", { html: true, linkify: true, breaks: false });
   md.block.ruler.before("fence", "math_block", mathBlock, { alt: ["paragraph", "reference", "blockquote", "list"] });
@@ -667,10 +900,13 @@ function createMarkdownIt(): MarkdownIt {
   md.inline.ruler.after("emphasis", "emoji", emoji);
   md.inline.ruler.before("link", "footnote_reference", footnoteReference);
   md.block.ruler.before("reference", "footnote_definition", footnoteDefinition);
+  md.core.ruler.after("block", "vtx_abstract", abstracts);
   md.core.ruler.before("inline", "vtx_block_markers", blockMarkers);
   md.core.ruler.before("inline", "vtx_title", titleLines);
+  md.core.ruler.before("inline", "vtx_title_block", titleBlockLines);
   md.core.ruler.before("inline", "vtx_aligned", alignedParagraphs);
   md.core.ruler.push("vtx_tidy", tidy);
+  md.core.ruler.push("vtx_figures", figureCaptions);
   return md;
 }
 
@@ -688,6 +924,19 @@ export function blockLanguage(info: string): string {
  */
 function displayAttrs(latex: string): { latex: string; numbered: boolean; id: string | null } {
   const label = /\\label\{([^}]*)\}/.exec(latex)?.[1]?.trim() || null;
+  // A formula's own \tag (top level, not a number in the document's format, which the export writes) stays in it:
+  // it replaces the document's number.
+  const own = ownEquationTag(latex.replace(/^\s*\\begin\{equation\}([\s\S]*)\\end\{equation\}\s*$/, "$1"));
+  if (own && !/^\[?\d+(?:[.-]\d+)?\]?$/.test(own.label)) {
+    const kept = latex.replace(/\\label\{[^}]*\}/g, "").replace(/\\nonumber|\\notag/g, "").trim();
+    const equation = /^\\begin\{equation\}([\s\S]*)\\end\{equation\}$/.exec(kept);
+    return { latex: equation ? equation[1].trim() : kept, numbered: false, id: label };
+  }
+  // align / gather whose rows carry their own tags: kept as they are (the formula draws its tags)
+  const rowTags = /^\s*\\begin\{(align|gather)\}[\s\S]*\\end\{\1\}\s*$/.test(latex) ? latex.match(/\\tag\*?\{[^}]*\}/g) ?? [] : [];
+  if (rowTags.some((t) => !/^\\tag\*?\{\[?\d+(?:[.-]\d+)?\]?\}$/.test(t))) {
+    return { latex: latex.replace(/\\label\{[^}]*\}/g, "").trim(), numbered: false, id: label };
+  }
   const numbered = /\\tag\*?\{[^}]*\}/.test(latex) || !!label;
   const clean = latex.replace(/\\tag\*?\{[^}]*\}/g, "").replace(/\\label\{[^}]*\}/g, "").replace(/\\nonumber|\\notag/g, "").trim();
   const environment = /^\\begin\{(equation|align|gather)\}([\s\S]*)\\end\{\1\}$/.exec(clean);
@@ -738,6 +987,9 @@ function parserFor(schema: Schema): MarkdownParser {
       getAttrs: (tok) => ({ src: tok.attrGet("src"), alt: tok.attrGet("alt") ?? "", width: Number(tok.attrGet("width")), x: Number(tok.attrGet("x")), top: Number(tok.attrGet("top")) }),
       noCloseToken: true,
     },
+    vtx_figure: { block: "figure" },
+    vtx_table_figure: { block: "table_figure", getAttrs: (tok) => ({ rules: tok.attrGet("rules") === "booktabs" ? "booktabs" : "grid" }) },
+    vtx_caption: { block: "caption" },
     vtx_html_inline: { node: "html_inline", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
     vtx_html: { node: "html_block", getAttrs: (tok) => ({ html: tok.attrGet("html") ?? "" }), noCloseToken: true },
     vtx_footnote: { node: "footnote", getAttrs: (tok) => ({ text: tok.attrGet("text") ?? "" }), noCloseToken: true },
@@ -751,8 +1003,11 @@ function parserFor(schema: Schema): MarkdownParser {
     list_item: { block: "list_item", getAttrs: (tok) => ({ checked: tok.attrGet("checked") === "true" ? true : tok.attrGet("checked") === "false" ? false : null }) },
     bullet_list: { block: "bullet_list" },
     ordered_list: { block: "ordered_list", getAttrs: (tok) => ({ start: Number(tok.attrGet("start")) || 1 }) },
-    heading: { block: "heading", getAttrs: (tok) => ({ level: Math.min(6, Number(tok.tag.slice(1)) || 1) }) },
+    heading: { block: "heading", getAttrs: (tok) => ({ level: Math.min(6, Number(tok.tag.slice(1)) || 1), unnumbered: tok.attrGet("unnumbered") === "true" }) },
     title: { block: "title" },
+    author: { block: "author" },
+    date: { block: "date" },
+    abstract: { block: "abstract" },
     code_block: { block: "code_block", noCloseToken: true },
     fence: { block: "code_block", getAttrs: (tok) => ({ language: blockLanguage(tok.info) }), noCloseToken: true },
     hr: { node: "horizontal_rule" },
@@ -785,7 +1040,9 @@ function parserFor(schema: Schema): MarkdownParser {
 
 /** Markdown text as a document. */
 export function markdownToDoc(schema: Schema, text: string, citationKeys?: Map<string, string>): Node {
-  return linkReferences(resolveLatexMarkers(parserFor(schema).parse(text.replace(/\r\n?/g, "\n")), citationKeys));
+  const parser = parserFor(schema);
+  // tables read from LaTeX (latexTables.ts): their cells' Markdown read the same way
+  return linkReferences(resolveTableMarkers(resolveLatexMarkers(parser.parse(text.replace(/\r\n?/g, "\n")), citationKeys), (md) => resolveLatexMarkers(parser.parse(md), citationKeys)));
 }
 
 /** Markdown text as a slice to paste (a single paragraph pastes inline); `citationKeys`: the document's entries. */
@@ -864,6 +1121,8 @@ export interface MarkdownExportOptions {
   source?: MarkdownSource | null;
   /** Where an image's file is, relative to the .md (default: assets/fig-n.ext in the order of appearance). */
   imagePath?: (key: string) => string | null;
+  /** The figures' and tables' numbers (figures.ts; set by documentToMarkdown). */
+  captionLabels?: Map<Node, CaptionLabel>;
 }
 
 const htmlAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -892,7 +1151,10 @@ function numbering(doc: Node): { byNode: Map<Node, string>; byId: Map<string, st
   const byId = new Map<string, string>();
   let n = 0;
   doc.descendants((node) => {
-    if (node.type.name === "math_display" && node.attrs.numbered) {
+    const own = node.type.name === "math_display" ? ownEquationTag(node.attrs.latex) : null;
+    // a formula's own \tag: no number (references show the tag)
+    if (own && node.attrs.id) byId.set(node.attrs.id, own.label);
+    else if (node.type.name === "math_display" && node.attrs.numbered && !own) {
       n += 1;
       const label = (node.attrs.id && labels.get(node.attrs.id)) || String(n);
       byNode.set(node, label);
@@ -913,10 +1175,29 @@ function clearsWrap(node: Node): boolean {
 function wrapGoesOn(doc: Node, index: number): boolean {
   for (let i = index - 1; i >= 0; i--) {
     const block = doc.child(i);
+    // a wrapped figure (figures.ts)
+    if (isFigure(block)) return !!figureWrap(block);
     if (block.type.name !== "paragraph" || isImageLine(block)) return false;
     if (isImage(block.firstChild) && block.firstChild!.attrs.wrap) return true;
   }
   return false;
+}
+
+/** An author or the date: <p align="center" class="author">…</p>, a line break in it as <br> (HTML's, which the
+ *  viewers show inside the element). */
+function titleBlockLine(state: Parameters<NonNullable<ConstructorParameters<typeof MarkdownSerializer>[0][string]>>[0], node: Node, kind: string) {
+  state.write(`<p align="center" class="${kind}">`);
+  const parts: Node[][] = [[]];
+  node.forEach((child) => {
+    if (child.type.name === "hard_break") parts.push([]);
+    else parts[parts.length - 1].push(child);
+  });
+  parts.forEach((part, k) => {
+    if (k > 0) state.write("<br>");
+    state.renderInline(node.type.create(null, part), k === 0);
+  });
+  state.write("</p>");
+  state.closeBlock(node);
 }
 
 function serializerFor(
@@ -930,9 +1211,16 @@ function serializerFor(
   const style = options.source?.style ?? { bullet: "-", delimiter: ".", setext: false };
   const latexOf = (latex: string) => (options.formulaLatex ?? ((l: string) => l))(latex).trim();
   const pathOf = (key: string) => (options.imagePath ?? (() => null))(key) ?? key;
+  /** A figure's line or board, a table: as the file had it when only its caption changed (figures.ts). */
+  const writeBody = (state: MarkdownSerializerState, body: Node, parent: Node, index: number) => {
+    const kept = options.source?.bodies?.get(signature(body, numbers));
+    if (kept === undefined) return state.render(body, parent, index);
+    state.write(kept);
+    state.closeBlock(body);
+  };
   /** An image as the HTML GitHub, Typora, Obsidian and VS Code show at its width (DESIGN.md §11.1). */
-  const imageHtml = (node: Node) =>
-    `<img src="${htmlAttr(pathOf(node.attrs.src))}" alt="${htmlAttr(node.attrs.alt || "")}" width="${percent(node.attrs.width)}"${node.attrs.wrap ? ` align="${node.attrs.wrap}"` : ""}>`;
+  const imageHtml = (node: Node, title = "") =>
+    `<img src="${htmlAttr(pathOf(node.attrs.src))}" alt="${htmlAttr(node.attrs.alt || "")}" width="${percent(node.attrs.width)}"${node.attrs.wrap ? ` align="${node.attrs.wrap}"` : ""}${title ? ` title="${htmlAttr(title).replace(/>/g, "&gt;")}"` : ""}>`;
   const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {
     paragraph(state, node) {
       if (isImageLine(node)) {
@@ -961,16 +1249,34 @@ function serializerFor(
       state.write(MARKDOWN_TITLE_CLOSE);
       state.closeBlock(node);
     },
+    // the authors and the date: centred lines with a class (GitHub and Typora show them centred, as the title)
+    author(state, node) {
+      titleBlockLine(state, node, "author");
+    },
+    date(state, node) {
+      titleBlockLine(state, node, "date");
+    },
+    // the abstract: a <div class="abstract"> around its Markdown (blank lines inside, so viewers read it as Markdown)
+    abstract(state, node) {
+      state.write('<div class="abstract">');
+      state.closeBlock(node);
+      state.renderContent(node);
+      state.write("</div>");
+      state.closeBlock(node);
+    },
     heading(state, node) {
+      // an unnumbered section: Pandoc's attribute "{-}" after the text
+      const unnumbered = node.attrs.unnumbered ? " {-}" : "";
       // A file written with underlined (setext) headings gets its new level-1/2 headings the same way.
       if (style.setext && node.attrs.level <= 2) {
         state.renderInline(node, false);
-        state.write(`\n${(node.attrs.level === 1 ? "=" : "-").repeat(Math.max(3, Math.min(60, node.textContent.length * 2)))}`);
+        state.write(`${unnumbered}\n${(node.attrs.level === 1 ? "=" : "-").repeat(Math.max(3, Math.min(60, node.textContent.length * 2)))}`);
         state.closeBlock(node);
         return;
       }
       state.write(`${"#".repeat(node.attrs.level)} `);
       state.renderInline(node, false);
+      if (unnumbered) state.write(unnumbered);
       state.closeBlock(node);
     },
     blockquote(state, node) {
@@ -1028,6 +1334,41 @@ function serializerFor(
       state.closeBlock(node);
     },
     board_image() {},
+    figure(state, node) {
+      // figures.ts: the line or board, then its caption "Figure n: …" as a centred paragraph (none when it is empty:
+      // Markdown viewers number nothing); a wrapped figure opens the next paragraph's line, its caption the title
+      const { body, caption } = figureParts(node);
+      if (!body) return;
+      const label = options.captionLabels?.get(node);
+      const prefix = label ? `${label.name}: ` : "";
+      if (figureWrap(node)) {
+        let image: Node | null = null;
+        body.forEach((child) => {
+          if (isImage(child)) image = child;
+        });
+        if (!image) return;
+        const title = caption.content.size ? prefix + serializer.serialize(node.type.schema.topNodeType.create(null, node.type.schema.nodes.paragraph.create(null, caption.content))).trim().replace(/\n/g, " ") : "";
+        state.write(imageHtml(image, title) + " ");
+        return;
+      }
+      writeBody(state, body, node, 0);
+      if (!caption.content.size) return;
+      state.write(`<p align="center">${prefix}`);
+      state.renderInline(caption);
+      state.write("</p>");
+      state.closeBlock(caption);
+    },
+    table_figure(state, node) {
+      // figures.ts: Pandoc's caption "Table: …" before the table (Typora and GitHub show it as a line above it)
+      const { caption, table } = tableFigureParts(node);
+      if (caption.content.size) {
+        state.write("Table: ");
+        state.renderInline(caption);
+        state.closeBlock(caption);
+      }
+      if (table) writeBody(state, table, node, 1);
+    },
+    caption() {},
     toc(state, node) {
       state.write("[toc]");
       state.closeBlock(node);
@@ -1076,11 +1417,12 @@ function serializerFor(
     math_display(state, node) {
       const number = numbers.byNode.get(node);
       // A formula the text refers to carries its label, so the references can point at it.
-      const label = live && number !== undefined && node.attrs.id && referenced.has(node.attrs.id) ? ` \\label{${labelOf(node.attrs.id, options.source)}}` : "";
+      const own = ownEquationTag(node.attrs.latex) !== null;
+      const label = live && (number !== undefined || own) && node.attrs.id && referenced.has(node.attrs.id) ? ` \\label{${labelOf(node.attrs.id, options.source)}}` : "";
       state.write("$$");
       state.ensureNewLine();
       const tag = number === undefined ? "" : numbers.brackets === "[]" ? ` \\tag*{[${number}]}` : ` \\tag{${number}}`;
-      state.text(latexOf(node.attrs.latex) + tag + (tag ? label : ""), false);
+      state.text(latexOf(node.attrs.latex) + tag + (tag || own ? label : ""), false);
       state.ensureNewLine();
       state.write("$$");
       state.closeBlock(node);
@@ -1132,19 +1474,28 @@ function serializerFor(
     },
     table(state, node) {
       // GFM: the first row is the header row; a cell is one line (its paragraphs joined by <br>, formulas inline).
+      // a cell spanning rows or columns: its text in its first place, the places it covers empty (GFM has no spans)
+      const map = TableMap.get(node);
       const rows: string[][] = [];
-      node.forEach((row) => {
+      for (let r = 0; r < map.height; r++) {
         const cells: string[] = [];
-        row.forEach((cell) => {
+        for (let c = 0; c < map.width; c++) {
+          const offset = map.map[r * map.width + c];
+          const rect = map.findCell(offset);
+          if (rect.top !== r || rect.left !== c) {
+            cells.push(" ");
+            continue;
+          }
+          const cell = node.nodeAt(offset)!;
           const parts: string[] = [];
           cell.forEach((block) => {
             if (block.type.name === "math_display") parts.push(`$${latexOf(block.attrs.latex)}$`);
-            else parts.push(serializer.serialize(block.type.schema.topNodeType.create(null, block)).trim().replace(/\n/g, " "));
+            else parts.push(serializer.serialize(block.type.schema.topNodeType.create(null, block)).trim().replace(/\\\n/g, "<br>").replace(/\n/g, " "));
           });
           cells.push(parts.join("<br>").replace(/\|/g, "\\|") || " ");
-        });
+        }
         rows.push(cells);
-      });
+      }
       const width = Math.max(...rows.map((r) => r.length));
       const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? " ").join(" | ")} |`;
       // the columns' alignment: the header row's cells'
@@ -1280,6 +1631,7 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
     const paths = imageFiles(doc, "assets").paths;
     options = { ...options, imagePath: (key) => paths.get(key) ?? null };
   }
+  options = { ...options, captionLabels: captionLabels(doc) };
   const numbers = numbering(doc);
   const notes = noteNumbers(doc);
   const serializer = serializerFor(numbers, options, referencedIds(doc), notes);
@@ -1289,7 +1641,11 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
   if (!source) return `${serializer.serialize(doc, { tightLists: true }).trim()}\n${definitions ? `\n${definitions}\n` : ""}`;
   const text = withSource(doc, source, numbers, (node, index) => {
     if (index === 0 && source.frontMatter && node.type.name === "code_block" && node.attrs.language === "yaml") return `---\n${node.textContent}\n---`;
-    return serializer.serialize(doc.type.create(null, [node]), { tightLists: true }).replace(/^\n+|\n+$/g, "");
+    // a wrapped figure is written with the paragraph it opens, on its line (figures.ts)
+    const previous = index > 0 ? doc.child(index - 1) : null;
+    if (wrappedFigure(node) && index + 1 < doc.childCount) return "";
+    const nodes = previous && wrappedFigure(previous) ? [previous, node] : [node];
+    return serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, "");
   });
   if (!definitions) return text;
   const newline = source.crlf ? "\r\n" : "\n";
@@ -1311,6 +1667,8 @@ export interface MarkdownSource {
   labels: Set<string>;
   /** the file's habits: its bullet, its ordered-list delimiter, underlined headings */
   style: { bullet: "-" | "*" | "+"; delimiter: "." | ")"; setext: boolean };
+  /** the text of figures' lines and boards and of tables, by their signature: kept when only their caption changed */
+  bodies?: Map<string, string>;
 }
 
 /** The markers a file uses most: bullets, ordered-list delimiters, underlined or # headings (code fences skipped). */
@@ -1351,6 +1709,38 @@ function signature(node: Node, numbers: { byNode: Map<Node, string>; byId: Map<s
   return JSON.stringify(node.toJSON(), (key, value) => (key === "id" ? undefined : value)) + marks.join(",");
 }
 
+/** A figure that text wraps (figures.ts): written on the line of the paragraph after it. */
+function wrappedFigure(node: Node): boolean {
+  return isFigure(node) && !!figureWrap(node);
+}
+
+/**
+ * The top-level blocks' signatures, with the numbers of the captions they write (figures.ts: "Figure 3: …" changes
+ * when a figure comes before it); a paragraph a wrapped figure opens is one block with the figure.
+ */
+function blockSignatures(doc: Node, numbers: { byNode: Map<Node, string>; byId: Map<string, string>; brackets: "()" | "[]" }): string[] {
+  const labels = captionLabels(doc);
+  const signatures: string[] = [];
+  doc.forEach((node, _offset, index) => {
+    const written: string[] = [];
+    const visit = (n: Node) => {
+      const label = labels.get(n);
+      const caption = label ? (isFigure(n) ? n.lastChild : n.firstChild) : null;
+      if (label && caption?.content.size) written.push(label.name);
+    };
+    visit(node);
+    node.descendants((n) => {
+      visit(n);
+      return true;
+    });
+    let sig = signature(node, numbers) + (written.length ? `|${written.join(",")}` : "");
+    const previous = index > 0 ? doc.child(index - 1) : null;
+    if (previous && wrappedFigure(previous)) sig = `${signatures[index - 1]}\u0000${sig}`;
+    signatures.push(sig);
+  });
+  return signatures;
+}
+
 /**
  * The document as Markdown with the blocks that are still as they were read written back character for character,
  * the space between two such neighbours too; only new or changed blocks are written anew (Typora keeps a file
@@ -1364,8 +1754,9 @@ function withSource(
 ): string {
   const parts: Array<{ text: string; original: number }> = [];
   let next = 0;
+  const signatures = blockSignatures(doc, numbers);
   doc.forEach((node, _offset, index) => {
-    const sig = signature(node, numbers);
+    const sig = signatures[index];
     let original = -1;
     for (let i = next; i < source.blocks.length; i++) {
       if (source.blocks[i].signature === sig) {
@@ -1396,15 +1787,23 @@ function withSource(
   }
   const gapBefore = (i: number) => source.text.slice(i > 0 ? source.blocks[i - 1].end : 0, source.blocks[i].start);
   let out = "";
+  // a block that writes nothing (a wrapped figure, written with its paragraph): the space before it goes before the next
+  let pending: string | null = null;
   parts.forEach((part, i) => {
-    if (i === 0) out += place[0] === 0 ? gapBefore(0) : "";
-    else if (place[i] > 0 && place[i - 1] === place[i] - 1) out += gapBefore(place[i]);
+    let space: string;
+    if (i === 0) space = place[0] === 0 ? gapBefore(0) : "";
+    else if (place[i] > 0 && place[i - 1] === place[i] - 1) space = gapBefore(place[i]);
     else {
       // Between rewritten neighbours a blank line; what stood before the block in the file (link definitions) stays.
       const kept = place[i] > 0 ? gapBefore(place[i]).trim() : "";
-      out += kept ? `\n\n${kept}\n\n` : "\n\n";
+      space = kept ? `\n\n${kept}\n\n` : "\n\n";
     }
-    out += part.text;
+    if (!part.text) {
+      pending ??= space;
+      return;
+    }
+    out += (pending ?? space) + part.text;
+    pending = null;
   });
   const tail = source.blocks.length ? source.text.slice(source.blocks[source.blocks.length - 1].end) : source.text;
   if (parts.length && place[parts.length - 1] === source.blocks.length - 1) out += tail;
@@ -1420,24 +1819,43 @@ export function readMarkdown(schema: Schema, raw: string): { doc: Node; source: 
   const bodyStart = front ? front[0].length : 0;
   const body = text.slice(bodyStart);
   const parser = parserFor(schema);
-  let doc = linkReferences(resolveLatexMarkers(parser.parse(body)));
+  let doc = linkReferences(resolveTableMarkers(resolveLatexMarkers(parser.parse(body)), (md) => resolveLatexMarkers(parser.parse(md))));
   if (front) {
     const yaml = schema.nodes.code_block.create({ language: "yaml" }, front[1] ? schema.text(front[1]) : null);
     doc = doc.type.create(doc.attrs, [yaml, ...childrenOf(doc)]);
   }
+  // as the editor holds it (a line of two images is a board, figures and tables have their captions): the blocks'
+  // signatures are then the ones the editor's blocks have
+  let state = EditorState.create({ doc });
+  for (const fix of [boardFixes, figureFixes]) {
+    const tr = fix(state);
+    if (tr) state = state.apply(tr);
+  }
+  doc = state.doc;
   // The top-level blocks' lines in the file.
   const lineStarts = [0];
   for (let i = 0; i < body.length; i++) if (body[i] === "\n") lineStarts.push(i + 1);
   const offset = (line: number) => bodyStart + (line < lineStarts.length ? lineStarts[line] : body.length);
   const ranges: Array<{ start: number; end: number }> = [];
   if (front) ranges.push({ start: 0, end: front[0].replace(/\n$/, "").length });
-  for (const token of parser.tokenizer.parse(body, {})) {
-    if (token.level !== 0 || token.nesting < 0 || !token.map) continue;
-    const start = offset(token.map[0]);
-    let end = offset(token.map[1]);
+  const lines = (map: [number, number]) => {
+    const start = offset(map[0]);
+    let end = offset(map[1]);
     while (end > start && text[end - 1] === "\n") end--;
-    ranges.push({ start, end });
-  }
+    return { start, end };
+  };
+  // a figure's line or board, a table: its own lines too (figures.ts)
+  const bodyRanges = new Map<number, { start: number; end: number }>();
+  const tokens = parser.tokenizer.parse(body, {});
+  tokens.forEach((token, i) => {
+    // (an inline token the HTML rules made for a title or a centred line sits at level 0 too: not a block)
+    if (token.level !== 0 || token.nesting < 0 || !token.map || token.type === "inline") return;
+    if (token.type === "vtx_figure_open" || token.type === "vtx_table_figure_open") {
+      const inner = token.type === "vtx_figure_open" ? tokens[i + 1] : tokens.slice(i + 1).find((t) => t.type === "table_open");
+      if (inner?.map) bodyRanges.set(ranges.length, lines(inner.map));
+    }
+    ranges.push(lines(token.map));
+  });
   const labels = new Set<string>();
   doc.descendants((node) => {
     if (node.type.name === "math_display" && node.attrs.id) labels.add(node.attrs.id);
@@ -1446,8 +1864,42 @@ export function readMarkdown(schema: Schema, raw: string): { doc: Node; source: 
   // Blocks and lines must pair up one to one; otherwise the file is simply written anew.
   if (ranges.length !== doc.childCount) return { doc, source: null };
   const numbers = numbering(doc);
-  const blocks = childrenOf(doc).map((node, i) => ({ signature: signature(node, numbers), ...ranges[i] }));
-  return { doc, source: { text, crlf: /\r\n/.test(raw), blocks, frontMatter: !!front, labels, style: styleOf(body) } };
+  const signatures = blockSignatures(doc, numbers);
+  const blocks = childrenOf(doc).map((_node, i) => ({ signature: signatures[i], ...ranges[i] }));
+  const bodies = new Map<string, string>();
+  for (const [index, range] of bodyRanges) {
+    const node = doc.child(index);
+    const part = isFigure(node) ? figureParts(node).body : isTableFigure(node) ? tableFigureParts(node).table : null;
+    if (part) bodies.set(signature(part, numbers), text.slice(range.start, range.end));
+  }
+  return { doc, source: { text, crlf: /\r\n/.test(raw), blocks, frontMatter: !!front, labels, style: styleOf(body), bodies } };
+}
+
+/**
+ * The file kept for a document read from it whose ids were changed afterwards (sourceEdit.ts gives formulas and
+ * entries the ids they had): the same blocks, their signatures taken again (references are part of them).
+ */
+export function rebaseMarkdownSource(source: MarkdownSource, read: Node, doc: Node): MarkdownSource {
+  if (read === doc || read.childCount !== doc.childCount || source.blocks.length !== doc.childCount) return source;
+  const before = numbering(read);
+  const after = numbering(doc);
+  const signatures = blockSignatures(doc, after);
+  const bodies = new Map<string, string>();
+  if (source.bodies?.size) {
+    read.forEach((node, _offset, index) => {
+      const partOf = (n: Node) => (isFigure(n) ? figureParts(n).body : isTableFigure(n) ? tableFigureParts(n).table : null);
+      const old = partOf(node);
+      const now = partOf(doc.child(index));
+      const text = old ? source.bodies!.get(signature(old, before)) : undefined;
+      if (now && text !== undefined) bodies.set(signature(now, after), text);
+    });
+  }
+  const labels = new Set<string>();
+  doc.descendants((node) => {
+    if (node.type.name === "math_display" && node.attrs.id && source.labels.has(node.attrs.id)) labels.add(node.attrs.id);
+    return true;
+  });
+  return { ...source, blocks: source.blocks.map((block, i) => ({ ...block, signature: signatures[i] })), labels, bodies };
 }
 
 /** The Markdown file the document was read from (set by the transaction that loads it; a new document drops it). */
@@ -1485,5 +1937,5 @@ export function sliceToMarkdown(slice: Slice, schema: Schema, options: MarkdownE
     const paragraph = schema.nodes.paragraph.create(null, slice.content);
     return serializerFor(numbering(schema.topNodeType.create(null, paragraph)), options).serialize(schema.topNodeType.create(null, paragraph)).trim();
   }
-  return serializerFor(numbering(doc), options).serialize(doc, { tightLists: true }).trim();
+  return serializerFor(numbering(doc), { ...options, captionLabels: captionLabels(doc) }).serialize(doc, { tightLists: true }).trim();
 }

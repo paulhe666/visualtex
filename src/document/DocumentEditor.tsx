@@ -29,13 +29,13 @@ import {
   slicePlainText,
   splitInlineMath,
   bodyFontFamily,
+  bodyLayout,
   documentSettings,
   FOOTNOTE_EDIT_EVENT,
   CITATION_REQUEST_EVENT,
   PAPER_SIZES,
   refreshPagination,
   setDocumentSettings,
-  SINGLE_LINE_HEIGHT,
   type DocumentSettings,
   type FootnoteEditRequest,
   type FormulaHost,
@@ -59,6 +59,7 @@ import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex"
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { DOCUMENT_LATEX } from "../edition";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
 import { LinkDialog } from "./LinkDialog";
@@ -342,11 +343,12 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       codeDiagram: drawDiagram,
       inputMode: () => useDocumentFormatStore.getState().inputMode,
       markdownRules: () => useDocumentFormatStore.getState().markdownRules,
-      // the page view: the paper's pages, the footnotes at their feet, the page numbers
+      // LaTeX source pasted into the text: read in by the personal edition only
+      latexPaste: DOCUMENT_LATEX,
+      // the page view: the paper's pages, the footnotes at their feet, the page style's head or foot (LaTeX's)
       pagination: {
         geometry: () => ({ pxPerMm: PX_PER_MM * zoomRef.current, gap: PAGE_GAP }),
         renderNote: noteHtml,
-        pageLabel: (page, pages) => (lang === "en" ? `Page ${page} of ${pages}` : `第 ${page} 页，共 ${pages} 页`),
       },
       codeLabels:
         lang === "en"
@@ -374,6 +376,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         lang === "en"
           ? { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text (image left)", wrapRight: "Wrap text (image right)" }
           : { left: "左对齐", center: "居中", right: "右对齐", wrapLeft: "文字环绕（图片在左）", wrapRight: "文字环绕（图片在右）" },
+      captionLabels: () => ({ caption: lang === "en" ? "Caption" : "题注" }),
     });
 
   useEffect(() => {
@@ -627,6 +630,9 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     () => (savedSettings && marginPreview ? { ...savedSettings, ...marginPreview } : savedSettings),
     [savedSettings, marginPreview],
   );
+  // the body as the exported class sets it (article, or ctexart for Chinese text): size, spacing, indent
+  const layout = useMemo(() => (settingsDoc ? bodyLayout(settingsDoc) : null), [settingsDoc]);
+  const layoutKey = layout ? JSON.stringify(layout) : "";
   // fitting the width: the zoom at which the page fills the window's width
   useEffect(() => {
     const store = useDocumentEditorStore.getState();
@@ -651,9 +657,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
   useEffect(() => {
     const view = viewRef.current;
     if (view && settings) refreshPagination(view);
-  }, [zoom, settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, settings, layoutKey]);
   const sheetStyle = useMemo<CSSProperties>(() => {
-    if (!settings) return { fontSize: DOCUMENT_TEXT_SIZE * zoom };
+    if (!settings || !layout) return { fontSize: DOCUMENT_TEXT_SIZE * zoom };
     const mm = PX_PER_MM * zoom;
     const paper = PAPER_SIZES[settings.paper];
     const pageHeight = paper.height * mm;
@@ -662,7 +669,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       minHeight: pageHeight,
       padding: `${settings.marginTop * mm}px ${settings.marginRight * mm}px ${settings.marginBottom * mm}px ${settings.marginLeft * mm}px`,
       margin: fitWidth ? `${SHEET_SIDE_ROOM}px 0` : `${SHEET_SIDE_ROOM}px auto`,
-      fontSize: settings.fontSize * (96 / 72) * zoom,
+      fontSize: layout.fontSize * (96 / 72) * zoom,
       // the pages: white, then the gap between them (the canvas shows through)
       background: `repeating-linear-gradient(to bottom, var(--vtx-paper, #fff) 0, var(--vtx-paper, #fff) ${pageHeight}px, transparent ${pageHeight}px, transparent ${pageHeight + PAGE_GAP}px)`,
       ["--vtx-body-font" as string]: bodyFontFamily(settings),
@@ -670,11 +677,21 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       // the left margin (what a page command's label may take)
       ["--vtx-margin-left" as string]: `${settings.marginLeft * mm}px`,
       ["--vtx-pt" as string]: `${(96 / 72) * zoom}px`,
-      ["--vtx-line-height" as string]: String(SINGLE_LINE_HEIGHT * settings.lineSpacing),
+      ["--vtx-line-height" as string]: String(layout.lineHeight),
+      // \linespread, the body's ex (the export's Latin Modern: 0.431em) and \parindent (em), for the class's headings
+      // and paragraphs (document.css)
+      ["--vtx-spread" as string]: String(layout.spread),
+      ["--vtx-ex" as string]: `${0.431 * layout.fontSize * (96 / 72) * zoom}px`,
+      ["--vtx-size" as string]: `${layout.fontSize * (96 / 72) * zoom}px`,
+      ["--vtx-baseline" as string]: `${layout.lineHeight * layout.fontSize * (96 / 72) * zoom}px`,
+      ["--vtx-parindent" as string]: `${layout.parindent}em`,
+      // \linewidth (a table's p{} column of blocks takes its share)
+      ["--vtx-linewidth" as string]: `${(paper.width - settings.marginLeft - settings.marginRight) * mm}px`,
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
     } as CSSProperties;
-  }, [settings, zoom, lang, fitWidth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, layoutKey, zoom, lang, fitWidth]);
 
   const view = viewRef.current;
   const writeText = (text: string) => void navigator.clipboard.writeText(text);
@@ -699,6 +716,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
           <div
             className={"mc-page vtx-sheet" + (settings?.headingNumbering === "1" ? " is-headings-plain" : settings?.headingNumbering === "none" ? " is-headings-none" : "")}
             style={sheetStyle}
+            data-class={layout?.documentClass}
             ref={setSheet}
           >
             <div ref={hostRef} className="vtx-document-host" />

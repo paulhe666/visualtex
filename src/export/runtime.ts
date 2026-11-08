@@ -13,6 +13,7 @@ import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 import { normalizeFlexiblePackageLatexCommands } from "../math/flexibleBraket.ts";
+import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
 import {
   isSingleCompleteLatexEnvironment,
   unwrapSingleLatexDisplayMath,
@@ -108,7 +109,7 @@ function nonNegativeFinite(value: number, fallback: number) {
 function prepareLatex(latex: string) {
   let normalized = normalizeMathLiveCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(
-      normalizeFlexiblePackageLatexCommands(latex.replace(/\r\n?/g, "\n")),
+      normalizeFlexiblePackageLatexCommands(normalizeTensorIndexCommands(latex.replace(/\r\n?/g, "\n"))),
     ),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");

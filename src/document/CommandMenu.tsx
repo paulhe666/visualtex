@@ -59,7 +59,7 @@ function Preview({ preview }: { preview: CommandPreview }) {
     case "section":
       return (
         <span className={`vtx-cmd-section is-level-${preview.level}`}>
-          {["1", "1.1", "1.1.1"][preview.level - 1]} <span className="vtx-cmd-line" />
+          {preview.unnumbered ? null : ["1", "1.1", "1.1.1"][preview.level - 1]} <span className="vtx-cmd-line" />
         </span>
       );
     case "title":

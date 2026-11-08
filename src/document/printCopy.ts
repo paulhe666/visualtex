@@ -3,7 +3,7 @@
 // page cutting drifts), scaled back to 100 %. Equation references, citations, footnote marks and internal links
 // become <a href="#…"> to ids on their targets: the PDF's internal links.
 import type { EditorView } from "prosemirror-view";
-import { documentImageKeys, documentSettings, hasPageNumbering, imageDataUrl, imageUrl, PAPER_SIZES } from "../../shared/visualtex-document/src/index.ts";
+import { documentImageKeys, documentSettings, imageDataUrl, imageUrl, PAPER_SIZES } from "../../shared/visualtex-document/src/index.ts";
 
 export interface PrintCopy {
   /** the pages, for the print page's body */
@@ -57,7 +57,6 @@ export function buildPrintCopy(view: EditorView, gap: number): PrintCopy | null 
   if (!sheet) return null;
   const doc = view.state.doc;
   const settings = documentSettings(doc);
-  const latexNumbers = hasPageNumbering(doc);
   const paper = PAPER_SIZES[settings.paper];
   const sheetRect = sheet.getBoundingClientRect();
   const pxPerMm = sheetRect.width / paper.width;
@@ -139,8 +138,6 @@ export function buildPrintCopy(view: EditorView, gap: number): PrintCopy | null 
       editor.removeAttribute("contenteditable");
     }
     copy.querySelectorAll(EDITOR_ONLY).forEach((el) => el.remove());
-    // the page numbers as LaTeX prints them (the editor's "page n of m" is the editor's), unless page commands set them
-    if (!latexNumbers) copy.querySelectorAll(".vtx-page-number").forEach((el, index) => (el.textContent = String(index + 1)));
     copy.querySelectorAll(".is-selected, .ProseMirror-selectednode").forEach((el) => el.classList.remove("is-selected", "ProseMirror-selectednode"));
     copy.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
     copy.querySelectorAll("img").forEach((img) => {

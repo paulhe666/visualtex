@@ -9,7 +9,8 @@ import { keymap } from "prosemirror-keymap";
 import { baseKeymap, chainCommands, toggleMark } from "prosemirror-commands";
 import { gapCursor } from "prosemirror-gapcursor";
 import { dropCursor } from "prosemirror-dropcursor";
-import { columnResizing, tableEditing } from "prosemirror-tables";
+import { tableEditing } from "prosemirror-tables";
+import { tableColumnsPlugin } from "./tableColumns.ts";
 import {
   deleteFormulaBackward,
   deleteFormulaForward,
@@ -52,11 +53,13 @@ import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
 import { bibliographyEntries, insertFootnote, noteText, notesPlugin } from "./notes.ts";
-import { bracketLabel, equationLabels } from "./settings.ts";
+import { bracketLabel, equationLabels, headingNumbers, ownEquationTag } from "./settings.ts";
 import { paginationPlugin, type PaginationOptions } from "./pagination.ts";
 import { imagesPlugin, type ImageLabels } from "./images.ts";
 import { boardFixes, DEFAULT_BOARD_LABELS, imageBoardsPlugin, type BoardLabels } from "./imageBoards.ts";
+import { DEFAULT_CAPTION_LABELS, figureFixes, figuresPlugin, type CaptionLabels } from "./figures.ts";
 import { pageCommandLatex } from "./pageCommands.ts";
+import { abstractLabelPlugin, leaveEmptyAuthorLine } from "./titleBlock.ts";
 
 // --------------------------------------------------------------- triggers --
 
@@ -169,7 +172,7 @@ function htmlShowsSource(html: string, text: string, types: readonly string[]): 
 }
 
 /** Pasted plain text with math delimiters becomes text with formulas. */
-function mathPastePlugin(schema: Schema, inputMode: () => InputMode) {
+function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource: boolean) {
   return new Plugin({
     key: new PluginKey("visualtex-document-math-paste"),
     props: {
@@ -183,7 +186,7 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode) {
         const html = data.types.includes("text/html") ? data.getData("text/html") : "";
         const source = htmlShowsSource(html, text, data.types);
         // LaTeX source (\section, itemize, \textbf, equation…) is read into the document's structure, in either input.
-        if (source && looksLikeLatexSource(text)) {
+        if (latexSource && source && looksLikeLatexSource(text)) {
           const keys = new Map(bibliographyEntries(view.state.doc).map((entry) => [entry.key, entry.id]));
           view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, latexToMarkdown(text), keys)).scrollIntoView());
           return true;
@@ -290,7 +293,7 @@ export function insertEquationReference(target: string): Command {
 export function numberedEquations(doc: Node): Array<{ id: string; number: number; latex: string }> {
   const list: Array<{ id: string; number: number; latex: string }> = [];
   doc.descendants((node) => {
-    if (node.type.name === "math_display" && node.attrs.numbered && node.attrs.id) {
+    if (node.type.name === "math_display" && node.attrs.numbered && node.attrs.id && !ownEquationTag(node.attrs.latex)) {
       list.push({ id: node.attrs.id, number: list.length + 1, latex: node.attrs.latex });
     }
     return true;
@@ -304,7 +307,7 @@ export function equationNumbers(doc: Node): Map<string, number> {
   const numbers = new Map<string, number>();
   let n = 0;
   doc.descendants((node) => {
-    if (node.type.name === "math_display" && node.attrs.numbered && node.attrs.id) numbers.set(node.attrs.id, ++n);
+    if (node.type.name === "math_display" && node.attrs.numbered && node.attrs.id && !ownEquationTag(node.attrs.latex)) numbers.set(node.attrs.id, ++n);
     return true;
   });
   return numbers;
@@ -315,8 +318,16 @@ function numberingPlugin() {
     const decorations: Decoration[] = [];
     // the labels in the document's numbering format: (3), (2.3), [2-3] (settings.ts)
     const labels = equationLabels(doc);
+    // the sections' numbers, drawn by the style sheet from the attribute (h1[data-number]::before)
+    // with its width (digits 0.5em, a period 0.25em: Times' and Latin Modern's bold figures, about) for a centred
+    // heading, which centres number and title together as LaTeX does
+    for (const [pos, number] of headingNumbers(doc)) {
+      const width = number.replace(/[^.]/g, "").length * 0.25 + number.replace(/\./g, "").length * 0.5;
+      decorations.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { "data-number": number, style: `--vtx-number-width:${width}em` }));
+    }
     doc.descendants((node, pos) => {
-      if (node.type.name === "math_display" && node.attrs.numbered) {
+      // a formula with its own \tag draws it itself (it takes no number)
+      if (node.type.name === "math_display" && node.attrs.numbered && !ownEquationTag(node.attrs.latex)) {
         const label = node.attrs.id ? labels.get(node.attrs.id) : undefined;
         decorations.push(Decoration.node(pos, pos + node.nodeSize, {}, { equationNumber: label ? bracketLabel(doc, label) : "(?)" }));
       } else if (node.type.name === "eqref") {
@@ -379,6 +390,7 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
       (state, dispatch, view) => inputMode() === "markdown" && tableEnter(state, dispatch, view),
       splitListItemOrLeave,
       leaveEmptyQuoteLine,
+      leaveEmptyAuthorLine,
       // Typora: after a section comes body text (Mathcha keeps the section's style)
       markdownHeadingEnter(inputMode),
       splitKeepingStyle,
@@ -423,12 +435,16 @@ export interface DocumentPluginOptions {
   inputMode?: () => InputMode;
   /** The Markdown rules that are on (all by default). */
   markdownRules?: () => MarkdownRuleSwitches;
+  /** Pasted LaTeX source is read into the document's structure (default); false: it pastes as text. */
+  latexPaste?: boolean;
   /** The page view: the document divided into the paper's pages (none: one long page). */
   pagination?: PaginationOptions | null;
   /** The image bar's button names in the app's language. */
   imageLabels?: () => ImageLabels;
   /** the image board's bar */
   boardLabels?: () => BoardLabels;
+  /** the hint in an empty caption */
+  captionLabels?: () => CaptionLabels;
 }
 
 const DEFAULT_IMAGE_LABELS: ImageLabels = { left: "Align left", center: "Centre", right: "Align right", wrapLeft: "Wrap text, image left", wrapRight: "Wrap text, image right" };
@@ -495,12 +511,14 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     // a selection that takes parts of formulas: its deletion, typing over it, its clipboard (before the rules)
     mixedSelectionPlugin(),
     commandMenuPlugin(options.mathCommands ?? null, inputMode, rules),
+    // captions (figures.ts): their Enter / Backspace / Delete before the Markdown rules and the keymaps
+    figuresPlugin({ labels: options.captionLabels ?? (() => DEFAULT_CAPTION_LABELS) }),
     // before the Markdown rules: what follows a "$" is decided first ("\$" it leaves to them)
     dollarPlugin(inputMode),
     markdownInputPlugin(inputMode, rules),
     // Typora's live inline Markdown: a formatted span shows its markers while the caret is in it
     markdownLivePlugin({ enabled: () => inputMode() === "markdown" && rules().marks }),
-    mathPastePlugin(schema, inputMode),
+    mathPastePlugin(schema, inputMode, options.latexPaste ?? true),
     linkClickPlugin(),
     formulaPlugin(options.host, { undo: markdownUndo, redo: markdownRedo, displayFormula: insertDisplayLatex("") }),
     new Plugin({
@@ -512,6 +530,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
       },
     }),
     numberingPlugin(),
+    abstractLabelPlugin(),
     notesPlugin(),
     imagesPlugin({ labels: options.imageLabels ?? (() => DEFAULT_IMAGE_LABELS) }),
     imageBoardsPlugin({ labels: options.boardLabels ?? (() => DEFAULT_BOARD_LABELS) }),
@@ -528,7 +547,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     }),
     documentKeymap(schema, inputMode, rules),
     keymap(baseKeymap),
-    columnResizing(),
+    tableColumnsPlugin(),
     tableEditing(),
     gapCursor(),
     dropCursor(),
@@ -589,6 +608,9 @@ export function createDocumentState(schema: Schema, doc: Node, options: Document
   // image lines of two or more images are boards (a document from before boards)
   const boards = boardFixes(state);
   if (boards) state = state.apply(boards.setMeta("addToHistory", false));
+  // image lines, boards and tables in their figures with a caption slot (a document from before captions)
+  const figures = figureFixes(state);
+  if (figures) state = state.apply(figures.setMeta("addToHistory", false));
   const tr = assignIds(state.doc, null, () => state.tr);
   return tr ? state.apply(tr.setMeta("addToHistory", false)) : state;
 }

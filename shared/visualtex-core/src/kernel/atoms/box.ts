@@ -2,6 +2,7 @@ import type { LatexValue } from '../public/core-types';
 
 import { Atom } from '../core/atom-class';
 import { joinLatex } from '../core/tokenizer';
+import { defaultBackgroundColorMap, defaultColorMap } from '../core/color';
 import type {
   CreateAtomOptions,
   AtomJson,
@@ -43,6 +44,17 @@ export class BoxAtom extends Atom {
     this.padding = options.padding;
     this.offset = options.offset;
     this.border = options.border;
+  }
+
+  /** VisualTeX: the frame and background colors as CSS colors (xcolor names and mixes resolved), for the layout. */
+  get frameColorValue(): string | undefined {
+    const v = this.framecolor;
+    return v && 'string' in v ? defaultColorMap(v.string) ?? v.string : undefined;
+  }
+
+  get backgroundColorValue(): string | undefined {
+    const v = this.backgroundcolor;
+    return v && 'string' in v ? defaultBackgroundColorMap(v.string) ?? v.string : undefined;
   }
 
   static fromJson(json: { [key: string]: any }): BoxAtom {

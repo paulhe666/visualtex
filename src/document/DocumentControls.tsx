@@ -52,6 +52,7 @@ import {
   toggleSection,
   CHINESE_FONT_SIZES,
   chineseSizeName,
+  bodyLayout,
   documentSettings,
   insertFootnote,
   LINE_SPACINGS,
@@ -70,6 +71,7 @@ import {
 import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "./systemFonts";
 import { CitationPicker } from "./CitationPicker";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { DOCUMENT_LATEX } from "../edition";
 import { useDocumentFormatStore, type DocumentFormat } from "../stores/documentFormatStore";
 import { useEditorStore } from "../stores/editorStore";
 import { openDocumentFormula } from "./openDocumentFormula";
@@ -462,8 +464,8 @@ function NumberingSetup(props: { lang: Lang; settings: DocumentSettings; apply: 
       <div className="document-menu-heading">{t(lang, "Section numbers", "章节编号")}</div>
       {row<HeadingNumbering>(
         [
-          ["1.", "1.  1.1."],
           ["1", "1  1.1"],
+          ["1.", "1.  1.1."],
           ["none", t(lang, "None", "无")],
         ],
         settings.headingNumbering,
@@ -627,9 +629,13 @@ function copyFormulaLatex() {
 
 /**
  * LaTeX or Markdown input (in the header, in document mode): what typing converts and what the command menu offers
- * (DESIGN.md §7.1). The document keeps the focus.
+ * (DESIGN.md §7.1). The document keeps the focus. The public edition has Markdown input only: no switch.
  */
 export function DocumentInputModeSwitch(props: { isEn: boolean }) {
+  return DOCUMENT_LATEX ? <InputModeSwitch isEn={props.isEn} /> : null;
+}
+
+function InputModeSwitch(props: { isEn: boolean }) {
   const lang: Lang = props.isEn ? "en" : "zh";
   const mode = useDocumentFormatStore((store) => store.inputMode);
   const setMode = useDocumentFormatStore((store) => store.setInputMode);
@@ -753,7 +759,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
       />
       <SizeButton
         lang={lang}
-        body={settings.fontSize}
+        body={bodyLayout(state.doc).fontSize}
         mark={size}
         onBody={(fontSize) => applySettings({ fontSize })}
         onMark={(name) => run(view, setAttrMark("fontSize", name === "normalsize" ? null : { size: name }))}

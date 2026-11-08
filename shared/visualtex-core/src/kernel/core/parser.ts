@@ -6,6 +6,7 @@ import {
   getEnvironmentDefinition,
 } from '../latex-commands/definitions-utils';
 import type { ColumnFormat } from '../atoms/array';
+import { TableMarkAtom, type CellWrapper } from '../atoms/array';
 
 import { ErrorAtom } from '../atoms/error';
 import { GroupAtom } from '../atoms/group';
@@ -41,6 +42,7 @@ import { Argument, LatexCommandDefinition } from '../latex-commands/types';
 import { codePointToLatex } from './unicode';
 import { isArray } from '../common/types';
 import { VISUALTEX_PHYSICS_MATRIX_WRAPPERS } from '../latex-commands/visualtex-physics-matrices';
+import { scanVisualTexPackageCommand } from '../latex-commands/visualtex-packages';
 
 //
 // - Literal (character token): a letter, digit or punctuation
@@ -667,6 +669,11 @@ export class Parser {
     const number = this.scanNumber();
     if (number) return number;
 
+    // VisualTeX: a sign scanNumber read belongs to a string (xcolor's
+    // complement, `\color{-red}`); anything else it skipped stays read
+    let sign = index;
+    while (sign < this.index && this.tokens[sign] === '<space>') sign++;
+    if (sign < this.index && (this.tokens[sign] === '-' || this.tokens[sign] === '+')) this.index = sign;
     if (this.end() || !isLiteral(this.peek())) return null;
 
     const s = this.scanString();
@@ -753,6 +760,7 @@ export class Parser {
 
   scanColspec(): ColumnFormat[] | null {
     this.skipWhitespace();
+    const start = this.index;
     const result: ColumnFormat[] = [];
     while (!this.end() && !(this.peek() === '<}>' || this.peek() === ']')) {
       const literal = this.get();
@@ -771,9 +779,131 @@ export class Parser {
 
         if (!this.match('<}>')) this.onError({ code: 'unbalanced-braces' });
       }
+      // VisualTeX: array.sty's p{len}, m{len} and b{len} (a column), !{…}
+      // (material between columns, as @{…} but with the column gaps),
+      // >{decl} and <{decl} (in a column's cells), arydshln's ;{dash/gap}
+      // (a dashed rule) and *{n}{spec}
+      else if (literal === 'p' || literal === 'm' || literal === 'b') {
+        this.scanLiteralGroup();
+        result.push({ align: 'l' });
+      } else if (literal === '!') {
+        if (this.match('<{>')) {
+          this.beginContext({ mode: 'math' });
+          result.push({ gap: this.scan((token) => token === '<}>') });
+          this.endContext();
+        }
+        if (!this.match('<}>')) this.onError({ code: 'unbalanced-braces' });
+      } else if (literal === '>' || literal === '<') this.scanLiteralGroup();
+      else if (literal === ';') {
+        this.scanLiteralGroup();
+        result.push({ separator: 'dashed' });
+      } else if (literal === '*') {
+        const count = Number.parseInt(this.scanLiteralGroup(), 10) || 0;
+        if (this.match('<{>')) {
+          const columns = this.scanColspec() ?? [];
+          this.match('<}>');
+          for (let i = 0; i < count; i++) result.push(...columns);
+        }
+      }
     }
 
+    // VisualTeX: the specification as written (ArrayAtom.colSpec)
+    (result as ColumnFormat[] & { source?: string }).source = tokensToString(
+      this.tokens.slice(start, this.index)
+    ).trim();
     return result;
+  }
+
+  /**
+   * VisualTeX: a group of tokens as written, `open` ... `close` (brackets,
+   * parentheses), or null (the index unchanged) if `open` does not follow.
+   */
+  private scanDelimitedTokens(open: string, close: string): string | null {
+    this.skipWhitespace();
+    if (open === '<{>') return this.peek() === '<{>' ? this.scanLiteralGroup() : null;
+    if (this.peek() !== open) return null;
+    const start = this.index;
+    this.next();
+    let depth = 0;
+    while (!this.end()) {
+      const token = this.get();
+      if (token === '<{>') depth += 1;
+      else if (token === '<}>') depth -= 1;
+      else if (token === close && depth === 0)
+        return tokensToString(this.tokens.slice(start + 1, this.index - 1)).trim();
+    }
+    this.index = start;
+    return null;
+  }
+
+  /**
+   * VisualTeX: in a tabular environment, at a row start a rule (\hline,
+   * \cline{2-3}, arydshln's \hdashline, booktabs' \toprule ...), at a cell
+   * start \multicolumn, multirow.sty's \multirow or amsmath's \hdotsfor.
+   * Each becomes a TableMarkAtom the ArrayAtom takes out of the cell (rules
+   * between rows, wrappers around the cell's content). Returns false, the
+   * index unchanged, if none follows.
+   */
+  private scanTableMark(rowStart: boolean): boolean {
+    if (!this.mathlist.every((x) => x instanceof TableMarkAtom)) return false;
+    const start = this.index;
+    this.skipWhitespace();
+    const command = this.get();
+    // the arguments of each command: [ optional, ( optional, { required
+    const ruleArgs = rowStart && this.mathlist.every((x) => (x as TableMarkAtom).rule !== undefined)
+      ? TABLE_RULE_ARGUMENTS[command]
+      : undefined;
+    const wrapperArgs = TABLE_WRAPPER_ARGUMENTS[command];
+    const pattern = ruleArgs ?? wrapperArgs;
+    if (pattern === undefined) {
+      this.index = start;
+      return false;
+    }
+    const args: (string | undefined)[] = [];
+    let latex = command;
+    for (const kind of pattern) {
+      const close = kind === '[' ? ']' : kind === '(' ? ')' : '<}>';
+      const arg = this.scanDelimitedTokens(kind === '{' ? '<{>' : kind, close);
+      if (arg === null && kind === '{') {
+        this.index = start;
+        return false;
+      }
+      args.push(arg ?? undefined);
+      if (arg !== null) latex += kind === '{' ? `{${arg}}` : `${kind}${arg}${close}`;
+    }
+    if (ruleArgs !== undefined) {
+      // a space after an argument stays: arydshln's \hdashline[4pt/2pt] sees
+      // it (no double rule with a \hline or \hdashline after the space)
+      if (latex !== command && this.peek() === '<space>') latex += ' ';
+      this.mathlist.push(new TableMarkAtom({ rule: latex }));
+      return true;
+    }
+    let wrapper: CellWrapper;
+    if (command === '\\multicolumn')
+      wrapper = { command, columns: Number.parseInt(args[0]!, 10) || 1, spec: args[1]! };
+    else if (command === '\\hdotsfor') {
+      wrapper = { command, columns: Number.parseInt(args[1]!, 10) || 1 };
+      if (args[0] !== undefined) wrapper.spacing = args[0];
+    } else {
+      wrapper = { command: '\\multirow', rows: args[1]!, width: args[3]! };
+      if (args[0] !== undefined) wrapper.vpos = args[0];
+      if (args[2] !== undefined) wrapper.bigstruts = args[2];
+      if (args[4] !== undefined) wrapper.vmove = args[4];
+    }
+    this.mathlist.push(new TableMarkAtom({ wrapper }));
+    if (command === '\\hdotsfor') return true;
+    // The content: in \multicolumn the cell's mode, in \multirow text (an
+    // \hbox); a \multirow may start a \multicolumn's content
+    this.skipWhitespace();
+    if (!this.match('<{>')) return true;
+    this.beginContext({ mode: command === '\\multirow' ? 'text' : this.parseMode });
+    this.scanTableMark(false);
+    do this.mathlist.push(...this.scan());
+    while (!this.match('<}>') && !this.end());
+    const content = this.mathlist;
+    this.endContext();
+    this.mathlist.push(...content);
+    return true;
   }
 
   /**
@@ -821,6 +951,23 @@ export class Parser {
     return result;
   }
 
+  /** VisualTeX: an optional `[t]`, `[b]` or `[c]` (else nothing is read). */
+  scanPositionArgument(): string | null {
+    const start = this.index;
+    this.skipWhitespace();
+    if (this.match('[')) {
+      this.skipWhitespace();
+      const letter = this.peek();
+      if (letter === 't' || letter === 'b' || letter === 'c') {
+        this.next();
+        this.skipWhitespace();
+        if (this.match(']')) return letter;
+      }
+    }
+    this.index = start;
+    return null;
+  }
+
   /**
    * Scan a \begin{env}...\end{end} sequence
    */
@@ -846,7 +993,11 @@ export class Parser {
     if (def.params) {
       for (const parameter of def.params) {
         // Parse an argument
-        if (parameter.isOptional) {
+        if (parameter.isOptional && /^(aligned|gathered|alignedat)$/.test(envName)) {
+          // VisualTeX: amsmath's position [t] / [b] / [c] only; any other
+          // bracket is the formula's (\ams@start@box puts it back)
+          args.push(this.scanPositionArgument());
+        } else if (parameter.isOptional) {
           // If it's not present, parseOptionalArgument returns null,
           // but push it on the list of arguments anyway.
           // The null value will be interpreted as unspecified
@@ -861,7 +1012,12 @@ export class Parser {
       }
     }
 
-    this.beginContext({ tabular: def.tabular, root: def.rootOnly });
+    // VisualTeX: a tabular's cells are text
+    this.beginContext({
+      tabular: def.tabular,
+      root: def.rootOnly,
+      ...(envName === 'tabular' ? { mode: 'text' as const } : {}),
+    });
 
     const array: Atom[][][] = [];
     const rowGaps: Dimension[] = [];
@@ -902,19 +1058,24 @@ export class Parser {
           rowGaps.push(gap ?? { dimension: 0 });
           array.push(row);
           row = [];
+        } else if (this.scanTableMark(row.length === 0)) {
+          // VisualTeX: a rule or a cell wrapper (see scanTableMark)
         } else {
-          this.mathlist.push(
-            ...this.scan((token) =>
-              [
-                '<}>',
-                '&',
-                '\\end',
-                '\\cr',
-                '\\\\',
-                '\\tabularnewline',
-              ].includes(token)
-            )
+          // VisualTeX: mathtools' cases* family: the second column is text
+          const text = row.length === 1 && /^d?r?cases\*$/.test(envName);
+          if (text) this.beginContext({ mode: 'text' });
+          const atoms = this.scan((token) =>
+            [
+              '<}>',
+              '&',
+              '\\end',
+              '\\cr',
+              '\\\\',
+              '\\tabularnewline',
+            ].includes(token)
           );
+          if (text) this.endContext();
+          this.mathlist.push(...atoms);
         }
       }
     } while (!done);
@@ -1108,6 +1269,10 @@ export class Parser {
         token
       )
     )
+      return token;
+
+    // VisualTeX: the rest of TeX's delimiters (a \delcode or \delimiter)
+    if (/^(\/|\\backslash|\\arrowvert|\\Arrowvert|\\bracevert)$/.test(token))
       return token;
 
     this.onError({ code: 'unexpected-delimiter', arg: token });
@@ -1511,6 +1676,9 @@ export class Parser {
     if (!this.match('[')) return null;
     let result: Argument | null = null;
     while (!this.end() && !this.match(']')) {
+      // VisualTeX: a token the argument's type cannot read is passed over
+      // (\framebox[2\mathrm{cm}] looped forever)
+      const start = this.index;
       if (argType === 'string') result = this.scanString();
       else if (argType === 'value') result = this.scanValue();
       else if (argType === 'colspec') result = this.scanColspec();
@@ -1546,6 +1714,7 @@ export class Parser {
         result = this.mathlist.concat(this.scan((token) => token === ']'));
         this.endContext();
       }
+      if (this.index === start && !this.end() && this.peek() !== ']') this.get();
     }
 
     return result;
@@ -1592,6 +1761,30 @@ export class Parser {
         ];
       }
       return [new PlaceholderAtom({ mode: this.parseMode, style: this.style })];
+    }
+
+    // VisualTeX: array parameters set before an array (\def\arraystretch{1.5},
+    // \setlength{\arraycolsep}{2pt}, ...): kept as written, an invisible atom
+    // the layout applies to the arrays after it in its group
+    if (command === '\\setlength' || command === '\\def') {
+      const index = this.index;
+      this.skipWhitespace();
+      const register = this.peek() === '<{>' ? this.scanLiteralGroup() : this.get();
+      if (
+        (command === '\\def' && register === '\\arraystretch') ||
+        (command === '\\setlength' && ARRAY_LENGTHS.includes(register))
+      ) {
+        this.skipWhitespace();
+        if (this.peek() === '<{>') {
+          this.scanLiteralGroup();
+          const verbatimLatex = joinLatex([
+            command,
+            tokensToString(this.tokens.slice(index, this.index)),
+          ]);
+          return [new Atom({ type: 'text', value: '', verbatimLatex })];
+        }
+      }
+      this.index = index;
     }
 
     if (
@@ -1832,6 +2025,27 @@ export class Parser {
    * Scan the macro name and its arguments and return a macro atom
    */
   scanMacro(macro: string): Atom | null {
+    // VisualTeX: physics, braket and siunitx commands, their arguments read
+    // as the packages read them (optional, delimited, variable)
+    if (this.parseMode === 'math') {
+      const packageCommand = scanVisualTexPackageCommand(
+        macro,
+        this.tokens,
+        this.index,
+        (latex) =>
+          parseLatex(latex, {
+            context: this.context,
+            parseMode: this.parseMode,
+            mathstyle: this.parsingContext.mathstyle,
+            style: this.parsingContext.style,
+          }),
+        this.parsingContext.style
+      );
+      if (packageCommand) {
+        this.index = packageCommand.index;
+        return packageCommand.atom;
+      }
+    }
     // The physics matrix commands must parse their braced contents in a real
     // tabular context, even when the host supplies static-renderer macros.
     if (
@@ -1843,7 +2057,8 @@ export class Parser {
     const def = this.context.getMacro(macro);
     if (!def) return null;
     const initialIndex = this.index;
-    const argCount = def.args!;
+    let argCount = def.args!;
+    let definition = def.def;
 
     // Carry forward the placeholder argument, if any.
     const args: Record<string, string | undefined> = { '?': this.args?.('?') };
@@ -1852,8 +2067,22 @@ export class Parser {
     // what the proper parse mode is, so defer parsing till later
     // when invoking `parseLatex`
     for (let i = 1; i <= argCount; i++) {
+      // VisualTeX: an optional last argument (xparse `g`, as physics'
+      // \braket{a}{b}) is only a brace group, never the next token.
+      if (i === argCount && def.defWithoutLastArgument !== undefined) {
+        const index = this.index;
+        this.skipWhitespace();
+        if (this.peek() !== '<{>') {
+          this.index = index;
+          argCount -= 1;
+          definition = def.defWithoutLastArgument;
+          break;
+        }
+      }
+      // VisualTeX: an empty group {} is an (empty) argument too
+      const groupStart = this.index;
       let arg = this.scanLiteralGroup();
-      if (!arg) {
+      if (!arg && this.index === groupStart) {
         // If the argument wasn't a group ({}), it may have
         // been a single token or expression, e.g. \frac12
         const index = this.index;
@@ -1868,12 +2097,13 @@ export class Parser {
     // macro's own slots.
     const visualTexTrackedDefinition =
       !def.expand && argCount > 0
-        ? def.def.replace(
-            /(^|[^\\])#([1-9])/g,
-            (_match, prefix, index) =>
-              prefix + '\\visualtexmacroarg{' + index + '}{#' + index + '}'
+        ? definition.replace(
+            // (a lookbehind: adjacent parameters, as in {}#1#3#2, are each marked)
+            /(?<!\\)#([1-9])/g,
+            (_match, index) =>
+              '\\visualtexmacroarg{' + index + '}{#' + index + '}'
           )
-        : def.def;
+        : definition;
 
     // Group the result of the macro expansion
     return new MacroAtom(macro, {
@@ -1967,3 +2197,39 @@ export function validateLatex(
   while (!parser.end()) parser.scan();
   return parser.errors;
 }
+
+/**
+ * VisualTeX: the rules a tabular row may start with and their arguments
+ * (`[` optional, `(` optional in parentheses, `{` required).
+ */
+const TABLE_RULE_ARGUMENTS: Record<string, string> = {
+  '\\hline': '',
+  '\\cline': '{',
+  // arydshln
+  '\\hdashline': '[',
+  '\\cdashline': '{[',
+  // booktabs
+  '\\toprule': '[',
+  '\\midrule': '[',
+  '\\bottomrule': '[',
+  '\\cmidrule': '[({',
+  '\\addlinespace': '[',
+  '\\specialrule': '{{{',
+  '\\morecmidrules': '',
+};
+
+/** VisualTeX: the commands a tabular cell may start with, before their content */
+const TABLE_WRAPPER_ARGUMENTS: Record<string, string> = {
+  '\\multicolumn': '{{',
+  '\\multirow': '[{[{[',
+  '\\hdotsfor': '[{',
+};
+
+/** VisualTeX: the array lengths \setlength may set before an array */
+const ARRAY_LENGTHS = [
+  '\\arraycolsep',
+  '\\tabcolsep',
+  '\\arrayrulewidth',
+  '\\doublerulesep',
+  '\\extrarowheight',
+];

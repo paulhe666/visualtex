@@ -46,8 +46,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "command-menu",
         title: ["反斜杠命令", "Backslash commands"],
         summary: [
-          "在正文里输入 \\ 和命令名，菜单列出章节、列表、加粗、公式环境等；↑↓ 选择，↩ 或数字键执行。",
-          "Type \\ and a command name in the text: the menu offers sections, lists, bold, formula environments…; ↑↓ to choose, ↩ or a digit to run it.",
+          "在正文里输入 \\ 和命令名，菜单列出章节（\\section* 无编号）、标题、作者、摘要、列表、加粗、公式环境等；↑↓ 选择，↩ 或数字键执行。",
+          "Type \\ and a command name in the text: the menu offers sections (\\section* unnumbered), title, author, abstract, lists, bold, formula environments…; ↑↓ to choose, ↩ or a digit to run it.",
         ],
       },
       {
@@ -128,8 +128,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "md-blocks",
         title: ["Markdown：标题、列表与引用", "Markdown: headings, lists and quotes"],
         summary: [
-          "行首输入 -、1.、> 加空格，得到无序列表、有序列表和引用；# 标题 回车或离开这一行变成标题；- [ ] 是待办事项，--- 回车是分隔线。",
-          "At a line start, -, 1. and > with a space make bullet and numbered lists and quotes; # Title becomes a heading on ↩ or when you leave the line; - [ ] is a to-do item, --- and ↩ a rule.",
+          "行首输入 -、1.、> 加空格，得到无序列表、有序列表和引用；# 标题 回车或离开这一行变成标题（# 标题 {-} 无编号）；- [ ] 是待办事项，--- 回车是分隔线。",
+          "At a line start, -, 1. and > with a space make bullet and numbered lists and quotes; # Title becomes a heading on ↩ or when you leave the line (# Title {-}: unnumbered); - [ ] is a to-do item, --- and ↩ a rule.",
         ],
       },
       {

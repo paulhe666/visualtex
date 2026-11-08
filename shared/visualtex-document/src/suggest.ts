@@ -20,6 +20,7 @@ import { MARKDOWN_HIGHLIGHT } from "./markdown.ts";
 import type { InputMode, MarkdownRuleSwitches } from "./markdownInput.ts";
 import { FONT_SIZES } from "./schema.ts";
 import { emojiOf, searchEmoji } from "./emoji.ts";
+import { insertAbstract, nextAuthor } from "./titleBlock.ts";
 import { addReferenceEntry, bibliographyEntries, insertCitation, insertFootnote, requestCitation } from "./notes.ts";
 
 /** The command being typed. */
@@ -44,7 +45,7 @@ export type CommandPreview =
   | { kind: "math"; latex: string }
   | { kind: "display"; latex: string; numbered: boolean }
   | { kind: "text"; text: string; style?: "bold" | "italic" | "underline" | "mono" | "strike"; scale?: number }
-  | { kind: "section"; level: 1 | 2 | 3 }
+  | { kind: "section"; level: 1 | 2 | 3; unnumbered?: boolean }
   | { kind: "title" }
   | { kind: "list"; ordered: boolean }
   | { kind: "align"; align: "left" | "center" | "right" }
@@ -103,7 +104,7 @@ export function commandToken(state: EditorState): CommandToken | null {
 
 const NAME = /^[A-Za-z]*\*?$/;
 const ENVIRONMENT = /^begin\{([A-Za-z]*\*?)$/;
-const ARGUMENT = /^([A-Za-z]+)\{([^{}\\]*)$/;
+const ARGUMENT = /^([A-Za-z]+\*?)\{([^{}\\]*)$/;
 /** characters LaTeX escapes with a backslash: "\$" is a dollar sign, not a formula */
 const ESCAPED = "$%&#_{}";
 
@@ -135,12 +136,19 @@ function bodyTextAfter(view: EditorView) {
   view.dispatch(view.state.tr.split($from.pos, 1, [{ type: view.state.schema.nodes.paragraph }]).scrollIntoView());
 }
 
-function section(level: 1 | 2 | 3): CommandEntry["run"] {
+/** \section and its kin; `unnumbered`: the starred form. Typed on a section of the same level without an argument,
+ *  the other form switches that section's number off (\section*) or on again (\section) in place. */
+function section(level: 1 | 2 | 3, unnumbered = false): CommandEntry["run"] {
   return (view, how) => {
+    const here = view.state.selection.$from;
+    if (how.argument === undefined && here.parent.type.name === "heading" && here.parent.attrs.level === level && here.parent.attrs.unnumbered !== unnumbered) {
+      view.dispatch(view.state.tr.setNodeAttribute(here.before(), "unnumbered", unnumbered).scrollIntoView());
+      return true;
+    }
     ownLine(view);
     const { $from } = view.state.selection;
     const block = $from.parent;
-    if (!setBlockType(view.state.schema.nodes.heading, { level, align: block.attrs.align ?? null, indent: 0 })(view.state, view.dispatch)) {
+    if (!setBlockType(view.state.schema.nodes.heading, { level, unnumbered, align: block.attrs.align ?? null, indent: 0 })(view.state, view.dispatch)) {
       return false;
     }
     if (how.argument !== undefined) {
@@ -160,6 +168,29 @@ const documentTitle: CommandEntry["run"] = (view, how) => {
     bodyTextAfter(view);
   }
   return true;
+};
+
+/** \author{…} / \date{…}: the line is an author / the date of the title block; after the argument, body text. */
+function titleBlockLine(kind: "author" | "date"): CommandEntry["run"] {
+  return (view, how) => {
+    ownLine(view);
+    if (!setBlockType(view.state.schema.nodes[kind])(view.state, view.dispatch)) return false;
+    if (how.argument !== undefined) {
+      if (how.argument) view.dispatch(view.state.tr.insertText(how.argument).scrollIntoView());
+      bodyTextAfter(view);
+    }
+    return true;
+  };
+}
+
+/** Markdown's "{-}": a section's number off or on again; on body text, an unnumbered section. */
+const unnumberedSection: CommandEntry["run"] = (view, how) => {
+  const { $from } = view.state.selection;
+  if ($from.parent.type.name === "heading") {
+    view.dispatch(view.state.tr.setNodeAttribute($from.before(), "unnumbered", !$from.parent.attrs.unnumbered).scrollIntoView());
+    return true;
+  }
+  return section(1, true)(view, how);
 };
 
 function textStyle(mark: (view: EditorView) => MarkType, attrs: Record<string, unknown> | null = null): CommandEntry["run"] {
@@ -278,7 +309,15 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
   { id: "section", label: "\\section{…}", names: ["section"], argument: true, featured: true, description: t("Section", "一级标题"), preview: { kind: "section", level: 1 }, run: section(1) },
   { id: "subsection", label: "\\subsection{…}", names: ["subsection"], argument: true, featured: true, description: t("Subsection", "二级标题"), preview: { kind: "section", level: 2 }, run: section(2) },
   { id: "subsubsection", label: "\\subsubsection{…}", names: ["subsubsection"], argument: true, description: t("Subsubsection", "三级标题"), preview: { kind: "section", level: 3 }, run: section(3) },
+  // the starred forms after the three levels: \sec + ↓ / 3 still pick \subsection / \subsubsection
+  { id: "section*", label: "\\section*{…}", names: ["section*"], argument: true, description: t("Section, unnumbered", "一级标题（无编号）"), preview: { kind: "section", level: 1, unnumbered: true }, run: section(1, true) },
+  { id: "subsection*", label: "\\subsection*{…}", names: ["subsection*"], argument: true, description: t("Subsection, unnumbered", "二级标题（无编号）"), preview: { kind: "section", level: 2, unnumbered: true }, run: section(2, true) },
+  { id: "subsubsection*", label: "\\subsubsection*{…}", names: ["subsubsection*"], argument: true, description: t("Subsubsection, unnumbered", "三级标题（无编号）"), preview: { kind: "section", level: 3, unnumbered: true }, run: section(3, true) },
   { id: "title", label: "\\title{…}", names: ["title", "maketitle"], argument: true, featured: true, description: t("Title", "文档标题"), preview: { kind: "title" }, run: documentTitle },
+  { id: "author", label: "\\author{…}", names: ["author", "zuozhe", "zz"], argument: true, description: t("Author", "作者"), preview: { kind: "text", text: "Author" }, run: titleBlockLine("author") },
+  { id: "and", label: "\\and", names: ["and"], description: t("Next author", "下一位作者"), preview: { kind: "text", text: "A  B" }, run: asRun(nextAuthor) },
+  { id: "date", label: "\\date{…}", names: ["date", "riqi", "rq"], argument: true, description: t("Date", "日期"), preview: { kind: "text", text: "2026" }, run: titleBlockLine("date") },
+  { id: "abstract", label: "\\begin{abstract}", names: ["abstract", "zhaiyao", "zy"], environment: "abstract", description: t("Abstract", "摘要"), preview: { kind: "block", block: "quote" }, run: asRun(insertAbstract) },
   { id: "itemize", label: "\\begin{itemize}", names: ["itemize"], environment: "itemize", featured: true, description: t("Bulleted list", "无序列表"), preview: { kind: "list", ordered: false }, run: list("bullet_list") },
   { id: "enumerate", label: "\\begin{enumerate}", names: ["enumerate"], environment: "enumerate", featured: true, description: t("Numbered list", "有序列表"), preview: { kind: "list", ordered: true }, run: list("ordered_list") },
   { id: "item", label: "\\item", names: ["item"], description: t("List item", "列表项"), preview: { kind: "list", ordered: false }, run: listItem },
@@ -308,8 +347,8 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
   { id: "newpage", label: "\\newpage", names: ["newpage", "pagebreak", "fenye", "fy", "huanye"], featured: true, description: t("Page break", "分页"), preview: { kind: "block", block: "rule" }, run: asRun(insertPageCommand("newpage")) },
   { id: "clearpage", label: "\\clearpage", names: ["clearpage", "fenye"], description: t("Page break (after floats)", "分页（浮动体之后）"), preview: { kind: "block", block: "rule" }, run: asRun(insertPageCommand("clearpage")) },
   { id: "pagenumbering", label: "\\pagenumbering{…}", names: ["pagenumbering", "yema", "ym", "yemageshi"], argument: true, description: t("Page numbers: arabic, roman, Roman, alph, Alph, gobble", "页码格式：arabic、roman、Roman、alph、Alph、gobble"), preview: { kind: "text", text: "i ii iii" }, run: pageCommandEntry("pagenumbering", PAGE_NUMBER_STYLES, "arabic") },
-  { id: "pagestyle", label: "\\pagestyle{…}", names: ["pagestyle", "yemianfengge"], argument: true, description: t("Page style: plain, empty", "页面样式：plain、empty"), preview: { kind: "text", text: "plain" }, run: pageCommandEntry("pagestyle", PAGE_STYLES, "plain") },
-  { id: "thispagestyle", label: "\\thispagestyle{…}", names: ["thispagestyle"], argument: true, description: t("This page's style: plain, empty", "本页样式：plain、empty"), preview: { kind: "text", text: "empty" }, run: pageCommandEntry("thispagestyle", PAGE_STYLES, "empty") },
+  { id: "pagestyle", label: "\\pagestyle{…}", names: ["pagestyle", "yemianfengge"], argument: true, description: t("Page style: plain, empty, headings, myheadings", "页面样式：plain、empty、headings、myheadings"), preview: { kind: "text", text: "plain" }, run: pageCommandEntry("pagestyle", PAGE_STYLES, "plain") },
+  { id: "thispagestyle", label: "\\thispagestyle{…}", names: ["thispagestyle"], argument: true, description: t("This page's style: plain, empty, headings, myheadings", "本页样式：plain、empty、headings、myheadings"), preview: { kind: "text", text: "empty" }, run: pageCommandEntry("thispagestyle", PAGE_STYLES, "empty") },
   { id: "hrule", label: "\\hrule", names: ["hrule", "hrulefill"], featured: true, description: t("Horizontal line", "水平线"), preview: { kind: "block", block: "rule" }, run: asRun(insertDivider) },
   { id: "footnote", label: "\\footnote{…}", names: ["footnote", "jiaozhu", "jz"], argument: true, description: t("Footnote (Ctrl+Alt+F)", "脚注（Ctrl+Alt+F）"), preview: { kind: "text", text: "a¹" }, run: footnote },
   { id: "cite", label: "\\cite{…}", names: ["cite", "citep", "citet", "yinyong", "wenxian", "ckwx"], argument: true, description: t("Citation", "引用文献"), preview: { kind: "text", text: "[1]" }, run: cite },
@@ -331,9 +370,13 @@ export const DOCUMENT_COMMANDS: CommandEntry[] = [
  * the Chinese words, in characters or pinyin). */
 export const MARKDOWN_COMMANDS: CommandEntry[] = [
   { id: "md-title", label: '<h1 align="center">', names: ["title", "biaoti", "bt", "wdbt"], description: t("Title", "文档标题"), preview: { kind: "title" }, run: documentTitle },
+  { id: "md-author", label: '<p align="center" class="author">', names: ["author", "zuozhe", "zz"], description: t("Author", "作者"), preview: { kind: "text", text: "Author" }, run: titleBlockLine("author") },
+  { id: "md-date", label: '<p align="center" class="date">', names: ["date", "riqi", "rq"], description: t("Date", "日期"), preview: { kind: "text", text: "2026" }, run: titleBlockLine("date") },
+  { id: "md-abstract", label: '<div class="abstract">', names: ["abstract", "zhaiyao", "zy"], description: t("Abstract", "摘要"), preview: { kind: "block", block: "quote" }, run: asRun(insertAbstract) },
   { id: "md-h1", label: "# …", names: ["h1", "heading", "biaoti", "bt", "yjbt"], featured: true, description: t("Heading 1", "一级标题"), preview: { kind: "section", level: 1 }, run: section(1) },
   { id: "md-h2", label: "## …", names: ["h2", "heading", "subtitle", "biaoti", "bt", "ejbt"], featured: true, description: t("Heading 2", "二级标题"), preview: { kind: "section", level: 2 }, run: section(2) },
   { id: "md-h3", label: "### …", names: ["h3", "heading", "biaoti", "bt", "sjbt"], featured: true, description: t("Heading 3", "三级标题"), preview: { kind: "section", level: 3 }, run: section(3) },
+  { id: "md-unnumbered", label: "# … {-}", names: ["unnumbered", "nonumber", "heading", "wubianhao", "wbh"], description: t("Heading, unnumbered", "标题（无编号）"), preview: { kind: "section", level: 1, unnumbered: true }, run: unnumberedSection },
   { id: "md-bullet", label: "- …", names: ["ul", "bullet", "list", "liebiao", "wuxu", "lb", "wxlb"], featured: true, description: t("Bulleted list", "无序列表"), preview: { kind: "list", ordered: false }, run: list("bullet_list") },
   { id: "md-ordered", label: "1. …", names: ["ol", "numbered", "ordered", "list", "liebiao", "youxu", "lb", "yxlb"], featured: true, description: t("Numbered list", "有序列表"), preview: { kind: "list", ordered: true }, run: list("ordered_list") },
   { id: "md-math-block", label: "$$ … $$", names: ["math", "formula", "equation", "display", "gongshi", "gs", "hjgs", "sxgs"], featured: true, description: t("Display formula", "行间公式"), preview: { kind: "display", latex: "E=mc^2", numbered: false }, run: asRun(insertDisplayLatex("")) },

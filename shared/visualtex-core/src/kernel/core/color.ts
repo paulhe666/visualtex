@@ -191,6 +191,115 @@ const DVIPS_COLORS: Record<string, string> = {
   YellowOrange: '#FAA21A',
 };
 
+/**
+ * VisualTeX: xcolor's predefined colors (xcolor.sty \definecolorset), as LaTeX
+ * sets them: rgb in [0, 1]. They take precedence over the MathLive palette
+ * above, so `\color{red}` is xcolor's red (#ff0000), not a design-scale red.
+ */
+const XCOLOR_COLORS: Record<string, [number, number, number]> = {
+  red: [1, 0, 0],
+  green: [0, 1, 0],
+  blue: [0, 0, 1],
+  brown: [0.75, 0.5, 0.25],
+  lime: [0.75, 1, 0],
+  orange: [1, 0.5, 0],
+  pink: [1, 0.75, 0.75],
+  purple: [0.75, 0, 0.25],
+  teal: [0, 0.5, 0.5],
+  violet: [0.5, 0, 0.5],
+  cyan: [0, 1, 1],
+  magenta: [1, 0, 1],
+  yellow: [1, 1, 0],
+  olive: [0.5, 0.5, 0],
+  black: [0, 0, 0],
+  darkgray: [0.25, 0.25, 0.25],
+  gray: [0.5, 0.5, 0.5],
+  lightgray: [0.75, 0.75, 0.75],
+  white: [1, 1, 1],
+};
+
+/** VisualTeX: xcolor's dvipsnames option (dvipsnam.def): cmyk. */
+const XCOLOR_DVIPSNAMES: Record<string, [number, number, number, number]> = {
+  GreenYellow: [0.15, 0, 0.69, 0],
+  Yellow: [0, 0, 1, 0],
+  Goldenrod: [0, 0.10, 0.84, 0],
+  Dandelion: [0, 0.29, 0.84, 0],
+  Apricot: [0, 0.32, 0.52, 0],
+  Peach: [0, 0.50, 0.70, 0],
+  Melon: [0, 0.46, 0.50, 0],
+  YellowOrange: [0, 0.42, 1, 0],
+  Orange: [0, 0.61, 0.87, 0],
+  BurntOrange: [0, 0.51, 1, 0],
+  Bittersweet: [0, 0.75, 1, 0.24],
+  RedOrange: [0, 0.77, 0.87, 0],
+  Mahogany: [0, 0.85, 0.87, 0.35],
+  Maroon: [0, 0.87, 0.68, 0.32],
+  BrickRed: [0, 0.89, 0.94, 0.28],
+  Red: [0, 1, 1, 0],
+  OrangeRed: [0, 1, 0.50, 0],
+  RubineRed: [0, 1, 0.13, 0],
+  WildStrawberry: [0, 0.96, 0.39, 0],
+  Salmon: [0, 0.53, 0.38, 0],
+  CarnationPink: [0, 0.63, 0, 0],
+  Magenta: [0, 1, 0, 0],
+  VioletRed: [0, 0.81, 0, 0],
+  Rhodamine: [0, 0.82, 0, 0],
+  Mulberry: [0.34, 0.90, 0, 0.02],
+  RedViolet: [0.07, 0.90, 0, 0.34],
+  Fuchsia: [0.47, 0.91, 0, 0.08],
+  Lavender: [0, 0.48, 0, 0],
+  Thistle: [0.12, 0.59, 0, 0],
+  Orchid: [0.32, 0.64, 0, 0],
+  DarkOrchid: [0.40, 0.80, 0.20, 0],
+  Purple: [0.45, 0.86, 0, 0],
+  Plum: [0.50, 1, 0, 0],
+  Violet: [0.79, 0.88, 0, 0],
+  RoyalPurple: [0.75, 0.90, 0, 0],
+  BlueViolet: [0.86, 0.91, 0, 0.04],
+  Periwinkle: [0.57, 0.55, 0, 0],
+  CadetBlue: [0.62, 0.57, 0.23, 0],
+  CornflowerBlue: [0.65, 0.13, 0, 0],
+  MidnightBlue: [0.98, 0.13, 0, 0.43],
+  NavyBlue: [0.94, 0.54, 0, 0],
+  RoyalBlue: [1, 0.50, 0, 0],
+  Blue: [1, 1, 0, 0],
+  Cerulean: [0.94, 0.11, 0, 0],
+  Cyan: [1, 0, 0, 0],
+  ProcessBlue: [0.96, 0, 0, 0],
+  SkyBlue: [0.62, 0, 0.12, 0],
+  Turquoise: [0.85, 0, 0.20, 0],
+  TealBlue: [0.86, 0, 0.34, 0.02],
+  Aquamarine: [0.82, 0, 0.30, 0],
+  BlueGreen: [0.85, 0, 0.33, 0],
+  Emerald: [1, 0, 0.50, 0],
+  JungleGreen: [0.99, 0, 0.52, 0],
+  SeaGreen: [0.69, 0, 0.50, 0],
+  Green: [1, 0, 1, 0],
+  ForestGreen: [0.91, 0, 0.88, 0.12],
+  PineGreen: [0.92, 0, 0.59, 0.25],
+  LimeGreen: [0.50, 0, 1, 0],
+  YellowGreen: [0.44, 0, 0.74, 0],
+  SpringGreen: [0.26, 0, 0.76, 0],
+  OliveGreen: [0.64, 0, 0.95, 0.40],
+  RawSienna: [0, 0.72, 1, 0.45],
+  Sepia: [0, 0.83, 1, 0.70],
+  Brown: [0, 0.81, 1, 0.60],
+  Tan: [0.14, 0.42, 0.56, 0],
+  Gray: [0, 0, 0, 0.50],
+  Black: [0, 0, 0, 1],
+  White: [0, 0, 0, 0],
+};
+
+/** An xcolor color name (case-sensitive, as xcolor's) as rgb in [0, 1]; cmyk converts as xcolor does (1 - min(1, c + k)). */
+function xcolorRgb(name: string): [number, number, number] | undefined {
+  const rgb = XCOLOR_COLORS[name];
+  if (rgb) return rgb;
+  const cmyk = XCOLOR_DVIPSNAMES[name];
+  if (!cmyk) return undefined;
+  const [c, m, y, k] = cmyk;
+  return [1 - Math.min(1, c + k), 1 - Math.min(1, m + k), 1 - Math.min(1, y + k)];
+}
+
 // Other color lists: SVG colors, x11 colors
 /*
 aliceblue	rgb(240, 248, 255)
@@ -391,7 +500,12 @@ export function defaultColorMap(s: string): string | undefined {
     const colorName = colorSpec[i].trim().match(/^([A-Za-z\d-]+)/)?.[1];
     const lcColorName = colorName?.toLowerCase();
 
-    const color = !colorName
+    // VisualTeX: xcolor's own names (and its dvipsnames) as LaTeX has them;
+    // MathLive's palette only for the names xcolor does not define
+    const xcolor = colorName ? xcolorRgb(colorSpec[i].trim()) : undefined;
+    const color = xcolor
+      ? '#' + xcolor.map((v) => ('00' + Math.round(v * 255).toString(16)).slice(-2)).join('')
+      : !colorName
       ? colorSpec[i].trim()
       : (FOREGROUND_COLORS[lcColorName!] ??
         FOREGROUND_COLORS[DVIPS_TO_CHROMATIC[colorName]] ??
@@ -460,6 +574,9 @@ export function defaultColorMap(s: string): string | undefined {
 
 export function defaultBackgroundColorMap(s: string): string | undefined {
   s = s.trim();
+  // VisualTeX: \colorbox{yellow} is xcolor's yellow; the pale MathLive
+  // backgrounds stay for the names xcolor does not define
+  if (xcolorRgb(s.split('!')[0].replace(/^-+/, '').trim())) return defaultColorMap(s);
   return (
     BACKGROUND_COLORS[s.toLowerCase()] ??
     BACKGROUND_COLORS[DVIPS_TO_CHROMATIC[s]] ??

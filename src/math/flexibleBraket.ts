@@ -1,8 +1,10 @@
 /**
  * braket.sty writes one balanced argument with internal | separators
- * (\\braket{\\phi|\\psi}); physics writes two arguments. The compatibility
- * macros only know the two-argument form, so rewrite the one-argument form to
- * the same delimiters before macro expansion or export.
+ * (\\braket{\\phi|\\psi}); physics writes two arguments, the second one only
+ * when a brace group follows, and one argument without a | of its own is
+ * physics' too (\\braket{a} = ⟨a|a⟩), as the editor's kernel reads them. The
+ * compatibility macros only know fixed arguments, so rewrite the forms to
+ * their delimiters before macro expansion or export.
  */
 type BalancedArgument = {
   content: string;
@@ -66,6 +68,21 @@ function readPackageMacroArgument(source: string, start: number) {
     : null;
 }
 
+/** Whether braket.sty's argument has a | of its own (not inside braces). */
+function hasTopLevelBar(text: string) {
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "\\") {
+      index += 1;
+      continue;
+    }
+    if (text[index] === "{") depth += 1;
+    else if (text[index] === "}") depth -= 1;
+    else if (text[index] === "|" && depth === 0) return true;
+  }
+  return false;
+}
+
 export function normalizeFlexiblePackageLatexCommands(
   source: string,
   excludedCommands: ReadonlySet<string> = new Set(),
@@ -94,52 +111,20 @@ export function normalizeFlexiblePackageLatexCommands(
       ? readBalancedArgument(source, secondStart, "{", "}")
       : null;
     if (second) {
-      output += `\\left\\langle ${first.content}\\middle\\vert ${second.content}\\right\\rangle`;
+      const bra = normalizeFlexiblePackageLatexCommands(first.content);
+      const ket = normalizeFlexiblePackageLatexCommands(second.content);
+      output += `\\left\\langle ${bra}\\middle\\vert ${ket}\\right\\rangle${/^[A-Za-z]/.test(source[second.end] ?? "") ? " " : ""}`;
       cursor = second.end;
       continue;
     }
 
-    // braket.sty-style one-argument syntax: separators live inside the single
-    // balanced argument. Replace only top-level unescaped | / || so nested groups
-    // and explicit \\| remain untouched.
-    let depth = 0;
-    let body = "";
-    let sawSeparator = false;
-    for (let index = 0; index < first.content.length; index += 1) {
-      const character = first.content[index];
-      if (character === "\\") {
-        body += character;
-        if (index + 1 < first.content.length) body += first.content[++index];
-        continue;
-      }
-      if (character === "{") {
-        depth += 1;
-        body += character;
-        continue;
-      }
-      if (character === "}") {
-        depth = Math.max(0, depth - 1);
-        body += character;
-        continue;
-      }
-      if (character === "|" && depth === 0) {
-        sawSeparator = true;
-        if (first.content[index + 1] === "|") {
-          body += "\\middle\\Vert ";
-          index += 1;
-        } else {
-          body += "\\middle\\vert ";
-        }
-        continue;
-      }
-      body += character;
-    }
-    if (!sawSeparator) {
-      output += source.slice(match.index, first.end);
-      cursor = first.end;
-      continue;
-    }
-    output += `\\left\\langle ${body}\\right\\rangle`;
+    // braket.sty's one argument with | separators of its own (physics'
+    // second argument is only a brace group, never the next token): the
+    // separators stay as written. Without one, physics' \\braket{a} = ⟨a|a⟩.
+    const content = normalizeFlexiblePackageLatexCommands(first.content);
+    output += hasTopLevelBar(first.content)
+      ? `\\mathinner{\\langle{${content}}\\rangle}`
+      : `\\left\\langle ${content}\\middle\\vert ${content}\\right\\rangle${/^[A-Za-z]/.test(source[first.end] ?? "") ? " " : ""}`;
     cursor = first.end;
   }
   return output;

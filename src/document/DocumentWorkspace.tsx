@@ -2,7 +2,7 @@
 // editor area beside the document library (saved as you type), the file actions of the main menu (new, import, save,
 // export) and an editor handle so that formula commands from the rest of the app (tools, tiles, OCR) go into the
 // document.
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -29,6 +29,7 @@ import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/Math
 import type { FormulaEditSource } from "../history/historyTypes";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
 import { createSafeStorage } from "../runtime/safeStorage";
+import { DOCUMENT_LATEX } from "../edition";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
@@ -64,6 +65,12 @@ import {
 } from "./documentEvents";
 import { TutorialDialog } from "./TutorialDialog";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
+import type { LatexActions } from "./latex/LatexWorkspace";
+import { isLatexDocument, latexPointerText, parseLatexPointer, rememberLatexDocument, type LatexPointer } from "./latex/latexDocs";
+
+// LaTeX documents (personal edition): loaded only there
+const LatexWorkspace = DOCUMENT_LATEX ? lazy(() => import("./latex/LatexWorkspace").then((m) => ({ default: m.LatexWorkspace }))) : null;
+const latexImport = () => import("./latex/latexImport");
 
 // Before the library the one document was kept here; the first start with the library takes it in (once; the key
 // stays for an older version of the app).
@@ -260,6 +267,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   // The open document: its id, the text last saved (or read) and the latest text.
   const current = useRef<{ id: string | null; saved: Node | null; latest: Node | null }>({ id: null, saved: null, latest: null });
   const saveTimer = useRef(0);
+  // a LaTeX document open (personal edition): its files are the document; the library keeps a pointer to them
+  const [latex, setLatex] = useState<{ id: string; pointer: LatexPointer } | null>(null);
+  const latexRef = useRef(latex);
+  latexRef.current = latex;
+  const latexActions = useRef<LatexActions | null>(null);
 
   const adapterRef = useRef<MathEditorHandle | null>(null);
   useEffect(() => {
@@ -304,6 +316,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     importFile: async (_file: File, _folder?: string | null) => {},
     exportFile: async (_id: string, _format?: DocumentExportFormat) => {},
     afterLoss: async (_library: Library) => {},
+    addLatex: async (_pointer: LatexPointer, _title: string, _folder?: string | null) => {},
   });
   ops.current = {
     saveNow: async () => {
@@ -321,13 +334,24 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       }
     },
     open: async (id) => {
-      if (id === current.current.id) {
+      if (id === current.current.id || id === latexRef.current?.id) {
         documentRef.current?.focus();
         return true;
       }
       await ops.current.saveNow();
+      if (latexRef.current) await latexActions.current?.save();
       try {
         const text = await api.read(id);
+        const pointer = DOCUMENT_LATEX ? parseLatexPointer(text) : null;
+        if (pointer) {
+          current.current = { id: null, saved: null, latest: null };
+          rememberLatexDocument(id);
+          setLatex({ id, pointer });
+          setCurrentId(id);
+          useDocumentLibraryStore.getState().setLastId(id);
+          return true;
+        }
+        setLatex(null);
         documentRef.current?.load(text);
       } catch (error) {
         flash(t("Cannot open: ", "无法打开：") + errorText(error));
@@ -354,8 +378,19 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     },
     // A .vtxdoc (or .json) as it is; Markdown and LaTeX read into a new document (one Ctrl+Z from empty); a .zip of
     // a LaTeX project (its main file, the files it inputs, the macros of its class and packages) or of Markdown.
+    // The public edition reads no LaTeX: .vtxdoc, Markdown and Markdown archives.
     importFile: async (file, folder = null) => {
       const stem = file.name.replace(/\.[^.]+$/, "");
+      if (DOCUMENT_LATEX && (await (await latexImport()).isLatexImport(file))) {
+        try {
+          const made = await (await latexImport()).openLatexImport(file, folder);
+          await ops.current.addLatex(made.pointer, made.title);
+          flash(t("Document opened", "文档已打开"));
+        } catch (error) {
+          flash(t("Cannot open: ", "无法打开：") + errorText(error));
+        }
+        return;
+      }
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         let kind: "document" | "markdown" | "latex";
@@ -365,10 +400,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         let base = "";
         if (/\.zip$/i.test(file.name)) {
           const picture = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
-          const entries = unzipSync(bytes, { filter: (entry) => /\.(tex|cls|sty|def|ltx|bib|md|markdown)$/i.test(entry.name) || picture.test(entry.name) });
+          const wanted = DOCUMENT_LATEX ? /\.(tex|cls|sty|def|ltx|bib|md|markdown)$/i : /\.(md|markdown)$/i;
+          const entries = unzipSync(bytes, { filter: (entry) => wanted.test(entry.name) || picture.test(entry.name) });
           images = new Map(Object.entries(entries).filter(([path]) => picture.test(path)));
           const files = Object.entries(entries).filter(([path]) => !picture.test(path)).map(([path, data]) => ({ path, bytes: data }));
-          const project = readLatexProject(files);
+          const project = DOCUMENT_LATEX ? readLatexProject(files) : null;
           const markdownFile = project ? null : findMarkdownFile(files);
           if (project) {
             kind = "latex";
@@ -378,8 +414,12 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
             kind = "markdown";
             text = decodeText(markdownFile.bytes);
             base = markdownFile.path.includes("/") ? markdownFile.path.slice(0, markdownFile.path.lastIndexOf("/") + 1) : "";
-          } else throw new Error(t("no .tex or .md file in the archive", "压缩包中没有 .tex 或 .md 文件"));
+          } else
+            throw new Error(
+              DOCUMENT_LATEX ? t("no .tex or .md file in the archive", "压缩包中没有 .tex 或 .md 文件") : t("no .md file in the archive", "压缩包中没有 .md 文件"),
+            );
         } else {
+          if (!DOCUMENT_LATEX && /\.(tex|ltx)$/i.test(file.name)) throw new Error(t("not a VisualTeX or Markdown file", "不是 VisualTeX 或 Markdown 文件"));
           text = decodeText(bytes);
           kind = /\.(md|markdown)$/i.test(file.name) ? "markdown" : /\.(tex|ltx)$/i.test(file.name) ? "latex" : "document";
           if (kind === "document") parseDocument(documentSchema, text);
@@ -407,6 +447,17 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       }
     },
     exportFile: async (id, format = "vtxdoc") => {
+      if (DOCUMENT_LATEX && isLatexDocument(id)) {
+        if (id !== latexRef.current?.id) {
+          await ops.current.open(id);
+          await new Promise((resolve) => window.setTimeout(resolve, 600));
+        }
+        const actions = latexActions.current;
+        if (format === "pdf") actions?.exportPdf();
+        else if (format === "latex") actions?.exportMain();
+        else actions?.exportProject();
+        return;
+      }
       try {
         if (format !== "vtxdoc") {
           // the other formats come from the editor: the document is opened (its pages laid out) first
@@ -414,7 +465,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
             await ops.current.open(id);
             await new Promise((resolve) => window.setTimeout(resolve, 400));
           }
-          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, pdf: actions.current.exportPdf }[format];
+          const run = { latex: actions.current.exportLatex, markdown: actions.current.exportMarkdown, pdf: actions.current.exportPdf, zip: actions.current.exportLatex }[format];
           run();
           return;
         }
@@ -428,9 +479,19 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         flash(errorText(error));
       }
     },
+    // A LaTeX project as a new library document (its pointer), opened.
+    addLatex: async (pointer, title, folder) => {
+      await ops.current.saveNow();
+      const where = folder !== undefined ? folder : (entryOf(current.current.id ?? latexRef.current?.id ?? null)?.folder ?? null);
+      const entry = await api.create(where, latexPointerText(pointer), title || null);
+      rememberLatexDocument(entry.id);
+      withEntry(entry);
+      await ops.current.open(entry.id);
+    },
     // The open document was deleted: the newest other one opens, or a new one.
     afterLoss: async (next) => {
       current.current = { id: null, saved: null, latest: null };
+      setLatex(null);
       const other = next.documents.find((doc) => doc.trashed === null);
       if (other) await ops.current.open(other.id);
       else await ops.current.create(null);
@@ -551,6 +612,21 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportFile: (id, format) => void ops.current.exportFile(id, format),
     reveal: isTauri() ? (id) => void invoke("document_library_reveal", { id }).catch((error) => flash(errorText(error))) : null,
     search: (query) => api.search(query),
+    ...(DOCUMENT_LATEX
+      ? {
+          createLatex: (folder: string | null) =>
+            void latexImport().then((m) => m.newLatexDocument(isEn)).then(
+              (made) => ops.current.addLatex(made.pointer, made.title, folder),
+              (error) => flash(errorText(error)),
+            ),
+          openFolder: () =>
+            void latexImport().then((m) => (isTauri() ? m.openLatexFolder(isEn) : m.pickLatexFolderInBrowser())).then(
+              (made) => made && ops.current.addLatex(made.pointer, made.title),
+              (error) => flash(t("Cannot open: ", "无法打开：") + errorText(error)),
+            ),
+          isLatex: (id: string) => isLatexDocument(id),
+        }
+      : {}),
   };
 
   // PDF: one at a time
@@ -568,11 +644,14 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     exportPdf: () => {},
   });
   actions.current = {
-    save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
+    save: () =>
+      void (latexRef.current ? (latexActions.current?.save() ?? Promise.resolve(true)) : ops.current.saveNow()).then((done) => done && flash(t("Saved", "已保存"))),
     open: () => openFile(),
     create: () => void ops.current.create(entryOf(current.current.id)?.folder ?? null),
     exportDocument: () => current.current.id && void ops.current.exportFile(current.current.id),
     exportLatex: () => {
+      if (latexRef.current) return latexActions.current?.exportProject();
+      if (!DOCUMENT_LATEX) return;
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
       // with images: the .tex and its figures/ in one .zip (Overleaf's upload)
@@ -616,6 +695,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       );
     },
     exportPdf: () => {
+      if (latexRef.current) return latexActions.current?.exportPdf();
       const view = documentRef.current?.view();
       if (!view || pdfBusy.current) return;
       pdfBusy.current = true;
@@ -639,6 +719,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       })();
     },
     copyLatex: () => {
+      if (!DOCUMENT_LATEX) return;
       const tex = documentRef.current?.toLatex();
       if (!tex) return;
       void navigator.clipboard.writeText(tex).then(
@@ -655,8 +736,13 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_OPEN_REQUEST_EVENT, () => actions.current.open()],
       [DOCUMENT_NEW_REQUEST_EVENT, () => actions.current.create()],
       [DOCUMENT_EXPORT_FILE_EVENT, () => actions.current.exportDocument()],
-      [DOCUMENT_EXPORT_LATEX_EVENT, () => actions.current.exportLatex()],
-      [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
+      // LaTeX out: the personal edition only
+      ...(DOCUMENT_LATEX
+        ? ([
+            [DOCUMENT_EXPORT_LATEX_EVENT, () => actions.current.exportLatex()],
+            [DOCUMENT_COPY_LATEX_EVENT, () => actions.current.copyLatex()],
+          ] as Array<[string, () => void]>)
+        : []),
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
       [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
@@ -671,7 +757,43 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   return (
     <section className={"vtx-document-workspace" + (libraryOpen ? " has-library" : "")} aria-label={t("Document", "文档")}>
       {libraryOpen && <DocumentLibrary isEn={isEn} library={library} currentId={currentId} actions={libraryActions} />}
-      <div className="vtx-document-main">
+      {latex && LatexWorkspace && (
+        <div className="vtx-document-main">
+          <Suspense fallback={null}>
+            <LatexWorkspace
+              key={latex.id}
+              docId={latex.id}
+              pointer={latex.pointer}
+              isEn={isEn}
+              leading={libraryOpen ? null : <DocumentLibraryToggle isEn={isEn} />}
+              trailing={
+                <button
+                  type="button"
+                  className="icon-button compact formula-formatting-button vtx-tutorial-button"
+                  title={t("Tutorials", "教程")}
+                  aria-label={t("Tutorials", "教程")}
+                  onClick={() => setTutorialOpen(true)}
+                >
+                  <GraduationCap size={16} />
+                </button>
+              }
+              onPointer={(pointer) => {
+                setLatex((old) => (old && old.id === latex.id ? { ...old, pointer } : old));
+                const entry = entryOf(latex.id);
+                void api.save(latex.id, latexPointerText(pointer), entry?.title ?? "").then(withEntry, (error) => flash(errorText(error)));
+              }}
+              onTitle={(title) => {
+                const entry = entryOf(latex.id);
+                if (!entry || entry.titleSet || entry.title === title) return;
+                void api.save(latex.id, latexPointerText(latexRef.current?.pointer ?? latex.pointer), title).then(withEntry, () => undefined);
+              }}
+              flash={flash}
+              actionsRef={latexActions}
+            />
+          </Suspense>
+        </div>
+      )}
+      <div className="vtx-document-main" hidden={!!latex} style={latex ? { display: "none" } : undefined}>
         {/* the document's own buttons above it; the formula tools stay in the bottom dock */}
         <DocumentTextToolbar
           leading={libraryOpen ? null : <DocumentLibraryToggle isEn={isEn} />}
@@ -705,7 +827,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       <input
         ref={fileRef}
         type="file"
-        accept=".vtxdoc,.json,.md,.markdown,.tex,.ltx,.zip"
+        accept={DOCUMENT_LATEX ? ".vtxdoc,.json,.md,.markdown,.tex,.ltx,.zip" : ".vtxdoc,.json,.md,.markdown,.zip"}
         className="visually-hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];

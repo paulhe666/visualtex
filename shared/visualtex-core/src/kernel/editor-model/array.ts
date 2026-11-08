@@ -421,10 +421,11 @@ function removeCell(model: _Model, where: 'row' | 'column'): void {
       case 'row':
         if (arrayAtom.rowCount > 1) {
           arrayAtom.removeRow(treeBranch[0]);
-          const cell = arrayAtom.getCell(
+          const cell = cellAtOrBefore(
+            arrayAtom,
             Math.max(0, treeBranch[0] - 1),
             treeBranch[1]
-          )!;
+          );
           pos = model.offsetOf(cell[cell.length - 1]);
         }
         break;
@@ -432,16 +433,26 @@ function removeCell(model: _Model, where: 'row' | 'column'): void {
       case 'column':
         if (arrayAtom.colCount > arrayAtom.minColumns) {
           arrayAtom.removeColumn(treeBranch[1]);
-          const cell = arrayAtom.getCell(
+          const cell = cellAtOrBefore(
+            arrayAtom,
             treeBranch[0],
             Math.max(0, treeBranch[1] - 1)
-          )!;
+          );
           pos = model.offsetOf(cell[cell.length - 1]);
         }
         break;
     }
     if (pos !== undefined) model.setPositionHandlingPlaceholder(pos);
   }
+}
+
+/** VisualTeX: the cell at [row, column], or the one before it (a \multicolumn covers columns) */
+function cellAtOrBefore(array: ArrayAtom, row: number, column: number): readonly Atom[] {
+  for (let c = Math.min(column, array.colCount - 1); c >= 0; c--) {
+    const cell = array.getCell(row, c);
+    if (cell) return cell;
+  }
+  return array.getCell(row, 0)!;
 }
 
 export function removeRow(model: _Model): boolean {
@@ -789,9 +800,18 @@ export function visualTexEmptyEnvironmentRowInfo(
       !visualTexCanDeleteEmptyEnvironmentRow(array, branch[0])) return null;
   return { array, row: branch[0], column: branch[1] };
 }
+/** VisualTeX: environments of column pairs (aligned, amsmath's align, flalign, alignat): & is an alignment point. */
+export function visualTexIsAlignEnvironment(name: string): boolean {
+  return /^(aligned|alignedat|align\*?|flalign\*?|alignat\*?)$/.test(name);
+}
+/** VisualTeX: amsmath's top-level displays and eqnarray (a list of lines). */
+export function visualTexIsDisplayEnvironment(name: string): boolean {
+  return /^(align|flalign|alignat|gather|multline|eqnarray)\*?$/.test(name);
+}
 export function visualTexCanDeleteEmptyEnvironmentRow(array: Atom | undefined, row: number): array is ArrayAtom {
   if (!(array instanceof ArrayAtom) ||
-      !["cases", "dcases", "rcases", "aligned", "gathered"].includes(array.environmentName) ||
+      !(["cases", "dcases", "rcases", "aligned", "gathered"].includes(array.environmentName) ||
+        visualTexIsDisplayEnvironment(array.environmentName)) ||
       array.rowCount <= 1 ||
       row < 0 ||
       row >= array.rowCount) return false;
@@ -894,7 +914,7 @@ export function visualTexEnsureAlignedColumnCapacity(array: ArrayAtom, requiredC
 export function visualTexInsertAlignmentPoint(model: _Model): boolean {
   const array = model.parentEnvironment;
   if (!array || array.type !== "array" ||
-      !["aligned", "align", "align*"].includes(array.environmentName)) return false;
+      !visualTexIsAlignEnvironment(array.environmentName)) return false;
   if (!model.contentWillChange({ inputType: "insertText" })) return false;
 
   const mathfield = model.mathfield;
@@ -923,7 +943,7 @@ export function visualTexInsertAlignmentPoint(model: _Model): boolean {
       visualTexAlignedCellIsEmpty(array.getCell(row, 0)) &&
       (
         provisionalRows.has(row) ||
-        (array.environmentName === "aligned" && array.colCount === 2)
+        (visualTexIsAlignEnvironment(array.environmentName) && array.colCount === 2)
       )
     ) {
       array.setCell(row, 0, before);
@@ -1006,7 +1026,7 @@ export function visualTexInsertRowBreak(model: _Model, environment = "gathered")
       const after = siblings.slice(split);
       parent.setCell(row, col, before);
       parent.addRowAfter(row);
-      if (parent.environmentName === "aligned") {
+      if (visualTexIsAlignEnvironment(parent.environmentName)) {
         for (let column = 0; column < parent.colCount; column += 1) {
           parent.setCell(row + 1, column, []);
         }

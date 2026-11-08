@@ -1,21 +1,22 @@
 diff --git a/src/App.tsx b/src/App.tsx
-index 3b60192..65dab53 100644
+index c0facf1..d788473 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
-@@ -1,8 +1,10 @@
+@@ -1,9 +1,11 @@
 -import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 +// Web shell for the macOS app. Mirrors apps/macos/src/App.tsx, minus the
 +// desktop-only parts (Office, updates, keypad window, local/quick/silent OCR),
 +// plus the web-only parts (API OCR, landing showcase, tutorial, default zoom).
 +import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
  import { useDocumentModeStore } from "./stores/documentModeStore";
+ import { DOCUMENT_LATEX, EDITION } from "./edition";
  import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
  import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 -import { installMcpRenderBridge } from "./office/shared/mcpRenderBridge";
  import {
    DOCUMENT_COPY_LATEX_EVENT,
    DOCUMENT_COPY_MARKDOWN_EVENT,
-@@ -34,14 +36,12 @@ import {
+@@ -35,14 +37,12 @@ import {
    FolderOpen,
    GraduationCap,
    History,
@@ -30,7 +31,7 @@ index 3b60192..65dab53 100644
    Save,
    ScanLine,
    Settings2,
-@@ -55,25 +55,8 @@ import {
+@@ -56,25 +56,8 @@ import {
  import { SettingsDialog } from "./components/SettingsDialog";
  import { HistoryPanel } from "./components/HistoryPanel";
  import { HelpManualDialog } from "./components/HelpManualDialog";
@@ -57,7 +58,7 @@ index 3b60192..65dab53 100644
  import { EditorWorkspace } from "./workspace/EditorWorkspace";
  import {
    EDITOR_ZOOM_STEP,
-@@ -98,69 +81,37 @@ import type {
+@@ -99,69 +82,37 @@ import type {
  import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
  import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
  import { formulaExportErrorMessage } from "./math/latexCompatibility";
@@ -145,7 +146,7 @@ index 3b60192..65dab53 100644
  
  function documentContentKey() {
    const { title, lines } = useEditorStore.getState();
-@@ -170,18 +121,30 @@ function documentContentKey() {
+@@ -171,18 +122,30 @@ function documentContentKey() {
    ]);
  }
  
@@ -179,7 +180,7 @@ index 3b60192..65dab53 100644
    const menuButtonRef = useRef<HTMLButtonElement>(null);
    const appMenuRef = useRef<HTMLDivElement>(null);
    const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
-@@ -194,54 +157,14 @@ function App() {
+@@ -195,54 +158,14 @@ function App() {
    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
    const [copyMenuOpen, setCopyMenuOpen] = useState(false);
    const [menuOpen, setMenuOpen] = useState(false);
@@ -234,7 +235,7 @@ index 3b60192..65dab53 100644
    const initialEditorFocusDoneRef = useRef(false);
    const pngClipboardBusyRef = useRef(false);
  
-@@ -257,26 +180,20 @@ function App() {
+@@ -258,26 +181,20 @@ function App() {
    const setLanguage = useEditorStore((state) => state.setLanguage);
    const zoom = useEditorStore((state) => state.zoom);
    const setZoom = useEditorStore((state) => state.setZoom);
@@ -263,7 +264,7 @@ index 3b60192..65dab53 100644
    const historyState = useHistorySnapshot();
    const isEn = language === "en";
    const latex = joinFormulaLines(lines);
-@@ -295,25 +212,90 @@ function App() {
+@@ -296,25 +213,90 @@ function App() {
      (latexFormatProfile.numbered ? "" : "*");
    const latexProfileSummary =
      `${inlineProfileLabel} · ${displayProfileLabel} · ${multilineProfileLabel}`;
@@ -366,7 +367,7 @@ index 3b60192..65dab53 100644
      initialEditorFocusDoneRef.current = true;
      const frame = window.requestAnimationFrame(() => {
        const active = document.activeElement;
-@@ -327,224 +309,6 @@ function App() {
+@@ -328,224 +310,6 @@ function App() {
      return () => window.cancelAnimationFrame(frame);
    }, []);
  
@@ -591,7 +592,7 @@ index 3b60192..65dab53 100644
    useEffect(() => {
      const checkpointTimer = window.setInterval(() => {
        historyManager.commitPendingTransaction();
-@@ -568,17 +332,12 @@ function App() {
+@@ -569,17 +333,12 @@ function App() {
        synchronizedThemeRef.current = theme;
        publishSynchronizedTheme(theme);
      }
@@ -609,7 +610,7 @@ index 3b60192..65dab53 100644
    useEffect(() => {
      if (!appHeader) return;
      return trackPriorityCollapse(appHeader, {
-@@ -612,110 +371,6 @@ function App() {
+@@ -613,110 +372,6 @@ function App() {
      return () => window.clearTimeout(timeout);
    }, [toast]);
  
@@ -720,7 +721,7 @@ index 3b60192..65dab53 100644
    useEffect(() => {
      const menu = menuOpen ? appMenuRef.current : copyMenuOpen ? copyMenuRef.current : null;
      const trigger = menuOpen ? menuButtonRef.current : copyMenuButtonRef.current;
-@@ -754,9 +409,7 @@ function App() {
+@@ -755,9 +410,7 @@ function App() {
  
    const inlineOcrStatus = inlineOcr?.status;
    useEffect(() => {
@@ -731,7 +732,7 @@ index 3b60192..65dab53 100644
      const timer = window.setInterval(() => {
        setInlineOcr((current) =>
          current
-@@ -789,149 +442,43 @@ function App() {
+@@ -790,149 +443,43 @@ function App() {
      }, delay);
    };
  
@@ -899,7 +900,7 @@ index 3b60192..65dab53 100644
        if (!recognizedLatex) {
          throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
        }
-@@ -948,173 +495,73 @@ function App() {
+@@ -949,173 +496,73 @@ function App() {
  
        setInlineOcr((current) => ({
          status: "success",
@@ -1122,7 +1123,7 @@ index 3b60192..65dab53 100644
  
    // the chords the user gave the main window's buttons (Settings > Keyboard shortcuts)
    useEffect(
-@@ -1125,10 +572,8 @@ function App() {
+@@ -1126,10 +573,8 @@ function App() {
      onButtonShortcut((action) => {
        switch (action) {
          case "quick-ocr":
@@ -1134,7 +1135,7 @@ index 3b60192..65dab53 100644
            break;
          case "copy-latex":
            void handleCopy();
-@@ -1145,9 +590,6 @@ function App() {
+@@ -1146,9 +591,6 @@ function App() {
          case "toggle-tiles":
            setSidebarOpen((open) => !open);
            break;
@@ -1144,7 +1145,7 @@ index 3b60192..65dab53 100644
          case "settings":
            setSettingsOpen(true);
            break;
-@@ -1174,53 +616,16 @@ function App() {
+@@ -1175,53 +617,16 @@ function App() {
            : `已复制（${latexProfileSummary}）`,
        );
        return true;
@@ -1201,7 +1202,7 @@ index 3b60192..65dab53 100644
    const handleCopyPng = async () => {
      if (pngClipboardBusyRef.current) return;
      pngClipboardBusyRef.current = true;
-@@ -1291,30 +696,21 @@ function App() {
+@@ -1292,30 +697,21 @@ function App() {
      }
    };
  
@@ -1239,7 +1240,7 @@ index 3b60192..65dab53 100644
      addHistory(latex);
      const after = createBlankDocumentSnapshot(
        isEn ? "Untitled Formula" : "未命名公式",
-@@ -1338,87 +734,6 @@ function App() {
+@@ -1339,87 +735,6 @@ function App() {
      action();
    };
  
@@ -1327,7 +1328,7 @@ index 3b60192..65dab53 100644
    useEffect(() => {
      const handleWindowKeyDown = (event: KeyboardEvent) => {
        if (event.key === "Escape") {
-@@ -1431,9 +746,8 @@ function App() {
+@@ -1432,9 +747,8 @@ function App() {
          settingsOpen ||
          ocrOpen ||
          historyOpen ||
@@ -1339,7 +1340,7 @@ index 3b60192..65dab53 100644
        ) {
          return;
        }
-@@ -1479,21 +793,17 @@ function App() {
+@@ -1480,21 +794,17 @@ function App() {
        }
  
        if (!primaryModifier) return;
@@ -1365,7 +1366,7 @@ index 3b60192..65dab53 100644
        } else if (key === ",") {
          event.preventDefault();
          setSettingsOpen(true);
-@@ -1516,15 +826,12 @@ function App() {
+@@ -1517,15 +827,12 @@ function App() {
      title,
      isEn,
      zoom,
@@ -1382,7 +1383,7 @@ index 3b60192..65dab53 100644
    ]);
  
    const renderLatexProfileMenu = () =>
-@@ -1538,7 +845,7 @@ function App() {
+@@ -1539,7 +846,7 @@ function App() {
        >
          <div className="code-format-menu-header">
            <span className="copy-menu-label">
@@ -1391,7 +1392,7 @@ index 3b60192..65dab53 100644
            </span>
          </div>
  
-@@ -1730,20 +1037,11 @@ function App() {
+@@ -1731,20 +1038,11 @@ function App() {
              </div>
            </div>
          </div>
@@ -1413,7 +1414,7 @@ index 3b60192..65dab53 100644
        <button
          ref={copyMenuButtonRef}
          type="button"
-@@ -1767,44 +1065,14 @@ function App() {
+@@ -1768,44 +1066,14 @@ function App() {
      </div>
    );
  
@@ -1459,7 +1460,7 @@ index 3b60192..65dab53 100644
        }
      >
        <input
-@@ -1815,13 +1083,11 @@ function App() {
+@@ -1816,13 +1084,11 @@ function App() {
          onChange={openDocument}
        />
  
@@ -1473,7 +1474,7 @@ index 3b60192..65dab53 100644
        >
          <div className="brand-area">
            <button
-@@ -1951,7 +1217,6 @@ function App() {
+@@ -1955,7 +1221,6 @@ function App() {
                <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
                  <FilePlus2 size={16} />
                  <span>{isEn ? "New formula" : "新建公式"}</span>
@@ -1481,7 +1482,7 @@ index 3b60192..65dab53 100644
                </button>
                <button
                  type="button"
-@@ -1976,7 +1241,6 @@ function App() {
+@@ -1980,7 +1245,6 @@ function App() {
                >
                  <FileDown size={16} />
                  <span>{isEn ? "Export…" : "导出…"}</span>
@@ -1489,7 +1490,7 @@ index 3b60192..65dab53 100644
                </button>
                </>)}
                <div className="app-menu-divider" />
-@@ -1991,7 +1255,8 @@ function App() {
+@@ -1995,7 +1259,8 @@ function App() {
                <button
                  type="button"
                  role="menuitem"
@@ -1499,7 +1500,7 @@ index 3b60192..65dab53 100644
                >
                  <ScanLine size={16} />
                  <span>{isEn ? "Formula image OCR" : "图片公式识别"}</span>
-@@ -2021,10 +1286,10 @@ function App() {
+@@ -2025,10 +1290,10 @@ function App() {
                <button
                  type="button"
                  role="menuitem"
@@ -1513,7 +1514,7 @@ index 3b60192..65dab53 100644
                </button>
                <div className="app-menu-divider" />
                <div className="app-menu-language">
-@@ -2128,7 +1393,7 @@ function App() {
+@@ -2132,7 +1397,7 @@ function App() {
              <History size={17} />
            </button>
            )}
@@ -1522,7 +1523,7 @@ index 3b60192..65dab53 100644
              <ScanLine size={17} />
            </button>
            <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings (Ctrl+,)" : "设置 (Ctrl+,)"}>
-@@ -2142,9 +1407,8 @@ function App() {
+@@ -2146,9 +1411,8 @@ function App() {
            />
          </div>
        </header>
@@ -1533,7 +1534,7 @@ index 3b60192..65dab53 100644
          <button
            type="button"
            className="menu-dismiss-layer"
-@@ -2159,10 +1423,8 @@ function App() {
+@@ -2163,10 +1427,8 @@ function App() {
        <EditorWorkspace
          mode="desktop"
          showFileActions
@@ -1545,7 +1546,7 @@ index 3b60192..65dab53 100644
          showOfficeActions={false}
          showOcrActions
          onOpenExport={() => setExportOpen(true)}
-@@ -2176,18 +1438,7 @@ function App() {
+@@ -2180,18 +1442,7 @@ function App() {
          }}
          onReplaceDocument={replaceDocumentWithHistory}
          sourceDocumentRevision={sourceDocumentRevision}
@@ -1565,7 +1566,7 @@ index 3b60192..65dab53 100644
          ocrOverlay={
            inlineOcr ? (
              <div
-@@ -2196,38 +1447,24 @@ function App() {
+@@ -2200,38 +1451,24 @@ function App() {
                aria-live="polite"
              >
                <span className="inline-ocr-progress-icon">
@@ -1608,7 +1609,7 @@ index 3b60192..65dab53 100644
                  <button
                    type="button"
                    className="inline-ocr-dismiss"
-@@ -2258,10 +1495,6 @@ function App() {
+@@ -2262,10 +1499,6 @@ function App() {
        <SettingsDialog
          open={settingsOpen}
          onClose={() => setSettingsOpen(false)}
@@ -1619,7 +1620,7 @@ index 3b60192..65dab53 100644
        />
        <HistoryPanel
          open={historyOpen}
-@@ -2301,61 +1534,22 @@ function App() {
+@@ -2305,61 +1538,22 @@ function App() {
            setToast(isEn ? "Formula restored" : "已恢复历史公式");
          }}
        />

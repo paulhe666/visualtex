@@ -4,12 +4,14 @@ import { Atom } from '../core/atom-class';
 import { ArrayAtom, ColumnFormat } from '../atoms/array';
 
 import {
+  argAtoms,
   defineFunction,
   defineRootEnvironment,
   defineTabularEnvironment,
 } from './definitions-utils';
 import type { Argument } from './types';
 import { Parser, parseLatex } from '../core/parser';
+import { latexCommand } from '../core/tokenizer';
 import { MacroAtom, MacroArgumentAtom } from '../atoms/macro';
 import { VISUALTEX_PHYSICS_MATRIX_WRAPPERS } from './visualtex-physics-matrices';
 
@@ -155,6 +157,23 @@ defineRootEnvironment(['align', 'align*', 'eqnarray'], makeEnvironment, {
 });
 
 defineTabularEnvironment(['aligned'], '', makeEnvironment);
+
+// VisualTeX: amsmath's other display alignments. alignat's argument is its
+// number of column pairs (kept for saving); flalign spreads its pairs over the
+// line; eqnarray* is eqnarray unnumbered.
+defineRootEnvironment(['eqnarray*', 'flalign', 'flalign*'], makeEnvironment, {
+  tabular: true,
+});
+defineRootEnvironment(['alignat', 'alignat*'], makeEnvironment, {
+  tabular: true,
+  params: '{:string}',
+});
+
+// VisualTeX: aligned / gathered / alignedat take amsmath's vertical position
+// [t] / [b] / [c] (the parser reads only those: any other bracket is content,
+// as amsmath's \ams@start@box puts it back)
+defineTabularEnvironment(['aligned', 'gathered'], '[:string]', makeEnvironment);
+defineTabularEnvironment('alignedat', '[:string]{:string}', makeEnvironment);
 
 // DefineEnvironment('alignat', '', function(name, args) {
 //     return {
@@ -331,6 +350,23 @@ defineFunction(['qq', 'qqtext'], '', {
 //   \array{@{}l@{\quad}l@{}}%
 defineTabularEnvironment(['cases', 'dcases', 'rcases'], '', makeEnvironment);
 
+// VisualTeX: mathtools' other cases (the starred ones set their second column
+// as text) and amsmath's subarray (\substack's environment, {l} or {c})
+defineTabularEnvironment(
+  ['cases*', 'dcases*', 'rcases*', 'drcases', 'drcases*'],
+  '',
+  makeEnvironment
+);
+defineTabularEnvironment('subarray', '{columns:colspec}', makeEnvironment);
+
+// VisualTeX: mathtools' starred matrices take one alignment (l, c or r) for
+// every column, not a column specification
+defineTabularEnvironment(
+  ['matrix*', 'pmatrix*', 'bmatrix*', 'Bmatrix*', 'vmatrix*', 'Vmatrix*'],
+  '[:string]',
+  makeEnvironment
+);
+
 // This is a text mode environment
 /*
 \begin{theorem}
@@ -347,6 +383,45 @@ export function makeEnvironment(
   content: (readonly Atom[])[][] = [[[]]],
   rowGaps: readonly Dimension[] = [],
   args: readonly (null | Argument)[] = [],
+  maxMatrixCols?: number
+): ArrayAtom {
+  const atom = makeEnvironmentAtom(name, content, rowGaps, args, maxMatrixCols);
+  // VisualTeX: the arguments read after \begin{name}, as written
+  const written = environmentArguments(name, args);
+  if (written) atom.environmentArguments = written;
+  return atom;
+}
+
+/** VisualTeX: the LaTeX of the arguments the parser read for these environments. */
+function environmentArguments(
+  name: Environment,
+  args: readonly (null | Argument)[]
+): string {
+  const text = (x: null | Argument | undefined) => (typeof x === 'string' ? x.trim() : '');
+  switch (name) {
+    case 'aligned':
+    case 'gathered':
+    case 'matrix*':
+    case 'pmatrix*':
+    case 'bmatrix*':
+    case 'Bmatrix*':
+    case 'vmatrix*':
+    case 'Vmatrix*':
+      return text(args[0]) ? `[${text(args[0])}]` : '';
+    case 'alignedat':
+      return (text(args[0]) ? `[${text(args[0])}]` : '') + `{${text(args[1])}}`;
+    case 'alignat':
+    case 'alignat*':
+      return `{${text(args[0])}}`;
+  }
+  return '';
+}
+
+function makeEnvironmentAtom(
+  name: Environment,
+  content: (readonly Atom[])[][],
+  rowGaps: readonly Dimension[],
+  args: readonly (null | Argument)[],
   maxMatrixCols?: number
 ): ArrayAtom {
   switch (name) {
@@ -433,6 +508,24 @@ export function makeEnvironment(
         minRows: 1,
       });
 
+    case 'subarray':
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: (args[0] as ColumnFormat[] | null) ?? [{ align: 'c' }],
+        mathstyleName: 'scriptstyle',
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1,
+      });
+
+    // VisualTeX: amsmath's alignment environments keep every column pair
+    // (`x&=1&y&=2`), as aligned does
+    case 'align':
+    case 'align*':
+    case 'flalign':
+    case 'flalign*':
+    case 'alignat':
+    case 'alignat*':
+    case 'alignedat':
     case 'aligned': {
       let colCount = 0;
       for (const row of content) colCount = Math.max(colCount, row.length);
@@ -457,11 +550,13 @@ export function makeEnvironment(
         // colSeparationType: 'align',
         minColumns: 2,
         minRows: 1,
-        isRoot: name !== 'aligned',
+        isRoot: name !== 'aligned' && name !== 'alignedat',
+        classes: name.startsWith('align') && name !== 'aligned' && name !== 'alignedat' ? ['ML__align_environment'] : [],
       });
     }
 
     case 'eqnarray':
+    case 'eqnarray*':
       return new ArrayAtom(name, content, rowGaps, {
         arraycolsep: 0,
         columns: [{ gap: 0 }, { align: 'r' }, { align: 'c' }, { align: 'l' }],
@@ -470,18 +565,6 @@ export function makeEnvironment(
         minRows: 1,
         isRoot: true,
         classes: ['ML__eqnarray_environment'],
-      });
-
-    case 'align':
-    case 'align*':
-      return new ArrayAtom(name, content, rowGaps, {
-        arraycolsep: 0,
-        columns: [{ gap: 0 }, { align: 'r' }, { gap: 0.25 }, { align: 'l' }],
-        minColumns: 2,
-        maxColumns: 2,
-        minRows: 1,
-        isRoot: true,
-        classes: ['ML__align_environment'],
       });
 
     case 'pmatrix':
@@ -551,8 +634,10 @@ export function makeEnvironment(
 
     case 'cases':
     case 'dcases':
+    case 'cases*':
+    case 'dcases*':
       return new ArrayAtom(name, content, rowGaps, {
-        mathstyleName: name === 'dcases' ? 'displaystyle' : 'textstyle',
+        mathstyleName: name.startsWith('dcases') ? 'displaystyle' : 'textstyle',
         arraystretch: 1.2,
         leftDelim: '\\lbrace',
         rightDelim: '.',
@@ -560,7 +645,11 @@ export function makeEnvironment(
       });
 
     case 'rcases':
+    case 'rcases*':
+    case 'drcases':
+    case 'drcases*':
       return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: name.startsWith('d') ? 'displaystyle' : 'textstyle',
         arraystretch: 1.2,
         leftDelim: '.',
         rightDelim: '\\rbrace',
@@ -590,6 +679,11 @@ function defaultColumns(
   args: null | Argument,
   maxMatrixCols: number = 10
 ): ColumnFormat[] {
+  // VisualTeX: mathtools' matrix*[r]: one alignment for every column
+  if (typeof args === 'string') {
+    const align = args.trim();
+    return Array(maxMatrixCols).fill({ align: align === 'l' || align === 'r' ? align : 'c' });
+  }
   return (args as ColumnFormat[]) ?? Array(maxMatrixCols).fill({ align: 'c' });
 }
 
@@ -601,3 +695,61 @@ function casesColumns(maxCasesColumns: number = 10): ColumnFormat[] {
   }
   return columns;
 }
+
+// VisualTeX: amsmath's equation tags and labels. \tag{x} draws "(x)" and
+// \tag*{x} draws "x" at the right end of its line (the layout engine places
+// them); its argument is text. \label, \notag and \nonumber draw nothing and
+// are kept for saving.
+defineFunction(['tag', 'tag*'], '{:text}', {
+  ifMode: 'math',
+  createAtom: (options) =>
+    new Atom({
+      ...options,
+      type: 'mord',
+      body: argAtoms(options.args![0]),
+      mode: 'math',
+    }),
+  serialize: (atom, options) =>
+    latexCommand(atom.command, atom.bodyToLatex({ ...options, defaultMode: 'text' })),
+});
+
+defineFunction('label', '{:string}', {
+  ifMode: 'math',
+  createAtom: (options) =>
+    new Atom({ ...options, type: 'mord', mode: 'math', captureSelection: true }),
+  serialize: (atom) => latexCommand('\\label', (atom.args?.[0] as string) ?? ''),
+});
+
+defineFunction(['notag', 'nonumber'], '', {
+  ifMode: 'math',
+  createAtom: (options) =>
+    new Atom({ ...options, type: 'mord', mode: 'math', captureSelection: true }),
+  serialize: (atom) => atom.command,
+});
+
+// VisualTeX: amsmath's \intertext and mathtools' \shortintertext: a line of
+// text between the rows of an alignment (the layout engine sets it)
+defineFunction(['intertext', 'shortintertext'], '{:text}', {
+  ifMode: 'math',
+  createAtom: (options) =>
+    new Atom({
+      ...options,
+      type: 'mord',
+      body: argAtoms(options.args![0]),
+      mode: 'math',
+    }),
+  serialize: (atom, options) =>
+    latexCommand(atom.command, atom.bodyToLatex({ ...options, defaultMode: 'text' })),
+});
+
+// VisualTeX: LaTeX's tabular, as in \text{\begin{tabular}{|l|r|}...}: its
+// cells are text (the parser reads them in text mode)
+defineTabularEnvironment(
+  'tabular',
+  '{columns:colspec}',
+  (name, array, rowGaps, args) =>
+    new ArrayAtom(name, array, rowGaps, {
+      columns: args[0] as ColumnFormat[],
+      mode: 'text',
+    })
+);

@@ -679,6 +679,12 @@ function atomToMathML(atom: Atom, options: MathMLOptions): string {
     longRightleftharpoons: '\u21CC', // Not a perfect match.
     xLeftrightharpoons: '\u21CB', // None better available.
     longLeftrightharpoons: '\u21CB', // None better available.
+    xlongrightarrow: '\u27F6',
+    xlongleftarrow: '\u27F5',
+    xLongrightarrow: '\u27F9',
+    xLongleftarrow: '\u27F8',
+    xlongleftrightarrow: '\u27F7',
+    xLongleftrightarrow: '\u27FA',
   };
 
   const SPACING: Record<string, number> = {

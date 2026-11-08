@@ -1,5 +1,5 @@
 import { setVisualTexEditingCore, setVisualTexLayoutEngine } from "mathlive";
-import { createVisualTexLayout, type LayoutData } from "../../shared/tex-layout/src/index.ts";
+import { createVisualTexLayout, type LayoutData, type PiecePlacer } from "../../shared/tex-layout/src/index.ts";
 import { createEditingCore } from "../../shared/visualtex-core/src/index.ts";
 import tfm from "../../shared/tex-layout/data/tfm.json";
 import meanings from "../../shared/tex-layout/data/latex-meanings.json";
@@ -91,6 +91,28 @@ export function setFormulaCaretBand(band: { up: number; down: number } | null): 
     (band !== null && caretBand !== null && Math.abs(band.up - caretBand.up) < 1e-3 && Math.abs(band.down - caretBand.down) < 1e-3);
   if (same) return;
   caretBand = band;
+  if (typeof document === "undefined") return;
+  document.querySelectorAll<HTMLElement>("math-field").forEach((field) => {
+    (field as unknown as { visualTexRender?: () => void }).visualTexRender?.();
+  });
+}
+
+// VisualTeX Anywhere sets its formula on several lines, where the host field wraps its text
+// (setFormulaLineLayout); everywhere else formulas stay on one line.
+let lineLayout: ((mathfield: unknown) => PiecePlacer | null) | null = null;
+
+/**
+ * How this page's edited formulas go on several lines (null: one line); open formulas are drawn
+ * again. The placer gets the widths of the pieces TeX may break the formula into (em) and gives
+ * each piece's place (shared/tex-layout lines.ts).
+ */
+export function setFormulaLineLayout(layout: ((mathfield: unknown) => PiecePlacer | null) | null): void {
+  lineLayout = layout;
+  redrawOpenFormulas();
+}
+
+/** Draws every open formula again (its line layout changed). */
+export function redrawOpenFormulas(): void {
   if (typeof document === "undefined") return;
   document.querySelectorAll<HTMLElement>("math-field").forEach((field) => {
     (field as unknown as { visualTexRender?: () => void }).visualTexRender?.();
@@ -299,6 +321,7 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
         spacing: currentSpacing,
         classOperatorItalic: customSymbolOperatorItalic,
         caretBand: () => caretBand,
+        lineLayout: (mathfield) => lineLayout?.(mathfield) ?? null,
       });
       engines.set(p, e);
     }

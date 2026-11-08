@@ -1128,7 +1128,8 @@ mhchemParser.stateMachines = {
         },
       },
       'state of aggregation $': {
-        '*': { action_: ['output', 'state of aggregation'], nextState: '1' },
+        // VisualTeX: a space before it is mhchem.sty's \, (\ce{NaCl (aq)})
+        '*': { action_: ['state of aggregation space', 'output', 'state of aggregation'], nextState: '1' },
       },
       '{[(': {
         'a|as|o': {
@@ -1162,14 +1163,15 @@ mhchemParser.stateMachines = {
         '*': {},
       },
       '^{(...)}|^($...$)': {
-        '0|1|2|as': { action_: 'b=', nextState: 'b' },
+        // VisualTeX: after an amount too, as mhchem.sty v4 reads \ce{10^{-5}}
+        '0|1|2|a|as': { action_: 'b=', nextState: 'b' },
         'p': { action_: 'b=', nextState: 'bp' },
         '3|o': { action_: 'd= kv', nextState: 'D' },
         'q': { action_: 'd=', nextState: 'qD' },
         'd|D|qd|qD|dq': { action_: ['output', 'd='], nextState: 'D' },
       },
       "^a|^\\x{}{}|^\\x{}|^\\x|'": {
-        '0|1|2|as': { action_: 'b=', nextState: 'b' },
+        '0|1|2|a|as': { action_: 'b=', nextState: 'b' },
         'p': { action_: 'b=', nextState: 'bp' },
         '3|o': { action_: 'd= kv', nextState: 'd' },
         'q': { action_: 'd=', nextState: 'qd' },
@@ -1180,7 +1182,7 @@ mhchemParser.stateMachines = {
         'd|D|q|qd|qD|dq': { action_: ['output', 'q='], nextState: 'q' },
       },
       '_{(...)}|_($...$)|_9|_\\x{}{}|_\\x{}|_\\x': {
-        '0|1|2|as': { action_: 'p=', nextState: 'p' },
+        '0|1|2|a|as': { action_: 'p=', nextState: 'p' },
         'b': { action_: 'p=', nextState: 'bp' },
         '3|o': { action_: 'q=', nextState: 'q' },
         'd|D': { action_: 'q=', nextState: 'dq' },
@@ -1396,6 +1398,9 @@ mhchemParser.stateMachines = {
       },
       'state of aggregation': function (buffer, m) {
         return { type_: 'state of aggregation', p1: mhchemParser.go(m, 'o') };
+      },
+      'state of aggregation space': function (buffer) {
+        return buffer.sb ? { type_: 'tex-math', p1: '\\,' } : undefined;
       },
       'comma': function (buffer, m) {
         var a = m.replace(/\s*$/, '');
@@ -2169,12 +2174,15 @@ var texify = {
     }
     var res = '';
     var cee = false;
+    texify._previous = null;
     for (var i = 0; i < input.length; i++) {
       var inputi = input[i];
       if (typeof inputi === 'string') {
         res += inputi;
       } else {
         res += texify._go2(inputi);
+        // the entity before a state of aggregation, past the space before it
+        if (!(inputi.type_ === 'tex-math' && inputi.p1 === '\\,')) texify._previous = inputi;
         if (inputi.type_ === '1st-level escape') {
           cee = true;
         }
@@ -2218,16 +2226,14 @@ var texify = {
         // b and p
         //
         if (b5.b || b5.p) {
+          // VisualTeX: mhchem.sty v4 (\__mhchem_output_coreFive): the
+          // prescripts right-aligned (\llap in each style) over a phantom of
+          // their width, then \mhchem@minispace
+          res += '\\hphantom{{}^{' + (b5.b || '') + '}_{' + (b5.p || '') + '}}';
           res += '{\\vphantom{X}}';
-          res +=
-            '^{\\hphantom{' +
-            (b5.b || '') +
-            '}}_{\\hphantom{' +
-            (b5.p || '') +
-            '}}';
-          res += '{\\vphantom{X}}';
-          res += '^{\\smash[t]{\\vphantom{2}}\\llap{' + (b5.b || '') + '}}';
-          res += '_{\\vphantom{2}\\llap{\\smash[t]{' + (b5.p || '') + '}}}';
+          res += '^{\\vtxcellap{\\vphantom{\\smash[t]{2}}' + (b5.b || '') + '}}';
+          if (b5.p) res += '_{\\vtxcellap{\\vphantom{2}\\smash[t]{' + b5.p + '}}}';
+          res += '\\vtxceminispace ';
         }
         //
         // o
@@ -2285,9 +2291,14 @@ var texify = {
       case 'roman numeral':
         res = '\\mathrm{' + buf.p1 + '}';
         break;
-      case 'state of aggregation':
-        res = '\\mskip2mu ' + texify._goInner(buf.p1);
+      case 'state of aggregation': {
+        // VisualTeX: mhchem.sty v4 \__mhchem_output_skipBeforeStateOfAggregation:
+        // \hspace{0.2ex}, none after an element with a script
+        var prev = texify._previous;
+        var scripted = prev && prev.type_ === 'chemfive' && ((prev.q && prev.q.length) || (prev.d && prev.d.length));
+        res = (scripted ? '' : '\\hspace{0.2ex}') + texify._goInner(buf.p1);
         break;
+      }
       case 'state of aggregation subscript':
         res = '\\mskip1mu ' + texify._goInner(buf.p1);
         break;
@@ -2362,6 +2373,24 @@ var texify = {
           rd: texify._goInner(buf.rd),
           rq: texify._goInner(buf.rq),
         };
+        // VisualTeX: mhchem.sty v4's arrows (\__mhchem_arrow_output:nnn), set
+        // by the layout engine: 2em at least, lengthened by their labels
+        var arrowName = {
+          '->': 'yields',
+          '\u2192': 'yields',
+          '\u27F6': 'yields',
+          '<-': 'yieldsLeft',
+          '<->': 'mesomerism',
+          '<-->': 'yieldsLeftRight',
+          '<=>': 'equilibrium',
+          '\u21CC': 'equilibrium',
+          '<=>>': 'equilibriumRight',
+          '<<=>': 'equilibriumLeft',
+        }[buf.r];
+        if (arrowName) {
+          res = ' {}\\vtxcearrow{' + arrowName + '}{' + (b6.rd || '') + '}{' + (b6.rq || '') + '}{} ';
+          break;
+        }
         var arrow = texify._getArrow(buf.r);
         if (b6.rd || b6.rq) {
           if (
@@ -2549,10 +2578,11 @@ var texify = {
     switch (a) {
       case '+':
         return ' {}+{} ';
+      // VisualTeX: mhchem.sty v4 in math (\__mhchem_output_operatorMinus:, ...Equals:)
       case '-':
-        return ' {}-{} ';
+        return ' \\nobreak\\hspace{0.5ex}{-}\\hspace{0.5ex} ';
       case '=':
-        return ' {}={} ';
+        return ' \\nobreak\\hspace{0.5ex}{=}\\hspace{0.5ex} ';
       case '<':
         return ' {}<{} ';
       case '>':
@@ -2567,14 +2597,15 @@ var texify = {
         return ' {}\\approx{} ';
       case '$\\approx$':
         return ' {}\\approx{} ';
+      // VisualTeX: mhchem.sty v4: \ensuremath{{}\mathop{\downarrow}{}}
       case 'v':
-        return ' \\downarrow{} ';
+        return ' {}\\mathop{\\downarrow}{} ';
       case '(v)':
-        return ' \\downarrow{} ';
+        return ' {}\\mathop{\\downarrow}{} ';
       case '^':
-        return ' \\uparrow{} ';
+        return ' {}\\mathop{\\uparrow}{} ';
       case '(^)':
-        return ' \\uparrow{} ';
+        return ' {}\\mathop{\\uparrow}{} ';
       default:
         assertNever(a);
         throw ['MhchemBugT', 'mhchem bug T. Please report.'];

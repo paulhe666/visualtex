@@ -5,13 +5,14 @@
 // in which every atom has an element with data-atom-id spanning its TeX box,
 // so the kernel's caret, selection and hit-testing code work unchanged.
 import { FontCache } from "./latex.ts";
-import { FACE_GROUP_FAMS, FAM, LatexAdapter, type AtomLike, type LatexData } from "./latex-adapter.ts";
+import { FACE_GROUP_FAMS, FAM, LatexAdapter, PACKAGE_FAMILIES, type AtomLike, type LatexData } from "./latex-adapter.ts";
 import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
 import { alignShift, caretBarHtml, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
 import { buildEditorGeometry, caretMetrics, type GeometryAtom } from "./editor-geometry.ts";
 import { shipOut, type ShipResult } from "./shipout.ts";
+import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
 import type { TeXFont, TfmData } from "./tfm.ts";
 import { NativeFont, type NativeMeasure } from "./native-font.ts";
 import { PathFont, type PathGlyphSet } from "./path-font.ts";
@@ -19,6 +20,7 @@ import type { Spacing } from "./spacing.ts";
 import { formulaSvgBody, type GlyphTable, type SvgFormula, type SvgOverlay } from "./svg.ts";
 
 export type { GlyphTable, SvgFormula } from "./svg.ts";
+export { fillLines, type FormulaLines, type PiecePlace, type PiecePlacer } from "./lines.ts";
 export { SPACING_DEFINITIONS, spacingPercent, type Spacing, type SpacingKey, type SpacingDefinition } from "./spacing.ts";
 
 export interface LayoutData extends LatexData {
@@ -219,6 +221,14 @@ export interface LayoutOptions {
    * Empty-slot markers span the same band, so typing into a slot never changes the caret.
    */
   caretBand?: () => { up: number; down: number } | null;
+  /**
+   * Edited formulas set on several lines (VisualTeX Anywhere: wrapped as the host field wraps its
+   * text): the formula is cut where TeX may break an in-line formula (after a relation or a binary
+   * operator of its outermost list) and each piece goes where the placer puts it. Called with the
+   * mathfield at every layout; null or absent: one line. The pieces and their places are left on
+   * the mathfield's geometry (EditorGeometry.lines).
+   */
+  lineLayout?: (mathfield: any) => PiecePlacer | null | undefined;
 }
 
 /** Chinese, Japanese and Korean characters: they stay in the formula's Chinese font. */
@@ -259,6 +269,10 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     adapter.fams.set(FAM.paths, sizes as [PathFont, PathFont, PathFont]);
     // LaTeX's own definitions (amsmath, esint) take precedence
     adapter.pathOps = new Map([...sizes[0].codes].filter(([cmd]) => !data.templates[cmd]));
+  }
+  // stmaryrd and upgreek fonts, where the profile's data has them (Computer Modern)
+  for (const [fam, names] of PACKAGE_FAMILIES) {
+    if (names.every((n) => data.tfm[n])) adapter.fams.set(fam, names.map((n) => cache.get(n)) as [TeXFont, TeXFont, TeXFont]);
   }
   // the letter font (LayoutOptions.letterFamilies) fills the adapter's letter
   // families at 10, 7 and 5pt; they are rebuilt when the choice changes
@@ -306,7 +320,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
    * recorded for the caret (MathEnv.atomScales) and empty slots and rows get
    * a place for their caret (LatexAdapter.editor).
    */
-  function layout(atoms: AtomLike[], display: boolean, editor = false) {
+  function layout(atoms: AtomLike[], display: boolean, editor = false, placer?: PiecePlacer | null) {
     syncLetterFonts();
     adapter.setSpacing(options.spacing?.() ?? null);
     const scales = editor ? new Map<Tag, number>() : undefined;
@@ -316,11 +330,18 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     try {
       const mlist = adapter.formula(atoms, display);
       const ts = new MathTypesetter(adapter.env);
-      const hl = ts.mlistToHlist(mlist, TEXT_STYLE, false);
+      // the break penalties of an in-line formula (tex.web 761) where it may go on several lines
+      const hl = ts.mlistToHlist(mlist, TEXT_STYLE, !!placer);
       const on: Node = { type: MATH_NODE, width: 0, subtype: 0 };
       const box = hpack([on, ...hl, { ...on }]);
       const ship = shipOut(box);
-      return { box, ship, regions: computeRegions(ship, caret.strut), scales };
+      if (placer) {
+        const placed = placePieces(box, ship, formulaPieces(box), placer);
+        if (placed) {
+          return { box: placed.box, ship: placed.ship, regions: computeRegions(placed.ship, caret.strut), scales, lines: placed.lines };
+        }
+      }
+      return { box, ship, regions: computeRegions(ship, caret.strut), scales, lines: undefined as FormulaLines | undefined };
     } finally {
       adapter.editor = false;
       adapter.env.editorBinSpacing = false;
@@ -401,6 +422,8 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       if (a.rows)
         for (const row of a.rows)
           for (const cell of row) {
+            // a column a \multicolumn covers is no cell
+            if (!cell) continue;
             const list: FormulaElement[] = [];
             for (const c of cell as KernelAtom[]) list.push(...build(c));
             kids.push(...branchBox(list));
@@ -455,9 +478,13 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
   function renderMathfield(mathfield: any, _renderOptions?: unknown): string {
     const model = mathfield.model;
     const root = model.root as KernelAtom;
-    const atoms = root.branch("body") ?? [];
+    // a root environment (align, gather, ...) is the root atom itself
+    const atoms = root.type === "array" ? [root] : root.branch("body") ?? [];
     const display = mathfield.options?.defaultMode !== "inline-math";
-    const { box, ship, regions, scales } = layout(atoms, display, true);
+    // explicit alignment markers move material by CSS: such a formula stays on one line
+    const aligned = atoms.some((a) => htmlClassOf(a as KernelAtom) === "visualtex-align-marker");
+    const placer = aligned ? null : options.lineLayout?.(mathfield) ?? null;
+    const { box, ship, regions, scales, lines } = layout(atoms, display, true, placer);
     propagateRegions(regions, root);
     // the root spans the whole formula (the kernel's hit-testing starts there)
     const empty = box.width === 0 && box.height === 0 && box.depth === 0;
@@ -480,6 +507,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
         ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
         : caret;
     const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret);
+    if (lines) geometry.lines = lines;
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
 
@@ -561,7 +589,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       seen.add(a);
       visit(a);
       for (const name of a.branches ?? []) for (const c of (a.branch(name) ?? []) as KernelAtom[]) walk(c);
-      if (a.rows) for (const row of a.rows) for (const cell of row) for (const c of cell as KernelAtom[]) walk(c);
+      if (a.rows) for (const row of a.rows) for (const cell of row) for (const c of (cell ?? []) as KernelAtom[]) walk(c);
     };
     roots.forEach(walk);
   }

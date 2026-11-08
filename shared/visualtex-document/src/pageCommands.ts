@@ -117,30 +117,33 @@ export interface PageLabel {
   text: string;
   style: string;
   number: number;
+  /** the page's style: plain (article's and ctexart's default), empty, headings, myheadings */
+  pageStyle: string;
 }
 
 /**
  * The pages' numbers, LaTeX's way: `commands[p]` are the commands on page p, in order. \pagenumbering resets the
- * count to 1 and sets the style from its page on; \setcounter{page}{n} makes its page n; \pagestyle{empty} hides the
- * numbers from its page on, \thispagestyle{empty} on its page only.
+ * count to 1 and sets the style from its page on; \setcounter{page}{n} makes its page n; \pagestyle{…} sets the page
+ * style from its page on, \thispagestyle{…} on its page only (empty: no number).
  */
 export function pageLabels(pages: number, commands: Array<Array<{ command: string; value: string }>>): PageLabel[] {
   const labels: PageLabel[] = [];
   let style = "arabic";
   let count = 1;
-  let shown = true;
+  let pageStyle = "plain";
+  const known = (value: string) => (PAGE_STYLES as readonly string[]).includes(value);
   for (let page = 0; page < pages; page++) {
-    let thisShown: boolean | null = null;
+    let thisStyle: string | null = null;
     for (const { command, value } of commands[page] ?? []) {
       if (command === "pagenumbering") {
         style = value || "arabic";
         count = 1;
       } else if (command === "setcounter") count = Number(value) || 0;
-      else if (command === "pagestyle") shown = value !== "empty";
-      else if (command === "thispagestyle") thisShown = value !== "empty";
+      else if (command === "pagestyle" && known(value)) pageStyle = value;
+      else if (command === "thispagestyle" && known(value)) thisStyle = value;
     }
-    const visible = thisShown ?? shown;
-    labels.push({ text: visible ? formatPageNumber(count, style) : "", style, number: count });
+    const current = thisStyle ?? pageStyle;
+    labels.push({ text: current !== "empty" ? formatPageNumber(count, style) : "", style, number: count, pageStyle: current });
     count++;
   }
   return labels;
