@@ -8,7 +8,7 @@ import { Fragment, Slice, type Node, type NodeSpec, type NodeType, type Schema }
 import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "prosemirror-state";
 import { ReplaceAroundStep } from "prosemirror-transform";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
-import { documentSettings, PAPER_SIZES } from "./settings.ts";
+import { bodyLayout, documentSettings, PAPER_SIZES } from "./settings.ts";
 
 // --------------------------------------------------------------------- model --
 
@@ -185,14 +185,15 @@ export function captionLabelLength(text: string, kind: "figure" | "table"): numb
 // ------------------------------------------------------------- long tables --
 
 /**
- * A table's height in LaTeX, estimated (pt): a row is as high as its most lines (\baselineskip each: 1.2 x the body
- * size), a cell's lines its paragraphs, its line breaks and, in a p{} column (a cell with a display formula or several
+ * A table's height in LaTeX, estimated (pt): a row is as high as its most lines (\baselineskip each, the class's:
+ * bodyLayout), a cell's lines its paragraphs, its line breaks and, in a p{} column (a cell with a display formula or several
  * paragraphs, latex.ts), its text over the column's width; plus the rules.
  */
 export function tableHeightPt(doc: Node, table: Node): number {
   const settings = documentSettings(doc);
-  const size = settings.fontSize;
-  const baseline = size * 1.2 * (settings.lineSpacing || 1);
+  const body = bodyLayout(doc);
+  const size = body.fontSize;
+  const baseline = size * body.lineHeight;
   const paper = PAPER_SIZES[settings.paper];
   const lineWidth = ((paper.width - settings.marginLeft - settings.marginRight) * 72.27) / 25.4;
   let columns = 0;

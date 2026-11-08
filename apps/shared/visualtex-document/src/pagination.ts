@@ -6,9 +6,10 @@
 import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
-import { documentSettings, PAPER_SIZES, type DocumentSettings } from "./settings.ts";
+import { bodyLayout, documentSettings, headingNumbers, PAPER_SIZES, type DocumentSettings, type LatexClass } from "./settings.ts";
 import { requestFootnoteEdit } from "./notes.ts";
-import { hasPageNumbering, isPageBreak, pageLabels } from "./pageCommands.ts";
+import { isPageBreak, pageLabels, type PageLabel } from "./pageCommands.ts";
+import { CJK_TEXT } from "./titleBlock.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -21,8 +22,6 @@ export interface PaginationOptions {
   geometry: () => PageGeometry;
   /** A footnote's text as HTML (its $…$ formulas drawn); default: the text escaped. */
   renderNote?: (text: string) => string;
-  /** "Page n" in the app's language. */
-  pageLabel?: (page: number, pages: number) => string;
 }
 
 interface PageBreak {
@@ -62,12 +61,37 @@ interface Unit {
   command?: { command: string; value: string };
   /** a long table's row (its table's columns) */
   row?: number;
+  /** a section's first line: its mark for the running head (\sectionmark), as HTML */
+  mark?: string;
 }
 
 const SEPARATOR_HEIGHT_EM = 0.9;
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+/** Text for the running head, in \slshape: Chinese upright (its font has no slanted face), the rest slanted. */
+function slanted(text: string): string {
+  return text.replace(new RegExp(`(${CJK_TEXT.source})+`, "gu"), (run) => `<span class="is-upright">${run}</span>`);
+}
+
+/**
+ * A section's mark as the class's \sectionmark makes it for \pagestyle{headings} (one-sided): its number, \quad, its
+ * title in capitals (\MakeUppercase); its formulas as drawn. With no section numbers article still prints the
+ * counter (0, as LaTeX does: secnumdepth is not tested there), ctexart none.
+ */
+function sectionMark(view: EditorView, node: Node, pos: number, number: string | undefined, documentClass: LatexClass): string {
+  let title = "";
+  node.forEach((child, offset) => {
+    if (child.isText) title += slanted(escapeHtml((child.text ?? "").toUpperCase()));
+    else if (child.isInline) {
+      const dom = view.nodeDOM(pos + 1 + offset);
+      if (dom instanceof HTMLElement && dom.classList.contains("vtx-math-inline")) title += dom.outerHTML;
+    }
+  });
+  const shown = number?.replace(/\.$/, "") ?? (documentClass === "article" ? "0" : "");
+  return shown ? `${slanted(shown)}<span class="vtx-page-quad"></span>${title}` : title;
 }
 
 function spacer(height: number, inline: boolean, row?: number): () => HTMLElement {
@@ -341,6 +365,19 @@ class PaginationView {
       return y - origin - shift;
     };
     const units = collectUnits(view, contentHeight).map((u) => ({ ...u, top: natural(u.top), bottom: natural(u.bottom) }));
+    // the sections' marks (the running head of \pagestyle{headings}) and \maketitle's \thispagestyle{plain}
+    const layout = bodyLayout(view.state.doc);
+    const numbers = headingNumbers(view.state.doc);
+    let titled = false;
+    for (const unit of units) {
+      const node = unit.block !== undefined ? view.state.doc.nodeAt(unit.block) : null;
+      if (node?.type.name === "heading" && node.attrs.level === 1 && !node.attrs.unnumbered) {
+        unit.mark = sectionMark(view, node, unit.block!, numbers.get(unit.block!), layout.documentClass);
+      } else if (node?.type.name === "title" && node.textContent.trim() && !titled && !unit.command) {
+        titled = true;
+        unit.command = { command: "thispagestyle", value: "plain" };
+      }
+    }
 
     // footnotes: the line each one's mark is on, and the room its note takes at a page's foot
     const notes: Array<{ pos: number; text: string; number: number }> = [];
@@ -363,6 +400,7 @@ class PaginationView {
     const breaks: PageBreak[] = [];
     const pageNotes: number[][] = [[]];
     const pageCommands: Array<Array<{ command: string; value: string }>> = [[]];
+    const pageMarks: string[][] = [[]];
     let page = 0;
     let breakPending = false;
     let offset = 0;
@@ -395,7 +433,9 @@ class PaginationView {
           reserve = 0;
           pageNotes[page] = [];
         }
-        if (top < page * stride) {
+        // (not on the first page: a line's glyphs may reach above its line box, a tight \baselineskip's, but nothing is
+        // above the first page's top)
+        if (page > 0 && top < page * stride) {
           const push = page * stride - top;
           breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block, row: unit.row });
           offset += push;
@@ -431,6 +471,7 @@ class PaginationView {
       reserve += roomFor(unit, reserve);
       pageNotes[page].push(...unit.footnotes);
       if (unit.command) (pageCommands[page] ??= []).push(unit.command);
+      if (unit.mark !== undefined) (pageMarks[page] ??= []).push(unit.mark);
       if (unit.breakAfter) breakPending = true;
       // a block taller than the rest of the page runs over its foot
       if (bottom > page * stride + contentHeight) {
@@ -454,9 +495,17 @@ class PaginationView {
         view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
       }
     }
-    // the pages' numbers: LaTeX's when the document has page-numbering commands
-    const labels = hasPageNumbering(view.state.doc) ? pageLabels(pages, pageCommands).map((l) => l.text) : null;
-    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes, labels);
+    // the pages' numbers and styles, LaTeX's; the running head's mark: the first on the page (\rightmark is the
+    // \firstmark), else the last one before it
+    const labels = pageLabels(pages, pageCommands);
+    const marks: string[] = [];
+    let mark = "";
+    for (let p = 0; p < pages; p++) {
+      const own = pageMarks[p] ?? [];
+      marks.push(own.length ? own[0] : mark);
+      if (own.length) mark = own[own.length - 1];
+    }
+    this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes, labels, marks);
   }
 
   /** Each footnote's height at the foot of a page (its text set at the text area's width). */
@@ -480,15 +529,15 @@ class PaginationView {
     pages: number,
     pageNotes: number[][],
     notes: Array<{ pos: number; text: string; number: number }>,
-    labels: string[] | null,
+    labels: PageLabel[],
+    marks: string[],
   ) {
     const paper = PAPER_SIZES[settings.paper];
     const sheetHeight = pages * stride - (stride - paper.height * pxPerMm);
     sheet.style.minHeight = `${sheetHeight}px`;
-    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text]), labels]);
+    const key = JSON.stringify([pages, stride, pxPerMm, settings, pageNotes, notes.map((n) => [n.pos, n.text]), labels, marks]);
     if (key === this.lastKey) return;
     this.lastKey = key;
-    const label = this.options.pageLabel ?? ((page: number, total: number) => `${page} / ${total}`);
     const parts: string[] = [];
     for (let page = 0; page < pages; page++) {
       const pageTop = page * stride;
@@ -501,14 +550,36 @@ class PaginationView {
             "</div>",
         );
       }
-      parts.push(
-        `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom / 2) * pxPerMm}px">${escapeHtml(labels ? labels[page] ?? "" : label(page + 1, pages))}</div>`,
-      );
+      // the page style (article.cls, as ctexart keeps it): plain, the number centred at the foot (its baseline
+      // \footskip, 30pt, under the text); headings, the section's mark slanted at the left and the number at the right
+      // in the head (its baseline \headsep, 25pt, over the text); myheadings, the number there alone; empty, nothing
+      const { pageStyle, text } = labels[page] ?? { pageStyle: "plain", text: String(page + 1) };
+      const pt = pxPerMm * (25.4 / 72.27);
+      const left = settings.marginLeft * pxPerMm;
+      const width = (paper.width - settings.marginLeft - settings.marginRight) * pxPerMm;
+      if (pageStyle === "plain" && text) {
+        parts.push(
+          `<div class="vtx-page-number" style="top:${pageTop + (paper.height - settings.marginBottom) * pxPerMm + 30 * pt}px;left:${left}px;width:${width}px"><span class="vtx-baseline-probe"></span>${escapeHtml(text)}</div>`,
+        );
+      } else if (pageStyle === "headings" || pageStyle === "myheadings") {
+        parts.push(
+          `<div class="vtx-page-head" style="top:${pageTop + settings.marginTop * pxPerMm - 25 * pt}px;left:${left}px;width:${width}px">` +
+            `<span class="vtx-baseline-probe"></span><span class="vtx-page-mark">${pageStyle === "headings" ? marks[page] ?? "" : ""}</span><span class="vtx-page-number">${escapeHtml(text)}</span></div>`,
+        );
+      }
     }
     const html = parts.join("");
     // the measurer stays in the layer
     this.layer.innerHTML = html;
     this.layer.append(this.measurer);
+    // the heads and feet are placed by their baseline: each one's top moved up by its baseline's depth in it (a
+    // zero-height box on the baseline tells it, whatever the fonts)
+    for (const el of Array.from(this.layer.querySelectorAll<HTMLElement>(".vtx-page-head, .vtx-page-layer > .vtx-page-number"))) {
+      const probe = el.querySelector(".vtx-baseline-probe");
+      if (!probe) continue;
+      const depth = probe.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      el.style.top = `${parseFloat(el.style.top) - depth}px`;
+    }
   }
 
   destroy() {

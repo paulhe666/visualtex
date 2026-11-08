@@ -1875,6 +1875,33 @@ export function readMarkdown(schema: Schema, raw: string): { doc: Node; source: 
   return { doc, source: { text, crlf: /\r\n/.test(raw), blocks, frontMatter: !!front, labels, style: styleOf(body), bodies } };
 }
 
+/**
+ * The file kept for a document read from it whose ids were changed afterwards (sourceEdit.ts gives formulas and
+ * entries the ids they had): the same blocks, their signatures taken again (references are part of them).
+ */
+export function rebaseMarkdownSource(source: MarkdownSource, read: Node, doc: Node): MarkdownSource {
+  if (read === doc || read.childCount !== doc.childCount || source.blocks.length !== doc.childCount) return source;
+  const before = numbering(read);
+  const after = numbering(doc);
+  const signatures = blockSignatures(doc, after);
+  const bodies = new Map<string, string>();
+  if (source.bodies?.size) {
+    read.forEach((node, _offset, index) => {
+      const partOf = (n: Node) => (isFigure(n) ? figureParts(n).body : isTableFigure(n) ? tableFigureParts(n).table : null);
+      const old = partOf(node);
+      const now = partOf(doc.child(index));
+      const text = old ? source.bodies!.get(signature(old, before)) : undefined;
+      if (now && text !== undefined) bodies.set(signature(now, after), text);
+    });
+  }
+  const labels = new Set<string>();
+  doc.descendants((node) => {
+    if (node.type.name === "math_display" && node.attrs.id && source.labels.has(node.attrs.id)) labels.add(node.attrs.id);
+    return true;
+  });
+  return { ...source, blocks: source.blocks.map((block, i) => ({ ...block, signature: signatures[i] })), labels, bodies };
+}
+
 /** The Markdown file the document was read from (set by the transaction that loads it; a new document drops it). */
 export const markdownSourceKey = new PluginKey<MarkdownSource | null>("visualtex-document-markdown-source");
 
