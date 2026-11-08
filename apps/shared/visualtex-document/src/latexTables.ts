@@ -22,6 +22,8 @@ export interface LatexTableCell {
 export interface LatexTable {
   rows: LatexTableCell[][];
   rules: "grid" | "booktabs";
+  /** the columns' widths in pt (p{} columns), null for the others */
+  widths?: Array<number | null>;
   /** the caption as Markdown, or null */
   caption: string | null;
 }
@@ -60,8 +62,22 @@ function optional(text: string, i: number): { content: string; end: number } | n
   return null;
 }
 
-/** A column specification's columns, as alignments: l c r, p{} m{} b{} X (left), >{\centering} before one, *{n}{…}. */
-export function columnAligns(spec: string): Align[] {
+/** A length in a column's width (3cm, 40mm, 2in, 120pt, 8em, 0.3\linewidth) in pt; null when it is not one. */
+export function lengthPt(text: string): number | null {
+  const match = /^\s*([\d.]+)\s*(pt|bp|cm|mm|in|em|ex|\\(?:linewidth|textwidth|columnwidth|hsize))\s*$/.exec(text);
+  if (!match || !Number.isFinite(Number(match[1]))) return null;
+  // \linewidth: A4's text area with the default margins (146.4 mm) — the document's own is not known here
+  const unit: Record<string, number> = { pt: 1, bp: 72.27 / 72, cm: 72.27 / 2.54, mm: 72.27 / 25.4, in: 72.27, em: 10, ex: 4.3 };
+  const factor = unit[match[2]] ?? (146.4 * 72.27) / 25.4;
+  const value = Number(match[1]) * factor;
+  return value > 0 ? Math.round(value * 2) / 2 : null;
+}
+
+/**
+ * A column specification's columns, as alignments: l c r, p{} m{} b{} X (left), >{\centering} before one, *{n}{…};
+ * `widths` (when given) gets each column's width in pt (p{}, m{}, b{}, w{}{}) or null.
+ */
+export function columnAligns(spec: string, widths?: Array<number | null>): Align[] {
   const out: Align[] = [];
   let pending: Align | undefined;
   for (let i = 0; i < spec.length; i++) {
@@ -87,7 +103,7 @@ export function columnAligns(spec: string): Align[] {
       const repeated = count ? group(spec, skipSpaces(spec, count.end)) : null;
       if (count && repeated) {
         const n = Math.max(0, Math.min(64, Number(count.content.trim()) || 0));
-        for (let k = 0; k < n; k++) out.push(...columnAligns(repeated.content));
+        for (let k = 0; k < n; k++) out.push(...columnAligns(repeated.content, widths));
         i = repeated.end - 1;
       }
       continue;
@@ -107,15 +123,19 @@ export function columnAligns(spec: string): Align[] {
       align = "center";
     } else if (!/[A-Za-z]/.test(c)) continue;
     // a width argument (p{3cm}, m{}, b{}, X has none; a newcolumntype may take one)
+    let columnWidth: number | null = null;
     if (/[pmbw]/.test(c)) {
       const arg = group(spec, skipSpaces(spec, i + 1));
       if (arg) i = arg.end - 1;
+      if (arg && c !== "w") columnWidth = lengthPt(arg.content);
       if (c === "w") {
         // array's w{align}{width}
         const width = group(spec, skipSpaces(spec, i + 1));
         if (width) i = width.end - 1;
+        if (width) columnWidth = lengthPt(width.content);
       }
     }
+    widths?.push(columnWidth);
     out.push(pending !== undefined ? pending : align);
     pending = undefined;
   }
@@ -271,7 +291,8 @@ export function parseTabular(
     const head = parts.firsthead ?? parts.head ?? "";
     body = [head, rest, parts.lastfoot ?? ""].map((part) => part.trim().replace(/(\\\\|\\tabularnewline)?\s*$/, "")).filter(Boolean).join(" \\\\ ");
   }
-  const aligns = columnAligns(spec);
+  const widths: Array<number | null> = [];
+  const aligns = columnAligns(spec, widths);
   const rows: Array<Array<LatexTableCell & { up: boolean; column: number }>> = [];
   for (const rawRow of splitTop(body.replace(RULES, " "), rowEnd)) {
     if (!rawRow.trim()) continue;
@@ -325,6 +346,7 @@ export function parseTabular(
   const table: LatexTable = {
     rows: rows.map((row) => row.filter((cell) => !removed.has(cell)).map(({ markdown, colspan, rowspan, align }) => ({ markdown, colspan, rowspan, align }))).filter((row) => row.length),
     rules: booktabs ? "booktabs" : "grid",
+    ...(widths.some((w) => w) ? { widths } : {}),
     caption: null,
   };
   return { table, caption, label };
@@ -386,12 +408,24 @@ export function resolveTableMarkers(doc: Node, parse: (markdown: string) => Node
       const match = child.isTextblock ? MARKER.exec(child.textContent) : null;
       const data = match ? decode<LatexTable>(match[1]) : null;
       if (data && data.rows?.length) {
-        const rows = data.rows.map((row) =>
-          rowType.create(
+        // the p{} columns' widths on their cells (tableColumns.ts: colwidth, pt), by the column each cell starts in
+        const taken: number[] = [];
+        const rows = data.rows.map((row, r) => {
+          let column = 0;
+          return rowType.create(
             null,
-            row.map((cell) => cellType.create({ colspan: cell.colspan || 1, rowspan: cell.rowspan || 1, align: cell.align === "left" ? null : cell.align }, blocks(cell.markdown))),
-          ),
-        );
+            row.map((cell) => {
+              while ((taken[column] ?? -1) >= r) column++;
+              const colspan = cell.colspan || 1;
+              const rowspan = cell.rowspan || 1;
+              for (let k = 0; k < colspan; k++) if (rowspan > 1) taken[column + k] = r + rowspan - 1;
+              const widths = data.widths ? Array.from({ length: colspan }, (_, k) => data.widths![column + k] ?? 0) : null;
+              column += colspan;
+              const colwidth = widths && widths.some((w) => w > 0) ? widths : null;
+              return cellType.create({ colspan, rowspan, align: cell.align === "left" ? null : cell.align, colwidth }, blocks(cell.markdown));
+            }),
+          );
+        });
         out.push(floatType.create({ rules: data.rules === "booktabs" ? "booktabs" : "grid" }, [captionType.create(null, data.caption ? inlineOf(data.caption) : Fragment.empty), tableType.create(null, rows)]));
         return;
       }

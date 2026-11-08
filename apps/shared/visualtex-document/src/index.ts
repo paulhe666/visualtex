@@ -63,11 +63,26 @@ export {
   markdownSourceKey,
   markdownSourceOf,
   readMarkdown,
+  rebaseMarkdownSource,
   type MarkdownExportOptions,
   type MarkdownSource,
 } from "./markdown.ts";
 export { documentDragKey, documentDragPlugin } from "./documentDrag.ts";
 export { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
+export {
+  latexLosses,
+  latexPreamble,
+  markdownLosses,
+  matchIds,
+  preambleSettings,
+  readSource,
+  sourcePlaceOf,
+  sourceProblem,
+  sourceTransaction,
+  type SourceFormat,
+  type SourceLoss,
+  type SourceProblem,
+} from "./sourceEdit.ts";
 export { decodeText, findMarkdownFile, readLatexProject, type LatexProject, type ProjectFile } from "./latexProject.ts";
 export { LINK_REQUEST_EVENT, insertLink, linkAt, normalizeHref, removeLink, requestLink, setLink, type LinkRange } from "./links.ts";
 export { markdownEnter, markdownHeadingEnter, markdownInputKey, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
@@ -100,6 +115,9 @@ export {
   clampMargin,
   type MarginName,
   bodyFontFamily,
+  bodyLayout,
+  type BodyLayout,
+  type LatexClass,
   bracketLabel,
   equationLabels,
   headingNumbers,

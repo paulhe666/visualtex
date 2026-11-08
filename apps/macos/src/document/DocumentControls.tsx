@@ -52,6 +52,7 @@ import {
   toggleSection,
   CHINESE_FONT_SIZES,
   chineseSizeName,
+  bodyLayout,
   documentSettings,
   insertFootnote,
   LINE_SPACINGS,
@@ -462,8 +463,8 @@ function NumberingSetup(props: { lang: Lang; settings: DocumentSettings; apply: 
       <div className="document-menu-heading">{t(lang, "Section numbers", "章节编号")}</div>
       {row<HeadingNumbering>(
         [
-          ["1.", "1.  1.1."],
           ["1", "1  1.1"],
+          ["1.", "1.  1.1."],
           ["none", t(lang, "None", "无")],
         ],
         settings.headingNumbering,
@@ -753,7 +754,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
       />
       <SizeButton
         lang={lang}
-        body={settings.fontSize}
+        body={bodyLayout(state.doc).fontSize}
         mark={size}
         onBody={(fontSize) => applySettings({ fontSize })}
         onMark={(name) => run(view, setAttrMark("fontSize", name === "normalsize" ? null : { size: name }))}

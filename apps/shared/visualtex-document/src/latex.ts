@@ -9,6 +9,7 @@ import { IMAGE_GAP, imageFiles, isImage, isImageLine } from "./images.ts";
 import { pageCommandLatex } from "./pageCommands.ts";
 import { boardHeight, boardItems, canonicalRow } from "./imageBoards.ts";
 import { figureParts, figureWrap, isLongTable, tableFigureParts } from "./figures.ts";
+import { columnWidth, tableColumns } from "./tableColumns.ts";
 import { sliceWithoutMarkdownSyntax, withoutMarkdownSyntax } from "./markdownLive.ts";
 import { formulaForPackages, formulaPackageNeeds } from "./formulaPackages.ts";
 import { CJK_TEXT } from "./titleBlock.ts";
@@ -488,29 +489,22 @@ class LatexWriter {
     const map = TableMap.get(table);
     const booktabs = float?.rules === "booktabs";
     const bar = booktabs ? "" : "|";
-    // A column holds blocks when a cell starting in it has display math or several paragraphs.
-    const blockColumn = new Array(map.width).fill(false);
-    const align = new Array<string | null>(map.width).fill(null);
-    for (let row = 0; row < map.height; row++) {
-      for (let col = 0; col < map.width; col++) {
-        const offset = map.map[row * map.width + col];
-        const cell = table.nodeAt(offset)!;
-        const rect = map.findCell(offset);
-        if (rect.left !== col || rect.top !== row) continue;
-        if (cell.childCount > 1 || cell.firstChild?.type.name === "math_display") blockColumn[col] = true;
-        align[col] ??= cell.attrs.align;
-      }
-    }
-    const share = (1 / map.width).toFixed(3);
+    // The columns as the page view sets them (tableColumns.ts): l c r, or p{} — a column given a width, or one whose
+    // cells hold display math or several paragraphs (its share of \linewidth) — centred or right-aligned as its cells
+    const columns = tableColumns(table);
+    const aligned = (align: string | null) => (align === "center" || align === "right" ? align : null);
+    const letter = (align: string | null) => ({ center: "c", right: "r" } as Record<string, string>)[align ?? ""] ?? "l";
+    const columnSpec = (col: number, align: string | null) => {
+      const width = columnWidth(columns[col], map.width);
+      if (!width) return letter(align);
+      const p = "pt" in width ? `p{${width.pt}pt}` : `p{${width.share}\\linewidth}`;
+      if (align !== "center" && align !== "right") return p;
+      this.packages.add("array");
+      return `>{${align === "center" ? "\\centering" : "\\raggedleft"}\\arraybackslash}${p}`;
+    };
+    const isP = columns.map((column) => !!columnWidth(column, map.width));
     // Mathcha's tables are ruled grids.
-    const spec =
-      bar +
-      blockColumn
-        .map((block, col) =>
-          block ? `p{${share}\\linewidth}` : ({ center: "c", right: "r" } as Record<string, string>)[align[col] ?? ""] ?? "l",
-        )
-        .join(bar) +
-      bar;
+    const spec = bar + columns.map((column, col) => columnSpec(col, column.align)).join(bar) + bar;
     const lines: string[] = [];
     for (let row = 0; row < map.height; row++) {
       const cells: string[] = [];
@@ -519,15 +513,25 @@ class LatexWriter {
         const cell = table.nodeAt(offset)!;
         const rect = map.findCell(offset);
         const colspan = rect.right - rect.left;
-        let content = rect.top === row ? this.cell(cell, blockColumn[col]) : "";
+        let content = rect.top === row ? this.cell(cell, isP[col]) : "";
+        // a line break in a cell: the next line of the cell (in an l c r column a \makecell of its lines)
+        if (content.includes("\\\\\n")) {
+          if (isP[col]) content = content.replace(/\\\\\n/g, "\\newline ");
+          else {
+            this.packages.add("makecell");
+            content = `\\makecell[${letter(cell.attrs.align)}]{${content.replace(/\\\\\n/g, "\\\\ ")}}`;
+          }
+        }
         const rowspan = rect.bottom - rect.top;
         if (rowspan > 1 && rect.top === row) {
           this.packages.add("multirow");
           content = `\\multirow{${rowspan}}{*}{${content}}`;
         }
         if (colspan > 1) {
-          const a = ({ center: "c", right: "r" } as Record<string, string>)[cell.attrs.align ?? ""] ?? "l";
-          content = `\\multicolumn{${colspan}}{${col === 0 ? bar : ""}${a}${bar}}{${content}}`;
+          content = `\\multicolumn{${colspan}}{${col === 0 ? bar : ""}${letter(cell.attrs.align)}${bar}}{${content}}`;
+        } else if (rect.top === row && content && aligned(cell.attrs.align) !== aligned(columns[col].align)) {
+          // a cell aligned otherwise than its column: its own \multicolumn, as the page view shows it
+          content = `\\multicolumn{1}{${col === 0 ? bar : ""}${columnSpec(col, cell.attrs.align)}${bar}}{${content}}`;
         }
         cells.push(content);
         col += colspan;

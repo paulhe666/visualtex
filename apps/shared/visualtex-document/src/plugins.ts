@@ -9,7 +9,8 @@ import { keymap } from "prosemirror-keymap";
 import { baseKeymap, chainCommands, toggleMark } from "prosemirror-commands";
 import { gapCursor } from "prosemirror-gapcursor";
 import { dropCursor } from "prosemirror-dropcursor";
-import { columnResizing, tableEditing } from "prosemirror-tables";
+import { tableEditing } from "prosemirror-tables";
+import { tableColumnsPlugin } from "./tableColumns.ts";
 import {
   deleteFormulaBackward,
   deleteFormulaForward,
@@ -318,7 +319,12 @@ function numberingPlugin() {
     // the labels in the document's numbering format: (3), (2.3), [2-3] (settings.ts)
     const labels = equationLabels(doc);
     // the sections' numbers, drawn by the style sheet from the attribute (h1[data-number]::before)
-    for (const [pos, number] of headingNumbers(doc)) decorations.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { "data-number": number }));
+    // with its width (digits 0.5em, a period 0.25em: Times' and Latin Modern's bold figures, about) for a centred
+    // heading, which centres number and title together as LaTeX does
+    for (const [pos, number] of headingNumbers(doc)) {
+      const width = number.replace(/[^.]/g, "").length * 0.25 + number.replace(/\./g, "").length * 0.5;
+      decorations.push(Decoration.node(pos, pos + doc.nodeAt(pos)!.nodeSize, { "data-number": number, style: `--vtx-number-width:${width}em` }));
+    }
     doc.descendants((node, pos) => {
       // a formula with its own \tag draws it itself (it takes no number)
       if (node.type.name === "math_display" && node.attrs.numbered && !ownEquationTag(node.attrs.latex)) {
@@ -539,7 +545,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     }),
     documentKeymap(schema, inputMode, rules),
     keymap(baseKeymap),
-    columnResizing(),
+    tableColumnsPlugin(),
     tableEditing(),
     gapCursor(),
     dropCursor(),
