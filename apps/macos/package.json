@@ -19,6 +19,7 @@
     "register:macos-dev-url": "node scripts/register_macos_dev_url_handler.mjs",
     "tauri:build": "node scripts/tauri_build.mjs",
     "tauri:build:no-ocr": "node scripts/build_macos_api_only.mjs",
+    "tauri:build:personal": "node scripts/build_macos_personal.mjs",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
     "test:radical-render": "npm run build:desktop && node scripts/radical_render_regression.mjs",
     "test:formula-hotkeys": "npm run build:desktop && node scripts/formula_hotkey_regression.mjs",

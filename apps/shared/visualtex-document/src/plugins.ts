@@ -172,7 +172,7 @@ function htmlShowsSource(html: string, text: string, types: readonly string[]): 
 }
 
 /** Pasted plain text with math delimiters becomes text with formulas. */
-function mathPastePlugin(schema: Schema, inputMode: () => InputMode) {
+function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource: boolean) {
   return new Plugin({
     key: new PluginKey("visualtex-document-math-paste"),
     props: {
@@ -186,7 +186,7 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode) {
         const html = data.types.includes("text/html") ? data.getData("text/html") : "";
         const source = htmlShowsSource(html, text, data.types);
         // LaTeX source (\section, itemize, \textbf, equation…) is read into the document's structure, in either input.
-        if (source && looksLikeLatexSource(text)) {
+        if (latexSource && source && looksLikeLatexSource(text)) {
           const keys = new Map(bibliographyEntries(view.state.doc).map((entry) => [entry.key, entry.id]));
           view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, latexToMarkdown(text), keys)).scrollIntoView());
           return true;
@@ -435,6 +435,8 @@ export interface DocumentPluginOptions {
   inputMode?: () => InputMode;
   /** The Markdown rules that are on (all by default). */
   markdownRules?: () => MarkdownRuleSwitches;
+  /** Pasted LaTeX source is read into the document's structure (default); false: it pastes as text. */
+  latexPaste?: boolean;
   /** The page view: the document divided into the paper's pages (none: one long page). */
   pagination?: PaginationOptions | null;
   /** The image bar's button names in the app's language. */
@@ -516,7 +518,7 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     markdownInputPlugin(inputMode, rules),
     // Typora's live inline Markdown: a formatted span shows its markers while the caret is in it
     markdownLivePlugin({ enabled: () => inputMode() === "markdown" && rules().marks }),
-    mathPastePlugin(schema, inputMode),
+    mathPastePlugin(schema, inputMode, options.latexPaste ?? true),
     linkClickPlugin(),
     formulaPlugin(options.host, { undo: markdownUndo, redo: markdownRedo, displayFormula: insertDisplayLatex("") }),
     new Plugin({

@@ -27,12 +27,13 @@ import {
   type SourceProblem,
 } from "../../../shared/visualtex-document/src/index.ts";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { DOCUMENT_LATEX } from "../edition";
 import { useDocumentFormatStore, type DocumentFormat } from "../stores/documentFormatStore";
 import { useEditorStore } from "../stores/editorStore";
 import type { Theme } from "../types/formula";
 import { portableFormulaLatex } from "./DocumentEditor";
 
-const highlightStyle = HighlightStyle.define([
+export const highlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.definitionKeyword, tags.macroName, tags.labelName, tags.heading], color: "var(--syntax-command)" },
   { tag: [tags.className, tags.typeName, tags.namespace], color: "var(--syntax-function)", fontWeight: "650" },
   { tag: [tags.strong, tags.emphasis, tags.monospace], color: "var(--syntax-command)", fontWeight: "600" },
@@ -44,7 +45,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: [tags.variableName, tags.content], color: "var(--syntax-variable)" },
 ]);
 
-const theme: Extension = EditorView.theme({
+export const theme: Extension = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "var(--text)", height: "100%" },
   ".cm-scroller": { overflow: "auto" },
   ".cm-content": {
@@ -427,7 +428,8 @@ export function DocumentSourceView(props: { theme: Theme }) {
             ))}
           </span>
         )}
-        <span className="document-format-switch" role="radiogroup" aria-label={isEn ? "Output format" : "输出格式"}>
+        {/* the public edition writes Markdown only */}
+        {DOCUMENT_LATEX && <span className="document-format-switch" role="radiogroup" aria-label={isEn ? "Output format" : "输出格式"}>
           <span className="document-format-switch-label">{isEn ? "Output" : "输出"}</span>
           {(["latex", "markdown"] as const).map((value) => (
             <button
@@ -446,7 +448,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
               {value === "latex" ? "LaTeX" : "Markdown"}
             </button>
           ))}
-        </span>
+        </span>}
       </div>
       <div ref={hostRef} className="document-source-view-host" />
     </div>

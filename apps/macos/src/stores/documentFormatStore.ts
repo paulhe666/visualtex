@@ -1,11 +1,16 @@
 // The document's input and output formats (docs/document-editor/DESIGN.md §7): LaTeX or Markdown input (what is
 // typed converts as LaTeX commands or as Markdown; the candidate menu offers LaTeX or Markdown items) and LaTeX or
-// Markdown output (the source tab, the copy button, Copy/Export).
+// Markdown output (the source tab, the copy button, Copy/Export). The public edition has Markdown only: both are
+// Markdown there, whatever was stored or set.
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { DOCUMENT_LATEX } from "../edition";
 import { safeStorage } from "../runtime/safeStorage";
 
 export type DocumentFormat = "latex" | "markdown";
+
+/** The format the edition allows: LaTeX only in the personal edition. */
+const allowed = (format: DocumentFormat): DocumentFormat => (DOCUMENT_LATEX ? format : "markdown");
 
 /** Groups of Markdown input rules that can be turned off (SiYuan had to add such switches after false positives). */
 export interface MarkdownRules {
@@ -32,12 +37,12 @@ interface DocumentFormatState {
 export const useDocumentFormatStore = create<DocumentFormatState>()(
   persist(
     (set) => ({
-      inputMode: "latex",
-      outputFormat: "latex",
+      inputMode: allowed("latex"),
+      outputFormat: allowed("latex"),
       markdownReferences: "eqref",
       markdownRules: { blocks: true, marks: true, chinese: true },
-      setInputMode: (inputMode) => set({ inputMode }),
-      setOutputFormat: (outputFormat) => set({ outputFormat }),
+      setInputMode: (inputMode) => set({ inputMode: allowed(inputMode) }),
+      setOutputFormat: (outputFormat) => set({ outputFormat: allowed(outputFormat) }),
       setMarkdownReferences: (markdownReferences) => set({ markdownReferences }),
       setMarkdownRule: (rule, on) => set((state) => ({ markdownRules: { ...state.markdownRules, [rule]: on } })),
     }),
@@ -50,6 +55,16 @@ export const useDocumentFormatStore = create<DocumentFormatState>()(
         markdownReferences: state.markdownReferences,
         markdownRules: state.markdownRules,
       }),
+      // a stored "latex" (from a personal build in the same profile) reads as Markdown in the public edition
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<DocumentFormatState>;
+        return {
+          ...current,
+          ...stored,
+          inputMode: allowed(stored.inputMode ?? current.inputMode),
+          outputFormat: allowed(stored.outputFormat ?? current.outputFormat),
+        };
+      },
     },
   ),
 );
