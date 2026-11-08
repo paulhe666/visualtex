@@ -107,8 +107,18 @@ const VERBATIM_ARGUMENT_COMMANDS = new Set([
   "operatorname", "operatorname*", "ce", "pu", "color", "textcolor",
   "colorbox", "fcolorbox", "hspace", "vspace", "kern", "mkern", "mskip",
   "hskip", "rule", "raisebox", "label", "tag", "ref", "eqref", "href",
-  "url", "begin", "end", "placeholder",
+  "url", "begin", "end", "placeholder", "fbox", "framebox",
 ]);
+
+// VisualTeX: optional arguments that are dimensions or positions (\framebox[2cm][l], \overbracket[1pt][5pt],
+// \rule[2pt]): copied verbatim; and \genfrac's delimiters, thickness and style.
+const OPTIONAL_VERBATIM_COMMANDS = new Set(["framebox", "rule", "overbracket", "underbracket"]);
+const LEADING_VERBATIM_ARGUMENTS: Readonly<Record<string, number>> = { genfrac: 4 };
+// The delimiters and dimension after TeX's \above and \abovewithdelims.
+const INFIX_DIMENSION = {
+  above: /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*[a-z]{2}/,
+  abovewithdelims: /^\s*(?:\\[A-Za-z]+|\\.|[^\s\\])\s*(?:\\[A-Za-z]+|\\.|[^\s\\])\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*[a-z]{2}/,
+} as Readonly<Record<string, RegExp>>;
 
 // Commands whose first argument is a name, not math (\class{visualtex-align-marker}{…}): that argument is copied
 // verbatim, the others are math.
@@ -296,19 +306,35 @@ function tokenize(source: string): Item[] {
       continue;
     }
 
+    const infix = INFIX_DIMENSION[name]?.exec(source.slice(end));
+    if (infix) {
+      index = end + infix[0].length;
+      items.push({ kind: "other", raw: source.slice(start, index) });
+      continue;
+    }
+
     const verbatim = VERBATIM_ARGUMENT_COMMANDS.has(name);
     const parts: Part[] = [source.slice(index, end)];
     let firstArgument: string | undefined;
     index = end;
-    for (;;) {
+    for (let argument = 0; ; ) {
       const argumentStart = skipWhitespace(source, index);
+      if (source[argumentStart] === "[" && OPTIONAL_VERBATIM_COMMANDS.has(name)) {
+        const close = source.indexOf("]", argumentStart);
+        if (close < 0) break;
+        parts.push(source.slice(index, close + 1));
+        index = close + 1;
+        continue;
+      }
       if (source[argumentStart] !== "{") break;
       const group = readBraced(source, argumentStart);
       if (!group) break;
       const nameArgument = firstArgument === undefined && NAME_ARGUMENT_COMMANDS.has(name);
+      const leadingVerbatim = argument < (LEADING_VERBATIM_ARGUMENTS[name] ?? 0);
+      argument += 1;
       firstArgument ??= group.content;
       parts.push(source.slice(index, argumentStart));
-      if (verbatim || nameArgument) parts.push(source.slice(argumentStart, group.end));
+      if (verbatim || nameArgument || leadingVerbatim) parts.push(source.slice(argumentStart, group.end));
       else parts.push("{", { content: group.content, child: {} }, "}");
       index = group.end;
     }

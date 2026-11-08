@@ -33,6 +33,8 @@ interface PageBreak {
   /** a break before a textblock's first line: a transparent top border on the block (its heading number and first-line indent
    *  moves with its text), at this block position */
   block?: number;
+  /** a break before a row of a long table (figures.ts): a row of space, as wide as the table's columns */
+  row?: number;
 }
 
 interface PaginationState {
@@ -58,6 +60,8 @@ interface Unit {
   breakAfter?: boolean;
   /** a page command (\pagenumbering…): the page it lands on numbers by it */
   command?: { command: string; value: string };
+  /** a long table's row (its table's columns) */
+  row?: number;
 }
 
 const SEPARATOR_HEIGHT_EM = 0.9;
@@ -66,7 +70,21 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
 
-function spacer(height: number, inline: boolean): () => HTMLElement {
+function spacer(height: number, inline: boolean, row?: number): () => HTMLElement {
+  if (row) {
+    // between a long table's rows: a row of space (document.css: no rules through it)
+    return () => {
+      const tr = document.createElement("tr");
+      tr.className = "vtx-page-break";
+      tr.contentEditable = "false";
+      tr.setAttribute("aria-hidden", "true");
+      const td = document.createElement("td");
+      td.colSpan = row;
+      td.style.height = `${height}px`;
+      tr.append(td);
+      return tr;
+    };
+  }
   return () => {
     const el = document.createElement(inline ? "span" : "div");
     el.className = "vtx-page-break";
@@ -83,17 +101,17 @@ function buildDecorations(doc: Node, breaks: PageBreak[]): DecorationSet {
     doc,
     breaks.map((b) => {
       const block = b.block !== undefined ? doc.nodeAt(b.block) : null;
-      if (block?.isTextblock) {
+      if (block?.isTextblock || block?.type.name === "abstract") {
         return Decoration.node(b.block!, b.block! + block.nodeSize, {
           class: "vtx-page-break-before",
           style: `border-top:${b.height}px solid transparent`,
           "data-page-break": String(b.height),
         });
       }
-      return Decoration.widget(b.pos, spacer(b.height, b.inline), {
+      return Decoration.widget(b.pos, spacer(b.height, b.inline, b.row), {
         side: -1,
         ignoreSelection: true,
-        key: `page-break-${b.pos}-${b.inline ? "i" : "b"}-${Math.round(b.height * 10)}`,
+        key: `page-break-${b.pos}-${b.inline ? "i" : "b"}${b.row ? "r" : ""}-${Math.round(b.height * 10)}`,
       });
     }),
   );
@@ -153,16 +171,21 @@ function lineStart(view: EditorView, start: number, end: number, line: { top: nu
 }
 
 /** What the page view divides into pages, in document order, at their places on the screen. */
-function collectUnits(view: EditorView): Unit[] {
+/** Lines that go to the next page with what follows them: a section's, and the title block's (\maketitle's box). */
+const KEEP_WITH_NEXT = new Set(["heading", "title", "author", "date"]);
+
+function collectUnits(view: EditorView, pageHeight = Infinity): Unit[] {
   const units: Unit[] = [];
-  const visit = (node: Node, pos: number) => {
+  /** `container`: the abstract whose first line this block holds (its heading goes along: the break is the abstract's) */
+  const visit = (node: Node, pos: number, container?: { pos: number; top: number }) => {
     const dom = view.nodeDOM(pos);
     if (!(dom instanceof HTMLElement)) return;
     if (node.isTextblock && node.type.name !== "code_block") {
+      const keep = KEEP_WITH_NEXT.has(node.type.name);
       const lines = lineBoxes(dom);
       if (!lines.length) {
         const r = dom.getBoundingClientRect();
-        units.push({ top: r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: node.type.name === "heading" || node.type.name === "title", footnotes: [], block: pos });
+        units.push({ top: container?.top ?? r.top, bottom: r.bottom, pos: pos + 1, inline: true, keepWithNext: keep, footnotes: [], block: container?.pos ?? pos });
         return;
       }
       let previous = -1;
@@ -174,25 +197,42 @@ function collectUnits(view: EditorView): Unit[] {
         if (start === null || start <= previous) return;
         previous = start;
         units.push({
-          top: index === 0 ? Math.min(line.top, dom.getBoundingClientRect().top) : line.top,
+          top: index === 0 ? Math.min(line.top, container?.top ?? dom.getBoundingClientRect().top) : line.top,
           bottom: index === 0 ? Math.max(line.bottom, wrapBottom) : line.bottom,
           pos: start,
           inline: true,
-          keepWithNext: (node.type.name === "heading" || node.type.name === "title") && index === lines.length - 1,
+          // a table's caption (figures.ts) goes with its table, as a heading with its text
+          keepWithNext: (keep || (node.type.name === "caption" && view.state.doc.resolve(pos).parent.type.name === "table_figure")) && index === lines.length - 1,
           footnotes: [],
-          ...(index === 0 ? { block: pos } : {}),
+          ...(index === 0 ? { block: container?.pos ?? pos } : {}),
         });
       });
       return;
     }
-    // a list, a quote, a reference list, a list item: their blocks
-    // (a table and an image board are one unit each)
-    if (!node.isAtom && !node.isTextblock && node.type.name !== "table" && node.type.name !== "image_board" && node.childCount && node.firstChild!.isBlock) {
-      node.forEach((child, offset) => visit(child, pos + 1 + offset));
+    // a list, a quote, a reference list, a list item, a table with its caption: their blocks
+    // (a table, an image board and a figure are one unit each)
+    if (!node.isAtom && !node.isTextblock && node.type.name !== "table" && node.type.name !== "image_board" && node.type.name !== "figure" && node.childCount && node.firstChild!.isBlock) {
+      const first = node.type.name === "abstract" ? { pos, top: dom.getBoundingClientRect().top } : container;
+      node.forEach((child, offset) => visit(child, pos + 1 + offset, offset === 0 ? first : undefined));
       return;
     }
     const r = dom.getBoundingClientRect();
-    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: false, footnotes: [] };
+    // a table longer than a page (without the rows of space its breaks put in): its rows, as longtable breaks it
+    // (figures.ts)
+    const breaksIn = node.type.name === "table" ? Array.from(dom.querySelectorAll("tr.vtx-page-break")).reduce((sum, tr) => sum + tr.getBoundingClientRect().height, 0) : 0;
+    if (node.type.name === "table" && r.height - breaksIn > pageHeight) {
+      let columns = 0;
+      node.firstChild?.forEach((cell) => (columns += cell.attrs.colspan ?? 1));
+      node.forEach((_row, offset) => {
+        const rowDom = view.nodeDOM(pos + 1 + offset);
+        if (!(rowDom instanceof HTMLElement)) return;
+        const rr = rowDom.getBoundingClientRect();
+        units.push({ top: rr.top, bottom: rr.bottom, pos: pos + 1 + offset, inline: false, keepWithNext: false, footnotes: [], row: Math.max(1, columns) });
+      });
+      return;
+    }
+    // a wrapped figure goes to the next page with the first line of the paragraph beside it (wrapfig)
+    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: node.type.name === "figure" && (dom.classList.contains("is-wrap-left") || dom.classList.contains("is-wrap-right")), footnotes: [] };
     if (node.type.name === "page_command") {
       unit.breakAfter = isPageBreak(node);
       unit.command = { command: node.attrs.command, value: node.attrs.value };
@@ -300,7 +340,7 @@ class PaginationView {
       for (const s of spacers) if (s.top + s.height / 2 <= y) shift += s.height;
       return y - origin - shift;
     };
-    const units = collectUnits(view).map((u) => ({ ...u, top: natural(u.top), bottom: natural(u.bottom) }));
+    const units = collectUnits(view, contentHeight).map((u) => ({ ...u, top: natural(u.top), bottom: natural(u.bottom) }));
 
     // footnotes: the line each one's mark is on, and the room its note takes at a page's foot
     const notes: Array<{ pos: number; text: string; number: number }> = [];
@@ -338,7 +378,7 @@ class PaginationView {
         breakPending = false;
         if (top < (page + 1) * stride) {
           const push = (page + 1) * stride - top;
-          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block, row: unit.row });
           offset += push;
           top += push;
           bottom += push;
@@ -357,7 +397,7 @@ class PaginationView {
         }
         if (top < page * stride) {
           const push = page * stride - top;
-          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block });
+          breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block, row: unit.row });
           offset += push;
           top += push;
           bottom += push;
@@ -376,7 +416,7 @@ class PaginationView {
         }
         const firstTop = first.top + offset;
         const push = (page + 1) * stride - firstTop;
-        breaks.push({ pos: first.pos, inline: first.inline, height: push, block: first.block });
+        breaks.push({ pos: first.pos, inline: first.inline, height: push, block: first.block, row: first.row });
         offset += push;
         page++;
         reserve = 0;

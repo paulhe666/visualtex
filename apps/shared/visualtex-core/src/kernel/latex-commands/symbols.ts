@@ -196,6 +196,10 @@ defineSymbols([
   ['\\rgroup', 0x27ef, 'mclose'],
   ['\\lmoustache', 0x23b0, 'mopen'],
   ['\\rmoustache', 0x23b1, 'mclose'],
+  // VisualTeX: fontmath.ltx's other delimiters (\DeclareMathDelimiter, \mathord)
+  ['\\arrowvert', 0x23d0],
+  ['\\Arrowvert', 0x2016],
+  ['\\bracevert', 0x23aa],
 
   // defineSymbol('\\ne', 0x2260, 'mrel'],
   // defineSymbol('\\neq', 0x2260, 'mrel'],

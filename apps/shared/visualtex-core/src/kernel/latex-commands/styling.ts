@@ -1209,6 +1209,25 @@ defineFunction('mathllap', '{:math}', {
     }),
 });
 
+// VisualTeX: latex.ltx \clap and mathtools \mathclap
+defineFunction('clap', '{:auto}', {
+  createAtom: (options): Atom =>
+    new OverlapAtom({
+      ...options,
+      body: argAtoms(options.args![0]),
+      align: 'center',
+    }),
+});
+
+defineFunction('mathclap', '{:math}', {
+  createAtom: (options): Atom =>
+    new OverlapAtom({
+      ...options,
+      body: argAtoms(options.args![0]),
+      align: 'center',
+    }),
+});
+
 defineFunction('raisebox', '{:value}{:text}', {
   createAtom: (
     options: CreateAtomOptions<[LatexValue | null, Argument | null]>

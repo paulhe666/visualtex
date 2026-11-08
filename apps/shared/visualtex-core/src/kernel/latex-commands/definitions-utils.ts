@@ -225,15 +225,30 @@ export const AMSMATH_MACROS: MacroDictionary = {
     def: '\\;\\mathbin{\\operatorname{mod }}',
     expand: false,
   },
+
+  // VisualTeX: amsmath \sideset{#1}{#2}#3, scripts on both sides of an
+  // operator that keeps its limits. The layout engine builds it as amsmath
+  // does; this expansion gives the arguments their slots.
+  sideset: {
+    def: '{}#1#3#2',
+    args: 3,
+    expand: false,
+    captureSelection: false,
+  },
 };
 
 // From `braket.sty`, Dirac notation
 export const BRAKET_MACROS: MacroDictionary = {
   bra: { def: '\\mathinner{\\langle{#1}|}', args: 1, captureSelection: false },
   ket: { def: '\\mathinner{|{#1}\\rangle}', args: 1, captureSelection: false },
+  // VisualTeX: physics.sty's \braket{a}{b} as well. Its second argument is
+  // xparse `g`: taken only when a brace group follows; otherwise braket.sty's
+  // one argument, | inside it as written (\braket{\phi|\psi}).
   braket: {
-    def: '\\mathinner{\\langle{#1}\\rangle}',
-    args: 1,
+    def: '\\left\\langle #1\\middle\\vert #2\\right\\rangle',
+    args: 2,
+    defWithoutLastArgument: '\\mathinner{\\langle{#1}\\rangle}',
+    expand: false,
     captureSelection: false,
   },
   set: {
@@ -327,34 +342,31 @@ const DEFAULT_MACROS: MacroDictionary = {
       //\providecommand\ordinarycolon{:}
       ordinarycolon: ':',
       //\def\vcentcolon{\mathrel{\mathop\ordinarycolon}}
-      //TODO(edemaine): Not yet centered. Fix via \raisebox or #726
+      // VisualTeX: centred by the layout engine (an \mathop of one character)
       vcentcolon: '\\mathrel{\\mathop\\ordinarycolon}',
-      // \providecommand*\dblcolon{\vcentcolon\mathrel{\mkern-.9mu}\vcentcolon}
-      dblcolon: '{\\mathop{\\char"2237}}', // ∷
-      // \providecommand*\coloneqq{\vcentcolon\mathrel{\mkern-1.2mu}=}
-      coloneqq: '{\\mathop{\\char"2254}}', // ≔
-      // \providecommand*\Coloneqq{\dblcolon\mathrel{\mkern-1.2mu}=}
-      Coloneqq: '{\\mathop{\\char"2A74}}', // ⩴
-      // \providecommand*\coloneq{\vcentcolon\mathrel{\mkern-1.2mu}\mathrel{-}}
-      coloneq: '{\\mathop{\\char"2254}}', // ≔
-      // \providecommand*\Coloneq{\dblcolon\mathrel{\mkern-1.2mu}\mathrel{=}}
-      Coloneq: '{\\mathop{\\char"2A74}}', // ⩴
-      // \providecommand*\eqqcolon{=\mathrel{\mkern-1.2mu}\vcentcolon}
-      eqqcolon: '{\\mathop{\\char"2255}}', // ≕
-      // \providecommand*\Eqqcolon{=\mathrel{\mkern-1.2mu}\dblcolon}
-      Eqqcolon: '{\\mathop{\\char"3D\\char"2237}}', // =∷
-      // \providecommand*\eqcolon{\mathrel{-}\mathrel{\mkern-1.2mu}\vcentcolon}
-      eqcolon: '{\\mathop{\\char"2255}}', // ≕
-      // \providecommand*\Eqcolon{\mathrel{-}\mathrel{\mkern-1.2mu}\dblcolon}
-      Eqcolon: '{\\mathop{\\char"3D\\char"2237}}', // =∷
-      // \providecommand*\colonapprox{\vcentcolon\mathrel{\mkern-1.2mu}\approx}
-      colonapprox: '{\\mathop{\\char"003A\\char"2248}}', // :≈
-      // \providecommand*\Colonapprox{\dblcolon\mathrel{\mkern-1.2mu}\approx}
-      Colonapprox: '{\\mathop{\\char"2237\\char"2248}}', // ∷≈
-      // \providecommand*\colonsim{\vcentcolon\mathrel{\mkern-1.2mu}\sim}
-      colonsim: '{\\mathop{\\char"3A\\char"223C}}', // :∼
-      // \providecommand*\Colonsim{\dblcolon\mathrel{\mkern-1.2mu}\sim}
-      Colonsim: '{\\mathop{\\char"2237\\char"223C}}', // ∷∼
+      // VisualTeX: the symbols as mathtools builds them (current, non-legacy
+      // names: \coloneq is \coloneqq, \eqcolon is \eqqcolon), not single
+      // Unicode characters the TeX fonts do not have
+      // \newcommand*\MATHT@dblcolon{\vcentcolon\mathrel{\mkern-.9mu}\vcentcolon}
+      dblcolon: '\\vcentcolon\\mathrel{\\mkern-.9mu}\\vcentcolon',
+      // \newcommand*\MATHT@coloneq{\vcentcolon\mathrel{\mkern-1.2mu}=}
+      coloneqq: '\\vcentcolon\\mathrel{\\mkern-1.2mu}=',
+      // \newcommand*\MATHT@dblcoloneq{\dblcolon\mathrel{\mkern-1.2mu}=}
+      Coloneqq: '\\dblcolon\\mathrel{\\mkern-1.2mu}=',
+      coloneq: '\\vcentcolon\\mathrel{\\mkern-1.2mu}=',
+      Coloneq: '\\dblcolon\\mathrel{\\mkern-1.2mu}=',
+      // \newcommand*\MATHT@eqcolon{=\mathrel{\mkern-1.2mu}\vcentcolon}
+      eqqcolon: '=\\mathrel{\\mkern-1.2mu}\\vcentcolon',
+      // \newcommand*\MATHT@eqdblcolon{=\mathrel{\mkern-1.2mu}\dblcolon}
+      Eqqcolon: '=\\mathrel{\\mkern-1.2mu}\\dblcolon',
+      eqcolon: '=\\mathrel{\\mkern-1.2mu}\\vcentcolon',
+      Eqcolon: '=\\mathrel{\\mkern-1.2mu}\\dblcolon',
+      // \newcommand*\MATHT@colonapprox{\vcentcolon\mathrel{\mkern-1.2mu}\approx}
+      colonapprox: '\\vcentcolon\\mathrel{\\mkern-1.2mu}\\approx',
+      Colonapprox: '\\dblcolon\\mathrel{\\mkern-1.2mu}\\approx',
+      // \newcommand*\MATHT@colonsim{\vcentcolon\mathrel{\mkern-1.2mu}\sim}
+      colonsim: '\\vcentcolon\\mathrel{\\mkern-1.2mu}\\sim',
+      Colonsim: '\\dblcolon\\mathrel{\\mkern-1.2mu}\\sim',
 
       colondash: '\\mathrel{\\vcentcolon\\mathrel{\\mkern-1.2mu}\\mathrel{-}}', // :-
       Colondash: '\\mathrel{\\dblcolon\\mathrel{\\mkern-1.2mu}\\mathrel{-}}',
@@ -932,7 +944,8 @@ export function defineRootEnvironment(
   const def: EnvironmentDefinition = {
     tabular: options?.tabular ?? false,
     rootOnly: true,
-    params: [],
+    // VisualTeX: the parameters are read (alignat's {n})
+    params: parseParameterTemplate(options?.params ?? ''),
     createAtom,
   };
   for (const name of names) ENVIRONMENTS[name] = def;
@@ -1133,6 +1146,9 @@ export function charToLatex(
     return REVERSE_MATH_SYMBOLS[codepoint];
 
   if (parseMode === 'text') {
+    // VisualTeX: brackets are themselves in text (\tag*{[A]}, \text{[a,b]})
+    if (codepoint === 0x005b || codepoint === 0x005d)
+      return String.fromCodePoint(codepoint);
     const textSymbol = Object.keys(TEXT_SYMBOLS).find(
       (x) => TEXT_SYMBOLS[x] === codepoint
     );

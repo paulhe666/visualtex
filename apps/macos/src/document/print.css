@@ -44,3 +44,7 @@ a.vtx-print-link {
 .vtx-print-window .vtx-page-number {
   color: #000 !important;
 }
+/* an empty caption's hint is the editor's */
+.vtx-print-window .vtx-caption-label::after {
+  content: none !important;
+}

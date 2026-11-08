@@ -5,7 +5,7 @@
 // in which every atom has an element with data-atom-id spanning its TeX box,
 // so the kernel's caret, selection and hit-testing code work unchanged.
 import { FontCache } from "./latex.ts";
-import { FACE_GROUP_FAMS, FAM, LatexAdapter, type AtomLike, type LatexData } from "./latex-adapter.ts";
+import { FACE_GROUP_FAMS, FAM, LatexAdapter, PACKAGE_FAMILIES, type AtomLike, type LatexData } from "./latex-adapter.ts";
 import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
@@ -260,6 +260,10 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     // LaTeX's own definitions (amsmath, esint) take precedence
     adapter.pathOps = new Map([...sizes[0].codes].filter(([cmd]) => !data.templates[cmd]));
   }
+  // stmaryrd and upgreek fonts, where the profile's data has them (Computer Modern)
+  for (const [fam, names] of PACKAGE_FAMILIES) {
+    if (names.every((n) => data.tfm[n])) adapter.fams.set(fam, names.map((n) => cache.get(n)) as [TeXFont, TeXFont, TeXFont]);
+  }
   // the letter font (LayoutOptions.letterFamilies) fills the adapter's letter
   // families at 10, 7 and 5pt; they are rebuilt when the choice changes
   let letterChoice: string | null = null;
@@ -401,6 +405,8 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       if (a.rows)
         for (const row of a.rows)
           for (const cell of row) {
+            // a column a \multicolumn covers is no cell
+            if (!cell) continue;
             const list: FormulaElement[] = [];
             for (const c of cell as KernelAtom[]) list.push(...build(c));
             kids.push(...branchBox(list));
@@ -455,7 +461,8 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
   function renderMathfield(mathfield: any, _renderOptions?: unknown): string {
     const model = mathfield.model;
     const root = model.root as KernelAtom;
-    const atoms = root.branch("body") ?? [];
+    // a root environment (align, gather, ...) is the root atom itself
+    const atoms = root.type === "array" ? [root] : root.branch("body") ?? [];
     const display = mathfield.options?.defaultMode !== "inline-math";
     const { box, ship, regions, scales } = layout(atoms, display, true);
     propagateRegions(regions, root);
@@ -561,7 +568,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       seen.add(a);
       visit(a);
       for (const name of a.branches ?? []) for (const c of (a.branch(name) ?? []) as KernelAtom[]) walk(c);
-      if (a.rows) for (const row of a.rows) for (const cell of row) for (const c of cell as KernelAtom[]) walk(c);
+      if (a.rows) for (const row of a.rows) for (const cell of row) for (const c of (cell ?? []) as KernelAtom[]) walk(c);
     };
     roots.forEach(walk);
   }

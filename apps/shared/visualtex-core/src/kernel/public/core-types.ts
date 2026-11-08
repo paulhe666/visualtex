@@ -226,6 +226,12 @@ export type MacroDefinition = {
   captureSelection?: boolean;
   /** If `false`, even if `expandMacro` is true, do not expand. */
   expand?: boolean;
+  /**
+   * VisualTeX: the last argument is optional, as an xparse `g` argument: it
+   * is taken only when a brace group follows (spaces skipped); otherwise
+   * this definition, with one argument fewer, is used.
+   */
+  defWithoutLastArgument?: string;
 };
 
 /** @category Macros */
@@ -429,8 +435,23 @@ export type TabularEnvironment =
   | 'rcases'
   | 'smallmatrix'
   | 'smallmatrix*'
+  // VisualTeX: amsmath/mathtools display and alignment environments
+  | 'eqnarray*'
+  | 'flalign'
+  | 'flalign*'
+  | 'alignat'
+  | 'alignat*'
+  | 'alignedat'
+  | 'subarray'
+  | 'cases*'
+  | 'dcases*'
+  | 'rcases*'
+  | 'drcases'
+  | 'drcases*'
   | CasesEnvironment
-  | MatrixEnvironment;
+  | MatrixEnvironment
+  // VisualTeX: LaTeX's tabular (text cells)
+  | 'tabular';
 
 /** @internal */
 export type Environment =

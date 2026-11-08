@@ -74,7 +74,7 @@ function caretDepth(model: CoreModel): number {
 export function ampersandAction(model: CoreModel, keys: KeyModifiers, rawLatex: boolean, alignRows: boolean): AmpersandAction {
   if (keys.isComposing || !plain(keys) || rawLatex) return "character";
   const environment = environmentAt(model);
-  if (environment === "aligned" || environment === "align" || environment === "align*") return "alignment-point";
+  if (environment !== undefined && /^(aligned|alignedat|align\*?|flalign\*?|alignat\*?)$/.test(environment)) return "alignment-point";
   if (alignRows && environment === undefined && caretDepth(model) === 0) return "alignment-marker";
   return environment !== undefined ? "next-column" : "character";
 }

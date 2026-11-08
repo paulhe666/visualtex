@@ -7,6 +7,7 @@ import { DOCUMENT_SETTING_ATTRS } from "./settings.ts";
 import { noteNodes } from "./notes.ts";
 import { imageNodeSpec } from "./images.ts";
 import { imageBoardNodes } from "./imageBoards.ts";
+import { figureNodes } from "./figures.ts";
 import { pageCommandNodeSpec } from "./pageCommands.ts";
 
 /** The kinds of alert (GitHub's, which Typora reads). */
@@ -52,17 +53,27 @@ const nodes: Record<string, NodeSpec> = {
     toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), ...styleOf(node.attrs) }, 0],
   },
 
-  /** A section: levels 1-3 numbered 1. / 1.1. / 1.1.1. by the document; 4-6 (Markdown's ####…) unnumbered. */
+  /** A section: levels 1-3 numbered 1. / 1.1. / 1.1.1. by the document; 4-6 (Markdown's ####…) unnumbered.
+   *  `unnumbered`: LaTeX's \section* — no number, and the counters stay as they are. */
   heading: {
     group: "block",
     content: "inline*",
     defining: true,
-    attrs: { ...id, level: { default: 1 }, ...paragraphStyle },
+    attrs: { ...id, level: { default: 1 }, unnumbered: { default: false }, ...paragraphStyle },
     parseDOM: [1, 2, 3, 4, 5, 6].map((level) => ({
       tag: "h" + level,
-      getAttrs: (dom: HTMLElement | string) => ({ ...idFrom(dom), ...paragraphStyleFrom(dom), level }),
+      getAttrs: (dom: HTMLElement | string) => ({
+        ...idFrom(dom),
+        ...paragraphStyleFrom(dom),
+        level,
+        unnumbered: typeof dom !== "string" && dom.hasAttribute("data-unnumbered"),
+      }),
     })),
-    toDOM: (node): DOMOutputSpec => ["h" + node.attrs.level, { ...withId(node.attrs), ...styleOf(node.attrs) }, 0],
+    toDOM: (node): DOMOutputSpec => [
+      "h" + node.attrs.level,
+      { ...withId(node.attrs), ...styleOf(node.attrs), ...(node.attrs.unnumbered ? { "data-unnumbered": "" } : {}) },
+      0,
+    ],
   },
 
   /** The document's title (LaTeX's \title + \maketitle): centred, unnumbered, at the top. */
@@ -73,6 +84,36 @@ const nodes: Record<string, NodeSpec> = {
     attrs: id,
     parseDOM: [{ tag: "p.vtx-title", priority: 60, getAttrs: idFrom }],
     toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), class: "vtx-title" }, 0],
+  },
+
+  /** An author of the title (\author; several authors are lines of their own, LaTeX's \and): centred under it. */
+  author: {
+    group: "block",
+    content: "inline*",
+    defining: true,
+    attrs: id,
+    parseDOM: [{ tag: "p.vtx-author", priority: 60, getAttrs: idFrom }],
+    toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), class: "vtx-author" }, 0],
+  },
+
+  /** The title's date (\date): centred under the authors. */
+  date: {
+    group: "block",
+    content: "inline*",
+    defining: true,
+    attrs: id,
+    parseDOM: [{ tag: "p.vtx-date", priority: 60, getAttrs: idFrom }],
+    toDOM: (node): DOMOutputSpec => ["p", { ...withId(node.attrs), class: "vtx-date" }, 0],
+  },
+
+  /** The abstract (\begin{abstract}): its paragraphs under the heading "Abstract" ("摘要" in a Chinese document). */
+  abstract: {
+    group: "block",
+    content: "(paragraph | math_display | bullet_list | ordered_list)+",
+    defining: true,
+    attrs: id,
+    parseDOM: [{ tag: "div.vtx-abstract", getAttrs: idFrom }],
+    toDOM: (node): DOMOutputSpec => ["div", { ...withId(node.attrs), class: "vtx-abstract" }, 0],
   },
 
   /** A quote; an alert (GitHub's and Typora's "> [!NOTE]") is a quote of a kind. */
@@ -303,6 +344,8 @@ const nodes: Record<string, NodeSpec> = {
   ...noteNodes,
 
   ...imageBoardNodes,
+
+  ...figureNodes,
 
   ...tableNodes({
     tableGroup: "block",

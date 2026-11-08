@@ -113,10 +113,7 @@ try {
 
   const bySource = new Map(result.map((item) => [item.latex, item]));
   for (const item of result) {
-    if (item.latex === String.raw`\qty{x}`) {
-      assert.equal(item.error, true, "Conflicting siunitx \\qty was unexpectedly added");
-      continue;
-    }
+    // \qty is physics' \quantity unless it is siunitx's \qty{<number>}{<unit>}
     assert.equal(item.error, false, `${item.latex} failed in the built MathLive kernel`);
     assert.equal(item.value, item.latex, `${item.latex} did not preserve the source command`);
   }
@@ -131,6 +128,7 @@ try {
     [String.raw`\outerproduct{p}{q}`, /pq|p.*q/],
     [String.raw`\flatfrac{a}{b}`, /a\s*\/\s*b/],
     [String.raw`A\qq{if}B`, /AifB/],
+    [String.raw`\qty{x}`, /x/],
   ]) {
     assert.match(
       bySource.get(source)?.renderedText ?? "",

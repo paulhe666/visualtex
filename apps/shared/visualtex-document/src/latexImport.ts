@@ -2,10 +2,13 @@
 // already reads (markdown.ts) — sections into headings, \textbf / \emph / \underline into marks, itemize /
 // enumerate into lists, quote into a quote, tabular into a table, lstlisting / verbatim into code blocks, math as
 // it is ($…$, \(…\), \[…\], equation / align / gather as numbered display formulas, \eqref as references).
-// Commands without a counterpart (\maketitle, \usepackage, \centering…) are dropped; their text stays.
+// \maketitle prints the title block (\title, \author, \date) where it stands; \begin{abstract} is the abstract; \section*
+// an unnumbered section. Commands without a counterpart (\usepackage, \centering…) are dropped; their text stays.
 import { resolveImageSource } from "./images.ts";
 import { bibliographyMarker, citeMarker, footnoteMarker } from "./latexMarkers.ts";
 import { PAGE_COMMAND_PATTERN, pageCommandLatex, parsePageCommand } from "./pageCommands.ts";
+import { CJK_TEXT } from "./titleBlock.ts";
+import { parseTabular, tableMarker } from "./latexTables.ts";
 
 /** Whether text is LaTeX document source (not just a formula). */
 export function looksLikeLatexSource(text: string): boolean {
@@ -14,6 +17,7 @@ export function looksLikeLatexSource(text: string): boolean {
     /\\(?:chapter|section|subsection|subsubsection|paragraph)\*?\s*\{/.test(text) ||
     /\\begin\{(?:itemize|enumerate|description|quote|quotation|tabular|table|figure|lstlisting|verbatim|center|abstract)\}/.test(text) ||
     /\\(?:textbf|textit|emph|underline|texttt)\s*\{/.test(text) ||
+    /\\maketitle\b/.test(text) ||
     PAGE_COMMAND_PATTERN.test(text)
   );
 }
@@ -93,19 +97,36 @@ export function graphicsPaths(source: string): string[] {
   return match ? [...match[1].matchAll(/\{([^{}]*)\}/g)].map((m) => m[1]) : [];
 }
 
+/** A caption's LaTeX as Markdown now (for a title, or a table's marker): its kept pieces back in, its \label out. */
+function captionMarkdown(latex: string, kept: string[]): string {
+  let text = finishText(inline(latex.replace(/\\label\s*\{[^{}]*\}/g, "").replace(/\s*\n\s*/g, " "), kept));
+  for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = text.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => kept[Number(n)]);
+  return text.trim();
+}
+
+/** A figure's captions: its last \caption, with those before it (subfigures') after it as (a) …, (b) … */
+function captionOf(body: string): string {
+  const captions: string[] = [];
+  for (const at of body.matchAll(/\\(?:sub)?caption\s*(?:\[[^\]]*\])?\s*(?=\{)/g)) {
+    const arg = group(body, at.index! + at[0].length);
+    if (arg) captions.push(arg.content.replace(/\\label\s*\{[^{}]*\}/g, "").replace(/\s*\n\s*/g, " ").trim());
+  }
+  if (!captions.length) return "";
+  const main = captions.pop()!;
+  return [main, ...captions.map((caption, i) => `(${String.fromCharCode(97 + i)}) ${caption}`)].filter(Boolean).join(" ");
+}
+
 /**
  * Images (DESIGN.md §11): a wrapfigure becomes an image at the start of the next paragraph (wrapped on its side);
  * figure / center / \centering groups and lines holding only \includegraphics become image lines; an
- * \includegraphics among text stays in the text. A caption becomes an italic line under the image line.
+ * \includegraphics among text stays in the text. A figure's caption is the figure's (figures.ts): the centred line
+ * "Figure 1: …" the Markdown reader takes as the caption of the image line before it; a wrapfigure's the image's
+ * title.
  */
 function figures(text: string, kept: string[]): string {
   const keep = (markdown: string) => {
     kept.push(markdown);
     return `\u0000${kept.length - 1}\u0000`;
-  };
-  const captionOf = (body: string) => {
-    const at = /\\caption\s*(?:\[[^\]]*\])?\s*(?=\{)/.exec(body);
-    return at ? group(body, at.index + at[0].length)?.content.trim() ?? "" : "";
   };
   // an image board as VisualTeX writes it: a picture of \linewidth units, one \put per image
   text = text.replace(
@@ -128,17 +149,27 @@ function figures(text: string, kept: string[]): string {
     const inner = graphicsWidth(graphics[1] ?? "");
     const options = fraction ? `width=${(fraction * (inner ?? 1)).toFixed(3)}\\linewidth` : graphics[1] ?? "";
     const html = graphicsHtml(options, graphics[2], /[lLiI]/.test(side) ? "left" : "right");
-    return html ? keep(html + " ") : "";
+    // its caption: the image's title, "Figure 1: …" (the Markdown reader's caption of a wrapped image)
+    const caption = captionOf(body);
+    const title = caption ? ` title="${`Figure 1: ${captionMarkdown(caption, kept)}`.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}"` : "";
+    return html ? keep(html.replace(/>$/, `${title}>`) + " ") : "";
   });
   // figure / center / a \centering group with images: an image line (and the caption under it)
   text = text.replace(/\\begin\{(figure|center|subfigure|minipage)\*?\}(?:\[[^\]]*\])?(?:\{[^{}]*\})?([\s\S]*?)\\end\{\1\*?\}/g, (whole, env: string, body: string) => {
     if (env === "subfigure" || env === "minipage") return whole;
     const images = [...body.matchAll(GRAPHICS)];
-    if (!images.length) return whole;
-    const align = env === "center" || /\\centering/.test(body) || env === "figure" ? "center" : /\\raggedleft/.test(body) ? "right" : "left";
+    // a board (taken aside above) in a figure
+    const board = env === "figure" ? [...body.matchAll(/\u0000(\d+)\u0000/g)].find((m) => /data-vtx-board/.test(kept[Number(m[1])] ?? "")) : undefined;
+    if (!images.length && !board) return whole;
+    const align = /\\raggedleft/.test(body) ? "right" : /\\raggedright/.test(body) ? "left" : env === "center" || /\\centering/.test(body) || env === "figure" ? "center" : "left";
     const caption = captionOf(body);
     const html = images.map((g) => graphicsHtml(g[1] ?? "", g[2])).filter(Boolean);
-    return (html.length ? keep(`\n\n<p align="${align}">${html.join(" ")}</p>\n\n`) : "") + (caption ? `\n\n*${caption}*\n\n` : "");
+    const line = board ? `\n\n${board[0]}\n\n` : html.length ? keep(`\n\n<p align="${align}">${html.join(" ")}</p>\n\n`) : "";
+    // a table in the same float stays (read with the tables, below)
+    const tabular = [...body.matchAll(/\\begin\{(tabular\*?|tabularx|tabulary)\}[\s\S]*?\\end\{\1\}/g)].map((m) => `\n\n${m[0]}\n\n`).join("");
+    // the caption: the figure's (figures.ts), a centred line the Markdown reader takes as it; without images, a line
+    if (!line) return (caption ? `\n\n*${caption}*\n\n` : "") + tabular;
+    return line + (caption && env === "figure" ? `\n\n<p align="center">Figure 1: ${caption}</p>\n\n` : caption ? `\n\n*${caption}*\n\n` : "") + tabular;
   });
   // {\centering …\par} / \noindent … lines with only images
   text = text.replace(/\{\\(centering|raggedleft|raggedright)\b((?:[^{}]|\{[^{}]*\})*?)\\par\s*\}/g, (whole, switch_: string, body: string) => {
@@ -385,7 +416,8 @@ function inline(text: string, kept: string[]): string {
         continue;
       }
     }
-    if (command === "footnote") {
+    // \thanks (in \author or \title): LaTeX prints it as a footnote
+    if (command === "footnote" || command === "thanks") {
       const arg = group(text, skipSpaces(text, skipOptional(text, j)));
       if (arg) {
         out += footnoteMarker(plainText(inline(arg.content, kept), kept));
@@ -497,26 +529,99 @@ function bibliographies(text: string, kept: string[]): string {
   });
 }
 
-/** A tabular as a GFM table (the first row is the header). */
-function tables(text: string, kept: string[]): string {
-  return text.replace(/\\begin\{tabular\}\s*(\{[^}]*\})?([\s\S]*?)\\end\{tabular\}/g, (_m, _spec: string, body: string) => {
-    const rows = body
-      .replace(/\\(hline|toprule|midrule|bottomrule|cline\{[^}]*\})/g, "")
-      .split(/\\\\/)
-      .map((row) => row.trim())
-      .filter(Boolean)
-      .map((row) => row.split(/(?<!\\)&/).map((cell) => inline(cell.trim(), kept).replace(/[{}]/g, "").replace(/\|/g, "\\|").replace(/\n+/g, " ")));
-    if (!rows.length) return "";
-    const width = Math.max(...rows.map((r) => r.length));
-    const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, k) => cells[k] ?? "").join(" | ")} |`;
-    kept.push(`\n\n${line(rows[0])}\n| ${Array.from({ length: width }, () => "---").join(" | ")} |\n${rows.slice(1).map(line).join("\n")}\n\n`);
-    return `\u0000${kept.length - 1}\u0000`;
-  });
+/** Where an environment ends, nested ones of the same name skipped: the index after its \end, or -1. */
+function environmentEnd(text: string, name: string, from: number): number {
+  const pattern = new RegExp(`\\\\(begin|end)\\{${name.replace(/\*/g, "\\*")}\\}`, "g");
+  pattern.lastIndex = from;
+  let depth = 1;
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    depth += match[1] === "begin" ? 1 : -1;
+    if (depth === 0) return match.index + match[0].length;
+  }
+  return -1;
 }
 
-/** \section{…} and its kin on lines of their own, as headings (\paragraph{…} as a bold run-in). */
+/** The tabular-like environments (latexTables.ts) and the arguments before their column specification. */
+const TABULARS: Record<string, number> = { tabular: 0, "tabular*": 1, tabularx: 1, tabulary: 1, longtable: 0, xtabular: 0, supertabular: 0, tabu: 0 };
+const TABULAR_BEGIN = /\\begin\{(tabular\*?|tabularx|tabulary|longtable|xtabular|supertabular|tabu)\}/g;
+
+/**
+ * Tables (latexTables.ts): every tabular, tabular*, tabularx, tabulary and longtable as the document's table with
+ * its caption — a table (or figure) float's \caption, a longtable's own — its spans, column alignment and rules,
+ * carried to the Markdown reader as a marker; threeparttable's notes and whatever else a float holds as text after it.
+ */
+function tables(text: string, kept: string[]): string {
+  const keep = (markdown: string) => {
+    kept.push(markdown);
+    return `\u0000${kept.length - 1}\u0000`;
+  };
+  const convert = (latex: string) => captionMarkdown(latex, kept);
+  /** The tabulars in a text as markers (the first one with the caption). */
+  const tabulars = (body: string, floatCaption: string | null): { text: string; found: number } => {
+    let out = "";
+    let last = 0;
+    let found = 0;
+    TABULAR_BEGIN.lastIndex = 0;
+    for (let match = TABULAR_BEGIN.exec(body); match; match = TABULAR_BEGIN.exec(body)) {
+      const name = match[1];
+      const end = environmentEnd(body, name, match.index + match[0].length);
+      if (end < 0) break;
+      let at = match.index + match[0].length;
+      // the width of tabular* / tabularx / tabulary, a position [t]
+      for (let k = 0; k < (TABULARS[name] ?? 0); k++) {
+        const arg = group(body, skipSpaces(body, at));
+        if (arg) at = arg.end;
+      }
+      at = skipOptional(body, at);
+      // tabu's "to \linewidth" / "spread 0pt"
+      const width = /^\s*(?:to|spread)\s*[-\d.]*\s*\\?[a-zA-Z]+/.exec(body.slice(at));
+      if (name === "tabu" && width) at += width[0].length;
+      const spec = group(body, skipSpaces(body, at));
+      const inside = body.slice(spec ? spec.end : at, end - `\\end{${name}}`.length);
+      const parsed = parseTabular(spec?.content ?? "", inside, convert);
+      const caption = found === 0 ? (floatCaption ?? parsed.caption) : parsed.caption;
+      parsed.table.caption = caption ? convert(caption) : null;
+      out += body.slice(last, match.index) + (parsed.table.rows.length ? keep(`\n\n${tableMarker(parsed.table)}\n\n`) : "");
+      found++;
+      last = end;
+      TABULAR_BEGIN.lastIndex = end;
+    }
+    return { text: out + body.slice(last), found };
+  };
+  /** threeparttable's notes: \item[a] … as lines after the table. */
+  const notes = (body: string) =>
+    body.replace(/\\begin\{tablenotes\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{tablenotes\}/g, (_m, items: string) =>
+      items
+        .split(/\\item\b/)
+        .slice(1)
+        .map((item) => {
+          const mark = /^\s*\[([^\]]*)\]/.exec(item);
+          return `\n\n${mark ? `<sup>${mark[1]}</sup> ` : ""}${item.slice(mark ? mark[0].length : 0).trim()}\n\n`;
+        })
+        .join(""),
+    );
+  // a table (or a figure) float holding tables: its caption the first table's; the rest of what it holds after them
+  text = text.replace(/\\begin\{(table|figure)(\*?)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\2\}/g, (whole, _env: string, _star: string, body: string) => {
+    if (!/\\begin\{(tabular\*?|tabularx|tabulary|longtable|xtabular|supertabular|tabu)\}/.test(body)) return whole;
+    const caption = captionOf(body.replace(/\\begin\{(tabular\*?|tabularx|tabulary|longtable)\}[\s\S]*?\\end\{\1\}/g, ""));
+    const rest = body
+      .replace(/\\(?:sub)?caption\s*(?:\[[^\]]*\])?\s*\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g, "")
+      .replace(/\\label\s*\{[^{}]*\}/g, "")
+      .replace(/\\(?:begin|end)\{(?:threeparttable|adjustbox|center|small|footnotesize)\}(?:\{[^{}]*\})?/g, "")
+      // \resizebox{\linewidth}{!}{…} and \scalebox{.8}{…} around a table: the group's braces go later
+      .replace(/\\(?:resizebox\*?|scalebox)\s*\{[^{}]*\}(?:\s*\{[^{}]*\})?/g, "")
+      .replace(/\\(?:centering|small|footnotesize|scriptsize|normalsize)\b/g, "");
+    const result = tabulars(rest, caption || null);
+    return `\n\n${notes(result.text)}\n\n`;
+  });
+  // the other tables (a longtable with its own caption)
+  return notes(tabulars(text, null).text);
+}
+
+/** \section{…} and its kin on lines of their own, as headings (\paragraph{…} as a bold run-in); \section*{…} as an
+ *  unnumbered heading (Pandoc's "{-}", which the Markdown reader takes). */
 function sections(text: string): string {
-  const pattern = /\\(chapter|section|subsection|subsubsection|paragraph)\*?\s*(\[[^\]]*\])?\s*(?=\{)/g;
+  const pattern = /\\(chapter|section|subsection|subsubsection|paragraph)(\*?)\s*(\[[^\]]*\])?\s*(?=\{)/g;
   let out = "";
   let last = 0;
   let match: RegExpExecArray | null;
@@ -525,7 +630,9 @@ function sections(text: string): string {
     if (!title) continue;
     const kind = match[1];
     const marker = kind === "chapter" || kind === "section" ? "#" : kind === "subsection" ? "##" : kind === "subsubsection" ? "###" : null;
-    out += text.slice(last, match.index) + (marker ? `\n\n${marker} ${title.content.trim()}\n\n` : `\n\n**${title.content.trim()}** `);
+    // (literal braces: grouping braces go at the end)
+    const unnumbered = match[2] ? " \u0004-\u0005" : "";
+    out += text.slice(last, match.index) + (marker ? `\n\n${marker} ${title.content.trim()}${unnumbered}\n\n` : `\n\n**${title.content.trim()}** `);
     last = title.end;
     pattern.lastIndex = title.end;
   }
@@ -561,6 +668,8 @@ function blocks(text: string): string {
         const env = begin[1];
         flushAligned();
         if (env === "center" || env === "flushright" || env === "flushleft") aligns.push(env === "center" ? "center" : env === "flushright" ? "right" : null);
+        // the abstract: Markdown's form of it (markdown.ts) around its paragraphs
+        if (env === "abstract") out.push("", `${prefix()}${MARKDOWN_ABSTRACT_OPEN}`);
         if (env === "itemize" || env === "description") lists.push("-");
         else if (env === "enumerate") lists.push("1.");
         else if (env === "quote" || env === "quotation") quote++;
@@ -576,6 +685,7 @@ function blocks(text: string): string {
         }
         if (env === "itemize" || env === "description" || env === "enumerate") lists.pop();
         else if (env === "quote" || env === "quotation") quote = Math.max(0, quote - 1);
+        if (env === "abstract") out.push("", `${prefix()}${MARKDOWN_ABSTRACT_CLOSE}`);
         out.push("");
         piece = piece.slice(end[0].length);
       }
@@ -630,22 +740,71 @@ function restoreKept(text: string, kept: string[]): string {
  *  show it so) and read back as the title (markdown.ts). */
 export const MARKDOWN_TITLE_OPEN = '<h1 align="center">';
 export const MARKDOWN_TITLE_CLOSE = "</h1>";
+/** The abstract: a div around its Markdown (markdown.ts). */
+export const MARKDOWN_ABSTRACT_OPEN = '<div class="abstract">';
+export const MARKDOWN_ABSTRACT_CLOSE = "</div>";
+
+/** `\name[…]{…}` taken out of the text (the first one's argument returned). */
+function takeCommand(text: string, name: string): { text: string; argument?: string } {
+  const pattern = new RegExp(`\\\\${name}\\s*(?:\\[[^\\]]*\\])?\\s*(?=\\{)`, "g");
+  let argument: string | undefined;
+  let out = "";
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    const arg = group(text, match.index + match[0].length);
+    if (!arg) continue;
+    argument ??= arg.content;
+    out += text.slice(last, match.index);
+    last = arg.end;
+    pattern.lastIndex = arg.end;
+  }
+  return { text: out + text.slice(last), argument };
+}
+
+/** The date \today prints: the day the file is read, in the document's language (ctex: 2026年11月7日). */
+function today(chinese: boolean): string {
+  const now = new Date();
+  if (chinese) return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+  return `${now.toLocaleString("en-US", { month: "long" })} ${now.getDate()}, ${now.getFullYear()}`;
+}
+
+/**
+ * The title block \maketitle prints: the title, each author (\and between them; \\ a line break in one) and the
+ * date, as lines marked \u0006 / \u0001 / \u0002 until the end, where they become Markdown's forms. No \date: none
+ * (the editor shows no date where none was written).
+ */
+function titleBlock(title: string | undefined, author: string | undefined, date: string | undefined, chinese: boolean): string {
+  const line = (marker: string, text: string) => `\n\n${marker}${text}\n\n`;
+  let out = title?.trim() ? line("\u0006", title.replace(/\\\\(\[[^\]]*\])?/g, " ").replace(/\s*\n\s*/g, " ").trim()) : "";
+  for (const one of (author ?? "").split(/\\and(?![A-Za-z])/)) {
+    const text = one.replace(/\\\\(\[[^\]]*\])?/g, "\u0003").replace(/\s*\n\s*/g, " ").replace(/\s*\u0003\s*/g, "\u0003").trim();
+    if (text) out += line("\u0001", text);
+  }
+  const day = date?.replace(/\\today(?![A-Za-z])/g, today(chinese)).replace(/\\\\(\[[^\]]*\])?/g, " ").replace(/\s*\n\s*/g, " ").trim();
+  if (day) out += line("\u0002", day);
+  return out;
+}
 
 /** LaTeX source as Markdown the document reads. */
 export function latexToMarkdown(source: string): string {
   let text = source.replace(/\r\n?/g, "\n");
   // Comments (an unescaped % to the end of the line).
   text = text.replace(/(^|[^\\])%.*$/gm, "$1");
-  // The body of a whole document; a \title shown by \maketitle as the document's title (a line marked \u0006 until
-  // the end, where it becomes Markdown's form of the title).
-  const titleAt = /\\title\s*(?=\{)/.exec(text);
-  const title = titleAt ? group(text, titleAt.index + titleAt[0].length)?.content.replace(/\s*\n\s*/g, " ").trim() : undefined;
+  // The body of a whole document; \title, \author and \date (in the preamble or the body) are shown by \maketitle where it
+  // stands (titleBlock), and print nothing themselves.
+  const chinese = /\\documentclass\s*(?:\[[^\]]*\])?\s*\{ctex|\\usepackage\s*(?:\[[^\]]*\])?\s*\{ctex/.test(text) || CJK_TEXT.test(text);
+  const titled = takeCommand(text, "title");
+  const authored = takeCommand(titled.text, "author");
+  const dated = takeCommand(authored.text, "date");
+  text = dated.text;
   const body = /\\begin\{document\}([\s\S]*?)(\\end\{document\}|$)/.exec(text);
   // page commands of the preamble act from the first page: they open the body
   const preamble = body ? text.slice(0, body.index) : "";
   const early = [...preamble.matchAll(PAGE_COMMANDS)].map((m) => m[0]).join("\n");
   if (body && early) body[1] = `${early}\n\n${body[1]}`;
-  if (body) text = (title && /\\maketitle/.test(body[1]) ? `\u0006${title.replace(/\\\\/g, " ")}\n\n` : "") + body[1];
+  if (body) text = body[1];
+  text = text.replace(/\\maketitle(?![A-Za-z])/, () => titleBlock(titled.argument, authored.argument, dated.argument, chinese));
   labelNumbers = countLabels(text);
   const kept: string[] = [];
   text = protectCode(text, kept);
@@ -668,5 +827,6 @@ export function latexToMarkdown(source: string): string {
   text = finishText(text);
   for (let pass = 0; pass < 3 && text.includes("\u0000"); pass++) text = restoreKept(text, kept);
   text = text.replace(/^\u0006[ \t]*(.*)$/m, (_m, line: string) => `${MARKDOWN_TITLE_OPEN}${line.trim()}${MARKDOWN_TITLE_CLOSE}`);
+  text = text.replace(/^([\u0001\u0002])[ \t]*(.*)$/gm, (_m, marker: string, line: string) => `<p align="center" class="${marker === "\u0001" ? "author" : "date"}">${line.trim().replace(/\u0003/g, "<br>")}</p>`);
   return text.replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

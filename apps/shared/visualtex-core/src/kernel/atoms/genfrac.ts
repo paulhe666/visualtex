@@ -1,4 +1,4 @@
-import type { MathstyleName, Style } from '../public/core-types';
+import type { LatexValue, MathstyleName, Style } from '../public/core-types';
 
 import { Atom } from '../core/atom-class';
 import type { AtomJson } from '../core/types';
@@ -13,6 +13,8 @@ export type GenfracOptions = {
   hasBarLine?: boolean;
   mathstyleName?: MathstyleName;
   style?: Style;
+  /** VisualTeX: the rule thickness of \above and \genfrac (absent: the default rule) */
+  barThickness?: LatexValue;
 };
 
 /**
@@ -35,6 +37,7 @@ export class GenfracAtom extends Atom {
   private readonly numerPrefix?: string;
   private readonly denomPrefix?: string;
   private readonly mathstyleName?: MathstyleName;
+  readonly barThickness?: LatexValue;
 
   constructor(
     above: readonly Atom[],
@@ -56,6 +59,7 @@ export class GenfracAtom extends Atom {
     this.mathstyleName = options?.mathstyleName;
     this.leftDelim = options?.leftDelim;
     this.rightDelim = options?.rightDelim;
+    if (options?.barThickness) this.barThickness = options.barThickness;
   }
 
   static fromJson(json: AtomJson): GenfracAtom {
@@ -76,6 +80,7 @@ export class GenfracAtom extends Atom {
     if (this.rightDelim) options.rightDelim = this.rightDelim;
     if (!this.hasBarLine) options.hasBarLine = false;
     if (this.mathstyleName) options.mathstyleName = this.mathstyleName;
+    if (this.barThickness) options.barThickness = this.barThickness;
     return { ...super.toJson(), ...options };
   }
 }

@@ -10,6 +10,12 @@ LaTeX uses for mathematics:
   Modified Version, so these fonts are renamed ("VTX Roman 10", ...).
 - RSFS script fonts (rsfs5/7/10), Type 1 by Taco Hoekwater. CTAN license: "other-free".
   To confirm before distribution.
+- Euler Roman (eurm5/7/10, upgreek's upright Greek), from the AMS Type 1 versions in
+  TeX Live. Copyright (c) 1997, 2009 American Mathematical Society. SIL Open Font
+  License 1.1, renamed ("VTX Euler Roman 10", ...).
+- stmaryrd fonts (stmary5/7/10), Type 1 versions from TeX Live (stmaryrd by Jeremy
+  Gibbons and Alan Jeffrey). LaTeX Project Public License; renamed ("VTX St Mary Road 10", ...).
+  To confirm before distribution.
 
 Each TeX character code c is mapped to U+E000+c (Private Use Area).
 The SIL Open Font License 1.1 text: https://openfontlicense.org

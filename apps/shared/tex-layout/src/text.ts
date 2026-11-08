@@ -1,8 +1,9 @@
 // Text in restricted horizontal mode: TeX's main loop for characters
 // (tex.web 1034-1044) with ligatures, kerns, boundary characters, inter-word
 // glue and space factors. No discretionaries (restricted horizontal mode).
-import { xnOverD } from "./arith.ts";
+import { div, xnOverD } from "./arith.ts";
 import { GLUE_NODE, KERN_NODE, NORMAL, newCharacter, newKern, type GlueSpec, type Node, type Tag } from "./nodes.ts";
+import { hpack } from "./pack.ts";
 import { KERN_FLAG, LIG_TAG, STOP_FLAG, type LigKern, type TeXFont } from "./tfm.ts";
 
 const NON_CHAR = 256;
@@ -57,8 +58,45 @@ function boundary(f: TeXFont): BoundaryInfo {
   return b;
 }
 
-/** A character of input text, or a space. */
-export type TextToken = { kind: "char"; code: number; tag?: Tag } | { kind: "space"; tag?: Tag };
+/**
+ * A character of input text, or a space; or an accented letter the font has
+ * no character for, set with TeX's \accent (`code` the letter, `accent` the
+ * accent character, `composed` the Unicode letter for a font that has it).
+ */
+export type TextToken =
+  | { kind: "char"; code: number; tag?: Tag }
+  | { kind: "space"; tag?: Tag }
+  | { kind: "accent"; accent: number; code: number; composed: number; below?: boolean; tag?: Tag };
+
+/**
+ * TeX's \accent (tex.web 1123-1125): the accent character over the letter,
+ * kerned to its centre and the font's slant, shifted by the difference of the
+ * letter's height and the x-height. A cedilla on a letter taller than 1ex is
+ * centred under it instead (ot1enc.def \c: \ooalign{#1\crcr\hidewidth\char24\hidewidth}).
+ */
+function makeAccent(f: TeXFont, accent: number, code: number, below: boolean, tag: Tag | undefined): Node[] {
+  const ai = f.charInfo(accent);
+  const x = f.param(5);
+  const s = f.param(1) / 65536;
+  const a = f.charWidth(ai);
+  const i = f.charInfo(code);
+  const t = f.param(1) / 65536;
+  const w = f.charWidth(i);
+  const h = f.charHeight(i);
+  let p: Node = newCharacter(f, accent, tag);
+  if (below && h !== x) {
+    // \ooalign: the letter, and the cedilla centred under it (\hidewidth on both sides)
+    const k = div(w - a, 2);
+    return [newCharacter(f, code, tag), newKern(k - w, tag), p, newKern(w - k - a, tag)];
+  }
+  if (h !== x) {
+    const box = hpack([p], 0, undefined, tag);
+    box.shift = x - h;
+    p = box;
+  }
+  const delta = Math.round((w - a) / 2 + h * t - x * s);
+  return [{ ...newKern(delta, tag), subtype: 2 } as Node, p, { ...newKern(-a - delta, tag), subtype: 2 } as Node, newCharacter(f, code, tag)];
+}
 
 /**
  * Typeset text tokens in one font, as TeX's main loop would in restricted
@@ -83,6 +121,14 @@ export function typesetText(tokens: TextToken[], f: TeXFont, spaceFactorStart = 
     if (t.kind === "space") {
       out.push({ type: GLUE_NODE, spec: spaceGlue(f, spaceFactor), subtype: NORMAL, tag: t.tag });
       i++;
+      continue;
+    }
+    if (t.kind === "accent") {
+      i++;
+      const has = (c: number) => c >= f.bc && c <= f.ec && f.charInfo(c).exists;
+      if (has(t.accent) && has(t.code)) out.push(...makeAccent(f, t.accent, t.code, !!t.below, t.tag));
+      else if (fallback?.charInfo(t.composed).exists) out.push(newCharacter(fallback, t.composed, t.tag));
+      spaceFactor = 1000;
       continue;
     }
     // A run of characters in one font: the ligature/kern main loop; characters

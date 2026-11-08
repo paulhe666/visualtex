@@ -102,6 +102,8 @@ export {
   bodyFontFamily,
   bracketLabel,
   equationLabels,
+  headingNumbers,
+  ownEquationTag,
   type EquationBrackets,
   type EquationNumbering,
   type HeadingNumbering,
@@ -159,3 +161,12 @@ export { formatPageNumber, hasPageNumbering, pageCommandLatex, pageLabels, parse
 export { richBlockViews, richBlocksPlugin, safeHtml } from "./richBlocks.ts";
 export { emojiOf } from "./emoji.ts";
 export { boardCommand, boardFixes, boardHeight, boardItems, boardRows, canonicalRow, isBoard, isBoardImage, lineAsBoard, DEFAULT_BOARD_LABELS, type BoardLabels, type BoardCommand } from "./imageBoards.ts";
+export {
+  abstractLabelPlugin,
+  documentHasCjk,
+  insertAbstract,
+  isTitleBlockLine,
+  leaveEmptyAuthorLine,
+  nextAuthor,
+} from "./titleBlock.ts";
+export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels } from "./figures.ts";

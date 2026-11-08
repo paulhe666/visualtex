@@ -50,6 +50,12 @@ export function fromJson(json: AtomJson | AtomJson[]): Atom | Atom[] {
 
   if (json.array) json.array = fromJson(json.array);
 
+  // VisualTeX: an array's @{...} and !{...} atoms (ArrayAtom.toJson)
+  if (Array.isArray(json.columns))
+    json.columns = json.columns.map((c: any) =>
+      Array.isArray(c?.gap) && c.gap.some((x: any) => !(x instanceof Atom)) ? { ...c, gap: fromJson(c.gap) } : c
+    );
+
   const type: AtomType | undefined = json.type;
   let result: Atom | undefined = undefined;
   if (type === 'accent') result = AccentAtom.fromJson(json);
