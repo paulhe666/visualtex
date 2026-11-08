@@ -4,7 +4,7 @@
 # and English and types what was spelled, as macOS Pinyin does.
 # encoding: utf-8
 
-config_version: '0.50.visualtex.1'
+config_version: '0.50.visualtex.2'
 
 schema_list:
   - schema: visualtex_pinyin
@@ -15,7 +15,6 @@ switcher:
   save_options:
     - full_shape
     - ascii_punct
-    - zh_hans
   fold_options: true
   abbreviate_options: true
   option_list_separator: '／'

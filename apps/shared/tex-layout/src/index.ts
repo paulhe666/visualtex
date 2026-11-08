@@ -12,6 +12,7 @@ import { hpack } from "./pack.ts";
 import { alignShift, caretBarHtml, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
 import { buildEditorGeometry, caretMetrics, type GeometryAtom } from "./editor-geometry.ts";
 import { shipOut, type ShipResult } from "./shipout.ts";
+import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
 import type { TeXFont, TfmData } from "./tfm.ts";
 import { NativeFont, type NativeMeasure } from "./native-font.ts";
 import { PathFont, type PathGlyphSet } from "./path-font.ts";
@@ -19,6 +20,7 @@ import type { Spacing } from "./spacing.ts";
 import { formulaSvgBody, type GlyphTable, type SvgFormula, type SvgOverlay } from "./svg.ts";
 
 export type { GlyphTable, SvgFormula } from "./svg.ts";
+export { fillLines, type FormulaLines, type PiecePlace, type PiecePlacer } from "./lines.ts";
 export { SPACING_DEFINITIONS, spacingPercent, type Spacing, type SpacingKey, type SpacingDefinition } from "./spacing.ts";
 
 export interface LayoutData extends LatexData {
@@ -219,6 +221,14 @@ export interface LayoutOptions {
    * Empty-slot markers span the same band, so typing into a slot never changes the caret.
    */
   caretBand?: () => { up: number; down: number } | null;
+  /**
+   * Edited formulas set on several lines (VisualTeX Anywhere: wrapped as the host field wraps its
+   * text): the formula is cut where TeX may break an in-line formula (after a relation or a binary
+   * operator of its outermost list) and each piece goes where the placer puts it. Called with the
+   * mathfield at every layout; null or absent: one line. The pieces and their places are left on
+   * the mathfield's geometry (EditorGeometry.lines).
+   */
+  lineLayout?: (mathfield: any) => PiecePlacer | null | undefined;
 }
 
 /** Chinese, Japanese and Korean characters: they stay in the formula's Chinese font. */
@@ -310,7 +320,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
    * recorded for the caret (MathEnv.atomScales) and empty slots and rows get
    * a place for their caret (LatexAdapter.editor).
    */
-  function layout(atoms: AtomLike[], display: boolean, editor = false) {
+  function layout(atoms: AtomLike[], display: boolean, editor = false, placer?: PiecePlacer | null) {
     syncLetterFonts();
     adapter.setSpacing(options.spacing?.() ?? null);
     const scales = editor ? new Map<Tag, number>() : undefined;
@@ -320,11 +330,18 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     try {
       const mlist = adapter.formula(atoms, display);
       const ts = new MathTypesetter(adapter.env);
-      const hl = ts.mlistToHlist(mlist, TEXT_STYLE, false);
+      // the break penalties of an in-line formula (tex.web 761) where it may go on several lines
+      const hl = ts.mlistToHlist(mlist, TEXT_STYLE, !!placer);
       const on: Node = { type: MATH_NODE, width: 0, subtype: 0 };
       const box = hpack([on, ...hl, { ...on }]);
       const ship = shipOut(box);
-      return { box, ship, regions: computeRegions(ship, caret.strut), scales };
+      if (placer) {
+        const placed = placePieces(box, ship, formulaPieces(box), placer);
+        if (placed) {
+          return { box: placed.box, ship: placed.ship, regions: computeRegions(placed.ship, caret.strut), scales, lines: placed.lines };
+        }
+      }
+      return { box, ship, regions: computeRegions(ship, caret.strut), scales, lines: undefined as FormulaLines | undefined };
     } finally {
       adapter.editor = false;
       adapter.env.editorBinSpacing = false;
@@ -464,7 +481,10 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     // a root environment (align, gather, ...) is the root atom itself
     const atoms = root.type === "array" ? [root] : root.branch("body") ?? [];
     const display = mathfield.options?.defaultMode !== "inline-math";
-    const { box, ship, regions, scales } = layout(atoms, display, true);
+    // explicit alignment markers move material by CSS: such a formula stays on one line
+    const aligned = atoms.some((a) => htmlClassOf(a as KernelAtom) === "visualtex-align-marker");
+    const placer = aligned ? null : options.lineLayout?.(mathfield) ?? null;
+    const { box, ship, regions, scales, lines } = layout(atoms, display, true, placer);
     propagateRegions(regions, root);
     // the root spans the whole formula (the kernel's hit-testing starts there)
     const empty = box.width === 0 && box.height === 0 && box.depth === 0;
@@ -487,6 +507,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
         ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
         : caret;
     const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret);
+    if (lines) geometry.lines = lines;
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
 

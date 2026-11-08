@@ -7,6 +7,7 @@ export const ANYWHERE_SUSPEND_EVENT = "visualtex-anywhere-suspend";
 export const ANYWHERE_KEY_EVENT = "visualtex-anywhere-key";
 export const ANYWHERE_STYLE_EVENT = "visualtex-anywhere-style";
 export const ANYWHERE_COMPOSE_EVENT = "visualtex-anywhere-compose";
+export const ANYWHERE_PIECES_EVENT = "visualtex-anywhere-pieces";
 
 export type AnywhereAnchorSource = "caret" | "field" | "pointer";
 
@@ -71,6 +72,35 @@ export function isAnywhereCompose(value: unknown): value is AnywhereCompose {
     typeof candidate.generation === "number" &&
     (candidate.phase === "update" || candidate.phase === "end") &&
     typeof candidate.text === "string"
+  );
+}
+
+/**
+ * Where the host field put the formula's pieces (it holds each piece's width
+ * in its text and wraps them as its own text): each piece's start from the
+ * first piece's, in points, y down (one place per piece the field has laid
+ * out, in order).
+ */
+export interface AnywherePieces {
+  generation: number;
+  places: [number, number][];
+  /** Where the held space starts (its anchor, before the first piece) and ends (after the last
+   *  piece), when the field tells. */
+  start?: [number, number] | null;
+  end?: [number, number] | null;
+  /** The end is the input method's estimate (the field did not tell it). */
+  endEstimated?: boolean;
+}
+
+export function isAnywherePieces(value: unknown): value is AnywherePieces {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AnywherePieces>;
+  return (
+    typeof candidate.generation === "number" &&
+    Array.isArray(candidate.places) &&
+    candidate.places.every(
+      (place) => Array.isArray(place) && place.length === 2 && place.every((n) => typeof n === "number" && Number.isFinite(n)),
+    )
   );
 }
 
@@ -177,10 +207,17 @@ export const commitAnywhereImage = (generation: number, dataBase64: string) =>
 export const dismissAnywhere = (generation: number, keepDraft: boolean) =>
   invoke<void>("anywhere_dismiss", { generation, keepDraft });
 
-/** The width the host field holds for the formula drawn in its line, and
- * the formula's text (what the field gets if it ends the composition). */
-export const reportAnywhereMarked = (generation: number, text: string, width: number, caretX: number) =>
-  invoke<void>("anywhere_marked", { generation, text, width, caretX });
+/** The formula's text (what the field gets if it ends the composition), its
+ * caret from the formula's start (x, and y down to the caret's line), and
+ * the widths of the pieces the field holds for it (TeX's break places). */
+export const reportAnywhereMarked = (
+  generation: number,
+  text: string,
+  width: number,
+  caretX: number,
+  caretY: number,
+  pieces: number[],
+) => invoke<void>("anywhere_marked", { generation, text, width, caretX, caretY, pieces });
 
 /** The formula's caret is in text (\text{}): the input method spells pinyin there. */
 export const reportAnywhereMode = (generation: number, text: boolean) =>

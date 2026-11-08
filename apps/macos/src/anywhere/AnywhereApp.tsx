@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
 import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
-import { editingModelOf, setFormulaCaretBand, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
+import {
+  editingModelOf,
+  redrawOpenFormulas,
+  setFormulaCaretBand,
+  setFormulaLineLayout,
+  visualTexEditingCore,
+} from "../editor/visualTexLayoutRuntime";
 import { useHistoryManager } from "../history/EditorSession";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import { useEditorStore } from "../stores/editorStore";
@@ -29,6 +35,7 @@ import {
   ANYWHERE_ACTIVATE_EVENT,
   ANYWHERE_COMPOSE_EVENT,
   ANYWHERE_KEY_EVENT,
+  ANYWHERE_PIECES_EVENT,
   ANYWHERE_STYLE_EVENT,
   ANYWHERE_SUSPEND_EVENT,
   captureAnywhereScreenshot,
@@ -39,6 +46,7 @@ import {
   isAnywhereActivation,
   isAnywhereCompose,
   isAnywhereKey,
+  isAnywherePieces,
   isAnywhereStyle,
   isAnywhereSuspension,
   listenAnywhere,
@@ -135,10 +143,23 @@ function cssColor(color?: string | null) {
   return `rgba(${channel(1)}, ${channel(3)}, ${channel(5)}, ${(channel(7) / 255).toFixed(3)})`;
 }
 
+/** sp per em of the layout engine (10pt at 65536 sp/pt). */
+const SP_PER_EM = 10 * 65536;
+
+type FormulaLines = { originX: number; pieces: { width: number; x: number; y: number }[] };
+
+/** The first row's formula set on several lines (the engine's geometry), if it is. */
+function formulaLines(): FormulaLines | null {
+  const mathfield = (firstField() as unknown as { _mathfield?: { visualTexGeometry?: { lines?: FormulaLines } } } | null)?._mathfield;
+  return mathfield?.visualTexGeometry?.lines ?? null;
+}
+
 /**
- * The drawn formula in the strip's field: its origin (where its ink starts),
- * its baseline (the bottom of the layout's strut, whose top is the box's
- * top) and the width its ink takes.
+ * The drawn formula in the strip's field: its origin (where its first
+ * piece starts: on a formula set on several lines, lines that start further
+ * left lie left of it), its baseline (the first line's: the bottom of the
+ * layout's strut, whose top is the box's top), the width its ink takes and
+ * its font size.
  */
 function formulaBox() {
   const latex = firstField()?.shadowRoot?.querySelector<HTMLElement>(".ML__latex");
@@ -147,9 +168,99 @@ function formulaBox() {
   const style = getComputedStyle(latex);
   const inkLeft = parseFloat(style.marginLeft) || 0;
   const inkRight = parseFloat(style.marginRight) || 0;
+  const fontPx = parseFloat(style.fontSize) || 0;
   const strut = latex.querySelector<HTMLElement>(":scope > .ML__strut");
   const baseline = strut ? strut.getBoundingClientRect().bottom : rect.top + rect.height * 0.75;
-  return { left: rect.left - inkLeft, baseline, width: rect.width + inkLeft + inkRight };
+  const origin = ((formulaLines()?.originX ?? 0) / SP_PER_EM) * fontPx;
+  return { left: rect.left - inkLeft + origin, baseline, width: rect.width + inkLeft + inkRight - origin, fontPx };
+}
+
+/**
+ * Covers over the host field's held space, in its background colour, under the formula: the field
+ * draws its composition underline (Chrome in its accent colour, whatever the input method asks),
+ * the selected anchor's highlight and its caret there; the held space is only spaces, so nothing of
+ * the field's own text is covered. One per line of the formula, the field's line tall, from where
+ * the field put the line's first piece to where the line's formula ends (the last line: to where
+ * the held space ends, when the field tells). `line`: the field's line height and descent.
+ */
+function placeCovers(
+  layer: HTMLElement | null,
+  background: string | null,
+  line: FieldLine | null,
+  places: [number, number][],
+  start: [number, number] | null,
+  end: [number, number] | null,
+): { right: number; bottom: number } | null {
+  if (!layer) return null;
+  const box = formulaBox();
+  const lines = formulaLines();
+  const covers: { left: number; right: number; top: number; bottom: number }[] = [];
+  if (box && lines && background && line && places.length) {
+    const px = box.fontPx / SP_PER_EM;
+    const byLine = new Map<number, { left: number; right: number }>();
+    lines.pieces.forEach((piece, index) => {
+      if (!places[index]) return;
+      const y = Math.round(piece.y * px * 4) / 4;
+      const left = box.left + piece.x * px;
+      const right = left + piece.width * px;
+      const known = byLine.get(y);
+      if (known) {
+        known.left = Math.min(known.left, left);
+        known.right = Math.max(known.right, right);
+      } else byLine.set(y, { left, right });
+    });
+    const ys = [...byLine.keys()].sort((a, b) => a - b);
+    ys.forEach((y, index) => {
+      const span = byLine.get(y)!;
+      // the first line from the anchor (the selected hair space before the formula)
+      const left = index === 0 ? Math.min(span.left, box.left + (start?.[0] ?? -3)) - 1 : span.left - 1;
+      // a line the field broke after holds its last piece to about a space past the formula; the
+      // last line's held space ends where the field says (else a little past the formula)
+      const last = index === ys.length - 1;
+      let right = span.right + (last ? 1 : Math.max(4, line.height * 0.6));
+      // (the field's caret may stand at its end: two pixels more)
+      if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
+      const baseline = box.baseline + y;
+      covers.push({ left, right, top: baseline - (line.height - line.descent), bottom: baseline + line.descent + 1 });
+    });
+  }
+  while (layer.children.length > covers.length) layer.lastElementChild?.remove();
+  while (layer.children.length < covers.length) layer.appendChild(document.createElement("div"));
+  // the panel holds the covers too (one may reach past the formula, to the end of the held space)
+  const extent = covers.length
+    ? { right: Math.max(...covers.map((cover) => cover.right)), bottom: Math.max(...covers.map((cover) => cover.bottom)) }
+    : null;
+  covers.forEach((cover, index) => {
+    const element = layer.children[index] as HTMLElement;
+    element.style.cssText =
+      `position:fixed;pointer-events:none;background:${background};left:${cover.left.toFixed(2)}px;` +
+      `top:${cover.top.toFixed(2)}px;width:${(cover.right - cover.left).toFixed(2)}px;height:${(cover.bottom - cover.top).toFixed(2)}px`;
+  });
+  return extent;
+}
+
+/** The widths (points) of the pieces the host field holds for the formula. */
+function pieceWidths(box: { fontPx: number } | null) {
+  const lines = formulaLines();
+  if (!box || !lines) return [];
+  return lines.pieces.map((piece) => Math.round((piece.width / SP_PER_EM) * box.fontPx * 100) / 100);
+}
+
+/** The line of the formula the editor's caret is on, from the first line (points, y down): the
+ *  line of the item of the formula's top level the caret is in (or after). */
+function caretLineOffset(box: { fontPx: number } | null) {
+  type Atom = { parent?: Atom };
+  type Model = { root: Atom; position: number; at(offset: number): Atom | undefined; offsetOf(atom: Atom): number };
+  const mathfield = (firstField() as unknown as {
+    _mathfield?: { model?: Model; visualTexGeometry?: { lines?: FormulaLines; stops: ({ baseline: number } | null)[] } };
+  } | null)?._mathfield;
+  const model = mathfield?.model;
+  const geometry = mathfield?.visualTexGeometry;
+  if (!box || !model || !geometry?.lines) return 0;
+  let top = model.at(model.position);
+  while (top?.parent && top.parent !== model.root) top = top.parent;
+  const stop = top && top.parent === model.root ? geometry.stops[model.offsetOf(top)] : null;
+  return stop ? (stop.baseline / SP_PER_EM) * box.fontPx : 0;
 }
 
 /**
@@ -441,7 +552,8 @@ function caretOffset(box: { left: number } | null) {
   const mathfield = (field as unknown as { _mathfield?: CoreMathfield } | null)?._mathfield;
   const caret = mathfield ? visualTexEditingCore.caretRect(mathfield) : null;
   if (!box || !caret || !Number.isFinite(caret.left)) return 0;
-  return Math.max(0, caret.left - box.left);
+  // on a later line of a formula set on several lines the caret may stand left of the formula's start
+  return formulaLines() ? caret.left - box.left : Math.max(0, caret.left - box.left);
 }
 
 function sameLayout(a: AnywhereLayout | null, b: AnywhereLayout) {
@@ -467,8 +579,12 @@ export function AnywhereApp() {
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const [zoom, setZoom] = useState(() => formulaZoom(18));
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   /** The host field's line: the formula's caret is as tall. */
   const [fieldLine, setFieldLine] = useState<FieldLine | null>(null);
+  const fieldLineRef = useRef<FieldLine | null>(null);
+  fieldLineRef.current = fieldLine;
   const lastSizeLogRef = useRef("");
   const [notice, setNotice] = useState<string | null>(null);
   const [outputMode, setOutputMode] = useState<AnywhereOutputMode>("source");
@@ -488,6 +604,12 @@ export function AnywhereApp() {
   const [textColor, setTextColor] = useState<string | null>(null);
   const inputMethodRef = useRef(false);
   const lastMarkedRef = useRef<string | null>(null);
+  /** Where the host field put the formula's pieces (points from the first's start), and where its
+   *  held space ends. */
+  const piecePlacesRef = useRef<[number, number][]>([]);
+  const pieceStartRef = useRef<[number, number] | null>(null);
+  const pieceEndRef = useRef<[number, number] | null>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
   const lastModeRef = useRef<boolean | null>(null);
   const composingRef = useRef(false);
   const generationRef = useRef(0);
@@ -682,11 +804,13 @@ export function AnywhereApp() {
     const box = formulaBox();
     const width = box ? Math.ceil(box.width + 1) : 0;
     const caretX = Math.round(caretOffset(box));
+    const caretY = Math.round(caretLineOffset(box));
+    const pieces = pieceWidths(box);
     const text = formulaText(useEditorStore.getState().latexFormatProfile);
-    const key = `${width}\u0000${caretX}\u0000${text}`;
+    const key = `${width}\u0000${caretX}\u0000${caretY}\u0000${pieces.join(",")}\u0000${text}`;
     if (key !== lastMarkedRef.current) {
       lastMarkedRef.current = key;
-      void reportAnywhereMarked(generation, text, width, caretX).catch((error) =>
+      void reportAnywhereMarked(generation, text, width, caretX, caretY, pieces).catch((error) =>
         console.error("Unable to hold the formula's space in the field", error),
       );
     }
@@ -719,6 +843,14 @@ export function AnywhereApp() {
     // holds for it, on the line's baseline; on the caret line (pasting) the
     // strip's middle sits on the line.
     const box = inputMethodRef.current ? formulaBox() : null;
+    const covers = placeCovers(
+      coverRef.current,
+      inputMethodRef.current ? fieldBackgroundRef.current : null,
+      fieldLineRef.current,
+      piecePlacesRef.current,
+      pieceStartRef.current,
+      pieceEndRef.current,
+    );
     const layout: AnywhereLayout = {
       width: Math.ceil(
         Math.max(
@@ -738,12 +870,48 @@ export function AnywhereApp() {
       anchorY: box ? box.baseline : rect.top + rect.height / 2,
     };
     if (inputMethodRef.current) reportInline();
+    if (covers) {
+      layout.width = Math.max(layout.width, Math.ceil(covers.right + 1));
+      layout.height = Math.max(layout.height, Math.ceil(covers.bottom + 1));
+    }
     if (sameLayout(lastLayoutRef.current, layout)) return;
     lastLayoutRef.current = layout;
     void reportAnywhereLayout(generation, layout).catch((error) =>
       console.error("Unable to place VisualTeX Anywhere", error),
     );
   }, [reportInline]);
+
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+
+  // In the field's line (input method) the formula is set on lines as the
+  // field wraps its text: each piece where the field put the space it holds
+  // for it (a piece the field has not placed yet continues the line). A
+  // formula of several rows stays as it is.
+  useEffect(() => {
+    setFormulaLineLayout(() => {
+      if (!inputMethodRef.current || stripFields().length > 1) return null;
+      return (widths) => {
+        const box = formulaBox();
+        const fontPx = box?.fontPx || EDITOR_BASE_FONT_PX * zoomRef.current;
+        // the field decides each piece's line and where each line starts; on
+        // a line, the pieces are spaced as in the formula (the field's space
+        // for them is the same to half a filler)
+        const out: ({ x: number; y: number } | null)[] = [];
+        widths.forEach((_, index) => {
+          const place = piecePlacesRef.current[index];
+          const before = piecePlacesRef.current[index - 1];
+          const drawn = out[index - 1];
+          if (!place) out.push(null);
+          else if (index > 0 && before && drawn && Math.abs(place[1] - before[1]) < 0.5) {
+            out.push({ x: drawn.x + widths[index - 1], y: place[1] / fontPx });
+          } else out.push({ x: place[0] / fontPx, y: place[1] / fontPx });
+        });
+        return out;
+      };
+    });
+    return () => setFormulaLineLayout(null);
+  }, []);
 
   const activate = useCallback(
     async (activation: AnywhereActivation) => {
@@ -753,8 +921,13 @@ export function AnywhereApp() {
       lastMarkedRef.current = null;
       lastModeRef.current = null;
       composingRef.current = false;
+      piecePlacesRef.current = [];
+      pieceStartRef.current = null;
+      pieceEndRef.current = null;
       inputMethodRef.current = Boolean(activation.inputMethod);
       setInputMethod(Boolean(activation.inputMethod));
+      // set on several lines only in the field's line (input method)
+      redrawOpenFormulas();
       applySystemAppearance();
       const kept = activation.resume && hasFormula() ? currentDocument() : null;
       // The size first: a size the field reports while the settings are read
@@ -898,6 +1071,25 @@ export function AnywhereApp() {
           compose(message.phase, message.text, composingRef);
         }
       }),
+      listenAnywhere(ANYWHERE_PIECES_EVENT, isAnywherePieces, (pieces) => {
+        if (pieces.generation !== generationRef.current || !inputMethodRef.current) return;
+        const same =
+          pieces.places.length === piecePlacesRef.current.length &&
+          pieces.places.every((place, index) => {
+            const known = piecePlacesRef.current[index];
+            return Math.abs(place[0] - known[0]) < 0.25 && Math.abs(place[1] - known[1]) < 0.25;
+          });
+        pieceStartRef.current = pieces.start ?? null;
+        // an estimated end is no place to cover to (it may lie past the held space, over the field's text)
+        pieceEndRef.current = pieces.endEstimated ? null : pieces.end ?? null;
+        if (same) {
+          measureRef.current();
+          return;
+        }
+        piecePlacesRef.current = pieces.places;
+        redrawOpenFormulas();
+        measureRef.current();
+      }),
       listenAnywhere(ANYWHERE_STYLE_EVENT, isAnywhereStyle, (style) => {
         if (style.generation !== generationRef.current || !inputMethodRef.current) return;
         if (style.fontSize) setZoom(formulaZoom(0, style.fontSize, style.xHeight));
@@ -906,7 +1098,10 @@ export function AnywhereApp() {
           setTextColor(cssColor(style.textColor));
           fieldInkRef.current = opaqueHex(style.textColor) ?? fieldInkRef.current;
         }
-        if (style.backgroundColor) fieldBackgroundRef.current = opaqueHex(style.backgroundColor);
+        if (style.backgroundColor) {
+          fieldBackgroundRef.current = opaqueHex(style.backgroundColor);
+          measureRef.current();
+        }
       }),
     ];
     return () => {
@@ -1105,6 +1300,7 @@ export function AnywhereApp() {
       data-output-mode={outputMode}
       style={textColor ? ({ "--anywhere-text-color": textColor } as CSSProperties) : undefined}
     >
+      <div ref={coverRef} className="anywhere-covers" aria-hidden="true" />
       <div className="anywhere-formula">
         <MathEditor
           ref={editorRef}

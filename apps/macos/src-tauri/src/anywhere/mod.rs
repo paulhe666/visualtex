@@ -47,10 +47,21 @@ const STYLE_EVENT: &str = "visualtex-anywhere-style";
 /// Pinyin spelled in the formula's text: the editor's composition.
 #[cfg(target_os = "macos")]
 const COMPOSE_EVENT: &str = "visualtex-anywhere-compose";
+/// Where the field put the formula's pieces (it wraps them as its text).
+#[cfg(target_os = "macos")]
+const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
+/// The most pieces a formula is cut into for the field (a longer formula's
+/// last piece holds the rest).
+const MAX_PIECES: usize = 512;
 /// The shortcut switched the field to the input method; a field that has
 /// not activated it by then does not take text (or the switch failed).
 #[cfg(target_os = "macos")]
-const INPUT_METHOD_WAIT: Duration = Duration::from_millis(900);
+const INPUT_METHOD_WAIT: Duration = Duration::from_millis(1500);
+/// When the field has not switched to the input method after this long, the "Select the previous
+/// input source" shortcut is sent once more (macOS sometimes drops the first one; the formula then
+/// fell back to the pasting strip, somewhere else, and took the keys there).
+#[cfg(target_os = "macos")]
+const SWITCH_RETRY: Duration = Duration::from_millis(450);
 /// The input method reconnects to VisualTeX within a second of being started
 /// or of VisualTeX starting (input-method/Sources/AppLink.swift).
 #[cfg(target_os = "macos")]
@@ -532,7 +543,15 @@ fn begin_input_method(app: &AppHandle, display: bool) {
     let _ = std::thread::Builder::new()
         .name("visualtex-ime-wait".to_string())
         .spawn(move || {
-            std::thread::sleep(INPUT_METHOD_WAIT);
+            std::thread::sleep(SWITCH_RETRY);
+            let still = session()
+                .map(|session| session.awaiting_input_method == generation && session.generation == generation)
+                .unwrap_or(false);
+            if still && !already && ime::current_source(&app).as_deref() != Some(ime::SOURCE_ID) {
+                log(&format!("input method switch not taken gen={generation}: shortcut sent again"));
+                ime::switch_back();
+            }
+            std::thread::sleep(INPUT_METHOD_WAIT.saturating_sub(SWITCH_RETRY));
             let waiting = session()
                 .map(|session| session.awaiting_input_method == generation && session.generation == generation)
                 .unwrap_or(false);
@@ -739,6 +758,7 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
         "activate" | "geometry" => input_method_caret_reported(app, message),
         "start" => input_method_started(app, message),
         "key" => input_method_key(app, message),
+        "pieces" => input_method_pieces(app, message),
         "compose" => {
             let generation = session()
                 .ok()
@@ -981,6 +1001,56 @@ fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
     }
     if let (Some(activation), true, Some(window)) = (activation, ready, app.get_webview_window(WINDOW_LABEL)) {
         send_activation(app, &window, activation);
+    }
+}
+
+/// Where the field put the formula's pieces (points from the first piece's
+/// start, y down): for the page, which draws each piece there.
+#[cfg(target_os = "macos")]
+fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
+    let Some(generation) = session()
+        .ok()
+        .filter(|session| session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod)
+        .map(|session| session.generation)
+    else {
+        return;
+    };
+    let places: Vec<[f64; 2]> = message
+        .get("places")
+        .and_then(|value| value.as_array())
+        .map(|places| {
+            places
+                .iter()
+                .take(MAX_PIECES)
+                .map_while(|place| {
+                    let pair = place.as_array()?;
+                    let x = pair.first()?.as_f64()?;
+                    let y = pair.get(1)?.as_f64()?;
+                    (x.is_finite() && y.is_finite() && x.abs() < 20000.0 && y.abs() < 20000.0).then_some([x, y])
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // where the held space starts (its anchor) and ends (the formula's last line), when the field tells
+    let point = |key: &str| {
+        message
+            .get(key)
+            .and_then(|value| value.as_array())
+            .and_then(|pair| Some([pair.first()?.as_f64()?, pair.get(1)?.as_f64()?]))
+            .filter(|[x, y]| x.is_finite() && y.is_finite() && x.abs() < 20000.0 && y.abs() < 20000.0)
+    };
+    let (start, end) = (point("start"), point("end"));
+    // an end the field did not tell (the input method's estimate)
+    let estimated = message
+        .get("end")
+        .and_then(|value| value.as_array())
+        .map(|end| end.len() > 2)
+        .unwrap_or(false);
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.emit(
+            PIECES_EVENT,
+            serde_json::json!({ "generation": generation, "places": places, "start": start, "end": end, "endEstimated": estimated }),
+        );
     }
 }
 
@@ -1384,7 +1454,14 @@ pub(crate) fn anywhere_dismiss(app: AppHandle, generation: u64, keep_draft: bool
 /// The formula's text for the field (the input method shows it as marked
 /// text while the formula is open).
 #[tauri::command]
-pub(crate) fn anywhere_marked(generation: u64, text: String, width: f64, caret_x: Option<f64>) -> Result<(), String> {
+pub(crate) fn anywhere_marked(
+    generation: u64,
+    text: String,
+    width: f64,
+    caret_x: Option<f64>,
+    caret_y: Option<f64>,
+    pieces: Option<Vec<f64>>,
+) -> Result<(), String> {
     if text.len() > 256 * 1024 {
         return Err("The formula is too long to show".to_string());
     }
@@ -1397,18 +1474,28 @@ pub(crate) fn anywhere_marked(generation: u64, text: String, width: f64, caret_x
         if current && width.is_finite() {
             // The field holds the formula's width; `text` is what it gets if
             // it ends the composition itself.
+            // The pieces TeX may break the formula into (points wide): the
+            // field holds each and wraps them as its own text.
+            let pieces: Vec<f64> = pieces
+                .unwrap_or_default()
+                .into_iter()
+                .take(MAX_PIECES)
+                .map(|piece| if piece.is_finite() { piece.clamp(0.0, 8192.0) } else { 0.0 })
+                .collect();
             ime::send(serde_json::json!({
                 "t": "inline",
                 "width": width.clamp(0.0, 4096.0),
                 "text": text,
                 "caretX": caret_x.filter(|value| value.is_finite()).unwrap_or(0.0),
+                "caretY": caret_y.filter(|value| value.is_finite()).unwrap_or(0.0).clamp(-8192.0, 8192.0),
+                "pieces": pieces,
             }));
         }
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (generation, text, width, caret_x);
+        let _ = (generation, text, width, caret_x, caret_y, pieces);
         Ok(())
     }
 }

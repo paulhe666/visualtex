@@ -298,7 +298,10 @@ pub(super) fn switch_in(app: &AppHandle, previous: &str) -> Result<(), String> {
         if !select(app, SOURCE_ID) || !select(app, previous) {
             return Err("macOS refused to select the VisualTeX input source".to_string());
         }
-        thread::sleep(Duration::from_millis(30));
+        // The selections reach the application (it re-selects `previous`) a moment later: a
+        // shortcut sent before that switched it to VisualTeX and the late re-selection straight
+        // back, ending the formula as it opened ("field kept the text").
+        thread::sleep(Duration::from_millis(200));
     }
     // The shortcut that opened the formula is still held: Control-Option
     // with the system shortcut's Control would be another shortcut.

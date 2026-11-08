@@ -2,11 +2,12 @@
 // input-method/build/VisualTeX Input.app:
 // - the Swift sources compiled with swiftc against librime (RIME, BSD
 //   licence), which goes into Contents/Frameworks;
-// - RIME's data in Contents/SharedSupport/rime: VisualTeX's default.yaml and
-//   pinyin schema (input-method/Rime), the Luna Pinyin dictionary, the essay
-//   language model and the prelude presets (LGPL-3.0, RIME developers), the
-//   OpenCC tables for Simplified Chinese (Apache-2.0), and the tables
-//   rime_deployer prebuilds from them (so the first keystroke is not slow);
+// - RIME's data in Contents/SharedSupport/rime: VisualTeX's default.yaml,
+//   pinyin schema and dictionary (input-method/Rime), the dictionary tables
+//   and spelling rules of 万象拼音 (wanxiang, amzxyz/rime_wanxiang, a pinned
+//   release, CC-BY-4.0: input-method/Rime/NOTICE-wanxiang.txt), the prelude
+//   presets (LGPL-3.0, RIME developers), and the tables rime_deployer
+//   prebuilds from them (so the first keystroke is not slow);
 // - the menu icon as a TIFF, Info.plist with the app's version, and a build
 //   id (Contents/Resources/build-id) the app compares to decide whether to
 //   update the copy in ~/Library/Input Methods (src-tauri/src/anywhere/ime.rs).
@@ -30,11 +31,12 @@ if (process.platform !== "darwin") {
 const RIME_RELEASE = "https://github.com/rime/librime/releases/download/1.17.0";
 const DOWNLOADS = [
   { name: "rime-mac.tar.bz2", url: `${RIME_RELEASE}/rime-33e7814-macOS-universal.tar.bz2`, sha256: "11d8dc663c6ec06d5ccb6111ba664a9e7b631b703ac6acd07cffbac664021850" },
-  { name: "rime-deps-mac.tar.bz2", url: `${RIME_RELEASE}/rime-deps-33e7814-macOS-universal.tar.bz2`, sha256: "dfe6047e87be271963d7466bd1a6e3d9e660c30e5e73e4bb94e8782c0a6ac8df" },
   { name: "rime-prelude.tar.gz", url: "https://github.com/rime/rime-prelude/archive/082425ea0684bca36474415d4a0e8db9b016487e.tar.gz", sha256: "66239ba4745d54471e5ce5540b45e86ec663ff5dba004cb23c95531a3bdec00f" },
-  { name: "rime-essay.tar.gz", url: "https://github.com/rime/rime-essay/archive/054920de4f54c9e5994276a96a4fc2a35cb51aa3.tar.gz", sha256: "3339b40aae91b0216d393aeccc6a8f7daad56a1f3a5e1ffcf464c80690d1b6ce" },
-  { name: "rime-luna-pinyin.tar.gz", url: "https://github.com/rime/rime-luna-pinyin/archive/56b934b099dfbeab842320f13aa8b461a6ab3e42.tar.gz", sha256: "876c7ba559794f476abf7195a255aea29000cee281e6f5ec664928dce018bd90" },
+  // 万象拼音 v18.1.10 (2026-11-07), its base package: dictionary tables and spelling rules
+  { name: "rime-wanxiang-base.zip", url: "https://github.com/amzxyz/rime_wanxiang/releases/download/v18.1.10/rime-wanxiang-base.zip", sha256: "ddebf0372a2a3d9d8f7a5017704b2afd7397a961c32be490a91e49ec3ee90999" },
 ];
+// The wanxiang tables visualtex_wanxiang.dict.yaml imports (Rime/), and its spelling rules.
+const WANXIANG_TABLES = ["zi", "jichu", "cuoyin", "duoyin", "diming", "mingren"];
 
 const appDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = join(appDirectory, "input-method");
@@ -60,12 +62,12 @@ for (const download of DOWNLOADS) {
 }
 const unpacked = join(cache, "unpacked");
 rmSync(unpacked, { recursive: true, force: true });
-mkdirSync(join(unpacked, "deps"), { recursive: true });
+mkdirSync(unpacked, { recursive: true });
 execFileSync("tar", ["-xjf", join(cache, "downloads", "rime-mac.tar.bz2"), "-C", unpacked]);
-execFileSync("tar", ["-xjf", join(cache, "downloads", "rime-deps-mac.tar.bz2"), "-C", join(unpacked, "deps"), "share/opencc"]);
-for (const name of ["rime-prelude", "rime-essay", "rime-luna-pinyin"]) {
-  execFileSync("tar", ["-xzf", join(cache, "downloads", `${name}.tar.gz`), "-C", unpacked]);
-}
+execFileSync("tar", ["-xzf", join(cache, "downloads", "rime-prelude.tar.gz"), "-C", unpacked]);
+const wanxiang = join(unpacked, "wanxiang");
+mkdirSync(wanxiang, { recursive: true });
+execFileSync("unzip", ["-q", "-o", join(cache, "downloads", "rime-wanxiang-base.zip"), "-d", wanxiang]);
 const unpackedDirectory = (prefix) => {
   const entry = readdirSync(unpacked).find((name) => name.startsWith(`${prefix}-`));
   if (!entry) throw new Error(`${prefix} is missing from the downloads`);
@@ -75,7 +77,7 @@ const rimeDist = join(unpacked, "dist");
 
 // The bundle.
 rmSync(bundle, { recursive: true, force: true });
-for (const folder of ["MacOS", "Resources", "Frameworks", "SharedSupport/rime/opencc"]) {
+for (const folder of ["MacOS", "Resources", "Frameworks", "SharedSupport/rime/dicts"]) {
   mkdirSync(join(contents, folder), { recursive: true });
 }
 
@@ -84,15 +86,12 @@ const rimeData = join(contents, "SharedSupport", "rime");
 for (const file of ["key_bindings.yaml", "punctuation.yaml", "symbols.yaml"]) {
   cpSync(join(unpackedDirectory("rime-prelude"), file), join(rimeData, file));
 }
-cpSync(join(unpackedDirectory("rime-essay"), "essay.txt"), join(rimeData, "essay.txt"));
-for (const file of ["luna_pinyin.dict.yaml", "pinyin.yaml"]) {
-  cpSync(join(unpackedDirectory("rime-luna-pinyin"), file), join(rimeData, file));
+for (const table of WANXIANG_TABLES) {
+  cpSync(join(wanxiang, "dicts", `${table}.dict.yaml`), join(rimeData, "dicts", `${table}.dict.yaml`));
 }
+cpSync(join(wanxiang, "wanxiang_algebra.yaml"), join(rimeData, "wanxiang_algebra.yaml"));
 for (const file of readdirSync(join(source, "Rime"))) {
   cpSync(join(source, "Rime", file), join(rimeData, file));
-}
-for (const file of ["t2s.json", "TSPhrases.ocd2", "TSCharacters.ocd2"]) {
-  cpSync(join(unpacked, "deps", "share", "opencc", file), join(rimeData, "opencc", file));
 }
 const deployUser = join(cache, "deploy-user");
 rmSync(deployUser, { recursive: true, force: true });

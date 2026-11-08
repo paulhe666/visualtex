@@ -7,20 +7,13 @@ import InputMethodKit
 /// more mode. While a formula is open (the shortcut) every key but a Command
 /// shortcut goes to VisualTeX, which edits the formula and draws it in the
 /// line itself, from where the field's caret was, with its own caret: the
-/// field shows nothing of its own meanwhile. Return inserts the formula's
+/// field holds the formula's space in its text (FormulaSpace), so it wraps
+/// the formula as it wraps its own text and shows nothing of its own. Return inserts the formula's
 /// text with insertText and, when the shortcut opened the formula from
 /// another input source, hands the field back to it.
 @objc(VTInputController)
 final class VTInputController: IMKInputController {
     static let noRange = NSRange(location: NSNotFound, length: 0)
-    /// The formula's marked text: one hair space, selected. Being selected
-    /// (not a caret) it hides the field's caret, so the formula's caret is
-    /// the only one; a hair space is about a point wide, so the field's
-    /// composition underline and selection under it are next to nothing, and
-    /// the formula is drawn over them. (Chrome draws the underline in the
-    /// accent colour, whatever colour the input method gives it; a selected
-    /// character of no width, a word joiner, still shows Chrome's caret.)
-    private static let anchorText = "\u{200A}"
 
     /// Return, keypad Enter, Z and V by virtual key code: with Command they
     /// act on the formula while it is open (⌘V pastes into it: an image is
@@ -61,6 +54,28 @@ final class VTInputController: IMKInputController {
     /// Where the formula opened (the caret's line), to tell a real marked
     /// text rectangle from a stale one.
     private var formulaStart = NSRect.zero
+    /// The formula's pieces (points wide, from VisualTeX) and the marked text
+    /// holding them (FormulaSpace).
+    private var pieceWidths: [CGFloat] = []
+    private var space = FormulaSpace.Layout(text: "", starts: [], counts: [])
+    /// A filler's width by application, learnt from where the field put the
+    /// pieces (points).
+    private static var fillerWidths: [String: CGFloat] = [:]
+    private var fillerWidth: CGFloat = 0
+    /// A joint's (word space's) width, likewise.
+    private static var jointWidths: [String: CGFloat] = [:]
+    private var jointWidth: CGFloat = 0
+    /// Calibrations in this formula: a few at most (a field rounding places
+    /// to pixels must not make the space flip between two widths).
+    private var calibrations = 0
+    /// The pieces' places last reported to VisualTeX.
+    private var lastPlaces: [[Double]] = []
+    private var lastEnd: [Double]?
+    /// The space was set again for a field that kept old places (once per change of the pieces).
+    private var rekicked = false
+    /// The formula's caret below the formula's first baseline, points (it may
+    /// be on a later line).
+    private var formulaCaretY: CGFloat = 0
 
     deinit {
         RimeEngine.shared.destroySession(rimeSession)
@@ -103,6 +118,9 @@ final class VTInputController: IMKInputController {
             return pinyinModifiers(event, client: client)
         }
         guard event.type == .keyDown else { return false }
+        if composing, [36, 53, 76].contains(event.keyCode) {
+            InputLog.write("formula key \(event.keyCode == 53 ? "escape" : "return")")
+        }
         if composing {
             if event.modifierFlags.contains(.command) {
                 // The formula's own Command keys (a row's inline / display
@@ -174,7 +192,7 @@ final class VTInputController: IMKInputController {
         if composing { showFormulaPinyin(client) } else { showPinyin(client) }
         let isAscii = RimeEngine.shared.isAsciiMode(session)
         if isAscii != wasAscii {
-            ModeIndicator.shared.show(isAscii ? "英" : "中", under: caretRect(client))
+            ModeIndicator.shared.show(isAscii ? "英" : "中", under: composing ? formulaCaret(client) : caretRect(client))
         }
         return handled
     }
@@ -250,15 +268,23 @@ final class VTInputController: IMKInputController {
         if state.isComposing {
             AppLink.shared.send(["t": "compose", "phase": "update", "text": state.preedit])
             formulaPinyin = true
-            var line = heldRect.height > 0 ? heldRect : caretRect(client)
-            line.origin.x += formulaCaretOffset
-            line.size.width = 1
-            CandidateWindow.shared.show(state.candidates, labels: state.labels, highlighted: state.highlighted, under: line)
+            CandidateWindow.shared.show(state.candidates, labels: state.labels, highlighted: state.highlighted, under: formulaCaret(client))
         } else {
             if formulaPinyin { AppLink.shared.send(["t": "compose", "phase": "end", "text": ""]) }
             formulaPinyin = false
             CandidateWindow.shared.hide()
         }
+    }
+
+    /// The formula's caret's line on the screen (AppKit coordinates): the
+    /// line of the formula's start moved to the caret (which may be on a
+    /// later line of the formula).
+    private func formulaCaret(_ client: IMKTextInput) -> NSRect {
+        var line = heldRect.height > 0 ? heldRect : caretRect(client)
+        line.origin.x += formulaCaretOffset
+        line.origin.y -= formulaCaretY
+        line.size.width = 1
+        return line
     }
 
     /// Chinese or English before the formula opened, to come back to.
@@ -351,6 +377,14 @@ final class VTInputController: IMKInputController {
             controller.formulaStart = controller.composing ? controller.caretRect(client) : .zero
             controller.heldRect = .zero
             controller.holdGeneration += 1
+            controller.pieceWidths = []
+            controller.lastPlaces = []
+            controller.lastEnd = nil
+            controller.calibrations = 0
+            controller.rekicked = false
+            controller.formulaCaretOffset = 0
+            controller.formulaCaretY = 0
+            controller.space = FormulaSpace.Layout(text: "", starts: [], counts: [])
             if controller.composing {
                 controller.placeAnchor(client)
             } else if !controller.marked.isEmpty {
@@ -362,6 +396,15 @@ final class VTInputController: IMKInputController {
         case "inline":
             controller.formulaText = message["text"] as? String ?? ""
             controller.formulaCaretOffset = CGFloat(message["caretX"] as? Double ?? 0)
+            controller.formulaCaretY = CGFloat(message["caretY"] as? Double ?? 0)
+            if let pieces = message["pieces"] as? [Double], controller.composing {
+                let widths = pieces.map { CGFloat(max(0, min($0, 20000))) }
+                if widths != controller.pieceWidths {
+                    controller.pieceWidths = widths
+                    controller.rekicked = false
+                    controller.hold(client)
+                }
+            }
         case "commit":
             controller.commit(message["text"] as? String ?? "", returnTo: message["returnTo"] as? String, client: client)
         case "cancel":
@@ -377,42 +420,215 @@ final class VTInputController: IMKInputController {
 
     // MARK: Where the formula goes in the line
 
-    /// Puts the formula's anchor in the field where its caret is, then
+    /// Puts the formula's space in the field where its caret is, then
     /// reports where the field placed it (see pollAnchor).
     private func placeAnchor(_ client: IMKTextInput) {
-        marked = Self.anchorText
-        let length = (Self.anchorText as NSString).length
+        let estimated = estimatedWidths(client)
+        fillerWidth = Self.fillerWidths[clientID(client)] ?? estimated.filler
+        jointWidth = Self.jointWidths[clientID(client)] ?? estimated.joint
+        hold(client)
+    }
+
+    /// A filler's width before the field has shown one: in the field's font
+    /// when it tells it, else from its line's height (Chrome and Electron
+    /// report a default font, not the page's).
+    private func estimatedWidths(_ client: IMKTextInput) -> (filler: CGFloat, joint: CGFloat) {
+        var line = NSRect.zero
+        let attributes = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &line) ?? [:]
+        let font = attributes[NSAttributedString.Key.font] as? NSFont
+            ?? attributes[NSAttributedString.Key.font.rawValue] as? NSFont
+        if let font, line.height > 0, line.height < (font.ascender - font.descender) * 1.25 + 1 {
+            return (FormulaSpace.unit(in: font), FormulaSpace.unit(in: font, of: FormulaSpace.joint))
+        }
+        let height = Self.textHeights[clientID(client)] ?? (line.height > 6 && line.height < 120 ? line.height : 17)
+        return (FormulaSpace.unit(atSize: height / 1.19), FormulaSpace.unit(atSize: height / 1.19, of: FormulaSpace.joint))
+    }
+
+    /// The field holds the formula's pieces (FormulaSpace) and the place of
+    /// each is followed.
+    private func hold(_ client: IMKTextInput) {
+        let layout = FormulaSpace.layout(widths: pieceWidths, unit: fillerWidth, joint: jointWidth)
+        guard layout != space || marked != layout.text else { return }
+        space = layout
+        marked = layout.text
+        InputLog.write("hold pieces=\(layout.starts.count) fillers=\(layout.counts.reduce(0, +)) filler=\(String(format: "%.2f", Double(fillerWidth))) joint=\(String(format: "%.2f", Double(jointWidth)))")
         client.setMarkedText(
-            NSAttributedString(string: Self.anchorText),
-            selectionRange: NSRange(location: 0, length: length),
+            NSAttributedString(string: layout.text),
+            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
             replacementRange: Self.noRange
         )
+        holdGeneration += 1
         pollAnchor(generation: holdGeneration, last: nil, polls: 0)
     }
 
     /// Chrome and Electron place marked text a frame or so after it is set
-    /// and answer with a stale (or bogus) rectangle meanwhile: the anchor is
+    /// and answer with a stale (or bogus) rectangle meanwhile: the pieces are
     /// reported once two reads agree, and followed (more slowly) while the
-    /// formula is open, in case the field moves it (scrolling, a late layout).
-    private func pollAnchor(generation: Int, last: NSRect?, polls: Int) {
+    /// formula is open, in case the field moves them (scrolling, a late
+    /// layout). The first piece's place is the formula's anchor.
+    private func pollAnchor(generation: Int, last: [NSRect]?, polls: Int) {
         guard generation == holdGeneration, composing, let client = client() else { return }
-        let rect = characterRect(client, 0).flatMap { isPlausible($0) ? $0 : nil }
-        if let rect, let last, rect.equalTo(last), !rect.equalTo(heldRect) {
-            noteTextHeight(client, rect)
-            heldRect = rect
-            var message = geometry(client)
-            message["t"] = "geometry"
-            message["caret"] = payload(NSRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height))
-            InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls)")
-            if !NSDictionary(dictionary: message).isEqual(to: lastGeometry) {
-                lastGeometry = message
-                AppLink.shared.send(message)
+        let starts = space.starts.isEmpty ? [0] : space.starts
+        let started = Date()
+        var stop: String?
+        var rects: [NSRect] = []
+        if let first = characterRect(client, starts[0]).flatMap({ isPlausible($0) ? $0 : nil }) {
+            rects.append(first)
+            for start in starts.dropFirst() {
+                guard let rect = pieceRect(client, start, line: first) else {
+                    stop = "piece at \(start) has no place"
+                    break
+                }
+                // each piece after the one before on its line, or on a lower line: a field that
+                // answers one rectangle for every part of the marked text places nothing
+                if let before = rects.last {
+                    let sameLine = abs(rect.minY - before.minY) < before.height * 0.5
+                    if sameLine ? rect.minX <= before.minX : rect.minY >= before.minY {
+                        stop = "piece at \(start) at \(NSStringFromRect(rect)) does not follow \(NSStringFromRect(before))"
+                        break
+                    }
+                }
+                rects.append(rect)
             }
         }
-        let delay = polls < 40 ? 0.016 : 0.25
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.pollAnchor(generation: generation, last: rect, polls: polls + 1)
+        let elapsed = Date().timeIntervalSince(started)
+        // Chrome sometimes keeps the places of a marked text replaced at once by another (a kept
+        // formula held anew as it opens) and answers the old ones: the space is set again, once
+        if polls == 12, rects.count < starts.count, !rekicked {
+            rekicked = true
+            InputLog.write("pieces \(rects.count)/\(starts.count) placed after \(polls) polls: set again")
+            // another text for a moment (the same one again changes nothing for Chrome), then the space
+            let other = space.text + FormulaSpace.filler
+            client.setMarkedText(
+                NSAttributedString(string: other),
+                selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
+                replacementRange: Self.noRange
+            )
+            marked = other
+            holdGeneration += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self, self.composing, let client = self.client() else { return }
+                self.hold(client)
+            }
+            return
         }
+        if polls == 2 || elapsed > 0.1, let stop { InputLog.write("poll \(polls): \(stop) ms=\(Int(elapsed * 1000))") }
+        if let rect = rects.first, let last, last == rects {
+            if !rect.equalTo(heldRect) {
+                noteTextHeight(client, rect)
+                heldRect = rect
+                var message = geometry(client)
+                message["t"] = "geometry"
+                message["caret"] = payload(NSRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height))
+                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls)")
+                if !NSDictionary(dictionary: message).isEqual(to: lastGeometry) {
+                    lastGeometry = message
+                    AppLink.shared.send(message)
+                }
+            }
+            reportPlaces(rects, end: rects.count == space.starts.count ? endPlace(client, rects) : nil, anchor: characterRect(client, 0))
+            if calibrate(client, rects) { return }
+        }
+        // a field slow to answer (its layout not ready) is asked less often
+        let delay = polls < 40 && elapsed < 0.05 ? 0.016 : 0.25
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.pollAnchor(generation: generation, last: rects, polls: polls + 1)
+        }
+    }
+
+    /// Where the field put each piece, from the first one's start on its
+    /// line (points, y down; the lines' bottoms, so a line of another height
+    /// keeps the formula on its baseline as nearly as the field tells).
+    private func reportPlaces(_ rects: [NSRect], end: [Double]?, anchor: NSRect?) {
+        guard let first = rects.first else { return }
+        let places = rects.map { [Double(($0.minX - first.minX).rounded(toPlaces: 2)), Double((first.minY - $0.minY).rounded(toPlaces: 2))] }
+        guard places != lastPlaces || end != lastEnd else { return }
+        lastPlaces = places
+        lastEnd = end
+        let lines = Set(places.map { $0[1] }).count
+        InputLog.write("pieces \(places.count)/\(space.starts.count) lines=\(lines) \(places.prefix(6).map { "\(Int($0[0])),\(Int($0[1]))" }.joined(separator: " ")) end=\(end.map { "\(Int($0[0])),\(Int($0[1]))" } ?? "-")")
+        var message: [String: Any] = ["t": "pieces", "places": places, "count": space.starts.count]
+        if let end { message["end"] = end }
+        // the selected anchor before the formula (the field may highlight it)
+        if let anchor, abs(anchor.minY - first.minY) < first.height * 0.5 {
+            message["start"] = [Double((anchor.minX - first.minX).rounded(toPlaces: 2)), 0]
+        }
+        AppLink.shared.send(message)
+    }
+
+    /// The filler's and the joint's widths as the field draws them: the
+    /// filler over the longest piece on one line (the field may round each
+    /// character's place to a pixel, so a long run reads it best), the joint
+    /// between a piece's fillers and the next piece on its line. Widths other
+    /// than the ones the pieces were held with hold them again. True when they
+    /// did.
+    private func calibrate(_ client: IMKTextInput, _ rects: [NSRect]) -> Bool {
+        var filler: (count: Int, width: CGFloat)?
+        var joint: CGFloat?
+        for (index, start) in space.starts.enumerated() where index < rects.count {
+            let count = space.counts[index]
+            guard let end = characterRect(client, start + count),
+                  abs(end.minY - rects[index].minY) < rects[index].height * 0.5,
+                  end.minX > rects[index].minX
+            else { continue }
+            // a run long enough that a field's pixel rounding is a small part of it
+            if count >= 6, count > (filler?.count ?? 1) {
+                filler = (count, (end.minX - rects[index].minX) / CGFloat(count))
+            }
+            if joint == nil, index + 1 < rects.count, abs(rects[index + 1].minY - end.minY) < end.height * 0.5,
+               rects[index + 1].minX >= end.minX {
+                joint = rects[index + 1].minX - end.minX
+            }
+        }
+        var changed = false
+        if let filler, filler.width > 0.5, filler.width < 40 {
+            Self.fillerWidths[clientID(client)] = filler.width
+            // a pixel over the run is the field's rounding, not another width
+            if abs(filler.width - fillerWidth) * CGFloat(filler.count) > 1.5 {
+                InputLog.write("filler \(String(format: "%.2f", Double(fillerWidth))) -> \(String(format: "%.2f", Double(filler.width))) from \(filler.count)")
+                fillerWidth = filler.width
+                changed = true
+            }
+        }
+        if let joint, joint < 40 {
+            Self.jointWidths[clientID(client)] = joint
+            if abs(joint - jointWidth) > 1.5 {
+                InputLog.write("joint \(String(format: "%.2f", Double(jointWidth))) -> \(String(format: "%.2f", Double(joint)))")
+                jointWidth = joint
+                changed = true
+            }
+        }
+        guard changed else { return false }
+        calibrations += 1
+        guard calibrations <= 3 else { return false }
+        hold(client)
+        return true
+    }
+
+    /// Where the field ends the held space, from the first piece's start
+    /// (the end of the formula's last line), for VisualTeX's cover: the
+    /// place after the last character, else the last one's and its width,
+    /// else the last piece's start and its fillers, marked as estimated.
+    private func endPlace(_ client: IMKTextInput, _ rects: [NSRect]) -> [Double]? {
+        guard let first = rects.first, let lastStart = rects.last, let count = space.counts.last else { return nil }
+        let length = (space.text as NSString).length
+        var end = characterRect(client, length)
+        // Chrome answers nothing after the last character: the last one's place and its width (the
+        // advance from the character before it, a filler too)
+        if end == nil, let last = characterRect(client, length - 1) {
+            var advance = fillerWidth
+            if count >= 2, let before = characterRect(client, length - 2),
+               abs(before.minY - last.minY) < last.height * 0.5, last.minX > before.minX {
+                advance = last.minX - before.minX
+            }
+            end = NSRect(x: last.minX + advance, y: last.minY, width: 0, height: last.height)
+        }
+        if let end {
+            return [Double((end.minX - first.minX).rounded(toPlaces: 2)), Double((first.minY - end.minY).rounded(toPlaces: 2))]
+        }
+        // estimated (a third component): VisualTeX covers no further than its formula's end
+        let x = lastStart.minX + CGFloat(count) * fillerWidth
+        return [Double((x - first.minX).rounded(toPlaces: 2)), Double((first.minY - lastStart.minY).rounded(toPlaces: 2)), 1]
     }
 
     /// On a screen and on (or near) the line where the formula opened.
@@ -431,6 +647,7 @@ final class VTInputController: IMKInputController {
         marked = ""
         formulaText = ""
         composing = false
+        space = FormulaSpace.Layout(text: "", starts: [], counts: [])
         hand(client, to: returnTo)
     }
 
@@ -441,6 +658,7 @@ final class VTInputController: IMKInputController {
         clearMarked(client)
         formulaText = ""
         composing = false
+        space = FormulaSpace.Layout(text: "", starts: [], counts: [])
         InputLog.write("cancel return=\(returnTo ?? "-")")
         hand(client, to: returnTo)
     }
@@ -480,6 +698,20 @@ final class VTInputController: IMKInputController {
         var rect = NSRect.zero
         _ = client.attributes(forCharacterIndex: index, lineHeightRectangle: &rect)
         return isOnScreen(rect) ? rect : nil
+    }
+
+    /// Where a piece starts (its first character, by its index in the marked
+    /// text). TextKit 2 fields (TextEdit, Notes) answer nothing for a place at
+    /// the start of a line they wrapped: there the character's own rectangle
+    /// is asked for, on a line as tall as the first piece's.
+    private func pieceRect(_ client: IMKTextInput, _ index: Int, line: NSRect) -> NSRect? {
+        if let rect = characterRect(client, index) { return rect }
+        let marked = client.markedRange()
+        guard marked.location != NSNotFound, index < marked.length else { return nil }
+        let glyph = client.firstRect(forCharacterRange: NSRange(location: marked.location + index, length: 1), actualRange: nil)
+        guard isOnScreen(glyph) else { return nil }
+        // the line's bottom, as the line rectangles are placed
+        return NSRect(x: glyph.minX, y: glyph.minY - (line.height - glyph.height) / 2, width: 1, height: line.height)
     }
 
     /// The marked text's rectangle: from its first character's left edge to
@@ -565,5 +797,12 @@ final class VTInputController: IMKInputController {
 
     private func clientID(_ sender: Any?) -> String {
         (sender as? IMKTextInput)?.bundleIdentifier() ?? "?"
+    }
+}
+
+private extension CGFloat {
+    func rounded(toPlaces places: Int) -> CGFloat {
+        let scale = pow(10, CGFloat(places))
+        return (self * scale).rounded() / scale
     }
 }

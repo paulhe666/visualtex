@@ -1,14 +1,21 @@
 # VisualTeX input method: pinyin in Simplified Chinese.
-# Based on luna_pinyin / luna_pinyin_simp from rime-luna-pinyin (LGPL-3.0,
-# RIME developers), without the stroke reverse lookup.
+# Dictionary and spelling rules from 万象拼音 (wanxiang, amzxyz/rime_wanxiang
+# v18.1.10, CC-BY-4.0): its base dictionary (visualtex_wanxiang.dict.yaml
+# imports its tables unchanged) and its full-pinyin spelling algebra
+# (wanxiang_algebra.yaml, base/全拼), without its Lua scripts and grammar
+# model. Changes: VisualTeX's own schema around them (switches, processors,
+# punctuation from rime-prelude), no stroke or reverse lookup, no tones typed
+# as digits (digits choose candidates).
 # encoding: utf-8
 
 schema:
   schema_id: visualtex_pinyin
   name: VisualTeX 拼音
-  version: '1'
+  version: '2'
+  author:
+    - 万象拼音 amzxyz (dictionary, spelling rules; CC-BY-4.0)
   description: |
-    朙月拼音的词库与语言模型，简化字输出。
+    万象拼音的词库与拼写规则，简化字输出。
 
 switches:
   - name: ascii_mode
@@ -16,9 +23,6 @@ switches:
     states: [ 中文, 英文 ]
   - name: full_shape
     states: [ 半角, 全角 ]
-  - name: zh_hans
-    reset: 1
-    states: [ 繁體, 简体 ]
   - name: ascii_punct
     states: [ 。，, ．， ]
 
@@ -42,7 +46,6 @@ engine:
     - punct_translator
     - script_translator
   filters:
-    - simplifier@zh_hans
     - uniquifier
 
 speller:
@@ -50,13 +53,12 @@ speller:
   delimiter: " '"
   algebra:
     __patch:
-      - pinyin:/abbreviation
-      - pinyin:/spelling_correction
-      - pinyin:/key_correction
+      - wanxiang_algebra:/base/全拼
 
 translator:
-  dictionary: luna_pinyin
+  dictionary: visualtex_wanxiang
   prism: visualtex_pinyin
+  enable_user_dict: true
   preedit_format:
     - xform/([nl])v/$1ü/
     - xform/([nl])ue/$1üe/
@@ -72,8 +74,3 @@ recognizer:
   import_preset: default
   patterns:
     punct: '^/([0-9]0?|[A-Za-z]+)$'
-
-zh_hans:
-  option_name: zh_hans
-  opencc_config: t2s.json
-  tips: none
