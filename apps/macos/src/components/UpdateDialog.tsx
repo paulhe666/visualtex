@@ -268,7 +268,7 @@ export function UpdateDialog({
                 <div className="update-project-author">
                   <UserRound size={15} aria-hidden="true" />
                   <span>
-                    <span>{isEn ? "Author" : "作者"}</span>
+                    <small>{isEn ? "Author" : "作者"}</small>
                     <strong>paulhe666</strong>
                   </span>
                 </div>
