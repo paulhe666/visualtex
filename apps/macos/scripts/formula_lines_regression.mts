@@ -72,3 +72,35 @@ test("first fit breaks where the line is full", () => {
   assert.deepEqual(place[1], { x: -1, y: 1.2 });
   assert.deepEqual(place[2], { x: 0.5, y: 1.2 });
 });
+
+// a long run of atoms with no operator (x x x … : twenty 1em boxes)
+const run = (n: number, script = false) => {
+  const items: any[] = [on];
+  for (let k = 0; k < n; k++) {
+    items.push(box(1, `x${k}`));
+    // a script box hangs on its atom: shifted
+    if (script && k === 4) items.push({ ...box(0.4, "sup"), shift: -0.3 * EM });
+  }
+  items.push({ ...on });
+  const width = items.reduce((x: number, n: any) => x + (n.width ?? n.spec?.width ?? 0), 0);
+  return { type: HLIST_NODE, width, height: 0.7 * EM, depth: 0.2 * EM, shift: 0, list: items, glueSet: 0, glueSign: 0, glueOrder: 0 };
+};
+
+test("a piece wider than the longest is cut at atom starts", () => {
+  const pieces = formulaPieces(run(20) as any);
+  assert.ok(pieces.length >= 3);
+  for (const p of pieces) assert.ok(p.end - p.start <= 8 * EM, `piece ${p.start / EM}-${p.end / EM} em`);
+  assert.equal(pieces[0].start, 0);
+  assert.equal(pieces.at(-1)!.end, 20 * EM);
+  for (let k = 1; k < pieces.length; k++) assert.equal(pieces[k].start, pieces[k - 1].end);
+});
+
+test("a script box stays with its atom", () => {
+  const pieces = formulaPieces(run(12, true) as any, 4.2);
+  // the shifted box after x4 starts at 5em: no piece starts there
+  assert.ok(!pieces.some((p: any) => p.start === 5 * EM), JSON.stringify(pieces.map((p: any) => p.start / EM)));
+});
+
+test("pieces within the longest keep TeX's breaks only", () => {
+  assert.equal(formulaPieces(run(6) as any).length, 1);
+});
