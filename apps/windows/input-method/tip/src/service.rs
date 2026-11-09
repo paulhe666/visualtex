@@ -117,6 +117,8 @@ struct Shared {
     /// Calibrations in this formula: a few at most (a field rounding places to pixels must not make
     /// the space flip between two widths).
     calibrations: Cell<u32>,
+    /// When the space was last held: the field draws it a moment later (follow_pieces).
+    last_hold: Cell<Option<std::time::Instant>>,
     /// Where each piece started at the last poll, and what was last reported.
     last_pieces: RefCell<Vec<Edges>>,
     reported_pieces: RefCell<Option<Value>>,
@@ -772,6 +774,7 @@ fn hold(shared: &Rc<Shared>) {
             select(&writer, cookie, &anchor)?;
         }
         *state.space.borrow_mut() = held.clone();
+        state.last_hold.set(Some(std::time::Instant::now()));
         state.last_pieces.borrow_mut().clear();
         Ok(())
     });
@@ -838,48 +841,66 @@ fn follow_pieces(state: &Rc<Shared>, reader: &ITfContext, cookie: u32, range: &I
         state.send(message.clone());
         *state.reported_pieces.borrow_mut() = Some(message);
     }
-    // the widths as the field draws them: a filler over the longest piece on one line (a field may
-    // round each character's place to a pixel), a joint between a piece and the next on its line
-    let mut filler: Option<(usize, f64)> = None;
-    let mut joint: Option<f64> = None;
+    // The widths as the field draws them, read once it has drawn the space held last: a field
+    // answers some places of the composition it replaced for a moment, and widths read then flipped
+    // the joint between 0, 4 and 10 points and left the formula wider than its space (macOS,
+    // 2026-11-09).
+    if state.last_hold.get().map(|at| at.elapsed() < std::time::Duration::from_millis(120)).unwrap_or(false) {
+        return false;
+    }
+    // A filler from the fillers of all the pieces read whole on their lines together (a formula of
+    // short pieces holds two or three fillers each, a run long enough for a field's pixel rounding
+    // to be a small part of it), a joint from the middle of those between a piece and the next on
+    // its line once two of them agree.
+    let mut filler_count = 0usize;
+    let mut filler_run = 0.0f64;
+    let mut joints: Vec<f64> = Vec::new();
     for (index, &start) in held.starts.iter().enumerate().take(rects.len()) {
         let count = held.counts[index];
         let Some(last) = char_rect(reader, cookie, range, start + count - 1) else { continue };
         if !same_line(&last, &rects[index]) || last.right <= rects[index].left {
             continue;
         }
-        // a run long enough that a field's pixel rounding is a small part of it
-        if count >= 6 && filler.map(|(known, _)| count > known).unwrap_or(true) {
-            filler = Some((count, (last.right - rects[index].left) as f64 / count as f64));
-        }
-        if joint.is_none() && index + 1 < rects.len() && same_line(&rects[index + 1], &last) && rects[index + 1].left >= last.right {
-            joint = Some((rects[index + 1].left - last.right) as f64);
+        filler_count += count;
+        filler_run += (last.right - rects[index].left) as f64;
+        if index + 1 < rects.len() && same_line(&rects[index + 1], &last) && rects[index + 1].left > last.right {
+            joints.push((rects[index + 1].left - last.right) as f64);
         }
     }
+    let filler = (filler_count >= 6)
+        .then(|| (filler_count, filler_run / filler_count as f64))
+        .filter(|(_, width)| (0.5..60.0).contains(width));
+    joints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let joint = joints
+        .get(joints.len() / 2)
+        .copied()
+        .filter(|middle| (1.0..60.0).contains(middle) && joints.iter().filter(|width| (*width - middle).abs() <= 1.5).count() >= 2);
     let window = view_window(reader);
-    let mut changed = false;
-    if let Some((count, width)) = filler.filter(|(_, width)| (0.5..60.0).contains(width)) {
-        if (width - state.filler_width.get()).abs() * count as f64 > 1.5 {
-            log::write(&format!("filler {:.2} -> {width:.2} from {count}", state.filler_width.get()));
-            state.filler_width.set(width);
-            changed = true;
+    let filler_changed = filler.map(|(count, width)| (width - state.filler_width.get()).abs() * count as f64 > 1.5).unwrap_or(false);
+    let joint_changed = joint.map(|width| (width - state.joint_width.get()).abs() > 1.5).unwrap_or(false);
+    if !filler_changed && !joint_changed {
+        if filler.is_some() || joint.is_some() {
+            // the widths the space is held with: this window's next formulas start with them
+            SPACE_WIDTHS.with(|widths| widths.borrow_mut().insert(window, (state.filler_width.get(), state.joint_width.get())));
         }
+        return false;
     }
-    if let Some(width) = joint.filter(|width| (0.0..60.0).contains(width)) {
-        if (width - state.joint_width.get()).abs() > 1.5 {
-            log::write(&format!("joint {:.2} -> {width:.2}", state.joint_width.get()));
-            state.joint_width.set(width);
-            changed = true;
-        }
+    // past three, the widths stay those the space is held with (never a space held with other
+    // widths than the ones the pieces are placed with)
+    if state.calibrations.get() >= 3 {
+        return false;
     }
-    if filler.is_some() || joint.is_some() {
-        SPACE_WIDTHS.with(|widths| widths.borrow_mut().insert(window, (state.filler_width.get(), state.joint_width.get())));
+    state.calibrations.set(state.calibrations.get() + 1);
+    if let Some((count, width)) = filler.filter(|_| filler_changed) {
+        log::write(&format!("filler {:.2} -> {width:.2} from {count}", state.filler_width.get()));
+        state.filler_width.set(width);
     }
-    if changed && state.calibrations.get() < 3 {
-        state.calibrations.set(state.calibrations.get() + 1);
-        return true;
+    if let Some(width) = joint.filter(|_| joint_changed) {
+        log::write(&format!("joint {:.2} -> {width:.2} from {}", state.joint_width.get(), joints.len()));
+        state.joint_width.set(width);
     }
-    false
+    SPACE_WIDTHS.with(|widths| widths.borrow_mut().insert(window, (state.filler_width.get(), state.joint_width.get())));
+    true
 }
 
 /// Polls the anchor's rectangle: reported once two reads agree, then followed while the formula
