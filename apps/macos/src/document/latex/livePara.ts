@@ -224,7 +224,7 @@ export function paragraphArea(tex: SyncTex, files: number[], first: number, last
     const parent = recs[chosen[0]].parent;
     if (chosen.some((i) => recs[i].parent !== parent)) return null;
     // the vbox's lines in order; the chosen ones must be a run of them
-    const all = recs.map((r, i) => i).filter((i) => recs[i].kind === "(" && recs[i].parent === parent).sort((x, y) => recs[x].v - recs[y].v);
+    const all = recs.map((_, i) => i).filter((i) => recs[i].kind === "(" && recs[i].parent === parent).sort((x, y) => recs[x].v - recs[y].v);
     const at = chosen.map((i) => all.indexOf(i)).sort((x, y) => x - y);
     if (at[at.length - 1] - at[0] !== at.length - 1) return null;
     found = {
