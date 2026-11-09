@@ -68,6 +68,8 @@ final class VTInputController: IMKInputController {
     /// Calibrations in this formula: a few at most (a field rounding places
     /// to pixels must not make the space flip between two widths).
     private var calibrations = 0
+    /// When the space was last held: the field draws it a moment later (calibrate).
+    private var lastHold = Date.distantPast
     /// The pieces' places last reported to VisualTeX.
     private var lastPlaces: [[Double]] = []
     private var lastEnd: [Double]?
@@ -452,6 +454,7 @@ final class VTInputController: IMKInputController {
         space = layout
         marked = layout.text
         InputLog.write("hold pieces=\(layout.starts.count) fillers=\(layout.counts.reduce(0, +)) filler=\(String(format: "%.2f", Double(fillerWidth))) joint=\(String(format: "%.2f", Double(jointWidth)))")
+        lastHold = Date()
         client.setMarkedText(
             NSAttributedString(string: layout.text),
             selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
@@ -563,8 +566,13 @@ final class VTInputController: IMKInputController {
     /// than the ones the pieces were held with hold them again. True when they
     /// did.
     private func calibrate(_ client: IMKTextInput, _ rects: [NSRect]) -> Bool {
+        // A space held a moment ago is not drawn everywhere yet: typing holds a new one every few
+        // milliseconds and Chrome answers some places from the one it replaced. Widths read from
+        // those flipped the joint between 0, 4 and 10 points and left the formula wider than its
+        // space (2026-11-09); the polls that follow read them once the field has drawn the space.
+        guard Date().timeIntervalSince(lastHold) > 0.12 else { return false }
         var filler: (count: Int, width: CGFloat)?
-        var joint: CGFloat?
+        var joints: [CGFloat] = []
         for (index, start) in space.starts.enumerated() where index < rects.count {
             let count = space.counts[index]
             guard let end = characterRect(client, start + count),
@@ -575,32 +583,42 @@ final class VTInputController: IMKInputController {
             if count >= 6, count > (filler?.count ?? 1) {
                 filler = (count, (end.minX - rects[index].minX) / CGFloat(count))
             }
-            if joint == nil, index + 1 < rects.count, abs(rects[index + 1].minY - end.minY) < end.height * 0.5,
-               rects[index + 1].minX >= end.minX {
-                joint = rects[index + 1].minX - end.minX
+            if index + 1 < rects.count, abs(rects[index + 1].minY - end.minY) < end.height * 0.5,
+               rects[index + 1].minX > end.minX {
+                joints.append(rects[index + 1].minX - end.minX)
             }
         }
-        var changed = false
-        if let filler, filler.width > 0.5, filler.width < 40 {
-            Self.fillerWidths[clientID(client)] = filler.width
-            // a pixel over the run is the field's rounding, not another width
-            if abs(filler.width - fillerWidth) * CGFloat(filler.count) > 1.5 {
-                InputLog.write("filler \(String(format: "%.2f", Double(fillerWidth))) -> \(String(format: "%.2f", Double(filler.width))) from \(filler.count)")
-                fillerWidth = filler.width
-                changed = true
-            }
+        // the joint: the one read, or the middle one of several when two of them agree
+        var joint: CGFloat?
+        let middle = joints.isEmpty ? nil : joints.sorted()[joints.count / 2]
+        if let middle, middle >= 1, middle < 40, joints.count == 1 || joints.filter({ abs($0 - middle) <= 1.5 }).count >= 2 {
+            joint = middle
         }
-        if let joint, joint < 40 {
-            Self.jointWidths[clientID(client)] = joint
-            if abs(joint - jointWidth) > 1.5 {
-                InputLog.write("joint \(String(format: "%.2f", Double(jointWidth))) -> \(String(format: "%.2f", Double(joint)))")
-                jointWidth = joint
-                changed = true
-            }
+        if let width = filler?.width, !(width > 0.5 && width < 40) { filler = nil }
+        let id = clientID(client)
+        // a pixel over the run is the field's rounding, not another width
+        let fillerChanged = filler.map { abs($0.width - fillerWidth) * CGFloat($0.count) > 1.5 } ?? false
+        let jointChanged = joint.map { abs($0 - jointWidth) > 1.5 } ?? false
+        guard fillerChanged || jointChanged else {
+            // the widths the space was held with: this application's next formulas start with them
+            if let filler { Self.fillerWidths[id] = filler.width }
+            if let joint { Self.jointWidths[id] = joint }
+            return false
         }
-        guard changed else { return false }
+        // past three, the widths stay those the space is held with (never a space held with other
+        // widths than the ones the pieces are placed with)
+        guard calibrations < 3 else { return false }
         calibrations += 1
-        guard calibrations <= 3 else { return false }
+        if fillerChanged, let filler {
+            InputLog.write("filler \(String(format: "%.2f", Double(fillerWidth))) -> \(String(format: "%.2f", Double(filler.width))) from \(filler.count)")
+            fillerWidth = filler.width
+            Self.fillerWidths[id] = filler.width
+        }
+        if jointChanged, let joint {
+            InputLog.write("joint \(String(format: "%.2f", Double(jointWidth))) -> \(String(format: "%.2f", Double(joint))) from \(joints.count)")
+            jointWidth = joint
+            Self.jointWidths[id] = joint
+        }
         hold(client)
         return true
     }
