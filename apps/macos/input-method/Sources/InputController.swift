@@ -153,7 +153,12 @@ final class VTInputController: IMKInputController {
     // MARK: Pinyin and English (RIME)
 
     private func ensureRimeSession() -> RimeSessionId {
-        if rimeSession == 0 { rimeSession = RimeEngine.shared.createSession() }
+        if rimeSession == 0 {
+            rimeSession = RimeEngine.shared.createSession()
+            // A formula that opened before RIME was ready (the first one after the input method
+            // started, 2026-11-09) starts in English as every formula does: it typed pinyin.
+            if rimeSession != 0, composing { setFormulaInputMode(on: true) }
+        }
         return rimeSession
     }
 
