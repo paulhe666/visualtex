@@ -20,6 +20,8 @@ export interface AnywhereActivation {
   accessibilityTrusted: boolean;
   /** VisualTeX's input method is installed but not among the input sources */
   inputMethodMissing?: boolean;
+  /** The field's application selected the input method without starting it: to be reopened */
+  reopenApp?: string | null;
   /** The previous session hid without a commit or cancel: keep its formula. */
   resume: boolean;
   /**

@@ -1,16 +1,8 @@
-// The document's input and output formats (docs/document-editor/DESIGN.md §7): LaTeX or Markdown input (what is
-// typed converts as LaTeX commands or as Markdown; the candidate menu offers LaTeX or Markdown items) and LaTeX or
-// Markdown output (the source tab, the copy button, Copy/Export). The public edition has Markdown only: both are
-// Markdown there, whatever was stored or set.
+// Document mode's Markdown settings (docs/document-editor/DESIGN.md §7): how references to numbered formulas are
+// written and which groups of Markdown input rules are on. Documents are typed and written as Markdown.
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { DOCUMENT_LATEX } from "../edition";
 import { safeStorage } from "../runtime/safeStorage";
-
-export type DocumentFormat = "latex" | "markdown";
-
-/** The format the edition allows: LaTeX only in the personal edition. */
-const allowed = (format: DocumentFormat): DocumentFormat => (DOCUMENT_LATEX ? format : "markdown");
 
 /** Groups of Markdown input rules that can be turned off (SiYuan had to add such switches after false positives). */
 export interface MarkdownRules {
@@ -23,13 +15,9 @@ export interface MarkdownRules {
 }
 
 interface DocumentFormatState {
-  inputMode: DocumentFormat;
-  outputFormat: DocumentFormat;
   /** Markdown output: references to numbered formulas as $\eqref{label}$ (links in Typora) or as plain "(n)" */
   markdownReferences: "eqref" | "plain";
   markdownRules: MarkdownRules;
-  setInputMode: (mode: DocumentFormat) => void;
-  setOutputFormat: (format: DocumentFormat) => void;
   setMarkdownReferences: (style: "eqref" | "plain") => void;
   setMarkdownRule: (rule: keyof MarkdownRules, on: boolean) => void;
 }
@@ -37,32 +25,22 @@ interface DocumentFormatState {
 export const useDocumentFormatStore = create<DocumentFormatState>()(
   persist(
     (set) => ({
-      inputMode: allowed("latex"),
-      outputFormat: allowed("latex"),
       markdownReferences: "eqref",
       markdownRules: { blocks: true, marks: true, chinese: true },
-      setInputMode: (inputMode) => set({ inputMode: allowed(inputMode) }),
-      setOutputFormat: (outputFormat) => set({ outputFormat: allowed(outputFormat) }),
       setMarkdownReferences: (markdownReferences) => set({ markdownReferences }),
       setMarkdownRule: (rule, on) => set((state) => ({ markdownRules: { ...state.markdownRules, [rule]: on } })),
     }),
     {
       name: "visualtex.document-format.v1",
       storage: createJSONStorage(() => safeStorage),
-      partialize: (state) => ({
-        inputMode: state.inputMode,
-        outputFormat: state.outputFormat,
-        markdownReferences: state.markdownReferences,
-        markdownRules: state.markdownRules,
-      }),
-      // a stored "latex" (from a personal build in the same profile) reads as Markdown in the public edition
+      partialize: (state) => ({ markdownReferences: state.markdownReferences, markdownRules: state.markdownRules }),
+      // (the input and output formats an earlier version stored here are left out)
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<DocumentFormatState>;
         return {
           ...current,
-          ...stored,
-          inputMode: allowed(stored.inputMode ?? current.inputMode),
-          outputFormat: allowed(stored.outputFormat ?? current.outputFormat),
+          markdownReferences: stored.markdownReferences ?? current.markdownReferences,
+          markdownRules: { ...current.markdownRules, ...stored.markdownRules },
         };
       },
     },

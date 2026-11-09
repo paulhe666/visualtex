@@ -19,38 +19,6 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
     title: ["公式", "Formulas"],
     tutorials: [
       {
-        id: "inline-formula",
-        title: ["行内公式", "Inline formulas"],
-        summary: [
-          "输入 $ 在文字中插入公式，像在公式编辑器里一样输入，按 Tab 回到文字；点一下公式即可再次编辑。",
-          "Type $ to put a formula in the text, write it as in the formula editor and press Tab to go back to the text; click a formula to edit it again.",
-        ],
-      },
-      {
-        id: "display-formula",
-        title: ["行间公式与编号", "Display formulas and numbers"],
-        summary: [
-          "\\[ 开始一个行间公式；\\begin{equation} 等环境自动编号；⇧↩ 换行，↩ 结束。",
-          "\\[ starts a display formula; \\begin{equation} and friends are numbered; ⇧↩ adds a line, ↩ ends it.",
-        ],
-      },
-      {
-        id: "references",
-        title: ["公式引用", "Referring to formulas"],
-        summary: [
-          "输入 \\eqref（或 \\ref）从列表里选一个编号公式；插入新公式后，引用的编号自动跟着变。",
-          "Type \\eqref (or \\ref) and pick a numbered formula; when formulas are added, the references follow.",
-        ],
-      },
-      {
-        id: "command-menu",
-        title: ["反斜杠命令", "Backslash commands"],
-        summary: [
-          "在正文里输入 \\ 和命令名，菜单列出章节（\\section* 无编号）、标题、作者、摘要、列表、加粗、公式环境等；↑↓ 选择，↩ 或数字键执行。",
-          "Type \\ and a command name in the text: the menu offers sections (\\section* unnumbered), title, author, abstract, lists, bold, formula environments…; ↑↓ to choose, ↩ or a digit to run it.",
-        ],
-      },
-      {
         id: "formula-tools",
         title: ["公式工具面板", "Formula tools"],
         summary: [
@@ -67,8 +35,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "text-format",
         title: ["文字格式与段落", "Text formatting and paragraphs"],
         summary: [
-          "选中文字后用工具栏或快捷键加粗、倾斜、着色；章节、列表、对齐都在工具栏上。",
-          "Select text and use the toolbar or keys for bold, italic and colour; sections, lists and alignment are in the toolbar too.",
+          "选中文字后用工具栏或快捷键加粗、倾斜、着色；标题、列表、对齐都在工具栏上。",
+          "Select text and use the toolbar or keys for bold, italic and colour; headings, lists and alignment are in the toolbar too.",
         ],
       },
       {
@@ -120,8 +88,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "markdown",
         title: ["Markdown 输入", "Markdown input"],
         summary: [
-          "切换到 Markdown 输入后，输入方式与 Typora 相同：**加粗**、- 列表、# 标题（回车）、$$ 公式、| 表格 | 都会转换；/ 打开命令菜单。",
-          "In Markdown input you type as in Typora: **bold**, - lists, # headings (on ↩), $$ formulas and | tables | turn into the real thing; / opens the menu.",
+          "# 标题、**加粗**、- 列表、$$ 行内公式、$$$$ 行间公式、| 表格 | 都像 Typora 一样即时转换；/ 打开命令菜单。",
+          "# headings, **bold**, - lists, $$ inline and $$$$ display formulas and | tables | turn into the real thing as you type, as in Typora; / opens the menu.",
         ],
       },
       {
@@ -144,8 +112,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "md-math",
         title: ["Markdown：公式", "Markdown: formulas"],
         summary: [
-          "$ 后紧跟公式内容开始行内公式（$5 这样的金额保持为文字）；$$ 开始行间公式；斜杠菜单里有带编号的公式和公式引用。",
-          "$ followed by the formula starts an inline formula ($5 stays a price); $$ starts a display formula; the / menu has numbered formulas and references.",
+          "$$ 开始行内公式，$$$$ 开始行间公式；单个 $ 就是美元符号（$5 保持为文字）；斜杠菜单里有带编号的公式和公式引用。",
+          "$$ starts an inline formula and $$$$ a display formula; a single $ is a dollar sign ($5 stays text); the / menu has numbered formulas and references.",
         ],
       },
       {
@@ -176,8 +144,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "md-source",
         title: ["Markdown：源码与文件", "Markdown: source and files"],
         summary: [
-          "源码面板把“输出”切换到 Markdown，实时查看生成的 Markdown；打开 .md 文件后，没有改动的部分按原样写回；也可以导出或复制为 Markdown。",
-          "Switch the source panel's Output to Markdown to see the Markdown live; a .md file you open is written back as it was where you did not change it; export or copy as Markdown.",
+          "源码面板实时显示生成的 Markdown；打开 .md 文件后，没有改动的部分按原样写回；也可以导出或复制为 Markdown。",
+          "The source panel shows the Markdown live; a .md file you open is written back as it was where you did not change it; export or copy as Markdown.",
         ],
       },
     ],
@@ -189,24 +157,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "page-setup",
         title: ["页面、字体与分页", "Page, fonts and page breaks"],
         summary: [
-          "“页面设置”选择纸张、页边距和行距；中文、西文字体和字号分别设置；\\newpage 另起一页。",
-          "Page setup picks the paper, margins and line spacing; Chinese and Latin fonts and the size are set apart; \\newpage starts a new page.",
-        ],
-      },
-      {
-        id: "paste-import",
-        title: ["粘贴 LaTeX 与 Markdown", "Pasting LaTeX and Markdown"],
-        summary: [
-          "粘贴 LaTeX 源码或 AI 回答里的 Markdown，会直接变成标题、公式、列表和表格；文档库的“导入”可打开 .tex、.md 文件。",
-          "Paste LaTeX source or Markdown from an AI answer and it becomes headings, formulas, lists and tables; Import in the library opens .tex and .md files.",
-        ],
-      },
-      {
-        id: "export",
-        title: ["源码与导出", "Source and export"],
-        summary: [
-          "底部“源码”实时显示文档的 LaTeX；主菜单可导出 PDF、LaTeX（.tex）、Markdown，或复制为 LaTeX / Markdown。",
-          "Source at the bottom shows the document's LaTeX live; the main menu exports PDF, LaTeX (.tex) and Markdown, or copies LaTeX / Markdown.",
+          "“页面设置”选择纸张、页边距和行距；中文、西文字体和字号分别设置。",
+          "Page setup picks the paper, margins and line spacing; Chinese and Latin fonts and the size are set apart.",
         ],
       },
       {

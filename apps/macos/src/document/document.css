@@ -99,20 +99,6 @@
   text-underline-offset: 2px;
 }
 
-/* ---- LaTeX | Markdown input, in the header's middle in document mode (DESIGN.md §7.1) ---- */
-.document-input-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.document-input-caption {
-  color: var(--text-faint, #7a8494);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.document-input-switch .workspace-content-switch {
-  margin-left: 0;
-}
 /* ---- document mode in the workspace (DESIGN.md §6.4): the document takes the formula rows' card ---- */
 .workspace.is-document-mode .editor-pane-scroll {
   overflow: hidden;

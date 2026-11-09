@@ -178,6 +178,22 @@ pub(super) fn capture_target(trusted: bool) -> Target {
     }
 }
 
+/// The frontmost application's bundle identifier: the input method names the
+/// application of its field so ("client" of its activate).
+pub(super) fn frontmost_bundle() -> Option<String> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()?
+        .bundleIdentifier()
+        .map(|identifier| identifier.to_string())
+}
+
+/// The frontmost application's name (the strip names it when it must be
+/// reopened).
+pub(super) fn frontmost_name() -> Option<String> {
+    let (_, name) = frontmost_application();
+    (!name.is_empty()).then_some(name)
+}
+
 fn frontmost_application() -> (i32, String) {
     let Some(application) = NSWorkspace::sharedWorkspace().frontmostApplication() else {
         return (0, String::new());

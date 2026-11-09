@@ -50,7 +50,7 @@ if (process.platform === "darwin") {
   ]) {
     rmSync(generatedPath, { recursive: true, force: true });
   }
-  // bundle/dmg: the other editions' and flavours' DMGs (-personal, -no-ocr) are moved aside while Tauri
+  // bundle/dmg: the other flavours' DMGs (-no-ocr, an older -personal) are moved aside while Tauri
   // rebuilds the folder (its DMG bundler empties it) and put back when this build ends, so building one never
   // deletes another
   const dmgDirectory = "src-tauri/target/release/bundle/dmg";
@@ -79,11 +79,6 @@ if (process.platform === "darwin") {
 }
 
 const forwardedArgs = process.argv.slice(2);
-// The edition (src/edition.ts): "personal" only through scripts/build_macos_personal.mjs (npm run
-// tauri:build:personal), which names its DMG -personal; every other build is public, whatever the shell's
-// VITE_VISUALTEX_EDITION says, so a release can never carry the personal edition under the public name.
-const edition = process.env.VISUALTEX_PERSONAL_BUILD === "1" ? "personal" : "public";
-process.stdout.write(`VisualTeX edition: ${edition}\n`);
 const hasExplicitFeatures = forwardedArgs.some(
   (argument) => argument === "--features" || argument === "-f",
 );
@@ -205,7 +200,6 @@ try {
     {
       ...process.env,
       VISUALTEX_TAURI_NATIVE_PREBUILT: "1",
-      VITE_VISUALTEX_EDITION: edition,
       ...(signing ? { APPLE_SIGNING_IDENTITY: signing.identity } : {}),
     },
   );

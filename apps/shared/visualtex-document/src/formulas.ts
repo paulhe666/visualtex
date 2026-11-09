@@ -43,9 +43,9 @@ export interface FormulaSessionCallbacks {
   /** Backspace in an empty formula: remove it. */
   remove(): void;
   /**
-   * "$" typed in the formula. In an empty inline formula it is the second "$" of "$$": the formula becomes a display
-   * formula. Otherwise it is the closing dollar: the formula is left after it (after a display formula, a "$" typed
-   * next is the second one of the closing "$$" and does nothing).
+   * "$" typed in the formula. In an empty inline formula it is the fourth "$" of "$$$$" (the field holds the third):
+   * the formula becomes a display formula. Otherwise it is the closing dollar: the formula is left after it, and the
+   * rest of its closing "$$" (inline) or "$$$$" (display) typed next does nothing.
    */
   dollar(empty: boolean): void;
   undo(): boolean;
@@ -235,6 +235,7 @@ function deliverKeys(view: EditorView, keys: FormulaKey[]) {
     if (formulaKey.getState(view.state)?.openId) {
       const open = openViews.get(view);
       if (open?.hasSession()) {
+        flushWaitingKeys(view, open);
         open.typeKey(key);
         continue;
       }
@@ -252,6 +253,14 @@ function deliverKeys(view: EditorView, keys: FormulaKey[]) {
   }
 }
 
+/** Keys waiting for the formula that opens go to its editor before any later key (in the order they were pressed). */
+function flushWaitingKeys(view: EditorView, open: FormulaView) {
+  const waiting = waitingKeys.get(view);
+  if (!waiting?.length) return;
+  waitingKeys.delete(view);
+  for (const key of waiting) open.typeKey(key);
+}
+
 /** Text typed into the formula that was just opened (it goes in once its editor is there). */
 export function typeIntoOpenFormula(view: EditorView, text: string) {
   deliverKeys(
@@ -267,7 +276,10 @@ export interface FormulaCommands {
   displayFormula?(state: EditorState, dispatch?: (tr: Transaction) => void): boolean;
 }
 
-/** Meta of the transaction that left a display formula by its closing "$": the next "$" typed is let go. */
+/** Marks a key event a formula field replays to itself (typed into it while it opened). */
+export const REPLAYED_KEY = "visualTexReplayed";
+
+/** Meta of the transaction that left a formula by its closing "$": how many "$" typed next are let go. */
 export const CLOSED_BY_DOLLAR = "visualtexClosedByDollar";
 
 // The formula views of each editor view by formula id: a drag asks them where the pointer is.
@@ -885,11 +897,7 @@ export class FormulaView implements NodeView {
         session.enter?.(open.entry);
       }
       // Keys handed back by a formula left just before this one opened.
-      const waiting = waitingKeys.get(this.view);
-      if (waiting?.length) {
-        waitingKeys.delete(this.view);
-        for (const key of waiting) session.typeKey(key);
-      }
+      flushWaitingKeys(this.view, this);
       return;
     }
     if (openViews.get(this.view) === this) openViews.delete(this.view);
@@ -960,13 +968,13 @@ export class FormulaView implements NodeView {
           if (!at) return;
           if (!empty) {
             const tr = leaveFormula(view, at.pos, at.node, "after");
-            if (at.node.isBlock) tr.setMeta(CLOSED_BY_DOLLAR, true);
+            tr.setMeta(CLOSED_BY_DOLLAR, at.node.isBlock ? 3 : 1);
             view.dispatch(tr);
             view.focus();
             return;
           }
           if (at.node.isBlock || !commands.displayFormula) return;
-          // "$$": the inline formula gives way to a display formula, opened in its place.
+          // "$$$$": the inline formula gives way to a display formula, opened in its place.
           const tr = closeFormula(view.state.tr.delete(at.pos, at.pos + at.node.nodeSize));
           view.dispatch(tr.setSelection(TextSelection.create(tr.doc, at.pos)));
           commands.displayFormula(view.state, view.dispatch);
@@ -1044,10 +1052,14 @@ export class FormulaView implements NodeView {
   /** A key that reached the document while this formula is open but its editor has no focus yet. */
   forwardKey(event: KeyboardEvent): boolean {
     if (!this.session || !this.editorBox) return false;
+    // a key the field replays to itself, bubbling out of it: never handed over again
+    if ((event as KeyboardEvent & { [REPLAYED_KEY]?: boolean })[REPLAYED_KEY]) return false;
     const active = document.activeElement;
     if (active && this.editorBox.contains(active)) return false;
     if (["Shift", "Control", "Alt", "Meta", "CapsLock"].includes(event.key) || event.isComposing) return false;
     const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+    // keys handed back a moment ago and waiting for this formula go first
+    flushWaitingKeys(this.view, this);
     this.session.typeKey({
       key: event.key,
       code: event.code,

@@ -80,6 +80,7 @@ const NOTICE = {
   accessibility: "未授权辅助功能 · ↩ 复制",
   copied: "已复制 · ⌘V 粘贴",
   inputMethod: "输入源中没有 VisualTeX · 系统设置 › 键盘 › 输入法",
+  reopen: (app: string) => `${app} 需重新打开 · 之后公式写在输入框里`,
 } as const;
 
 type CoreMathfield = Parameters<typeof visualTexEditingCore.caretRect>[0];
@@ -969,7 +970,15 @@ export function AnywhereApp() {
       fieldInkRef.current = activation.inputMethod ? opaqueHex(activation.textColor) : null;
       fieldBackgroundRef.current = activation.inputMethod ? opaqueHex(activation.backgroundColor) : null;
       setTextColor(activation.inputMethod ? cssColor(activation.textColor) ?? systemTextColor() : null);
-      setNotice(!activation.accessibilityTrusted ? NOTICE.accessibility : activation.inputMethodMissing ? NOTICE.inputMethod : null);
+      setNotice(
+        !activation.accessibilityTrusted
+          ? NOTICE.accessibility
+          : activation.reopenApp
+            ? NOTICE.reopen(activation.reopenApp)
+            : activation.inputMethodMissing
+              ? NOTICE.inputMethod
+              : null,
+      );
       appNameRef.current = activation.appName;
       const mode = rememberedOutputMode(activation.appName);
       outputModeRef.current = mode;

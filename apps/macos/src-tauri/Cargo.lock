@@ -4429,17 +4429,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tex-bridge"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "flate2",
- "serde",
- "serde_json",
- "ttf-parser",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5029,7 +5018,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
- "tex-bridge",
  "time",
  "tokio",
  "tower",

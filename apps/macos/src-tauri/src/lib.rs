@@ -22,7 +22,6 @@ mod office;
 mod quick_ocr;
 mod svg_font_stabilizer;
 mod system_math_glyphs;
-mod tex_commands;
 
 const PADDLE_VERSION: &str = "3.3.1";
 const PADDLEOCR_VERSION: &str = "3.7.0";
@@ -2073,8 +2072,6 @@ pub fn run() {
         .setup(move |app| {
             let setup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                 || -> Result<(), Box<dyn std::error::Error>> {
-                    // LaTeX documents' TeX service (personal edition front end; harmless otherwise)
-                    app.manage(tex_commands::TexState::new(app.handle())?);
                     if maintenance_install {
                         match office::macos_offline_installer::install(app.handle()) {
                             Ok(status) => {
@@ -2192,19 +2189,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            tex_commands::tex_status,
-            tex_commands::tex_project_open,
-            tex_commands::tex_project_new,
-            tex_commands::tex_project_files,
-            tex_commands::tex_project_read,
-            tex_commands::tex_project_write,
-            tex_commands::tex_compile,
-            tex_commands::tex_preview,
-            tex_commands::tex_pages,
-            tex_commands::tex_pdf,
-            tex_commands::tex_synctex,
-            tex_commands::tex_live,
-            tex_commands::tex_close,
             write_export_file,
             read_image_file,
             document_export::read_import_file,
@@ -2422,12 +2406,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let Err(error) = office::background::pause_launch_agent_for_quit() {
                 eprintln!("Unable to pause VisualTeX Office background service: {error}");
-            }
-        }
-        tauri::RunEvent::Exit => {
-            // LaTeX documents' engines (warm runs, live servers) do not outlive the app
-            if let Some(tex) = app.try_state::<tex_commands::TexState>() {
-                tex.0.shutdown();
             }
         }
         _ => {}

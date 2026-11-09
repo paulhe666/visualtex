@@ -36,7 +36,7 @@ const BUNDLE_NAME: &str = "VisualTeX Input.app";
 const EXECUTABLE: &str = "VisualTeXInput";
 /// input-method/Sources/AppLink.swift
 const SOCKET_NAME: &str = "anywhere-ime.sock";
-const APP_IDENTIFIER: &str = "com.visualtex.studio";
+pub(super) const APP_IDENTIFIER: &str = "com.visualtex.studio";
 /// "Select the previous input source" in com.apple.symbolichotkeys.
 const SELECT_PREVIOUS_HOTKEY: &str = "60";
 /// Its default binding: Control-Space.
@@ -90,6 +90,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     static kTISPropertyInputSourceID: CFTypeRef;
     static kTISPropertyInputSourceIsEnabled: CFTypeRef;
+    static kTISPropertyInputSourceIsSelectCapable: CFTypeRef;
     fn TISCreateInputSourceList(properties: CFTypeRef, include_all_installed: u8) -> CFTypeRef;
     fn TISGetInputSourceProperty(source: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
     fn TISSelectInputSource(source: CFTypeRef) -> i32;
@@ -219,27 +220,61 @@ fn input_source(id: &str, include_all_installed: bool) -> Option<Owned> {
 
 /// The user added VisualTeX in System Settings > Keyboard > Input Sources
 /// (an application cannot: on macOS 27 TISEnableInputSource opens that page).
-/// Text Input Sources may call it enabled when it is not in the user's list
-/// (the input menu does not show it, nothing can switch to it): the list says.
+/// Text Input Sources tells it: an added third-party input method is listed in
+/// com.apple.inputsources AppleEnabledThirdPartyInputSources, never in
+/// com.apple.HIToolbox AppleEnabledInputSources (Apple's own sources only).
 pub(super) fn is_enabled(app: &AppHandle) -> bool {
-    listed()
-        && on_main(app, || {
-            input_source(SOURCE_ID, true)
-                .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsEnabled) }) == Some(1))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    on_main(app, || {
+        input_source(SOURCE_ID, true)
+            .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsEnabled) }) == Some(1))
+            .unwrap_or(false)
+    })
+    .unwrap_or(false)
 }
 
-/// VisualTeX is in the user's input sources (com.apple.HIToolbox
-/// AppleEnabledInputSources: what the input menu shows).
-fn listed() -> bool {
-    let Some(list) = preference("com.apple.HIToolbox", "AppleEnabledInputSources") else { return false };
-    array_values(list.0).iter().any(|entry| {
-        let bundle = string_value(dictionary_value(*entry, "Bundle ID")).unwrap_or_default();
-        let mode = string_value(dictionary_value(*entry, "Input Mode")).unwrap_or_default();
-        bundle.starts_with("com.visualtex.inputmethod") || mode.starts_with("com.visualtex.inputmethod")
+/// VisualTeX is in the user's input sources list (for anywhere.log): a
+/// third-party source in com.apple.inputsources, Apple's in com.apple.HIToolbox.
+pub(super) fn listed() -> bool {
+    [
+        ("com.apple.inputsources", "AppleEnabledThirdPartyInputSources"),
+        ("com.apple.HIToolbox", "AppleEnabledInputSources"),
+    ]
+    .iter()
+    .any(|(domain, key)| {
+        let Some(list) = preference(domain, key) else { return false };
+        array_values(list.0).iter().any(|entry| {
+            let bundle = string_value(dictionary_value(*entry, "Bundle ID")).unwrap_or_default();
+            let mode = string_value(dictionary_value(*entry, "Input Mode")).unwrap_or_default();
+            bundle.starts_with("com.visualtex.inputmethod") || mode.starts_with("com.visualtex.inputmethod")
+        })
     })
+}
+
+/// The most recently used input source other than VisualTeX
+/// (com.apple.HIToolbox AppleInputSourceHistory, most recent first) that can
+/// be selected: the field's own source when this process's is not (VisualTeX's
+/// own windows changed it).
+pub(super) fn recent_other_source(app: &AppHandle) -> Option<String> {
+    let history = preference("com.apple.HIToolbox", "AppleInputSourceHistory")?;
+    let candidates: Vec<String> = array_values(history.0)
+        .iter()
+        .filter_map(|entry| {
+            let mode = string_value(dictionary_value(*entry, "Input Mode"));
+            let layout = string_value(dictionary_value(*entry, "KeyboardLayout Name"))
+                .map(|name| format!("com.apple.keylayout.{}", name.replace([' ', '.'], "")));
+            let bundle = string_value(dictionary_value(*entry, "Bundle ID"));
+            mode.or(layout).or(bundle)
+        })
+        .filter(|id| !id.starts_with("com.visualtex.inputmethod"))
+        .collect();
+    on_main(app, move || {
+        candidates.into_iter().find(|id| {
+            input_source(id, false)
+                .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsSelectCapable) }) == Some(1))
+                .unwrap_or(false)
+        })
+    })
+    .flatten()
 }
 
 /// The input method is in ~/Library/Input Methods (the app put it there).
@@ -266,8 +301,16 @@ pub(super) fn select_ascii(app: &AppHandle) -> Option<String> {
     .flatten()
 }
 
-/// The app's own input source back to `id` (after select_ascii).
+/// The app's own input source back to `id` (after select_ascii), never to
+/// VisualTeX's input method: this process would then type with it (its strip,
+/// its windows) and take it for the field's source at the next shortcut.
 pub(super) fn restore(app: &AppHandle, id: &str) {
+    if id == SOURCE_ID {
+        if let Some(other) = recent_other_source(app) {
+            let _ = select(app, &other);
+        }
+        return;
+    }
     let _ = select(app, id);
 }
 
@@ -402,8 +445,9 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     }
     let registered = on_main(app, move || register(&installed)).unwrap_or(false);
     super::log(&format!(
-        "input method installed changed={changed} registered={registered} enabled={}",
-        is_enabled(app)
+        "input method installed changed={changed} registered={registered} enabled={} listed={}",
+        is_enabled(app),
+        listed()
     ));
     Ok(())
 }

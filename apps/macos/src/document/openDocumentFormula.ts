@@ -20,15 +20,3 @@ export function setOpenDocumentFormula(next: OpenDocumentFormula | null, field?:
 export function openDocumentFormula(): OpenDocumentFormula | null {
   return open?.field.isConnected ? open : null;
 }
-
-/** A LaTeX document edited on its pages (visualEditor.ts) opens a new formula at its caret for a tile or the
- *  toolbar: true when it did (its field then registers above). */
-let pageFormula: (() => boolean) | null = null;
-
-export function setPageFormulaOpener(opener: (() => boolean) | null) {
-  pageFormula = opener;
-}
-
-export function openPageFormula(): boolean {
-  return pageFormula?.() ?? false;
-}
