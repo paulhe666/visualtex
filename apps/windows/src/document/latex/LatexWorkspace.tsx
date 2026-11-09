@@ -28,7 +28,25 @@ import { DocumentFormulaField, type DocumentFormulaFieldApi } from "../DocumentF
 import { createSafeStorage } from "../../runtime/safeStorage";
 import { LatexPages, type PageContent, type PageMarker } from "./LatexPages";
 import { LatexSource, type LatexSourceHandle, type LineMark } from "./LatexSource";
-import { changedParagraph, liveEligible, overlayOf, pageGlyphs, paragraphArea, placesOf, SP_PER_BP, verify, type LiveOverlay, type PageGlyph, type ParagraphArea, type ParagraphPlace } from "./livePara";
+import {
+  beginsParagraphCommand,
+  bodyPrefix,
+  changedParagraph,
+  docMacros,
+  liveEligible,
+  liveText,
+  overlayOf,
+  pageGlyphs,
+  paragraphArea,
+  placesOf,
+  SP_PER_BP,
+  verify,
+  type DocMacros,
+  type LiveOverlay,
+  type PageGlyph,
+  type ParagraphArea,
+  type ParagraphPlace,
+} from "./livePara";
 import { formulaForEditor, mathRegionAt, type MathRegion } from "./mathRegion";
 import { projectPath, SyncTex } from "./synctex";
 import { parseTexLog, type TexMessage } from "./texLog";
@@ -471,6 +489,15 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     /** the paragraph typed is not TeX yet (a formula or command half typed) */
     unfinished: false,
   });
+  const macrosRef = useRef<{ preamble: string; macros: DocMacros } | null>(null);
+  /** The document's own commands (its main file's preamble). */
+  const macrosOf = useCallback((): DocMacros => {
+    const main = buffers.current.get(pointerRef.current.main)?.text ?? "";
+    const at = main.search(/\\begin\s*\{document\}/);
+    const preamble = at >= 0 ? main.slice(0, at) : "";
+    if (macrosRef.current?.preamble !== preamble) macrosRef.current = { preamble, macros: docMacros(preamble) };
+    return macrosRef.current.macros;
+  }, []);
   const clearLive = useCallback(() => {
     liveState.current.shown = "";
     setLive(null);
@@ -491,8 +518,12 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       const old = base?.texts.get(path) ?? pristine.current.get(path);
       if (!service || !base || old === undefined || base.build !== buildRef.current) return quit("no build text");
       if (old === text) return quit("the page is current");
-      const change = changedParagraph(old, text);
-      if (!change || !liveEligible(change, text, path === pointerRef.current.main)) return quit("not a plain paragraph");
+      const macros = macrosOf();
+      const main = path === pointerRef.current.main;
+      const change = changedParagraph(old, text, macros);
+      if (!change || !liveEligible(change, text, main)) return quit("not a plain paragraph");
+      // the body's declarations before it (a size, a family), then the paragraph with its indent
+      const prefix = bodyPrefix(text, change.start, main);
       if (sync.current?.build !== base.build) await loadSync(base.build);
       const s = sync.current;
       if (!s || s.build !== base.build || buildRef.current !== base.build) return quit("no SyncTeX");
@@ -517,15 +548,16 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       }
       const hsize = Math.round(area.lines[area.core[0]].width * SP_PER_BP);
       const ask = async (paragraph: string, indent: number) => {
-        const r = await service.live({ doc: docId, text: paragraph, hsize, indent, session: state.session });
+        const r = await service.live({ doc: docId, text: liveText(prefix, indent, paragraph), hsize, indent: -2, session: state.session });
         for (const [k, d] of Object.entries(r.paths)) state.paths.set(k, d);
         return r;
       };
       let checked = state.verified.get(key);
       if (checked === undefined) {
         checked = null;
-        // indented as the document indents it, or not (after a heading, \noindent)
-        for (const indent of [-1, 0]) {
+        // indented as the document indents it, or not (after a heading, \noindent; one of the document's paragraph
+        // commands sets its own)
+        for (const indent of beginsParagraphCommand(change.oldText, macros) ? [0, -1] : [-1, 0]) {
           const r0 = await ask(change.oldText, indent);
           // no server yet: asked again at the next edit
           if (r0.status === "starting" || r0.status === "unavailable") return quit("server " + r0.status);
@@ -569,7 +601,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = `live ${r.status} ${r.error}`;
       }
     },
-    [clearLive, docId, loadSync, service],
+    [clearLive, docId, loadSync, macrosOf, service],
   );
 
   const requestLive = useRef<(path: string, text: string) => void>(() => undefined);
@@ -624,7 +656,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       // a paragraph the live server can show: TeX once typing pauses
       const base = built.current;
       const old = base ? base.texts.get(path) ?? pristine.current.get(path) : undefined;
-      const change = base && old !== undefined ? changedParagraph(old, text) : null;
+      const change = base && old !== undefined ? changedParagraph(old, text, macrosOf()) : null;
       const live =
         !!change &&
         liveEligible(change, text, path === pointerRef.current.main) &&

@@ -50,7 +50,8 @@ pub struct LiveRequest {
     pub doc: String,
     /// the paragraph's LaTeX as the source has it
     pub text: String,
-    /// sp: the line width, the indent (-1: the document's \parindent, 0: none), \leftskip, \rightskip
+    /// sp: the line width, the indent (-1: the document's \parindent, 0: none, -2: the text says), \leftskip,
+    /// \rightskip
     pub hsize: i64,
     #[serde(default = "minus_one")]
     pub indent: i64,
