@@ -577,6 +577,12 @@ final class VTInputController: IMKInputController {
         // space (2026-11-09); the polls that follow read them once the field has drawn the space.
         guard Date().timeIntervalSince(lastHold) > 0.12 else { return false }
         var filler: (count: Int, width: CGFloat)?
+        // the fillers of all the pieces read whole on their lines: together a run long enough that a
+        // field's pixel rounding is a small part of it (a formula of short pieces holds two or three
+        // fillers each, and Safari draws the filler narrower than its font says: 2026-11-09 the first
+        // line ran past the field's edge)
+        var fillerCount = 0
+        var fillerRun: CGFloat = 0
         var joints: [CGFloat] = []
         for (index, start) in space.starts.enumerated() where index < rects.count {
             let count = space.counts[index]
@@ -584,10 +590,9 @@ final class VTInputController: IMKInputController {
                   abs(end.minY - rects[index].minY) < rects[index].height * 0.5,
                   end.minX > rects[index].minX
             else { continue }
-            // a run long enough that a field's pixel rounding is a small part of it
-            if count >= 6, count > (filler?.count ?? 1) {
-                filler = (count, (end.minX - rects[index].minX) / CGFloat(count))
-            }
+            fillerCount += count
+            fillerRun += end.minX - rects[index].minX
+            if fillerCount >= 6 { filler = (fillerCount, fillerRun / CGFloat(fillerCount)) }
             if index + 1 < rects.count, abs(rects[index + 1].minY - end.minY) < end.height * 0.5,
                rects[index + 1].minX > end.minX {
                 joints.append(rects[index + 1].minX - end.minX)
