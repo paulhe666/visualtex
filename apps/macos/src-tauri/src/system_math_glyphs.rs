@@ -87,7 +87,6 @@ fn validate_character(value: &str) -> Result<String, String> {
     Ok(normalized.to_string())
 }
 
-#[cfg(target_os = "macos")]
 /// A font family installed on the system, for the document's body font menus.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +99,7 @@ pub(crate) struct SystemFontFamily {
     cjk: bool,
 }
 
+#[cfg(target_os = "macos")]
 mod macos {
     use super::*;
     use std::ffi::c_void;
@@ -842,9 +842,61 @@ pub(crate) async fn list_system_font_families() -> Result<Vec<SystemFontFamily>,
             .await
             .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        return tauri::async_runtime::spawn_blocking(linux::list_families)
+            .await
+            .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         Ok(Vec::new())
+    }
+}
+
+/// The font families fontconfig knows (fc-list), with their Chinese names.
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::SystemFontFamily;
+    use std::collections::BTreeMap;
+    use std::process::Command;
+
+    pub(super) fn list_families() -> Vec<SystemFontFamily> {
+        let Ok(output) = Command::new("fc-list")
+            .args([":", "-f", "%{family}\\t%{familylang}\\t%{lang}\\n"])
+            .output()
+        else {
+            return Vec::new();
+        };
+        let mut families: BTreeMap<String, SystemFontFamily> = BTreeMap::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let mut fields = line.split('\t');
+            let names: Vec<&str> = fields.next().unwrap_or("").split(',').collect();
+            let languages: Vec<&str> = fields.next().unwrap_or("").split(',').collect();
+            let cjk = fields.next().unwrap_or("").split('|').any(|lang| lang.starts_with("zh"));
+            let Some(family) = names.first().map(|name| name.trim()).filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            if family.starts_with('.') {
+                continue;
+            }
+            let localized = names
+                .iter()
+                .zip(languages.iter())
+                .find(|(_, lang)| lang.starts_with("zh"))
+                .map(|(name, _)| name.trim().to_string())
+                .filter(|name| name != family);
+            let entry = families.entry(family.to_string()).or_insert(SystemFontFamily {
+                family: family.to_string(),
+                localized: None,
+                cjk: false,
+            });
+            entry.cjk |= cjk;
+            if entry.localized.is_none() {
+                entry.localized = localized;
+            }
+        }
+        families.into_values().collect()
     }
 }
 

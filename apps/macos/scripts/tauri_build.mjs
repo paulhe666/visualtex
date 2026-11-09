@@ -207,3 +207,8 @@ try {
   signing?.cleanup();
 }
 if (tauriStatus !== 0) process.exit(tauriStatus);
+if (process.platform === "linux") {
+  // Tauri names the package after the product in kebab case ("visual-te-x"): visualtex
+  const status = runStatus("node", ["scripts/linux_package.mjs"]);
+  if (status !== 0) process.exit(status);
+}

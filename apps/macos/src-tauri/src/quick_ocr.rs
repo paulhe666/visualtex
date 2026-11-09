@@ -123,7 +123,12 @@ pub(crate) fn capture_selection_png() -> Result<Option<Vec<u8>>, String> {
         Ok(Some(bytes))
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux_screenshot::capture_selection_png(MAX_IMAGE_BYTES)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         Err("Quick OCR screenshot capture is currently supported on macOS only".to_string())
     }

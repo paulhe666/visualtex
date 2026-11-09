@@ -18,3 +18,4 @@ __pycache__/
 *.log
 .tmp-*
 input-method/build/
+input-method/linux/target/
