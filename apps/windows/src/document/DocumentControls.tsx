@@ -71,8 +71,6 @@ import {
 import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "./systemFonts";
 import { CitationPicker } from "./CitationPicker";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
-import { DOCUMENT_LATEX } from "../edition";
-import { useDocumentFormatStore, type DocumentFormat } from "../stores/documentFormatStore";
 import { useEditorStore } from "../stores/editorStore";
 import { openDocumentFormula } from "./openDocumentFormula";
 import { ColorMenuButton } from "./ColorPalette";
@@ -627,49 +625,6 @@ function copyFormulaLatex() {
   target.field.focus();
 }
 
-/**
- * LaTeX or Markdown input (in the header, in document mode): what typing converts and what the command menu offers
- * (DESIGN.md §7.1). The document keeps the focus. The public edition has Markdown input only: no switch.
- */
-export function DocumentInputModeSwitch(props: { isEn: boolean }) {
-  return DOCUMENT_LATEX ? <InputModeSwitch isEn={props.isEn} /> : null;
-}
-
-function InputModeSwitch(props: { isEn: boolean }) {
-  const lang: Lang = props.isEn ? "en" : "zh";
-  const mode = useDocumentFormatStore((store) => store.inputMode);
-  const setMode = useDocumentFormatStore((store) => store.setInputMode);
-  const view = useDocumentEditorStore((store) => store.view);
-  const choices: Array<{ value: DocumentFormat; label: string; hint: string }> = [
-    { value: "latex", label: "LaTeX", hint: t(lang, "LaTeX input", "LaTeX 输入") },
-    { value: "markdown", label: "Markdown", hint: t(lang, "Markdown input", "Markdown 输入") },
-  ];
-  return (
-    <div className="document-input-switch" role="radiogroup" aria-label={t(lang, "Input", "输入方式")}>
-      <span className="document-input-caption">{t(lang, "Input", "输入")}</span>
-      <span className="workspace-content-switch">
-        {choices.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            role="radio"
-            aria-checked={mode === choice.value}
-            className={mode === choice.value ? "is-active" : ""}
-            title={choice.hint}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              setMode(choice.value);
-              view?.focus();
-            }}
-          >
-            {choice.label}
-          </button>
-        ))}
-      </span>
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ controls --
 
 function useLang(): Lang {
@@ -721,7 +676,6 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
   const view = useDocumentEditorStore((store) => store.view);
   const state = useDocumentEditorStore((store) => store.state);
   const lang = useLang();
-  const markdownInput = useDocumentFormatStore((store) => store.inputMode) === "markdown";
   if (!state) return <div className="document-controls document-top-toolbar">{props.leading}{props.trailing}</div>;
   const inMath = !!openFormulaId(state);
   const align = currentAlign(state);
@@ -730,8 +684,6 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
   const size = markValue(state, "fontSize", "size") ?? "normalsize";
   const color = markValue(state, "textColor", "color");
   const highlight = markValue(state, "highlight", "color");
-  // The tooltips name the way to type each style in the current input (LaTeX commands, or Markdown and Typora's keys).
-  const tip = (latex: [string, string], markdown: [string, string]) => (markdownInput ? t(lang, ...markdown) : t(lang, ...latex));
   const settings = documentSettings(state.doc);
   const applySettings = (patch: Partial<DocumentSettings>) => run(view, setDocumentSettings(patch));
   // a value typed in a field: set without taking the focus from the field
@@ -784,17 +736,17 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
         </Button>
       ))}
       <Divider />
-      <Button label={tip(["Section (Ctrl+Alt+1)", "章节 (Ctrl+Alt+1)"], ["Heading (Ctrl+1–6)", "标题 (Ctrl+1–6)"])} active={level > 0} className="is-text-action" onClick={() => run(view, toggleSection)}>
+      <Button label={t(lang, "Heading (Ctrl+1–6)", "标题 (Ctrl+1–6)")} active={level > 0} className="is-text-action" onClick={() => run(view, toggleSection)}>
         <span className="document-section-icon">
           1.
           <br />
           1.2.
         </span>
       </Button>
-      <Button label={tip(["Numbered list (Ctrl+Shift+7)", "有序列表 (Ctrl+Shift+7)"], ["Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)"])} active={list === "ordered_list"} onClick={() => run(view, toggleList("ordered_list"))}>
+      <Button label={t(lang, "Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)")} active={list === "ordered_list"} onClick={() => run(view, toggleList("ordered_list"))}>
         <ListOrdered size={16} />
       </Button>
-      <Button label={tip(["Bulleted list (Ctrl+Shift+8)", "无序列表 (Ctrl+Shift+8)"], ["Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])"])} active={list === "bullet_list"} onClick={() => run(view, toggleList("bullet_list"))}>
+      <Button label={t(lang, "Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])")} active={list === "bullet_list"} onClick={() => run(view, toggleList("bullet_list"))}>
         <List size={16} />
       </Button>
       <Button label={t(lang, "Indent", "增加缩进")} onClick={() => run(view, indent(1))}>
@@ -804,7 +756,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
         <IndentDecrease size={16} />
       </Button>
       <Divider />
-      <Popover label={tip(["Table", "表格"], ["Table (Ctrl+T)", "表格 (Ctrl+T)"])} disabled={isInTable(state)} button={<Table size={16} strokeWidth={1.8} />}>
+      <Popover label={t(lang, "Table (Ctrl+T)", "表格 (Ctrl+T)")} disabled={isInTable(state)} button={<Table size={16} strokeWidth={1.8} />}>
         {(close) => (
           <TablePicker
             onPick={(rows, cols) => {
@@ -839,7 +791,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
       <Button label={t(lang, "Underline (Ctrl+U)", "下划线 (Ctrl+U)")} active={markActive(state, "underline")} onClick={() => run(view, toggleMark(state.schema.marks.underline))}>
         <Underline size={15} strokeWidth={2.2} />
       </Button>
-      <Button label={tip(["Strikethrough", "删除线"], ["Strikethrough (Alt+Shift+5)", "删除线 (Alt+Shift+5)"])} active={markActive(state, "strike")} onClick={() => run(view, toggleMark(state.schema.marks.strike))}>
+      <Button label={t(lang, "Strikethrough (Alt+Shift+5)", "删除线 (Alt+Shift+5)")} active={markActive(state, "strike")} onClick={() => run(view, toggleMark(state.schema.marks.strike))}>
         <Strikethrough size={15} strokeWidth={2.2} />
       </Button>
       <ColorMenuButton

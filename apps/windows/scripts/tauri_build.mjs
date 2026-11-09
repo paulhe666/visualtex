@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -297,7 +297,7 @@ function releaseArguments(args) {
     if (argument === "--debug" || argument === "-d") {
       throw new Error("VisualTeX Windows installer builds must use release mode");
     }
-    if (argument === "--no-bundle" || argument === "--no-ocr-bundle" || argument === "--personal") continue;
+    if (argument === "--no-bundle" || argument === "--no-ocr-bundle") continue;
     if (argument === "--bundles" || argument === "-b") {
       index += 1;
       continue;
@@ -323,24 +323,14 @@ if (process.argv.includes("--prepare-nsis-template-only")) {
   process.exit(0);
 }
 const forwarded = releaseArguments(process.argv.slice(2));
-// The edition (src/edition.ts): "personal" (document mode with LaTeX) only with --personal (npm run
-// tauri:build:personal), whose installer is named -personal-setup.exe; every other build is public, whatever the
-// shell's VITE_VISUALTEX_EDITION says, so a release can never carry the personal edition under the public name.
-const personal = process.argv.includes("--personal");
-if (personal && noOcrBundle) {
-  throw new Error("The personal build is the full installer; it has no no-OCR flavor");
-}
-const edition = personal ? "personal" : "public";
-console.log(`VisualTeX edition: ${edition}`);
 
 if (process.platform !== "win32") {
   if (noOcrBundle) {
     throw new Error("The no-OCR installer flavor is Windows-only");
   }
-  const editionEnvironment = { ...process.env, VITE_VISUALTEX_EDITION: edition };
-  run(npm, ["run", "build:desktop"], editionEnvironment);
-  run(node, ["scripts/verify_frontend_dist.mjs"], editionEnvironment);
-  run(tauri, ["build", ...forwarded], editionEnvironment);
+  run(npm, ["run", "build:desktop"]);
+  run(node, ["scripts/verify_frontend_dist.mjs"]);
+  run(tauri, ["build", ...forwarded]);
   process.exit(0);
 }
 
@@ -351,9 +341,8 @@ const flavorEnvironment = noOcrBundle
       ...process.env,
       VISUALTEX_NO_OCR_BUNDLE: "1",
       CARGO_TARGET_DIR: noOcrTargetRoot,
-      VITE_VISUALTEX_EDITION: edition,
     }
-  : { ...process.env, VITE_VISUALTEX_EDITION: edition };
+  : process.env;
 const powershellEnvironment =
   process.platform === "win32"
     ? windowsPowerShellEnvironment(flavorEnvironment)
@@ -362,11 +351,11 @@ const flavorConfigArguments = noOcrBundle
   ? ["--config", "src-tauri/tauri.no-ocr.conf.json"]
   : ["--config", "src-tauri/tauri.ocr-bundle.conf.json"];
 
-// The full builds (public and personal) share one target, and its cleanup empties bundle/nsis: the other
-// installers already there (the other edition's, the no-OCR copy) are kept aside and put back after the build,
-// whether it succeeds or not. (The no-OCR build has a target of its own and leaves bundle/nsis alone.)
+// The full build's cleanup empties bundle/nsis: the other installers already there (the no-OCR copy) are kept
+// aside and put back after the build, whether it succeeds or not. (The no-OCR build has a target of its own and
+// leaves bundle/nsis alone.)
 const deliveryDirectory = resolve("src-tauri", "target", "release", "bundle", "nsis");
-const ownInstaller = personal ? /-personal-setup\.exe$/ : /^VisualTeX_.+_x64-setup\.exe$/;
+const ownInstaller = /^VisualTeX_.+_x64-setup\.exe$/;
 let keptInstallers = null;
 if (!noOcrBundle && existsSync(deliveryDirectory)) {
   keptInstallers = mkdtempSync(join(tmpdir(), "visualtex-installers-"));
@@ -381,20 +370,8 @@ function restoreKeptInstallers() {
   rmSync(keptInstallers, { recursive: true, force: true });
   keptInstallers = null;
 }
-// run() exits on a failed step: a personal installer left under the public name goes, the kept ones come back
-let personalDone = false;
-process.on("exit", () => {
-  if (!personal || personalDone) {
-    restoreKeptInstallers();
-    return;
-  }
-  if (existsSync(deliveryDirectory)) {
-    for (const name of readdirSync(deliveryDirectory)) {
-      if (/^VisualTeX_.+_x64-setup\.exe$/.test(name)) rmSync(join(deliveryDirectory, name), { force: true });
-    }
-  }
-  restoreKeptInstallers();
-});
+// run() exits on a failed step: the kept installers come back
+process.on("exit", restoreKeptInstallers);
 
 // 1. Remove only stale outputs for this flavor. The lightweight build uses its
 // own Cargo/Tauri target tree so it cannot overwrite the already-accepted full
@@ -510,15 +487,6 @@ if (noOcrBundle) {
       "-File",
       "scripts/test_windows_installed_release.ps1",
     ], powershellEnvironment);
-  }
-  if (personal) {
-    // moved, not copied: no personal installer is left under the public name
-    const personalInstaller = resolve(deliveryDirectory, `VisualTeX_${version}_x64-personal-setup.exe`);
-    rmSync(personalInstaller, { force: true });
-    renameSync(generatedInstaller, personalInstaller);
-    personalDone = true;
-    restoreKeptInstallers();
-    console.log(`Personal installer: ${personalInstaller}`);
   }
   restoreKeptInstallers();
 }

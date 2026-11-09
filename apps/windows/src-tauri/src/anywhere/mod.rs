@@ -339,7 +339,16 @@ fn begin_input_method(app: &AppHandle, display: bool) {
         return;
     }
     let previous = ime::current_profile();
-    let already = previous.as_ref().map(ime::is_visualtex).unwrap_or(false);
+    // The profile read here is this process's, not the field's: 11-08 06:44 it said VisualTeX two
+    // seconds after the TIP had handed the field back to Microsoft Pinyin; no TIP answered and
+    // the formula fell back to the strip at the pointer (also 10-27, 10-30). VisualTeX types the
+    // field already only when a TIP reports it (see below).
+    let profile_is_visualtex = previous.as_ref().map(ime::is_visualtex).unwrap_or(false);
+    if !profile_is_visualtex {
+        if let Some(profile) = previous.as_ref() {
+            remember_other_profile(profile);
+        }
+    }
     let field_window = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }.0 as isize;
     let generation = {
         let Ok(mut session) = session() else { return };
@@ -347,7 +356,7 @@ fn begin_input_method(app: &AppHandle, display: bool) {
         session.phase = Phase::Activating;
         session.caret = None;
         session.inline_anchor = None;
-        session.return_to = previous.clone().filter(|_| !already);
+        session.return_to = previous.clone().filter(|_| !profile_is_visualtex);
         session.display = display;
         session.awaiting_input_method = session.generation;
         session.pending_keys.clear();
@@ -361,15 +370,21 @@ fn begin_input_method(app: &AppHandle, display: bool) {
     ime::pin(None);
     with_panel(app, |_| {});
     formula_keys(true);
+    // Typing with VisualTeX already: a TIP reports the field (one relinks within a second of
+    // VisualTeX starting), and the field answers with the caret.
+    let already = profile_is_visualtex && wait_linked();
     let switched = if already {
-        // Typing with VisualTeX already: its field answers with the caret. A TIP relinks
-        // within a second of VisualTeX starting.
-        let deadline = std::time::Instant::now() + IME_RELINK_WAIT;
-        while !ime::is_linked() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(40));
-        }
         ime::send(serde_json::json!({ "t": "caret" }))
     } else {
+        if profile_is_visualtex {
+            // no field has VisualTeX: switch it, and give it back the last other input method
+            log(&format!("input method gen={generation}: the profile is VisualTeX's but no field reports it: switching"));
+            if let Ok(mut session) = session() {
+                if session.generation == generation {
+                    session.return_to = last_other_profile();
+                }
+            }
+        }
         match ime::switch_in() {
             Ok(()) => true,
             Err(error) => {
@@ -399,6 +414,30 @@ fn begin_input_method(app: &AppHandle, display: bool) {
             give_up(&app, generation, !already);
         }
     });
+}
+
+/// A TIP reports its field; while no TIP is connected at all (VisualTeX has just started: they
+/// relink within a second) it is waited for, at most IME_RELINK_WAIT.
+fn wait_linked() -> bool {
+    let deadline = std::time::Instant::now() + IME_RELINK_WAIT;
+    while !ime::is_linked() && !ime::has_clients() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    ime::is_linked()
+}
+
+/// The last input method other than VisualTeX's seen at a shortcut: where a field goes back to
+/// when this process's profile says VisualTeX but the field had another one.
+static OTHER_PROFILE: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+
+fn remember_other_profile(profile: &serde_json::Value) {
+    if let Ok(mut other) = OTHER_PROFILE.lock() {
+        *other = Some(profile.clone());
+    }
+}
+
+fn last_other_profile() -> Option<serde_json::Value> {
+    OTHER_PROFILE.lock().ok().and_then(|other| other.clone())
 }
 
 /// The field did not take the input method: back to the input method it had, and the formula

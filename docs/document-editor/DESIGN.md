@@ -56,8 +56,8 @@ whole formula highlighted), **open** (live FormulaField inside the node).
 | Ctrl+M (no selection) | insert an empty inline formula and open it |
 | Ctrl+M with text selected | the selected text becomes the formula's LaTeX (`\text{}` for CJK) and opens |
 | Ctrl+Shift+M | insert / convert to a display formula |
-| `$...$` typed in text | becomes an inline formula when the closing `$` is typed (Pandoc rule: no space after the opening `$`, none before the closing one, no digit right after it) |
-| `$$` + Enter/space at the start of an empty paragraph | display formula |
+| `$$` typed in text | an empty inline formula in their place, open (2026-11-09; a single `$` stays text) |
+| `$$$$` typed in text | an empty display formula in their place, open (the third and fourth `$` reach the new inline formula, which gives way to it) |
 | Backspace after a formula / Delete before it | first press selects it, second deletes it |
 | Backspace in an empty line after a display formula / Delete in one before it | the line goes, the formula opens with the caret at its end / start (the formula is never deleted with the empty line, 2026-11-01) |
 | Left/Right at a formula's edge (horizontalExit) | close, caret before / after the formula |
@@ -199,11 +199,12 @@ character at both ends (inside its non-editable span); pinyin then works in ever
 
 ## 7. Markdown (2026-10-31)
 
-### 7.1 Two input modes
+### 7.1 Markdown only
 
-The strip's first control switches the input, persisted in `stores/documentFormatStore.ts`: LaTeX (Mathcha's
-triggers, §6.1) or Markdown (Typora and the note apps). Both edit the same document; the mode only changes what typing
-converts, what the command menu offers and how Markdown pastes. The output format is chosen on its own (§7.5).
+Documents are typed and written as Markdown (Typora and the note apps). The LaTeX input mode, LaTeX output and
+import, and the TeX-typeset LaTeX documents of the personal edition were removed on 2026-11-09, in every build; the
+shared package still has its LaTeX input code (`inputMode`), which the apps no longer select.
+`stores/documentFormatStore.ts` keeps the Markdown settings (references, input rule groups).
 
 ### 7.2 Typing Markdown (`markdownInput.ts`, `markdownLive.ts`, `inlineMarkdown.ts`) — Typora's input (2026-11-07)
 
@@ -244,11 +245,14 @@ Measured on Typora 1.14.15 (and Obsidian) with scripted keyboard runs: ~/claude/
   after a list or a quote: the line joins its last line; at a cell's start: the end of the cell before; in an empty first
   line of the document: the line goes. Enter on an empty list item outdents it / leaves the list; on an empty quote line
   leaves the quote; in a table goes to the cell below and leaves the table from its last row; a new task is unticked.
-- Formulas are VisualTeX's (not Typora's): `$` typed in a formula closes it; `$$` makes a display formula (Enter in it
-  while empty keeps the caret there); the closing `$$` of a display formula leaves it; Ctrl+Enter leaves any formula
-  (`￥` from a Chinese input method counts as `$`). In LaTeX input `$` opens an inline formula at once; in Markdown input
-  the next character decides, as in Typora and Pandoc: a digit or a space keeps `$5`, `$ 5`, `￥50` text, `$` makes a
-  display formula, anything else opens the formula with it.
+- Formulas are VisualTeX's (not Typora's), opened by doubled dollars so that a single `$` is never taken for one
+  (user, 2026-11-09): `$$` opens an inline formula, `$$$$` a display formula — the third `$` reaches the new empty
+  inline formula and is held there (nothing shown), the fourth turns it into a display formula; anything else typed
+  in between lets the held `$` go. A single `$` stays text (`$5`, `\$`). `$` typed in a formula closes it, and the rest
+  of its closing delimiter typed right after does nothing (one more `$` after an inline formula, up to three after a
+  display formula), so `$$x$$` and `$$$$x$$$$` type as written; Enter in an empty display formula keeps the caret
+  there; Ctrl+Enter leaves any formula; `￥` from a Chinese input method counts as `$`. Files still read and write
+  `$…$` and `$$…$$` (§7.5).
 - Typora's keys — Windows: Ctrl+1…6, Ctrl+0 (body text), Ctrl+= / Ctrl+- (a level up / down), Ctrl+T, Ctrl+Shift+K
   (code block), Ctrl+Shift+M (display formula), Ctrl+Shift+Q, Ctrl+Shift+[ / ], Ctrl+] / Ctrl+[ (list level),
   Ctrl+Shift+I (picture), Ctrl+L / E / D (select the line, the formatted span or cell, the word). Mac: ⌘1…6, ⌘0, ⌘= / ⌘-,

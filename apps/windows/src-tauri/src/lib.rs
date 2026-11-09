@@ -38,7 +38,6 @@ pub fn system_font_asset_acceptance_json(
 }
 mod document_export;
 mod document_library;
-mod tex_commands;
 mod office;
 #[cfg(windows)]
 mod windows_quick_ocr;
@@ -4053,8 +4052,6 @@ pub fn run() {
             }
             app.manage(office_state.clone());
             office::start(office_state);
-            // LaTeX documents (personal edition): TeX runs, pages, SyncTeX
-            app.manage(tex_commands::TexState::new(app.handle()).map_err(std::io::Error::other)?);
 
             #[cfg(windows)]
             if !isolated { windows_silent_ocr_hotkey::initialize(app.handle()).map_err(|error| {
@@ -4108,19 +4105,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            tex_commands::tex_status,
-            tex_commands::tex_project_open,
-            tex_commands::tex_project_new,
-            tex_commands::tex_project_files,
-            tex_commands::tex_project_read,
-            tex_commands::tex_project_write,
-            tex_commands::tex_compile,
-            tex_commands::tex_preview,
-            tex_commands::tex_pages,
-            tex_commands::tex_pdf,
-            tex_commands::tex_synctex,
-            tex_commands::tex_live,
-            tex_commands::tex_close,
             write_export_file,
             document_export::read_image_file,
             document_export::read_import_file,
@@ -4352,10 +4336,6 @@ pub fn run() {
         }
         tauri::RunEvent::Exit => {
             shutdown_runtime(app, &shutdown_for_events, "event-loop-exit");
-            // LaTeX documents' engines (warm runs, live servers) do not outlive the app
-            if let Some(tex) = app.try_state::<tex_commands::TexState>() {
-                tex.0.shutdown();
-            }
         }
         _ => {}
     });

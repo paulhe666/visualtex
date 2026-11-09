@@ -305,6 +305,11 @@ pub(super) fn is_linked() -> bool {
     clients().lock().map(|clients| clients.active.is_some()).unwrap_or(false)
 }
 
+/// Some TIP is connected (whether or not its field has the keyboard).
+pub(super) fn has_clients() -> bool {
+    clients().lock().map(|clients| !clients.all.is_empty()).unwrap_or(false)
+}
+
 // MARK: Profiles (a COM apartment of its own)
 
 fn with_profiles<T>(work: impl FnOnce(&ITfInputProcessorProfileMgr) -> T + Send + 'static) -> Option<T>

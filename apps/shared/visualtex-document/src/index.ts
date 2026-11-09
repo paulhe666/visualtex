@@ -11,6 +11,7 @@ export {
   formulaViewOf,
   openFormula,
   openFormulaId,
+  REPLAYED_KEY,
   type FormulaPart,
   type FormulaEntry,
   type FormulaExit,
