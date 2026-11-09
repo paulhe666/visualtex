@@ -3,7 +3,8 @@
 // export. Typing saves the files a moment later and has TeX typeset again (the engine is already waiting with
 // the preamble read); the pages change when the new ones are there. A click on a page goes to its source line;
 // the caret's line is marked on the pages. TeX's errors are listed and marked on their lines; the last good
-// pages stay. A formula at the caret opens in the formula editor (Mod+E) and goes back as LaTeX.
+// pages stay. A formula at the caret opens in the formula editor (Mod+E) and goes back as LaTeX. Meanwhile the
+// paragraph being typed is drawn at once, as the live LuaLaTeX server typesets it (livePara.ts).
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { gunzipSync, strToU8, zipSync } from "fflate";
 import { isTauri } from "@tauri-apps/api/core";
@@ -27,6 +28,7 @@ import { DocumentFormulaField, type DocumentFormulaFieldApi } from "../DocumentF
 import { createSafeStorage } from "../../runtime/safeStorage";
 import { LatexPages, type PageContent, type PageMarker } from "./LatexPages";
 import { LatexSource, type LatexSourceHandle, type LineMark } from "./LatexSource";
+import { changedParagraph, liveEligible, overlayOf, pageGlyphs, paragraphArea, placesOf, SP_PER_BP, verify, type LiveOverlay, type PageGlyph, type ParagraphArea, type ParagraphPlace } from "./livePara";
 import { formulaForEditor, mathRegionAt, type MathRegion } from "./mathRegion";
 import { projectPath, SyncTex } from "./synctex";
 import { parseTexLog, type TexMessage } from "./texLog";
@@ -65,7 +67,13 @@ const storage = createSafeStorage();
 const ZOOM_KEY = "visualtex.latex.zoom.v1";
 const SPLIT_KEY = "visualtex.latex.split.v1";
 const SAVE_DELAY_MS = 700;
-const COMPILE_DELAY_MS = 220;
+// TeX starts at the first keystroke (a run in progress is not stopped, the next one follows it); while the
+// paragraph being typed is shown live, once typing pauses (the live lines are what TeX will make; the run then
+// settles the page breaks and references)
+const COMPILE_DELAY_MS = 0;
+const LIVE_COMPILE_DELAY_MS = 400;
+// a formula or command half typed (TeX stops at it): TeX runs only after a longer pause
+const UNFINISHED_COMPILE_DELAY_MS = 2000;
 const ENGINES = ["xelatex", "pdflatex", "lualatex"] as const;
 const ENGINE_LABEL: Record<string, string> = { xelatex: "XeLaTeX", pdflatex: "pdfLaTeX", lualatex: "LuaLaTeX" };
 
@@ -89,6 +97,8 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
   const pointerRef = useRef(pointer);
   pointerRef.current = pointer;
   const buffers = useRef(new Map<string, Buffer>());
+  /** each file's text as first read from disk (what a build made before the file was open used) */
+  const pristine = useRef(new Map<string, string>());
   const legacy = useRef(new Set<string>());
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [tabs, setTabs] = useState<string[]>(() => pointer.tabs?.length ? pointer.tabs : [pointer.main]);
@@ -145,6 +155,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       // change its encoding under \documentclass[GBK]
       if (!isUtf8(bytes)) legacy.current.add(path);
       buffers.current.set(path, { disk: text, text });
+      pristine.current.set(path, text);
       return text;
     },
     [service],
@@ -178,6 +189,8 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
 
   // ---- compiling ----
   const run = useRef({ inflight: false, pending: false, started: 0, expected: 1500, reruns: 0, timer: 0, generation: 0, rerun: false });
+  /** the texts the shown build was made from (the live paragraph is found against them) */
+  const built = useRef<{ build: number; texts: Map<string, string> } | null>(null);
 
   const toProject = useCallback((path: string) => {
     const work = sync.current?.work ?? "";
@@ -289,6 +302,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       }
       const overlays: Record<string, string> = {};
       for (const [path, b] of buffers.current) if (b.text !== b.disk) overlays[path] = b.text;
+      const texts = new Map([...buffers.current].map(([path, b]) => [path, b.text] as const));
       const generation = ++state.generation;
       state.inflight = true;
       state.started = performance.now();
@@ -325,6 +339,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         if (generation === state.generation || full) {
           state.expected = r.timings.total || state.expected;
           state.rerun = r.status === "ok" && r.needsRerun;
+          if (r.status === "ok" && r.pages.length) built.current = { build: r.build, texts };
           applyResult(r);
           if (r.status === "notex") setProblem(t("TeX is not installed", "未安装 TeX"));
         }
@@ -351,10 +366,15 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     [applyResult, docId, service],
   );
 
-  const scheduleCompile = useCallback(() => {
-    window.clearTimeout(run.current.timer);
-    run.current.timer = window.setTimeout(() => void compile(), COMPILE_DELAY_MS);
-  }, [compile]);
+  const scheduleCompile = useCallback(
+    (delay = COMPILE_DELAY_MS) => {
+      window.clearTimeout(run.current.timer);
+      run.current.timer = window.setTimeout(() => void compile(), delay);
+    },
+    [compile],
+  );
+  const scheduleCompileRef = useRef(scheduleCompile);
+  scheduleCompileRef.current = scheduleCompile;
 
   // ---- opening ----
   useEffect(() => {
@@ -428,6 +448,153 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     sourceRef.current?.mark(marks);
   }, [messages, active]);
 
+  // ---- the live paragraph ----
+  const [live, setLive] = useState<LiveOverlay | null>(null);
+  const liveState = useRef({
+    busy: false,
+    pending: null as { path: string; text: string } | null,
+    /** a paragraph of a build checked against its page: how it is indented, its lines and where its box starts */
+    verified: new Map<string, { indent: number; place: ParagraphPlace; x0: number; y0: number } | null>(),
+    /** glyph outlines by "<font>:<code>", as the server sent them to this session */
+    paths: new Map<string, string>(),
+    session: `${docId}:${Math.random().toString(36).slice(2)}`,
+    /** the paragraph shown live */
+    shown: "",
+    glyphs: new Map<string, PageGlyph[]>(),
+    areas: new Map<string, ParagraphArea | null>(),
+    /** the paragraph typed is not TeX yet (a formula or command half typed) */
+    unfinished: false,
+  });
+  const clearLive = useCallback(() => {
+    liveState.current.shown = "";
+    setLive(null);
+  }, []);
+
+  /** The paragraph `path`'s edit changed, typeset by the live server and drawn over its old lines. */
+  const liveFor = useCallback(
+    async (path: string, text: string): Promise<void> => {
+      const state = liveState.current;
+      const started = performance.now();
+      // (why there is none: for the tests)
+      const quit = (why: string) => {
+        if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = why;
+        clearLive();
+      };
+      const base = built.current;
+      // the text the shown build was made from (a file opened since: as it was on disk)
+      const old = base?.texts.get(path) ?? pristine.current.get(path);
+      if (!service || !base || old === undefined || base.build !== buildRef.current) return quit("no build text");
+      if (old === text) return quit("the page is current");
+      const change = changedParagraph(old, text);
+      if (!change || !liveEligible(change, text, path === pointerRef.current.main)) return quit("not a plain paragraph");
+      if (sync.current?.build !== base.build) await loadSync(base.build);
+      const s = sync.current;
+      if (!s || s.build !== base.build || buildRef.current !== base.build) return quit("no SyncTeX");
+      const key = `${base.build}:${path}:${change.oldFirst}:${change.oldLast}`;
+      let area = state.areas.get(key);
+      if (area === undefined) {
+        const files = s.files.map((f, i) => (f === path ? i : -1)).filter((i) => i >= 0);
+        area = paragraphArea(s.tex, files, change.oldFirst, change.oldLast);
+        if (state.areas.size > 200) state.areas.clear();
+        state.areas.set(key, area);
+      }
+      if (!area) return quit("not found on the pages");
+      const meta = pagesRef.current[area.page - 1];
+      const shown = contentsRef.current[area.page - 1];
+      // the page as this build made it (its glyphs are what the paragraph is checked against)
+      if (!meta || !shown || shown.hash !== meta.hash) return quit("page not shown");
+      let glyphs: PageGlyph[] | null = null;
+      if (shown.kind === "svg") {
+        glyphs = state.glyphs.get(shown.hash) ?? pageGlyphs(shown.svg);
+        if (state.glyphs.size > 40) state.glyphs.clear();
+        state.glyphs.set(shown.hash, glyphs);
+      }
+      const hsize = Math.round(area.lines[area.core[0]].width * SP_PER_BP);
+      const ask = async (paragraph: string, indent: number) => {
+        const r = await service.live({ doc: docId, text: paragraph, hsize, indent, session: state.session });
+        for (const [k, d] of Object.entries(r.paths)) state.paths.set(k, d);
+        return r;
+      };
+      let checked = state.verified.get(key);
+      if (checked === undefined) {
+        checked = null;
+        // indented as the document indents it, or not (after a heading, \noindent)
+        for (const indent of [-1, 0]) {
+          const r0 = await ask(change.oldText, indent);
+          // no server yet: asked again at the next edit
+          if (r0.status === "starting" || r0.status === "unavailable") return quit("server " + r0.status);
+          // its lines among the area's (the one run where its glyphs, or on a picture of the page its glues, are)
+          const places = placesOf(area, r0.lines.length);
+          for (const place of places) {
+            const report = import.meta.env.DEV ? { matched: 0, onPage: 0, misses: [] as [number, number][] } : undefined;
+            const at = verify(r0, place, glyphs, report);
+            if (import.meta.env.DEV) {
+              const w = window as unknown as { __latexLiveDebug?: unknown[] };
+              w.__latexLiveDebug = [...(w.__latexLiveDebug ?? []).slice(-5), { key, indent, place, status: r0.status, error: r0.error, lines: r0.lines, count: r0.glyphs.length, report, ok: !!at }];
+            }
+            if (at) {
+              checked = { indent, place, ...at };
+              break;
+            }
+          }
+          if (checked) break;
+        }
+        if (state.verified.size > 200) state.verified.clear();
+        state.verified.set(key, checked);
+      }
+      if (!checked) return quit("does not match the page");
+      const r = await ask(change.newText, checked.indent);
+      // TeX for the whole document once what is typed is TeX again (or after a longer pause)
+      const unfinished = r.status === "error";
+      if (unfinished !== state.unfinished) {
+        state.unfinished = unfinished;
+        scheduleCompileRef.current(unfinished ? UNFINISHED_COMPILE_DELAY_MS : LIVE_COMPILE_DELAY_MS);
+      }
+      if (buildRef.current !== base.build) return;
+      if (r.status === "ok" && r.undrawable === 0 && r.lines.length) {
+        state.shown = key;
+        if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = "";
+        setLive(overlayOf(r, checked.place, checked.x0, checked.y0, state.paths));
+        if (import.meta.env.DEV) (window as unknown as { __latexLive?: unknown }).__latexLive = { key, texMs: r.texMs, ms: r.ms, frontMs: performance.now() - started, lines: r.lines.length, at: performance.now() };
+      } else if (r.status !== "error" || state.shown !== key) {
+        // a command being typed (TeX's error) keeps what was shown; anything else shows the page
+        quit(`live ${r.status} ${r.error}`);
+      } else if (import.meta.env.DEV) {
+        (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = `live ${r.status} ${r.error}`;
+      }
+    },
+    [clearLive, docId, loadSync, service],
+  );
+
+  const requestLive = useRef<(path: string, text: string) => void>(() => undefined);
+  requestLive.current = (path: string, text: string) => {
+    const state = liveState.current;
+    if (state.busy) {
+      state.pending = { path, text };
+      return;
+    }
+    state.busy = true;
+    void liveFor(path, text)
+      .catch(() => clearLive())
+      .finally(() => {
+        state.busy = false;
+        const next = state.pending;
+        state.pending = null;
+        if (next) requestLive.current(next.path, next.text);
+      });
+  };
+
+  // a new build shown: the paragraph again against it (or nothing, when it has the text)
+  useEffect(() => {
+    const path = sourceRef.current?.active();
+    const text = path ? buffers.current.get(path)?.text : undefined;
+    if (!path || text === undefined || (built.current?.texts.get(path) ?? pristine.current.get(path)) === text) {
+      clearLive();
+      return;
+    }
+    requestLive.current(path, text);
+  }, [build, contents, clearLive]);
+
   // ---- editing ----
   const caretTimer = useRef(0);
   const placeOf = (path: string, line: number) => {
@@ -448,7 +615,16 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       else buffers.current.set(path, { disk: "", text });
       window.clearTimeout(saveTimers.current.get(path));
       saveTimers.current.set(path, window.setTimeout(() => void saveFile(path), SAVE_DELAY_MS));
-      scheduleCompile();
+      // a paragraph the live server can show: TeX once typing pauses
+      const base = built.current;
+      const old = base ? base.texts.get(path) ?? pristine.current.get(path) : undefined;
+      const change = base && old !== undefined ? changedParagraph(old, text) : null;
+      const live =
+        !!change &&
+        liveEligible(change, text, path === pointerRef.current.main) &&
+        liveState.current.verified.get(`${base!.build}:${path}:${change.oldFirst}:${change.oldLast}`) !== null;
+      scheduleCompile(live ? (liveState.current.unfinished ? UNFINISHED_COMPILE_DELAY_MS : LIVE_COMPILE_DELAY_MS) : COMPILE_DELAY_MS);
+      requestLive.current(path, text);
       const caret = sourceRef.current?.caret();
       if (caret) {
         const at = placeOf(path, caret.line);
@@ -867,6 +1043,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
           reveal={reveal}
           onWidth={setPaneWidth}
           busy={busy}
+          live={live}
         />
       </div>
     </div>

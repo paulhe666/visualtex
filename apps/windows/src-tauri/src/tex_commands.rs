@@ -104,6 +104,12 @@ pub async fn tex_synctex(state: State<'_, TexState>, request: BuildRequest) -> R
 }
 
 #[tauri::command]
+pub async fn tex_live(state: State<'_, TexState>, request: tex_bridge::live::LiveRequest) -> Result<tex_bridge::live::LiveResult, String> {
+    let s = state.0.clone();
+    blocking(move || s.live(&request)).await
+}
+
+#[tauri::command]
 pub async fn tex_close(state: State<'_, TexState>, request: DocRequest) -> Result<(), String> {
     let s = state.0.clone();
     blocking(move || s.close(&request.doc)).await

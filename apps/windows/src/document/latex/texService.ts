@@ -111,6 +111,53 @@ export interface SynctexOut {
   aliases: string[];
 }
 
+export interface LiveRequest {
+  doc: string;
+  /** the paragraph's LaTeX */
+  text: string;
+  /** sp: the line width; the indent (-1: the document's \parindent, 0: none) */
+  hsize: number;
+  indent?: number;
+  leftskip?: number;
+  rightskip?: number;
+  /** the paths this reader has (a new session is sent them all again) */
+  session?: string;
+}
+
+export interface LiveFont {
+  index: number;
+  /** the outline set ("" : the font cannot be drawn) */
+  key: string;
+  /** path units to bp */
+  sx: number;
+  sy: number;
+  size: number;
+  slant: number;
+  extend: number;
+}
+
+export interface LiveResult {
+  /** "ok"; "error": TeX's errors in it; "migrated": footnotes, floats; "starting"; "unavailable"; "failed" */
+  status: "ok" | "error" | "migrated" | "starting" | "unavailable" | "failed";
+  error: string;
+  texMs: number;
+  ms: number;
+  /** bp, from the paragraph's top left, y down */
+  height: number;
+  /** baseline, height, depth, width, shift */
+  lines: [number, number, number, number, number][];
+  /** font, x, baseline y, code */
+  glyphs: [number, number, number, number][];
+  /** x, top, width, height */
+  rules: [number, number, number, number][];
+  /** where each line's glues end: x, baseline y */
+  glues: [number, number][];
+  fonts: LiveFont[];
+  /** "<key>:<code>" -> SVG path data (font units, y up): the ones this session has not had */
+  paths: Record<string, string>;
+  undrawable: number;
+}
+
 export interface TexService {
   status(): Promise<TexStatus>;
   /** a folder, or a .tex file (its folder; it the main file) */
@@ -127,6 +174,8 @@ export interface TexService {
   pages(doc: string, build: number, pages: number[], scale?: number): Promise<PageOut[]>;
   pdf(doc: string, build: number, options: { dest?: string; bytes?: boolean }): Promise<PdfOut>;
   synctex(doc: string, build: number): Promise<SynctexOut>;
+  /** one paragraph typeset at once (the document's live LuaLaTeX server) */
+  live(request: LiveRequest): Promise<LiveResult>;
   close(doc: string): Promise<void>;
 }
 
@@ -143,6 +192,7 @@ function make(call: <T>(command: string, request: unknown) => Promise<T>): TexSe
     pages: (doc, build, pages, scale) => call("tex_pages", { doc, build, pages, scale }),
     pdf: (doc, build, options) => call("tex_pdf", { doc, build, ...options }),
     synctex: (doc, build) => call("tex_synctex", { doc, build }),
+    live: (request) => call("tex_live", request),
     close: (doc) => call("tex_close", { doc }),
   };
 }

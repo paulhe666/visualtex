@@ -4426,6 +4426,7 @@ dependencies = [
  "flate2",
  "serde",
  "serde_json",
+ "ttf-parser",
 ]
 
 [[package]]

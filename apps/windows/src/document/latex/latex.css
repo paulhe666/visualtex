@@ -274,6 +274,14 @@
 .vtx-tex-page-svg > svg text {
   cursor: text;
 }
+.vtx-tex-live-part,
+.vtx-tex-live {
+  position: absolute;
+  inset: 0;
+}
+.vtx-tex-live {
+  pointer-events: none;
+}
 .vtx-tex-marker {
   position: absolute;
   pointer-events: none;

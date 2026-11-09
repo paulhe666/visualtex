@@ -4119,6 +4119,7 @@ pub fn run() {
             tex_commands::tex_pages,
             tex_commands::tex_pdf,
             tex_commands::tex_synctex,
+            tex_commands::tex_live,
             tex_commands::tex_close,
             write_export_file,
             document_export::read_image_file,

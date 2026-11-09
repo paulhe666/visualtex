@@ -35,6 +35,7 @@ pub fn dispatch(service: &Service, cmd: &str, args: &Value) -> Result<Value, Str
         "tex_pages" => ok(service.pages(&arg(args)?)?),
         "tex_pdf" => ok(service.pdf(&arg(args)?)?),
         "tex_synctex" => ok(service.synctex(&arg(args)?)?),
+        "tex_live" => ok(service.live(&arg(args)?)),
         "tex_close" => {
             let doc = args.get("request").and_then(|r| r.get("doc")).or_else(|| args.get("doc")).and_then(|v| v.as_str()).unwrap_or("").to_string();
             service.close(&doc);
