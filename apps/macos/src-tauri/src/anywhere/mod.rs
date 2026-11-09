@@ -674,7 +674,13 @@ fn begin_input_method(app: &AppHandle, display: bool) {
 /// false when macOS refused.
 #[cfg(target_os = "macos")]
 fn switch_field(app: &AppHandle, generation: u64, previous: Option<&str>) -> bool {
-    match ime::switch_in(app, previous.unwrap_or("com.apple.keylayout.ABC")) {
+    // the field took the input method: its activate opened this formula
+    let taken = || {
+        session()
+            .map(|session| session.generation != generation || session.awaiting_input_method != generation)
+            .unwrap_or(true)
+    };
+    match ime::switch_in(app, previous.unwrap_or("com.apple.keylayout.ABC"), &taken) {
         Ok(()) => true,
         Err(error) => {
             log(&format!("input method switch failed gen={generation}: {error}"));
@@ -906,12 +912,13 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             }
         }
         "forced" => {
-            // The field ended the composition and kept its text.
+            // The field ended the composition and kept its text; it goes back to its own input
+            // source, as after a commit (not left typing pinyin with VisualTeX's).
             let open = session()
                 .map(|session| session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod)
                 .unwrap_or(false);
             if open {
-                hide_with(app, false, "field kept the text", false);
+                hide_with(app, false, "field kept the text", true);
             }
         }
         _ => {}

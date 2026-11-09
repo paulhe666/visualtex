@@ -376,24 +376,53 @@ fn select_previous_shortcut() -> Option<Shortcut> {
 
 /// Switches the frontmost application to VisualTeX from `previous` (see the
 /// module comment). The input method's "activate" message confirms it.
-pub(super) fn switch_in(app: &AppHandle, previous: &str) -> Result<(), String> {
+pub(super) fn switch_in(app: &AppHandle, previous: &str, taken: &dyn Fn() -> bool) -> Result<(), String> {
     let shortcut = select_previous_shortcut()
         .ok_or_else(|| "the \"Select the previous input source\" shortcut is turned off".to_string())?;
     if !visualtex_is_previous() {
         // Both selections are made from here: the application keeps its
         // input source and only the history changes.
-        if !select(app, SOURCE_ID) || !select(app, previous) {
+        if !select(app, SOURCE_ID) {
+            return Err("macOS refused to select the VisualTeX input source".to_string());
+        }
+        // Some applications take VisualTeX's input method from this selection at once (the
+        // user's own Chrome, 2026-11-09: its activate came 30 ms later). Then nothing more is
+        // sent: selecting `previous` and the shortcut reached the input method itself, the
+        // formula ended as it opened and the keys typed pinyin.
+        if wait_taken(taken, Duration::from_millis(150)) {
+            return Ok(());
+        }
+        if !select(app, previous) {
             return Err("macOS refused to select the VisualTeX input source".to_string());
         }
         // The selections reach the application (it re-selects `previous`) a moment later: a
         // shortcut sent before that switched it to VisualTeX and the late re-selection straight
         // back, ending the formula as it opened ("field kept the text").
-        thread::sleep(Duration::from_millis(200));
+        if wait_taken(taken, Duration::from_millis(200)) {
+            return Ok(());
+        }
     }
     // The shortcut that opened the formula is still held: Control-Option
     // with the system shortcut's Control would be another shortcut.
     super::deliver::wait_for_modifiers_released(Duration::from_millis(600));
+    if taken() {
+        return Ok(());
+    }
     super::deliver::post_shortcut(shortcut.key, shortcut.flags)
+}
+
+/// Waits up to `limit` for the field to take the input method; true when it did.
+fn wait_taken(taken: &dyn Fn() -> bool, limit: Duration) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if taken() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// Switches back when the input method could not take the field (no text
