@@ -17,7 +17,9 @@
 //! Windows' translation (CUAS, a "transitory" context): the anchor there is a zero-width space
 //! marked as the clause being converted (the field hides its caret for it and draws nothing), and
 //! the field's caret is the one the application gave IMM32 for the candidate window, where the
-//! context's own rectangles are made up.
+//! context's own rectangles are made up. Chromium's own text store (Chrome, Edge, WebView2,
+//! Electron) calls itself transitory too, but it lays the composition out as its text and tells
+//! where each character went: the formula wraps there as in any other field.
 
 use crate::engine::{Engine, Reply};
 use crate::link::{Link, WM_LINK_CLOSED, WM_LINK_MESSAGE};
@@ -45,7 +47,7 @@ use windows::Win32::UI::TextServices::{
     TF_ANCHOR_START, TF_DEFAULT_SELECTION, TF_IAS_QUERYONLY, TF_SELECTION, TF_SELECTIONSTYLE, TF_SS_TRANSITORY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, KillTimer,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClassNameW, GetWindowLongPtrW, KillTimer,
     PostMessageW, RegisterClassW, SetTimer, SetWindowLongPtrW, GWLP_USERDATA, HWND_MESSAGE, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_APP, WM_TIMER, WNDCLASSW,
 };
@@ -229,6 +231,26 @@ fn view_window(context: &ITfContext) -> isize {
         .unwrap_or(0)
 }
 
+/// The view's window is Chromium's (Chrome_WidgetWin_1, Chrome_RenderWidgetHostHWND: Chrome, Edge,
+/// WebView2, Electron applications).
+fn chromium_view(context: &ITfContext) -> bool {
+    let window = view_window(context);
+    if window == 0 {
+        return false;
+    }
+    let mut name = [0u16; 64];
+    let length = unsafe { GetClassNameW(HWND(window as *mut _), &mut name) };
+    let length = usize::try_from(length).unwrap_or(0).min(name.len());
+    String::from_utf16_lossy(&name[..length]).starts_with("Chrome_")
+}
+
+/// The field types through IMM32 (see is_transitory). Chromium's text store calls itself
+/// transitory as well (it keeps no text for reconversion), but its rectangles are its layout's,
+/// one per character of the composition, so the formula's space is held there as in any field.
+fn types_through_imm32(context: &ITfContext) -> bool {
+    is_transitory(context) && !chromium_view(context)
+}
+
 /// The caret an application typing through IMM32 gave Windows for the candidate window: the area
 /// the candidates must not cover (Qt sets its text cursor's rectangle there), in physical screen
 /// pixels. Only a caret-like area counts (some applications exclude their whole text area). Read in
@@ -287,7 +309,7 @@ fn made_up(rect: &RECT, caret: &RECT) -> bool {
 /// IMM32 caret where that is made up. Some(note): the caret is IMM32's (the note says what it
 /// replaced, for the log).
 fn field_extent(context: &ITfContext, extent: Option<Extent>) -> (Option<Extent>, Option<String>) {
-    if !is_transitory(context) {
+    if !types_through_imm32(context) {
         return (extent, None);
     }
     let window = extent.as_ref().map(|extent| extent.window).filter(|&window| window != 0).unwrap_or_else(|| view_window(context));
@@ -683,7 +705,7 @@ fn start_formula(shared: &Rc<Shared>) {
     let state = shared.clone();
     let writer = context.clone();
     let result = edit::request(&context, shared.client.get(), move |cookie| {
-        let transitory = is_transitory(&writer);
+        let transitory = types_through_imm32(&writer);
         let insert: ITfInsertAtSelection = writer.cast()?;
         let range = unsafe { insert.InsertTextAtSelection(cookie, TF_IAS_QUERYONLY, &[])? };
         let composer: ITfContextComposition = writer.cast()?;

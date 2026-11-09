@@ -81,6 +81,16 @@ function Invoke-Elevated {
     }
 }
 
+# regsvr32 is a Windows program: "&" would not wait for it (nor give its exit code), and the
+# registration read after it would still be the previous build's. The 64-bit one (Sysnative from
+# the installer's 32-bit PowerShell) registers the 64-bit TIP itself.
+function Invoke-Regsvr32([string[]]$Arguments) {
+    $program = Join-Path $env:WINDIR "Sysnative\regsvr32.exe"
+    if (-not (Test-Path $program)) { $program = Join-Path $env:WINDIR "System32\regsvr32.exe" }
+    $process = Start-Process -FilePath $program -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+    try { return $process.ExitCode } finally { $process.Dispose() }
+}
+
 function Stop-InputServer {
     Get-Process -Name "VisualTeXInput" -ErrorAction SilentlyContinue | ForEach-Object {
         try { $_.Kill(); $_.WaitForExit(3000) | Out-Null } catch { }
@@ -111,8 +121,8 @@ if ($Elevated) {
         $registered = Get-RegisteredDll
         if ($Uninstall) {
             if ($registered -and (Test-Path $registered)) {
-                & "$env:WINDIR\System32\regsvr32.exe" /u /s $registered
-                Write-Log "unregistered $registered (exit $LASTEXITCODE)"
+                $code = Invoke-Regsvr32 @("/u", "/s", (Quote-ProcessArgument $registered))
+                Write-Log "unregistered $registered (exit $code)"
             }
             Remove-Registration
             # Folders still loaded by running applications go at the next install.
@@ -141,8 +151,7 @@ if ($Elevated) {
             }
             Copy-Item -Path (Join-Path $source "build-id") -Destination $target -Force
         }
-        & "$env:WINDIR\System32\regsvr32.exe" /s (Join-Path $target "visualtex_tip.dll")
-        $code = $LASTEXITCODE
+        $code = Invoke-Regsvr32 @("/s", (Quote-ProcessArgument (Join-Path $target "visualtex_tip.dll")))
         Write-Log "registered $target (exit $code)"
         if ($code -ne 0) { exit $code }
         # Earlier builds' folders, unless an application still has their DLL loaded.
