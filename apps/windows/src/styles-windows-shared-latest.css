@@ -460,7 +460,8 @@
   font-weight: 700;
 }
 
-.quick-ocr-primary {
+/* the left half of a split button only when the mode half follows it */
+.quick-ocr-primary:has(+ .quick-ocr-mode-trigger) {
   border-radius: 9px 0 0 9px;
   border-right: 0;
 }
@@ -2278,6 +2279,24 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* the keypad window's header: every control as tall as the keypad toggle */
+.app-shell.is-keypad-mode .workspace-export-trigger,
+.app-shell.is-keypad-mode .canvas-input-behavior-trigger,
+.app-shell.is-keypad-mode .quick-ocr-controls,
+.app-shell.is-keypad-mode .quick-ocr-split,
+.app-shell.is-keypad-mode .quick-ocr-button,
+.app-shell.is-keypad-mode .silent-ocr-toggle {
+  height: 30px;
+  min-height: 30px;
+}
+
+.app-shell.is-keypad-mode .workspace-export-trigger,
+.app-shell.is-keypad-mode .canvas-input-behavior-trigger,
+.app-shell.is-keypad-mode .quick-ocr-button,
+.app-shell.is-keypad-mode .silent-ocr-toggle {
+  border-radius: 7px;
+}
+
 .workspace.is-keypad-mode .formula-workspace.editor-pane {
   border-right: 0;
 }
@@ -2945,6 +2964,19 @@
   padding: 0 7px;
   border-radius: 7px;
   font-size: 11px;
+}
+
+.editor-pane-header.is-office-editor-header .quick-ocr-controls,
+.editor-pane-header.is-office-editor-header .quick-ocr-split {
+  height: 30px;
+}
+
+.editor-pane-header.is-office-editor-header .quick-ocr-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
 }
 
 .editor-pane-header.is-office-editor-header .canvas-ocr-model {

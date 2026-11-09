@@ -355,9 +355,14 @@ textarea:focus-visible,
   align-items: center;
   gap: 7px;
   padding: 0 13px;
-  border-radius: 9px 0 0 9px;
+  border-radius: 9px;
   font-size: 12px;
   font-weight: 700;
+}
+
+/* the left half of a split button only when the chevron half follows it */
+.copy-primary:has(+ .copy-chevron) {
+  border-radius: 9px 0 0 9px;
 }
 
 .copy-chevron {
@@ -3461,9 +3466,14 @@ button:disabled {
 
 .copy-primary {
   padding: 0 11px;
-  border-radius: 7px 0 0 7px;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* the left half of a split button only when the chevron half follows it */
+.copy-primary:has(+ .copy-chevron) {
+  border-radius: 7px 0 0 7px;
 }
 
 .copy-chevron {
