@@ -20,10 +20,78 @@ export interface ParagraphChange {
   newText: string;
 }
 
+/** The document's own commands that matter here (its preamble's definitions): those that make a heading, a list
+ *  item, a display (`structural`: their lines are not text), and those that begin a paragraph (`starters`: \par in
+ *  their definition — a line starting with one starts a paragraph). */
+export interface DocMacros {
+  structural: RegExp | null;
+  starters: RegExp | null;
+}
+
+export const NO_MACROS: DocMacros = { structural: null, starters: null };
+
+const STRUCTURAL_BODY =
+  /\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph|item|begin|end|caption|footnote|marginpar|clearpage|newpage|cleardoublepage|maketitle|includegraphics)(?![A-Za-z@])|\\\[|\\\]|\$\$/;
+const STARTER_BODY = /\\(?:par|medskip|bigskip|smallskip|vspace|vskip|noindent)(?![A-Za-z@])/;
+
+/** The definition bodies of the commands a preamble defines (\newcommand and friends, \def). */
+function definitions(preamble: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const code = preamble.replace(/(^|[^\\])%[^\n]*/g, "$1");
+  const heads = [
+    /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[\d\]\s*)?(?:\[[^\]]*\]\s*)?\{/g,
+    /\\(?:NewDocumentCommand|RenewDocumentCommand|DeclareDocumentCommand|ProvideDocumentCommand)\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*\{[^{}]*\}\s*\{/g,
+    /\\[gex]?def\s*\\([A-Za-z@]+)[^{]*\{/g,
+  ];
+  for (const re of heads) {
+    for (let m = re.exec(code); m; m = re.exec(code)) {
+      // the body: up to the brace that closes the one the match ends with
+      let depth = 1;
+      let i = re.lastIndex;
+      for (; i < code.length && depth > 0; i++) {
+        const c = code[i];
+        if (c === "\\") i++;
+        else if (c === "{") depth++;
+        else if (c === "}") depth--;
+      }
+      out.set(m[1], code.slice(re.lastIndex, i - 1));
+    }
+  }
+  return out;
+}
+
+const commandsRe = (names: string[]) =>
+  names.length ? new RegExp(`\\\\(?:${names.map((n) => n.replace(/[@]/g, "@")).join("|")})(?![A-Za-z@])`) : null;
+
+/** What the preamble's own commands are (see DocMacros); one command calling another counts as it. */
+export function docMacros(preamble: string): DocMacros {
+  const defs = definitions(preamble);
+  const structural = new Set<string>();
+  const starters = new Set<string>();
+  for (let round = 0; round < 3; round++) {
+    const structuralRe = commandsRe([...structural]);
+    const startersRe = commandsRe([...starters]);
+    for (const [name, body] of defs) {
+      if (STRUCTURAL_BODY.test(body) || structuralRe?.test(body)) {
+        structural.add(name);
+        starters.delete(name);
+      } else if (STARTER_BODY.test(body) || startersRe?.test(body)) starters.add(name);
+    }
+  }
+  return { structural: commandsRe([...structural]), starters: commandsRe([...starters]) };
+}
+
 const blank = (line: string) => /^[ \t\f\r]*$/.test(line);
 /** A line of a paragraph's text: not blank, and no structure, display or command that makes it more than text
- *  (DENIED below). Such lines (a heading, \begin{equation}, \item) end the run of lines typeset together. */
-const textLine = (line: string) => !blank(line) && !DENIED.test(line) && !DISPLAY.test(line);
+ *  (DENIED below, the document's own structural commands). Such lines (a heading, \begin{equation}, \item) end
+ *  the run of lines typeset together. */
+const textLine = (line: string, m: DocMacros) => !blank(line) && !DENIED.test(line) && !DISPLAY.test(line) && !m.structural?.test(line);
+/** A line that starts a paragraph of its own (it begins with one of the document's paragraph commands). */
+const startsParagraph = (line: string, m: DocMacros) => {
+  if (!m.starters) return false;
+  const head = /^\s*(\\[A-Za-z@]+)/.exec(line);
+  return !!head && m.starters.test(head[1]);
+};
 
 function lineStart(text: string, pos: number): number {
   return text.lastIndexOf("\n", pos - 1) + 1;
@@ -39,24 +107,28 @@ function lineEnd(text: string, pos: number): number {
  * paragraph's end): up to a blank line or a line that is more than text, before and after. Null when a line of
  * [from, to] is itself more than text.
  */
-function paragraphAround(text: string, from: number, to: number): [number, number] | null {
+function paragraphAround(text: string, from: number, to: number, m: DocMacros): [number, number] | null {
   let start = lineStart(text, from);
   let end = lineEnd(text, to);
-  if (!text.slice(start, end).split("\n").every(textLine)) return null;
-  while (start > 0) {
+  if (!allText(text.slice(start, end), m, true)) return null;
+  // up to the line that starts the paragraph (a blank line, a heading or display before it, or a paragraph command)
+  while (start > 0 && !startsParagraph(text.slice(start, lineEnd(text, start)), m)) {
     const prev = lineStart(text, start - 1);
-    if (!textLine(text.slice(prev, start - 1))) break;
+    if (!textLine(text.slice(prev, start - 1), m)) break;
     start = prev;
   }
   while (end < text.length) {
     const next = lineEnd(text, end + 1);
-    if (!textLine(text.slice(end + 1, next))) break;
+    const line = text.slice(end + 1, next);
+    if (!textLine(line, m) || startsParagraph(line, m)) break;
     end = next;
   }
   return [start, end];
 }
 
-const allText = (text: string) => text.split("\n").every(textLine);
+/** Text lines, a paragraph command only on the first (`anyFirst`: on any — the lines an edit touched). */
+const allText = (text: string, m: DocMacros, anyFirst = false) =>
+  text.split("\n").every((line, i) => textLine(line, m) && (i === 0 || anyFirst || !startsParagraph(line, m)));
 const count = (text: string, c: string) => {
   let n = 0;
   for (let i = text.indexOf(c); i >= 0; i = text.indexOf(c, i + 1)) n++;
@@ -64,14 +136,14 @@ const count = (text: string, c: string) => {
 };
 
 /** The one paragraph an edit changed (old: the text TeX last typeset), else null (no change, several). */
-export function changedParagraph(old: string, now: string): ParagraphChange | null {
+export function changedParagraph(old: string, now: string, m: DocMacros = NO_MACROS): ParagraphChange | null {
   if (old === now) return null;
   const max = Math.min(old.length, now.length);
   let p = 0;
   while (p < max && old.charCodeAt(p) === now.charCodeAt(p)) p++;
   let s = 0;
   while (s < max - p && old.charCodeAt(old.length - 1 - s) === now.charCodeAt(now.length - 1 - s)) s++;
-  const around = paragraphAround(now, p, Math.max(p, now.length - s));
+  const around = paragraphAround(now, p, Math.max(p, now.length - s), m);
   if (!around) return null;
   const [start, end] = around;
   const oldEnd = end - (now.length - old.length);
@@ -79,7 +151,7 @@ export function changedParagraph(old: string, now: string): ParagraphChange | nu
   const oldText = old.slice(start, oldEnd);
   const newText = now.slice(start, end);
   // the same run of lines before the edit (it did not join two, nor take a heading or a display away)
-  if (!allText(oldText) || !allText(newText)) return null;
+  if (!allText(oldText, m) || !allText(newText, m)) return null;
   const oldFirst = count(old.slice(0, start), "\n") + 1;
   return { oldText, oldFirst, oldLast: oldFirst + count(oldText, "\n"), start, newText };
 }
@@ -159,6 +231,51 @@ export function liveEligible(change: ParagraphChange, text: string, main: boolea
     envs.shift();
   }
   return !envs.some((e) => DENIED_ENVIRONMENTS.test(e));
+}
+
+// Declarations of the body that hold for what follows them (a size, a family, paragraph shape and spacing): the
+// ones before a paragraph at the body's top level go before it in the live server too.
+const DECLARATION = new RegExp(
+  "^\\s*(?:" +
+    [
+      "\\\\(?:tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|normalfont|rmfamily|sffamily|ttfamily|mdseries|bfseries|upshape|itshape|slshape|scshape|sloppy|fussy|raggedright|raggedleft|centering|selectfont)(?![A-Za-z@])\\s*",
+      "\\\\(?:setlength|addtolength)\\s*\\{?\\s*\\\\(?:parindent|parskip|baselineskip|lineskip|lineskiplimit|emergencystretch|tolerance)\\s*\\}?\\s*\\{[^{}]*\\}\\s*",
+      "\\\\linespread\\s*\\{[^{}]*\\}\\s*(?:\\\\selectfont\\s*)?",
+      "\\\\(?:tolerance|pretolerance|emergencystretch|parindent|parskip|hyphenpenalty|exhyphenpenalty|looseness)\\s*=?\\s*-?[\\d.]+\\s*(?:pt|em|ex|bp|mm|cm|in)?\\s*",
+    ].join("|") +
+    ")+(?:%.*)?$",
+);
+
+/** The body's declarations at its top level before `start` (the main file's body; another file's text before it). */
+export function bodyPrefix(text: string, start: number, main: boolean): string {
+  let from = 0;
+  if (main) {
+    const at = text.search(/\\begin\s*\{document\}/);
+    if (at < 0 || at > start) return "";
+    from = text.indexOf("\n", at) + 1;
+  }
+  const out: string[] = [];
+  let depth = 0;
+  for (const raw of text.slice(from, start).split("\n")) {
+    const line = raw.replace(/(^|[^\\])%.*$/, "$1");
+    if (depth === 0 && DECLARATION.test(line)) out.push(line.trim());
+    for (const m of line.matchAll(/\\(begin|end)\s*\{[^}]*\}|(?<!\\)[{}]/g)) {
+      if (m[1] === "begin" || m[0] === "{") depth++;
+      else if (m[1] === "end" || m[0] === "}") depth = Math.max(0, depth - 1);
+    }
+  }
+  return out.join("\n");
+}
+
+/** What the live server is sent for a paragraph: the body's declarations, then the indent as asked
+ *  (-1: \indent, 0: \noindent), then the paragraph. */
+export function liveText(prefix: string, indent: number, paragraph: string): string {
+  return (prefix ? prefix + "\n" : "") + (indent < 0 ? "\\indent " : "\\noindent ") + paragraph;
+}
+
+/** The paragraph begins with one of the document's paragraph commands (it sets its own indent). */
+export function beginsParagraphCommand(paragraph: string, m: DocMacros): boolean {
+  return startsParagraph(paragraph.split("\n")[0] ?? "", m);
 }
 
 // ---- where the paragraph is on the pages ----

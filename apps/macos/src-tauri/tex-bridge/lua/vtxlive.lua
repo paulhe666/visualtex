@@ -4,7 +4,7 @@
 -- from the top left of the paragraph, in sp. tex-bridge draws them over the page until TeX has made it anew.
 --
 -- A request:  "P <id> <hsize> <indent> <leftskip> <rightskip> <bytes>\n" then <bytes> of LaTeX
---   (indent: -1 the document's \parindent, else the indent in sp; 0 no indent)
+--   (indent: -1 the document's \parindent, 0 no indent, -2 the text says, else the indent in sp)
 -- "R <file>\n": read the labels of the document's last run again (its .aux)
 -- "Q\n": the run ends.
 -- An answer: "\n@@VTXLIVE@@ <json>\n" on stdout.
@@ -247,7 +247,9 @@ local function typeset(id, hsize, indent, leftskip, rightskip, text)
   errors, first_error = 0, nil
   tex.runtoks(function()
     tex.sprint(string.format("\\setbox0\\vbox{\\hsize=%dsp\\leftskip=%dsp\\rightskip=%dsp\\relax", hsize, leftskip, rightskip))
-    if indent < 0 then
+    if indent < -1 then
+      -- the text says (the body's declarations come before its \indent or \noindent)
+    elseif indent < 0 then
       tex.sprint("\\indent ")
     elseif indent == 0 then
       tex.sprint("\\noindent ")
