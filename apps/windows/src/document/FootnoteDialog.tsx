@@ -6,8 +6,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorState, Selection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
+import type { Node as ProseMirrorNode } from "prosemirror-model";
 import {
   documentSchema,
+  findNodeById,
   footnoteEditorDoc,
   footnoteEditorPlugins,
   footnoteEditorText,
@@ -18,11 +20,16 @@ import {
 import { CommandMenu } from "./CommandMenu";
 
 type Lang = "en" | "zh";
+
+/** The node at `pos`, or null where the document no longer reaches. */
+const nodeAtSafe = (doc: ProseMirrorNode, pos: number) => (pos >= 0 && pos < doc.content.size ? doc.nodeAt(pos) : null);
 const t = (lang: Lang, en: string, zh: string) => (lang === "en" ? en : zh);
 
 export function FootnoteDialog(props: {
   view: EditorView;
   pos: number;
+  /** the footnote's id when it was asked for (`pos` may have moved since: the Markdown shown around the caret hidden) */
+  id: string | null;
   rect: DOMRect | null;
   lang: Lang;
   host: FormulaHost;
@@ -34,7 +41,8 @@ export function FootnoteDialog(props: {
   const { view, pos, lang, onClose } = props;
   // the footnote is the node at `pos` when the dialog opens; it is found again by its id when the text is applied
   const [target] = useState(() => {
-    const node = view.state.doc.nodeAt(pos);
+    const at = nodeAtSafe(view.state.doc, pos);
+    const node = at?.type.name === "footnote" ? at : props.id ? findNodeById(view.state.doc, props.id)?.node : null;
     return node?.type.name === "footnote" ? { id: node.attrs.id as string | null, text: node.attrs.text as string } : null;
   });
   const panelRef = useRef<HTMLFormElement>(null);
@@ -111,7 +119,7 @@ export function FootnoteDialog(props: {
   /** The footnote's position now (the document may have changed around it). */
   const currentPos = (): number | null => {
     if (!target) return null;
-    const at = view.state.doc.nodeAt(pos);
+    const at = nodeAtSafe(view.state.doc, pos);
     if (at?.type.name === "footnote" && at.attrs.id === target.id) return pos;
     let found: number | null = null;
     view.state.doc.descendants((node, p) => {

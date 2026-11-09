@@ -736,6 +736,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
           key={`${footnote.pos}`}
           view={view}
           pos={footnote.pos}
+          id={footnote.id ?? null}
           rect={footnote.rect}
           lang={lang}
           host={noteFormulaHost}

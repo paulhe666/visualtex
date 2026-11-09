@@ -1825,7 +1825,6 @@ kbd {
 
 .secondary-button {
   height: 32px;
-  margin-top: 9px;
   padding: 0 11px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -8260,6 +8259,11 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+/* as tall as the path field beside it */
+.export-browse-button {
+  height: 36px;
 }
 
 .export-error {
