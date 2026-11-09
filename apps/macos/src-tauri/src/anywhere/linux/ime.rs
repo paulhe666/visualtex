@@ -79,12 +79,20 @@ pub(super) fn recent_other_source(_app: &AppHandle) -> Option<String> {
     LAST_OTHER.lock().ok().and_then(|last| last.clone())
 }
 
-/// The pasting strip types its formula itself: nothing to switch.
+/// The pasting strip's formula is typed in English: while it is up the engine is a keyboard layout
+/// (pinyin would compose in it); the one it had is given back when the strip hides.
 pub(super) fn select_ascii(_app: &AppHandle) -> Option<String> {
-    None
+    let current = current_engine()?;
+    if current.starts_with("xkb:") {
+        return None;
+    }
+    let _ = Command::new("ibus").args(["engine", DEFAULT_SOURCE]).output();
+    Some(current)
 }
 
-pub(super) fn restore(_app: &AppHandle, _id: &str) {}
+pub(super) fn restore(_app: &AppHandle, id: &str) {
+    let _ = Command::new("ibus").args(["engine", id]).output();
+}
 
 /// Switches the field to VisualTeX's engine (from `previous`), waiting until the field takes it
 /// (`taken`) or a moment passes.

@@ -5250,6 +5250,7 @@ dependencies = [
  "flate2",
  "gdk",
  "gdk-pixbuf",
+ "gdkx11",
  "getrandom 0.3.4",
  "global-hotkey",
  "gtk",

@@ -61,6 +61,7 @@ keyring = { version = "3.6.3", default-features = false, features = ["async-secr
 gtk = "0.18"
 gdk = "0.18"
 gdk-pixbuf = "0.18"
+gdkx11 = "0.18"
 # the desktop's screenshot portal (quick OCR)
 zbus = { version = "5", default-features = false, features = ["tokio", "blocking-api"] }
 # the formula shortcuts as X11 grabs

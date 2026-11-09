@@ -146,7 +146,20 @@ pub(super) fn present(window: &WebviewWindow, anchor: ScreenRect, layout: PanelL
         gtk_window.set_accept_focus(true);
     });
     let _ = window.show();
+    // a window manager gives the keyboard to a window raised from the background only with a
+    // recent user time (the shortcut was pressed a moment ago)
+    with_gtk(window, |gtk_window| {
+        use gtk::glib::Cast;
+        if let Some(x11) = gtk_window.window().and_then(|gdk_window| gdk_window.downcast::<gdkx11::X11Window>().ok()) {
+            x11.set_user_time(gdkx11::functions::x11_get_server_time(&x11));
+        }
+        gtk_window.present();
+    });
     let _ = window.set_focus();
+    // the keys to the page (the window's focus is not its web view's)
+    let _ = window.with_webview(|webview| {
+        webview.inner().grab_focus();
+    });
     TOOK_KEYBOARD.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
