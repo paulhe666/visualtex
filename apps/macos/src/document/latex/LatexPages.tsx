@@ -1,8 +1,10 @@
 // The pages of a LaTeX document as TeX made them: each page's SVG (from the same DVI/XDV as the PDF) put in at
 // its paper size × zoom, only near the visible part; a picture of the PDF page where the SVG cannot show it. A
 // page keeps what it showed until its new content is there (no flashing while TeX runs). A click asks for the
-// source line (SyncTeX); the marker shows where the caret's line is.
+// source line (SyncTeX); the marker shows where the caret's line is. A paragraph being edited is drawn over its
+// old lines as the live server typeset it (livePara.ts), what follows it on the page moved with it.
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
+import type { LiveOverlay } from "./livePara";
 import type { PageMeta } from "./texService";
 
 export type PageContent = { kind: "svg"; hash: string; svg: string } | { kind: "png"; hash: string; url: string };
@@ -34,6 +36,8 @@ interface Props {
   /** fits the width (for "fit width") */
   onWidth?(width: number): void;
   busy: boolean;
+  /** the paragraph being edited, drawn as typeset a moment ago */
+  live?: LiveOverlay | null;
 }
 
 const GAP = 14;
@@ -44,7 +48,7 @@ const PageBody = memo(function PageBody({ content }: { content: PageContent | un
   return <div className="vtx-tex-page-svg" dangerouslySetInnerHTML={{ __html: content.svg }} />;
 }, (a, b) => a.content?.hash === b.content?.hash && a.content?.kind === b.content?.kind);
 
-export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisible, onZoom, reveal, onWidth, busy }: Props) {
+export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisible, onZoom, reveal, onWidth, busy, live }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleRef = useRef(new Set<number>());
   const onVisibleRef = useRef(onVisible);
@@ -162,8 +166,30 @@ export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisib
               onPageClick(n, ((event.clientX - rect.left) / rect.width) * page.width, ((event.clientY - rect.top) / rect.height) * page.height);
             }}
           >
-            <PageBody content={contents[i]} />
-            {marker && marker.page === n && (
+            {live && live.page === n ? (
+              <>
+                <div className="vtx-tex-live-part" style={{ clipPath: `inset(0 0 ${Math.max(0, (page.height - live.top) * zoom)}px 0)` }}>
+                  <PageBody content={contents[i]} />
+                </div>
+                <div
+                  className="vtx-tex-live-part"
+                  style={{ clipPath: `inset(${Math.max(0, live.bottom * zoom)}px 0 0 0)`, transform: `translateY(${live.shift * zoom}px)` }}
+                >
+                  <PageBody content={contents[i]} />
+                </div>
+                <svg
+                  className="vtx-tex-live"
+                  viewBox={`0 0 ${page.width} ${page.height}`}
+                  width={page.width * zoom}
+                  height={page.height * zoom}
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: live.svg }}
+                />
+              </>
+            ) : (
+              <PageBody content={contents[i]} />
+            )}
+            {marker && marker.page === n && !(live && live.page === n) && (
               <div
                 className={"vtx-tex-marker is-" + marker.kind}
                 style={{

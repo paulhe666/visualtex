@@ -280,6 +280,7 @@ struct Progress {
 
 struct Doc {
     dir: PathBuf,
+    live: Mutex<crate::live::Live>,
     generation: AtomicU64,
     killer: Killer,
     run: Mutex<RunState>,
@@ -349,6 +350,7 @@ impl Service {
             .or_insert_with(|| {
                 Arc::new(Doc {
                     dir: self.cache_root.join(safe_id(id)),
+                    live: Mutex::new(crate::live::Live::default()),
                     generation: AtomicU64::new(0),
                     killer: Killer::default(),
                     run: Mutex::new(RunState::default()),
@@ -479,7 +481,17 @@ impl Service {
                     let _ = w.run.child.wait();
                 }
             }
+            if let Ok(mut live) = doc.live.lock() {
+                live.stop();
+            }
         }
+    }
+
+    /// One paragraph typeset at once by the document's live server (live.rs), its glyphs and their outlines.
+    pub fn live(&self, req: &crate::live::LiveRequest) -> crate::live::LiveResult {
+        let doc = self.doc(&req.doc);
+        let mut live = doc.live.lock().unwrap();
+        live.paragraph(req)
     }
 
     pub fn compile(&self, req: &CompileRequest) -> CompileResult {
@@ -627,6 +639,8 @@ impl Service {
         }
         // the next edit's engine reads the preamble now
         self.spawn_warm(dist, run, engine, &run_dir, &job, split.as_ref(), key, req.shell_escape);
+        // and the live server (the paragraph being edited, at once)
+        doc.live.lock().unwrap().ensure(dist, &run_dir, &job, engine, split.as_ref(), key, req.shell_escape);
 
         // the screen copy and the pages asked for
         let t = Instant::now();
@@ -1111,7 +1125,10 @@ fn aux_hashes(dir: &Path, job: &str) -> HashMap<String, u64> {
                 let p = e.path();
                 if p.is_dir() {
                     walk(&p, depth + 1, add);
-                } else if p.extension().map(|x| x == "aux").unwrap_or(false) {
+                } else if p.extension().map(|x| x == "aux").unwrap_or(false)
+                    // (the live server's own, which it rewrites on its own)
+                    && !p.file_name().map(|n| n.to_string_lossy().starts_with("_vtx_")).unwrap_or(false)
+                {
                     add(p);
                 }
             }
