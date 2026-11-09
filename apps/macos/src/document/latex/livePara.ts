@@ -256,9 +256,10 @@ export interface PageGlyph {
   y: number;
 }
 
-/** Where the page's SVG (dvisvgm: one <text> a glyph) draws each glyph, bp from the page's top left. */
-export function pageGlyphs(svg: string): PageGlyph[] {
-  const box = /viewBox=['"]([-\d.e]+)[ ,]+([-\d.e]+)/.exec(svg);
+/** Where the page's SVG (dvisvgm: one <text> a glyph) draws each glyph, bp from the page's top left (`page`
+ *  false: in the SVG's own user units, the DVI's — a live paragraph's, from its top left). */
+export function pageGlyphs(svg: string, page = true): PageGlyph[] {
+  const box = page ? /viewBox=['"]([-\d.e]+)[ ,]+([-\d.e]+)/.exec(svg) : null;
   const dx = box ? -Number(box[1]) : 0;
   const dy = box ? -Number(box[2]) : 0;
   const out: PageGlyph[] = [];
@@ -329,14 +330,15 @@ export function verify(
     }
   }
   let matched = 0;
-  for (const [, gx, gy] of result.glyphs) {
+  const own: [number, number][] = result.svg ? pageGlyphs(result.svg, false).map((g) => [g.x, g.y]) : result.glyphs.map(([, gx, gy]) => [gx, gy]);
+  for (const [gx, gy] of own) {
     const x = x0 + gx;
     const y = y0 + gy;
     const list = byLine.get(Math.round(y * 10));
     if (list?.some((g) => Math.abs(g.x - x) <= TOLERANCE && Math.abs(g.y - y) <= TOLERANCE)) matched++;
     else report?.misses.push([x, y]);
   }
-  const n = result.glyphs.length;
+  const n = own.length;
   if (report) {
     report.matched = matched;
     report.onPage = onPage;
@@ -362,9 +364,20 @@ const fmt = (v: number) => (Math.round(v * 1000) / 1000).toString();
 
 /** The paragraph's glyphs and rules at (x0, y0) on the page; `paths` the outlines known so far. */
 export function overlayOf(result: LiveResult, place: ParagraphPlace, x0: number, y0: number, paths: Map<string, string>): LiveOverlay {
+  const last = place.boxes[place.boxes.length - 1];
+  const newLast = y0 + result.lines[result.lines.length - 1][0];
+  const frame = { page: place.page, top: place.boxes[0].v - place.boxes[0].height, bottom: last.v + last.depth, shift: newLast - last.v };
+  if (result.svg) {
+    // the engine's own page of the paragraph (dvisvgm: its ids and classes are its own), moved to the paragraph
+    const open = result.svg.indexOf(">", result.svg.indexOf("<svg"));
+    const close = result.svg.lastIndexOf("</svg>");
+    const inner = open >= 0 && close > open ? result.svg.slice(open + 1, close) : "";
+    return { ...frame, svg: `<g transform="translate(${fmt(x0)} ${fmt(y0)})">${inner}</g>` };
+  }
   const used = new Set<string>();
   let uses = "";
-  for (const [fi, gx, gy, code] of result.glyphs) {
+  const fill = (color: number | undefined) => (color && result.colors?.[color] ? ` fill="${result.colors[color]}"` : "");
+  for (const [fi, gx, gy, code, color] of result.glyphs) {
     const f = result.fonts[fi];
     if (!f?.key) continue;
     const key = `${f.key}:${code}`;
@@ -373,19 +386,11 @@ export function overlayOf(result: LiveResult, place: ParagraphPlace, x0: number,
     used.add(key);
     const a = f.sx * f.extend;
     const c = f.sx * f.slant;
-    uses += `<use href="#${pathId(key)}" transform="matrix(${fmt(a)} 0 ${fmt(c)} ${fmt(-f.sy)} ${fmt(x0 + gx)} ${fmt(y0 + gy)})"/>`;
+    uses += `<use href="#${pathId(key)}" transform="matrix(${fmt(a)} 0 ${fmt(c)} ${fmt(-f.sy)} ${fmt(x0 + gx)} ${fmt(y0 + gy)})"${fill(color)}/>`;
   }
   let defs = "";
   for (const key of used) defs += `<path id="${pathId(key)}" d="${paths.get(key)}"/>`;
   let rules = "";
-  for (const [rx, ry, rw, rh] of result.rules) rules += `<rect x="${fmt(x0 + rx)}" y="${fmt(y0 + ry)}" width="${fmt(rw)}" height="${fmt(rh)}"/>`;
-  const last = place.boxes[place.boxes.length - 1];
-  const newLast = y0 + result.lines[result.lines.length - 1][0];
-  return {
-    page: place.page,
-    top: place.boxes[0].v - place.boxes[0].height,
-    bottom: last.v + last.depth,
-    shift: newLast - last.v,
-    svg: `<defs>${defs}</defs><g fill="#000">${uses}${rules}</g>`,
-  };
+  for (const [rx, ry, rw, rh, color] of result.rules) rules += `<rect x="${fmt(x0 + rx)}" y="${fmt(y0 + ry)}" width="${fmt(rw)}" height="${fmt(rh)}"${fill(color)}/>`;
+  return { ...frame, svg: `<defs>${defs}</defs><g fill="#000">${uses}${rules}</g>` };
 }
