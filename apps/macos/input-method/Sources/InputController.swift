@@ -579,8 +579,8 @@ final class VTInputController: IMKInputController {
         var filler: (count: Int, width: CGFloat)?
         // the fillers of all the pieces read whole on their lines: together a run long enough that a
         // field's pixel rounding is a small part of it (a formula of short pieces holds two or three
-        // fillers each, and Safari draws the filler narrower than its font says: 2026-11-09 the first
-        // line ran past the field's edge)
+        // fillers each, so a single piece's never was; Safari draws the filler 10.3 points wide where
+        // its font says 12.6, and the first line ran past the field's edge, 2026-11-09)
         var fillerCount = 0
         var fillerRun: CGFloat = 0
         var joints: [CGFloat] = []
@@ -598,10 +598,11 @@ final class VTInputController: IMKInputController {
                 joints.append(rects[index + 1].minX - end.minX)
             }
         }
-        // the joint: the one read, or the middle one of several when two of them agree
+        // the joint: the middle one of those read on the lines, once two of them agree (a single
+        // reading flipped between 4 and 10 points in Chrome)
         var joint: CGFloat?
         let middle = joints.isEmpty ? nil : joints.sorted()[joints.count / 2]
-        if let middle, middle >= 1, middle < 40, joints.count == 1 || joints.filter({ abs($0 - middle) <= 1.5 }).count >= 2 {
+        if let middle, middle >= 1, middle < 40, joints.filter({ abs($0 - middle) <= 1.5 }).count >= 2 {
             joint = middle
         }
         if let width = filler?.width, !(width > 0.5 && width < 40) { filler = nil }
