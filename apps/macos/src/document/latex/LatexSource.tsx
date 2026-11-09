@@ -2,10 +2,10 @@
 // own state: text, undo, selection), with the look of the document source view. TeX's errors and warnings are
 // marked on their lines; a line found from the pages flashes.
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorSelection, EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { ChangeSet, EditorSelection, EditorState, StateEffect, StateField, type ChangeSpec, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { syntaxHighlighting } from "@codemirror/language";
-import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineKeepIndent } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineKeepIndent, redo, undo } from "@codemirror/commands";
 import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import { highlightStyle, theme } from "../DocumentSourceView";
 import { latexSourceCompletion, latexSourceCompletionTheme } from "../../source-editor/latexSourceCompletion";
@@ -34,10 +34,17 @@ export interface LatexSourceHandle {
   forget(path: string): void;
   /** caret to the end of a line of the active file (tests) */
   caretToLine(line: number, column?: number): void;
+  /** Changes to a file made on the pages (the file is shown here first): one history step a typing run, as the
+   *  keyboard's are; `caret` the selection after them. */
+  edit(path: string, changes: ChangeSpec, caret: number, event: "input.type" | "delete.backward" | "delete.forward" | "delete.selection" | "input.paste" | "input"): boolean;
+  /** Undo/redo in a file (shown here first): where its caret is after, null when there was nothing to undo. */
+  history(path: string, dir: "undo" | "redo"): number | null;
 }
 
 interface Props {
   onChange(path: string, text: string): void;
+  /** what changed in a file (before onChange): offsets kept on the pages are moved with it */
+  onChanges?(path: string, changes: ChangeSet): void;
   onCaret(path: string, line: number, pos: number): void;
   /** Mod+E: the formula at the caret into the formula editor */
   onFormula(): void;
@@ -122,7 +129,10 @@ export const LatexSource = forwardRef<LatexSourceHandle, Props>(function LatexSo
     EditorView.updateListener.of((update) => {
       const file = activeRef.current;
       if (!file || update.view !== viewRef.current) return;
-      if (update.docChanged) propsRef.current.onChange(file, update.state.doc.toString());
+      if (update.docChanged) {
+        propsRef.current.onChanges?.(file, update.changes);
+        propsRef.current.onChange(file, update.state.doc.toString());
+      }
       if (update.selectionSet || update.docChanged) {
         const head = update.state.selection.main.head;
         propsRef.current.onCaret(file, update.state.doc.lineAt(head).number, head);
@@ -201,6 +211,18 @@ export const LatexSource = forwardRef<LatexSourceHandle, Props>(function LatexSo
     focus: () => viewRef.current?.focus(),
     forget(path) {
       states.current.delete(path);
+    },
+    edit(path, changes, caret, event) {
+      const view = viewRef.current;
+      if (!view || activeRef.current !== path) return false;
+      view.dispatch({ changes, selection: EditorSelection.cursor(caret), userEvent: event, scrollIntoView: false });
+      return true;
+    },
+    history(path, dir) {
+      const view = viewRef.current;
+      if (!view || activeRef.current !== path) return null;
+      const done = (dir === "undo" ? undo : redo)(view);
+      return done ? view.state.selection.main.head : null;
     },
     caretToLine(line, column) {
       const view = viewRef.current;

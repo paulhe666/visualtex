@@ -278,8 +278,14 @@ struct Progress {
     done: bool,
 }
 
+/// A document nobody asked anything of for this long: its engines (the warm one, the live server) stop until it is
+/// asked again (a document left open in a window that is gone keeps hundreds of MB in each).
+const IDLE_ENGINES: Duration = Duration::from_secs(15 * 60);
+
 struct Doc {
     dir: PathBuf,
+    /// when it was last asked something (ms since the service started)
+    touched: AtomicU64,
     live: Mutex<crate::live::Live>,
     generation: AtomicU64,
     killer: Killer,
@@ -290,6 +296,7 @@ struct Doc {
 }
 
 pub struct Service {
+    started: Instant,
     cache_root: PathBuf,
     projects_root: PathBuf,
     docs: Mutex<HashMap<String, Arc<Doc>>>,
@@ -320,6 +327,7 @@ impl Service {
     /// opened archives).
     pub fn new(cache_root: PathBuf, projects_root: PathBuf) -> Service {
         Service {
+            started: Instant::now(),
             cache_root,
             projects_root,
             docs: Mutex::new(HashMap::new()),
@@ -345,11 +353,28 @@ impl Service {
     }
 
     fn doc(&self, id: &str) -> Arc<Doc> {
+        let now = self.started.elapsed().as_millis() as u64;
         let mut docs = self.docs.lock().unwrap();
-        docs.entry(id.to_string())
+        // the engines of documents idle for long stop (not while a compile or a paragraph holds them)
+        for (other, d) in docs.iter() {
+            if other != id && now.saturating_sub(d.touched.load(Ordering::Relaxed)) > IDLE_ENGINES.as_millis() as u64 {
+                if let Ok(mut run) = d.run.try_lock() {
+                    if let Some(mut w) = run.warm.take() {
+                        let _ = w.run.child.kill();
+                        let _ = w.run.child.wait();
+                    }
+                }
+                if let Ok(mut live) = d.live.try_lock() {
+                    live.stop();
+                }
+            }
+        }
+        let doc = docs
+            .entry(id.to_string())
             .or_insert_with(|| {
                 Arc::new(Doc {
                     dir: self.cache_root.join(safe_id(id)),
+                    touched: AtomicU64::new(now),
                     live: Mutex::new(crate::live::Live::default()),
                     generation: AtomicU64::new(0),
                     killer: Killer::default(),
@@ -359,7 +384,9 @@ impl Service {
                     progress_cv: Condvar::new(),
                 })
             })
-            .clone()
+            .clone();
+        doc.touched.store(now, Ordering::Relaxed);
+        doc
     }
 
     // ----------------------------------------------------------------------------------- project files --
@@ -484,6 +511,14 @@ impl Service {
             if let Ok(mut live) = doc.live.lock() {
                 live.stop();
             }
+        }
+    }
+
+    /// Every document's engines stop (the app quits: TeX processes do not outlive it).
+    pub fn shutdown(&self) {
+        let ids: Vec<String> = self.docs.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.close(&id);
         }
     }
 

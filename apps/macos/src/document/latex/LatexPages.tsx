@@ -1,9 +1,11 @@
 // The pages of a LaTeX document as TeX made them: each page's SVG (from the same DVI/XDV as the PDF) put in at
 // its paper size × zoom, only near the visible part; a picture of the PDF page where the SVG cannot show it. A
-// page keeps what it showed until its new content is there (no flashing while TeX runs). A click asks for the
-// source line (SyncTeX); the marker shows where the caret's line is. A paragraph being edited is drawn over its
-// old lines as the live server typeset it (livePara.ts), what follows it on the page moved with it.
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
+// page keeps what it showed until its new content is there (no flashing while TeX runs). The pages are where the
+// document is edited (`edit`: the pointer's page points; `decorate`: the caret, the selection, a formula's editor
+// drawn on a page); else a click asks for the source line (SyncTeX) and the marker shows the caret's line. The
+// paragraphs being edited are drawn over their old lines as the live server typeset them (livePara.ts), what
+// follows each on its page moved with it.
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { LiveOverlay } from "./livePara";
 import type { PageMeta } from "./texService";
 
@@ -36,8 +38,25 @@ interface Props {
   /** fits the width (for "fit width") */
   onWidth?(width: number): void;
   busy: boolean;
-  /** the paragraph being edited, drawn as typeset a moment ago */
-  live?: LiveOverlay | null;
+  /** the paragraphs being edited, drawn as typeset a moment ago */
+  overlays?: LiveOverlay[];
+  /** the pages are edited: the pointer at a page point (bp) */
+  edit?: {
+    down(page: number, x: number, y: number, event: React.PointerEvent): void;
+    move(page: number, x: number, y: number, event: React.PointerEvent): void;
+    up(page: number, x: number, y: number, event: React.PointerEvent): void;
+  };
+  /** what is drawn on a page over its content (the caret, the selection), in page bp × zoom */
+  decorate?: (page: number) => ReactNode;
+  /** in the pages' scroller (the keyboard's sink) */
+  children?: ReactNode;
+}
+
+/** How far the overlays above `y` on a page moved what follows them (bp). */
+export function shiftAt(overlays: LiveOverlay[] | undefined, page: number, y: number): number {
+  let shift = 0;
+  for (const o of overlays ?? []) if (o.page === page && o.bottom <= y + 0.01) shift += o.shift;
+  return shift;
 }
 
 const GAP = 14;
@@ -48,7 +67,7 @@ const PageBody = memo(function PageBody({ content }: { content: PageContent | un
   return <div className="vtx-tex-page-svg" dangerouslySetInnerHTML={{ __html: content.svg }} />;
 }, (a, b) => a.content?.hash === b.content?.hash && a.content?.kind === b.content?.kind);
 
-export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisible, onZoom, reveal, onWidth, busy, live }: Props) {
+export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisible, onZoom, reveal, onWidth, busy, overlays, edit, decorate, children }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleRef = useRef(new Set<number>());
   const onVisibleRef = useRef(onVisible);
@@ -145,51 +164,132 @@ export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisib
       {pages.map((page, i) => {
         const n = i + 1;
         const style: CSSProperties = { width: page.width * zoom, height: page.height * zoom, marginBottom: GAP };
+        const point = (event: React.PointerEvent | React.MouseEvent): [number, number] => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          return [((event.clientX - rect.left) / rect.width) * page.width, ((event.clientY - rect.top) / rect.height) * page.height];
+        };
+        // the paragraphs being edited on this page, top first: the page in slices between them, each moved by the
+        // ones above it
+        const mine = (overlays ?? []).filter((o) => o.page === n).sort((a, b) => a.top - b.top);
+        let body: ReactNode;
+        if (mine.length) {
+          const parts: ReactNode[] = [];
+          let start = 0;
+          let shift = 0;
+          mine.forEach((o, k) => {
+            parts.push(
+              <div
+                key={`s${k}`}
+                className="vtx-tex-live-part"
+                style={{ clipPath: `inset(${Math.max(0, start * zoom)}px 0 ${Math.max(0, (page.height - o.top) * zoom)}px 0)`, transform: shift ? `translateY(${shift * zoom}px)` : undefined }}
+              >
+                <PageBody content={contents[i]} />
+              </div>,
+              // the band of the old lines: the page's background there (a box's colour, its frame), its text not
+              <div
+                key={`b${k}`}
+                className="vtx-tex-live-part vtx-tex-live-band"
+                style={{
+                  clipPath: `inset(${Math.max(0, o.top * zoom)}px 0 ${Math.max(0, (page.height - o.bottom - Math.max(0, o.shift)) * zoom)}px 0)`,
+                  transform: shift ? `translateY(${shift * zoom}px)` : undefined,
+                }}
+              >
+                <PageBody content={contents[i]} />
+              </div>,
+              ...(o.keep ?? []).map((r, j) => (
+                <div
+                  key={`k${k}-${j}`}
+                  className="vtx-tex-live-part vtx-tex-live-keep"
+                  style={{
+                    clipPath: `inset(${Math.max(0, r.y * zoom)}px ${Math.max(0, (page.width - r.x - r.w) * zoom)}px ${Math.max(0, (page.height - r.y - r.h) * zoom)}px ${Math.max(0, r.x * zoom)}px)`,
+                    transform: shift ? `translateY(${shift * zoom}px)` : undefined,
+                  }}
+                >
+                  <PageBody content={contents[i]} />
+                </div>
+              )),
+              <svg
+                key={`o${k}`}
+                className="vtx-tex-live"
+                viewBox={`0 0 ${page.width} ${page.height}`}
+                width={page.width * zoom}
+                height={page.height * zoom}
+                aria-hidden="true"
+                style={shift ? { transform: `translateY(${shift * zoom}px)` } : undefined}
+                dangerouslySetInnerHTML={{ __html: o.svg }}
+              />,
+            );
+            start = o.bottom;
+            shift += o.shift;
+          });
+          parts.push(
+            <div
+              key="end"
+              className="vtx-tex-live-part"
+              style={{ clipPath: `inset(${Math.max(0, start * zoom)}px 0 0 0)`, transform: shift ? `translateY(${shift * zoom}px)` : undefined }}
+            >
+              <PageBody content={contents[i]} />
+            </div>,
+          );
+          body = parts;
+        } else body = <PageBody content={contents[i]} />;
         return (
           <div
             key={n}
-            className={"vtx-tex-page" + (contents[i] ? "" : " is-empty")}
+            className={"vtx-tex-page" + (contents[i] ? "" : " is-empty") + (edit ? " is-editable" : "")}
             data-page={n}
             data-hash={contents[i]?.hash}
             data-current={contents[i]?.hash === page.hash ? "true" : undefined}
             style={style}
-            onMouseDown={(event) => {
-              down.current = { x: event.clientX, y: event.clientY };
-            }}
-            onMouseUp={(event) => {
-              const start = down.current;
-              down.current = null;
-              if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
-              const selection = window.getSelection();
-              if (selection && !selection.isCollapsed) return;
-              const rect = event.currentTarget.getBoundingClientRect();
-              onPageClick(n, ((event.clientX - rect.left) / rect.width) * page.width, ((event.clientY - rect.top) / rect.height) * page.height);
-            }}
+            onPointerDown={
+              edit
+                ? (event) => {
+                    if (event.button !== 0) return;
+                    const [x, y] = point(event);
+                    edit.down(n, x, y, event);
+                  }
+                : undefined
+            }
+            onPointerMove={
+              edit
+                ? (event) => {
+                    const [x, y] = point(event);
+                    edit.move(n, x, y, event);
+                  }
+                : undefined
+            }
+            onPointerUp={
+              edit
+                ? (event) => {
+                    const [x, y] = point(event);
+                    edit.up(n, x, y, event);
+                  }
+                : undefined
+            }
+            onMouseDown={
+              edit
+                ? undefined
+                : (event) => {
+                    down.current = { x: event.clientX, y: event.clientY };
+                  }
+            }
+            onMouseUp={
+              edit
+                ? undefined
+                : (event) => {
+                    const start = down.current;
+                    down.current = null;
+                    if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+                    const selection = window.getSelection();
+                    if (selection && !selection.isCollapsed) return;
+                    const [x, y] = point(event);
+                    onPageClick(n, x, y);
+                  }
+            }
           >
-            {live && live.page === n ? (
-              <>
-                <div className="vtx-tex-live-part" style={{ clipPath: `inset(0 0 ${Math.max(0, (page.height - live.top) * zoom)}px 0)` }}>
-                  <PageBody content={contents[i]} />
-                </div>
-                <div
-                  className="vtx-tex-live-part"
-                  style={{ clipPath: `inset(${Math.max(0, live.bottom * zoom)}px 0 0 0)`, transform: `translateY(${live.shift * zoom}px)` }}
-                >
-                  <PageBody content={contents[i]} />
-                </div>
-                <svg
-                  className="vtx-tex-live"
-                  viewBox={`0 0 ${page.width} ${page.height}`}
-                  width={page.width * zoom}
-                  height={page.height * zoom}
-                  aria-hidden="true"
-                  dangerouslySetInnerHTML={{ __html: live.svg }}
-                />
-              </>
-            ) : (
-              <PageBody content={contents[i]} />
-            )}
-            {marker && marker.page === n && !(live && live.page === n) && (
+            {body}
+            {decorate?.(n)}
+            {marker && marker.page === n && !mine.length && (
               <div
                 className={"vtx-tex-marker is-" + marker.kind}
                 style={{
@@ -203,6 +303,7 @@ export function LatexPages({ pages, contents, zoom, marker, onPageClick, onVisib
           </div>
         );
       })}
+      {children}
     </div>
   );
 }

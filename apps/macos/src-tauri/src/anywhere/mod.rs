@@ -187,6 +187,9 @@ struct Activation {
     line_descent: Option<f64>,
     /// The field's background (#rrggbbaa), as read off the screen.
     background_color: Option<String>,
+    /// VisualTeX's input method is installed but not among the user's input
+    /// sources: the strip says so (it types into the field once it is added).
+    input_method_missing: bool,
 }
 
 /// How the field's text looks where the formula goes (input method).
@@ -267,6 +270,12 @@ struct Session {
     /// The generation whose formula colour comes from the screen: it stays,
     /// whatever the field reports later.
     color_from_screen: u64,
+    /// The strip's activation: the input method is not among the input
+    /// sources.
+    input_method_missing: bool,
+    /// The app's input source before the strip took an English layout (given
+    /// back when it hides).
+    strip_source: Option<String>,
 }
 
 /// How the formula reaches the application. Paste: the strip sits on the
@@ -319,6 +328,8 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     inline_anchor: None,
     color_read: 0,
     color_from_screen: 0,
+    input_method_missing: false,
+    strip_source: None,
 });
 
 #[cfg(target_os = "macos")]
@@ -440,12 +451,20 @@ fn activate(app: &AppHandle, display: bool) {
             return;
         }
     };
+    // the strip's formula is typed in English: the app's own input source an
+    // ASCII-capable layout while it is up (the one it had, back when it hides)
+    let missing = ime::installed() && !ime::is_enabled(app);
+    let strip_source = ime::select_ascii(app);
     let (activation, ready) = {
         let Ok(mut session) = session() else { return };
         session.generation += 1;
         session.phase = Phase::Activating;
         session.target = Some(target.clone());
         session.delivery = Delivery::Paste;
+        session.input_method_missing = missing;
+        if strip_source.is_some() {
+            session.strip_source = strip_source;
+        }
         session.return_to = None;
         session.display = display;
         session.awaiting_input_method = 0;
@@ -481,6 +500,7 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
         line_height: session.field_text.line_height,
         line_descent: session.field_text.line_descent,
         background_color: session.field_text.background_color.clone(),
+        input_method_missing: session.input_method_missing && session.delivery == Delivery::Paste,
     })
 }
 
@@ -1203,7 +1223,7 @@ fn hide(app: &AppHandle, keep_draft: bool, reason: &str) {
 /// (not when the input method itself ended the session).
 #[cfg(target_os = "macos")]
 fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method: bool) {
-    let (generation, delivery, return_to) = {
+    let (generation, delivery, return_to, strip_source) = {
         let Ok(mut session) = session() else { return };
         if session.phase == Phase::Hidden {
             return;
@@ -1212,8 +1232,11 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
         session.draft = keep_draft;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
-        (session.generation, session.delivery, session.return_to.take())
+        (session.generation, session.delivery, session.return_to.take(), session.strip_source.take())
     };
+    if let Some(source) = strip_source {
+        ime::restore(app, &source);
+    }
     if delivery == Delivery::InputMethod && tell_input_method {
         ime::send(serde_json::json!({ "t": "cancel", "returnTo": return_to }));
     }

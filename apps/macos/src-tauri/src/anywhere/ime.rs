@@ -94,6 +94,7 @@ unsafe extern "C" {
     fn TISGetInputSourceProperty(source: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
     fn TISSelectInputSource(source: CFTypeRef) -> i32;
     fn TISCopyCurrentKeyboardInputSource() -> CFTypeRef;
+    fn TISCopyCurrentASCIICapableKeyboardLayoutInputSource() -> CFTypeRef;
     fn TISRegisterInputSource(location: CFTypeRef) -> i32;
 }
 
@@ -218,13 +219,56 @@ fn input_source(id: &str, include_all_installed: bool) -> Option<Owned> {
 
 /// The user added VisualTeX in System Settings > Keyboard > Input Sources
 /// (an application cannot: on macOS 27 TISEnableInputSource opens that page).
+/// Text Input Sources may call it enabled when it is not in the user's list
+/// (the input menu does not show it, nothing can switch to it): the list says.
 pub(super) fn is_enabled(app: &AppHandle) -> bool {
-    on_main(app, || {
-        input_source(SOURCE_ID, true)
-            .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsEnabled) }) == Some(1))
-            .unwrap_or(false)
+    listed()
+        && on_main(app, || {
+            input_source(SOURCE_ID, true)
+                .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsEnabled) }) == Some(1))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// VisualTeX is in the user's input sources (com.apple.HIToolbox
+/// AppleEnabledInputSources: what the input menu shows).
+fn listed() -> bool {
+    let Some(list) = preference("com.apple.HIToolbox", "AppleEnabledInputSources") else { return false };
+    array_values(list.0).iter().any(|entry| {
+        let bundle = string_value(dictionary_value(*entry, "Bundle ID")).unwrap_or_default();
+        let mode = string_value(dictionary_value(*entry, "Input Mode")).unwrap_or_default();
+        bundle.starts_with("com.visualtex.inputmethod") || mode.starts_with("com.visualtex.inputmethod")
     })
-    .unwrap_or(false)
+}
+
+/// The input method is in ~/Library/Input Methods (the app put it there).
+pub(super) fn installed() -> bool {
+    std::env::var_os("HOME")
+        .map(|home| Path::new(&home).join("Library").join("Input Methods").join(BUNDLE_NAME).exists())
+        .unwrap_or(false)
+}
+
+/// The app's own input source becomes an ASCII-capable keyboard layout (the
+/// strip's formula is typed in English): the one it had, to give back, when
+/// it was not one.
+pub(super) fn select_ascii(app: &AppHandle) -> Option<String> {
+    on_main(app, || {
+        let current = Owned::new(unsafe { TISCopyCurrentKeyboardInputSource() })?;
+        let current_id = string_value(unsafe { TISGetInputSourceProperty(current.0, kTISPropertyInputSourceID) })?;
+        let ascii = Owned::new(unsafe { TISCopyCurrentASCIICapableKeyboardLayoutInputSource() })?;
+        let ascii_id = string_value(unsafe { TISGetInputSourceProperty(ascii.0, kTISPropertyInputSourceID) })?;
+        if ascii_id == current_id {
+            return None;
+        }
+        (unsafe { TISSelectInputSource(ascii.0) } == 0).then_some(current_id)
+    })
+    .flatten()
+}
+
+/// The app's own input source back to `id` (after select_ascii).
+pub(super) fn restore(app: &AppHandle, id: &str) {
+    let _ = select(app, id);
 }
 
 /// The selected keyboard input source.

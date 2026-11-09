@@ -2424,6 +2424,12 @@ pub fn run() {
                 eprintln!("Unable to pause VisualTeX Office background service: {error}");
             }
         }
+        tauri::RunEvent::Exit => {
+            // LaTeX documents' engines (warm runs, live servers) do not outlive the app
+            if let Some(tex) = app.try_state::<tex_commands::TexState>() {
+                tex.0.shutdown();
+            }
+        }
         _ => {}
     });
 }

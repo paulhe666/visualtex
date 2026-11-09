@@ -18,6 +18,8 @@ export interface AnywhereActivation {
   anchorSource: AnywhereAnchorSource;
   appName: string;
   accessibilityTrusted: boolean;
+  /** VisualTeX's input method is installed but not among the input sources */
+  inputMethodMissing?: boolean;
   /** The previous session hid without a commit or cancel: keep its formula. */
   resume: boolean;
   /**

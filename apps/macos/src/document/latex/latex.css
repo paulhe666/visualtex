@@ -113,7 +113,14 @@
   font-size: 13px;
 }
 .vtx-tex-body {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+.vtx-tex-body > .vtx-tex-source,
+.vtx-tex-body > .vtx-tex-pages {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -321,11 +328,123 @@
   box-shadow: var(--shadow-md);
 }
 @media (max-width: 760px) {
-  .vtx-tex-body {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: 45% minmax(0, 1fr);
-  }
   .vtx-tex-divider {
     display: none;
   }
+}
+
+/* ---- the pages edited (visualEditor.ts, LatexVisual.tsx) ---- */
+.vtx-tex-page.is-editable {
+  cursor: text;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.vtx-tex-page.is-editable svg text {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vtx-tex-caret {
+  position: absolute;
+  width: 1.5px;
+  background: #1d1d1f;
+  pointer-events: none;
+  z-index: 4;
+  animation: vtx-tex-blink 1.06s steps(1) 0.5s infinite;
+}
+@keyframes vtx-tex-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.vtx-tex-sel {
+  position: absolute;
+  background: rgba(64, 132, 255, 0.24);
+  pointer-events: none;
+  z-index: 3;
+}
+.vtx-tex-compose {
+  position: absolute;
+  z-index: 5;
+  padding: 0 1px;
+  white-space: pre;
+  background: #fff;
+  color: #1d1d1f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  pointer-events: none;
+  font-family: "Songti SC", "STSong", "SimSun", "Times New Roman", serif;
+}
+.vtx-tex-sink {
+  position: absolute;
+  width: 2px;
+  min-height: 8px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  opacity: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  pointer-events: none;
+  z-index: 0;
+}
+.vtx-tex-formula-on-page {
+  position: absolute;
+  z-index: 6;
+  white-space: nowrap;
+  line-height: normal;
+}
+.vtx-tex-formula-on-page.is-display {
+  transform: none;
+}
+.vtx-tex-formula-probe {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: baseline;
+}
+.vtx-tex-formula-field {
+  display: inline-block;
+  vertical-align: baseline;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(64, 132, 255, 0.45);
+  background: rgba(255, 255, 255, 0.6);
+}
+.vtx-tex-cmd-menu {
+  position: absolute;
+  z-index: 8;
+}
+.vtx-tex-cmd-query {
+  padding: 4px 10px 2px;
+  font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text-muted, #6b6b70);
+}
+.vtx-tex-view-toggle.is-active {
+  color: var(--accent, #2563eb);
+}
+.vtx-tex-pending {
+  position: absolute;
+  z-index: 3;
+  white-space: pre;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1d1d1f;
+  pointer-events: none;
+  border-bottom: 1px dashed rgba(64, 132, 255, 0.6);
+}
+.vtx-tex-pending-cover {
+  position: absolute;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+}
+/* the old lines' band under a paragraph being edited: the page's background, not its glyphs or rules */
+.vtx-tex-live-band text,
+.vtx-tex-live-band use,
+.vtx-tex-live-band rect,
+.vtx-tex-live-band image {
+  visibility: hidden;
 }

@@ -160,6 +160,11 @@ export interface LiveResult {
   /** "<key>:<code>" -> SVG path data (font units, y up): the ones this session has not had */
   paths: Record<string, string>;
   undrawable: number;
+  /** every glyph as the caret sees it: x, baseline y, advance (bp), the characters it stands for, kind (1 a word's,
+   *  2 a TFM font's character, 3 a formula's glyph; LuaTeX: 4 text, 5 a formula's), its font's size (bp) */
+  map: [number, number, number, string, number, number][];
+  /** \special{vtx:<name>} in it: name, x, baseline y (bp) */
+  marks: [string, number, number][];
 }
 
 export interface TexService {
