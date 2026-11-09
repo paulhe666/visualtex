@@ -16,9 +16,22 @@ use crate::tfm::Tfm;
 /// `colors`, 0 black).
 pub type Glyph = (usize, f64, f64, u32, usize);
 
+/// What a glyph stands for (the caret's places in a paragraph come from these): its advance (bp) and where it
+/// comes from — `TEXT` a word of a native font (its run's characters are in `runs`), `CHAR` a TFM font's
+/// character, `GLYPH` a native font's glyph outside a word (a formula's).
+pub const TEXT: u8 = 1;
+pub const CHAR: u8 = 2;
+pub const GLYPH: u8 = 3;
+
 #[derive(Default, Debug)]
 pub struct Drawn {
     pub glyphs: Vec<Glyph>,
+    /// for each glyph: advance (bp), kind (TEXT, CHAR, GLYPH)
+    pub advances: Vec<(f64, u8)>,
+    /// the words of native fonts (XDV text and glyphs, \XeTeXgenerateactualtext): first glyph, glyph count, text
+    pub runs: Vec<(usize, usize, String)>,
+    /// specials "vtx:<name>" (other than the paragraph's own marker and padding) and where they are (bp)
+    pub marks: Vec<(String, f64, f64)>,
     /// x, y (top), width, height (bp), colour
     pub rules: Vec<([f64; 4], usize)>,
     /// (outline set, size in bp, slant, extend) of each font used
@@ -239,10 +252,18 @@ impl Machine {
         *self.color.last().unwrap_or(&0)
     }
 
-    /// A colour special ("color push rgb 0 0 1", "color pop", "color set ...")
-    fn special(&mut self, text: &[u8]) {
+    /// A colour special ("color push rgb 0 0 1", "color pop", "color set ..."), a mark of ours ("vtx:<name>") at
+    /// (h, v) in bp
+    fn special(&mut self, text: &[u8], h: f64, v: f64) {
         let s = String::from_utf8_lossy(text);
         let s = s.trim();
+        if let Some(name) = s.strip_prefix("vtx:") {
+            // (the paragraph's own marker "vtx:q<n>" and the padding page's are not marks)
+            if !name.starts_with("pad") && !(name.starts_with('q') && name[1..].chars().all(|c| c.is_ascii_digit())) {
+                self.out.marks.push((name.to_string(), h, v));
+            }
+            return;
+        }
         if let Some(rest) = s.strip_prefix("color push").or_else(|| s.strip_prefix("color set")) {
             let css = css_color(rest.trim()).unwrap_or_else(|| "#000000".into());
             let index = match self.out.colors.iter().position(|c| *c == css) {
@@ -263,6 +284,11 @@ impl Machine {
             }
         } else if s.starts_with("color pop") {
             self.color.pop();
+        } else if let Some(rest) = s.strip_prefix("pdf:uxobj") {
+            // a form drawn by reference (a list's bullet drawn once in the preamble): not drawn here; where it is,
+            // for the page to show it there
+            let name = rest.split_whitespace().next().unwrap_or("").to_string();
+            self.out.marks.push((format!("xobj {name}"), h, v));
         } else if s.starts_with("vtx:") || s.starts_with("pdf:bann") || s.starts_with("pdf:eann") || s.starts_with("pdf:dest") || s.starts_with("pdf:outline") || s.starts_with("pdf:docinfo") || s.starts_with("pdf:pagesize") || s.starts_with("papersize") || s.starts_with("header=") || s.starts_with("src:") || s.is_empty() {
             // links, destinations, our marker: nothing drawn
         } else {
@@ -286,9 +312,11 @@ impl Machine {
             if o == 253 || o == 254 {
                 r.pos += 1;
                 let Some(()) = (|| -> Option<()> {
+                    let mut text = None;
                     if o == 254 {
                         let l = r.u(2).ok()? as usize;
-                        r.bytes(l * 2).ok()?;
+                        let units: Vec<u16> = r.bytes(l * 2).ok()?.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                        text = Some(String::from_utf16_lossy(&units));
                     }
                     let wd = r.s(4).ok()? as f64;
                     let n = r.u(2).ok()? as usize;
@@ -297,16 +325,23 @@ impl Machine {
                         xy.push((r.s(4).ok()? as f64, r.s(4).ok()? as f64));
                     }
                     let current = font.and_then(|f| fonts.get(&f)).cloned();
-                    for &(gx, gy) in xy.iter() {
+                    let first = self.out.glyphs.len();
+                    for (i, &(gx, gy)) in xy.iter().enumerate() {
                         let g = r.u(2).ok()?;
                         match &current {
                             Some(Font::Native { key, size, slant, extend }) => {
                                 let fi = self.font_slot(key, *size, *slant, *extend);
                                 let c = self.color_now();
                                 self.out.glyphs.push((fi, (h + gx * scale) * self.unit, (v + gy * scale) * self.unit, g, c));
+                                // a glyph's advance: to the next one's place, the last to the run's end
+                                let next = xy.get(i + 1).map(|p| p.0).unwrap_or(wd);
+                                self.out.advances.push(((next - gx) * scale * self.unit, if text.is_some() { TEXT } else { GLYPH }));
                             }
                             _ => self.out.undrawable.push("glyphs without a native font".into()),
                         }
+                    }
+                    if let Some(text) = text {
+                        self.out.runs.push((first, self.out.glyphs.len() - first, text));
                     }
                     h += wd * scale;
                     Some(())
@@ -368,7 +403,7 @@ impl Machine {
                     v += z;
                 }
                 Op::Fnt(k) => font = Some(k),
-                Op::Xxx(text) => self.special(text),
+                Op::Xxx(text) => self.special(text, h * self.unit, v * self.unit),
                 Op::FntDef(..) => {}
                 Op::Glyphs(_) => {}
                 Op::Pic => self.out.undrawable.push("picture".into()),
@@ -407,6 +442,7 @@ impl Machine {
                     let fi = self.font_slot(k, size, *slant, *extend);
                     let col = self.color_now();
                     self.out.glyphs.push((fi, h * self.unit, v * self.unit, c, col));
+                    self.out.advances.push((advance * self.unit, CHAR));
                 } else {
                     self.out.undrawable.push(format!("{name}: no outlines"));
                 }

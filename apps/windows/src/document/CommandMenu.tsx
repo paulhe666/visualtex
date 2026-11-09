@@ -36,7 +36,7 @@ function Formula({ latex, display = false }: { latex: string; display?: boolean 
   return <span className="vtx-cmd-formula" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-function Preview({ preview }: { preview: CommandPreview }) {
+export function Preview({ preview }: { preview: CommandPreview }) {
   switch (preview.kind) {
     case "math":
       return <Formula latex={preview.latex} />;

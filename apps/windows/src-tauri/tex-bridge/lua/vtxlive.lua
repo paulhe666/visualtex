@@ -129,8 +129,30 @@ local function virtual_char(fid, f, c, x, y, glyphs, rules, fonts, depth)
   end
 end
 
--- a glyph at (x, y); its width
-out_glyph = function(fid, f, c, x, y, glyphs, rules, fonts, depth)
+-- what the glyphs being walked stand for (the caret's places): per glyph its advance, whether it is in a
+-- formula, the characters (an OpenType font's: Unicode; a TFM font's: found from its glyph names by tex-bridge)
+local map, marks, in_math = {}, {}, false
+local SPECIAL = node.subtype and node.subtype("special") or 3
+
+local function unicode_of(f, n)
+  local function chars(g, out)
+    local comps = g.components
+    if comps then
+      for c in node.traverse(comps) do
+        if c.id == GLYPH then chars(c, out) end
+      end
+    elseif g.char and g.char > 0 and not (g.char >= 0xE000 and g.char <= 0xF8FF) and g.char < 0xF0000 then
+      out[#out + 1] = tostring(g.char)
+    end
+    return out
+  end
+  local file = (f and f.filename or ""):lower()
+  if not (file:match("%.[ot]tf$") or file:match("%.tt[cf]$") or file:match("%.otc$")) then return "" end
+  return table.concat(chars(n, {}), ",")
+end
+
+-- a glyph at (x, y); its width (`n`: its node, for its characters)
+out_glyph = function(fid, f, c, x, y, glyphs, rules, fonts, depth, n)
   f = f or font.getfont(fid)
   local ch = f and f.characters and f.characters[c]
   if f and f.type == "virtual" and ch and ch.commands then
@@ -139,6 +161,7 @@ out_glyph = function(fid, f, c, x, y, glyphs, rules, fonts, depth)
   end
   note_font(fid, fonts)
   glyphs[#glyphs + 1] = string.format("[%d,%d,%d,%d]", fid, x, y, glyph_code(f, c))
+  map[#map + 1] = string.format("[%d,%d,[%s]]", math.floor((ch and ch.width or 0) + 0.5), in_math and 5 or 4, n and unicode_of(f, n) or "")
   return ch and ch.width or 0
 end
 
@@ -151,7 +174,7 @@ local function walk_hlist(box, x, y, glyphs, rules, fonts, glues)
     local id = n.id
     if id == GLYPH then
       local f = font.getfont(n.font)
-      out_glyph(n.font, f, n.char, x + (n.xoffset or 0), y - (n.yoffset or 0), glyphs, rules, fonts, 0)
+      out_glyph(n.font, f, n.char, x + (n.xoffset or 0), y - (n.yoffset or 0), glyphs, rules, fonts, 0, n)
       x = x + n.width
     elseif id == HLIST then
       walk_hlist(n, x, y + (n.shift or 0), glyphs, rules, fonts, glues)
@@ -184,7 +207,11 @@ local function walk_hlist(box, x, y, glyphs, rules, fonts, glues)
     elseif id == KERN then
       x = x + n.kern
     elseif id == MATH then
+      in_math = n.subtype == 0
       x = x + (n.surround or 0) + (n.width or 0)
+    elseif id == WHATSIT and n.subtype == SPECIAL then
+      local name = (n.data or ""):match("^vtx:(.*)$")
+      if name then marks[#marks + 1] = string.format('["%s",%d,%d]', esc(name), math.floor(x + 0.5), math.floor(y + 0.5)) end
     elseif id == DISC then
       -- a discretionary inside a line: its replacement stands there (after line breaking only the taken
       -- break's pre/post texts are left as plain nodes)
@@ -246,7 +273,7 @@ local function typeset(id, hsize, indent, leftskip, rightskip, text)
   local level = tex.currentgrouplevel
   errors, first_error = 0, nil
   tex.runtoks(function()
-    tex.sprint(string.format("\\setbox0\\vbox{\\hsize=%dsp\\leftskip=%dsp\\rightskip=%dsp\\relax", hsize, leftskip, rightskip))
+    tex.sprint(string.format("\\setbox0\\vbox{\\hsize=%dsp\\linewidth=\\hsize\\leftskip=%dsp\\rightskip=%dsp\\relax", hsize, leftskip, rightskip))
     if indent < -1 then
       -- the text says (the body's declarations come before its \indent or \noindent)
     elseif indent < 0 then
@@ -270,10 +297,12 @@ local function typeset(id, hsize, indent, leftskip, rightskip, text)
   end
   local box = tex.box[0]
   local glyphs, rules, fonts, lines, glues = {}, {}, {}, {}, {}
+  map, marks, in_math = {}, {}, false
   local total = walk_vlist(box, 0, 0, glyphs, rules, fonts, lines, glues)
-  return string.format('{"id":"%s","ok":true,"ms":%.2f,"height":%d,"migrated":%s,"errors":%d,"error":"%s","lines":[%s],"glyphs":[%s],"rules":[%s],"glues":[%s],"fonts":[%s]}',
+  return string.format('{"id":"%s","ok":true,"ms":%.2f,"height":%d,"migrated":%s,"errors":%d,"error":"%s","lines":[%s],"glyphs":[%s],"rules":[%s],"glues":[%s],"fonts":[%s],"map":[%s],"marks":[%s]}',
     esc(id), (os.clock() - t0) * 1000, total, tostring(has_migrated(box)), errors, esc(first_error or ""), table.concat(lines, ","),
-    table.concat(glyphs, ","), table.concat(rules, ","), table.concat(glues, ","), table.concat(fonts, ","))
+    table.concat(glyphs, ","), table.concat(rules, ","), table.concat(glues, ","), table.concat(fonts, ","),
+    table.concat(map, ","), table.concat(marks, ","))
 end
 
 local function answer(json)

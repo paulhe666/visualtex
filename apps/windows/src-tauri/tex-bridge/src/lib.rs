@@ -2,6 +2,7 @@
 //! warm engine holding the preamble), turn the XDV/DVI pages into SVG with dvisvgm after rewriting the
 //! (x)dvipdfmx specials into SVG (so the pages show exactly what the PDF of the same run shows), make that PDF.
 
+pub mod agl;
 pub mod cjk_table;
 pub mod commands;
 pub mod dvi;

@@ -115,6 +115,56 @@ pub struct LiveResult {
     pub paths: HashMap<String, String>,
     /// a glyph has no outline here (a bitmap font): the paragraph cannot be drawn exactly
     pub undrawable: usize,
+    /// every glyph as the caret sees it (drawn or not): x, y (baseline), advance (bp), the characters it stands
+    /// for ("" unknown), kind (1 a word's, 2 a TFM font's character, 3 a glyph outside words: a formula's; 4 text
+    /// and 5 a formula's, from LuaTeX), its font's size (bp)
+    pub map: Vec<(f64, f64, f64, String, u8, f64)>,
+    /// our marks in the paragraph (\special{vtx:<name>}): name, x, y (bp)
+    pub marks: Vec<(String, f64, f64)>,
+}
+
+/// The characters of a word's glyphs: its text spread over them in order, a ligature (its cmap character
+/// ﬁ, ﬀ, or none) taking the letters it stands for.
+fn spread(text: &str, glyph_chars: &[String]) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let n = glyph_chars.len();
+    let mut out = vec![String::new(); n];
+    let mut p = 0;
+    for (j, gc) in glyph_chars.iter().enumerate() {
+        if p >= chars.len() {
+            break;
+        }
+        let left = n - j - 1;
+        if left == 0 {
+            out[j] = chars[p..].iter().collect();
+            break;
+        }
+        let expanded: String = gc
+            .chars()
+            .map(|c| match c {
+                '\u{FB00}' => "ff".to_string(),
+                '\u{FB01}' => "fi".to_string(),
+                '\u{FB02}' => "fl".to_string(),
+                '\u{FB03}' => "ffi".to_string(),
+                '\u{FB04}' => "ffl".to_string(),
+                '\u{FB05}' | '\u{FB06}' => "st".to_string(),
+                c => c.to_string(),
+            })
+            .collect();
+        let rest: String = chars[p..].iter().collect();
+        let take = if !expanded.is_empty() && expanded.chars().count() > 1 && rest.starts_with(&expanded) {
+            expanded.chars().count()
+        } else if gc.is_empty() && chars.len() - p > left + 1 {
+            // a glyph the cmap does not name, more letters than glyphs left: a ligature of the extra ones
+            chars.len() - p - left
+        } else {
+            1
+        };
+        let take = take.min(chars.len() - p);
+        out[j] = chars[p..p + take].iter().collect();
+        p += take;
+    }
+    out
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -165,6 +215,11 @@ struct LuaAnswer {
     glues: Vec<[i64; 2]>,
     #[serde(default)]
     fonts: Vec<LuaFont>,
+    /// per glyph: advance (sp), kind (4 text, 5 in a formula), Unicode characters
+    #[serde(default)]
+    map: Vec<(i64, u8, Vec<u32>)>,
+    #[serde(default)]
+    marks: Vec<(String, i64, i64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -239,7 +294,10 @@ fn server_file(engine: Engine, split: &engine::Split) -> String {
     match kind_of(engine) {
         Kind::Lua => {
             text.push_str(&split.preamble);
-            text.push_str("\n\\begin{document}\n\\directlua{dofile(\"");
+            text.push_str("\n\\begin{document}\n");
+            // a formula being edited on the page: the room its editor takes, marked where it starts
+            text.push_str("\\def\\vtxhole#1#2#3{\\hbox to #1sp{\\special{vtx:hole}\\vrule width 0pt height #2sp depth #3sp\\hss}}\n");
+            text.push_str("\\directlua{dofile(\"");
             text.push_str(LUA_FILE);
             text.push_str("\")}\n\\end{document}\n");
         }
@@ -580,6 +638,7 @@ impl Live {
         result.lines = a.lines.iter().map(|l| [bp(l[0]), bp(l[1]), bp(l[2]), bp(l[3]), bp(l[4])]).collect();
         result.rules = a.rules.iter().map(|r| [bp(r[0]), bp(r[1]), bp(r[2]), bp(r[3]), 0.0]).collect();
         result.glues = a.glues.iter().map(|g| [bp(g[0]), bp(g[1])]).collect();
+        result.marks = a.marks.iter().map(|(n, x, y)| (n.clone(), bp(*x), bp(*y))).collect();
         result.colors = vec!["#000000".into()];
         let sent = self.sent.entry(req.session.clone()).or_default();
         let mut index_of: HashMap<i64, usize> = HashMap::new();
@@ -603,6 +662,17 @@ impl Live {
                 }
             };
             result.glyphs.push((index, bp(g[1]), bp(g[2]), code, 0));
+            {
+                let (adv, kind, chars) = a.map.get(result.glyphs.len() - 1).cloned().unwrap_or((0, 4, vec![]));
+                let mut text: String = chars.iter().filter_map(|&c| char::from_u32(c)).collect();
+                if text.is_empty() {
+                    let f = server.fonts.get(&fid).cloned().unwrap_or_default();
+                    if f.kind == "type1" || f.kind == "otf" {
+                        text = self.outlines.chars(&FontKey { kind: f.kind, file: f.file, enc: f.enc, sub: f.sub }, code);
+                    }
+                }
+                result.map.push((bp(g[1]), bp(g[2]), bp(adv), text, kind, result.fonts[index].size));
+            }
             let font = &result.fonts[index];
             if font.key.is_empty() {
                 result.undrawable += 1;
@@ -704,6 +774,14 @@ impl Live {
         };
         // drawn from the fonts' outlines when everything on it can be (glyphs, rules, colours)
         let drawn = crate::dvilive::draw_page(&dvi, &page.body, &mut server.files);
+        // what each glyph stands for (the caret's places)
+        let mut texts: Vec<String> = drawn.glyphs.iter().map(|g| self.outlines.chars(&drawn.fonts[g.0].0, g.3)).collect();
+        for (first, count, text) in &drawn.runs {
+            let spread = spread(text, &texts[*first..first + count]);
+            texts.splice(*first..first + count, spread);
+        }
+        result.map = drawn.glyphs.iter().zip(drawn.advances.iter()).zip(texts).map(|((g, a), t)| (g.1, g.2, a.0, t, a.1, drawn.fonts[g.0].1)).collect();
+        result.marks = drawn.marks.clone();
         if drawn.undrawable.is_empty() {
             let sent = self.sent.entry(req.session.clone()).or_default();
             let mut undrawable = 0;

@@ -37,6 +37,19 @@ impl FontKey {
 pub struct Outlines {
     faces: HashMap<FontKey, Option<Face>>,
     paths: HashMap<(FontKey, u32), Option<String>>,
+    /// an OpenType font's characters by glyph (its cmap read backwards)
+    unicode: HashMap<FontKey, HashMap<u16, char>>,
+}
+
+/// Of two characters one glyph stands for, the one text has: not a compatibility form (Kangxi radicals, CJK
+/// compatibility ideographs, presentation forms), else the lower.
+fn better(a: char, b: char) -> bool {
+    let compat = |c: char| matches!(c as u32, 0x2E80..=0x2FDF | 0xF900..=0xFAFF | 0xFB00..=0xFB4F | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x2F800..=0x2FA1F | 0x1D400..=0x1D7FF);
+    match (compat(a), compat(b)) {
+        (false, true) => true,
+        (true, false) => false,
+        _ => a < b,
+    }
 }
 
 struct PathOut(String);
@@ -82,6 +95,45 @@ impl Outlines {
         match self.face(key)? {
             Face::Otf { upem, .. } => Some((1.0 / upem, 1.0 / upem)),
             Face::Type1 { font, .. } => Some((font.matrix[0], font.matrix[3])),
+        }
+    }
+
+    /// The characters glyph `code` (a glyph index, or a slot of the TFM font) stands for ("" when unknown): an
+    /// OpenType glyph's from the font's cmap, a Type 1 character's from its glyph name.
+    pub fn chars(&mut self, key: &FontKey, code: u32) -> String {
+        if key.kind == "otf" {
+            if !self.unicode.contains_key(key) {
+                let mut map: HashMap<u16, char> = HashMap::new();
+                if let Some(Face::Otf { data, index, .. }) = self.face(key) {
+                    if let Ok(face) = ttf_parser::Face::parse(data, *index) {
+                        if let Some(cmap) = face.tables().cmap {
+                            for sub in cmap.subtables {
+                                if !sub.is_unicode() {
+                                    continue;
+                                }
+                                sub.codepoints(|cp| {
+                                    let (Some(c), Some(g)) = (char::from_u32(cp), sub.glyph_index(cp)) else { return };
+                                    match map.get(&g.0) {
+                                        Some(&old) if !better(c, old) => {}
+                                        _ => {
+                                            map.insert(g.0, c);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+                self.unicode.insert(key.clone(), map);
+            }
+            return self.unicode.get(key).and_then(|m| m.get(&(code as u16))).map(|c| c.to_string()).unwrap_or_default();
+        }
+        match self.face(key) {
+            Some(Face::Type1 { font, enc }) => {
+                let names = enc.as_deref().unwrap_or(&font.encoding);
+                names.get(code as usize).and_then(|n| n.as_deref()).map(crate::agl::chars).unwrap_or_default()
+            }
+            _ => String::new(),
         }
     }
 

@@ -8,6 +8,8 @@
 % starting with \special{vtx:<id>} (then a page of padding: it pushes the page through TeX's and the C library's
 % buffers into the file), and its lines are shown (\showbox, depth 1) before VTXDONE <id> on the terminal.
 \makeatletter
+% (XeTeX: a word's characters go into the output with its glyphs — where the caret's places are)
+\ifdefined\XeTeXgenerateactualtext \XeTeXgenerateactualtext=1 \fi
 \newbox\vtx@box
 \newcount\vtx@level
 \edef\vtx@pad{\romannumeral 24000000}
@@ -18,7 +20,7 @@
 \fi
 \long\def\vtx@para#1#2#3#4#5#6{%
   \vtx@level=\currentgrouplevel
-  \setbox\vtx@box\vbox{\hsize=#2sp\leftskip=#4sp\rightskip=#5sp\relax
+  \setbox\vtx@box\vbox{\hsize=#2sp\linewidth=\hsize\leftskip=#4sp\rightskip=#5sp\relax
     \ifnum#3<\m@ne\else\ifnum#3<\z@ \indent\else\noindent\ifnum#3>\z@ \hskip#3sp\relax\fi\fi\fi
     \input{#6}\par}%
   \ifnum\currentgrouplevel=\vtx@level
@@ -30,6 +32,8 @@
   \else
     \immediate\write16{VTXBROKEN #1}%
   \fi}
+% a formula being edited on the page: the room its editor takes (sp), marked where it starts
+\def\vtxhole#1#2#3{\hbox to #1sp{\special{vtx:hole}\vrule width 0pt height #2sp depth #3sp\hss}}
 \def\vtx@label#1#2#3{\expandafter\gdef\csname #1@#2\endcsname{#3}}
 \def\vtx@labels#1{{\def\newlabel{\vtx@label r}\def\bibcite{\vtx@label b}\setbox\z@\vbox{\input{#1}}}%
   \immediate\write16{VTXLABELS}}

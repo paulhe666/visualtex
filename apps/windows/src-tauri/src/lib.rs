@@ -4352,6 +4352,10 @@ pub fn run() {
         }
         tauri::RunEvent::Exit => {
             shutdown_runtime(app, &shutdown_for_events, "event-loop-exit");
+            // LaTeX documents' engines (warm runs, live servers) do not outlive the app
+            if let Some(tex) = app.try_state::<tex_commands::TexState>() {
+                tex.0.shutdown();
+            }
         }
         _ => {}
     });

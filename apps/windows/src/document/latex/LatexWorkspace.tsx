@@ -1,17 +1,20 @@
-// A LaTeX document (personal edition): the project's files are the document. Its source on the left (a tab a
-// file), the pages TeX made of it on the right — SVG from the same DVI/XDV as the PDF, so the screen is the
-// export. Typing saves the files a moment later and has TeX typeset again (the engine is already waiting with
-// the preamble read); the pages change when the new ones are there. A click on a page goes to its source line;
-// the caret's line is marked on the pages. TeX's errors are listed and marked on their lines; the last good
-// pages stay. A formula at the caret opens in the formula editor (Mod+E) and goes back as LaTeX. Meanwhile the
-// paragraph being typed is drawn at once, as the live LuaLaTeX server typesets it (livePara.ts).
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+// A LaTeX document (personal edition): the project's files are the document, and it is edited on its pages as
+// TeX makes them — SVG from the same DVI/XDV as the PDF, so the screen is the export. A click puts the caret
+// between the glyphs clicked between; typing goes into the source there and the paragraph is typeset at once by
+// the live server (the document's own TeX, the preamble already read) and drawn over its old lines
+// (visualEditor.ts, livePara.ts); "$" opens the formula editor in place, "\" the LaTeX commands. TeX makes the
+// whole document again a moment after the typing stops; the pages change when the new ones are there. The source
+// (a tab a file) is a view of its own (the toolbar's switch): there a click on a page goes to its source line.
+// TeX's errors are listed and marked on their lines; the last good pages stay.
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from "react";
+import type { ChangeSet } from "@codemirror/state";
 import { gunzipSync, strToU8, zipSync } from "fflate";
 import { isTauri } from "@tauri-apps/api/core";
 import {
   AlertTriangle,
   ChevronDown,
   CircleX,
+  Code2,
   Download,
   FileText,
   Loader2,
@@ -25,14 +28,25 @@ import { decodeText } from "../../../../shared/visualtex-document/src/index.ts";
 import type { FormulaSessionCallbacks } from "../../../../shared/visualtex-document/src/index.ts";
 import { chooseExportPath, saveBinaryFile, saveTextFile } from "../documentLibraryApi";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "../DocumentFormulaField";
+import { setPageFormulaOpener } from "../openDocumentFormula";
 import { createSafeStorage } from "../../runtime/safeStorage";
 import { LatexPages, type PageContent, type PageMarker } from "./LatexPages";
+import { FormulaOnPage, KeyboardSink, LatexCommandMenu, PageMarks } from "./LatexVisual";
+import { VisualEditor, type TypesetOutcome } from "./visualEditor";
+import { documentCommands } from "./texCaret";
 import { LatexSource, type LatexSourceHandle, type LineMark } from "./LatexSource";
 import {
   beginsParagraphCommand,
   bodyPrefix,
   changedParagraph,
   docMacros,
+  endsProof,
+  enumerated,
+  proofOpening,
+  proofText,
+  isListItem,
+  listContext,
+  listText,
   liveEligible,
   liveText,
   overlayOf,
@@ -44,13 +58,15 @@ import {
   type DocMacros,
   type LiveOverlay,
   type PageGlyph,
+  type ParagraphChange,
+  lineNumberAt,
   type ParagraphArea,
   type ParagraphPlace,
 } from "./livePara";
 import { formulaForEditor, mathRegionAt, type MathRegion } from "./mathRegion";
 import { projectPath, SyncTex } from "./synctex";
 import { parseTexLog, type TexMessage } from "./texLog";
-import { base64ToBytes, texService, type CompileResult, type PageMeta, type ProjectFile, type TexService } from "./texService";
+import { base64ToBytes, texService, type CompileResult, type LiveResult, type PageMeta, type ProjectFile, type TexService } from "./texService";
 import { projectTitle, type LatexPointer } from "./latexDocs";
 import "./latex.css";
 
@@ -83,7 +99,7 @@ interface Buffer {
 
 const storage = createSafeStorage();
 const ZOOM_KEY = "visualtex.latex.zoom.v1";
-const SPLIT_KEY = "visualtex.latex.split.v1";
+const VIEW_KEY = "visualtex.latex.view.v1";
 const SAVE_DELAY_MS = 700;
 // TeX starts at the first keystroke (a run in progress is not stopped, the next one follows it); while the
 // paragraph being typed is shown live, once typing pauses (the live lines are what TeX will make; the run then
@@ -136,15 +152,18 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<TexMessage[]>([]);
   const [showMessages, setShowMessages] = useState(false);
-  const [marker, setMarker] = useState<PageMarker | null>(null);
+  const [, setMarker] = useState<PageMarker | null>(null);
   const [reveal, setReveal] = useState<{ page: number; y: number; nonce: number; ifHidden?: boolean } | null>(null);
   const [zoomSetting, setZoomSetting] = useState<number | "fit">(() => {
     const z = storage.getItem(ZOOM_KEY);
     return z && z !== "fit" ? Number(z) || "fit" : "fit";
   });
   const [paneWidth, setPaneWidth] = useState(800);
-  const [split, setSplit] = useState(() => Number(storage.getItem(SPLIT_KEY)) || 0.44);
   const [caretInMath, setCaretInMath] = useState(false);
+  /** the pages edited (the visual editor), or the source */
+  const [view, setViewState] = useState<"visual" | "source">(() => (storage.getItem(VIEW_KEY) === "source" ? "source" : "visual"));
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const cache = useRef(new Map<string, PageContent>());
   const buildRef = useRef(0);
@@ -208,7 +227,24 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
   // ---- compiling ----
   const run = useRef({ inflight: false, pending: false, started: 0, expected: 1500, reruns: 0, timer: 0, generation: 0, rerun: false });
   /** the texts the shown build was made from (the live paragraph is found against them) */
-  const built = useRef<{ build: number; texts: Map<string, string> } | null>(null);
+  const built = useRef<{ build: number; texts: Map<string, string>; seq: number } | null>(null);
+  /** each file's changes since the texts of a build (in order, numbered): an offset of the build's text is found
+   *  in the text now through them, and back */
+  const changeLog = useRef(new Map<string, Array<{ seq: number; changes: ChangeSet }>>());
+  const seqRef = useRef(0);
+  const toCurrent = useCallback((path: string, pos: number, assoc: -1 | 1) => {
+    const since = built.current?.seq ?? 0;
+    let p = pos;
+    for (const e of changeLog.current.get(path) ?? []) if (e.seq > since) p = e.changes.mapPos(p, assoc);
+    return p;
+  }, []);
+  const toBuilt = useCallback((path: string, pos: number, assoc: -1 | 1) => {
+    const since = built.current?.seq ?? 0;
+    const log = changeLog.current.get(path) ?? [];
+    let p = pos;
+    for (let i = log.length - 1; i >= 0; i--) if (log[i].seq > since) p = log[i].changes.invertedDesc.mapPos(p, assoc);
+    return p;
+  }, []);
 
   const toProject = useCallback((path: string) => {
     const work = sync.current?.work ?? "";
@@ -321,6 +357,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       const overlays: Record<string, string> = {};
       for (const [path, b] of buffers.current) if (b.text !== b.disk) overlays[path] = b.text;
       const texts = new Map([...buffers.current].map(([path, b]) => [path, b.text] as const));
+      const seqAtStart = seqRef.current;
       const generation = ++state.generation;
       state.inflight = true;
       state.started = performance.now();
@@ -357,7 +394,11 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         if (generation === state.generation || full) {
           state.expected = r.timings.total || state.expected;
           state.rerun = r.status === "ok" && r.needsRerun;
-          if (r.status === "ok" && r.pages.length) built.current = { build: r.build, texts };
+          if (r.status === "ok" && r.pages.length) {
+            built.current = { build: r.build, texts, seq: seqAtStart };
+            // (the changes the build has: no longer needed)
+            for (const [path, log] of changeLog.current) changeLog.current.set(path, log.filter((e) => e.seq > seqAtStart));
+          }
           applyResult(r);
           if (r.status === "notex") setProblem(t("TeX is not installed", "未安装 TeX"));
         }
@@ -473,12 +514,12 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
   }, [messages, active]);
 
   // ---- the live paragraph ----
-  const [live, setLive] = useState<LiveOverlay | null>(null);
+  const [, setLive] = useState<LiveOverlay | null>(null);
   const liveState = useRef({
     busy: false,
     pending: null as { path: string; text: string } | null,
     /** a paragraph of a build checked against its page: how it is indented, its lines and where its box starts */
-    verified: new Map<string, { indent: number; place: ParagraphPlace; x0: number; y0: number } | null>(),
+    verified: new Map<string, { indent: number; place: ParagraphPlace; x0: number; y0: number; tx: number; ty: number; result: LiveResult; hsize: number } | null>(),
     /** glyph outlines by "<font>:<code>", as the server sent them to this session */
     paths: new Map<string, string>(),
     session: `${docId}:${Math.random().toString(36).slice(2)}`,
@@ -503,30 +544,24 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     setLive(null);
   }, []);
 
-  /** The paragraph `path`'s edit changed, typeset by the live server and drawn over its old lines. */
-  const liveFor = useCallback(
-    async (path: string, text: string): Promise<void> => {
+  /**
+   * What the live server makes of a change of a paragraph of `path` (`text` its text now): checked first, on the
+   * paragraph's text as the shown build had it, to come out where the page has it (else nothing is drawn); then
+   * the new text typeset there. `transform`: what the paragraph is sent as (a formula being edited: its room).
+   */
+  const typesetChange = useCallback(
+    async (path: string, text: string, change: ParagraphChange, options: { displays?: boolean; transform?: (paragraph: string) => string } = {}): Promise<TypesetOutcome> => {
       const state = liveState.current;
-      const started = performance.now();
-      // (why there is none: for the tests)
-      const quit = (why: string) => {
-        if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = why;
-        clearLive();
-      };
       const base = built.current;
-      // the text the shown build was made from (a file opened since: as it was on disk)
-      const old = base?.texts.get(path) ?? pristine.current.get(path);
-      if (!service || !base || old === undefined || base.build !== buildRef.current) return quit("no build text");
-      if (old === text) return quit("the page is current");
+      if (!service || !base || base.build !== buildRef.current) return { ok: false, why: "no build text", retry: !base };
       const macros = macrosOf();
       const main = path === pointerRef.current.main;
-      const change = changedParagraph(old, text, macros);
-      if (!change || !liveEligible(change, text, main)) return quit("not a plain paragraph");
+      if (!liveEligible(change, text, main, options.displays)) return { ok: false, why: "not a plain paragraph" };
       // the body's declarations before it (a size, a family), then the paragraph with its indent
       const prefix = bodyPrefix(text, change.start, main);
       if (sync.current?.build !== base.build) await loadSync(base.build);
       const s = sync.current;
-      if (!s || s.build !== base.build || buildRef.current !== base.build) return quit("no SyncTeX");
+      if (!s || s.build !== base.build || buildRef.current !== base.build) return { ok: false, why: "no SyncTeX", retry: true };
       const key = `${base.build}:${path}:${change.oldFirst}:${change.oldLast}`;
       let area = state.areas.get(key);
       if (area === undefined) {
@@ -535,20 +570,43 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         if (state.areas.size > 200) state.areas.clear();
         state.areas.set(key, area);
       }
-      if (!area) return quit("not found on the pages");
+      if (!area) return { ok: false, why: "not found on the pages" };
       const meta = pagesRef.current[area.page - 1];
       const shown = contentsRef.current[area.page - 1];
       // the page as this build made it (its glyphs are what the paragraph is checked against)
-      if (!meta || !shown || shown.hash !== meta.hash) return quit("page not shown");
+      if (!meta || !shown || shown.hash !== meta.hash) return { ok: false, why: "page not shown", retry: true };
       let glyphs: PageGlyph[] | null = null;
       if (shown.kind === "svg") {
         glyphs = state.glyphs.get(shown.hash) ?? pageGlyphs(shown.svg);
         if (state.glyphs.size > 40) state.glyphs.clear();
         state.glyphs.set(shown.hash, glyphs);
       }
-      const hsize = Math.round(area.lines[area.core[0]].width * SP_PER_BP);
-      const ask = async (paragraph: string, indent: number) => {
-        const r = await service.live({ doc: docId, text: liveText(prefix, indent, paragraph), hsize, indent: -2, session: state.session });
+      // a list item: typeset in its lists (the text's width; the list makes its lines' width and indent)
+      const item = isListItem(change.oldText) && isListItem(change.newText);
+      const list = item ? listContext(text, change.start, main) : null;
+      if (item && !list) return { ok: false, why: "not in a list" };
+      const numbered = list ? enumerated(list.name, macrosRef.current?.preamble ?? "") : false;
+      // the line width: the lines' own; a list item's lines are the list's (its margins inside the width given):
+      // the width of the box the lines are in, made right by one answer when the box is not the list's (a list in
+      // a frame, a minipage)
+      let hsize = Math.round((list ? area.width : area.lines[area.core[0]].width) * SP_PER_BP);
+      const lineWidth = area.lines[area.core[0]].width;
+      if (import.meta.env.DEV) {
+        const w = window as unknown as { __latexLiveDebug?: unknown[] };
+        w.__latexLiveDebug = [...(w.__latexLiveDebug ?? []).slice(-5), { key, list: list ? { begins: list.begins, before: list.before } : null, hsize: hsize / SP_PER_BP, lineWidth, core: area.core, lines: area.lines.map((l) => [l.h, l.v, l.width]) }];
+      }
+      // a proof's first paragraph: in its proof (its head); a proof's last: with its QED symbol (\end{proof} puts it)
+      const proof = list ? null : proofOpening(text, change);
+      const last = endsProof(text, change);
+      const qed = last && !proof ? " \\qed" : "";
+      const ask = async (paragraph: string, indent: number, size?: number) => {
+        const sent = list
+          ? listText(prefix, list, numbered, paragraph + qed)
+          : proof
+            ? proofText(prefix, proof, paragraph, last)
+            : liveText(prefix, indent, paragraph + qed);
+        const r = await service.live({ doc: docId, text: sent, hsize: size ?? hsize, indent: -2, session: state.session });
+        if (import.meta.env.DEV) (window as unknown as { __latexLiveSent?: unknown }).__latexLiveSent = { sent, hsize: (size ?? hsize) / SP_PER_BP, map: r.map, lines: r.lines };
         for (const [k, d] of Object.entries(r.paths)) state.paths.set(k, d);
         return r;
       };
@@ -557,10 +615,20 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         checked = null;
         // indented as the document indents it, or not (after a heading, \noindent; one of the document's paragraph
         // commands sets its own)
-        for (const indent of beginsParagraphCommand(change.oldText, macros) ? [0, -1] : [-1, 0]) {
-          const r0 = await ask(change.oldText, indent);
+        const indents = list || proof ? [0] : beginsParagraphCommand(change.oldText, macros) ? [0, -1] : [-1, 0];
+        let unindented: LiveResult | null = null;
+        let measuredTried = 0;
+        for (let k = 0; k < indents.length; k++) {
+          const indent = indents[k];
+          let r0 = await ask(change.oldText, indent);
+          if (indent === 0) unindented = r0;
           // no server yet: asked again at the next edit
-          if (r0.status === "starting" || r0.status === "unavailable") return quit("server " + r0.status);
+          if (r0.status === "starting" || r0.status === "unavailable") return { ok: false, why: "server " + r0.status, retry: r0.status === "starting" };
+          if (list && r0.status === "ok" && r0.lines.length && Math.abs(r0.lines[0][3] - lineWidth) > 0.01) {
+            // the list's lines narrower or wider than the page's: the box it is in is not the one SyncTeX gave
+            hsize = Math.round(hsize + (lineWidth - r0.lines[0][3]) * SP_PER_BP);
+            r0 = await ask(change.oldText, indent);
+          }
           // its lines among the area's (the one run where its glyphs, or on a picture of the page its glues, are)
           const places = placesOf(area, r0.lines.length);
           for (const place of places) {
@@ -571,37 +639,97 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
               w.__latexLiveDebug = [...(w.__latexLiveDebug ?? []).slice(-5), { key, indent, place, status: r0.status, error: r0.error, lines: r0.lines, count: r0.glyphs.length, report, ok: !!at }];
             }
             if (at) {
-              checked = { indent, place, ...at };
+              checked = { indent, place, ...at, result: r0, hsize };
               break;
             }
           }
           if (checked) break;
+          // indented neither as the document's paragraphs nor not at all (a list's own paragraph indent, a proof's
+          // later paragraphs): as much as the page shows — its first glyph's place against the unindented answer's
+          const first = (map: LiveResult["map"], baseline: number) =>
+            Math.min(...(map ?? []).filter((g) => Math.abs(g[1] - baseline) < 0.5).map((g) => g[0]));
+          if (k === indents.length - 1 && measuredTried < 2 && glyphs && unindented?.status === "ok" && unindented.lines.length && !list && !proof) {
+            for (const place of placesOf(area, unindented.lines.length)) {
+              const b = place.boxes[0];
+              const onPage = Math.min(...glyphs.filter((g) => Math.abs(g.y - b.v) < 0.3 && g.x >= b.h - 3 && g.x <= b.h + b.width).map((g) => g.x));
+              // first a kern as wide as the page's first glyph is in; then less what the glyph itself stands off it
+              // in that answer
+              let measured = onPage - b.h;
+              if (measuredTried === 1 && r0.status === "ok" && r0.lines.length && indent > 0) measured = indent / SP_PER_BP - (first(r0.map, r0.lines[0][0]) - r0.lines[0][4] - indent / SP_PER_BP);
+              if (!isFinite(measured) || measured < 0.2 || measured > 80 || (indent > 0 && Math.abs(measured * SP_PER_BP - indent) < 300)) continue;
+              measuredTried++;
+              indents.push(Math.round(measured * SP_PER_BP));
+              break;
+            }
+          }
         }
         if (state.verified.size > 200) state.verified.clear();
         state.verified.set(key, checked);
       }
-      if (!checked) return quit("does not match the page");
-      const r = await ask(change.newText, checked.indent);
+      if (!checked) return { ok: false, why: "does not match the page" };
+      const unchanged = change.newText === change.oldText && !options.transform;
+      if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = unchanged ? "the page is current" : "";
+      const r = unchanged ? checked.result : await ask(options.transform ? options.transform(change.newText) : change.newText, checked.indent, checked.hsize);
       // TeX for the whole document once what is typed is TeX again (or after a longer pause)
       const unfinished = r.status === "error";
       if (unfinished !== state.unfinished) {
         state.unfinished = unfinished;
         scheduleCompileRef.current(unfinished ? UNFINISHED_COMPILE_DELAY_MS : LIVE_COMPILE_DELAY_MS);
       }
-      if (buildRef.current !== base.build) return;
+      if (buildRef.current !== base.build) return { ok: false, why: "a new build", retry: true };
       if (r.status === "ok" && r.undrawable === 0 && r.lines.length) {
+        if (import.meta.env.DEV) (window as unknown as { __latexLive?: unknown }).__latexLive = { key, texMs: r.texMs, ms: r.ms, lines: r.lines.length, at: performance.now() };
+        // its first line on the old first line's baseline (TeX keeps the baselines' distance; a taller first line —
+        // a formula's room — reaches up, it does not push the paragraph down)
+        const y0 = unchanged ? checked.y0 : checked.place.boxes[0].v - r.lines[0][0];
+        return {
+          ok: true,
+          result: r,
+          page: checked.place.page,
+          x0: checked.x0,
+          y0,
+          tx: checked.tx,
+          ty: checked.ty,
+          overlay: unchanged ? null : overlayOf(r, checked.place, checked.x0, y0, state.paths, checked.tx, checked.ty),
+        };
+      }
+      if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = `live ${r.status} ${r.error}`;
+      return { ok: false, why: `live ${r.status} ${r.error}`, unfinished };
+    },
+    [docId, loadSync, macrosOf, service],
+  );
+
+  /** The paragraph `path`'s edit changed (the source edited), typeset by the live server and drawn over its old lines. */
+  const liveFor = useCallback(
+    async (path: string, text: string): Promise<void> => {
+      const state = liveState.current;
+      // (why there is none: for the tests)
+      const quit = (why: string) => {
+        if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = why;
+        clearLive();
+      };
+      const base = built.current;
+      // the text the shown build was made from (a file opened since: as it was on disk)
+      const old = base?.texts.get(path) ?? pristine.current.get(path);
+      if (!service || !base || old === undefined || base.build !== buildRef.current) return quit("no build text");
+      if (old === text) return quit("the page is current");
+      const change = changedParagraph(old, text, macrosOf());
+      if (!change) return quit("not a plain paragraph");
+      const key = `${base.build}:${path}:${change.oldFirst}:${change.oldLast}`;
+      const out = await typesetChange(path, text, change);
+      if (buildRef.current !== base.build) return;
+      if (out.ok) {
         state.shown = key;
         if (import.meta.env.DEV) (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = "";
-        setLive(overlayOf(r, checked.place, checked.x0, checked.y0, state.paths));
-        if (import.meta.env.DEV) (window as unknown as { __latexLive?: unknown }).__latexLive = { key, texMs: r.texMs, ms: r.ms, frontMs: performance.now() - started, lines: r.lines.length, at: performance.now() };
-      } else if (r.status !== "error" || state.shown !== key) {
+        setLive(out.overlay);
+      } else if (!out.unfinished || state.shown !== key) {
         // a command being typed (TeX's error) keeps what was shown; anything else shows the page
-        quit(`live ${r.status} ${r.error}`);
+        quit(out.why);
       } else if (import.meta.env.DEV) {
-        (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = `live ${r.status} ${r.error}`;
+        (window as unknown as { __latexLiveWhy?: string }).__latexLiveWhy = out.why;
       }
     },
-    [clearLive, docId, loadSync, macrosOf, service],
+    [clearLive, macrosOf, service, typesetChange],
   );
 
   const requestLive = useRef<(path: string, text: string) => void>(() => undefined);
@@ -624,6 +752,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
 
   // a new build shown: the paragraph again against it (or nothing, when it has the text)
   useEffect(() => {
+    if (viewRef.current === "visual") return;
     const path = sourceRef.current?.active();
     const text = path ? buffers.current.get(path)?.text : undefined;
     if (!path || text === undefined || (built.current?.texts.get(path) ?? pristine.current.get(path)) === text) {
@@ -635,6 +764,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
 
   // ---- editing ----
   const caretTimer = useRef(0);
+  const placeOfRef = useRef<(path: string, line: number) => { page: number; x: number; y: number; width: number; height: number } | null>(() => null);
   const placeOf = (path: string, line: number) => {
     const s = sync.current;
     if (!s) return null;
@@ -645,6 +775,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     }
     return null;
   };
+  placeOfRef.current = placeOf;
 
   const onChange = useCallback(
     (path: string, text: string) => {
@@ -653,6 +784,8 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
       else buffers.current.set(path, { disk: "", text });
       window.clearTimeout(saveTimers.current.get(path));
       saveTimers.current.set(path, window.setTimeout(() => void saveFile(path), SAVE_DELAY_MS));
+      // (on the pages the editor typesets its paragraph and says when TeX runs)
+      if (viewRef.current === "visual") return;
       // a paragraph the live server can show: TeX once typing pauses
       const base = built.current;
       const old = base ? base.texts.get(path) ?? pristine.current.get(path) : undefined;
@@ -698,6 +831,152 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     setMarker(at ? { ...at, kind: "sync" } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [build]);
+
+  // ---- the pages edited ----
+  const editorRef = useRef<VisualEditor | null>(null);
+  const flashRef = useRef(flash);
+  flashRef.current = flash;
+  const isEnRef = useRef(isEn);
+  isEnRef.current = isEn;
+  const overlayTick = useRef(0);
+  const [, setOverlayTick] = useState(0);
+  if (!editorRef.current) {
+    editorRef.current = new VisualEditor({
+      source: () => sourceRef.current,
+      textOf: (path) => buffers.current.get(path)?.text,
+      openFile: async (path) => {
+        try {
+          const text = await readFile(path);
+          if (sourceRef.current?.active() !== path) sourceRef.current?.show(path, text, legacy.current.has(path));
+          setActive(path);
+          return !legacy.current.has(path);
+        } catch {
+          return false;
+        }
+      },
+      built: () => built.current,
+      builtText: (path) => built.current?.texts.get(path) ?? pristine.current.get(path),
+      toCurrent: (path, pos, assoc) => toCurrent(path, pos, assoc),
+      toBuilt: (path, pos, assoc) => toBuilt(path, pos, assoc),
+      sync: async () => {
+        await loadSync(buildRef.current);
+        const s = sync.current;
+        return s && s.build === buildRef.current ? { tex: s.tex, files: s.files } : null;
+      },
+      pageSvg: (page) => {
+        const meta = pagesRef.current[page - 1];
+        const shown = contentsRef.current[page - 1];
+        return meta && shown && shown.hash === meta.hash && shown.kind === "svg" ? shown.svg : null;
+      },
+      pageCount: () => pagesRef.current.length,
+      pageHeight: (page) => pagesRef.current[page - 1]?.height ?? 842,
+      macros: () => macrosOf(),
+      commands: () => {
+        const main = buffers.current.get(pointerRef.current.main)?.text ?? "";
+        const at = main.search(/\\begin\s*\{document\}/);
+        return documentCommands(at >= 0 ? main.slice(0, at) : "");
+      },
+      typeset: (path, text, change, options) => typesetChangeRef.current(path, text, change, { displays: true, ...options }),
+      overlaysChanged: () => setOverlayTick(++overlayTick.current),
+      cannotEdit: () => flashRef.current(isEnRef.current ? "Not editable here on the page · ⌘/ source" : "此处不能在页面上编辑 · ⌘/ 源码"),
+      revealSource: (path, offset) => {
+        const text = buffers.current.get(path)?.text;
+        if (text === undefined) return;
+        const at = placeOfRef.current(path, lineNumberAt(text, offset));
+        if (at) setReveal({ page: at.page, y: at.y, nonce: Date.now(), ifHidden: true });
+      },
+      scheduleCompile: (live) => scheduleCompileRef.current(live ? (liveState.current.unfinished ? UNFINISHED_COMPILE_DELAY_MS : LIVE_COMPILE_DELAY_MS) : COMPILE_DELAY_MS),
+      isMac: /Mac|iPhone|iPad/.test(navigator.platform),
+    });
+  }
+  const editor = editorRef.current;
+  if (import.meta.env.DEV) (window as unknown as { __latexEditor?: VisualEditor }).__latexEditor = editor;
+  const typesetChangeRef = useRef(typesetChange);
+  typesetChangeRef.current = typesetChange;
+  useSyncExternalStore(editor.subscribe, editor.getVersion);
+  useEffect(() => {
+    editor.revive();
+    // the formula tiles and toolbar: a new formula at the caret on the pages
+    setPageFormulaOpener(() => {
+      if (viewRef.current !== "visual" || !editor.caret || editor.formula) return false;
+      editor.newFormula(false);
+      return true;
+    });
+    return () => {
+      setPageFormulaOpener(null);
+      editor.dispose();
+    };
+  }, [editor]);
+  const onChanges = useCallback(
+    (path: string, changes: ChangeSet) => {
+      const log = changeLog.current.get(path) ?? [];
+      log.push({ seq: ++seqRef.current, changes });
+      changeLog.current.set(path, log);
+      editor.changed(path, changes);
+    },
+    [editor],
+  );
+  // a new build: the units the caret is in again from it
+  useEffect(() => {
+    if (view === "visual") editor.newBuild();
+  }, [build, editor, view]);
+  const sinkRef = useRef<HTMLTextAreaElement | null>(null);
+  const clickRef = useRef({ t: 0, x: 0, y: 0, n: 0 });
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  const focusSink = () => requestAnimationFrame(() => sinkRef.current?.focus({ preventScroll: true }));
+  const pageEdit = useMemo(
+    () => ({
+      down: (page: number, x: number, y: number, event: React.PointerEvent) => {
+        event.preventDefault();
+        setScroller((event.currentTarget as HTMLElement).closest(".vtx-tex-pages") as HTMLElement | null);
+        sinkRef.current?.focus({ preventScroll: true });
+        (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+        // (a pointer's click count: pointer events do not carry it)
+        const last = clickRef.current;
+        const now = performance.now();
+        const clicks = now - last.t < 450 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 5 ? last.n + 1 : 1;
+        clickRef.current = { t: now, x: event.clientX, y: event.clientY, n: clicks };
+        void editor.pointerDown(page, x, y, event.shiftKey, { x: event.clientX, y: event.clientY }).then(() => {
+          if (clicks >= 2 && !editor.formula) editor.selectWord(clicks);
+          if (!editor.formula) focusSink();
+        });
+      },
+      move: (page: number, x: number, y: number, event: React.PointerEvent) => {
+        if (event.buttons & 1) editor.pointerMove(page, x, y);
+      },
+      up: () => editor.pointerUp(),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor],
+  );
+  const decorate = useCallback(
+    (page: number) => (
+      <>
+        <PageMarks editor={editor} page={page} zoom={zoomRef.current} />
+        <FormulaOnPage editor={editor} page={page} zoom={zoomRef.current} onClosed={focusSink} />
+        <LatexCommandMenu editor={editor} page={page} zoom={zoomRef.current} isEn={isEn} />
+      </>
+    ),
+    // (drawn again with every change of the editor: the version is read by the components)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, editor.version, isEn, zoom],
+  );
+  const setViewRef = useRef<(next: "visual" | "source") => void>(() => undefined);
+  const setView = (next: "visual" | "source") => {
+    setViewState(next);
+    storage.setItem(VIEW_KEY, next);
+    if (next === "source") {
+      // the source at the caret's place
+      const c = editor.caret;
+      const text = c ? buffers.current.get(c.path)?.text : undefined;
+      if (c && text !== undefined) {
+        const line = lineNumberAt(text, c.offset);
+        const column = c.offset - (text.lastIndexOf("\n", c.offset - 1) + 1);
+        void openTab(c.path).then(() => requestAnimationFrame(() => sourceRef.current?.caretToLine(line, column)));
+      }
+    } else focusSink();
+  };
+  setViewRef.current = setView;
 
   // ---- pages ↔ source ----
   const onPageClick = useCallback(
@@ -838,30 +1117,16 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         event.preventDefault();
         void compile();
       }
+      if ((event.metaKey || event.ctrlKey) && event.key === "/") {
+        event.preventDefault();
+        setViewRef.current(viewRef.current === "visual" ? "source" : "visual");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [compile]);
 
-  // ---- layout: the divider ----
   const bodyRef = useRef<HTMLDivElement>(null);
-  const startDrag = (event: React.PointerEvent) => {
-    const body = bodyRef.current;
-    if (!body) return;
-    event.preventDefault();
-    const rect = body.getBoundingClientRect();
-    const move = (e: PointerEvent) => setSplit(Math.min(0.75, Math.max(0.2, (e.clientX - rect.left) / rect.width)));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      setSplit((s) => {
-        storage.setItem(SPLIT_KEY, String(s));
-        return s;
-      });
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
 
   const errors = messages.filter((m) => m.kind === "error");
   const warnings = messages.filter((m) => m.kind !== "error");
@@ -949,11 +1214,22 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
           className="icon-button compact formula-formatting-button"
           title={t("Formula (⌘E)", "公式 (⌘E)")}
           aria-label={t("Formula", "公式")}
-          disabled={!caretInMath}
+          disabled={view === "source" ? !caretInMath : !editor.caret}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={openFormula}
+          onClick={() => (view === "source" ? openFormula() : editor.newFormula(false))}
         >
           <Sigma size={16} />
+        </button>
+        <button
+          type="button"
+          className={"icon-button compact formula-formatting-button vtx-tex-view-toggle" + (view === "source" ? " is-active" : "")}
+          title={t("Source (⌘/)", "源码 (⌘/)")}
+          aria-label={t("Source", "源码")}
+          aria-pressed={view === "source"}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setView(view === "visual" ? "source" : "visual")}
+        >
+          <Code2 size={16} />
         </button>
         <span className="formula-formatting-divider" aria-hidden="true" />
         <button type="button" className="icon-button compact formula-formatting-button" title={t("Zoom out", "缩小")} aria-label={t("Zoom out", "缩小")} onClick={() => setZoom(Math.max(0.3, zoom / 1.15))}>
@@ -988,8 +1264,8 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
         {trailing}
       </div>
       {problem && <div className="vtx-tex-problem">{problem}</div>}
-      <div className="vtx-tex-body" ref={bodyRef} style={{ gridTemplateColumns: `${split * 100}% 6px minmax(0, 1fr)` }}>
-        <div className="vtx-tex-source latex-source-editor document-source-view">
+      <div className={"vtx-tex-body is-" + view} ref={bodyRef}>
+        <div className="vtx-tex-source latex-source-editor document-source-view" style={view === "visual" ? { display: "none" } : undefined}>
           <div className="vtx-tex-tabs" role="tablist">
             {tabs.map((path) => (
               <span
@@ -1025,26 +1301,14 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
               )}
             </span>
           </div>
-          <LatexSource ref={sourceRef} onChange={onChange} onCaret={onCaret} onFormula={openFormula} onSave={() => void saveAll().then((ok) => ok && flash(t("Saved", "已保存")))} />
-          {showMessages && (
-            <div className="vtx-tex-messages" role="list">
-              {messages.length === 0 && <div className="vtx-tex-message is-none">{t("No messages", "没有消息")}</div>}
-              {messages.map((m, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  role="listitem"
-                  className={"vtx-tex-message is-" + m.kind}
-                  title={m.context ?? m.message}
-                  onClick={() => m.file && void openTab(m.file, m.line || undefined)}
-                >
-                  {m.kind === "error" ? <CircleX size={13} /> : <AlertTriangle size={13} />}
-                  <span className="vtx-tex-message-place">{m.file ? `${name(m.file)}${m.line ? `:${m.line}` : ""}` : ""}</span>
-                  <span className="vtx-tex-message-text">{m.message}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <LatexSource
+            ref={sourceRef}
+            onChange={onChange}
+            onChanges={onChanges}
+            onCaret={onCaret}
+            onFormula={openFormula}
+            onSave={() => void saveAll().then((ok) => ok && flash(t("Saved", "已保存")))}
+          />
           {formula && (
             <>
               <div className="vtx-tex-formula-dismiss" onMouseDown={() => closeFormula(true)} />
@@ -1069,20 +1333,48 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
             </>
           )}
         </div>
-        <div className="vtx-tex-divider" onPointerDown={startDrag} role="separator" aria-orientation="vertical" />
-        <LatexPages
-          pages={pages}
-          contents={contents}
-          zoom={zoom}
-          marker={marker}
-          onPageClick={(p, x, y) => void onPageClick(p, x, y)}
-          onVisible={onVisible}
-          onZoom={(z) => setZoom(z)}
-          reveal={reveal}
-          onWidth={setPaneWidth}
-          busy={busy}
-          live={live}
-        />
+        {view === "visual" && (
+          <LatexPages
+            pages={pages}
+            contents={contents}
+            zoom={zoom}
+            marker={null}
+            onPageClick={(p, x, y) => void onPageClick(p, x, y)}
+            onVisible={onVisible}
+            onZoom={(z) => setZoom(z)}
+            reveal={reveal}
+            onWidth={setPaneWidth}
+            busy={busy}
+            overlays={editor.overlays()}
+            edit={pageEdit}
+            decorate={decorate}
+          >
+            <KeyboardSink editor={editor} zoom={zoom} scroller={scroller} sinkRef={sinkRef} onCopy={() => undefined} />
+          </LatexPages>
+        )}
+        {showMessages && (
+          <div className="vtx-tex-messages" role="list">
+            {messages.length === 0 && <div className="vtx-tex-message is-none">{t("No messages", "没有消息")}</div>}
+            {messages.map((m, i) => (
+              <button
+                key={i}
+                type="button"
+                role="listitem"
+                className={"vtx-tex-message is-" + m.kind}
+                title={m.context ?? m.message}
+                onClick={() => {
+                  if (!m.file) return;
+                  setView("source");
+                  void openTab(m.file, m.line || undefined);
+                }}
+              >
+                {m.kind === "error" ? <CircleX size={13} /> : <AlertTriangle size={13} />}
+                <span className="vtx-tex-message-place">{m.file ? `${name(m.file)}${m.line ? `:${m.line}` : ""}` : ""}</span>
+                <span className="vtx-tex-message-text">{m.message}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

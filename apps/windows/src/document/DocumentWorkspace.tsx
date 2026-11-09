@@ -48,7 +48,7 @@ import {
   type LibraryDocument,
 } from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
-import { openDocumentFormula } from "./openDocumentFormula";
+import { openDocumentFormula, openPageFormula } from "./openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
 import { imagePathKey, loadImportImages } from "./importImages";
 import {
@@ -162,6 +162,8 @@ function createDocumentEditorAdapter(document: () => DocumentEditorHandle | null
   const target = async () => {
     const open = openDocumentFormula();
     if (open) return open;
+    // a LaTeX document's pages: a new formula at their caret
+    if (openPageFormula()) return waitForOpenFormula();
     const editor = document();
     if (!editor?.run(insertInlineFormula)) return null;
     return waitForOpenFormula();
