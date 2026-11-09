@@ -5,6 +5,7 @@
 pub mod cjk_table;
 pub mod commands;
 pub mod dvi;
+pub mod dvilive;
 pub mod engine;
 pub mod emu;
 pub mod fontfix;

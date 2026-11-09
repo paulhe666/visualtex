@@ -73,7 +73,7 @@ const SAVE_DELAY_MS = 700;
 const COMPILE_DELAY_MS = 0;
 const LIVE_COMPILE_DELAY_MS = 400;
 // a formula or command half typed (TeX stops at it): TeX runs only after a longer pause
-const UNFINISHED_COMPILE_DELAY_MS = 2000;
+const UNFINISHED_COMPILE_DELAY_MS = 1500;
 const ENGINES = ["xelatex", "pdflatex", "lualatex"] as const;
 const ENGINE_LABEL: Record<string, string> = { xelatex: "XeLaTeX", pdflatex: "pdfLaTeX", lualatex: "LuaLaTeX" };
 
@@ -366,10 +366,16 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
     [applyResult, docId, service],
   );
 
+  const rootRef = useRef<HTMLDivElement>(null);
   const scheduleCompile = useCallback(
     (delay = COMPILE_DELAY_MS) => {
       window.clearTimeout(run.current.timer);
-      run.current.timer = window.setTimeout(() => void compile(), delay);
+      // (a run is due: the workspace says so, for the tests)
+      rootRef.current?.setAttribute("data-due", "true");
+      run.current.timer = window.setTimeout(() => {
+        rootRef.current?.removeAttribute("data-due");
+        void compile();
+      }, delay);
     },
     [compile],
   );
@@ -833,7 +839,7 @@ export function LatexWorkspace({ docId, pointer, isEn, leading, trailing, onPoin
   const timing = result ? `${(result.timings.total / 1000).toFixed(2)} s` : "";
 
   return (
-    <div className="vtx-tex-workspace" data-doc={docId} data-build={build} data-busy={busy ? "true" : undefined}>
+    <div ref={rootRef} className="vtx-tex-workspace" data-doc={docId} data-build={build} data-busy={busy ? "true" : undefined}>
       <div className="document-controls document-top-toolbar vtx-tex-toolbar" role="toolbar" aria-label="LaTeX">
         {leading}
         <button

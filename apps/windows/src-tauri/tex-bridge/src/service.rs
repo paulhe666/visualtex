@@ -640,7 +640,18 @@ impl Service {
         // the next edit's engine reads the preamble now
         self.spawn_warm(dist, run, engine, &run_dir, &job, split.as_ref(), key, req.shell_escape);
         // and the live server (the paragraph being edited, at once)
-        doc.live.lock().unwrap().ensure(dist, &run_dir, &job, engine, split.as_ref(), key, req.shell_escape);
+        doc.live.lock().unwrap().ensure(
+            dist,
+            &run_dir,
+            &job,
+            engine,
+            split.as_ref(),
+            key,
+            req.shell_escape,
+            &doc.dir.join("live"),
+            &self.svg_font_format,
+            default_paper(dist),
+        );
 
         // the screen copy and the pages asked for
         let t = Instant::now();

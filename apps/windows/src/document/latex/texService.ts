@@ -146,10 +146,14 @@ export interface LiveResult {
   height: number;
   /** baseline, height, depth, width, shift */
   lines: [number, number, number, number, number][];
-  /** font, x, baseline y, code */
-  glyphs: [number, number, number, number][];
-  /** x, top, width, height */
-  rules: [number, number, number, number][];
+  /** the paragraph as SVG (the document's own engine; its user units are bp from the paragraph's top left) */
+  svg?: string | null;
+  /** font, x, baseline y, code, colour (index into colors; 0 black) */
+  glyphs: [number, number, number, number, number][];
+  /** x, top, width, height, colour */
+  rules: [number, number, number, number, number][];
+  /** CSS colours ("#000000" first) */
+  colors: string[];
   /** where each line's glues end: x, baseline y */
   glues: [number, number][];
   fonts: LiveFont[];
