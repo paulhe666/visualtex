@@ -3,8 +3,7 @@
 // into a blob first: a media element asks for byte ranges, which the app's asset protocol does not answer everywhere.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, GraduationCap, X } from "lucide-react";
-import { DOCUMENT_LATEX } from "../edition";
-import { TUTORIAL_GROUPS, type Tutorial, type TutorialGroup } from "./tutorials";
+import { TUTORIAL_GROUPS, type Tutorial } from "./tutorials";
 
 const blobs = new Map<string, Promise<string>>();
 
@@ -23,32 +22,7 @@ function videoBlob(path: string): Promise<string> {
   return url;
 }
 
-// The public edition (Markdown input only): no tutorial of LaTeX input, and the summaries that name it say Markdown.
-const LATEX_ONLY = new Set(["inline-formula", "display-formula", "references", "command-menu", "paste-import", "export"]);
-const MARKDOWN_SUMMARIES: Record<string, [string, string]> = {
-  markdown: [
-    "输入方式与 Typora 相同：**加粗**、- 列表、# 标题（回车）、$$ 公式、| 表格 | 都会转换；/ 打开命令菜单。",
-    "You type as in Typora: **bold**, - lists, # headings (on ↩), $$ formulas and | tables | turn into the real thing; / opens the menu.",
-  ],
-  "md-source": [
-    "源码面板实时显示生成的 Markdown；打开 .md 文件后，没有改动的部分按原样写回；也可以导出或复制为 Markdown。",
-    "The source panel shows the Markdown live; a .md file you open is written back as it was where you did not change it; export or copy as Markdown.",
-  ],
-  "page-setup": [
-    "“页面设置”选择纸张、页边距和行距；中文、西文字体和字号分别设置。",
-    "Page setup picks the paper, margins and line spacing; Chinese and Latin fonts and the size are set apart.",
-  ],
-};
-const GROUPS: TutorialGroup[] = DOCUMENT_LATEX
-  ? TUTORIAL_GROUPS
-  : TUTORIAL_GROUPS.map((group) => ({
-      ...group,
-      tutorials: group.tutorials
-        .filter((tutorial) => !LATEX_ONLY.has(tutorial.id))
-        .map((tutorial) => ({ ...tutorial, summary: MARKDOWN_SUMMARIES[tutorial.id] ?? tutorial.summary })),
-    })).filter((group) => group.tutorials.length > 0);
-
-const ALL: Tutorial[] = GROUPS.flatMap((group) => group.tutorials);
+const ALL: Tutorial[] = TUTORIAL_GROUPS.flatMap((group) => group.tutorials);
 
 export function TutorialDialog(props: { open: boolean; isEn: boolean; onClose: () => void }) {
   const { open, isEn, onClose } = props;
@@ -124,7 +98,7 @@ export function TutorialDialog(props: { open: boolean; isEn: boolean; onClose: (
         </header>
         <div className="help-dialog-body vtx-tutorial-body">
           <nav className="help-dialog-toc vtx-tutorial-list" aria-label={isEn ? "Tutorials" : "教程"}>
-            {GROUPS.map((group) => (
+            {TUTORIAL_GROUPS.map((group) => (
               <div key={group.title[1]} className="vtx-tutorial-group">
                 <div className="vtx-tutorial-group-title">{pick(group.title)}</div>
                 {group.tutorials.map((item) => (

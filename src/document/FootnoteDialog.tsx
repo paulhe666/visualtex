@@ -1,5 +1,5 @@
 // The footnote editor (DESIGN.md §8.3): opened by a new footnote, a click on a footnote's number or on its note at
-// the foot of the page. The note is edited as the document is: text and inline formulas ("$", "\(", \frac… open a
+// the foot of the page. The note is edited as the document is: text and inline formulas ("$$", "\(", \frac… open a
 // formula in place); Enter applies (Shift+Enter: a new line), Esc closes, "Delete footnote" removes the mark with
 // its note.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -15,7 +15,6 @@ import {
   type FormulaHost,
   type MathCommandProvider,
 } from "../../shared/visualtex-document/src/index.ts";
-import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
 
 type Lang = "en" | "zh";
@@ -55,7 +54,7 @@ export function FootnoteDialog(props: {
         plugins: footnoteEditorPlugins(documentSchema, {
           host: props.host,
           mathCommands: props.mathCommands,
-          inputMode: () => useDocumentFormatStore.getState().inputMode,
+          inputMode: () => "markdown",
           submit: () => {
             actions.current.apply();
             return true;

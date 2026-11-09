@@ -40,8 +40,7 @@ import {
 import { DocumentWorkspace } from "../document/DocumentWorkspace";
 import { DocumentControls } from "../document/DocumentControls";
 import { DocumentSourceView } from "../document/DocumentSourceView";
-import { DOCUMENT_COPY_LATEX_EVENT, DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
-import { useDocumentFormatStore } from "../stores/documentFormatStore";
+import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
 import { useDocumentModeStore } from "../stores/documentModeStore";
 import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../stores/documentEditorStore";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
@@ -311,7 +310,6 @@ export function EditorWorkspace({
   const setDocumentFitWidth = useDocumentEditorStore((store) => store.setFitWidth);
   const setDocumentZoom = useDocumentEditorStore((store) => store.setZoom);
   const documentWords = useMemo(() => documentCounts(documentState), [documentState?.doc]);
-  const documentMarkdownOutput = useDocumentFormatStore((store) => store.outputFormat === "markdown") && documentMode;
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
   >({ color: null, backgroundColor: null });
@@ -1103,7 +1101,7 @@ export function EditorWorkspace({
   };
 
   const copySource = () => {
-    if (documentMode) window.dispatchEvent(new Event(documentMarkdownOutput ? DOCUMENT_COPY_MARKDOWN_EVENT : DOCUMENT_COPY_LATEX_EVENT));
+    if (documentMode) window.dispatchEvent(new Event(DOCUMENT_COPY_MARKDOWN_EVENT));
     else void onCopy();
   };
 
@@ -2206,8 +2204,8 @@ export function EditorWorkspace({
                       className="icon-button compact classic-bottom-copy"
                       data-classic-bottom-copy
                       onClick={copySource}
-                      aria-label={documentMode ? (documentMarkdownOutput ? (isEn ? "Copy Markdown" : "复制 Markdown") : (isEn ? "Copy LaTeX" : "复制 LaTeX")) : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      title={documentMode ? (documentMarkdownOutput ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : (isEn ? "Copy the document as LaTeX" : "复制文档的 LaTeX")) : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      aria-label={documentMode ? (isEn ? "Copy Markdown" : "复制 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={documentMode ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
                     >
                       <Copy size={14} />
                     </button>
@@ -2348,8 +2346,8 @@ export function EditorWorkspace({
                       className="icon-button compact classic-bottom-copy"
                       data-standard-source-copy
                       onClick={copySource}
-                      aria-label={documentMode ? (documentMarkdownOutput ? (isEn ? "Copy Markdown" : "复制 Markdown") : (isEn ? "Copy LaTeX" : "复制 LaTeX")) : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      title={documentMode ? (documentMarkdownOutput ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : (isEn ? "Copy the document as LaTeX" : "复制文档的 LaTeX")) : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      aria-label={documentMode ? (isEn ? "Copy Markdown" : "复制 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={documentMode ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
                     >
                       <Copy size={14} />
                     </button>

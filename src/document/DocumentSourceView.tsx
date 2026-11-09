@@ -1,23 +1,19 @@
-// The source tab in document mode: the document as LaTeX or as Markdown — the output format, chosen in this tab's
-// header — following the document as it is edited; what it shows is what Copy and Export write. It is also an
+// The source tab in document mode: the document as Markdown, following the document as it is edited; what it
+// shows is what Copy and Export write. It is also an
 // editor: what is typed here is read into the document a moment after typing stops and when the editor is left
 // (sourceEdit.ts: only the blocks that differ are replaced, one undo step in the document per change). While it is
 // being edited the document does not write over it; once it is left it shows the document's source again.
-// Unfinished code (an open brace, environment, formula or fence) is not read: the document keeps its last good
-// state and the line is marked. What reading drops (commands, environments, comments, preamble lines the document
-// has no place for) is listed in the header and its lines marked, before it goes when the editor is left.
+// Unfinished code (an open formula or fence) is not read: the document keeps its last good state and the line is
+// marked. What reading drops is listed in the header and its lines marked, before it goes when the editor is left.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Annotation, Compartment, EditorState, StateEffect, StateField, Transaction, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { defaultKeymap, history, historyKeymap, insertNewlineKeepIndent } from "@codemirror/commands";
 import { tags } from "@lezer/highlight";
-import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import type { EditorState as DocumentState } from "prosemirror-state";
 import {
-  documentToLatex,
   documentToMarkdown,
-  latexLosses,
   markdownLosses,
   markdownSourceOf,
   sourcePlaceOf,
@@ -27,8 +23,7 @@ import {
   type SourceProblem,
 } from "../../shared/visualtex-document/src/index.ts";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
-import { DOCUMENT_LATEX } from "../edition";
-import { useDocumentFormatStore, type DocumentFormat } from "../stores/documentFormatStore";
+import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { useEditorStore } from "../stores/editorStore";
 import type { Theme } from "../types/formula";
 import { portableFormulaLatex } from "./DocumentEditor";
@@ -67,10 +62,6 @@ export const theme: Extension = EditorView.theme({
   ".cm-vtx-lost-line": { backgroundColor: "color-mix(in srgb, var(--warning) 9%, transparent)" },
 });
 
-// Braces close as they open; environments do not (the package's \end{…} on "}" doubles the closed brace).
-const languageOf = (format: DocumentFormat): Extension =>
-  format === "latex" ? latexLanguageSupport({ enableLinting: false, enableTooltips: false, enableAutocomplete: false, autoCloseTags: false }) : [];
-
 /** Text put in from the document (not typed): not a change to read back. */
 const fromDocument = Annotation.define<boolean>();
 
@@ -105,11 +96,9 @@ const marksField = StateField.define<DecorationSet>({
 /** How long after typing stops what was typed is read into the document. */
 const APPLY_DELAY_MS = 400;
 
-/** The source the document gives in a format (what Copy and Export write). */
-function documentSource(state: DocumentState, format: DocumentFormat, references: "eqref" | "plain"): string {
-  return format === "markdown"
-    ? documentToMarkdown(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state) })
-    : documentToLatex(state.doc, { formulaLatex: portableFormulaLatex });
+/** The Markdown the document gives (what Copy and Export write). */
+function documentSource(state: DocumentState, references: "eqref" | "plain"): string {
+  return documentToMarkdown(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state) });
 }
 
 function problemText(problem: SourceProblem, isEn: boolean): string {
@@ -144,11 +133,8 @@ const lossTitle = (losses: SourceLoss[], isEn: boolean) =>
 export function DocumentSourceView(props: { theme: Theme }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const language = useRef(new Compartment()).current;
   const undoHistory = useRef(new Compartment()).current;
   const state = useDocumentEditorStore((store) => store.state);
-  const format = useDocumentFormatStore((store) => store.outputFormat);
-  const setFormat = useDocumentFormatStore((store) => store.setOutputFormat);
   const references = useDocumentFormatStore((store) => store.markdownReferences);
   const setReferences = useDocumentFormatStore((store) => store.setMarkdownReferences);
   const uiLanguage = useEditorStore((store) => store.language);
@@ -163,10 +149,8 @@ export function DocumentSourceView(props: { theme: Theme }) {
   const markdownSource = state ? markdownSourceOf(state) : null;
   const source = useMemo(() => {
     if (!doc) return "";
-    return format === "markdown"
-      ? documentToMarkdown(doc, { formulaLatex: portableFormulaLatex, references, source: markdownSource })
-      : documentToLatex(doc, { formulaLatex: portableFormulaLatex });
-  }, [doc, format, references, markdownSource]);
+    return documentToMarkdown(doc, { formulaLatex: portableFormulaLatex, references, source: markdownSource });
+  }, [doc, references, markdownSource]);
 
   // Being edited: the source editor has the focus (or the window went away while it had it). Its text is then the
   // user's, not the document's.
@@ -177,8 +161,6 @@ export function DocumentSourceView(props: { theme: Theme }) {
   const dirtyRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const editingRef = useRef(false);
-  const formatRef = useRef(format);
-  formatRef.current = format;
   const referencesRef = useRef(references);
   referencesRef.current = references;
 
@@ -211,12 +193,9 @@ export function DocumentSourceView(props: { theme: Theme }) {
     [mark, undoHistory],
   );
 
-  /**
-   * What was typed, read into the document (`final`: the editor is being left; otherwise a command name still being
-   * typed waits). False: unfinished, not read.
-   */
+  /** What was typed, read into the document. False: unfinished, not read. */
   const apply = useCallback(
-    (final: boolean): boolean => {
+    (): boolean => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -225,30 +204,24 @@ export function DocumentSourceView(props: { theme: Theme }) {
       const documentView = useDocumentEditorStore.getState().view;
       if (!view || !documentView || !dirtyRef.current) return true;
       const text = view.state.doc.toString();
-      const kind = formatRef.current;
-      const unfinished = sourceProblem(text, kind);
+      const unfinished = sourceProblem(text, "markdown");
       if (unfinished) {
         setProblem(unfinished);
         setLosses([]);
         mark(unfinished, []);
         return false;
       }
-      if (!final) {
-        const head = view.state.selection.main.head;
-        const line = view.state.doc.lineAt(head);
-        if (kind === "latex" && /\\[A-Za-z]*$/.test(line.text.slice(0, head - line.from))) return true;
-      }
-      const written = documentSource(documentView.state, kind, referencesRef.current);
+      const written = documentSource(documentView.state, referencesRef.current);
       try {
-        const tr = sourceTransaction(documentView.state, text, kind, written);
+        const tr = sourceTransaction(documentView.state, text, "markdown", written);
         if (tr) documentView.dispatch(tr);
       } catch (error) {
         console.error("source not read", error);
         return false;
       }
       dirtyRef.current = false;
-      const now = documentSource(documentView.state, kind, referencesRef.current);
-      const lost = kind === "latex" ? latexLosses(text, now) : markdownLosses(text, now);
+      const now = documentSource(documentView.state, referencesRef.current);
+      const lost = markdownLosses(text, now);
       setProblem(null);
       setLosses(lost);
       mark(null, lost);
@@ -261,7 +234,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
   const finishEditing = useCallback(() => {
     if (!editingRef.current) return;
     editingRef.current = false;
-    apply(true);
+    apply();
     const documentState = useDocumentEditorStore.getState().state;
     setDoc(documentState?.doc ?? null);
     setEditing(false);
@@ -279,7 +252,6 @@ export function DocumentSourceView(props: { theme: Theme }) {
           undoHistory.of(history()),
           // a new line keeps the line's indentation (the language's own would indent a section's text)
           keymap.of([{ key: "Enter", run: insertNewlineKeepIndent }, ...defaultKeymap, ...historyKeymap]),
-          language.of(languageOf(format)),
           syntaxHighlighting(highlightStyle),
           marksField,
           EditorView.lineWrapping,
@@ -291,7 +263,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
                 setEditing(true);
               } else if (document.hasFocus()) finishEditing();
               // (the window went away: the text is read, and stays as typed for when it comes back)
-              else apply(true);
+              else apply();
             }
             if (!update.docChanged || update.transactions.every((tr) => tr.annotation(fromDocument))) return;
             dirtyRef.current = true;
@@ -300,7 +272,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
             if (timerRef.current !== null) window.clearTimeout(timerRef.current);
             timerRef.current = window.setTimeout(() => {
               timerRef.current = null;
-              apply(false);
+              apply();
             }, APPLY_DELAY_MS);
           }),
           theme,
@@ -328,10 +300,6 @@ export function DocumentSourceView(props: { theme: Theme }) {
     return () => document.removeEventListener("focusin", onFocusIn);
   }, [editing, finishEditing]);
 
-  useEffect(() => {
-    viewRef.current?.dispatch({ effects: language.reconfigure(languageOf(format)) });
-  }, [format, language]);
-
   // the document's source, unless the user's text is being edited or holds unfinished code
   useEffect(() => {
     if (editing || problem) return;
@@ -355,7 +323,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
     setEditing(false);
     setProblem(null);
     setLosses([]);
-    if (documentState) showSource(documentSource(documentState, format, references));
+    if (documentState) showSource(documentSource(documentState, references));
   };
 
   /** The caret to the first line listed (the header's list of what is dropped, the unfinished piece). */
@@ -403,52 +371,29 @@ export function DocumentSourceView(props: { theme: Theme }) {
             </button>
           ) : null}
         </span>
-        {format === "markdown" && (
-          <span className="document-format-switch" role="radiogroup" aria-label={isEn ? "References to formulas" : "公式引用"}>
-            <span className="document-format-switch-label">{isEn ? "References" : "公式引用"}</span>
-            {(["eqref", "plain"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={references === value}
-                className={references === value ? "is-active" : ""}
-                disabled={!!problem}
-                title={
-                  value === "eqref"
-                    ? "\\eqref + \\label"
-                    : isEn
-                      ? "Plain text: (1)"
-                      : "纯文本：(1)"
-                }
-                onClick={() => setReferences(value)}
-              >
-                {value === "eqref" ? "\\eqref" : "(n)"}
-              </button>
-            ))}
-          </span>
-        )}
-        {/* the public edition writes Markdown only */}
-        {DOCUMENT_LATEX && <span className="document-format-switch" role="radiogroup" aria-label={isEn ? "Output format" : "输出格式"}>
-          <span className="document-format-switch-label">{isEn ? "Output" : "输出"}</span>
-          {(["latex", "markdown"] as const).map((value) => (
+        <span className="document-format-switch" role="radiogroup" aria-label={isEn ? "References to formulas" : "公式引用"}>
+          <span className="document-format-switch-label">{isEn ? "References" : "公式引用"}</span>
+          {(["eqref", "plain"] as const).map((value) => (
             <button
               key={value}
               type="button"
               role="radio"
-              aria-checked={format === value}
-              className={format === value ? "is-active" : ""}
-              disabled={!!problem && format !== value}
-              // (WebKit leaves the focus in the editor on a button press: what was typed is read in first)
-              onClick={() => {
-                finishEditing();
-                setFormat(value);
-              }}
+              aria-checked={references === value}
+              className={references === value ? "is-active" : ""}
+              disabled={!!problem}
+              title={
+                value === "eqref"
+                  ? "\\eqref + \\label"
+                  : isEn
+                    ? "Plain text: (1)"
+                    : "纯文本：(1)"
+              }
+              onClick={() => setReferences(value)}
             >
-              {value === "latex" ? "LaTeX" : "Markdown"}
+              {value === "eqref" ? "\\eqref" : "(n)"}
             </button>
           ))}
-        </span>}
+        </span>
       </div>
       <div ref={hostRef} className="document-source-view-host" />
     </div>

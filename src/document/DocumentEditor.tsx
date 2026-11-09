@@ -13,19 +13,16 @@ import {
   createDocumentState,
   documentSchema,
   DEFAULT_BOARD_LABELS,
-  documentToLatex,
   withoutMarkdownSyntax,
   documentToMarkdown,
   markdownSourceKey,
   markdownSourceOf,
   readMarkdown,
-  latexToMarkdown,
   FORMULAS_REFRESH_EVENT,
   LINK_REQUEST_EVENT,
   openFormulaId,
   parseDocument,
   serializeDocument,
-  sliceToLatex,
   slicePlainText,
   splitInlineMath,
   bodyFontFamily,
@@ -59,7 +56,6 @@ import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex"
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
-import { DOCUMENT_LATEX } from "../edition";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
 import { LinkDialog } from "./LinkDialog";
@@ -97,7 +93,6 @@ export function portableFormulaLatex(latex: string): string {
 export interface DocumentEditorHandle {
   view(): EditorView | null;
   run(command: Command): boolean;
-  toLatex(): string;
   /** The document's images as the export writes them (figures/fig-1.png …, or assets/ for Markdown). */
   imageFiles(folder: string): Array<{ path: string; bytes: Uint8Array }>;
   /** The document as Markdown (Typora / Obsidian / GitHub flavour). */
@@ -105,8 +100,6 @@ export interface DocumentEditorHandle {
   serialize(): string;
   /** Open Markdown text as the document (undoable). */
   loadMarkdown(text: string): void;
-  /** A .tex file: its document structure read in (latexImport.ts). */
-  loadLatex(text: string): void;
   load(text: string): void;
   setDoc(doc: Node): void;
   focus(): void;
@@ -341,10 +334,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       mathCommands: documentMathCommands,
       codeHighlighter,
       codeDiagram: drawDiagram,
-      inputMode: () => useDocumentFormatStore.getState().inputMode,
+      inputMode: () => "markdown",
       markdownRules: () => useDocumentFormatStore.getState().markdownRules,
-      // LaTeX source pasted into the text: read in by the personal edition only
-      latexPaste: DOCUMENT_LATEX,
+      // LaTeX source pasted into the text stays text
+      latexPaste: false,
       // the page view: the paper's pages, the footnotes at their feet, the page style's head or foot (LaTeX's)
       pagination: {
         geometry: () => ({ pxPerMm: PX_PER_MM * zoomRef.current, gap: PAGE_GAP }),
@@ -515,10 +508,6 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       view.focus();
       return done;
     },
-    toLatex() {
-      const view = viewRef.current;
-      return view ? documentToLatex(view.state.doc, { formulaLatex: portableFormulaLatex }) : "";
-    },
     imageFiles(folder) {
       const view = viewRef.current;
       return view ? imageFiles(view.state.doc, folder).files : [];
@@ -543,13 +532,6 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       const { doc, source } = readMarkdown(documentSchema, text);
       // Replaced in the history, so Ctrl+Z gives the previous document back; ids come from the ids plugin.
       view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, source).scrollIntoView());
-      view.focus();
-    },
-    loadLatex(text) {
-      const view = viewRef.current;
-      if (!view) return;
-      const { doc } = readMarkdown(documentSchema, latexToMarkdown(text));
-      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, null).scrollIntoView());
       view.focus();
     },
     load(text) {
@@ -700,9 +682,6 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     cut: () => document.execCommand("cut"),
     copyPlainText: () => {
       if (view) writeText(slicePlainText(view.state.selection.content(), portableFormulaLatex));
-    },
-    copyLatex: () => {
-      if (view) writeText(sliceToLatex(view.state.selection.content(), documentSchema, { formulaLatex: portableFormulaLatex }));
     },
     remove: () => {
       if (view) view.dispatch(view.state.tr.deleteSelection().scrollIntoView());

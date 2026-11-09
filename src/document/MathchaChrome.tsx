@@ -4,7 +4,6 @@ import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { CellSelection } from "prosemirror-tables";
 import { isInTable, tableCommands } from "../../shared/visualtex-document/src/index.ts";
-import { DOCUMENT_LATEX } from "../edition";
 
 export type Lang = "en" | "zh";
 const t = (lang: Lang, en: string, zh: string) => (lang === "en" ? en : zh);
@@ -29,7 +28,6 @@ export interface ContextMenuState {
 export interface ContextMenuActions {
   copy(): void;
   copyPlainText(): void;
-  copyLatex(): void;
   cut(): void;
   remove(): void;
 }
@@ -72,7 +70,6 @@ export function ContextMenu(props: {
       <div className="mc-panel mc-context" style={style} role="menu" onMouseDown={keepFocus}>
         {item(t(lang, "Copy", "复制"), actions.copy, { disabled: empty, hint: "Ctrl+C" })}
         {item(t(lang, "Copy Plain Text", "复制纯文本"), actions.copyPlainText, { disabled: empty })}
-        {DOCUMENT_LATEX && item(t(lang, "Copy Latex", "复制 LaTeX"), actions.copyLatex, { disabled: empty })}
         {item(t(lang, "Cut", "剪切"), actions.cut, { disabled: empty, hint: "Ctrl+X" })}
         {item(t(lang, "Delete", "删除"), actions.remove, { disabled: empty })}
         {inTable && (

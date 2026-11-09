@@ -8,10 +8,8 @@ import {
   Copy,
   Download,
   FilePlus2,
-  FileCode2,
   FileText,
   FileUp,
-  FolderOpen,
   Folder,
   FolderInput,
   FolderPlus,
@@ -26,7 +24,6 @@ import {
   X,
 } from "lucide-react";
 import { libraryDocumentName, useDocumentLibraryStore, type Library, type LibraryDocument } from "./documentLibraryApi";
-import { DOCUMENT_LATEX } from "../edition";
 
 export interface DocumentLibraryActions {
   open(id: string): void;
@@ -43,17 +40,11 @@ export interface DocumentLibraryActions {
   createFolder(): Promise<string | null>;
   renameFolder(id: string, name: string): void;
   deleteFolder(id: string): void;
-  /** the document to a file: its own format, or LaTeX, Markdown, PDF */
+  /** the document to a file: its own format, Markdown or PDF */
   exportFile(id: string, format?: DocumentExportFormat): void;
   /** Shows the file in Finder (the app only). */
   reveal: ((id: string) => void) | null;
   search(query: string): Promise<string[]>;
-  /** a new LaTeX document (personal edition) */
-  createLatex?(folder: string | null): void;
-  /** a folder opened as a LaTeX document (personal edition) */
-  openFolder?(): void;
-  /** the document is a LaTeX project (personal edition) */
-  isLatex?(id: string): boolean;
 }
 
 const DRAG_TYPE = "application/x-visualtex-library-document";
@@ -120,23 +111,12 @@ function InlineName(props: { value: string; placeholder: string; onDone: (value:
 
 type MenuTarget = { kind: "document" | "folder"; id: string; x: number; y: number; moving?: boolean; exporting?: boolean };
 
-export type DocumentExportFormat = "vtxdoc" | "latex" | "markdown" | "pdf" | "zip";
+export type DocumentExportFormat = "vtxdoc" | "markdown" | "pdf";
 
-type ExportFormat = { id: DocumentExportFormat; en: string; zh: string; extension: string };
-
-// LaTeX: the personal edition only
-const EXPORT_FORMATS: ExportFormat[] = ([
+const EXPORT_FORMATS: Array<{ id: DocumentExportFormat; en: string; zh: string; extension: string }> = [
   { id: "pdf", en: "PDF", zh: "PDF", extension: ".pdf" },
-  { id: "latex", en: "LaTeX", zh: "LaTeX", extension: ".tex" },
   { id: "markdown", en: "Markdown", zh: "Markdown", extension: ".md" },
   { id: "vtxdoc", en: "VisualTeX document", zh: "VisualTeX 文档", extension: ".vtxdoc" },
-] satisfies ExportFormat[]).filter((format) => DOCUMENT_LATEX || format.id !== "latex");
-
-/** A LaTeX document's exports: the PDF of its TeX run, its project, its main file. */
-const LATEX_EXPORT_FORMATS: Array<{ id: DocumentExportFormat; en: string; zh: string; extension: string }> = [
-  { id: "pdf", en: "PDF", zh: "PDF", extension: ".pdf" },
-  { id: "zip", en: "Project", zh: "项目", extension: ".zip" },
-  { id: "latex", en: "LaTeX", zh: "LaTeX", extension: ".tex" },
 ];
 
 function Menu(props: { target: MenuTarget; onClose: () => void; children: ReactNode }) {
@@ -301,7 +281,7 @@ export function DocumentLibrary(props: {
         onContextMenu={(event) => openMenu(event, "document", doc.id)}
         title={name}
       >
-        {actions.isLatex?.(doc.id) ? <FileCode2 size={14} className="document-library-item-icon" /> : <FileText size={14} className="document-library-item-icon" />}
+        <FileText size={14} className="document-library-item-icon" />
         {renaming?.kind === "document" && renaming.id === doc.id ? (
           <InlineName
             value={doc.titleSet ? doc.title : ""}
@@ -349,19 +329,9 @@ export function DocumentLibrary(props: {
         >
           <FolderPlus size={15} />
         </button>
-        {actions.createLatex && (
-          <button type="button" className="document-library-icon" title={t("New LaTeX document", "新建 LaTeX 文档")} aria-label={t("New LaTeX document", "新建 LaTeX 文档")} onClick={() => actions.createLatex?.(null)}>
-            <FileCode2 size={15} />
-          </button>
-        )}
         <button type="button" className="document-library-icon" title={t("Import (⌘O)", "导入 (⌘O)")} aria-label={t("Import", "导入")} onClick={() => actions.importFile()}>
           <FileUp size={15} />
         </button>
-        {actions.openFolder && (
-          <button type="button" className="document-library-icon" title={t("Open folder", "打开文件夹")} aria-label={t("Open folder", "打开文件夹")} onClick={() => actions.openFolder?.()}>
-            <FolderOpen size={15} />
-          </button>
-        )}
         <button type="button" className="document-library-icon" title={t("Hide", "收起")} aria-label={t("Hide", "收起")} onClick={() => setOpen(false)}>
           <PanelLeftClose size={15} />
         </button>
@@ -489,7 +459,7 @@ export function DocumentLibrary(props: {
             <>
               <MenuItem icon={<ChevronLeft size={14} />} label={t("Export", "导出")} onClick={() => setMenu({ ...menu, exporting: false })} />
               <div className="document-library-menu-rule" />
-              {(actions.isLatex?.(menuDocument.id) ? LATEX_EXPORT_FORMATS : EXPORT_FORMATS).map((format) => (
+              {EXPORT_FORMATS.map((format) => (
                 <MenuItem
                   key={format.id}
                   label={`${t(format.en, format.zh)} (${format.extension})`}
@@ -583,16 +553,6 @@ export function DocumentLibrary(props: {
               actions.create(menuFolder.id);
             }}
           />
-          {actions.createLatex && (
-            <MenuItem
-              icon={<FileCode2 size={14} />}
-              label={t("New LaTeX document", "新建 LaTeX 文档")}
-              onClick={() => {
-                closeMenu();
-                actions.createLatex?.(menuFolder.id);
-              }}
-            />
-          )}
           <MenuItem
             icon={<Pencil size={14} />}
             label={t("Rename", "重命名")}

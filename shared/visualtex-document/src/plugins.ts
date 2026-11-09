@@ -22,7 +22,7 @@ import {
   insertInlineFormula,
   openSelectedFormula,
 } from "./commands.ts";
-import { CLOSED_BY_DOLLAR, findNodeById, formulaPlugin, openFormulaId, typeIntoOpenFormula, type FormulaHost } from "./formulas.ts";
+import { CLOSED_BY_DOLLAR, findNodeById, formulaPlugin, openFormulaId, type FormulaHost } from "./formulas.ts";
 import { assignIds, idsPlugin, newNodeId } from "./ids.ts";
 import { hasMathDelimiters, parseMathText, type MathTextBlock } from "./mathText.ts";
 import {
@@ -64,20 +64,21 @@ import { abstractLabelPlugin, leaveEmptyAuthorLine } from "./titleBlock.ts";
 // --------------------------------------------------------------- triggers --
 
 interface DollarState {
-  /** "$" just closed a display formula: the next "$" is the second one of its closing "$$" */
-  closing: boolean;
+  /** "$" just closed a formula: how many "$" typed next are the rest of its closing "$$" or "$$$$" */
+  closing: number;
   /** Markdown input: the position of a "$" typed as a character, waiting for what comes after it */
   pending: number | null;
 }
 
-type DollarMeta = { closing: false } | { pending: number | null };
+type DollarMeta = { closing: number } | { pending: number | null };
 
 /**
- * "$" in text opens an inline formula at once (Mathcha, LaTeX); so does "￥", the same key (Shift+4) with a Chinese
- * input method's punctuation. In Markdown input the character after it decides, as in Typora and Pandoc: a digit
- * or a space keeps "$5", "$ 5" (and "￥50") text, another "$" makes a display formula, anything else opens the
- * formula with that character in it. Inside code they stay characters; "\$" is the character in Markdown input.
- * Right after "$" closed a display formula, the next "$" is the second one of its closing "$$": it does nothing.
+ * Formulas typed with dollars. In Markdown input "$$" opens an inline formula and "$$$$" a display formula: the
+ * first "$" is a character until the second one comes right after it, and the third and fourth reach the new inline
+ * formula, which then gives way to a display formula (DocumentFormulaField). A single "$" stays text ("$5"), "\$"
+ * too; "￥", the same key (Shift+4) with a Chinese input method's punctuation, counts as "$". Inside code they stay
+ * characters. Right after "$" closed a formula, the rest of its closing delimiter does nothing: one more "$" after an
+ * inline formula, up to three after a display formula. (LaTeX input: "$" opens an inline formula at once.)
  */
 function dollarPlugin(inputMode: () => InputMode) {
   const key = new PluginKey<DollarState>("visualtex-document-dollar");
@@ -85,14 +86,15 @@ function dollarPlugin(inputMode: () => InputMode) {
   return new Plugin<DollarState>({
     key,
     state: {
-      init: () => ({ closing: false, pending: null }),
+      init: () => ({ closing: 0, pending: null }),
       apply: (tr, value) => {
         const meta = tr.getMeta(key) as DollarMeta | undefined;
-        if (tr.getMeta(CLOSED_BY_DOLLAR)) return { closing: true, pending: null };
-        if (meta && "closing" in meta) return { ...value, closing: false };
-        if (meta && "pending" in meta) return { closing: false, pending: meta.pending };
+        const closed = tr.getMeta(CLOSED_BY_DOLLAR) as number | undefined;
+        if (closed) return { closing: closed, pending: null };
+        if (meta && "closing" in meta) return { ...value, closing: meta.closing };
+        if (meta && "pending" in meta) return { closing: 0, pending: meta.pending };
         if (tr.getMeta("appendedTransaction") || !(tr.docChanged || tr.selectionSet)) return value;
-        return value.closing || value.pending !== null ? { closing: false, pending: null } : value;
+        return value.closing || value.pending !== null ? { closing: 0, pending: null } : value;
       },
     },
     props: {
@@ -100,25 +102,17 @@ function dollarPlugin(inputMode: () => InputMode) {
         const state = view.state;
         if (openFormulaId(state)) return false;
         const { closing, pending } = key.getState(state)!;
-        if (isDollar(text) && closing) {
-          view.dispatch(state.tr.setMeta(key, { closing: false } satisfies DollarMeta));
+        if (isDollar(text) && closing > 0) {
+          view.dispatch(state.tr.setMeta(key, { closing: closing - 1 } satisfies DollarMeta));
           return true;
         }
         const $from = state.doc.resolve(from);
         if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
         if ($from.marks().some((m) => m.type.spec.code || m.type.name === "code")) return false;
-        // Markdown input: what follows a "$" typed as a character.
-        if (pending !== null && from === to && from === pending + 1) {
-          if (/^[\d\s]/u.test(text) || !/^[\x21-\x7e]/.test(text)) {
-            view.dispatch(state.tr.setMeta(key, { pending: null } satisfies DollarMeta));
-            return false;
-          }
-          const tr = state.tr.delete(pending, pending + 1).setMeta(key, { pending: null } satisfies DollarMeta);
-          view.dispatch(tr);
-          if (isDollar(text)) return insertDisplayLatex("")(view.state, view.dispatch, view);
-          if (!insertInlineFormula(view.state, view.dispatch, view)) return false;
-          typeIntoOpenFormula(view, text);
-          return true;
+        // Markdown input: a "$" right after a "$" typed as a character, "$$": an inline formula in their place.
+        if (pending !== null && from === to && from === pending + 1 && isDollar(text)) {
+          view.dispatch(state.tr.delete(pending, pending + 1).setMeta(key, { pending: null } satisfies DollarMeta));
+          return insertInlineFormula(view.state, view.dispatch, view);
         }
         if (!isDollar(text)) return false;
         if (inputMode() !== "markdown") return insertInlineFormula(state, view.dispatch, view);
@@ -569,7 +563,7 @@ export interface FootnoteEditorOptions {
 const inFootnote = (entry: { id: string }) => entry.id.startsWith("math-") || entry.id === "inline-math" || entry.id === "md-inline-math" || entry.id === "newline";
 
 /**
- * A footnote's own editor (the footnote panel): text and inline formulas, typed as in the document — "$" or "\("
+ * A footnote's own editor (the footnote panel): text and inline formulas, typed as in the document — "$$" or "\("
  * opens a formula, a formula command (\frac) starts one, the formula editor's keys move in and out of formulas.
  */
 export function footnoteEditorPlugins(schema: Schema, options: FootnoteEditorOptions): Plugin[] {

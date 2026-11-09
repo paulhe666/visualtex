@@ -1,8 +1,8 @@
 diff --git a/src/document/DocumentWorkspace.tsx b/src/document/DocumentWorkspace.tsx
-index e7843e3..54eb561 100644
+index 447ad4b..64d14ac 100644
 --- a/src/document/DocumentWorkspace.tsx
 +++ b/src/document/DocumentWorkspace.tsx
-@@ -49,7 +49,7 @@ import {
+@@ -46,7 +46,7 @@ import {
  } from "./documentLibraryApi";
  import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
  import { openDocumentFormula } from "./openDocumentFormula";
@@ -10,8 +10,8 @@ index e7843e3..54eb561 100644
 +import { documentToPdf, printDocumentInBrowser } from "./documentPdf";
  import { imagePathKey, loadImportImages } from "./importImages";
  import {
-   DOCUMENT_COPY_LATEX_EVENT,
-@@ -701,6 +701,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
+   DOCUMENT_COPY_MARKDOWN_EVENT,
+@@ -630,6 +630,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
        pdfBusy.current = true;
        void (async () => {
          try {

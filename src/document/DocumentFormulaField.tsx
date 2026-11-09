@@ -4,12 +4,13 @@
 // the field's edits and keys into the session callbacks.
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import type { MathfieldElement } from "mathlive";
-import type {
-  FormulaEntry,
-  FormulaExit,
-  FormulaKey,
-  FormulaSelection,
-  FormulaSessionCallbacks,
+import {
+  REPLAYED_KEY,
+  type FormulaEntry,
+  type FormulaExit,
+  type FormulaKey,
+  type FormulaSelection,
+  type FormulaSessionCallbacks,
 } from "../../shared/visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
@@ -144,6 +145,8 @@ function typeKeyInto(field: MathfieldElement, key: FormulaKey) {
     composed: true,
   };
   const down = new KeyboardEvent("keydown", init);
+  // (the document does not take it for a key of its own to hand over: it bubbles through the document's view)
+  Object.defineProperty(down, REPLAYED_KEY, { value: true });
   sink.dispatchEvent(down);
   if (key.text && !down.defaultPrevented) {
     const press = new KeyboardEvent("keypress", { ...init, charCode: key.text.codePointAt(0) ?? 0 });
@@ -224,11 +227,18 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     leftRef.current = true;
     callbacksRef.current.exit(how, x);
   };
-  /** "$" in the formula: the closing dollar, or (in an empty inline formula) the second "$" of "$$". */
+  // a "$" typed in the empty inline formula: the third of "$$$$", shown as nothing until the fourth
+  const heldDollarRef = useRef(false);
+  /** "$" in the formula: the closing dollar, or (in an empty inline formula) the third and fourth "$" of "$$$$". */
   const typedDollar = (field: MathfieldElement) => {
     const empty = !field.getValue("latex-without-placeholders").trim();
     // An empty display formula waits for its content.
     if (empty && displayRef.current) return;
+    if (empty && !heldDollarRef.current) {
+      heldDollarRef.current = true;
+      return;
+    }
+    heldDollarRef.current = false;
     flush();
     leftRef.current = true;
     callbacksRef.current.dollar(empty);
@@ -332,7 +342,8 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     flush,
     typeKey(key) {
       const field = fieldRef.current;
-      if (!field || !readyRef.current) {
+      // a field at rest (a formula just made again, not yet entered) keeps the keys for when it is entered
+      if (!field || !readyRef.current || passiveRef.current) {
         pendingKeys.current.push(key);
         return;
       }
@@ -526,6 +537,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     passiveRef.current = false;
     leftRef.current = false;
     readyRef.current = false;
+    heldDollarRef.current = false;
     partRef.current = null;
     field.classList.remove("has-visualtex-multi-line-selection");
     setOpenDocumentFormula({ field, display: displayRef.current, mutate: (change) => mutateRef.current(field, change) });
@@ -544,8 +556,9 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       const keys = pendingKeys.current;
       pendingKeys.current = [];
       for (let i = 0; i < keys.length; i++) {
-        // A key left the formula (Tab, an arrow at its edge, Enter): the document takes the rest.
-        if (leftRef.current) {
+        // A key left the formula (Tab, an arrow at its edge, Enter, the closing "$"): the document takes the rest.
+        // (Leaving puts the field to rest at once, which clears leftRef: passiveRef tells it then.)
+        if (leftRef.current || passiveRef.current) {
           callbacksRef.current.handBack(keys.slice(i));
           return;
         }
@@ -567,7 +580,11 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     }
     const onBeforeInput = (event: Event) => {
       const input = event as InputEvent;
-      if (input.inputType !== "insertText" || (input.data !== "$" && input.data !== "￥")) return;
+      if (input.inputType !== "insertText" || (input.data !== "$" && input.data !== "￥")) {
+        // anything else typed: a held "$" is no longer the start of "$$$$"
+        if (input.data) heldDollarRef.current = false;
+        return;
+      }
       if (field.mode !== "math" || hasRawLatexInput(field)) return;
       event.preventDefault();
       event.stopImmediatePropagation();

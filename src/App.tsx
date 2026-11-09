@@ -3,14 +3,11 @@
 // plus the web-only parts (API OCR, landing showcase, tutorial, default zoom).
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDocumentModeStore } from "./stores/documentModeStore";
-import { DOCUMENT_LATEX, EDITION } from "./edition";
-import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
+import { DocumentHistoryButtons } from "./document/DocumentControls";
 import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 import {
-  DOCUMENT_COPY_LATEX_EVENT,
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
-  DOCUMENT_EXPORT_LATEX_EVENT,
   DOCUMENT_EXPORT_PDF_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
@@ -1159,8 +1156,7 @@ function App() {
               aria-label={isEn ? "VisualTeX menu" : "VisualTeX 菜单"}
             >
               <div className="app-menu-heading">
-                {/* the author's own builds say so */}
-                <strong>VisualTeX{EDITION === "personal" ? (isEn ? " Personal" : " 个人版") : ""}</strong>
+                <strong>VisualTeX</strong>
                 <span>
                   {workspaceContent === "document"
                     ? isEn ? "Document" : "文档"
@@ -1192,17 +1188,6 @@ function App() {
                 <span>{isEn ? "Export document" : "导出文档"}</span>
                 <kbd>.vtxdoc</kbd>
               </button>
-              {DOCUMENT_LATEX && (<>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_LATEX_EVENT)))}>
-                <FileDown size={16} />
-                <span>{isEn ? "Export LaTeX" : "导出 LaTeX"}</span>
-                <kbd>.tex</kbd>
-              </button>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_COPY_LATEX_EVENT)))}>
-                <ClipboardCopy size={16} />
-                <span>{isEn ? "Copy as LaTeX" : "复制为 LaTeX"}</span>
-              </button>
-              </>)}
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_MARKDOWN_EVENT)))}>
                 <FileDown size={16} />
                 <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>
@@ -1327,7 +1312,6 @@ function App() {
         </div>
 
         <div className="document-title-area">
-          {workspaceContent === "document" && <DocumentInputModeSwitch isEn={isEn} />}
           {workspaceContent === "formula" && (<>
           <input
             value={title}

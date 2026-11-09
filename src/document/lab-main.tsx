@@ -5,7 +5,7 @@ import "../styles.css";
 import { createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentControls, DocumentInputModeSwitch, DocumentTextToolbar } from "./DocumentControls";
+import { DocumentControls, DocumentTextToolbar } from "./DocumentControls";
 import * as documentCore from "../../shared/visualtex-document/src/index.ts";
 import { sampleDocument } from "./sampleDocument";
 import { DocumentWorkspace } from "./DocumentWorkspace";
@@ -29,7 +29,6 @@ createRoot(document.getElementById("root")!).render(
   workspace ? (
     <div style={{ background: "#fff", height: "100vh", display: "flex", flexDirection: "column" }}>
       <div className="classic-bottom-workspace-controls lab-controls" style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, padding: "4px 8px", borderBottom: "1px solid #ddd" }}>
-        <DocumentInputModeSwitch isEn={false} />
         <DocumentControls />
       </div>
       <div className="editor-surface document-editor-surface" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -44,7 +43,6 @@ createRoot(document.getElementById("root")!).render(
   ) :
   <div style={{ background: "#fff", height: "100vh", display: "flex", flexDirection: "column" }}>
     <div className="classic-bottom-workspace-controls lab-controls" style={{ flex: "none", display: "flex", gap: 10, padding: "4px 8px", borderBottom: "1px solid #ddd" }}>
-      <DocumentInputModeSwitch isEn={false} />
       <DocumentControls />
     </div>
     {/* the document's toolbar, as above the page in the app */}
