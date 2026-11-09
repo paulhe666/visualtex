@@ -59,6 +59,7 @@ import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex"
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { DOCUMENT_LATEX } from "../edition";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
 import { LinkDialog } from "./LinkDialog";
@@ -342,6 +343,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       codeDiagram: drawDiagram,
       inputMode: () => useDocumentFormatStore.getState().inputMode,
       markdownRules: () => useDocumentFormatStore.getState().markdownRules,
+      // LaTeX source pasted into the text: read in by the personal edition only
+      latexPaste: DOCUMENT_LATEX,
       // the page view: the paper's pages, the footnotes at their feet, the page style's head or foot (LaTeX's)
       pagination: {
         geometry: () => ({ pxPerMm: PX_PER_MM * zoomRef.current, gap: PAGE_GAP }),

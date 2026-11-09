@@ -85,6 +85,16 @@ body.anywhere-page #root {
   display: none;
 }
 
+/* The field's background over the space it holds for the formula
+   (AnywhereApp.tsx placeCovers): fixed boxes, drawn before the formula. */
+.anywhere-covers {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
 .anywhere-notice {
   font-size: 11px;
   line-height: 15px;

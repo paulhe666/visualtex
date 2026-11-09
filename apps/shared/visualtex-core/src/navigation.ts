@@ -304,6 +304,44 @@ function nearestStop(model: CoreModel, candidates: number[], fromX: number | nul
   return best;
 }
 
+/** The lines of a formula set on several lines (EditorGeometry.lines): their baselines, top to bottom (sp). */
+export function formulaLineBaselines(model: CoreModel): number[] {
+  const lines = model.mathfield.visualTexGeometry?.lines;
+  if (!lines) return [];
+  return [...new Set(lines.pieces.map((p) => p.y))].sort((a, b) => a - b);
+}
+
+/**
+ * Up/Down on a formula set on several lines: the stop of the formula's top level on the line above
+ * (below) nearest the caret, as in a paragraph; null when the formula has one line or the caret is
+ * on its first (last).
+ */
+function acrossLines(model: CoreModel, from: number, direction: Direction, fromX: number | null): number | null {
+  const baselines = formulaLineBaselines(model);
+  const geometry = model.mathfield.visualTexGeometry;
+  if (baselines.length < 2 || !geometry || fromX === null) return null;
+  // the line of the caret: that of the top-level item it is in or after
+  let top: CoreAtom | undefined = model.at(from);
+  while (top?.parent && top.parent !== model.root) top = top.parent;
+  const own = geometry.stops[top && top.parent === model.root ? model.offsetOf(top) : from];
+  if (!own) return null;
+  const line = nearestIndex(baselines, own.baseline);
+  const target = line + direction;
+  if (target < 0 || target >= baselines.length) return null;
+  const candidates = allowedStops(model).filter((offset) => {
+    const atom = model.at(offset);
+    const c = geometry.stops[offset];
+    return !!atom && atom.parent === model.root && !!c && nearestIndex(baselines, c.baseline) === target;
+  });
+  return nearestStop(model, candidates, fromX);
+}
+
+function nearestIndex(values: number[], value: number): number {
+  let best = 0;
+  for (let i = 1; i < values.length; i++) if (Math.abs(values[i] - value) < Math.abs(values[best] - value)) best = i;
+  return best;
+}
+
 export function vertical(model: CoreModel, direction: Direction, context: NavigationContext, extend = false): boolean {
   const from = extend ? model.position : originStop(model, direction);
   const source = model.at(from);
@@ -347,6 +385,9 @@ export function vertical(model: CoreModel, direction: Direction, context: Naviga
       if (owner.type === "overunder" && (tryBranch(owner, direction < 0 ? "above" : "below") || tryBranch(owner, direction < 0 ? "superscript" : "subscript"))) return true;
     }
   }
+  // A formula set on several lines (VisualTeX Anywhere): the line above (below).
+  const across = acrossLines(model, from, direction, fromX);
+  if (across !== null && across !== from) return go(across);
   // Nothing above (below) inside the formula: the app may move to another row.
   if (!extend && context.host?.verticalExit?.(direction)) return true;
   return plonk(model);

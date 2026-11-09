@@ -32,6 +32,10 @@ const STYLE_EVENT: &str = "visualtex-anywhere-style";
 const COMPOSE_EVENT: &str = "visualtex-anywhere-compose";
 /// A shortcut of the open formula, pressed (registered with Windows while a formula is open).
 const SHORTCUT_EVENT: &str = "visualtex-anywhere-shortcut";
+/// Where the field put the formula's pieces (it holds them in its text and wraps them as its own).
+const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
+/// The most pieces a formula is cut into for the field.
+const MAX_PIECES: usize = 512;
 /// The shortcut switched the field to the input method; a field that has not activated it by
 /// then does not take text (or the switch failed).
 const INPUT_METHOD_WAIT: Duration = Duration::from_millis(1200);
@@ -353,6 +357,8 @@ fn begin_input_method(app: &AppHandle, display: bool) {
         session.delivery = Delivery::InputMethod;
         session.generation
     };
+    // a new formula: the field that has the keyboard answers (no earlier formula's field)
+    ime::pin(None);
     with_panel(app, |_| {});
     formula_keys(true);
     let switched = if already {
@@ -719,6 +725,7 @@ pub(super) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
         )),
         "activate" | "geometry" => caret_reported(app, message),
         "key" => input_method_key(app, message),
+        "pieces" => input_method_pieces(app, message),
         "compose" => {
             let generation = session().ok().filter(|session| session.phase == Phase::Presented).map(|session| session.generation);
             if let (Some(generation), Some(window)) = (generation, app.get_webview_window(WINDOW_LABEL)) {
@@ -745,6 +752,39 @@ pub(super) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             }
         }
         _ => {}
+    }
+}
+
+/// Where the field put the formula's pieces (physical pixels from the first piece's start, y
+/// down; with where the held space starts and ends): for the page, in CSS pixels.
+fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
+    let Some((generation, scale)) = session()
+        .ok()
+        .filter(|session| session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod)
+        .map(|session| (session.generation, session.scale))
+    else {
+        return;
+    };
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let pair = |value: &serde_json::Value| -> Option<[f64; 2]> {
+        let pair = value.as_array()?;
+        let (x, y) = (pair.first()?.as_f64()?, pair.get(1)?.as_f64()?);
+        (x.is_finite() && y.is_finite() && x.abs() < 40000.0 && y.abs() < 40000.0).then_some([x / scale, y / scale])
+    };
+    let places: Vec<[f64; 2]> = message
+        .get("places")
+        .and_then(|value| value.as_array())
+        .map(|places| places.iter().take(MAX_PIECES).map_while(pair).collect())
+        .unwrap_or_default();
+    let start = message.get("start").and_then(pair);
+    let end = message.get("end").and_then(pair);
+    // an end the field did not tell (the TIP's estimate)
+    let estimated = message.get("end").and_then(|value| value.as_array()).map(|end| end.len() > 2).unwrap_or(false);
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.emit(
+            PIECES_EVENT,
+            serde_json::json!({ "generation": generation, "places": places, "start": start, "end": end, "endEstimated": estimated }),
+        );
     }
 }
 
@@ -944,7 +984,7 @@ fn caret_reported(app: &AppHandle, message: &serde_json::Value) {
         } else if let (Phase::Presented | Phase::Activating, Some(geometry), Delivery::InputMethod) =
             (session.phase, geometry.as_ref(), session.delivery)
         {
-            if kind_is_anchor(message) {
+            if kind_is_anchor(message) && !ime::from_other_field(message) {
                 session.caret = Some(geometry.caret);
                 session.scale = geometry.scale;
                 let anchor = inline_anchor(geometry);
@@ -996,6 +1036,8 @@ fn caret_reported(app: &AppHandle, message: &serde_json::Value) {
     }
     match next {
         Next::Open(activation, ready) => {
+            // the formula's messages go to this field's TIP until it closes
+            ime::pin(Some(message));
             ime::send(serde_json::json!({ "t": "session", "on": true }));
             log(&format!(
                 "session open client={client:?} caret={}",
@@ -1153,6 +1195,7 @@ fn recover_unanswered(app: &AppHandle, generation: u64) {
         panel::park(&window);
         let return_to = session().ok().and_then(|mut session| session.return_to.take());
         ime::send(serde_json::json!({ "t": "cancel", "returnTo": return_to }));
+        ime::pin(None);
         formula_keys(false);
     }
 }
@@ -1230,6 +1273,7 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
         // The field is gone: the user's input method comes back for the next one.
         ime::switch_to(&profile);
     }
+    ime::pin(None);
     formula_keys(false);
     log(&format!("hide gen={generation} keep_draft={keep_draft} ({reason})"));
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
@@ -1372,6 +1416,7 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
         return Ok(CommitOutcome::Inserted);
     }
     let sent = ime::send(serde_json::json!({ "t": "commit", "text": text, "returnTo": return_to }));
+    ime::pin(None);
     log(&format!("commit gen={generation} chars={} input_method={sent}", text.chars().count()));
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         panel::park(&window);
@@ -1398,10 +1443,19 @@ pub(crate) fn anywhere_dismiss(app: AppHandle, generation: u64, keep_draft: bool
     Ok(())
 }
 
-/// The formula's text for the field (if the field ends the composition itself) and its caret
-/// (CSS pixels from the formula's start: the input method places pinyin candidates there).
+/// The formula's text for the field (if the field ends the composition itself), its caret (CSS
+/// pixels from the formula's start, x and down to the caret's line: the input method places pinyin
+/// candidates and the 中/英 indicator there) and the widths of the pieces TeX may break it into
+/// (CSS pixels: the field holds each in its text and wraps them as its own text).
 #[tauri::command]
-pub(crate) fn anywhere_marked(generation: u64, text: String, width: f64, caret_x: Option<f64>) -> Result<(), String> {
+pub(crate) fn anywhere_marked(
+    generation: u64,
+    text: String,
+    width: f64,
+    caret_x: Option<f64>,
+    caret_y: Option<f64>,
+    pieces: Option<Vec<f64>>,
+) -> Result<(), String> {
     if text.len() > 256 * 1024 {
         return Err("The formula is too long to show".to_string());
     }
@@ -1413,11 +1467,19 @@ pub(crate) fn anywhere_marked(generation: u64, text: String, width: f64, caret_x
         session.scale
     };
     if width.is_finite() {
+        let pieces: Vec<f64> = pieces
+            .unwrap_or_default()
+            .into_iter()
+            .take(MAX_PIECES)
+            .map(|piece| if piece.is_finite() { (piece * scale).clamp(0.0, 16384.0) } else { 0.0 })
+            .collect();
         ime::send(serde_json::json!({
             "t": "inline",
             "width": (width * scale).clamp(0.0, 16384.0),
             "text": text,
             "caretX": caret_x.filter(|value| value.is_finite()).unwrap_or(0.0) * scale,
+            "caretY": (caret_y.filter(|value| value.is_finite()).unwrap_or(0.0) * scale).clamp(-16384.0, 16384.0),
+            "pieces": pieces,
         }));
     }
     Ok(())

@@ -102,13 +102,56 @@ function advanceBox(view: RectHitView, atom: CoreAtom): FormulaBox | null {
   const region = boxOf(view, atom);
   if (!region) return null;
   const model = view.model;
-  const before = atom.leftSibling ? view.geometry.stops[model.offsetOf(atom.leftSibling)] : null;
   const after = view.geometry.stops[model.offsetOf(atom)];
+  // the caret before the atom, when it is on the atom's line (on a formula set on several lines the
+  // first atom of a line has it at the end of the line before)
+  const beforeStop = atom.leftSibling ? view.geometry.stops[model.offsetOf(atom.leftSibling)] : null;
+  const before = beforeStop && (!after || beforeStop.baseline === after.baseline || !view.geometry.lines) ? beforeStop : null;
   const next = atom.rightSibling ? boxOf(view, atom.rightSibling) : null;
   const x0 = before ? Math.min(region.x0, before.x) : region.x0;
   let x1 = after ? after.x : region.x1;
   if (next && next.x0 > x0 && next.x0 < x1) x1 = next.x0;
   return { x0, x1, y0: region.y0, y1: region.y1 };
+}
+
+/**
+ * The lines of a formula set on several lines (VisualTeX Anywhere), top to bottom: each line's band
+ * (sp), the bands meeting halfway between lines and the first and last reaching the row's edges.
+ */
+function lineBands(view: RectHitView): { baseline: number; y0: number; y1: number }[] {
+  const pieces = view.geometry.lines?.pieces ?? [];
+  const byLine = new Map<number, { baseline: number; y0: number; y1: number }>();
+  for (const p of pieces) {
+    const line = byLine.get(p.y);
+    if (line) {
+      line.y0 = Math.min(line.y0, p.y - p.height);
+      line.y1 = Math.max(line.y1, p.y + p.depth);
+    } else byLine.set(p.y, { baseline: p.y, y0: p.y - p.height, y1: p.y + p.depth });
+  }
+  const lines = [...byLine.values()].sort((a, b) => a.baseline - b.baseline);
+  if (lines.length < 2) return [];
+  return lines.map((line, i) => ({
+    baseline: line.baseline,
+    y0: i === 0 ? -Infinity : (lines[i - 1].y1 + line.y0) / 2,
+    y1: i === lines.length - 1 ? Infinity : (line.y1 + lines[i + 1].y0) / 2,
+  }));
+}
+
+/** The band (page pixels) of the line a top-level atom is on, when the formula has several lines. */
+function lineBandOf(view: RectHitView, atom: CoreAtom): { top: number; bottom: number } | null {
+  const bands = lineBands(view);
+  if (!bands.length) return null;
+  const stop = view.geometry.stops[view.model.offsetOf(atom)];
+  const baseline = stop?.baseline;
+  if (baseline === undefined) return null;
+  let line = bands[0];
+  for (const b of bands) if (Math.abs(b.baseline - baseline) < Math.abs(line.baseline - baseline)) line = b;
+  const page = view.toPage({ x0: 0, x1: 0, y0: Number.isFinite(line.y0) ? line.y0 : line.baseline, y1: Number.isFinite(line.y1) ? line.y1 : line.baseline });
+  if (!page) return null;
+  return {
+    top: Number.isFinite(line.y0) ? page.top : view.band.top,
+    bottom: Number.isFinite(line.y1) ? page.bottom : view.band.bottom,
+  };
 }
 
 function hitRect(view: RectHitView, atom: CoreAtom): PixelRect | null {
@@ -118,7 +161,7 @@ function hitRect(view: RectHitView, atom: CoreAtom): PixelRect | null {
   if (!page) return null;
   const s = view.scale;
   const margin = Math.trunc(HIT_VERTICAL_MARGIN_EM * view.fontPx * s);
-  const vertical = topLevel(view.model, atom) ? view.band : page;
+  const vertical = topLevel(view.model, atom) ? lineBandOf(view, atom) ?? view.band : page;
   return {
     left: Math.trunc(page.left * s) - Math.trunc(start ? 3 * s : s),
     right: Math.trunc(page.right * s) + Math.trunc(s),
@@ -173,6 +216,28 @@ export function rectHitTest(view: RectHitView, clientX: number, clientY: number)
   const body = root?.branch?.("body") ?? [];
   const hit = hitSlot(view, body, x, y);
   if (!hit) {
+    // a formula on several lines: beside its line, that line's start or end
+    const bands = lineBands(view);
+    if (bands.length) {
+      const onLine = stops.filter((offset) => {
+        const atom = model.at(offset);
+        return atom?.parent === root && atom.type !== "first";
+      });
+      let best: number | null = null;
+      let bestDistance = Infinity;
+      for (const offset of onLine) {
+        const c = view.geometry.stops[offset];
+        const band = c && lineBandOf(view, model.at(offset)!);
+        if (!c || !band || y < Math.trunc(band.top * s) || y >= Math.trunc(band.bottom * s)) continue;
+        const page = view.toPage({ x0: c.x, x1: c.x, y0: c.top, y1: c.bottom });
+        const distance = page ? Math.abs(page.left * s - x) : Infinity;
+        if (distance < bestDistance) {
+          best = offset;
+          bestDistance = distance;
+        }
+      }
+      if (best !== null) return best;
+    }
     // beside every atom: the start or the end of the formula
     const start = view.geometry.stops[stops[0]];
     const startPage = start ? view.toPage({ x0: start.x, x1: start.x, y0: start.top, y1: start.bottom }) : null;

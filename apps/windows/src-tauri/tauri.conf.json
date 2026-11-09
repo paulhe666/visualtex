@@ -37,7 +37,8 @@
       "resources/formula-fonts/GUST-FONT-LICENSE.txt": "licenses/formula-fonts/GUST-FONT-LICENSE.txt",
       "resources/formula-fonts/NotoSansCJK-OFL.txt": "licenses/formula-fonts/NotoSansCJK-OFL.txt",
       "resources/formula-fonts/NotoSerifCJK-OFL.txt": "licenses/formula-fonts/NotoSerifCJK-OFL.txt",
-      "resources/formula-fonts/LXGWWenKai-OFL.txt": "licenses/formula-fonts/LXGWWenKai-OFL.txt"
+      "resources/formula-fonts/LXGWWenKai-OFL.txt": "licenses/formula-fonts/LXGWWenKai-OFL.txt",
+      "../input-method/Rime/NOTICE-wanxiang.txt": "licenses/NOTICE-wanxiang-pinyin.txt"
     },
     "macOS": {
       "signingIdentity": "-"

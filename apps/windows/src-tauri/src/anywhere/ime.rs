@@ -1,7 +1,10 @@
 //! VisualTeX's Windows input method from the app's side (apps/windows/input-method):
 //! - the link: a pipe the TIP in every application connects to (\\.\pipe\VisualTeXAnywhere-<user>,
 //!   newline-delimited JSON both ways). Messages go to the TIP whose field has the keyboard (the
-//!   last one to report it);
+//!   last one to report it), or while a formula is open to the TIP of its field (pinned: another
+//!   application's TIP that reports itself meanwhile, reconnecting or getting a focus of its own,
+//!   must not take the formula's messages, which left the formula's field without its anchor and
+//!   the card without its keys);
 //! - its TSF profile: whether it is installed, which input method the field has, switching the
 //!   field to VisualTeX (the shortcut) and back;
 //! - VisualTeX Input (the per-user RIME server beside the TIP), started with VisualTeX.
@@ -59,6 +62,8 @@ struct Clients {
     all: HashMap<u64, Arc<Client>>,
     /// The client whose field has the keyboard.
     active: Option<u64>,
+    /// The client of the open formula's field.
+    pinned: Option<u64>,
 }
 
 static CLIENTS: OnceLock<Mutex<Clients>> = OnceLock::new();
@@ -217,7 +222,7 @@ fn read_client(app: AppHandle, id: u64, client: Arc<Client>) {
         pending.extend_from_slice(&buffer[..count]);
         while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = pending.drain(..=end).collect();
-            let Ok(message) = serde_json::from_slice::<Value>(&line[..line.len() - 1]) else { continue };
+            let Ok(mut message) = serde_json::from_slice::<Value>(&line[..line.len() - 1]) else { continue };
             let kind = message.get("t").and_then(Value::as_str).unwrap_or("");
             let forward = {
                 let Ok(mut clients) = clients().lock() else { return };
@@ -232,13 +237,17 @@ fn read_client(app: AppHandle, id: u64, client: Arc<Client>) {
                         if was_active {
                             clients.active = None;
                         }
-                        was_active
+                        was_active || clients.pinned == Some(id)
                     }
                     "hello" => true,
-                    _ => clients.active == Some(id),
+                    _ => clients.active == Some(id) || clients.pinned == Some(id),
                 }
             };
             if forward {
+                // which TIP said it (the formula pins its field's)
+                if let Some(object) = message.as_object_mut() {
+                    object.insert("link".to_string(), json!(id));
+                }
                 super::input_method_message(&app, &message);
             }
         }
@@ -247,9 +256,12 @@ fn read_client(app: AppHandle, id: u64, client: Arc<Client>) {
         .lock()
         .map(|mut clients| {
             clients.all.remove(&id);
-            let active = clients.active == Some(id);
-            if active {
+            let active = clients.active == Some(id) || clients.pinned == Some(id);
+            if clients.active == Some(id) {
                 clients.active = None;
+            }
+            if clients.pinned == Some(id) {
+                clients.pinned = None;
             }
             active
         })
@@ -259,16 +271,34 @@ fn read_client(app: AppHandle, id: u64, client: Arc<Client>) {
     }
 }
 
-/// Sends a message to the TIP whose field has the keyboard; false when none is linked.
+/// Sends a message to the TIP of the open formula's field, else to the one whose field has the
+/// keyboard; false when none is linked.
 pub(super) fn send(message: Value) -> bool {
     let client = {
         let Ok(clients) = clients().lock() else { return false };
-        clients.active.and_then(|id| clients.all.get(&id).cloned())
+        clients
+            .pinned
+            .and_then(|id| clients.all.get(&id).cloned())
+            .or_else(|| clients.active.and_then(|id| clients.all.get(&id).cloned()))
     };
     let Some(client) = client else { return false };
     let Ok(mut line) = serde_json::to_vec(&message) else { return false };
     line.push(b'\n');
     transfer(client.pipe, Some(&line), None) == Some(line.len())
+}
+
+/// The open formula's field is the one whose TIP reported `message` (its "link"); None: no formula.
+pub(super) fn pin(message: Option<&Value>) {
+    let link = message.and_then(|message| message.get("link")).and_then(Value::as_u64);
+    if let Ok(mut clients) = clients().lock() {
+        clients.pinned = link.filter(|id| clients.all.contains_key(id));
+    }
+}
+
+/// `message` came from another TIP than the open formula's field's.
+pub(super) fn from_other_field(message: &Value) -> bool {
+    let link = message.get("link").and_then(Value::as_u64);
+    clients().lock().map(|clients| matches!((clients.pinned, link), (Some(pinned), Some(link)) if pinned != link)).unwrap_or(false)
 }
 
 pub(super) fn is_linked() -> bool {

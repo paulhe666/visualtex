@@ -1,5 +1,6 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentModeStore } from "./stores/documentModeStore";
+import { DOCUMENT_LATEX, EDITION } from "./edition";
 import { DocumentHistoryButtons, DocumentInputModeSwitch } from "./document/DocumentControls";
 import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 import {
@@ -1757,7 +1758,8 @@ function App() {
               aria-label={isEn ? "VisualTeX menu" : "VisualTeX 菜单"}
             >
               <div className="app-menu-heading">
-                <strong>VisualTeX</strong>
+                {/* the author's own builds say so */}
+                <strong>VisualTeX{EDITION === "personal" ? (isEn ? " Personal" : " 个人版") : ""}</strong>
                 <span>
                   {workspaceContent === "document"
                     ? isEn ? "Document" : "文档"
@@ -1789,6 +1791,7 @@ function App() {
                 <span>{isEn ? "Export document" : "导出文档"}</span>
                 <kbd>.vtxdoc</kbd>
               </button>
+              {DOCUMENT_LATEX && (<>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_LATEX_EVENT)))}>
                 <FileDown size={16} />
                 <span>{isEn ? "Export LaTeX" : "导出 LaTeX"}</span>
@@ -1798,6 +1801,7 @@ function App() {
                 <ClipboardCopy size={16} />
                 <span>{isEn ? "Copy as LaTeX" : "复制为 LaTeX"}</span>
               </button>
+              </>)}
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_MARKDOWN_EVENT)))}>
                 <FileDown size={16} />
                 <span>{isEn ? "Export Markdown" : "导出 Markdown"}</span>

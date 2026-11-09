@@ -2,10 +2,11 @@
 // - visualtex_tip.dll, the TSF text input processor (registered by the installer, elevated), and
 //   VisualTeXInput.exe, the per-user server with RIME and the candidate window (cargo, release);
 // - rime.dll (librime, BSD licence) from librime's Windows release;
-// - RIME's data in data\: VisualTeX's default.yaml and pinyin schema (input-method/Rime), the
-//   Luna Pinyin dictionary, the essay language model and the prelude presets (LGPL-3.0, RIME
-//   developers), the OpenCC tables for Simplified Chinese (Apache-2.0), and the tables
-//   rime_deployer prebuilds from them in data\build (so the first keystroke is not slow).
+// - RIME's data in data\: VisualTeX's default.yaml, pinyin schema and dictionary (input-method/Rime),
+//   the dictionary tables and spelling rules of 万象拼音 (wanxiang, amzxyz/rime_wanxiang, a pinned
+//   release, CC-BY-4.0: input-method/Rime/NOTICE-wanxiang.txt), the prelude presets (LGPL-3.0, RIME
+//   developers), and the tables rime_deployer prebuilds from them in data\build (so the first
+//   keystroke is not slow).
 // The downloads are pinned and checked (sha256) and cached in input-method/build/cache.
 // VISUALTEX_RIME_MIRROR=<base URL> fetches them from a mirror that serves the same file names.
 // librime's Windows release is a .7z: tar extracts it where libarchive has LZMA (Windows 11),
@@ -24,11 +25,12 @@ if (process.platform !== "win32") {
 const RIME_RELEASE = "https://github.com/rime/librime/releases/download/1.17.0";
 const DOWNLOADS = [
   { name: "rime-windows.7z", url: `${RIME_RELEASE}/rime-33e7814-Windows-msvc-x64.7z`, sha256: "7478c7caa4ff6b37de86daba1f7ce4a994a4f5ba24872a820fb2b3a9b01fed15" },
-  { name: "rime-deps-windows.7z", url: `${RIME_RELEASE}/rime-deps-33e7814-Windows-msvc-x64.7z`, sha256: "9ef5608d8a54ff52bbad7a9b4128de42b232f8e3dd1f5fd3bff42a0b1bacd7e8" },
   { name: "rime-prelude.tar.gz", url: "https://github.com/rime/rime-prelude/archive/082425ea0684bca36474415d4a0e8db9b016487e.tar.gz", sha256: "66239ba4745d54471e5ce5540b45e86ec663ff5dba004cb23c95531a3bdec00f" },
-  { name: "rime-essay.tar.gz", url: "https://github.com/rime/rime-essay/archive/054920de4f54c9e5994276a96a4fc2a35cb51aa3.tar.gz", sha256: "3339b40aae91b0216d393aeccc6a8f7daad56a1f3a5e1ffcf464c80690d1b6ce" },
-  { name: "rime-luna-pinyin.tar.gz", url: "https://github.com/rime/rime-luna-pinyin/archive/56b934b099dfbeab842320f13aa8b461a6ab3e42.tar.gz", sha256: "876c7ba559794f476abf7195a255aea29000cee281e6f5ec664928dce018bd90" },
+  // 万象拼音 v18.1.10 (2026-11-07), its base package: dictionary tables and spelling rules
+  { name: "rime-wanxiang-base.zip", url: "https://github.com/amzxyz/rime_wanxiang/releases/download/v18.1.10/rime-wanxiang-base.zip", sha256: "ddebf0372a2a3d9d8f7a5017704b2afd7397a961c32be490a91e49ec3ee90999" },
 ];
+// The wanxiang tables visualtex_wanxiang.dict.yaml imports (Rime/), and its spelling rules.
+const WANXIANG_TABLES = ["zi", "jichu", "cuoyin", "duoyin", "diming", "mingren"];
 
 const appDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = join(appDirectory, "input-method");
@@ -81,10 +83,10 @@ function extract7z(archive, target) {
 const unpacked = join(cache, "unpacked");
 rmSync(unpacked, { recursive: true, force: true });
 extract7z(join(cache, "downloads", "rime-windows.7z"), unpacked);
-extract7z(join(cache, "downloads", "rime-deps-windows.7z"), join(unpacked, "deps"));
-for (const name of ["rime-prelude", "rime-essay", "rime-luna-pinyin"]) {
-  execFileSync("tar", ["-xzf", join(cache, "downloads", `${name}.tar.gz`), "-C", unpacked]);
-}
+execFileSync("tar", ["-xzf", join(cache, "downloads", "rime-prelude.tar.gz"), "-C", unpacked]);
+const wanxiang = join(unpacked, "wanxiang");
+mkdirSync(wanxiang, { recursive: true });
+execFileSync("tar", ["-xf", join(cache, "downloads", "rime-wanxiang-base.zip"), "-C", wanxiang]);
 const unpackedDirectory = (prefix) => {
   const entry = readdirSync(unpacked).find((name) => name.startsWith(`${prefix}-`));
   if (!entry) throw new Error(`${prefix} is missing from the downloads`);
@@ -95,21 +97,18 @@ const rimeDist = join(unpacked, "dist");
 // The folder.
 rmSync(output, { recursive: true, force: true });
 const rimeData = join(output, "data");
-mkdirSync(join(rimeData, "opencc"), { recursive: true });
+mkdirSync(join(rimeData, "dicts"), { recursive: true });
 
 // RIME's data, then its prebuilt tables.
 for (const file of ["key_bindings.yaml", "punctuation.yaml", "symbols.yaml"]) {
   cpSync(join(unpackedDirectory("rime-prelude"), file), join(rimeData, file));
 }
-cpSync(join(unpackedDirectory("rime-essay"), "essay.txt"), join(rimeData, "essay.txt"));
-for (const file of ["luna_pinyin.dict.yaml", "pinyin.yaml"]) {
-  cpSync(join(unpackedDirectory("rime-luna-pinyin"), file), join(rimeData, file));
+for (const table of WANXIANG_TABLES) {
+  cpSync(join(wanxiang, "dicts", `${table}.dict.yaml`), join(rimeData, "dicts", `${table}.dict.yaml`));
 }
+cpSync(join(wanxiang, "wanxiang_algebra.yaml"), join(rimeData, "wanxiang_algebra.yaml"));
 for (const file of readdirSync(join(source, "Rime"))) {
   cpSync(join(source, "Rime", file), join(rimeData, file));
-}
-for (const file of ["t2s.json", "TSPhrases.ocd2", "TSCharacters.ocd2"]) {
-  cpSync(join(unpacked, "deps", "share", "opencc", file), join(rimeData, "opencc", file));
 }
 const deployUser = join(cache, "deploy-user");
 rmSync(deployUser, { recursive: true, force: true });
@@ -137,5 +136,6 @@ cpSync(join(rimeDist, "lib", "rime.dll"), join(output, "rime.dll"));
 const digest = createHash("sha256");
 for (const file of ["visualtex_tip.dll", "VisualTeXInput.exe", "rime.dll"]) digest.update(readFileSync(join(output, file)));
 for (const file of readdirSync(join(source, "Rime")).sort()) digest.update(readFileSync(join(source, "Rime", file)));
+for (const download of DOWNLOADS) digest.update(download.sha256);
 writeFileSync(join(output, "build-id"), `${digest.digest("hex").slice(0, 16)}\n`);
 process.stdout.write(`Built ${output}\n`);

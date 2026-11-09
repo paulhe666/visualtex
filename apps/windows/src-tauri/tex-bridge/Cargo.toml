@@ -1,0 +1,24 @@
+[package]
+name = "tex-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "VisualTeX LaTeX documents: TeX runs, XDV/DVI pages as SVG (dvisvgm) identical to the (x)dvipdfmx PDF, SyncTeX/log for the front end"
+license = "MIT"
+
+[lib]
+name = "tex_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tex-bridge"
+path = "src/bin/tex-bridge.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+flate2 = "1.1"
+
+[profile.release]
+opt-level = 3
+debug = false

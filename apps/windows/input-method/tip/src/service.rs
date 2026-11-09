@@ -5,11 +5,13 @@
 //! Pinyin: the spelling is the field's composition (underlined), the candidates are VisualTeX
 //! Input's window under it, and the chosen text replaces the composition.
 //!
-//! A formula (VisualTeX's "session on", from its shortcut): the field gets a composition holding
-//! one selected hair space where the caret was (it takes almost no width and, being selected,
-//! hides the field's caret; VisualTeX draws the formula there), every key but the system's goes
-//! to VisualTeX (pinyin spelled in the formula's text goes to it as its composition), and
-//! "commit" replaces the composition with the formula's text.
+//! A formula (VisualTeX's "session on", from its shortcut): the field gets a composition where the
+//! caret was holding the formula's space (space.rs: a selected hair space, which hides the field's
+//! caret, then blanks as wide as each piece of the formula, joined by word spaces where the field
+//! may break the line), so the field wraps the formula as its own text; the TIP reads back where
+//! each piece went and VisualTeX draws it there. Every key but the system's goes to VisualTeX
+//! (pinyin spelled in the formula's text goes to it as its composition), and "commit" replaces the
+//! composition with the formula's text.
 //!
 //! An application typing through IMM32 (Qt's, such as WeChat) sees the composition through
 //! Windows' translation (CUAS, a "transitory" context): the anchor there is a zero-width space
@@ -19,7 +21,7 @@
 
 use crate::engine::{Engine, Reply};
 use crate::link::{Link, WM_LINK_CLOSED, WM_LINK_MESSAGE};
-use crate::{display, edit, keys, log, profile, rimekeys};
+use crate::{display, edit, keys, log, profile, rimekeys, space};
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -48,8 +50,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINDOW_STYLE, WM_APP, WM_TIMER, WNDCLASSW,
 };
 
-/// The formula's place in the field: one hair space, selected.
-const ANCHOR: &[u16] = &[0x200A];
 /// The formula's place in a field typing through IMM32: one zero-width space (the field draws the
 /// clause being converted highlighted, Qt in its text colour: the anchor must have no width).
 const IMM_ANCHOR: &[u16] = &[0x200B];
@@ -81,6 +81,8 @@ struct Shared {
     display_atom: Cell<u32>,
     /// The display attribute of the formula's anchor in a field typing through IMM32 (0: none).
     anchor_atom: Cell<u32>,
+    /// The display attribute of the space a field holds for a formula (0: none).
+    space_atom: Cell<u32>,
     /// Chinese (false) or English, as RIME last said.
     ascii: Cell<bool>,
     /// A key RIME was offered in OnTestKey*, for the OnKey* that follows: (vk, release, reply).
@@ -101,8 +103,23 @@ struct Shared {
     formula_transitory: Cell<bool>,
     /// What the formula inserts, for a field that ends the composition itself.
     formula_text: RefCell<String>,
-    /// The formula's caret from its start, physical pixels.
+    /// The formula's caret from its start, physical pixels, and down to the caret's line.
     formula_caret_x: Cell<i32>,
+    formula_caret_y: Cell<i32>,
+    /// The formula's pieces (physical pixels wide, from VisualTeX), the composition holding them
+    /// (space.rs), and the widths of a filler and of a joint as this field draws them.
+    piece_widths: RefCell<Vec<f64>>,
+    space: RefCell<space::Layout>,
+    filler_width: Cell<f64>,
+    joint_width: Cell<f64>,
+    /// Calibrations in this formula: a few at most (a field rounding places to pixels must not make
+    /// the space flip between two widths).
+    calibrations: Cell<u32>,
+    /// Where each piece started at the last poll, and what was last reported.
+    last_pieces: RefCell<Vec<Edges>>,
+    reported_pieces: RefCell<Option<Value>>,
+    /// The widths changed at the last poll: the space is held again.
+    rehold: Cell<bool>,
     /// Pinyin is being spelled in the formula's text (as its composition).
     formula_pinyin: Cell<bool>,
     /// Chinese or English before the formula opened (a formula starts in English).
@@ -314,6 +331,8 @@ fn select(context: &ITfContext, cookie: u32, range: &ITfRange) -> Result<()> {
 }
 
 thread_local! {
+    /// The widths of a filler and of a joint (space.rs) by window, as the field drew them.
+    static SPACE_WIDTHS: RefCell<HashMap<isize, (f64, f64)>> = RefCell::new(HashMap::new());
     /// The height of a line of text by window, learnt from the caret where the line had text
     /// before it (physical pixels). An empty line reports its whole line box instead (Chrome,
     /// Electron), which would make the formula too large: VisualTeX takes this height there (as
@@ -381,6 +400,43 @@ fn rect_payload(rect: &RECT) -> Value {
 /// A caret-like rectangle at a rectangle's left edge.
 fn caret_payload(edges: Edges, offset: i32) -> Value {
     json!([edges.0 + offset, edges.1, 1, edges.3 - edges.1])
+}
+
+/// `length` characters of `range` from its `start`-th.
+fn sub_range(range: &ITfRange, cookie: u32, start: usize, length: usize) -> Option<ITfRange> {
+    let part = unsafe { range.Clone() }.ok()?;
+    let mut moved = 0i32;
+    unsafe {
+        part.Collapse(cookie, TF_ANCHOR_START).ok()?;
+        part.ShiftEnd(cookie, (start + length) as i32, &mut moved, std::ptr::null()).ok()?;
+        if moved != (start + length) as i32 {
+            return None;
+        }
+        part.ShiftStart(cookie, start as i32, &mut moved, std::ptr::null()).ok()?;
+    }
+    Some(part)
+}
+
+/// The screen rectangle of the `index`-th character of `range` (physical pixels).
+fn char_rect(context: &ITfContext, cookie: u32, range: &ITfRange, index: usize) -> Option<RECT> {
+    let part = sub_range(range, cookie, index, 1)?;
+    range_rect(context, cookie, &part).filter(|rect| rect.right >= rect.left && rect.bottom - rect.top < 2000)
+}
+
+/// Two rectangles on one line of the field.
+fn same_line(a: &RECT, b: &RECT) -> bool {
+    (a.bottom - b.bottom).abs() * 2 < (a.bottom - a.top).max(1)
+}
+
+/// A filler's and a joint's width before the field has shown them: from the height of a line of
+/// its text (a blank is about half an em, a word space a quarter).
+fn estimated_space_widths(window: isize, line_height: i32) -> (f64, f64) {
+    if let Some(known) = SPACE_WIDTHS.with(|widths| widths.borrow().get(&window).copied()) {
+        return known;
+    }
+    let height = TEXT_HEIGHTS.with(|heights| heights.borrow().get(&window).copied()).unwrap_or(line_height).clamp(8, 200) as f64;
+    let em = height / 1.32;
+    (em * 0.5, em * 0.27)
 }
 
 // MARK: Pinyin in the field
@@ -634,16 +690,34 @@ fn start_formula(shared: &Rc<Shared>) {
         let sink = state.composition_sink.borrow().clone();
         let composition = unsafe { composer.StartComposition(cookie, &range, sink.as_ref())? };
         let range = unsafe { composition.GetRange()? };
-        unsafe { range.SetText(cookie, 0, if transitory { IMM_ANCHOR } else { ANCHOR })? };
         if transitory {
+            // a field typing through IMM32 reports made-up rectangles for parts of the
+            // composition: the formula stays on one line there, over a zero-width anchor
+            unsafe { range.SetText(cookie, 0, IMM_ANCHOR)? };
             set_attribute_atom(state.anchor_atom.get(), &writer, cookie, &range);
+            select(&writer, cookie, &range)?;
+        } else {
+            let caret = range_rect(&writer, cookie, &range);
+            let window = view_window(&writer);
+            let (filler, joint) = estimated_space_widths(window, caret.map(|rect| rect.bottom - rect.top).unwrap_or(20));
+            state.filler_width.set(filler);
+            state.joint_width.set(joint);
+            let held = space::layout(&[], filler, joint);
+            unsafe { range.SetText(cookie, 0, &held.text)? };
+            set_attribute_atom(state.space_atom.get(), &writer, cookie, &range);
+            if let Some(anchor) = sub_range(&range, cookie, 0, 1) {
+                select(&writer, cookie, &anchor)?;
+            }
+            *state.space.borrow_mut() = held;
         }
-        select(&writer, cookie, &range)?;
         *state.formula.borrow_mut() = Some(composition);
         *state.formula_context.borrow_mut() = Some(writer.clone());
         state.formula_transitory.set(transitory);
         state.last_rect.set(None);
         state.stable_rect.set(None);
+        state.last_pieces.borrow_mut().clear();
+        *state.reported_pieces.borrow_mut() = None;
+        state.calibrations.set(0);
         state.polls.set(0);
         unsafe {
             SetTimer(Some(state.window()), POLL_TIMER, 16, None);
@@ -656,6 +730,136 @@ fn start_formula(shared: &Rc<Shared>) {
     }
 }
 
+/// The field holds the formula's pieces (space.rs) and their places are followed anew.
+fn hold(shared: &Rc<Shared>) {
+    let (Some(context), Some(composition)) = (shared.formula_context.borrow().clone(), shared.formula.borrow().clone()) else { return };
+    if shared.formula_transitory.get() {
+        return;
+    }
+    let held = space::layout(&shared.piece_widths.borrow(), shared.filler_width.get(), shared.joint_width.get());
+    if *shared.space.borrow() == held {
+        return;
+    }
+    let state = shared.clone();
+    let writer = context.clone();
+    let result = edit::request(&context, shared.client.get(), move |cookie| {
+        let range = unsafe { composition.GetRange()? };
+        unsafe { range.SetText(cookie, 0, &held.text)? };
+        set_attribute_atom(state.space_atom.get(), &writer, cookie, &range);
+        if let Some(anchor) = sub_range(&range, cookie, 0, 1) {
+            select(&writer, cookie, &anchor)?;
+        }
+        *state.space.borrow_mut() = held.clone();
+        state.last_pieces.borrow_mut().clear();
+        Ok(())
+    });
+    if let Err(error) = result {
+        log::write(&format!("formula space not held: {error}"));
+        return;
+    }
+    shared.polls.set(0);
+    unsafe {
+        SetTimer(Some(shared.window()), POLL_TIMER, 16, None);
+    }
+}
+
+/// Where the field put each piece (the first character of each): reported once two reads agree,
+/// with where the held space starts and ends; the filler's and the joint's widths are read off the
+/// same characters (true: the space was held again with them).
+fn follow_pieces(state: &Rc<Shared>, reader: &ITfContext, cookie: u32, range: &ITfRange, polls: u32) -> bool {
+    let held = state.space.borrow().clone();
+    if held.starts.is_empty() {
+        return false;
+    }
+    let mut rects: Vec<RECT> = Vec::with_capacity(held.starts.len());
+    for &start in &held.starts {
+        let Some(rect) = char_rect(reader, cookie, range, start) else { break };
+        // each piece after the one before on its line, or on a lower line: a field that answers
+        // one rectangle for every part of the composition places nothing
+        if let Some(before) = rects.last() {
+            let onward = if same_line(before, &rect) { rect.left > before.left } else { rect.bottom > before.bottom };
+            if !onward {
+                break;
+            }
+        }
+        rects.push(rect);
+    }
+    let current: Vec<Edges> = rects.iter().map(edges).collect();
+    let previous = std::mem::replace(&mut *state.last_pieces.borrow_mut(), current.clone());
+    if current.is_empty() || previous != current {
+        return false;
+    }
+    let first = rects[0];
+    let place = |rect: &RECT, x: i32| json!([x - first.left, rect.bottom - first.bottom]);
+    let places: Vec<Value> = rects.iter().map(|rect| place(rect, rect.left)).collect();
+    let mut message = json!({ "t": "pieces", "places": places, "count": held.starts.len() });
+    if let Some(anchor) = char_rect(reader, cookie, range, 0).filter(|anchor| same_line(anchor, &first)) {
+        message["start"] = json!([anchor.left - first.left, 0]);
+    }
+    if rects.len() == held.starts.len() {
+        // after the last character, or (a field that answers nothing for it) the last piece's start
+        // and its fillers
+        match held.text.len().checked_sub(1).and_then(|index| char_rect(reader, cookie, range, index)) {
+            Some(last) => message["end"] = place(&last, last.right),
+            None => {
+                if let (Some(start), Some(&count)) = (rects.last(), held.counts.last()) {
+                    // estimated (a third component): VisualTeX covers no further than its formula's end
+                    let x = start.left + (count as f64 * state.filler_width.get()).round() as i32;
+                    message["end"] = json!([x - first.left, start.bottom - first.bottom, 1]);
+                }
+            }
+        }
+    }
+    if state.reported_pieces.borrow().as_ref() != Some(&message) {
+        let lines = rects.windows(2).filter(|pair| !same_line(&pair[0], &pair[1])).count() + 1;
+        log::write(&format!("pieces {}/{} lines={lines} polls={polls}", rects.len(), held.starts.len()));
+        state.send(message.clone());
+        *state.reported_pieces.borrow_mut() = Some(message);
+    }
+    // the widths as the field draws them: a filler over the longest piece on one line (a field may
+    // round each character's place to a pixel), a joint between a piece and the next on its line
+    let mut filler: Option<(usize, f64)> = None;
+    let mut joint: Option<f64> = None;
+    for (index, &start) in held.starts.iter().enumerate().take(rects.len()) {
+        let count = held.counts[index];
+        let Some(last) = char_rect(reader, cookie, range, start + count - 1) else { continue };
+        if !same_line(&last, &rects[index]) || last.right <= rects[index].left {
+            continue;
+        }
+        // a run long enough that a field's pixel rounding is a small part of it
+        if count >= 6 && filler.map(|(known, _)| count > known).unwrap_or(true) {
+            filler = Some((count, (last.right - rects[index].left) as f64 / count as f64));
+        }
+        if joint.is_none() && index + 1 < rects.len() && same_line(&rects[index + 1], &last) && rects[index + 1].left >= last.right {
+            joint = Some((rects[index + 1].left - last.right) as f64);
+        }
+    }
+    let window = view_window(reader);
+    let mut changed = false;
+    if let Some((count, width)) = filler.filter(|(_, width)| (0.5..60.0).contains(width)) {
+        if (width - state.filler_width.get()).abs() * count as f64 > 1.5 {
+            log::write(&format!("filler {:.2} -> {width:.2} from {count}", state.filler_width.get()));
+            state.filler_width.set(width);
+            changed = true;
+        }
+    }
+    if let Some(width) = joint.filter(|width| (0.0..60.0).contains(width)) {
+        if (width - state.joint_width.get()).abs() > 1.5 {
+            log::write(&format!("joint {:.2} -> {width:.2}", state.joint_width.get()));
+            state.joint_width.set(width);
+            changed = true;
+        }
+    }
+    if filler.is_some() || joint.is_some() {
+        SPACE_WIDTHS.with(|widths| widths.borrow_mut().insert(window, (state.filler_width.get(), state.joint_width.get())));
+    }
+    if changed && state.calibrations.get() < 3 {
+        state.calibrations.set(state.calibrations.get() + 1);
+        return true;
+    }
+    false
+}
+
 /// Polls the anchor's rectangle: reported once two reads agree, then followed while the formula
 /// is open (scrolling, a late layout).
 fn poll_anchor(shared: &Rc<Shared>) {
@@ -663,6 +867,10 @@ fn poll_anchor(shared: &Rc<Shared>) {
         stop_polling(shared);
         return;
     };
+    if shared.rehold.replace(false) {
+        *shared.space.borrow_mut() = space::Layout::default();
+        hold(shared);
+    }
     let polls = shared.polls.get() + 1;
     shared.polls.set(polls);
     if polls == FAST_POLLS {
@@ -674,7 +882,13 @@ fn poll_anchor(shared: &Rc<Shared>) {
     let reader = context.clone();
     let _ = edit::request(&context, shared.client.get(), move |cookie| {
         let Ok(range) = (unsafe { composition.GetRange() }) else { return Ok(()) };
-        let (extent, source) = field_extent(&reader, range_extent(&reader, cookie, &range));
+        // the formula's start: its first piece's (the field may have put it on the next line)
+        let start = if state.formula_transitory.get() {
+            None
+        } else {
+            state.space.borrow().starts.first().and_then(|&first| sub_range(&range, cookie, first, 1))
+        };
+        let (extent, source) = field_extent(&reader, range_extent(&reader, cookie, start.as_ref().unwrap_or(&range)));
         let Some(extent) = extent else { return Ok(()) };
         let rect = extent.rect;
         let current = edges(&rect);
@@ -696,6 +910,10 @@ fn poll_anchor(shared: &Rc<Shared>) {
             log_extent(&format!("anchor polls={polls}"), &extent, &message, source.as_deref());
             state.send(message);
         }
+        if !state.formula_transitory.get() && follow_pieces(&state, &reader, cookie, &range, polls) {
+            // the widths changed: the space is held again at the next poll (outside this session)
+            state.rehold.set(true);
+        }
         Ok(())
     });
 }
@@ -713,6 +931,21 @@ fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>
     let composition = shared.formula.borrow_mut().take();
     let context = shared.formula_context.borrow_mut().take();
     let (Some(composition), Some(context)) = (composition, context) else {
+        // The composition never started or the field dropped it unseen: a formula committed then
+        // still goes in at the field's caret (it used to vanish, the field taking no input).
+        if !text.is_empty() {
+            if let Some(context) = shared.focused_context() {
+                let writer = context.clone();
+                let inserted = edit::request(&context, shared.client.get(), move |cookie| {
+                    let insert: ITfInsertAtSelection = writer.cast()?;
+                    let range = unsafe { insert.InsertTextAtSelection(cookie, INSERT_TEXT_AT_SELECTION_FLAGS(0), &utf16(&text))? };
+                    unsafe { range.Collapse(cookie, TF_ANCHOR_END)? };
+                    let _ = select(&writer, cookie, &range);
+                    Ok(())
+                });
+                log::write(&format!("formula inserted without its composition: {}", inserted.is_ok()));
+            }
+        }
         if let Some(reply) = reply {
             shared.send(json!({ "t": reply }));
         }
@@ -764,7 +997,9 @@ fn set_formula_input_mode(shared: &Rc<Shared>, on: bool) {
 /// formula), its commit ends the composition with the chosen characters, its candidates go
 /// under the formula's caret.
 fn formula_pinyin(shared: &Rc<Shared>, reply: &Reply) {
-    let caret = shared.stable_rect.get().map(|edges| (edges.0 + shared.formula_caret_x.get(), edges.1, edges.2, edges.3));
+    // the formula's caret: from the formula's start, on its line (a later one when it wraps)
+    let (dx, dy) = (shared.formula_caret_x.get(), shared.formula_caret_y.get());
+    let caret = shared.stable_rect.get().map(|edges| (edges.0 + dx, edges.1 + dy, edges.0 + dx + 1, edges.3 + dy));
     note_ascii(shared, reply.ascii, caret);
     if let Some(commit) = &reply.commit {
         shared.send(json!({ "t": "compose", "phase": "end", "text": commit }));
@@ -816,6 +1051,10 @@ fn receive(shared: &Rc<Shared>, message: &Value) {
                 shared.composing.set(true);
                 shared.formula_text.borrow_mut().clear();
                 shared.formula_caret_x.set(0);
+                shared.formula_caret_y.set(0);
+                shared.piece_widths.borrow_mut().clear();
+                shared.calibrations.set(0);
+                *shared.space.borrow_mut() = space::Layout::default();
                 start_formula(shared);
             } else if !on && shared.composing.get() {
                 close_formula(shared, String::new(), None, None);
@@ -825,6 +1064,14 @@ fn receive(shared: &Rc<Shared>, message: &Value) {
         "inline" => {
             *shared.formula_text.borrow_mut() = message.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
             shared.formula_caret_x.set(message.get("caretX").and_then(Value::as_f64).unwrap_or(0.0).round() as i32);
+            shared.formula_caret_y.set(message.get("caretY").and_then(Value::as_f64).unwrap_or(0.0).round() as i32);
+            if let Some(pieces) = message.get("pieces").and_then(Value::as_array) {
+                let widths: Vec<f64> = pieces.iter().map(|piece| piece.as_f64().unwrap_or(0.0).clamp(0.0, 16384.0)).collect();
+                if shared.composing.get() && *shared.piece_widths.borrow() != widths {
+                    *shared.piece_widths.borrow_mut() = widths;
+                    hold(shared);
+                }
+            }
         }
         "commit" => {
             let text = message.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -1053,6 +1300,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             }
             if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_ANCHOR) } {
                 shared.anchor_atom.set(atom);
+            }
+            if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_SPACE) } {
+                shared.space_atom.set(atom);
             }
         }
         if let Some(link) = Link::connect(shared.window()) {

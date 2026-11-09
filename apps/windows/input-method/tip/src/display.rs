@@ -1,7 +1,9 @@
 //! The look of pinyin being spelled in the field: underlined, as Windows' own input methods show
 //! it (a display attribute the field draws). The formula's anchor gets one only in applications
 //! typing through IMM32: it marks the anchor converted and selected, as the clause an input method
-//! is converting, so that the field hides its caret there (Qt does) and draws nothing for it.
+//! is converting, so that the field hides its caret there (Qt does) and draws nothing for it. The
+//! space a field holds for a formula (space.rs) is input without a line: the field draws no
+//! composition underline under the formula (VisualTeX covers what a field draws anyway).
 
 use std::cell::Cell;
 use windows::core::{implement, Result, BSTR, GUID};
@@ -16,13 +18,17 @@ use windows::Win32::UI::TextServices::{
 pub(crate) const GUID_INPUT: GUID = GUID::from_u128(0x7c1e5b2a_93d4_4b61_8e0f_a2d6c3b8f514);
 /// The display attribute of the formula's anchor (IMM32 applications).
 pub(crate) const GUID_ANCHOR: GUID = GUID::from_u128(0x2f6b8d41_5ac7_4e93_b1d2_8c4e7a9f3b06);
+/// The display attribute of the space a field holds for a formula.
+pub(crate) const GUID_SPACE: GUID = GUID::from_u128(0x5d3c9e17_2b84_4f6a_9c01_7e2a4b8d6f35);
 
-const ALL: [GUID; 2] = [GUID_INPUT, GUID_ANCHOR];
+const ALL: [GUID; 3] = [GUID_INPUT, GUID_ANCHOR, GUID_SPACE];
 
 fn attribute(guid: &GUID) -> TF_DISPLAYATTRIBUTE {
     if *guid == GUID_ANCHOR {
         // no colour and no line: nothing to draw for it
         TF_DISPLAYATTRIBUTE { lsStyle: TF_LS_NONE, bAttr: TF_ATTR_TARGET_CONVERTED, ..Default::default() }
+    } else if *guid == GUID_SPACE {
+        TF_DISPLAYATTRIBUTE { lsStyle: TF_LS_NONE, bAttr: TF_ATTR_INPUT, ..Default::default() }
     } else {
         TF_DISPLAYATTRIBUTE { lsStyle: TF_LS_SOLID, bAttr: TF_ATTR_INPUT, ..Default::default() }
     }
@@ -46,7 +52,13 @@ impl ITfDisplayAttributeInfo_Impl for AttributeInfo_Impl {
     }
 
     fn GetDescription(&self) -> Result<BSTR> {
-        Ok(BSTR::from(if self.guid == GUID_ANCHOR { "VisualTeX formula" } else { "VisualTeX composition" }))
+        Ok(BSTR::from(if self.guid == GUID_ANCHOR {
+            "VisualTeX formula"
+        } else if self.guid == GUID_SPACE {
+            "VisualTeX formula space"
+        } else {
+            "VisualTeX composition"
+        }))
     }
 
     fn GetAttributeInfo(&self, info: *mut TF_DISPLAYATTRIBUTE) -> Result<()> {

@@ -191,13 +191,17 @@ fn palette() -> Palette {
 }
 
 fn font(pixels: f32) -> HFONT {
+    font_of_weight(pixels, FW_NORMAL.0 as i32)
+}
+
+fn font_of_weight(pixels: f32, weight: i32) -> HFONT {
     unsafe {
         CreateFontW(
             -(pixels.round() as i32),
             0,
             0,
             0,
-            FW_NORMAL.0 as i32,
+            weight,
             0,
             0,
             0,
@@ -371,7 +375,8 @@ fn paint_indicator(dc: HDC, text: &[u16], scale: f32, width: i32, height: i32) {
         SelectObject(dc, previous_brush);
         let _ = DeleteObject(background.into());
         let _ = DeleteObject(border.into());
-        let font = font(15.0 * scale);
+        // the macOS indicator's label: 14 pt, medium (input-method/Sources/ModeIndicator.swift)
+        let font = font_of_weight(14.0 * scale, 500);
         let size = measure(dc, font, text);
         let previous = SelectObject(dc, font.into());
         SetBkMode(dc, TRANSPARENT);
@@ -467,10 +472,19 @@ extern "system" fn indicator_proc(window: HWND, message: u32, wparam: WPARAM, lp
         WM_INDICATOR => {
             let indicator = unsafe { Box::from_raw(lparam.0 as *mut Indicator) };
             let (scale, work) = monitor_at(indicator.caret.x, indicator.caret.y + indicator.caret.height);
-            let size = (30.0 * scale).round() as i32;
-            let (x, y) = place(indicator.caret, size, size, scale, work);
+            // as on macOS: 30 x 26, 4 pixels under the caret (the formula's caret, on its line),
+            // its left edge 4 pixels left of it; over the caret at the screen's bottom
+            let (width, height) = ((30.0 * scale).round() as i32, (26.0 * scale).round() as i32);
+            let gap = (4.0 * scale).round() as i32;
+            let mut x = indicator.caret.x - gap;
+            let mut y = indicator.caret.y + indicator.caret.height + gap;
+            if y + height > work.bottom {
+                y = indicator.caret.y - height - gap;
+            }
+            x = x.min(work.right - width).max(work.left);
+            y = y.max(work.top);
             INDICATOR_TEXT.with(|slot| *slot.borrow_mut() = (indicator.text.clone(), scale));
-            move_to(window, x, y, size, size);
+            move_to(window, x, y, width, height);
             unsafe {
                 SetTimer(Some(window), INDICATOR_TIMER, 800, None);
             }

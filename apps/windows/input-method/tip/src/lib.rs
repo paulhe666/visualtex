@@ -20,6 +20,7 @@ mod profile;
 mod register;
 mod rimekeys;
 mod service;
+mod space;
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, Ordering};

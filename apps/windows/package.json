@@ -19,6 +19,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/tauri_build.mjs",
     "tauri:build:no-ocr": "node scripts/tauri_build.mjs --no-ocr-bundle",
+    "tauri:build:personal": "node scripts/tauri_build.mjs --personal",
     "clean:windows-release": "node scripts/clean_windows_release_outputs.mjs",
     "clean:windows-local:dry-run": "node scripts/clean_windows_release_outputs.mjs --acceptance --dry-run",
     "clean:windows-local": "node scripts/clean_windows_release_outputs.mjs --acceptance",

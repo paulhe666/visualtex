@@ -1,0 +1,323 @@
+/* LaTeX documents (personal edition): source left, TeX's pages right */
+.vtx-tex-workspace {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.vtx-tex-toolbar {
+  gap: 4px;
+}
+.vtx-tex-toolbar-fill {
+  flex: 1 1 auto;
+}
+.vtx-tex-toolbar .vtx-tutorial-button {
+  margin-left: 0;
+}
+.vtx-tex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vtx-tex-chip:hover,
+.vtx-tex-chip[aria-pressed="true"] {
+  background: var(--surface-hover, color-mix(in srgb, var(--text) 7%, transparent));
+}
+.vtx-tex-messages-button svg {
+  color: var(--text-faint);
+}
+.vtx-tex-messages-button.has-errors svg:first-child {
+  color: var(--danger, #d93025);
+}
+.vtx-tex-time {
+  min-width: 44px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.vtx-tex-zoom {
+  min-width: 52px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.vtx-tex-spin {
+  animation: vtx-tex-spin 0.9s linear infinite;
+}
+@keyframes vtx-tex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.vtx-tex-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.vtx-tex-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.vtx-tex-menu button {
+  padding: 6px 10px 6px 26px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vtx-tex-menu button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.vtx-tex-menu button.is-checked {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: 6px 6px;
+  background-position: 11px center;
+  background-repeat: no-repeat;
+}
+.vtx-tex-menu-rule {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+.vtx-tex-problem {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--danger, #d93025) 8%, var(--surface));
+  color: var(--text);
+  font-size: 13px;
+}
+.vtx-tex-body {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.vtx-tex-source {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+.vtx-tex-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.vtx-tex-tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.vtx-tex-tab.is-read-only .vtx-tex-tab-name {
+  font-style: italic;
+  color: var(--text-muted);
+}
+.vtx-tex-tab.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.vtx-tex-tab-name,
+.vtx-tex-tab-close,
+.vtx-tex-tab-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.vtx-tex-tab-close {
+  padding: 0 4px;
+  color: var(--text-faint);
+}
+.vtx-tex-tab-add {
+  color: var(--text-muted);
+}
+.vtx-tex-file-menu button {
+  padding-left: 26px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.vtx-tex-source-host {
+  background: var(--surface);
+}
+.cm-vtx-tex-flash {
+  animation: vtx-tex-flash 1.4s ease-out;
+}
+@keyframes vtx-tex-flash {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.vtx-tex-messages {
+  flex: 0 0 auto;
+  max-height: 32%;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.vtx-tex-message {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.vtx-tex-message:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.vtx-tex-message svg {
+  flex: none;
+  align-self: center;
+}
+.vtx-tex-message.is-error svg {
+  color: var(--danger, #d93025);
+}
+.vtx-tex-message.is-warning svg,
+.vtx-tex-message.is-box svg {
+  color: var(--warning, #c98a00);
+}
+.vtx-tex-message.is-none {
+  color: var(--text-faint);
+  cursor: default;
+}
+.vtx-tex-message-place {
+  flex: none;
+  color: var(--text-muted);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+}
+.vtx-tex-message-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vtx-tex-divider {
+  cursor: col-resize;
+  background: var(--border);
+  background-clip: content-box;
+  padding: 0 2px;
+}
+.vtx-tex-divider:hover {
+  background-color: var(--accent);
+}
+/* the pages: TeX's page size × zoom on the grey desk of the document's page view */
+.vtx-tex-pages {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 12px 40px;
+  background: #e8e9ec;
+  scrollbar-gutter: stable;
+}
+.vtx-tex-page {
+  position: relative;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  cursor: default;
+}
+.vtx-tex-page-svg,
+.vtx-tex-page-svg > svg,
+.vtx-tex-page-picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.vtx-tex-page-svg > svg text {
+  cursor: text;
+}
+.vtx-tex-marker {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 3px;
+}
+.vtx-tex-marker.is-sync {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.vtx-tex-marker.is-pending {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  animation: vtx-tex-pending 1s ease-in-out infinite alternate;
+}
+@keyframes vtx-tex-pending {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.vtx-tex-formula-dismiss {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+.vtx-tex-formula {
+  position: absolute;
+  z-index: 71;
+  min-width: 220px;
+  max-width: calc(100% - 16px);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-md);
+}
+@media (max-width: 760px) {
+  .vtx-tex-body {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 45% minmax(0, 1fr);
+  }
+  .vtx-tex-divider {
+    display: none;
+  }
+}
