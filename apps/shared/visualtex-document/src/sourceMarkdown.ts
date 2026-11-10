@@ -13,7 +13,7 @@ import { Fragment, Slice, type Mark, type Node, type ResolvedPos, type Schema } 
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { OBJECT, writeInline, type InlineMark, type WriteUnit } from "./inlineMarkdown.ts";
-import { blockLanguage, readMarkdown } from "./markdown.ts";
+import { blockLanguage, documentToMarkdown, readMarkdown } from "./markdown.ts";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { homeInLine, renumberLists } from "./sourceKeys.ts";
 import { blankLine as tokenizerBlankLine, copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
@@ -556,7 +556,7 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
     lineClasses.push("md-quoteline", `md-quote-${Math.min(facts.quote, 6)}`);
     if (cx.inCallout) lineClasses.push("md-calloutline", `md-callout-${cx.inCallout}`);
   }
-  if (facts.hr && !lineTouched) lineClasses.push("md-ruleline");
+  if (facts.hr) lineClasses.push("md-ruleline");
   if (cx.continuation) lineClasses.push("md-cont");
   if (lineClasses.length || lineStyle.length) {
     out.push(Decoration.node(pos, pos + node.nodeSize, { class: lineClasses.join(" "), ...(lineStyle.length ? { style: lineStyle.join(";") } : {}) }));
@@ -1110,6 +1110,8 @@ export function sourceLivePlugin(options: { enabled: () => boolean } = { enabled
       },
       // what is pasted (from a web page, a word processor, the app's own copy) comes in as source lines
       transformPasted: (slice) => (options.enabled() ? toSourceSlice(slice) : slice),
+      // copied text: the lines as they stand, one per line (as Obsidian copies), objects as their Markdown
+      clipboardTextSerializer: (slice, view) => (options.enabled() ? sourceSliceText(slice, view.state.schema) : ""),
       // pasted text: its lines as lines, blank ones too (formulas, tables, pictures as objects)
       clipboardTextParser: (text, $context, plain, view) => {
         if (!options.enabled() || $context.parent.type.spec.code) return null as unknown as Slice;
@@ -1508,6 +1510,31 @@ export function sourceTextToDocument(schema: Schema, text: string, readBlock: (m
   }
   if (!out.length) out.push(schema.nodes.paragraph.create());
   return withHeadings(schema.topNodeType.create(null, out));
+}
+
+/**
+ * A copied slice's text in the source editor: its lines as they stand, one per line, objects written as the source
+ * export writes them (a blank line on each side); "" when the slice is not lines (cells of a table: the editor's own
+ * copy then).
+ */
+function sourceSliceText(slice: Slice, schema: Schema): string {
+  const blocks: Node[] = [];
+  let run: Node[] = [];
+  const flush = () => {
+    if (run.length) blocks.push(schema.nodes.paragraph.create(null, run));
+    run = [];
+  };
+  slice.content.forEach((node) => {
+    if (node.isInline) run.push(node);
+    else {
+      flush();
+      blocks.push(node);
+    }
+  });
+  flush();
+  const content = Fragment.from(blocks);
+  if (!blocks.length || !schema.topNodeType.validContent(content)) return "";
+  return documentToMarkdown(schema.topNodeType.create(null, content), { sourceText: true }).replace(/\n$/, "");
 }
 
 /** A paragraph-based document (saved before the line model, read from Markdown): a blank line between paragraphs. */
