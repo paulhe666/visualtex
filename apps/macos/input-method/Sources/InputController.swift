@@ -58,13 +58,22 @@ final class VTInputController: IMKInputController {
     /// holding them (FormulaSpace).
     private var pieceWidths: [CGFloat] = []
     private var space = FormulaSpace.Layout(text: "", starts: [], counts: [])
-    /// A filler's width by application, learnt from where the field put the
-    /// pieces (points).
-    private static var fillerWidths: [String: CGFloat] = [:]
+    /// A filler's and a joint's (word space's) widths by application and
+    /// line height, learnt from where the field put the pieces (points), with
+    /// how many fillers the filler's was measured over; kept across starts.
+    private static var learntWidths: [String: [Double]] = UserDefaults.standard.dictionary(forKey: "VisualTeXLearntWidths2") as? [String: [Double]] ?? [:]
     private var fillerWidth: CGFloat = 0
-    /// A joint's (word space's) width, likewise.
-    private static var jointWidths: [String: CGFloat] = [:]
     private var jointWidth: CGFloat = 0
+    /// How many fillers the filler width was measured over (0: estimated), and
+    /// whether the joint's was measured: the space is held a little short of
+    /// the formula by as much as they may be off (hold).
+    private var widthSpan = 0
+    private var jointKnown = false
+    /// The hold whose places the widths were last measured from.
+    private var measuredGeneration = -1
+    /// The piece the field began the last line of the space with (FormulaSpace's lineStart), as it last
+    /// told.
+    private var lastLineStart = 0
     /// Calibrations in this formula: a few at most (a field rounding places
     /// to pixels must not make the space flip between two widths).
     private var calibrations = 0
@@ -651,6 +660,8 @@ final class VTInputController: IMKInputController {
             controller.lastPlaces = []
             controller.lastEnd = nil
             controller.calibrations = 0
+            controller.measuredGeneration = -1
+            controller.lastLineStart = 0
             controller.rekicked = false
             controller.holdDeferred = false
             controller.staleHolds = 0
@@ -719,9 +730,23 @@ final class VTInputController: IMKInputController {
     /// reports where the field placed it (see pollAnchor).
     private func placeAnchor(_ client: IMKTextInput) {
         let estimated = estimatedWidths(client)
-        fillerWidth = Self.fillerWidths[clientID(client)] ?? estimated.filler
-        jointWidth = Self.jointWidths[clientID(client)] ?? estimated.joint
+        if let learnt = Self.learntWidths[widthKey(client)], learnt.count == 3 {
+            fillerWidth = CGFloat(learnt[0])
+            jointWidth = CGFloat(learnt[1])
+            widthSpan = Int(learnt[2])
+            jointKnown = true
+        } else {
+            fillerWidth = estimated.filler
+            jointWidth = estimated.joint
+            widthSpan = 0
+            jointKnown = false
+        }
         hold(client)
+    }
+
+    /// The widths' key: the application and the height of the line where the formula opened.
+    private func widthKey(_ client: IMKTextInput) -> String {
+        "\(clientID(client))@\(Int(formulaStart.height.rounded()))"
     }
 
     /// A filler's width before the field has shown one: in the field's font
@@ -743,7 +768,16 @@ final class VTInputController: IMKInputController {
     /// each is followed.
     private func hold(_ client: IMKTextInput) {
         guard !holdDeferred else { return }
-        let layout = FormulaSpace.layout(widths: pieceWidths, unit: fillerWidth, joint: jointWidth)
+        // held short of the formula by as much as the widths may be off: a filler measured over a run
+        // of n fillers is off by up to about 0.7/n point a filler (the field gives places in whole
+        // points), an estimated one by 5%, a joint not measured by a quarter of its width
+        let unit = max(fillerWidth, 0.5)
+        let fillers = pieceWidths.reduce(0, +) / unit
+        let joints = CGFloat(max(0, pieceWidths.count - 1))
+        let margin = 0.15 + (widthSpan > 0 ? fillers * 0.7 / CGFloat(widthSpan) / unit : fillers * 0.05)
+            + (jointKnown ? 0 : joints * 0.25 * jointWidth / unit)
+        let layout = FormulaSpace.layout(widths: pieceWidths, unit: fillerWidth, joint: jointWidth, margin: margin,
+                                         lineStart: lastLineStart < pieceWidths.count ? lastLineStart : 0)
         guard layout != space || marked != layout.text else { return }
         if layout.text != kickedText {
             staleKicks = 0
@@ -753,28 +787,16 @@ final class VTInputController: IMKInputController {
         InputLog.write("hold pieces=\(layout.starts.count) fillers=\(layout.counts.reduce(0, +)) filler=\(String(format: "%.2f", Double(fillerWidth))) joint=\(String(format: "%.2f", Double(jointWidth)))")
         lastHold = Date()
         holdGeneration += 1
-        let generation = holdGeneration
-        let selection = NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length)
-        guard Self.lateClients.contains(clientID(client)) else {
-            marked = layout.text
-            client.setMarkedText(Self.heldString(layout.text), selectionRange: selection, replacementRange: Self.noRange)
-            pollAnchor(generation: generation, last: nil, polls: 0)
-            return
-        }
-        // Chrome and Electron learn where a marked text's characters are one set late (and keep
-        // what they learnt until the next): the space with a character of no width after it first,
-        // the space itself a moment later, whose places are then the ones they answer. (Typing
-        // goes on meanwhile: a space held before the moment is up takes its place.)
-        let other = layout.text + "\u{200B}"
-        marked = other
-        client.setMarkedText(Self.heldString(other), selectionRange: selection, replacementRange: Self.noRange)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
-            guard let self, generation == self.holdGeneration, self.composing, self.space == layout, let client = self.client() else { return }
-            self.marked = layout.text
-            client.setMarkedText(Self.heldString(layout.text), selectionRange: selection, replacementRange: Self.noRange)
-            self.lastHold = Date()
-            self.pollAnchor(generation: generation, last: nil, polls: 0)
-        }
+        marked = layout.text
+        // One marked text a key. (Set twice a key, for Chrome to answer fresher places, the field's
+        // underline and caret moved twice a key and each key flashed, 2026-11-10: the places are
+        // made fresh once typing pauses, refresh.)
+        client.setMarkedText(
+            Self.heldString(layout.text),
+            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
+            replacementRange: Self.noRange
+        )
+        pollAnchor(generation: holdGeneration, last: nil, polls: 0)
     }
 
     /// Chrome and Electron place marked text a frame or so after it is set
@@ -883,23 +905,31 @@ final class VTInputController: IMKInputController {
                 }
             }
             reportPlaces(rects, end: rects.count == space.starts.count ? endPlace(client, rects) : nil, anchor: characterRect(client, 0))
+            // where the last line begins: the first of the pieces on the last piece's line
+            if rects.count == space.starts.count, let lastRect = rects.last {
+                var start = rects.count - 1
+                while start > 0, abs(rects[start - 1].minY - lastRect.minY) < lastRect.height * 0.5 { start -= 1 }
+                lastLineStart = start
+            }
             // (a field that answers nothing after the last character: Chrome, Electron)
             if (marked as NSString).length >= 2, characterRect(client, (marked as NSString).length) == nil {
                 Self.lateClients.insert(clientID(client))
             }
-            // places of a space held before, still answered once typing has paused: the space is
-            // set again (twice a space at most; a field that answers so all the same is left alone).
-            // The widths are read off places that passed (read off an earlier space's, the joint
-            // came out a filler wide and the formula ran past its space, 2026-11-09).
+            // Once typing has paused: in a field that answers places one set late (Chrome, Electron)
+            // the space is set again once, for its own places; places of a space held before, still
+            // answered, have it set again (twice a space at most; a field that answers so all the
+            // same is left alone; never cleared and held afresh while the formula shows: the field's
+            // text and caret jumped). The widths are read off places that passed (read off an
+            // earlier space's, the joint came out a filler wide and the formula ran past its space,
+            // 2026-11-09).
             if !kicksUseless, placesChecked != generation, Date().timeIntervalSince(lastHold) > 0.12 {
                 placesChecked = generation
-                if let sign = stalePlaces(client, rects) {
+                let late = Self.lateClients.contains(clientID(client))
+                if let sign = late && staleKicks == 0 ? "refresh" : stalePlaces(client, rects) {
                     if staleKicks < 2 {
                         staleKicks += 1
-                        // set again first (nothing moves in the field); if that changed nothing, held
-                        // afresh (the text after the formula moves for a moment)
-                        InputLog.write("pieces stale (\(sign)): \(staleKicks == 1 ? "set again" : "held afresh")")
-                        if staleKicks == 1 { setAgain(client) } else { holdAfresh(client) }
+                        if sign != "refresh" { InputLog.write("pieces stale (\(sign)): set again") }
+                        setAgain(client)
                         return
                     }
                     kicksUseless = true
@@ -908,7 +938,7 @@ final class VTInputController: IMKInputController {
                     placesSound = generation
                 }
             }
-            if placesSound == generation, calibrate(client, rects) { return }
+            if measuredGeneration != generation, measureWidths(client, rects) { return }
         }
         // a field slow to answer (its layout not ready) is asked less often
         let delay = polls < 40 && elapsed < 0.05 ? 0.016 : 0.25
@@ -931,8 +961,23 @@ final class VTInputController: IMKInputController {
     /// is meanwhile; the same text again changes nothing for Chrome).
     private func setAgain(_ client: IMKTextInput) {
         Self.lateClients.insert(clientID(client))
-        marked = ""
-        hold(client)
+        let layout = space
+        guard !layout.text.isEmpty else { return }
+        // Chrome and Electron learn where a marked text's characters are one set late (and keep what
+        // they learnt until the next): the space with a character of no width after it first (nothing
+        // in the field moves), the space itself a moment later, whose places they then answer.
+        holdGeneration += 1
+        let generation = holdGeneration
+        let selection = NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length)
+        marked = layout.text + "\u{200B}"
+        client.setMarkedText(Self.heldString(marked), selectionRange: selection, replacementRange: Self.noRange)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+            guard let self, generation == self.holdGeneration, self.composing, self.space == layout, let client = self.client() else { return }
+            self.marked = layout.text
+            client.setMarkedText(Self.heldString(layout.text), selectionRange: selection, replacementRange: Self.noRange)
+            self.lastHold = Date()
+            self.pollAnchor(generation: generation, last: nil, polls: 0)
+        }
     }
 
     /// Chrome answers a character's place from what its page told it of the
@@ -1085,73 +1130,81 @@ final class VTInputController: IMKInputController {
         AppLink.shared.send(message)
     }
 
-    /// The filler's and the joint's widths as the field draws them: the
-    /// filler over the longest piece on one line (the field may round each
-    /// character's place to a pixel, so a long run reads it best), the joint
-    /// between a piece's fillers and the next piece on its line. Widths other
-    /// than the ones the pieces were held with hold them again. True when they
-    /// did.
-    private func calibrate(_ client: IMKTextInput, _ rects: [NSRect]) -> Bool {
-        // A space held a moment ago is not drawn everywhere yet: typing holds a new one every few
-        // milliseconds and Chrome answers some places from the one it replaced. Widths read from
-        // those flipped the joint between 0, 4 and 10 points and left the formula wider than its
-        // space (2026-11-09); the polls that follow read them once the field has drawn the space.
-        guard Date().timeIntervalSince(lastHold) > 0.12 else { return false }
-        var filler: (count: Int, width: CGFloat)?
-        // the fillers of all the pieces read whole on their lines: together a run long enough that a
-        // field's pixel rounding is a small part of it (a formula of short pieces holds two or three
-        // fillers each, so a single piece's never was; Safari draws the filler 10.3 points wide where
-        // its font says 12.6, and the first line ran past the field's edge, 2026-11-09)
-        var fillerCount = 0
-        var fillerRun: CGFloat = 0
-        var joints: [CGFloat] = []
-        for (index, start) in space.starts.enumerated() where index < rects.count {
+    /// The filler's width as the field draws it, from the runs of fillers in
+    /// the pieces on the first line (each piece's first and last filler: their
+    /// places are whole points, so the runs together tell it to a fraction of
+    /// a point), then the joint's, from where each piece starts after the one
+    /// before. Chrome and Electron answer places of the space held a moment
+    /// before as well: its fillers and joints are as wide, and runs that do
+    /// not fit the others (of a piece split since) are left out; so widths
+    /// are read while a key is held too (held with an estimated width, 2.7%
+    /// narrower than Chrome drew it, the space ended a few points past the
+    /// formula until typing paused, 2026-11-10). (Both solved together, the
+    /// joint took up part of the fillers' width: pieces of a long run are
+    /// alike.) Widths read over a longer run, or off by more than a point
+    /// over the space, hold it again. True when they did.
+    private func measureWidths(_ client: IMKTextInput, _ rects: [NSRect]) -> Bool {
+        measuredGeneration = holdGeneration
+        guard let first = rects.first else { return false }
+        let totalFillers = space.counts.reduce(0, +)
+        // measured well enough over a run as long as the space: nothing to ask
+        if widthSpan >= 6, CGFloat(widthSpan) * 1.5 >= CGFloat(totalFillers), jointKnown || space.starts.count < 3 { return false }
+        // the runs: a piece's fillers from its first to its last (count - 1 advances)
+        var runs: [(index: Int, advances: Int, length: CGFloat)] = []
+        for (index, start) in space.starts.enumerated() {
+            guard index < rects.count, abs(rects[index].minY - first.minY) < 0.5 else { break }
             let count = space.counts[index]
-            guard let end = characterRect(client, start + count),
-                  abs(end.minY - rects[index].minY) < rects[index].height * 0.5,
-                  end.minX > rects[index].minX
+            guard count >= 2, let end = characterRect(client, start + count - 1),
+                  abs(end.minY - rects[index].minY) < 0.5, end.minX > rects[index].minX
             else { continue }
-            fillerCount += count
-            fillerRun += end.minX - rects[index].minX
-            if fillerCount >= 6 { filler = (fillerCount, fillerRun / CGFloat(fillerCount)) }
-            if index + 1 < rects.count, abs(rects[index + 1].minY - end.minY) < end.height * 0.5,
-               rects[index + 1].minX > end.minX {
-                joints.append(rects[index + 1].minX - end.minX)
+            runs.append((index, count - 1, end.minX - rects[index].minX))
+        }
+        guard !runs.isEmpty else { return false }
+        // the runs that agree with the middle one (to their places' rounding)
+        let ratios = runs.map { $0.length / CGFloat($0.advances) }.sorted()
+        let middle = ratios[ratios.count / 2]
+        let fitting = runs.filter { abs($0.length - middle * CGFloat($0.advances)) <= 1.5 }
+        let span = fitting.reduce(0) { $0 + $1.advances }
+        guard span >= 5 else { return false }
+        let filler = fitting.reduce(0) { $0 + $1.length } / CGFloat(span)
+        guard filler > 0.5, filler < 40 else { return false }
+        // the joints: a piece's start after the one before on the line, less the fillers of that one
+        var gaps: [CGFloat] = []
+        for index in 1..<min(rects.count, space.starts.count) where abs(rects[index].minY - first.minY) < 0.5 && abs(rects[index - 1].minY - first.minY) < 0.5 {
+            gaps.append(rects[index].minX - rects[index - 1].minX - CGFloat(space.counts[index - 1]) * filler)
+        }
+        var joint: CGFloat?
+        if gaps.count >= 2 {
+            let sorted = gaps.sorted()
+            let middleGap = sorted[sorted.count / 2]
+            let agreeing = gaps.filter { abs($0 - middleGap) <= 1.5 }
+            if agreeing.count * 2 > gaps.count {
+                let value = agreeing.reduce(0, +) / CGFloat(agreeing.count)
+                if value > 0.3, value < filler * 1.5 { joint = value }
             }
         }
-        // the joint: the middle one of those read on the lines, once two of them agree (a single
-        // reading flipped between 4 and 10 points in Chrome)
-        var joint: CGFloat?
-        let middle = joints.isEmpty ? nil : joints.sorted()[joints.count / 2]
-        if let middle, middle >= 1, middle < 40, joints.filter({ abs($0 - middle) <= 1.5 }).count >= 2 {
-            joint = middle
+        // a reading over a shorter run than the width's own is not better
+        let fillerBetter = span > widthSpan
+        let fillerOff = abs(filler - fillerWidth) * CGFloat(totalFillers) > 0.8
+        let joints = CGFloat(max(0, space.starts.count - 1))
+        // (a joint reading moves by a few tenths with the pieces read: the space is held again only for
+        // a joint off by a third of a point and more than a point and a half over its joints)
+        let jointOff = joint.map { abs($0 - jointWidth) > 0.33 && abs($0 - jointWidth) * joints > 1.5 } ?? false
+        if fillerBetter { widthSpan = span }
+        if joint != nil { jointKnown = true }
+        let changed = (fillerBetter && fillerOff) || jointOff
+        if fillerBetter && fillerOff {
+            InputLog.write("filler \(String(format: "%.2f", Double(fillerWidth))) -> \(String(format: "%.2f", Double(filler))) over \(span)")
+            fillerWidth = filler
         }
-        if let width = filler?.width, !(width > 0.5 && width < 40) { filler = nil }
-        let id = clientID(client)
-        // a pixel over the run is the field's rounding, not another width
-        let fillerChanged = filler.map { abs($0.width - fillerWidth) * CGFloat($0.count) > 1.5 } ?? false
-        let jointChanged = joint.map { abs($0 - jointWidth) > 1.5 } ?? false
-        guard fillerChanged || jointChanged else {
-            // the widths the space was held with: this application's next formulas start with them
-            if let filler { Self.fillerWidths[id] = filler.width }
-            if let joint { Self.jointWidths[id] = joint }
-            return false
-        }
-        // past three, the widths stay those the space is held with (never a space held with other
-        // widths than the ones the pieces are placed with)
-        guard calibrations < 3 else { return false }
-        calibrations += 1
-        if fillerChanged, let filler {
-            InputLog.write("filler \(String(format: "%.2f", Double(fillerWidth))) -> \(String(format: "%.2f", Double(filler.width))) from \(filler.count)")
-            fillerWidth = filler.width
-            Self.fillerWidths[id] = filler.width
-        }
-        if jointChanged, let joint {
-            InputLog.write("joint \(String(format: "%.2f", Double(jointWidth))) -> \(String(format: "%.2f", Double(joint))) from \(joints.count)")
+        if jointOff, let joint {
+            InputLog.write("joint \(String(format: "%.2f", Double(jointWidth))) -> \(String(format: "%.2f", Double(joint))) from \(gaps.count)")
             jointWidth = joint
-            Self.jointWidths[id] = joint
         }
-        // (the same space with the new widths is not held again: its places go on being followed)
+        Self.learntWidths[widthKey(client)] = [Double(fillerWidth), Double(jointWidth), Double(widthSpan)]
+        UserDefaults.standard.set(Self.learntWidths, forKey: "VisualTeXLearntWidths2")
+        guard changed, calibrations < 8 else { return false }
+        calibrations += 1
         let generation = holdGeneration
         hold(client)
         return holdGeneration != generation

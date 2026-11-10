@@ -185,9 +185,13 @@ function formulaBox() {
  * the field put the line's first piece to where the line's formula ends (the last line: to where
  * the held space ends, when the field tells). `line`: the field's line height and descent.
  */
-/** How long after a key the cover reaches past the formula (the field tells where the new space
- *  ends about a key repeat later). */
-const TYPING_COVER_MS = 260;
+/** How long the last line's cover keeps a width the formula lost (a deleted character): the field
+ *  takes the narrower space a moment after the formula is drawn narrower (scheduleInline), and its
+ *  underline and caret stood past the formula meanwhile. */
+const SHRINK_COVER_MS = 200;
+/** Spare room in the in-line panel, right of and below the formula and its covers: they grow into it
+ *  in the frame the formula grows, without waiting for the window to be made larger. */
+const PANEL_SLACK = 96;
 
 function placeCovers(
   layer: HTMLElement | null,
@@ -196,17 +200,25 @@ function placeCovers(
   places: [number, number][],
   start: [number, number] | null,
   end: [number, number] | null,
-  typing: boolean,
-): { right: number; bottom: number } | null {
+  keep: { y: number; right: number } | null,
+): { right: number; bottom: number; last: { y: number; right: number } | null } | null {
   if (!layer) return null;
   const box = formulaBox();
   const lines = formulaLines();
   const covers: { left: number; right: number; top: number; bottom: number }[] = [];
-  if (box && lines && background && line && places.length) {
+  let lastLine: { y: number; right: number } | null = null;
+  if (box && background && line && !places.length) {
+    // the field holds a space before it has told where: the formula's line from the anchor, at
+    // least a filler's width (its underline and caret are there)
+    const baseline = box.baseline;
+    const right = box.left + Math.max(box.width, line.height * 0.75) + 3;
+    covers.push({ left: box.left - 3, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
+  } else if (box && lines && background && line && places.length) {
     const px = box.fontPx / SP_PER_EM;
     const byLine = new Map<number, { left: number; right: number }>();
-    lines.pieces.forEach((piece, index) => {
-      if (!places[index]) return;
+    // (a piece the field has no place for is drawn after the one before it: held with that one, its
+    // last piece while narrower than a filler, or not held yet)
+    lines.pieces.forEach((piece) => {
       const y = Math.round(piece.y * px * 4) / 4;
       const left = box.left + piece.x * px;
       const right = left + piece.width * px;
@@ -224,14 +236,15 @@ function placeCovers(
       // a line the field broke after holds its last piece to about a space past the formula; the
       // last line's held space ends where the field says (else a little past the formula)
       const last = index === ys.length - 1;
-      let right = span.right + (last ? 1 : Math.max(4, line.height * 0.6));
-      // (the field's caret may stand at its end: two pixels more)
+      // (the field's caret, a point or two wide, stands at the held space's end: never past the
+      // formula's on its last line, FormulaSpace)
+      let right = span.right + (last ? 3 : Math.max(4, line.height * 0.6));
       if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
-      // While a key is being typed the field holds the new space before it tells where it ends
-      // (a key later): the end of the space and the field's caret showed past the formula for
-      // that moment, all along a held key (2026-11-10). The space is the formula's and at most a
-      // filler and a third more: so much is covered until the field has told.
-      if (last && typing) right = Math.max(right, span.right + line.height * 0.85);
+      if (last) {
+        lastLine = { y, right: right - box.left };
+        // a width just lost stays covered until the field has taken the narrower space
+        if (keep && Math.abs(keep.y - y) < 0.5) right = Math.max(right, box.left + keep.right);
+      }
       const baseline = box.baseline + y;
       // (a field's caret is drawn a pixel taller than its line: Chrome)
       covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
@@ -241,7 +254,11 @@ function placeCovers(
   while (layer.children.length < covers.length) layer.appendChild(document.createElement("div"));
   // the panel holds the covers too (one may reach past the formula, to the end of the held space)
   const extent = covers.length
-    ? { right: Math.max(...covers.map((cover) => cover.right)), bottom: Math.max(...covers.map((cover) => cover.bottom)) }
+    ? {
+        right: Math.max(...covers.map((cover) => cover.right)),
+        bottom: Math.max(...covers.map((cover) => cover.bottom)),
+        last: lastLine,
+      }
     : null;
   covers.forEach((cover, index) => {
     const element = layer.children[index] as HTMLElement;
@@ -622,10 +639,14 @@ export function AnywhereApp() {
   const piecePlacesRef = useRef<[number, number][]>([]);
   const pieceStartRef = useRef<[number, number] | null>(null);
   const pieceEndRef = useRef<[number, number] | null>(null);
-  /** When the input method last gave a key (the cover reaches a little further for a moment after:
-   *  placeCovers), and the timer that brings it back. */
-  const lastKeyRef = useRef(0);
-  const typingTimerRef = useRef<number | null>(null);
+  /** The last line's cover widths of the last moments (placeCovers keeps the widest of them for
+   *  SHRINK_COVER_MS), the timer that lets it shrink after, and the frame the field is told in
+   *  (scheduleInline). */
+  const coverWidthsRef = useRef<{ at: number; y: number; right: number }[]>([]);
+  const shrinkTimerRef = useRef<number | null>(null);
+  const inlineFrameRef = useRef<number | null>(null);
+  /** The panel's last layout report (its window is set to the new size when it has been answered). */
+  const layoutReportRef = useRef<Promise<unknown> | null>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const lastModeRef = useRef<boolean | null>(null);
   const composingRef = useRef(false);
@@ -838,6 +859,33 @@ export function AnywhereApp() {
     }
   }, []);
 
+  // The field is told the formula's new widths once the panel has drawn the formula and its cover as
+  // they are now (two frames on): told at once, the field drew its wider space a frame before the
+  // panel drew the formula, and its underline and caret showed past the formula at every key
+  // (2026-11-10). Its space is never wider than the formula (FormulaSpace), so it grows under the
+  // cover drawn already.
+  // (A window made larger for them is set first: its layout report answered and a frame on.)
+  const scheduleInline = useCallback(() => {
+    if (inlineFrameRef.current !== null) return;
+    const report = () => {
+      inlineFrameRef.current = null;
+      reportInline();
+    };
+    inlineFrameRef.current = window.requestAnimationFrame(() => {
+      inlineFrameRef.current = window.requestAnimationFrame(() => {
+        const layout = layoutReportRef.current;
+        if (!layout) {
+          report();
+          return;
+        }
+        inlineFrameRef.current = -1;
+        void layout.finally(() => {
+          inlineFrameRef.current = window.requestAnimationFrame(report);
+        });
+      });
+    });
+  }, [reportInline]);
+
   const measure = useCallback(() => {
     const generation = generationRef.current;
     const strip = stripRef.current;
@@ -860,6 +908,11 @@ export function AnywhereApp() {
     // holds for it, on the line's baseline; on the caret line (pasting) the
     // strip's middle sits on the line.
     const box = inputMethodRef.current ? formulaBox() : null;
+    const now = performance.now();
+    const widths = coverWidthsRef.current.filter((width) => now - width.at < SHRINK_COVER_MS);
+    const lastY = widths.length ? widths[widths.length - 1].y : null;
+    const kept = widths.filter((width) => width.y === lastY);
+    const keep = kept.length ? { y: lastY as number, right: Math.max(...kept.map((width) => width.right)) } : null;
     const covers = placeCovers(
       coverRef.current,
       inputMethodRef.current ? fieldBackgroundRef.current : null,
@@ -867,8 +920,19 @@ export function AnywhereApp() {
       piecePlacesRef.current,
       pieceStartRef.current,
       pieceEndRef.current,
-      performance.now() - lastKeyRef.current < TYPING_COVER_MS,
+      keep,
     );
+    if (covers?.last) {
+      widths.push({ at: now, ...covers.last });
+      // narrower than a width kept: drawn again once that is no longer kept
+      if (keep && keep.y === covers.last.y && keep.right > covers.last.right + 0.5 && shrinkTimerRef.current === null) {
+        shrinkTimerRef.current = window.setTimeout(() => {
+          shrinkTimerRef.current = null;
+          measureRef.current();
+        }, SHRINK_COVER_MS + 20);
+      }
+    }
+    coverWidthsRef.current = widths;
     const layout: AnywhereLayout = {
       width: Math.ceil(
         Math.max(
@@ -887,17 +951,31 @@ export function AnywhereApp() {
       anchorX: box ? box.left : formulaStartRef.current ?? rect.left + 1,
       anchorY: box ? box.baseline : rect.top + rect.height / 2,
     };
-    if (inputMethodRef.current) reportInline();
+    if (inputMethodRef.current) scheduleInline();
     if (covers) {
       layout.width = Math.max(layout.width, Math.ceil(covers.right + 1));
       layout.height = Math.max(layout.height, Math.ceil(covers.bottom + 1));
     }
+    if (inputMethodRef.current) {
+      // the window a little larger than the formula, and made smaller only when much larger: the
+      // formula and its cover grow into the spare room in the frame they grow
+      const previous = lastLayoutRef.current;
+      const slackY = Math.max(12, fieldLineRef.current?.height ?? 0);
+      if (previous && layout.width <= previous.width && previous.width - layout.width < PANEL_SLACK * 2) layout.width = previous.width;
+      else layout.width += PANEL_SLACK;
+      if (previous && layout.height <= previous.height && previous.height - layout.height < slackY * 2) layout.height = previous.height;
+      else layout.height += slackY;
+    }
     if (sameLayout(lastLayoutRef.current, layout)) return;
     lastLayoutRef.current = layout;
-    void reportAnywhereLayout(generation, layout).catch((error) =>
+    const report = reportAnywhereLayout(generation, layout).catch((error) =>
       console.error("Unable to place VisualTeX Anywhere", error),
     );
-  }, [reportInline]);
+    layoutReportRef.current = report;
+    void report.finally(() => {
+      if (layoutReportRef.current === report) layoutReportRef.current = null;
+    });
+  }, [scheduleInline]);
 
   const measureRef = useRef(measure);
   measureRef.current = measure;
@@ -942,6 +1020,7 @@ export function AnywhereApp() {
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
+      coverWidthsRef.current = [];
       inputMethodRef.current = Boolean(activation.inputMethod);
       setInputMethod(Boolean(activation.inputMethod));
       // set on several lines only in the field's line (input method)
@@ -1088,12 +1167,6 @@ export function AnywhereApp() {
           void pasteIntoFormula();
           return;
         }
-        lastKeyRef.current = performance.now();
-        if (typingTimerRef.current !== null) window.clearTimeout(typingTimerRef.current);
-        typingTimerRef.current = window.setTimeout(() => {
-          typingTimerRef.current = null;
-          measureRef.current();
-        }, TYPING_COVER_MS + 20);
         const shortcut = formulaShortcut(key);
         if (shortcut) runFormulaShortcut(shortcut);
         else typeKey(key);
@@ -1238,14 +1311,14 @@ export function AnywhereApp() {
   useEffect(() => {
     if (!session || !inputMethod) return;
     reportInline();
-    const follow = () => window.requestAnimationFrame(() => reportInline());
+    const follow = () => scheduleInline();
     document.addEventListener("selection-change", follow, true);
     document.addEventListener("mode-change", follow, true);
     return () => {
       document.removeEventListener("selection-change", follow, true);
       document.removeEventListener("mode-change", follow, true);
     };
-  }, [session, inputMethod, lines, zoom, reportInline]);
+  }, [session, inputMethod, lines, zoom, reportInline, scheduleInline]);
 
   // The panel became key: the keyboard goes to the formula.
   useEffect(() => {
