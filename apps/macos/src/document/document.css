@@ -269,9 +269,11 @@
   font-size: 12px;
   user-select: none;
 }
+/* (in the line's own height: the line does not change height when the caret comes onto it and shows its "---") */
 .vtx-document .md-rule {
-  display: block;
-  margin: 0.55em 0;
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
   border-top: 1px solid #c8ccd2;
 }
 /* the document's front matter ("---" … "---" at its top): YAML lines */

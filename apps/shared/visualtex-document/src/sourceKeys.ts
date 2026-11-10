@@ -76,12 +76,14 @@ export const sourceEnter: Command = (state, dispatch) => {
   const m = l.length;
   if (line.ch < l.length || (!d && !c)) return false;
   if (!d) {
-    // a line indented under an item: that item's marker
+    // a line indented under an item: that item's marker (an item in as many quotes: Obsidian takes any item whose
+    // prefix is as long, so a "> " line under "- a" went on as "- ")
+    const quotes = (prefix: string) => prefix.replace(/[^>]/g, "").length;
     for (let v = line.index - 1; v >= 0; v--) {
       const t = lineText(doc, v);
       if (t === null) break;
       const k = LINE_PREFIX.exec(t)!;
-      if (k[2] && k[0].length === m) {
+      if (k[2] && k[0].length === m && quotes(k[1]) === quotes(l)) {
         [l, c, d, h, u, p, f] = k;
         break;
       }
