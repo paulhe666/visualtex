@@ -12,12 +12,11 @@
       "deb": {
         "depends": [
           "ibus",
-          "librime1",
-          "xdotool"
+          "librime1"
         ],
         "section": "editors",
         "files": {
-          "/usr/lib/visualtex/visualtex-ibus": "../input-method/build/linux/bin/visualtex-ibus",
+          "/usr/lib/visualtex/visualtex-ibus": "../input-method/build/linux/engine/visualtex-ibus",
           "/usr/share/ibus/component/visualtex.xml": "../input-method/build/linux/visualtex.xml",
           "/usr/share/visualtex/rime": "../input-method/build/linux/rime",
           "/usr/share/icons/hicolor/128x128/apps/visualtex.png": "icons/128x128.png"

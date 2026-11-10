@@ -62,6 +62,8 @@ gtk = "0.18"
 gdk = "0.18"
 gdk-pixbuf = "0.18"
 gdkx11 = "0.18"
+# Ctrl+V for the pasting strip
+x11rb = { version = "0.13", features = ["xtest"] }
 # the desktop's screenshot portal (quick OCR)
 zbus = { version = "5", default-features = false, features = ["tokio", "blocking-api"] }
 # the formula shortcuts as X11 grabs

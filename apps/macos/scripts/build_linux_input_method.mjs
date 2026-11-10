@@ -1,5 +1,7 @@
 // Builds VisualTeX's Linux input method (an IBus engine) into input-method/build/linux:
-// - bin/visualtex-ibus: the engine (input-method/linux, Rust), linked against the system librime;
+// - engine/visualtex-ibus: the engine (input-method/linux, Rust), linked against librime;
+// - engine/lib: librime and the libraries it needs (the engine's RPATH $ORIGIN/lib; the AppImage
+//   carries them for systems without librime, the package uses the system's and leaves them out);
 // - rime: RIME's data, as the macOS input method bundles it (build_macos_input_method.mjs):
 //   VisualTeX's default.yaml, pinyin schema and dictionary (input-method/Rime), the dictionary tables
 //   and spelling rules of 万象拼音 (wanxiang, amzxyz/rime_wanxiang, a pinned release, CC-BY-4.0:
@@ -9,10 +11,10 @@
 //   /usr/lib/visualtex, its data in /usr/share/visualtex/rime; VISUALTEX_LINUX_PREFIX for another).
 // The downloads are pinned and checked (sha256) and cached in input-method/build/cache;
 // VISUALTEX_RIME_MIRROR=<base URL> fetches them from a mirror serving the same file names.
-// Needs cargo, librime's development files and rime_deployer (librime-dev, librime-bin).
+// Needs cargo, librime's development files, rime_deployer and patchelf (librime-dev, librime-bin, patchelf).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -88,8 +90,26 @@ execFileSync("cargo", ["build", "--release", "--manifest-path", join(source, "li
   stdio: "inherit",
   env: { ...process.env, CARGO_TARGET_DIR: target },
 });
-mkdirSync(join(output, "bin"), { recursive: true });
-cpSync(join(target, "release", "visualtex-ibus"), join(output, "bin", "visualtex-ibus"));
+mkdirSync(join(output, "engine"), { recursive: true });
+const engine = join(output, "engine", "visualtex-ibus");
+cpSync(join(target, "release", "visualtex-ibus"), engine);
+
+// librime and the libraries it needs beside the engine (lib/, found through its RPATH)
+const SYSTEM_LIBRARIES = /^(linux-vdso|ld-linux|libc|libm|libdl|libpthread|librt|libgcc_s|libstdc\+\+|liblzma)\.so/;
+const libraries = join(output, "engine", "lib");
+mkdirSync(libraries, { recursive: true });
+for (const line of execFileSync("ldd", [engine], { encoding: "utf8" }).split("\n")) {
+  const match = line.match(/^\s*(\S+) => (\S+) \(/);
+  if (!match || SYSTEM_LIBRARIES.test(match[1])) continue;
+  if (match[2] === "not") throw new Error(`The engine needs ${match[1]}, which is not installed`);
+  copyFileSync(realpathSync(match[2]), join(libraries, match[1]));
+}
+execFileSync("patchelf", ["--set-rpath", "$ORIGIN/lib", engine]);
+// each library finds its own beside it (a RUNPATH serves only an object's direct needs)
+for (const library of readdirSync(libraries)) {
+  execFileSync("patchelf", ["--set-rpath", "$ORIGIN", join(libraries, library)]);
+}
+process.stdout.write(`Engine libraries: ${readdirSync(libraries).join(" ")}\n`);
 
 // The IBus component.
 const component = `<?xml version="1.0" encoding="utf-8"?>

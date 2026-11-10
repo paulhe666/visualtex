@@ -5284,6 +5284,7 @@ dependencies = [
  "tower-http 0.7.0",
  "unicode-segmentation",
  "uuid",
+ "x11rb",
  "x509-parser",
  "zbus 5.17.0",
  "zip",

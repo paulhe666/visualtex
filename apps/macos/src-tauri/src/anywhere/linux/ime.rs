@@ -124,12 +124,98 @@ pub(super) fn switch_back() {
     }
 }
 
-/// The package installs the engine for every user; nothing to do here.
-pub(super) fn install(_app: &AppHandle) -> Result<(), String> {
-    if installed() {
-        Ok(())
-    } else {
-        Err("VisualTeX's IBus engine is not installed (visualtex.xml is in no IBus component folder)".to_string())
+/// The input method for IBus. The package installs it for every user. The AppImage carries it
+/// ($APPDIR/usr/lib/visualtex, its RIME data and component) and installs it the same way, with the
+/// administrator's permission (pkexec), since IBus reads engines only from its system folder: once,
+/// and again for a newer engine; a refusal is kept per version.
+pub(super) fn install(app: &AppHandle) -> Result<(), String> {
+    let Some(appdir) = std::env::var_os("APPDIR").map(PathBuf::from) else {
+        return if installed() {
+            Ok(())
+        } else {
+            Err("VisualTeX's IBus engine is not installed (visualtex.xml is in no IBus component folder)".to_string())
+        };
+    };
+    let carried = appdir.join("usr/lib/visualtex/visualtex-ibus");
+    if !carried.is_file() {
+        return Err("this AppImage carries no input method".to_string());
+    }
+    let version = |program: &std::path::Path| {
+        Command::new(program)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    let system = PathBuf::from("/usr/lib/visualtex/visualtex-ibus");
+    let wanted = version(&carried).unwrap_or_default();
+    if installed() && system.is_file() {
+        if version(&system).as_deref() == Some(wanted.as_str()) {
+            return Ok(());
+        }
+        // the package's files are the package's to update
+        let packaged = Command::new("dpkg").args(["-S", "/usr/lib/visualtex/visualtex-ibus"]).output();
+        if packaged.map(|output| output.status.success()).unwrap_or(false) {
+            return Ok(());
+        }
+    }
+    let data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let _ = std::fs::create_dir_all(&data);
+    let declined = data.join("input-method-install-declined");
+    if std::fs::read_to_string(&declined).map(|text| text.trim() == wanted).unwrap_or(false) {
+        return Err(format!("installing the input method {wanted} was declined"));
+    }
+    // root cannot read the AppImage's own mount: its files are copied out first
+    let stage = std::env::temp_dir().join(format!("visualtex-input-method-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&stage);
+    let copy = |from: PathBuf, to: PathBuf| -> Result<(), String> {
+        let status = Command::new("cp").arg("-r").arg(&from).arg(&to).status().map_err(|error| error.to_string())?;
+        if status.success() { Ok(()) } else { Err(format!("could not copy {}", from.display())) }
+    };
+    std::fs::create_dir_all(&stage).map_err(|error| error.to_string())?;
+    copy(appdir.join("usr/lib/visualtex"), stage.join("engine"))?;
+    copy(appdir.join("usr/share/visualtex/rime"), stage.join("rime"))?;
+    copy(appdir.join("usr/share/ibus/component/visualtex.xml"), stage.join("visualtex.xml"))?;
+    let script = stage.join("install.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\n\
+         # VisualTeX's input method for IBus (from the AppImage): install.sh <staged files> [root]\n\
+         set -e\n\
+         S=\"$1\"\n\
+         R=\"$2\"\n\
+         rm -rf \"$R/usr/lib/visualtex.new\" \"$R/usr/share/visualtex/rime.new\"\n\
+         mkdir -p \"$R/usr/lib\" \"$R/usr/share/visualtex\" \"$R/usr/share/ibus/component\"\n\
+         cp -r \"$S/engine\" \"$R/usr/lib/visualtex.new\"\n\
+         cp -r \"$S/rime\" \"$R/usr/share/visualtex/rime.new\"\n\
+         rm -rf \"$R/usr/lib/visualtex\" \"$R/usr/share/visualtex/rime\"\n\
+         mv \"$R/usr/lib/visualtex.new\" \"$R/usr/lib/visualtex\"\n\
+         mv \"$R/usr/share/visualtex/rime.new\" \"$R/usr/share/visualtex/rime\"\n\
+         install -m 644 \"$S/visualtex.xml\" \"$R/usr/share/ibus/component/visualtex.xml\"\n\
+         chmod -R a+rX \"$R/usr/lib/visualtex\" \"$R/usr/share/visualtex\"\n\
+         if [ -z \"$R\" ]; then ibus write-cache --system >/dev/null 2>&1 || true; fi\n",
+    )
+    .map_err(|error| error.to_string())?;
+    let _ = Command::new("chmod").args(["-R", "a+rX"]).arg(&stage).status();
+    super::log(&format!("input method {wanted}: installing from the AppImage (administrator permission)"));
+    let status = Command::new("pkexec").arg("/bin/sh").arg(&script).arg(&stage).status();
+    if std::env::var_os("VISUALTEX_KEEP_INPUT_METHOD_STAGE").is_none() {
+        let _ = std::fs::remove_dir_all(&stage);
+    }
+    match status {
+        Ok(status) if status.success() => {
+            let _ = std::fs::remove_file(&declined);
+            // IBus finds a new engine when it starts again
+            let _ = Command::new("ibus").arg("restart").output();
+            super::log(&format!("input method {wanted} installed"));
+            Ok(())
+        }
+        Ok(status) => {
+            let _ = std::fs::write(&declined, &wanted);
+            Err(format!("the input method was not installed ({status})"))
+        }
+        Err(error) => Err(format!("pkexec: {error}")),
     }
 }
 

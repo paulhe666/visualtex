@@ -8,18 +8,26 @@ the input method's pieces.
 
     sudo apt install build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
       librsvg2-dev libayatana-appindicator3-dev libssl-dev libxdo-dev librime-dev librime-bin \
-      libibus-1.0-dev unzip curl
+      libibus-1.0-dev ibus-gtk3 patchelf unzip curl
     npm ci
     npm run tauri:build      # → src-tauri/target/release/bundle/deb/VisualTeX_<version>_amd64.deb
+                             #   src-tauri/target/release/bundle/appimage/VisualTeX_<version>_amd64.AppImage
 
-`npm run tauri:build` runs `scripts/build_linux_input_method.mjs` first (the IBus engine, its RIME
-data with prebuilt tables, the IBus component) and `scripts/linux_package.mjs` after (the package is
-named `visualtex`). The package installs:
+`npm run tauri:build` runs `scripts/build_linux_input_method.mjs` first (the IBus engine with librime
+beside it, its RIME data with prebuilt tables, the IBus component), then `scripts/linux_package.mjs`
+(the package is named `visualtex`) and `scripts/build_linux_appimage.mjs` (the AppImage: Tauri's own
+AppImage bundler needs the distribution's /usr layout; this one bundles WebKitGTK with its helper
+processes, GTK's image loaders and IBus module, and downloads linuxdeploy and appimagetool). The
+package installs:
 
 - `/usr/bin/visualtex` — the app;
 - `/usr/lib/visualtex/visualtex-ibus` — the input method (an IBus engine, `input-method/linux`);
 - `/usr/share/ibus/component/visualtex.xml` — its IBus component;
 - `/usr/share/visualtex/rime` — RIME's data (万象拼音 tables, CC-BY-4.0).
+
+The AppImage carries the same files and installs the input method on its first start, asking for
+the administrator's password (pkexec): IBus reads engines only from its system folder. A refused
+install is not asked again for that version. Both need glibc 2.39 or newer (Ubuntu 24.04, Fedora 40).
 
 ## The input method
 

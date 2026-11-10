@@ -1,8 +1,7 @@
 //! The pasting strip's delivery on Linux: the formula on the clipboard, then Ctrl+V into the field
-//! (xdotool, X11); and the clipboard's image or text for a formula (Ctrl+V in it).
+//! (XTest, X11); and the clipboard's image or text for a formula (Ctrl+V in it).
 
 use gtk::prelude::*;
-use std::process::Command;
 use std::time::Duration;
 use tauri::AppHandle;
 
@@ -25,18 +24,39 @@ pub(super) fn copy(app: &AppHandle, text: String) -> Result<(), String> {
     })
 }
 
-/// Ctrl+V into the window with the keyboard (the field the formula was opened in).
+/// Ctrl+V into the window with the keyboard (the field the formula was opened in), pressed
+/// through XTest (X11; a Wayland application does not take it: the formula stays on the clipboard).
 fn press_paste() -> Result<(), String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt as _, KEY_PRESS_EVENT, KEY_RELEASE_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    const COPIED: &str = "The formula is on the clipboard: paste it with Ctrl+V";
     std::thread::sleep(Duration::from_millis(60));
-    let status = Command::new("xdotool")
-        .args(["key", "--clearmodifiers", "ctrl+v"])
-        .status()
-        .map_err(|_| "The formula is on the clipboard: paste it with Ctrl+V (xdotool is not installed)".to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("The formula is on the clipboard: paste it with Ctrl+V".to_string())
-    }
+    let (connection, screen) = x11rb::connect(None).map_err(|_| COPIED.to_string())?;
+    let root = connection.setup().roots.get(screen).ok_or(COPIED)?.root;
+    let (min, max) = (connection.setup().min_keycode, connection.setup().max_keycode);
+    let mapping = connection
+        .get_keyboard_mapping(min, max - min + 1)
+        .map_err(|_| COPIED.to_string())?
+        .reply()
+        .map_err(|_| COPIED.to_string())?;
+    let per = mapping.keysyms_per_keycode.max(1) as usize;
+    let keycode = |keysym: u32| {
+        mapping
+            .keysyms
+            .chunks(per)
+            .position(|keysyms| keysyms.first() == Some(&keysym))
+            .map(|index| min + index as u8)
+    };
+    // Control_L and v
+    let (Some(control), Some(v)) = (keycode(0xffe3), keycode(0x76)) else { return Err(COPIED.to_string()) };
+    let fake = |kind: u8, key: u8| connection.xtest_fake_input(kind, key, 0, root, 0, 0, 0).map(|_| ());
+    fake(KEY_PRESS_EVENT, control)
+        .and_then(|_| fake(KEY_PRESS_EVENT, v))
+        .and_then(|_| fake(KEY_RELEASE_EVENT, v))
+        .and_then(|_| fake(KEY_RELEASE_EVENT, control))
+        .map_err(|_| COPIED.to_string())?;
+    connection.flush().map_err(|_| COPIED.to_string())
 }
 
 pub(super) fn paste(app: &AppHandle, text: String) -> Result<(), String> {

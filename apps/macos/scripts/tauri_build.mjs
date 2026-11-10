@@ -208,7 +208,10 @@ try {
 }
 if (tauriStatus !== 0) process.exit(tauriStatus);
 if (process.platform === "linux") {
-  // Tauri names the package after the product in kebab case ("visual-te-x"): visualtex
-  const status = runStatus("node", ["scripts/linux_package.mjs"]);
-  if (status !== 0) process.exit(status);
+  // Tauri names the package after the product in kebab case ("visual-te-x"): visualtex; and the
+  // AppImage, which Tauri's bundler cannot make outside the distribution's /usr layout
+  for (const script of ["scripts/linux_package.mjs", "scripts/build_linux_appimage.mjs"]) {
+    const status = runStatus("node", [script]);
+    if (status !== 0) process.exit(status);
+  }
 }
