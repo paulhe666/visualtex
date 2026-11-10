@@ -99,6 +99,86 @@
   text-underline-offset: 2px;
 }
 
+/* ---- the source editor (sourceMarkdown.ts): the text is its Markdown; a span's markers light grey while the selection
+   touches it and hidden otherwise, a heading's "#" while the selection is in its line; the formatting read from the
+   text ---- */
+.vtx-document .md-mark {
+  color: #b4b9c1;
+  font-weight: normal;
+  font-style: normal;
+  text-decoration: none;
+  background: none;
+}
+.vtx-document .md-hidden {
+  display: none;
+}
+.vtx-document .md-strong {
+  font-weight: 700;
+}
+.vtx-document .md-em {
+  font-style: italic;
+}
+.vtx-document .md-strike {
+  text-decoration: line-through;
+}
+.vtx-document .md-underline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.vtx-document .md-strike.md-underline {
+  text-decoration: underline line-through;
+}
+.vtx-document .md-highlight {
+  background-color: #fff59d;
+}
+.vtx-document .md-code {
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+  background: rgba(135, 131, 120, 0.15);
+  border-radius: 3px;
+  padding: 0.1em 0.2em;
+}
+.vtx-document .md-link {
+  color: #1f6fd0;
+  text-decoration: underline;
+  text-decoration-color: rgba(31, 111, 208, 0.45);
+  text-underline-offset: 2px;
+}
+/* a link's address while its markers show */
+.vtx-document .md-url {
+  color: #5b7896;
+  text-decoration: underline;
+  text-decoration-color: rgba(91, 120, 150, 0.45);
+  text-underline-offset: 2px;
+}
+.vtx-document .md-sup {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document .md-sub {
+  vertical-align: sub;
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document .md-kbd {
+  padding: 0 0.3em;
+  border: 1px solid #c8ccd2;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f6f8fa;
+  font: 0.85em ui-monospace, "SF Mono", Consolas, monospace;
+}
+/* a picture written as ![text](https://…): drawn after its source */
+.vtx-document .md-picture img {
+  max-width: 100%;
+  vertical-align: bottom;
+}
+/* a quote's "> " on the caret's line */
+.vtx-document .md-quote-mark {
+  user-select: none;
+}
+
 /* ---- document mode in the workspace (DESIGN.md §6.4): the document takes the formula rows' card ---- */
 .workspace.is-document-mode .editor-pane-scroll {
   overflow: hidden;

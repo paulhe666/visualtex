@@ -98,7 +98,7 @@ const APPLY_DELAY_MS = 400;
 
 /** The Markdown the document gives (what Copy and Export write). */
 function documentSource(state: DocumentState, references: "eqref" | "plain"): string {
-  return documentToMarkdown(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state) });
+  return documentToMarkdown(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state), sourceText: true });
 }
 
 function problemText(problem: SourceProblem, isEn: boolean): string {
@@ -149,7 +149,7 @@ export function DocumentSourceView(props: { theme: Theme }) {
   const markdownSource = state ? markdownSourceOf(state) : null;
   const source = useMemo(() => {
     if (!doc) return "";
-    return documentToMarkdown(doc, { formulaLatex: portableFormulaLatex, references, source: markdownSource });
+    return documentToMarkdown(doc, { formulaLatex: portableFormulaLatex, references, source: markdownSource, sourceText: true });
   }, [doc, references, markdownSource]);
 
   // Being edited: the source editor has the focus (or the window went away while it had it). Its text is then the

@@ -19,4 +19,8 @@ export const sharedPackageDedupe = [
   "prosemirror-view",
   "prosemirror-markdown",
   "markdown-it",
+  // the source editor's Markdown parser (sourceMarkdown.ts)
+  "@lezer/markdown",
+  "@lezer/common",
+  "@lezer/highlight",
 ];

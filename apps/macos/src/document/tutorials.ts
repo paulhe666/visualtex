@@ -88,24 +88,24 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "markdown",
         title: ["Markdown 输入", "Markdown input"],
         summary: [
-          "# 标题、**加粗**、- 列表、$$ 行内公式、$$$$ 行间公式、| 表格 | 都像 Typora 一样即时转换；/ 打开命令菜单。",
-          "# headings, **bold**, - lists, $$ inline and $$$$ display formulas and | tables | turn into the real thing as you type, as in Typora; / opens the menu.",
+          "正文就是 Markdown 源码，和 Obsidian 一样：光标不在时按格式显示，光标移到标记上时显示源码；$$ 行内公式、$$$$ 行间公式；/ 打开命令菜单。",
+          "The text is its Markdown source, as in Obsidian: it shows formatted where the caret is not and shows its marks where the caret is; $$ inline and $$$$ display formulas; / opens the menu.",
         ],
       },
       {
         id: "md-blocks",
         title: ["Markdown：标题、列表与引用", "Markdown: headings, lists and quotes"],
         summary: [
-          "行首输入 -、1.、> 加空格，得到无序列表、有序列表和引用；# 标题 回车或离开这一行变成标题（# 标题 {-} 无编号）；- [ ] 是待办事项，--- 回车是分隔线。",
-          "At a line start, -, 1. and > with a space make bullet and numbered lists and quotes; # Title becomes a heading on ↩ or when you leave the line (# Title {-}: unnumbered); - [ ] is a to-do item, --- and ↩ a rule.",
+          "行首输入 -、1.、> 加空格，得到无序列表、有序列表和引用；行首 # 加空格就是标题，## 是二级标题，删掉 # 变回正文（# 标题 {-} 无编号）；- [ ] 是待办事项，⌘L 切换待办；--- 回车是分隔线。",
+          "At a line start, -, 1. and > with a space make bullet and numbered lists and quotes; # and a space at a line start make a heading, ## a level-2 one, and deleting the # makes it text again (# Title {-}: unnumbered); - [ ] is a to-do item, ⌘L toggles it; --- and ↩ a rule.",
         ],
       },
       {
         id: "md-inline",
         title: ["Markdown：粗体、斜体与链接", "Markdown: bold, italic and links"],
         summary: [
-          "**粗体**、*斜体*、~~删除线~~、==高亮==、`代码` 输完结束符号即转换，光标回到其中时显示标记，可直接修改；[文字](网址) 变成链接；\\* 输入字面字符。",
-          "**bold**, *italic*, ~~strike~~, ==highlight== and `code` convert when you type the closing mark and show their marks again when the caret is back in them; [text](url) becomes a link; \\* types the character itself.",
+          "**粗体**、*斜体*、~~删除线~~、==高亮==、`代码`、[文字](网址)：标记可以先成对输入再在中间打字，也可以随时修改（** 改成 * 就是斜体）；光标碰到时显示标记；选中文字再输入 * 或 ` 会包住它；\\* 是字面字符。",
+          "**bold**, *italic*, ~~strike~~, ==highlight==, `code`, [text](url): type the marks in pairs and the text between, or edit them any time (** to * makes italic); the caret at a span shows its marks; * or ` typed over selected text goes around it; \\* is the character itself.",
         ],
       },
       {
@@ -120,8 +120,8 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
         id: "md-tables-code",
         title: ["Markdown：表格与代码", "Markdown: tables and code"],
         summary: [
-          "一行 | a | b | 回车变成表格，表格里回车到下一行；```语言 回车开始代码块；⌘T 直接插入表格。",
-          "A line | a | b | and ↩ becomes a table, ↩ in it goes down; ```language and ↩ starts code; ⌘T inserts a table.",
+          "| a | b | 回车，再输入 | --- | --- | 回车就是表格，之后每输入一行 | … | 回车加一行；```语言 回车开始代码块，最后一行输入 ``` 回车结束；⌘T 直接插入表格。",
+          "| a | b |, ↩, then | --- | --- | and ↩ make a table, and each | … | line with ↩ after it adds a row; ```language and ↩ starts code, ``` and ↩ on its last line ends it; ⌘T inserts a table.",
         ],
       },
       {
@@ -134,10 +134,10 @@ export const TUTORIAL_GROUPS: TutorialGroup[] = [
       },
       {
         id: "md-keys",
-        title: ["Markdown：Typora 快捷键", "Markdown: Typora's keys"],
+        title: ["Markdown：快捷键", "Markdown: keys"],
         summary: [
-          "Markdown 输入支持 Typora 的快捷键：⌘1–6 标题，⌘0 正文，⌘B/I/U，⌘K 链接，⌘\\ 清除格式，⌥⌘Q 引用，⌥⌘O / ⌥⌘U 列表，⌥⌘C 代码块，⌥⌘T 表格，⌥⌘B 行间公式。",
-          "Markdown input has Typora's keys: ⌘1–6 headings, ⌘0 body text, ⌘B/I/U, ⌘K link, ⌘\\ clear format, ⌥⌘Q quote, ⌥⌘O / ⌥⌘U lists, ⌥⌘C code block, ⌥⌘T table, ⌥⌘B display formula.",
+          "⌘1–6 标题，⌘0 正文；⌘B/I/U 在单词里加上或去掉标记，在粗体末尾再按 ⌘B 跳出；⌘K 链接，⌘\\ 清除格式，⌘L 待办；⌥⌘Q 引用，⌥⌘O / ⌥⌘U 列表，⌥⌘C 代码块，⌥⌘T 表格，⌥⌘B 行间公式。",
+          "⌘1–6 headings, ⌘0 body text; ⌘B/I/U add or remove the marks around a word, and ⌘B at a bold span's end steps out of it; ⌘K link, ⌘\\ clear format, ⌘L to-do; ⌥⌘Q quote, ⌥⌘O / ⌥⌘U lists, ⌥⌘C code block, ⌥⌘T table, ⌥⌘B display formula.",
         ],
       },
       {

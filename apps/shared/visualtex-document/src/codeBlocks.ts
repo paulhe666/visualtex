@@ -98,10 +98,21 @@ export function insertCodeBlock(language = ""): Command {
 const codeEnter: Command = (state, dispatch) => {
   const block = codeBlockAt(state);
   if (!block) return false;
+  const { $from } = state.selection;
+  const before = block.node.textBetween(0, $from.parentOffset);
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  // a closing fence typed as the last line ("```", "~~~"): the line goes and the caret leaves the block (Obsidian)
+  if (state.selection.empty && $from.parentOffset === block.node.content.size && /^\s*(`{3,}|~{3,})\s*$/.test(line) && before.includes("\n")) {
+    if (dispatch) {
+      const lineStart = block.pos + 1 + before.lastIndexOf("\n");
+      const tr = state.tr.delete(lineStart, $from.pos);
+      const after = tr.mapping.map(block.pos + block.node.nodeSize);
+      if (!tr.doc.resolve(after).nodeAfter?.isTextblock) tr.insert(after, state.schema.nodes.paragraph.create());
+      dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 1)).scrollIntoView());
+    }
+    return true;
+  }
   if (dispatch) {
-    const { $from } = state.selection;
-    const before = block.node.textBetween(0, $from.parentOffset);
-    const line = before.slice(before.lastIndexOf("\n") + 1);
     let indent = /^[ \t]*/.exec(line)?.[0] ?? "";
     if (/[{[(:]\s*$/.test(line)) indent += INDENT;
     dispatch(state.tr.insertText("\n" + indent).scrollIntoView());

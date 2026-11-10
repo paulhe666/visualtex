@@ -10,6 +10,7 @@ import { bodyLayout, documentSettings, headingNumbers, PAPER_SIZES, type Documen
 import { requestFootnoteEdit } from "./notes.ts";
 import { isPageBreak, pageLabels, type PageLabel } from "./pageCommands.ts";
 import { CJK_TEXT } from "./titleBlock.ts";
+import { shownContent } from "./sourceMarkdown.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -83,13 +84,14 @@ function slanted(text: string): string {
  */
 function sectionMark(view: EditorView, node: Node, pos: number, number: string | undefined, documentClass: LatexClass): string {
   let title = "";
-  node.forEach((child, offset) => {
-    if (child.isText) title += slanted(escapeHtml((child.text ?? "").toUpperCase()));
-    else if (child.isInline) {
-      const dom = view.nodeDOM(pos + 1 + offset);
+  // (the heading as it reads: its "#" and markers left out)
+  for (const piece of shownContent(node)) {
+    if ("text" in piece) title += slanted(escapeHtml(piece.text.toUpperCase()));
+    else if (piece.node.isInline) {
+      const dom = view.nodeDOM(pos + 1 + piece.offset);
       if (dom instanceof HTMLElement && dom.classList.contains("vtx-math-inline")) title += dom.outerHTML;
     }
-  });
+  }
   const shown = number?.replace(/\.$/, "") ?? (documentClass === "article" ? "0" : "");
   return shown ? `${slanted(shown)}<span class="vtx-page-quad"></span>${title}` : title;
 }
