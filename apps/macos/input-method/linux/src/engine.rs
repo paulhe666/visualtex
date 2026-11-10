@@ -72,6 +72,13 @@ struct Context {
     filler: f64,
     joint: f64,
     calibrations: u32,
+    /// The widths were measured in this field (else estimated: the space is held a margin short).
+    widths_known: bool,
+    /// The piece the field began the last line of the space with, as it was last read (space.rs).
+    last_line_start: usize,
+    /// The last full reading: the space's text then, each piece's place by its start, and when (places
+    /// of pieces whose text before them has not changed since are not read again).
+    probed: Option<(Vec<u16>, std::collections::HashMap<usize, Rect>, Instant)>,
     hold_generation: u64,
     last_hold: Instant,
     /// Where the formula starts (the first piece's place), once read.
@@ -159,6 +166,9 @@ impl Shared {
             filler: 0.0,
             joint: 0.0,
             calibrations: 0,
+            widths_known: false,
+            last_line_start: 0,
+            probed: None,
             hold_generation: 0,
             last_hold: Instant::now(),
             held_rect: None,
@@ -861,12 +871,15 @@ pub async fn receive(shared: Arc<Shared>, message: Json) {
                 context.last_places.clear();
                 context.last_end = None;
                 context.calibrations = 0;
+                context.last_line_start = 0;
+                context.probed = None;
                 context.caret_offset = (0.0, 0.0);
                 context.space = space::Layout::default();
                 if on {
                     let (filler, joint) = estimated_widths(&context, &shared);
                     context.filler = filler;
                     context.joint = joint;
+                    context.widths_known = shared.widths.lock().ok().map(|widths| widths.contains_key(&context.client)).unwrap_or(false);
                     hold_now = true;
                 } else if !context.marked.is_empty() {
                     context.marked.clear();
@@ -957,7 +970,14 @@ fn hold(shared: Arc<Shared>, context_arc: Arc<Mutex<Context>>) -> std::pin::Pin<
             if !context.composing {
                 return;
             }
-            let layout = space::layout(&context.pieces, context.filler, context.joint);
+            // held short of the formula by as much as estimated widths may be off (5% a filler, a
+            // quarter of a joint)
+            let unit = context.filler.max(0.5);
+            let fillers = context.pieces.iter().sum::<f64>() / unit;
+            let joints = context.pieces.len().saturating_sub(1) as f64;
+            let margin = if context.widths_known { 0.15 } else { 0.15 + fillers * 0.05 + joints * 0.25 * context.joint / unit };
+            let line_start = if context.last_line_start < context.pieces.len() { context.last_line_start } else { 0 };
+            let layout = space::layout(&context.pieces, context.filler, context.joint, margin, line_start);
             let text = String::from_utf16_lossy(&layout.text);
             if layout == context.space && context.marked == text {
                 return;
@@ -1044,8 +1064,25 @@ async fn probe_once(shared: &Arc<Shared>, context_arc: &Arc<Mutex<Context>>, gen
     let mut variant = false;
     let mut indices = starts.clone();
     indices.push(length);
+    // places of pieces whose text before them is as at the last full reading a moment ago (typing at
+    // the formula's end changes its last piece only): kept, not read again (each reading moves the
+    // field's cursor, in Chromium with a key: a formula of many pieces was read for seconds a key)
+    let reuse: Vec<Option<Rect>> = {
+        let context = context_arc.lock().unwrap();
+        match &context.probed {
+            Some((text, at, when)) if when.elapsed() < Duration::from_millis(1500) => {
+                let common = text.iter().zip(context.space.text.iter()).take_while(|(a, b)| a == b).count();
+                starts.iter().map(|start| if *start <= common { at.get(start).copied() } else { None }).collect()
+            }
+            _ => vec![None; starts.len()],
+        }
+    };
     let mut places: Vec<Option<Rect>> = Vec::new();
-    for &index in &indices {
+    for (position, &index) in indices.iter().enumerate() {
+        if let Some(rect) = reuse.get(position).copied().flatten() {
+            places.push(Some(rect));
+            continue;
+        }
         let reports = {
             let context = context_arc.lock().unwrap();
             if context.hold_generation != generation || !context.composing {
@@ -1128,6 +1165,18 @@ async fn probe_once(shared: &Arc<Shared>, context_arc: &Arc<Mutex<Context>>, gen
         crate::log::write(&format!("probe: {stop} ms={elapsed}"));
     }
     let Some(first) = rects.first().copied() else { return Probe::Settle };
+    if rects.len() == starts.len() {
+        // where the last line begins (the first of the pieces on the last piece's line), and the
+        // reading, for the next one
+        let last = rects[rects.len() - 1];
+        let mut line_start = rects.len() - 1;
+        while line_start > 0 && (rects[line_start - 1].y - last.y).abs() < last.height * 0.5 {
+            line_start -= 1;
+        }
+        context.last_line_start = line_start;
+        let at: std::collections::HashMap<usize, Rect> = starts.iter().copied().zip(rects.iter().copied()).collect();
+        context.probed = Some((context.space.text.clone(), at, Instant::now()));
+    }
     if let Some(start) = context.formula_start {
         if (first.y - start.y).abs() > (first.height * 4.0).max(80.0) {
             crate::log::write("probe: the first piece is far from where the formula opened");
@@ -1190,6 +1239,7 @@ async fn probe_once(shared: &Arc<Shared>, context_arc: &Arc<Mutex<Context>>, gen
         return Probe::Done;
     }
     let fillers: f64 = counts.iter().sum::<usize>() as f64;
+    context.widths_known = true;
     let filler_changed = (filler - context.filler).abs() * fillers.max(1.0) > 1.5;
     let joint_changed = (joint - context.joint).abs() > 1.5;
     let client = context.client.clone();
