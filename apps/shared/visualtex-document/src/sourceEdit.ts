@@ -13,7 +13,7 @@ import { withoutMarkdownSyntax } from "./markdownLive.ts";
 import { closeFormula, openFormulaId } from "./formulas.ts";
 import { DEFAULT_DOCUMENT_SETTINGS, PAPER_SIZES, SINGLE_LINE_HEIGHT, CHINESE_FONT_SIZES, documentSettings, type DocumentSettings, type PaperName } from "./settings.ts";
 import { imageFiles, setImageFileResolver } from "./images.ts";
-import { toSourceDocument } from "./sourceMarkdown.ts";
+import { separateParagraphs, sourceTextToDocument, toSourceDocument } from "./sourceMarkdown.ts";
 
 export type SourceFormat = "latex" | "markdown";
 
@@ -259,8 +259,9 @@ export function readSource(schema: Schema, text: string, format: SourceFormat, i
   if (images) for (const folder of ["figures", "assets"]) for (const [key, path] of imageFiles(images, folder).paths) paths.set(path, key);
   if (paths.size) setImageFileResolver((path) => paths.get(path) ?? null);
   try {
-    if (format === "markdown") return readMarkdown(schema, text);
-    return { doc: readMarkdown(schema, latexToMarkdown(text)).doc, source: null };
+    // (the source editor's document is the Markdown's lines)
+    if (format === "markdown") return { doc: sourceTextToDocument(schema, text), source: null };
+    return { doc: toSourceDocument(separateParagraphs(readMarkdown(schema, latexToMarkdown(text)).doc)), source: null };
   } finally {
     if (paths.size) setImageFileResolver(null);
   }

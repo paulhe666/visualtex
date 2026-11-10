@@ -17,7 +17,7 @@ import {
   documentToMarkdown,
   markdownSourceKey,
   markdownSourceOf,
-  readMarkdown,
+  sourceTextToDocument,
   toSourceDocument,
   FORMULAS_REFRESH_EVENT,
   LINK_REQUEST_EVENT,
@@ -532,12 +532,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     loadMarkdown(text) {
       const view = viewRef.current;
       if (!view) return;
-      // The file is kept with the document: blocks left as they were are written back exactly as they were read.
-      const { doc: read, source } = readMarkdown(documentSchema, text);
-      // the source editor's text: the formatting read written back into it
-      const doc = toSourceDocument(read);
+      // the file's lines are the document's lines (formulas, tables and pictures its objects)
+      const doc = sourceTextToDocument(documentSchema, text);
       // Replaced in the history, so Ctrl+Z gives the previous document back; ids come from the ids plugin.
-      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, source).scrollIntoView());
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, null).scrollIntoView());
       view.focus();
     },
     load(text) {

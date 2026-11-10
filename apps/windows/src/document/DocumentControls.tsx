@@ -36,9 +36,11 @@ import {
 import {
   FONT_SIZES,
   currentAlign,
-  currentListKind,
-  indent,
-  insertCodeBlock,
+  lineListKind,
+  toggleLineList,
+  indentLines,
+  outdentLines,
+  insertCodeFence,
   insertTable,
   requestImage,
   isInTable,
@@ -49,7 +51,6 @@ import {
   setSourceHeading,
   sourceFormatActive,
   toggleDocumentBold,
-  toggleList,
   toggleSourceFormat,
   CHINESE_FONT_SIZES,
   chineseSizeName,
@@ -677,7 +678,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
   if (!state) return <div className="document-controls document-top-toolbar">{props.leading}{props.trailing}</div>;
   const inMath = !!openFormulaId(state);
   const align = currentAlign(state);
-  const list = currentListKind(state);
+  const list = lineListKind(state);
   const level = sectionLevel(state);
   const size = markValue(state, "fontSize", "size") ?? "normalsize";
   const color = markValue(state, "textColor", "color");
@@ -741,16 +742,16 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
           1.2.
         </span>
       </Button>
-      <Button label={t(lang, "Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)")} active={list === "ordered_list"} onClick={() => run(view, toggleList("ordered_list"))}>
+      <Button label={t(lang, "Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)")} active={list === "ordered"} onClick={() => run(view, toggleLineList("ordered"))}>
         <ListOrdered size={16} />
       </Button>
-      <Button label={t(lang, "Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])")} active={list === "bullet_list"} onClick={() => run(view, toggleList("bullet_list"))}>
+      <Button label={t(lang, "Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])")} active={list === "bullet"} onClick={() => run(view, toggleLineList("bullet"))}>
         <List size={16} />
       </Button>
-      <Button label={t(lang, "Indent", "增加缩进")} onClick={() => run(view, indent(1))}>
+      <Button label={t(lang, "Indent", "增加缩进")} onClick={() => run(view, indentLines)}>
         <IndentIncrease size={16} />
       </Button>
-      <Button label={t(lang, "Outdent", "减少缩进")} onClick={() => run(view, indent(-1))}>
+      <Button label={t(lang, "Outdent", "减少缩进")} onClick={() => run(view, outdentLines)}>
         <IndentDecrease size={16} />
       </Button>
       <Divider />
@@ -767,7 +768,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
       <Button label={t(lang, "Image", "图片")} onClick={() => view && requestImage(view)}>
         <ImageIcon size={16} strokeWidth={1.8} />
       </Button>
-      <Button label={t(lang, "Code block", "代码块")} onClick={() => run(view, insertCodeBlock(""))}>
+      <Button label={t(lang, "Code block", "代码块")} onClick={() => run(view, insertCodeFence)}>
         <SquareCode size={16} strokeWidth={1.8} />
       </Button>
       <Button label={t(lang, "Link (Ctrl+K)", "链接 (Ctrl+K)")} onClick={() => run(view, insertSourceLink)}>

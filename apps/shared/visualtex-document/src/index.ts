@@ -161,7 +161,6 @@ export {
   headingSyntax,
   hideSourceMarkers,
   insertSourceLink,
-  parseSourceInline,
   renderedBlock,
   renderedDocument,
   renderedText,
@@ -170,10 +169,14 @@ export {
   shownContent,
   sourceFormatActive,
   sourceLiveKey,
+  sourceLines,
   sourceLivePlugin,
   toggleSourceFormat,
   toSourceDocument,
   toSourceSlice,
+  sourceTextToDocument,
+  separateParagraphs,
+  withHeadings,
 } from "./sourceMarkdown.ts";
 export {
   DEFAULT_IMAGE_WIDTH,
@@ -208,3 +211,4 @@ export {
   nextAuthor,
 } from "./titleBlock.ts";
 export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels } from "./figures.ts";
+export { cycleLineTask, indentLines, insertCodeFence, lineListKind, outdentLines, sourceEnter, sourceShiftEnter, toggleLineList, toggleLineQuote } from "./sourceKeys.ts";

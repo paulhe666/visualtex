@@ -49,7 +49,8 @@ import { richBlocksPlugin } from "./richBlocks.ts";
 import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
 import { ALL_RULES, markdownEnter, markdownHeadingEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
 import { markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
-import { clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, shiftSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
+import { blockSyntax, clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
+import { codeLineEnter, indentLines, outdentLines, sourceEnter, sourcePlainEnter, sourceShiftEnter } from "./sourceKeys.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
@@ -200,6 +201,9 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource
           view.dispatch(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, latexToMarkdown(text), keys))).scrollIntoView());
           return true;
         }
+        // In the source editor pasted text is its lines (sourceMarkdown.ts clipboardTextParser: formulas, tables and
+        // pictures as objects; a formatted copy — HTML — comes in through transformPasted)
+        if (inputMode() === "markdown" && (source || !html)) return false;
         // Pasted Markdown keeps its structure (headings, lists, tables, math, marks): in Markdown input whenever it reads
         // as Markdown, in LaTeX input when it is unmistakably a Markdown document (an AI answer, a README).
         // (the source editor takes Markdown text as it is, unless it has blocks to build: lists, quotes, code, tables)
@@ -373,15 +377,20 @@ const listIndent = (delta: 1 | -1): Command => (state, dispatch, view) =>
 /** Tab: a deeper section, the next table cell, a deeper list item, or a tab character (Mathcha); in the source editor
  *  a section's "#" one more. */
 const tabKey = (inputMode: () => InputMode): Command => (state, dispatch, view) =>
-  sectionLevel(state)
-    ? (inputMode() === "markdown" ? shiftSourceHeading(1) : changeSectionLevel(1))(state, dispatch, view)
-    : chainCommands(goToCell(1), listIndent(1), insertTabCharacter)(state, dispatch, view);
+  inputMode() === "markdown"
+    ? chainCommands(goToCell(1), indentLines)(state, dispatch, view)
+    : sectionLevel(state)
+      ? changeSectionLevel(1)(state, dispatch, view)
+      : chainCommands(goToCell(1), listIndent(1), insertTabCharacter)(state, dispatch, view);
 
-/** Shift+Tab: a higher section, the previous table cell, a higher list item. */
+/** Shift+Tab: a higher section, the previous table cell, a higher list item; in the source editor (Obsidian) Tab and
+ *  Shift+Tab indent and outdent whole lines. */
 const shiftTabKey = (inputMode: () => InputMode): Command => (state, dispatch, view) =>
-  sectionLevel(state)
-    ? (inputMode() === "markdown" ? shiftSourceHeading(-1) : changeSectionLevel(-1))(state, dispatch, view)
-    : chainCommands(goToCell(-1), listIndent(-1))(state, dispatch, view);
+  inputMode() === "markdown"
+    ? chainCommands(goToCell(-1), outdentLines)(state, dispatch, view)
+    : sectionLevel(state)
+      ? changeSectionLevel(-1)(state, dispatch, view)
+      : chainCommands(goToCell(-1), listIndent(-1))(state, dispatch, view);
 
 /** Mathcha's keys (its toolbar tooltips name them); in Markdown input, Enter also ends a line of Markdown that makes a
  * block ("```lang", "---", "| a | b |"). */
@@ -402,6 +411,10 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
     Enter: lineUndoStep(inputMode, chainCommands(
       openSelectedFormula,
       markdownEnter(inputMode, rules),
+      // the source editor's lines (sourceKeys.ts): in code the line's indentation, a list or quote continued
+      (state, dispatch, view) => inputMode() === "markdown" && codeLineEnter(inCodeLine)(state, dispatch, view),
+      (state, dispatch, view) => inputMode() === "markdown" && sourceEnter(state, dispatch, view),
+      (state, dispatch, view) => inputMode() === "markdown" && sourcePlainEnter(state, dispatch, view),
       (state, dispatch, view) => inputMode() === "markdown" && tableEnter(state, dispatch, view),
       splitListItemOrLeave,
       leaveEmptyQuoteLine,
@@ -430,12 +443,20 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
     "Shift-Mod-e": setAlign("center"),
     "Shift-Mod-r": setAlign("right"),
     "Shift-Mod-j": setAlign("justify"),
-    "Shift-Enter": (state, dispatch) => {
+    "Shift-Enter": (state, dispatch, view) => {
+      // the source editor: a new line under the item's text (Obsidian)
+      if (inputMode() === "markdown" && sourceShiftEnter(state, dispatch, view)) return true;
       if (dispatch) dispatch(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
       return true;
     },
   });
 }
+
+/** Whether the caret is in a fenced code block's line (the source editor reads it so). */
+const inCodeLine = (state: EditorState) => {
+  const facts = blockSyntax(state.selection.$head.parent).facts;
+  return facts.codeInside || facts.codeBegin;
+};
 
 /** A command whose change starts an undo step of its own in Markdown input (Enter: Obsidian undoes a line at a time). */
 function lineUndoStep(inputMode: () => InputMode, command: Command): Command {

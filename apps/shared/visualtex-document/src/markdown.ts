@@ -1644,6 +1644,32 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
   const source = options.source;
   // the footnotes' texts follow the document, as Markdown footnote definitions
   const definitions = footnoteDefinitions(doc);
+  // the source editor's document: its lines as they are, one per line; an object (a formula, a table, a picture)
+  // with a blank line on each side
+  if (options.sourceText) {
+    const out: string[] = [];
+    const blankLast = () => !out.length || out[out.length - 1] === "";
+    doc.forEach((node, _offset, index) => {
+      if (node.isTextblock && (node.type.name === "paragraph" || node.type.name === "heading")) {
+        // a line of text: as it is (objects in it written as Markdown: formulas, footnotes)
+        let plain = true;
+        node.forEach((child) => {
+          if (!child.isText) plain = false;
+        });
+        out.push(plain ? node.textContent : serializer.serialize(doc.type.create(null, [doc.type.schema.nodes.paragraph.create(null, node.content)]), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
+        return;
+      }
+      const previous = index > 0 ? doc.child(index - 1) : null;
+      if (wrappedFigure(node) && index + 1 < doc.childCount) return;
+      const nodes = previous && wrappedFigure(previous) ? [previous, node] : [node];
+      if (!blankLast()) out.push("");
+      out.push(serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
+      const next = index + 1 < doc.childCount ? doc.child(index + 1) : null;
+      if (next && next.content.size) out.push("");
+    });
+    const text = out.join("\n").replace(/\n+$/, "");
+    return `${text}\n${definitions ? `\n${definitions}\n` : ""}`;
+  }
   if (!source) return `${serializer.serialize(doc, { tightLists: true }).trim()}\n${definitions ? `\n${definitions}\n` : ""}`;
   const text = withSource(doc, source, numbers, (node, index) => {
     if (index === 0 && source.frontMatter && node.type.name === "code_block" && node.attrs.language === "yaml") return `---\n${node.textContent}\n---`;
