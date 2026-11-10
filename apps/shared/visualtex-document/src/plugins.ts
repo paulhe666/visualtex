@@ -49,7 +49,7 @@ import { richBlocksPlugin } from "./richBlocks.ts";
 import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
 import { ALL_RULES, markdownEnter, markdownHeadingEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
 import { markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
-import { clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
+import { clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, shiftSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
@@ -370,15 +370,18 @@ function numberingPlugin() {
 const listIndent = (delta: 1 | -1): Command => (state, dispatch, view) =>
   currentListKind(state) ? indent(delta)(state, dispatch, view) : false;
 
-/** Tab: a deeper section, the next table cell, a deeper list item, or a tab character (Mathcha). */
-const tab: Command = (state, dispatch, view) =>
+/** Tab: a deeper section, the next table cell, a deeper list item, or a tab character (Mathcha); in the source editor
+ *  a section's "#" one more. */
+const tabKey = (inputMode: () => InputMode): Command => (state, dispatch, view) =>
   sectionLevel(state)
-    ? changeSectionLevel(1)(state, dispatch, view)
+    ? (inputMode() === "markdown" ? shiftSourceHeading(1) : changeSectionLevel(1))(state, dispatch, view)
     : chainCommands(goToCell(1), listIndent(1), insertTabCharacter)(state, dispatch, view);
 
 /** Shift+Tab: a higher section, the previous table cell, a higher list item. */
-const shiftTab: Command = (state, dispatch, view) =>
-  sectionLevel(state) ? changeSectionLevel(-1)(state, dispatch, view) : chainCommands(goToCell(-1), listIndent(-1))(state, dispatch, view);
+const shiftTabKey = (inputMode: () => InputMode): Command => (state, dispatch, view) =>
+  sectionLevel(state)
+    ? (inputMode() === "markdown" ? shiftSourceHeading(-1) : changeSectionLevel(-1))(state, dispatch, view)
+    : chainCommands(goToCell(-1), listIndent(-1))(state, dispatch, view);
 
 /** Mathcha's keys (its toolbar tooltips name them); in Markdown input, Enter also ends a line of Markdown that makes a
  * block ("```lang", "---", "| a | b |"). */
@@ -409,14 +412,16 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
       splitKeepingStyle,
     )),
     "Mod-Enter": tableRowBelow,
-    Tab: tab,
-    "Shift-Tab": shiftTab,
+    Tab: tabKey(inputMode),
+    "Shift-Tab": shiftTabKey(inputMode),
     "Mod-b": toggleDocumentBold,
     "Mod-i": toggleMark(marks.em),
     "Mod-u": toggleMark(marks.underline),
     // the app's link dialog (insert, change or remove a link)
     "Mod-k": requestLink,
-    "Mod-Alt-1": toggleSection,
+    // (in the source editor a heading is its "#")
+    "Mod-Alt-1": (state, dispatch, view) =>
+      inputMode() === "markdown" ? setSourceHeading(sectionLevel(state) || 1)(state, dispatch, view) : toggleSection(state, dispatch, view),
     // Word's footnote key
     "Mod-Alt-f": insertFootnote(),
     "Shift-Mod-7": toggleList("ordered_list"),

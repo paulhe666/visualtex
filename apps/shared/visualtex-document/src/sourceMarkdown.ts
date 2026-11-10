@@ -873,6 +873,13 @@ function unitAround(node: Node, from: number, to: number, kind: string): SourceU
   return best;
 }
 
+/** Whether the selection is in a span of a kind (the toolbar's pressed buttons). */
+export function sourceFormatActive(state: EditorState, kind: string): boolean {
+  const { $from, $to } = state.selection;
+  if (!$from.parent.isTextblock || !$from.sameParent($to)) return false;
+  return !!unitAround($from.parent, $from.parentOffset, $to.parentOffset, kind);
+}
+
 const WORD = /[\p{L}\p{N}_]/u;
 
 /** The word the caret is in or at an end of (letters, digits, "_"; a run of Chinese text is one), or null. */
@@ -1004,6 +1011,23 @@ export function setSourceHeading(level: number): Command {
       tr = prefix ? tr.insertText(prefix, at, at + current) : current ? tr.delete(at, at + current) : tr;
     }
     dispatch(tr.scrollIntoView());
+    return true;
+  };
+}
+
+/** Tab / Shift+Tab on a heading: one level deeper / higher, its "#" prefix rewritten (levels 1 to 6). */
+export function shiftSourceHeading(delta: 1 | -1): Command {
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    const node = $from.parent;
+    if (!node.isTextblock || !headingCapable(node)) return false;
+    const syntax = headingSyntax(blockText(node));
+    if (!syntax) return false;
+    const level = Math.max(1, Math.min(6, syntax.level + delta));
+    if (dispatch && level !== syntax.level) {
+      const start = $from.start();
+      dispatch(state.tr.insertText("#".repeat(level), start, start + syntax.level).scrollIntoView());
+    }
     return true;
   };
 }
