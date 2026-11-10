@@ -1,10 +1,10 @@
 //! The formula's colour for fields that do not tell their text colour to
 //! the input method (Chrome, Electron): the line around the caret is captured
-//! from beneath VisualTeX's own panel and its most common colour is the
-//! field's background; the formula is near-white on a dark one, near-black on
-//! a light one, whatever the system appearance says. Only the background
-//! decides: the text before the caret (or the field's own caret, which some
-//! fields draw in a colour) does not change it.
+//! without VisualTeX's own panel and its most common colour is the field's
+//! background; the formula is near-white on a dark one, near-black on a light
+//! one, whatever the system appearance says. Only the background decides: the
+//! text before the caret (or the field's own caret, which some fields draw in
+//! a colour) does not change it.
 //!
 //! Only with the Screen Recording permission (asked for once at startup when
 //! the input method is in use, see mod.rs); without it the page keeps the
@@ -24,10 +24,13 @@ struct CGRect {
     height: f64,
 }
 
-/// CGWindowListCreateImage, looked up at run time: deprecated, and a missing
-/// symbol must not keep VisualTeX from starting on a later macOS.
+/// CGWindowListCreateImageFromArray and CGWindowListCreateImage, looked up at
+/// run time: deprecated, and a missing symbol must not keep VisualTeX from
+/// starting on a later macOS.
+type CreateImageFromArray = unsafe extern "C" fn(CGRect, CFTypeRef, u32) -> CFTypeRef;
 type CreateImage = unsafe extern "C" fn(CGRect, u32, u32, u32) -> CFTypeRef;
 
+const LIST_ON_SCREEN_ONLY: u32 = 1 << 0;
 const LIST_ON_SCREEN_BELOW_WINDOW: u32 = 1 << 2;
 const IMAGE_NOMINAL_RESOLUTION: u32 = 1 << 4;
 const ALPHA_INFO_MASK: u32 = 0x1f;
@@ -39,6 +42,7 @@ const ALPHA_LAST: [u32; 3] = [1, 3, 5];
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGWindowListCreate(option: u32, relative_to_window: u32) -> CFTypeRef;
     fn CGRequestScreenCaptureAccess() -> bool;
     fn CGImageGetWidth(image: CFTypeRef) -> usize;
     fn CGImageGetHeight(image: CFTypeRef) -> usize;
@@ -54,6 +58,10 @@ unsafe extern "C" {
     fn CFRelease(value: CFTypeRef);
     fn CFDataGetBytePtr(data: CFTypeRef) -> *const u8;
     fn CFDataGetLength(data: CFTypeRef) -> isize;
+    fn CFArrayGetCount(array: CFTypeRef) -> isize;
+    fn CFArrayGetValueAtIndex(array: CFTypeRef, index: isize) -> *const c_void;
+    fn CFArrayCreateMutable(allocator: CFTypeRef, capacity: isize, callbacks: *const c_void) -> CFTypeRef;
+    fn CFArrayAppendValue(array: CFTypeRef, value: *const c_void);
 }
 
 pub(super) fn can_read_screen() -> bool {
@@ -66,16 +74,16 @@ pub(super) fn request_access() -> bool {
     unsafe { CGRequestScreenCaptureAccess() }
 }
 
-fn create_image_function() -> Option<CreateImage> {
-    let name = CString::new("CGWindowListCreateImage").ok()?;
+fn symbol(name: &str) -> Option<*mut c_void> {
+    let name = CString::new(name).ok()?;
     let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) };
-    (!symbol.is_null()).then(|| unsafe { std::mem::transmute::<*mut c_void, CreateImage>(symbol) })
+    (!symbol.is_null()).then_some(symbol)
 }
 
 /// The field's colours at `caret` (Quartz coordinates), as #rrggbbaa: the
-/// formula's (near-white or near-black) and the background's (for the Image
-/// output mode). None without the permission or a readable capture.
-/// `panel_window` is VisualTeX's panel: what is beneath it is captured.
+/// formula's (near-white or near-black) and the background's (for the cover
+/// and the Image output mode). None without the permission or a readable
+/// capture. `panel_window` is VisualTeX's panel, left out of the capture.
 pub(super) struct FieldColors {
     pub(super) text: String,
     pub(super) background: String,
@@ -85,7 +93,6 @@ pub(super) fn field_colors(caret: ScreenRect, panel_window: u32) -> Option<Field
     if !can_read_screen() {
         return None;
     }
-    let create = create_image_function()?;
     let height = caret.height.max(10.0);
     // The line around the caret, mostly before it (after it the field may
     // still show a placeholder).
@@ -96,10 +103,7 @@ pub(super) fn field_colors(caret: ScreenRect, panel_window: u32) -> Option<Field
         width: before + 80.0,
         height,
     };
-    let image = unsafe { create(rect, LIST_ON_SCREEN_BELOW_WINDOW, panel_window, IMAGE_NOMINAL_RESOLUTION) };
-    if image.is_null() {
-        return None;
-    }
+    let image = capture_without(rect, panel_window)?;
     let pixels = read_pixels(image);
     unsafe { CFRelease(image) };
     let background = background(&pixels?);
@@ -107,6 +111,45 @@ pub(super) fn field_colors(caret: ScreenRect, panel_window: u32) -> Option<Field
         text: hex(text_color_on(background)),
         background: hex([background[0], background[1], background[2], 1.0]),
     })
+}
+
+/// The screen in `rect` as it is without VisualTeX's panel: every window on
+/// the screen but that one, composited. Not "what is beneath the panel": the
+/// panel waits at the back of the screen and comes to the front a moment
+/// after it is asked to, and a capture taken in that moment (within some
+/// 20 ms) held nothing but the desktop picture, whose colour the formula's
+/// cover then took (a grey box on the field, 2026-11-09).
+fn capture_without(rect: CGRect, panel_window: u32) -> Option<CFTypeRef> {
+    if let Some(create) = symbol("CGWindowListCreateImageFromArray") {
+        let create = unsafe { std::mem::transmute::<*mut c_void, CreateImageFromArray>(create) };
+        unsafe {
+            let all = CGWindowListCreate(LIST_ON_SCREEN_ONLY, 0);
+            if !all.is_null() {
+                let others = CFArrayCreateMutable(std::ptr::null(), 0, std::ptr::null());
+                let mut count = 0;
+                for index in 0..CFArrayGetCount(all) {
+                    // a window's number, as the array holds it (no object)
+                    let window = CFArrayGetValueAtIndex(all, index);
+                    if window as usize != panel_window as usize {
+                        CFArrayAppendValue(others, window);
+                        count += 1;
+                    }
+                }
+                CFRelease(all);
+                let image = if count > 0 { create(rect, others, IMAGE_NOMINAL_RESOLUTION) } else { std::ptr::null() };
+                CFRelease(others);
+                if !image.is_null() {
+                    return Some(image);
+                }
+            }
+        }
+    }
+    // Without that function: what is beneath the panel, once it has had the time to come to the front.
+    let create = symbol("CGWindowListCreateImage")?;
+    let create = unsafe { std::mem::transmute::<*mut c_void, CreateImage>(create) };
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let image = unsafe { create(rect, LIST_ON_SCREEN_BELOW_WINDOW, panel_window, IMAGE_NOMINAL_RESOLUTION) };
+    (!image.is_null()).then_some(image)
 }
 
 struct Pixels {

@@ -223,7 +223,8 @@ function placeCovers(
       // (the field's caret may stand at its end: two pixels more)
       if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
       const baseline = box.baseline + y;
-      covers.push({ left, right, top: baseline - (line.height - line.descent), bottom: baseline + line.descent + 1 });
+      // (a field's caret is drawn a pixel taller than its line: Chrome)
+      covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
     });
   }
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();

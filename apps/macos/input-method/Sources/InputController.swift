@@ -78,6 +78,35 @@ final class VTInputController: IMKInputController {
     /// The formula's caret below the formula's first baseline, points (it may
     /// be on a later line).
     private var formulaCaretY: CGFloat = 0
+    /// When pinyin last went into the field: the field takes a moment to
+    /// place its caret after it (see holdLater).
+    private var lastPinyinCommit = Date.distantPast
+    /// The space is held a moment later (holdLater): nothing holds it meanwhile.
+    private var holdDeferred = false
+    /// The space was held afresh for a field that placed it where an earlier
+    /// composition was (staleAnchor): twice a formula at most.
+    private var staleHolds = 0
+    /// The field placed this formula's space where its caret was (once it
+    /// did, the field may move it: a window dragged, a line scrolled).
+    private var anchorTrusted = false
+    /// The field keeps answering a place that is not the space's: the
+    /// formula stays where the caret was.
+    private var anchorDistrusted = false
+    /// How often the space held now was set again for places of an earlier
+    /// one (stalePlaces), and a field where that changed nothing.
+    private var staleKicks = 0
+    private var kickedText = ""
+    /// The hold whose places were checked (once each, when typing pauses),
+    /// and the one whose places passed.
+    private var placesChecked = -1
+    private var placesSound = -1
+    private var kicksUseless = false
+    /// The place that looked stale and had the space held afresh: answered
+    /// again for the fresh space, it is the field's own.
+    private var suspectAnchor: NSRect?
+    /// How far from the caret an application placed a formula's start when
+    /// that was its own doing (staleAnchor), points.
+    private static var anchorOffsets: [String: CGFloat] = [:]
 
     deinit {
         RimeEngine.shared.destroySession(rimeSession)
@@ -211,6 +240,7 @@ final class VTInputController: IMKInputController {
         if let commit = engine.takeCommit(rimeSession), !commit.isEmpty {
             client.insertText(commit, replacementRange: Self.noRange)
             marked = ""
+            lastPinyinCommit = Date()
         }
         let state = engine.state(rimeSession)
         if state.isComposing {
@@ -326,6 +356,8 @@ final class VTInputController: IMKInputController {
         guard state.isComposing else { return }
         if let text = RimeEngine.shared.commitComposition(rimeSession), !text.isEmpty {
             client.insertText(text, replacementRange: Self.noRange)
+            lastPinyinCommit = Date()
+            InputLog.write("pinyin finished length=\((text as NSString).length)")
         } else {
             clearMarked(client)
         }
@@ -389,15 +421,36 @@ final class VTInputController: IMKInputController {
             controller.lastEnd = nil
             controller.calibrations = 0
             controller.rekicked = false
+            controller.holdDeferred = false
+            controller.staleHolds = 0
+            controller.suspectAnchor = nil
+            controller.staleKicks = 0
+            controller.kickedText = ""
+            controller.kicksUseless = false
+            controller.anchorTrusted = false
+            controller.anchorDistrusted = false
             controller.formulaCaretOffset = 0
             controller.formulaCaretY = 0
             controller.space = FormulaSpace.Layout(text: "", starts: [], counts: [])
-            if controller.composing {
+            // Pinyin that went into the field a moment ago (finished just above, or chosen right
+            // before the shortcut): Chrome and Electron place a composition set at once where the
+            // pinyin was spelled, not at the caret after it (the formula stood over the text before
+            // it and its space showed after it, 2026-11-09). The space is held once the field has
+            // its caret after the pinyin.
+            let sincePinyin = Date().timeIntervalSince(controller.lastPinyinCommit)
+            let before = controller.composing ? " \(controller.fieldState(client, brief: true))" : ""
+            if controller.composing, sincePinyin < 0.06 {
+                InputLog.write("pinyin \(Int(max(0, sincePinyin) * 1000)) ms ago: the space is held in a moment")
+                controller.holdLater(0.06 - max(0, sincePinyin)) { controller, client in
+                    controller.formulaStart = controller.caretRect(client)
+                    controller.placeAnchor(client)
+                }
+            } else if controller.composing {
                 controller.placeAnchor(client)
             } else if !controller.marked.isEmpty {
                 controller.clearMarked(client)
             }
-            InputLog.write("session \(controller.composing ? "on" : "off")")
+            InputLog.write("session \(controller.composing ? "on" : "off")\(before)")
         case "mode":
             controller.formulaTextMode = message["text"] as? Bool ?? false
         case "inline":
@@ -454,8 +507,13 @@ final class VTInputController: IMKInputController {
     /// The field holds the formula's pieces (FormulaSpace) and the place of
     /// each is followed.
     private func hold(_ client: IMKTextInput) {
+        guard !holdDeferred else { return }
         let layout = FormulaSpace.layout(widths: pieceWidths, unit: fillerWidth, joint: jointWidth)
         guard layout != space || marked != layout.text else { return }
+        if layout.text != kickedText {
+            staleKicks = 0
+            kickedText = layout.text
+        }
         space = layout
         marked = layout.text
         InputLog.write("hold pieces=\(layout.starts.count) fillers=\(layout.counts.reduce(0, +)) filler=\(String(format: "%.2f", Double(fillerWidth))) joint=\(String(format: "%.2f", Double(jointWidth)))")
@@ -477,6 +535,7 @@ final class VTInputController: IMKInputController {
     private func pollAnchor(generation: Int, last: [NSRect]?, polls: Int) {
         guard generation == holdGeneration, composing, let client = client() else { return }
         let starts = space.starts.isEmpty ? [0] : space.starts
+        if polls == 0, !anchorTrusted { InputLog.write("held \(fieldState(client, brief: true))") }
         let started = Date()
         var stop: String?
         var rects: [NSRect] = []
@@ -505,43 +564,233 @@ final class VTInputController: IMKInputController {
         if polls == 12, rects.count < starts.count, !rekicked {
             rekicked = true
             InputLog.write("pieces \(rects.count)/\(starts.count) placed after \(polls) polls: set again")
-            // another text for a moment (the same one again changes nothing for Chrome), then the space
-            let other = space.text + FormulaSpace.filler
-            client.setMarkedText(
-                NSAttributedString(string: other),
-                selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
-                replacementRange: Self.noRange
-            )
-            marked = other
-            holdGeneration += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                guard let self, self.composing, let client = self.client() else { return }
-                self.hold(client)
-            }
+            setAgain(client)
             return
         }
         if polls == 2 || elapsed > 0.1, let stop { InputLog.write("poll \(polls): \(stop) ms=\(Int(elapsed * 1000))") }
-        if let rect = rects.first, let last, last == rects {
+        // the places are told once two reads agree; a first one that is not the space's (staleAnchor)
+        // is not
+        let settled = !rects.isEmpty && last == rects
+        var stale = settled ? staleAnchor(client, rects[0]) : nil
+        if let rect = rects.first, let reason = stale {
+            if let suspect = suspectAnchor, abs(suspect.minX - rect.minX) <= 1.5, abs(suspect.minY - rect.minY) <= 1.5 {
+                // held afresh and placed there again: the field's own doing (a centred or
+                // right-aligned line moves left as the space goes in)
+                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls) \(reason), placed there twice: taken \(fieldState(client))")
+                if abs(rect.minY - formulaStart.minY) < rect.height * 0.5 {
+                    Self.anchorOffsets[clientID(client)] = rect.minX - formulaStart.minX
+                }
+                stale = nil
+            } else if staleHolds < 2 {
+                staleHolds += 1
+                suspectAnchor = rect
+                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls) stale (\(reason)): held afresh \(fieldState(client))")
+                holdAfresh(client)
+                return
+            } else if !anchorDistrusted {
+                anchorDistrusted = true
+                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls) stale (\(reason)): the formula stays at the caret \(fieldState(client))")
+                var message = geometry(client)
+                message["t"] = "geometry"
+                message["caret"] = payload(NSRect(x: formulaStart.minX, y: formulaStart.minY, width: 0, height: formulaStart.height))
+                if !NSDictionary(dictionary: message).isEqual(to: lastGeometry) {
+                    lastGeometry = message
+                    AppLink.shared.send(message)
+                }
+            }
+        }
+        if settled, stale == nil, let rect = rects.first {
+            if anchorDistrusted { InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls): at the caret again") }
+            anchorTrusted = true
+            anchorDistrusted = false
             if !rect.equalTo(heldRect) {
                 noteTextHeight(client, rect)
                 heldRect = rect
                 var message = geometry(client)
                 message["t"] = "geometry"
                 message["caret"] = payload(NSRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height))
-                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls)")
+                InputLog.write("anchor \(NSStringFromRect(rect)) polls=\(polls) \(fieldState(client))")
                 if !NSDictionary(dictionary: message).isEqual(to: lastGeometry) {
                     lastGeometry = message
                     AppLink.shared.send(message)
                 }
             }
             reportPlaces(rects, end: rects.count == space.starts.count ? endPlace(client, rects) : nil, anchor: characterRect(client, 0))
-            if calibrate(client, rects) { return }
+            // places of a space held before, still answered once typing has paused: the space is
+            // set again (twice a space at most; a field that answers so all the same is left alone).
+            // The widths are read off places that passed (read off an earlier space's, the joint
+            // came out a filler wide and the formula ran past its space, 2026-11-09).
+            if !kicksUseless, placesChecked != generation, Date().timeIntervalSince(lastHold) > 0.12 {
+                placesChecked = generation
+                if let sign = stalePlaces(client, rects) {
+                    if staleKicks < 2 {
+                        staleKicks += 1
+                        // set again first (nothing moves in the field); if that changed nothing, held
+                        // afresh (the text after the formula moves for a moment)
+                        InputLog.write("pieces stale (\(sign)): \(staleKicks == 1 ? "set again" : "held afresh")")
+                        if staleKicks == 1 { setAgain(client) } else { holdAfresh(client) }
+                        return
+                    }
+                    kicksUseless = true
+                    InputLog.write("pieces stale (\(sign)) after being set again: left as they are")
+                } else {
+                    placesSound = generation
+                }
+            }
+            if placesSound == generation, calibrate(client, rects) { return }
         }
         // a field slow to answer (its layout not ready) is asked less often
         let delay = polls < 40 && elapsed < 0.05 ? 0.016 : 0.25
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.pollAnchor(generation: generation, last: rects, polls: polls + 1)
         }
+    }
+
+    /// Another text for a moment (the same one again changes nothing for
+    /// Chrome), then the space: Chrome places it anew. The other text is the
+    /// space and a character of no width, so the text after the formula
+    /// stays where it is meanwhile.
+    private func setAgain(_ client: IMKTextInput) {
+        let other = space.text + "\u{200B}"
+        client.setMarkedText(
+            NSAttributedString(string: other),
+            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
+            replacementRange: Self.noRange
+        )
+        marked = other
+        holdGeneration += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, self.composing, let client = self.client() else { return }
+            self.hold(client)
+        }
+    }
+
+    /// Chrome answers a character's place from what its page told it of the
+    /// marked text, except the character where it believes the caret is: for
+    /// that one it answers the caret's place, and what it knows of the caret
+    /// can be several spaces old (typing holds one after another). So one
+    /// character of the held space, often a piece's first (where the space
+    /// held before ended), gets a place that is not its own, for as long as
+    /// the formula stays as it is: a piece drawn off its place, the cover
+    /// short of the space's end (2026-11-09). The sign: a filler is as wide
+    /// here as there; a piece whose first filler is not as wide as the
+    /// others', or that starts where the joint before it does, has a place
+    /// that is not its own.
+    private func stalePlaces(_ client: IMKTextInput, _ rects: [NSRect]) -> String? {
+        guard rects.count == space.starts.count else { return nil }
+        let length = (space.text as NSString).length
+        var widths: [(piece: Int, width: CGFloat)] = []
+        // (Chrome answers nothing after the last character; a field that does is not asked why it
+        // answers nothing for another)
+        let chromeLike = characterRect(client, length) == nil
+        // Chrome knows the places of an earlier, shorter space only
+        if chromeLike, length >= 3, characterRect(client, length - 1) == nil { return "no place for the last character" }
+        for (index, start) in space.starts.enumerated() where start + 1 < length {
+            // (the character after a piece's first filler, on its line: another filler, or the joint)
+            guard let next = characterRect(client, start + 1) else {
+                if chromeLike { return "no place for the character after piece \(index)'s first" }
+                continue
+            }
+            guard abs(next.minY - rects[index].minY) < 0.5 else { continue }
+            widths.append((index, next.minX - rects[index].minX))
+        }
+        // a piece that starts where the joint before it does (a word space has a width): the last
+        // piece when one filler holds it, which has no character after its first filler to tell
+        for (index, start) in space.starts.enumerated() where index > 0 && start >= 2 {
+            guard let joint = characterRect(client, start - 1) else {
+                if chromeLike { return "no place for the joint before piece \(index)" }
+                continue
+            }
+            guard abs(joint.minY - rects[index].minY) < 0.5 else { continue }
+            // (the caret's place Chrome answers may be a point off the character's)
+            if rects[index].minX - joint.minX <= 1.5 { return "piece \(index) starts at the joint before it" }
+        }
+        guard widths.count >= 2 else { return nil }
+        let middle = widths.map(\.width).sorted()[widths.count / 2]
+        guard let odd = widths.first(where: { abs($0.width - middle) > max(2, abs(middle) * 0.25) }) else { return nil }
+        return "piece \(odd.piece)'s first filler \(Int(odd.width.rounded())) pt wide, the others \(Int(middle.rounded()))"
+    }
+
+    /// Why the first piece's place is not the held space's, nil when it is.
+    /// Chrome and Electron answer the places of marked text from what their
+    /// page told them last, and after a composition that went in right before
+    /// the formula opened (pinyin) that is still the pinyin's: a character of
+    /// the held space gets the place of one in the spelling, or the
+    /// spelling's end, for as long as the space is only set again. The
+    /// formula stood over the text before it, its cover with it, and the held
+    /// space showed (underlined) after it (2026-11-09). The sign, before the
+    /// field has placed this formula once: the first piece is not right after
+    /// where the caret was (the anchor's width past it), on its line, or is
+    /// on a line above. (Held afresh, a place that is the field's own comes
+    /// back the same and is taken, pollAnchor: a centred or right-aligned
+    /// line moves as the space goes in; that application's next formulas
+    /// start with it.)
+    private func staleAnchor(_ client: IMKTextInput, _ rect: NSRect) -> String? {
+        guard isOnScreen(formulaStart) else { return nil }
+        if anchorTrusted, !anchorDistrusted { return nil }
+        let height = max(rect.height, formulaStart.height)
+        // (AppKit coordinates: up is more)
+        if rect.minY - formulaStart.minY > height * 0.5 { return "above the caret's line" }
+        // a line below: the space did not fit on the caret's
+        guard abs(rect.minY - formulaStart.minY) < height * 0.5 else { return nil }
+        let offset = rect.minX - formulaStart.minX
+        if offset >= -0.5, offset <= max(4, height * 0.2) { return nil }
+        if let known = Self.anchorOffsets[clientID(client)], abs(known - offset) <= 1.5 { return nil }
+        return "\(Int(offset.rounded())) pt from the caret"
+    }
+
+    /// The field drops the composition, the space is held anew once it has
+    /// its caret back (a composition only set again keeps a stale place).
+    private func holdAfresh(_ client: IMKTextInput) {
+        clearMarked(client)
+        space = FormulaSpace.Layout(text: "", starts: [], counts: [])
+        holdGeneration += 1
+        holdLater(0.06) { controller, client in
+            // where the field has its caret now is where the space goes
+            let caret = controller.caretRect(client)
+            if controller.isOnScreen(caret) { controller.formulaStart = caret }
+            controller.hold(client)
+        }
+    }
+
+    /// Holds the space in a moment; nothing else holds it meanwhile (the
+    /// formula's pieces that come are held then).
+    private func holdLater(_ delay: TimeInterval, _ hold: @escaping (VTInputController, IMKTextInput) -> Void) {
+        holdDeferred = true
+        let generation = holdGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.holdDeferred, generation == self.holdGeneration else { return }
+            self.holdDeferred = false
+            guard self.composing, let client = self.client() else { return }
+            hold(self, client)
+        }
+    }
+
+    /// What the field tells of its marked text and selection, for the log:
+    /// their ranges, the places of the marked text's first two characters,
+    /// its last one and its end, the first character's rectangle as asked by
+    /// its place in the document, and where the formula opened.
+    private func fieldState(_ client: IMKTextInput, brief: Bool = false) -> String {
+        let markedRange = client.markedRange()
+        let selected = client.selectedRange()
+        let length = (marked as NSString).length
+        let range = { (range: NSRange) in range.location == NSNotFound ? "-" : "\(range.location)+\(range.length)" }
+        let place = { (index: Int) -> String in
+            guard index >= 0 else { return "-" }
+            var rect = NSRect.zero
+            _ = client.attributes(forCharacterIndex: index, lineHeightRectangle: &rect)
+            return "\(Int(rect.minX)),\(Int(rect.minY))"
+        }
+        if brief {
+            return "marked=\(range(markedRange)) selected=\(range(selected)) at0=\(place(0)) start=\(Int(formulaStart.minX)),\(Int(formulaStart.minY))"
+        }
+        var first = "-"
+        if markedRange.location != NSNotFound, markedRange.length > 0 {
+            var actual = Self.noRange
+            let rect = client.firstRect(forCharacterRange: NSRange(location: markedRange.location, length: 1), actualRange: &actual)
+            first = "\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width))x\(Int(rect.height))@\(range(actual))"
+        }
+        return "marked=\(range(markedRange)) selected=\(range(selected)) at0=\(place(0)) at1=\(place(1)) last=\(place(length - 1)) end=\(place(length)) first=\(first) start=\(Int(formulaStart.minX)),\(Int(formulaStart.minY))"
     }
 
     /// Where the field put each piece, from the first one's start on its
@@ -630,8 +879,10 @@ final class VTInputController: IMKInputController {
             jointWidth = joint
             Self.jointWidths[id] = joint
         }
+        // (the same space with the new widths is not held again: its places go on being followed)
+        let generation = holdGeneration
         hold(client)
-        return true
+        return holdGeneration != generation
     }
 
     /// Where the field ends the held space, from the first piece's start
