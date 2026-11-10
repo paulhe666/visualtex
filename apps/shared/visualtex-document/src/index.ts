@@ -157,6 +157,23 @@ export {
 } from "./notes.ts";
 export { paginationKey, paginationPlugin, refreshPagination, type PageGeometry, type PaginationOptions } from "./pagination.ts";
 export {
+  blockSyntax,
+  headingSyntax,
+  hideSourceMarkers,
+  insertSourceLink,
+  parseSourceInline,
+  renderedBlock,
+  renderedDocument,
+  renderedText,
+  setSourceHeading,
+  shownContent,
+  sourceLiveKey,
+  sourceLivePlugin,
+  toggleSourceFormat,
+  toSourceDocument,
+  toSourceSlice,
+} from "./sourceMarkdown.ts";
+export {
   DEFAULT_IMAGE_WIDTH,
   IMAGE_GAP,
   documentImageKeys,

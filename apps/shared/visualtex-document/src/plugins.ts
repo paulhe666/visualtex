@@ -4,7 +4,7 @@ import { mixedSelectionPlugin, toggleDocumentBold } from "./mixedSelection.ts";
 import { Fragment, Slice, type Node, type Schema } from "prosemirror-model";
 import { EditorState, NodeSelection, Plugin, PluginKey, type Command } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
-import { history, redo, undo } from "prosemirror-history";
+import { closeHistory, history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { baseKeymap, chainCommands, toggleMark } from "prosemirror-commands";
 import { gapCursor } from "prosemirror-gapcursor";
@@ -48,7 +48,8 @@ import { codeBlockKeys, codeBlockPlugin, type CodeBlockOptions, type CodeHighlig
 import { richBlocksPlugin } from "./richBlocks.ts";
 import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
 import { ALL_RULES, markdownEnter, markdownHeadingEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
-import { markdownLivePlugin, markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
+import { markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
+import { clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
 import { requestLink } from "./links.ts";
@@ -108,7 +109,7 @@ function dollarPlugin(inputMode: () => InputMode) {
         }
         const $from = state.doc.resolve(from);
         if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
-        if ($from.marks().some((m) => m.type.spec.code || m.type.name === "code")) return false;
+        if ($from.marks().some((m) => m.type.spec.code || m.type.name === "code") || inSourceCode($from)) return false;
         // Markdown input: a "$" right after a "$" typed as a character, "$$": an inline formula in their place.
         if (pending !== null && from === to && from === pending + 1 && isDollar(text)) {
           view.dispatch(state.tr.delete(pending, pending + 1).setMeta(key, { pending: null } satisfies DollarMeta));
@@ -116,6 +117,14 @@ function dollarPlugin(inputMode: () => InputMode) {
         }
         if (!isDollar(text)) return false;
         if (inputMode() !== "markdown") return insertInlineFormula(state, view.dispatch, view);
+        // "$" typed over text selected in a line: that text a formula (Obsidian puts "$" around it)
+        if (from !== to && state.doc.resolve(to).sameParent($from)) {
+          let objects = false;
+          state.doc.nodesBetween(from, to, (node) => {
+            if (node.isInline && !node.isText) objects = true;
+          });
+          if (!objects) return insertInlineFormula(state, view.dispatch, view);
+        }
         // "\$" is Markdown's escape (the Markdown input rules make it the character).
         const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 2), $from.parentOffset, undefined, "￼");
         if (before.endsWith("\\") && !before.endsWith("\\\\")) return false;
@@ -165,6 +174,10 @@ function htmlShowsSource(html: string, text: string, types: readonly string[]): 
   return !!marked && shown.includes(marked.replace(/\s+/g, " "));
 }
 
+/** A line of Markdown that is a block the document builds as one (a list item, a quote, code, a table, a rule, a
+ *  display formula); headings and paragraphs are their text in the source editor. */
+const MARKDOWN_BLOCKS = /^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|>|```|~~~|\||\$\$|(?:[-*_][ \t]*){3,}$)/m;
+
 /** Pasted plain text with math delimiters becomes text with formulas. */
 function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource: boolean) {
   return new Plugin({
@@ -180,16 +193,20 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource
         const html = data.types.includes("text/html") ? data.getData("text/html") : "";
         const source = htmlShowsSource(html, text, data.types);
         // LaTeX source (\section, itemize, \textbf, equation…) is read into the document's structure, in either input.
+        // (in the source editor what is read comes in as source: its formatting written as markers)
+        const asSource = (slice: Slice) => (inputMode() === "markdown" ? toSourceSlice(slice) : slice);
         if (latexSource && source && looksLikeLatexSource(text)) {
           const keys = new Map(bibliographyEntries(view.state.doc).map((entry) => [entry.key, entry.id]));
-          view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, latexToMarkdown(text), keys)).scrollIntoView());
+          view.dispatch(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, latexToMarkdown(text), keys))).scrollIntoView());
           return true;
         }
         // Pasted Markdown keeps its structure (headings, lists, tables, math, marks): in Markdown input whenever it reads
         // as Markdown, in LaTeX input when it is unmistakably a Markdown document (an AI answer, a README).
-        const markdown = inputMode() === "markdown" ? looksLikeMarkdown(text) : looksLikeMarkdownDocument(text);
+        // (the source editor takes Markdown text as it is, unless it has blocks to build: lists, quotes, code, tables)
+        const markdown =
+          inputMode() === "markdown" ? looksLikeMarkdown(text) && MARKDOWN_BLOCKS.test(text) : looksLikeMarkdownDocument(text);
         if (markdown && source) {
-          view.dispatch(view.state.tr.replaceSelection(markdownToSlice(schema, text)).scrollIntoView());
+          view.dispatch(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, text))).scrollIntoView());
           return true;
         }
         if (!hasMathDelimiters(text)) return false;
@@ -378,17 +395,19 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
     ArrowLeft: enterFormulaBackward,
     ArrowDown: enterFormulaDown,
     ArrowUp: enterFormulaUp,
-    Enter: chainCommands(
+    // (in the source editor each line typed is an undo step of its own, as in Obsidian)
+    Enter: lineUndoStep(inputMode, chainCommands(
       openSelectedFormula,
       markdownEnter(inputMode, rules),
       (state, dispatch, view) => inputMode() === "markdown" && tableEnter(state, dispatch, view),
       splitListItemOrLeave,
       leaveEmptyQuoteLine,
       leaveEmptyAuthorLine,
-      // Typora: after a section comes body text (Mathcha keeps the section's style)
-      markdownHeadingEnter(inputMode),
+      // Typora: after a section comes body text (Mathcha keeps the section's style); in the source editor a line
+      // split off a heading has no "#" and is body text by itself
+      (state, dispatch, view) => inputMode() !== "markdown" && markdownHeadingEnter(inputMode)(state, dispatch, view),
       splitKeepingStyle,
-    ),
+    )),
     "Mod-Enter": tableRowBelow,
     Tab: tab,
     "Shift-Tab": shiftTab,
@@ -411,6 +430,11 @@ function documentKeymap(schema: Schema, inputMode: () => InputMode, rules: () =>
       return true;
     },
   });
+}
+
+/** A command whose change starts an undo step of its own in Markdown input (Enter: Obsidian undoes a line at a time). */
+function lineUndoStep(inputMode: () => InputMode, command: Command): Command {
+  return (state, dispatch, view) => command(state, dispatch && inputMode() === "markdown" ? (tr) => dispatch(closeHistory(tr)) : dispatch, view);
 }
 
 export interface DocumentPluginOptions {
@@ -495,7 +519,14 @@ export function slicePlainText(slice: Slice, formulaText: (latex: string) => str
 
 export function documentPlugins(schema: Schema, options: DocumentPluginOptions): Plugin[] {
   const inputMode = options.inputMode ?? (() => "latex");
-  const rules = options.markdownRules ?? (() => ALL_RULES);
+  const allRules = options.markdownRules ?? (() => ALL_RULES);
+  const markdown = () => inputMode() === "markdown";
+  // Markdown input is the source editor (sourceMarkdown.ts): a heading is its text's "#", never converted, and what is
+  // typed stays in the text
+  const rules = () => ({ ...allRules(), headings: !markdown(), source: markdown() });
+  // Ctrl+B: in an open formula its own bold, in the text the source's "**"
+  const sourceBold: Command = (state, dispatch, view) =>
+    openFormulaId(state) ? toggleDocumentBold(state, dispatch, view) : toggleSourceFormat("strong")(state, dispatch, view);
   return [
     idsPlugin(),
     markdownSourcePlugin(),
@@ -510,8 +541,8 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     // before the Markdown rules: what follows a "$" is decided first ("\$" it leaves to them)
     dollarPlugin(inputMode),
     markdownInputPlugin(inputMode, rules),
-    // Typora's live inline Markdown: a formatted span shows its markers while the caret is in it
-    markdownLivePlugin({ enabled: () => inputMode() === "markdown" && rules().marks }),
+    // the source editor: each block's Markdown read from its text after every change and drawn (sourceMarkdown.ts)
+    sourceLivePlugin({ enabled: markdown }),
     mathPastePlugin(schema, inputMode, options.latexPaste ?? true),
     linkClickPlugin(),
     formulaPlugin(options.host, { undo: markdownUndo, redo: markdownRedo, displayFormula: insertDisplayLatex("") }),
@@ -531,14 +562,18 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
     ...(options.pagination ? [paginationPlugin(options.pagination)] : []),
     codeBlockPlugin({ highlighter: options.codeHighlighter ?? null, labels: options.codeLabels ?? DEFAULT_CODE_LABELS, diagram: options.codeDiagram ?? null }),
     keymap(codeBlockKeys),
-    markdownKeymap(inputMode, {
-      bold: toggleDocumentBold,
-      italic: toggleMark(schema.marks.em),
-      underline: toggleMark(schema.marks.underline),
-      code: toggleMark(schema.marks.code),
-      strike: toggleMark(schema.marks.strike),
-      link: requestLink,
-    }),
+    markdownKeymap(
+      inputMode,
+      {
+        bold: sourceBold,
+        italic: toggleSourceFormat("em"),
+        underline: toggleSourceFormat("underline"),
+        code: toggleSourceFormat("code"),
+        strike: toggleSourceFormat("strike"),
+        link: requestLink,
+      },
+      { heading: setSourceHeading, highlight: toggleSourceFormat("highlight"), link: insertSourceLink, clear: clearSourceFormat },
+    ),
     documentKeymap(schema, inputMode, rules),
     keymap(baseKeymap),
     tableColumnsPlugin(),

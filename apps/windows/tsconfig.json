@@ -23,6 +23,7 @@
       "lucide-react": ["./node_modules/lucide-react"],
       "prosemirror-*": ["./node_modules/prosemirror-*"],
       "markdown-it": ["./node_modules/@types/markdown-it"],
+      "@lezer/*": ["./node_modules/@lezer/*"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }

@@ -1123,6 +1123,9 @@ export interface MarkdownExportOptions {
   imagePath?: (key: string) => string | null;
   /** The figures' and tables' numbers (figures.ts; set by documentToMarkdown). */
   captionLabels?: Map<Node, CaptionLabel>;
+  /** The document's text is its Markdown source (the source editor, sourceMarkdown.ts): written as it stands (no
+   *  escapes), a heading's "#" being in its text. */
+  sourceText?: boolean;
 }
 
 const htmlAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -1274,9 +1277,11 @@ function serializerFor(
         state.closeBlock(node);
         return;
       }
-      state.write(`${"#".repeat(node.attrs.level)} `);
+      // (the source editor's heading has its "#" in its text)
+      if (!options.sourceText || !/^#{1,6}(?=[ \t]|$)/.test(node.textContent)) state.write(`${"#".repeat(node.attrs.level)} `);
       state.renderInline(node, false);
-      if (unnumbered) state.write(unnumbered);
+      // (the source editor's unnumbered heading has its "{-}" in its text)
+      if (unnumbered && !(options.sourceText && /[ \t]\{[^{}]*\}[ \t]*$/.test(node.textContent))) state.write(unnumbered);
       state.closeBlock(node);
     },
     blockquote(state, node) {
@@ -1470,7 +1475,8 @@ function serializerFor(
       }
     },
     text(state, node) {
-      state.text(node.text ?? "");
+      // the source editor's text is Markdown already
+      state.text(node.text ?? "", !options.sourceText);
     },
     table(state, node) {
       // GFM: the first row is the header row; a cell is one line (its paragraphs joined by <br>, formulas inline).

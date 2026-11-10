@@ -13,6 +13,7 @@ import { withoutMarkdownSyntax } from "./markdownLive.ts";
 import { closeFormula, openFormulaId } from "./formulas.ts";
 import { DEFAULT_DOCUMENT_SETTINGS, PAPER_SIZES, SINGLE_LINE_HEIGHT, CHINESE_FONT_SIZES, documentSettings, type DocumentSettings, type PaperName } from "./settings.ts";
 import { imageFiles, setImageFileResolver } from "./images.ts";
+import { toSourceDocument } from "./sourceMarkdown.ts";
 
 export type SourceFormat = "latex" | "markdown";
 
@@ -332,7 +333,8 @@ export function sourceTransaction(state: EditorState, text: string, format: Sour
   const { schema } = state;
   const current = state.doc;
   const read = readSource(schema, text, format, current);
-  let doc = matchIds(read.doc, current);
+  // (the document's text is its Markdown source: what was read, as source)
+  let doc = toSourceDocument(matchIds(read.doc, current));
   if (!doc.childCount) doc = doc.type.create(doc.attrs, schema.nodes.paragraph.create());
   const source = read.source ? rebaseMarkdownSource(read.source, read.doc, doc) : null;
   const shown = withoutMarkdownSyntax(current);

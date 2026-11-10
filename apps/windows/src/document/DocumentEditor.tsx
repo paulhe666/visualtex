@@ -18,6 +18,7 @@ import {
   markdownSourceKey,
   markdownSourceOf,
   readMarkdown,
+  toSourceDocument,
   FORMULAS_REFRESH_EVENT,
   LINK_REQUEST_EVENT,
   openFormulaId,
@@ -379,6 +380,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     try {
       doc = initialJson ? documentSchema.nodeFromJSON(initialJson) : emptyDoc();
       doc.check();
+      // the source editor's text is Markdown: formatting kept as marks (an older document) goes into the text
+      doc = toSourceDocument(doc);
     } catch {
       doc = emptyDoc();
     }
@@ -519,6 +522,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         formulaLatex: portableFormulaLatex,
         references: useDocumentFormatStore.getState().markdownReferences,
         source: markdownSourceOf(view.state),
+        sourceText: true,
       });
     },
     serialize() {
@@ -529,7 +533,9 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       const view = viewRef.current;
       if (!view) return;
       // The file is kept with the document: blocks left as they were are written back exactly as they were read.
-      const { doc, source } = readMarkdown(documentSchema, text);
+      const { doc: read, source } = readMarkdown(documentSchema, text);
+      // the source editor's text: the formatting read written back into it
+      const doc = toSourceDocument(read);
       // Replaced in the history, so Ctrl+Z gives the previous document back; ids come from the ids plugin.
       view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, source).scrollIntoView());
       view.focus();
@@ -538,7 +544,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       replaceState(parseDocument(documentSchema, text).doc);
     },
     setDoc(doc) {
-      replaceState(doc);
+      replaceState(toSourceDocument(doc));
     },
     focus() {
       viewRef.current?.focus();

@@ -179,6 +179,9 @@ export const clearLineStyle: Command = (state, dispatch) => {
   if (!$cursor || $cursor.parentOffset > 0 || !$cursor.parent.isTextblock) return false;
   const block = $cursor.parent;
   const { heading, title, author, date, paragraph, list_item } = state.schema.nodes;
+  // a heading that is its text's "#" (the source editor, sourceMarkdown.ts): Backspace before the "#" joins the line
+  // before, as in any text
+  if (block.type === heading && /^#{1,6}(?=[ \t]|$)/.test(block.textContent)) return false;
   if (block.type === heading || block.type === title || block.type === author || block.type === date) {
     if (dispatch) {
       const attrs = { align: block.attrs.align ?? null, indent: block.attrs.indent ?? 0 };
@@ -264,6 +267,8 @@ export const leaveEmptyQuoteLine: Command = (state, dispatch) => {
   const { paragraph } = state.schema.nodes;
   if (!$cursor || $cursor.parent.type !== paragraph || $cursor.parent.content.size > 0) return false;
   if ($cursor.depth < 2 || !isQuoteLike($cursor.node(-1).type)) return false;
+  // an alert's only line, empty ("> [!NOTE]" just typed): it stays for the alert's text (Obsidian's Enter after the title)
+  if ($cursor.node(-1).attrs.alert && $cursor.node(-1).childCount === 1) return true;
   const range = $cursor.blockRange();
   const target = range && liftTarget(range);
   if (!range || target === null || target === undefined) return false;
