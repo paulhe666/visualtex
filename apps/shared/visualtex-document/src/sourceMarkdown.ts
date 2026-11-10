@@ -1,117 +1,32 @@
-// The document's text is its Markdown source (2026-11-10): a source editor as Obsidian's Live Preview is one. The text
-// keeps every marker ("**", "*", "~~", "==", "`", "[…](…)", "\", a heading's "# "): what the text means is read from it
-// after every change, with the parser Obsidian's editor family uses (@lezer/markdown), and drawn with decorations. A
-// formatted span shows its markers while the selection touches it (its ends included) and hides them otherwise; a heading
-// shows its "#" while the selection is in its line; a paragraph whose text begins "#" is a heading, and stops being one
-// when the "#" goes. Nothing is converted one way: "**" text "**", "****" with text typed between, "**x**" edited into
-// "*x*" all read as they stand. Formulas stay the document's own (inline atoms; "$$" opens one, formulas.ts), and so do
-// the blocks that are nodes (lists, quotes, code, tables, figures).
-//
-// Emphasis follows CommonMark with one change for Chinese, Japanese and Korean text: next to a CJK character, punctuation
-// does not stop a run of "*" or "_" from opening or closing ("前**粗体。**后" is bold; CommonMark and Obsidian's editor
-// both get it wrong).
+// The document's text is its Markdown source, line by line, as in Obsidian's editor (2026-11-10, second form): every
+// line of the document is a paragraph (a heading while its text starts with "#"), and lists ("- ", "1. ", "- [ ] " with
+// tabs for nesting), quotes ("> "), code fences, rules ("---") are those lines' text. What the text means is read with
+// the tokenizer Obsidian's editor uses (CodeMirror 5's Markdown mode, cm5Markdown.ts), line after line with the state
+// the lines before left, and drawn as Obsidian's Live Preview draws it (its rules read from Obsidian 1.15, see
+// ~/claude/obsidian-study/FINDINGS.md): tokens in a row form a group (a whole `**bold**` or `[text](url)`, a bullet's
+// "-" alone), and a group's markers hide unless the selection touches it, both ends counted; a heading's "#", a quote's
+// ">" and an escape's "\" while the selection is not in their line; a bullet's "-" is drawn as a bullet, a task's
+// "[ ]" as a box; nothing is drawn again while an input method composes or the mouse button is down. Formulas,
+// tables, pictures, the title and page commands stay objects of the document between the lines (formulas.ts etc.).
 
-import { parser as baseParser, InlineContext, type DelimiterType, type Element as MdElement, type MarkdownConfig } from "@lezer/markdown";
 import { Fragment, Slice, type Mark, type Node, type ResolvedPos, type Schema } from "prosemirror-model";
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { OBJECT, writeInline, type InlineMark, type WriteUnit } from "./inlineMarkdown.ts";
+import { blockLanguage, readMarkdown } from "./markdown.ts";
+import { CODE_LANGUAGES } from "./codeBlocks.ts";
+import { homeInLine, renumberLists } from "./sourceKeys.ts";
+import { blankLine as tokenizerBlankLine, copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
 
-// ------------------------------------------------------------------------------------------------- the parser
+// ------------------------------------------------------------------------------------------------- a line's syntax
 
-const PUNCTUATION = (() => {
-  try {
-    return new RegExp("[\\p{S}\\p{P}]", "u");
-  } catch {
-    return /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~\xA1‐-‧]/;
-  }
-})();
-const CJK = /[ᄀ-ᇿ⺀-⿿　-〿぀-ヿ㄀-ㇿ㈀-㏿㐀-䶿一-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-￯]|[\ud840-\ud87f]/;
-
-/** Whether a run of delimiter characters at [from, to) may open and close (CommonMark's flanking, CJK-friendly). */
-function flanking(cx: InlineContext, from: number, to: number) {
-  const before = cx.slice(from - 1, from);
-  const after = cx.slice(to, to + 1);
-  // next to CJK text, punctuation counts as a letter would
-  const cjk = CJK.test(before) || CJK.test(after);
-  const pBefore = !cjk && PUNCTUATION.test(before);
-  const pAfter = !cjk && PUNCTUATION.test(after);
-  const sBefore = /\s|^$/.test(before);
-  const sAfter = /\s|^$/.test(after);
-  const left = !sAfter && (!pAfter || sBefore || pBefore);
-  const right = !sBefore && (!pBefore || sAfter || pAfter);
-  return { left, right, pBefore, pAfter };
-}
-
-const Emphasis: MarkdownConfig = {
-  remove: ["Emphasis"],
-  parseInline: [
-    {
-      name: "SourceEmphasis",
-      parse(cx, next, start) {
-        if (next !== 95 && next !== 42) return -1;
-        let pos = start + 1;
-        while (cx.char(pos) === next) pos++;
-        const { left, right, pBefore, pAfter } = flanking(cx, start, pos);
-        const canOpen = left && (next === 42 || !right || pBefore);
-        const canClose = right && (next === 42 || !left || pAfter);
-        return cx.addDelimiter(next === 95 ? InlineContext.emphasisUnderscore : InlineContext.emphasisAsterisk, start, pos, canOpen, canClose);
-      },
-    },
-  ],
-};
-
-/** A pair of two-character delimiters ("~~", "=="), as GFM's strikethrough reads them (CJK-friendly). */
-function pairedDelimiter(name: string, code: number): MarkdownConfig {
-  const type: DelimiterType = { resolve: name, mark: `${name}Mark` };
-  return {
-    defineNodes: [{ name }, { name: `${name}Mark` }],
-    parseInline: [
-      {
-        name,
-        parse(cx, next, pos) {
-          if (next !== code || cx.char(pos + 1) !== code || cx.char(pos + 2) === code) return -1;
-          const { left, right } = flanking(cx, pos, pos + 2);
-          return cx.addDelimiter(type, pos, pos + 2, left, right);
-        },
-      },
-    ],
-  };
-}
-
-/** Bare addresses ("https://…", "www.…") read as links, as GFM and Obsidian do. */
-const BareUrl: MarkdownConfig = {
-  defineNodes: [{ name: "BareURL" }],
-  parseInline: [
-    {
-      name: "BareURL",
-      parse(cx, next, start) {
-        if (next !== 104 && next !== 119) return -1; // h, w
-        const before = cx.slice(start - 1, start);
-        if (before && !/[\s*_~(]/.test(before)) return -1;
-        const rest = cx.slice(start, Math.min(cx.end, start + 2048));
-        const m = /^(?:https?:\/\/|www\.)[^\s<]*[^\s<?!.,:*_~)'"]/i.exec(rest);
-        if (!m) return -1;
-        return cx.addElement(cx.elt("BareURL", start, start + m[0].length));
-      },
-      before: "Link",
-    },
-  ],
-};
-
-export const sourceParser = baseParser.configure([Emphasis, pairedDelimiter("Strikethrough", 126), pairedDelimiter("Highlight", 61), BareUrl]);
-const nodeName = (type: number) => sourceParser.nodeSet.types[type]?.name ?? "";
-const childrenOf = (element: MdElement) => (element as unknown as { children?: MdElement[] }).children ?? [];
-
-// ------------------------------------------------------------------------------------------------- a block's syntax
-
-/** A formatted span: its range in the block's text and its markers (hidden while the selection does not touch it). */
+/** A formatted span: its range in the line's text and its markers (hidden while the selection does not touch it). */
 export interface SourceUnit {
   from: number;
   to: number;
-  /** its markers: hidden while the selection is away from the span, shown in the markers' colour while it touches it */
+  /** its markers */
   marks: Array<[number, number]>;
-  /** text hidden while the selection is away and shown as text otherwise (a link's address, a picture's description) */
+  /** text hidden while the selection is away and shown as text otherwise (an escape's "\") */
   plain?: Array<[number, number]>;
   /** what it is (strong, em, strike, highlight, code, link, image, escape, break, html, underline, …, heading) */
   kind: string;
@@ -119,43 +34,43 @@ export interface SourceUnit {
   href?: string;
   /** a link's or a picture's text (between "[" and "]") */
   text?: [number, number];
-  /** "line": the markers show while the selection is in the span's line (a heading's "#", an escape's "\") */
+  /** "line": the markers show while the selection is in the span's line */
   reveal?: "line";
   /** drawn after the span (a picture), or in its place while it is hidden (a line break for <br>) */
   widget?: { kind: "image"; src: string; alt: string } | { kind: "break" };
 }
 
-/** The style of a stretch of the block's text. */
+/** The style of a stretch of the line's text. */
 export interface SourceStyle {
   from: number;
   to: number;
   kind: "strong" | "em" | "strike" | "highlight" | "code" | "link" | "url" | "underline" | "superscript" | "subscript" | "kbd" | "color";
   href?: string;
-  /** inline HTML's style="color: …" / "background-color: …" */
   color?: string;
   background?: string;
 }
 
 export interface HeadingSyntax {
   level: number;
-  /** the end of "#… " (the markers and the spaces after them) */
+  /** the end of "#… " (the markers and the spaces after them; 0 for an underlined heading) */
   prefixEnd: number;
-  /** a closing run of "#" at the line's end */
   close: [number, number] | null;
-  /** Pandoc's attributes at the end (" {-}", " {.unnumbered}"): an unnumbered section */
+  /** Pandoc's " {-}" at the end: an unnumbered section */
   attributes: [number, number] | null;
   unnumbered: boolean;
 }
 
 export interface BlockSyntax {
   text: string;
+  tokens: MarkdownToken[];
+  facts: LineFacts;
   units: SourceUnit[];
   styles: SourceStyle[];
   heading: HeadingSyntax | null;
 }
 
-/** An inline object (a formula, an image) in a block's text: reads as a letter would. */
-const OBJECT_CHAR = "\uE000";
+/** An inline object (a formula, a footnote) in a line's text: reads as a letter would. */
+const OBJECT_CHAR = "";
 
 /** A textblock's text as Markdown reads it: each inline object one character (a line break a newline). */
 export function blockText(node: Node): string {
@@ -168,11 +83,10 @@ export function blockText(node: Node): string {
   return text;
 }
 
-/** "#" to "######" at a line's start, then spaces or the line's end: a heading (CommonMark, as Obsidian reads it). */
+/** "#" to "######" at a line's start, then spaces or the line's end: a heading (with its closing run and " {-}"). */
 export function headingSyntax(text: string): HeadingSyntax | null {
   const m = /^(#{1,6})(?=[ \t]|$)[ \t]*/.exec(text);
   if (!m) return null;
-  // Pandoc's "# Title {-}" (or {.unnumbered}, {#id .unnumbered}): an unnumbered section
   let end = text.length;
   let attributes: [number, number] | null = null;
   let unnumbered = false;
@@ -189,24 +103,21 @@ export function headingSyntax(text: string): HeadingSyntax | null {
     const start = m[0].length + c.index + 1;
     close = [start, start + c[1].length];
   } else if (/^#+[ \t]*$/.test(rest) && rest.length) {
-    // "# #": the line holds the closing run only
     close = [m[0].length, m[0].length + rest.replace(/[ \t]+$/, "").length];
   }
   return { level: m[1].length, prefixEnd: m[0].length, close, attributes, unnumbered };
 }
 
-const STYLE_OF: Record<string, SourceStyle["kind"]> = { StrongEmphasis: "strong", Emphasis: "em", Strikethrough: "strike", Highlight: "highlight" };
 const HTML_STYLES: Record<string, SourceStyle["kind"]> = {
   u: "underline", ins: "underline", sup: "superscript", sub: "subscript", kbd: "kbd", mark: "highlight", b: "strong",
   strong: "strong", i: "em", em: "em", s: "strike", del: "strike", strike: "strike",
 };
-/** HTML elements that have no closing tag. */
 const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%a-z]+\))$/i;
-/** Pictures drawn from their address as it stands (a web address or data); others are the document's own objects. */
+/** Pictures drawn from their address as it stands (a web address or data). */
 const SHOWN_PICTURE = /^(https?:\/\/|data:image\/)/i;
+const BARE_URL = /(?:https?:\/\/|www\.)[^\s<]*[^\s<?!.,:*_~)'"]/gi;
 
-/** An HTML tag's colours (style="color: …; background-color: …"). */
 function tagColors(attrs: string): { color?: string; background?: string } {
   const style = /\bstyle\s*=\s*(["'])(.*?)\1/is.exec(attrs)?.[2] ?? "";
   const out: { color?: string; background?: string } = {};
@@ -222,169 +133,329 @@ function tagColors(attrs: string): { color?: string; background?: string } {
   return out;
 }
 
-/** The formatted spans and styles of inline Markdown text (offsets into `text`). */
-export function parseSourceInline(text: string, offset = 0): { units: SourceUnit[]; styles: SourceStyle[] } {
+const has = (token: MarkdownToken, cls: string) => (" " + token.type + " ").includes(" " + cls + " ");
+
+const SPAN_KINDS: Array<[string, SourceUnit["kind"], SourceStyle["kind"]]> = [
+  ["strong", "strong", "strong"],
+  ["em", "em", "em"],
+  ["strikethrough", "strike", "strike"],
+  ["highlight", "highlight", "highlight"],
+  ["code", "code", "code"],
+];
+
+/** The spans and styles a line's tokens make (for the commands, exports and the text as it reads). */
+function spansOf(text: string, tokens: MarkdownToken[]): { units: SourceUnit[]; styles: SourceStyle[] } {
   const units: SourceUnit[] = [];
   const styles: SourceStyle[] = [];
-  const slice = (from: number, to: number) => text.slice(from - offset, to - offset);
-  const walk = (elements: MdElement[]) => {
-    // inline HTML: a tag and its closing tag around text style it (<u>, <sup>, <kbd>, <span style="color: …">)
-    const open: Array<{ tag: string; element: MdElement; attrs: string }> = [];
-    for (const element of elements) {
-      const name = nodeName(element.type);
-      const children = childrenOf(element);
-      const marks = children.filter((child) => nodeName(child.type).endsWith("Mark"));
-      if (STYLE_OF[name] && marks.length >= 2) {
-        const first = marks[0];
-        const last = marks[marks.length - 1];
-        units.push({ from: element.from, to: element.to, marks: [[first.from, first.to], [last.from, last.to]], kind: STYLE_OF[name] });
-        if (last.from > first.to) styles.push({ from: first.to, to: last.from, kind: STYLE_OF[name] });
-        walk(children.filter((child) => !nodeName(child.type).endsWith("Mark")));
-      } else if (name === "InlineCode" && marks.length >= 2) {
-        const first = marks[0];
-        const last = marks[marks.length - 1];
-        units.push({ from: element.from, to: element.to, marks: [[first.from, first.to], [last.from, last.to]], kind: "code" });
-        if (last.from > first.to) styles.push({ from: first.to, to: last.from, kind: "code" });
-      } else if (name === "Link" || name === "Image") {
-        // [text](address "title"), [text][label]: the text shows; "](", ")" and the label are markers, the address
-        // shows as a link while the selection is at it
-        const linkMarks = children.filter((child) => nodeName(child.type) === "LinkMark");
-        const url = children.find((child) => nodeName(child.type) === "URL");
-        const label = children.find((child) => nodeName(child.type) === "LinkLabel");
-        if (linkMarks.length < 2) continue;
-        const textFrom = linkMarks[0].to;
-        const textTo = linkMarks[1].from;
-        const inline = linkMarks.length >= 4 && slice(linkMarks[2].from, linkMarks[2].to) === "(";
-        // "[text]" alone (no address, no label): text
-        if (!inline && !label) continue;
-        const href = url ? slice(url.from, url.to) : undefined;
-        const unitMarks: Array<[number, number]> = [[element.from, textFrom]];
-        const plain: Array<[number, number]> = [];
-        if (url) {
-          unitMarks.push([textTo, url.from], [url.to, element.to]);
-          plain.push([url.from, url.to]);
-        } else unitMarks.push([textTo, element.to]);
-        const picture = name === "Image" && href && SHOWN_PICTURE.test(href) ? href : null;
-        // a picture drawn from its address: drawn alone while the selection is away from its source
-        if (picture) plain.push([textFrom, textTo]);
-        units.push({
-          from: element.from,
-          to: element.to,
-          marks: unitMarks,
-          plain,
-          kind: name === "Image" ? "image" : "link",
-          href,
-          text: [textFrom, textTo],
-          ...(picture ? { widget: { kind: "image" as const, src: picture, alt: slice(textFrom, textTo) } } : {}),
-        });
-        if (textTo > textFrom) styles.push({ from: textFrom, to: textTo, kind: "link", href });
-        if (url && url.to > url.from) styles.push({ from: url.from, to: url.to, kind: "url", href });
-        walk(children.filter((child) => child.from >= textFrom && child.to <= textTo && nodeName(child.type) !== "LinkMark"));
-      } else if (name === "Autolink") {
-        const url = children.find((child) => nodeName(child.type) === "URL");
-        if (url) {
-          units.push({ from: element.from, to: element.to, marks: [[element.from, url.from], [url.to, element.to]], kind: "link", href: slice(url.from, url.to) });
-          styles.push({ from: url.from, to: url.to, kind: "link", href: slice(url.from, url.to) });
-        }
-      } else if (name === "BareURL" || name === "URL") {
-        const href = slice(element.from, element.to);
-        styles.push({ from: element.from, to: element.to, kind: "link", href: /^www\./i.test(href) ? `https://${href}` : href });
-      } else if (name === "Escape") {
-        // its "\" shows (as text) while the selection is in the line (Obsidian)
-        units.push({ from: element.from, to: element.to, marks: [], plain: [[element.from, element.from + 1]], kind: "escape", reveal: "line" });
-      } else if (name === "HTMLTag") {
-        const tag = /^<(\/?)\s*([a-zA-Z][\w-]*)([^>]*)>$/s.exec(slice(element.from, element.to));
-        if (!tag) continue;
-        const tagName = tag[2].toLowerCase();
-        const closing = tag[1] === "/";
-        if (tagName === "br" && !closing) {
-          units.push({ from: element.from, to: element.to, marks: [[element.from, element.to]], kind: "break", widget: { kind: "break" } });
-          continue;
-        }
-        if (VOID_TAGS.has(tagName) || /\/\s*$/.test(tag[3])) continue;
-        if (!closing) {
-          open.push({ tag: tagName, element, attrs: tag[3] });
-          continue;
-        }
-        const at = open.map((o) => o.tag).lastIndexOf(tagName);
-        if (at < 0) continue;
-        const start = open[at];
-        open.splice(at);
-        const kind = HTML_STYLES[tagName];
-        units.push({ from: start.element.from, to: element.to, marks: [[start.element.from, start.element.to], [element.from, element.to]], kind: kind ?? "html" });
-        if (element.from > start.element.to) {
-          if (kind) styles.push({ from: start.element.to, to: element.from, kind });
-          const colors = tagColors(start.attrs);
-          if (colors.color || colors.background) styles.push({ from: start.element.to, to: element.from, kind: "color", ...colors });
-        }
+  const open = new Map<string, [number, number]>();
+  let link: { from: number; textFrom: number; textTo: number; urlFrom: number; urlTo: number; image: boolean } | null = null;
+  for (const token of tokens) {
+    if (has(token, "formatting-escape")) {
+      units.push({ from: token.from, to: token.to, marks: [], plain: [[token.from, token.from + 1]], kind: "escape", reveal: "line" });
+      continue;
+    }
+    for (const [name, kind, style] of SPAN_KINDS) {
+      if (!has(token, "formatting-" + name)) continue;
+      // "***": the outer "*" is the em's, the inner "**" the strong's
+      let [from, to] = [token.from, token.to];
+      if (has(token, "formatting-strong") && has(token, "formatting-em") && to - from === 3) {
+        const opening = !open.has(kind);
+        if (kind === "em") [from, to] = opening ? [from, from + 1] : [to - 1, to];
+        else [from, to] = opening ? [from + 1, to] : [from, to - 1];
+      }
+      const start = open.get(kind);
+      if (!start) open.set(kind, [from, to]);
+      else {
+        open.delete(kind);
+        units.push({ from: start[0], to, marks: [start, [from, to]], kind });
+        if (from > start[1]) styles.push({ from: start[1], to: from, kind: style });
       }
     }
-  };
-  walk(sourceParser.parseInline(text, offset));
+    // links and pictures: "[" / "![" … "]" "(" address ")"
+    const piece = text.slice(token.from, token.to);
+    if ((has(token, "formatting-link") || has(token, "formatting-image")) && !has(token, "formatting-link-string")) {
+      if (piece === "[" || piece === "!" || piece === "<") {
+        if (!link) link = { from: token.from, textFrom: token.to, textTo: token.to, urlFrom: -1, urlTo: -1, image: has(token, "formatting-image") };
+        else if (piece === "[") link.textFrom = token.to;
+      } else if ((piece === "]" || piece === ">") && link) {
+        link.textTo = token.from;
+        if (piece === ">") {
+          // <address>
+          const href = text.slice(link.textFrom, link.textTo);
+          units.push({ from: link.from, to: token.to, marks: [[link.from, link.textFrom], [token.from, token.to]], kind: "link", href });
+          styles.push({ from: link.textFrom, to: link.textTo, kind: "link", href });
+          link = null;
+        } else if (!/^\s?[([]/.test(text.slice(token.to, token.to + 2))) link = null;
+      }
+    } else if (has(token, "formatting-link-string") && link) {
+      if (piece === "(" || piece === "[") link.urlFrom = token.to;
+      else {
+        link.urlTo = token.from;
+        const href = text.slice(link.urlFrom, link.urlTo).trim().split(/\s+/)[0] ?? "";
+        const kind = link.image ? "image" : "link";
+        const shownPicture = link.image && SHOWN_PICTURE.test(href);
+        units.push({
+          from: link.from,
+          to: token.to,
+          marks: [[link.from, link.textFrom], [link.textTo, link.urlFrom], [link.urlTo, token.to]],
+          plain: [[link.urlFrom, link.urlTo], ...(shownPicture ? [[link.textFrom, link.textTo] as [number, number]] : [])],
+          kind,
+          href,
+          text: [link.textFrom, link.textTo],
+          ...(shownPicture ? { widget: { kind: "image" as const, src: href, alt: text.slice(link.textFrom, link.textTo) } } : {}),
+        });
+        if (link.textTo > link.textFrom) styles.push({ from: link.textFrom, to: link.textTo, kind: "link", href });
+        if (link.urlTo > link.urlFrom) styles.push({ from: link.urlFrom, to: link.urlTo, kind: "url", href });
+        link = null;
+      }
+    }
+  }
+  // spans left open at the line's end format the rest of it (the tokenizer reads them so, as Obsidian shows them)
+  for (const [kind, start] of open) {
+    units.push({ from: start[0], to: text.length, marks: [start], kind });
+    const style = SPAN_KINDS.find((k) => k[1] === kind)![2];
+    if (text.length > start[1]) styles.push({ from: start[1], to: text.length, kind: style });
+  }
+  // code spans and links hold what follows literally
+  const literal = (at: number) => units.some((u) => (u.kind === "code" || u.kind === "link" || u.kind === "image") && at >= u.from && at < u.to);
+  for (const m of text.matchAll(BARE_URL)) {
+    if (literal(m.index!)) continue;
+    const href = m[0];
+    styles.push({ from: m.index!, to: m.index! + href.length, kind: "link", href: /^www\./i.test(href) ? `https://${href}` : href });
+  }
+  // inline HTML: a tag and its closing tag around text style it (<u>, <sup>, <kbd>, <span style="color: …">), <br>
+  const tags: Array<{ tag: string; from: number; to: number; attrs: string }> = [];
+  for (const m of text.matchAll(/<(\/?)([a-zA-Z][\w-]*)([^<>]*)>/g)) {
+    const from = m.index!;
+    const to = from + m[0].length;
+    if (literal(from)) continue;
+    const tag = m[2].toLowerCase();
+    if (tag === "br" && !m[1]) {
+      units.push({ from, to, marks: [[from, to]], kind: "break", widget: { kind: "break" } });
+      continue;
+    }
+    if (VOID_TAGS.has(tag) || /\/\s*$/.test(m[3])) continue;
+    if (!m[1]) {
+      tags.push({ tag, from, to, attrs: m[3] });
+      continue;
+    }
+    const at = tags.map((t) => t.tag).lastIndexOf(tag);
+    if (at < 0) continue;
+    const start = tags[at];
+    tags.splice(at);
+    const kind = HTML_STYLES[tag];
+    units.push({ from: start.from, to, marks: [[start.from, start.to], [from, to]], kind: kind ?? "html" });
+    if (from > start.to) {
+      if (kind) styles.push({ from: start.to, to: from, kind });
+      const colors = tagColors(start.attrs);
+      if (colors.color || colors.background) styles.push({ from: start.to, to: from, kind: "color", ...colors });
+    }
+  }
   return { units, styles };
 }
 
-const syntaxCache = new WeakMap<Node, BlockSyntax>();
-
-/** A textblock's Markdown (cached: an unchanged block is the same node). */
-export function blockSyntax(node: Node): BlockSyntax {
-  const known = syntaxCache.get(node);
-  if (known) return known;
-  const text = blockText(node);
-  const heading = headingCapable(node) ? headingSyntax(text) : null;
-  const start = heading ? heading.prefixEnd : 0;
-  const end = heading?.close ? heading.close[0] : heading?.attributes ? heading.attributes[0] : text.length;
-  const inline = parseSourceInline(text.slice(0, end), 0);
-  // a heading's markers ("# ", a closing run, " {-}") are a unit of their own: they show while the selection is in the line
-  const units = inline.units.filter((unit) => unit.from >= start);
-  if (heading) {
-    const marks: Array<[number, number]> = [[0, heading.prefixEnd]];
-    if (heading.close) marks.push(heading.close);
-    if (heading.attributes) marks.push(heading.attributes);
-    units.unshift({ from: 0, to: text.length, marks, kind: "heading", reveal: "line" });
+function makeSyntax(text: string, tokens: MarkdownToken[], facts: LineFacts): BlockSyntax {
+  const { units, styles } = spansOf(text, tokens);
+  let heading: HeadingSyntax | null = null;
+  if (facts.header && !facts.list && !facts.quote && !facts.codeInside && !facts.codeBegin) {
+    const atx = headingSyntax(text);
+    if (atx) heading = atx;
+    else if (!/^\s*(=+|-+)\s*$/.test(text)) heading = { level: facts.header, prefixEnd: 0, close: null, attributes: null, unnumbered: false };
   }
-  const syntax: BlockSyntax = { text, units, styles: inline.styles.filter((style) => style.from >= start), heading };
-  syntaxCache.set(node, syntax);
-  return syntax;
+  return { text, tokens, facts, units, styles, heading };
 }
 
-/** Paragraphs and headings take a heading's syntax (a title, a caption or a code line does not). */
+const frontMatterReads = new WeakMap<BlockSyntax, BlockSyntax>();
+
+/** A line of front matter: YAML text (not a heading, a rule or Markdown). */
+function frontMatterSyntax(syntax: BlockSyntax, tokens: MarkdownToken[]): BlockSyntax {
+  let read = frontMatterReads.get(syntax);
+  if (!read) {
+    read = { text: syntax.text, tokens, facts: { header: 0, list: 0, quote: 0, codeBegin: false, codeEnd: false, codeInside: false, indentedCode: false, codeLang: "", hr: false, blank: !syntax.text, frontMatter: true }, units: [], styles: [], heading: null };
+    frontMatterReads.set(syntax, read);
+  }
+  return read;
+}
+
+/** Paragraphs and headings are the document's lines (a title, a caption or a table cell is read on its own). */
 function headingCapable(node: Node): boolean {
   return node.type.name === "paragraph" || node.type.name === "heading";
 }
 
+interface LineRead {
+  syntax: BlockSyntax;
+  out: MarkdownState;
+}
+
+/** Lines read before: per line node, per state it was read with. */
+const reads = new WeakMap<Node, Map<string, LineRead>>();
+/** Each textblock's syntax as last read in its document (blockSyntax). */
+const lastRead = new WeakMap<Node, BlockSyntax>();
+
+const SETEXT = /^ {0,3}(?:=+|-{2,})\s*$/;
+
+/** A textblock read alone (a title, a caption, a table cell; a line not read in its document yet). */
+function readAlone(node: Node): BlockSyntax {
+  const text = blockText(node);
+  const { tokens, facts } = tokenizeLine(text, startState(), () => undefined);
+  const syntax = makeSyntax(text, tokens, headingCapable(node) ? facts : { ...facts, header: 0 });
+  lastRead.set(node, syntax);
+  return syntax;
+}
+
+/** A textblock's Markdown as its document reads it. */
+export function blockSyntax(node: Node): BlockSyntax {
+  return lastRead.get(node) ?? readAlone(node);
+}
+
+export interface SourceLine {
+  node: Node;
+  pos: number;
+  syntax: BlockSyntax;
+}
+
+/** A fenced code block: its first and last line (indices into the lines) and language. */
+interface CodeBlockRange {
+  first: number;
+  last: number;
+  lang: string;
+}
+
+interface DocumentLines {
+  lines: SourceLine[];
+  code: CodeBlockRange[];
+  /** textblocks that are not lines (in tables, captions, the title) */
+  others: Array<{ node: Node; pos: number; syntax: BlockSyntax }>;
+}
+
+/** Every line of a document read in order (unchanged lines with the same state before them are not read again). */
+function readDocument(doc: Node): DocumentLines {
+  const lines: SourceLine[] = [];
+  const others: DocumentLines["others"] = [];
+  const children: Array<{ node: Node; pos: number }> = [];
+  doc.forEach((node, pos) => children.push({ node, pos }));
+  let state = startState();
+  const textOf = (i: number) => {
+    const child = children[i];
+    return child && child.node.isTextblock && headingCapable(child.node) ? blockText(child.node) : undefined;
+  };
+  children.forEach(({ node, pos }, i) => {
+    if (node.isTextblock && headingCapable(node)) {
+      const next = textOf(i + 1);
+      const key = stateKey(state) + (next !== undefined && SETEXT.test(next) ? "|s" : "");
+      let byState = reads.get(node);
+      let read = byState?.get(key);
+      if (!read) {
+        const text = blockText(node);
+        const working = copyState(state);
+        const { tokens, facts } = tokenizeLine(text, working, (n) => textOf(i + n));
+        read = { syntax: makeSyntax(text, tokens, facts), out: working };
+        if (!byState) reads.set(node, (byState = new Map()));
+        byState.set(key, read);
+      }
+      state = copyState(read.out);
+      lastRead.set(node, read.syntax);
+      lines.push({ node, pos, syntax: read.syntax });
+      return;
+    }
+    // an object between lines (a formula, a table, a picture, the title): what was open ends there
+    tokenizerBlankLine(state);
+    state.code = 0;
+    state.fencedEndRE = null;
+    if (node.isTextblock) others.push({ node, pos, syntax: readAlone(node) });
+    else
+      node.descendants((child, offset) => {
+        if (!child.isTextblock) return true;
+        if (!child.type.spec.code) others.push({ node: child, pos: pos + 1 + offset, syntax: readAlone(child) });
+        return false;
+      });
+  });
+  // front matter: the document's first line "---" to the next "---" (or "..."): YAML lines (Obsidian's properties)
+  if (lines.length && lines[0].pos === 0 && lines[0].syntax.text === "---") {
+    const end = lines.findIndex((l, i) => i > 0 && (l.syntax.text === "---" || l.syntax.text === "..."));
+    if (end > 0) {
+      for (let i = 0; i <= end; i++) {
+        const syntax = lines[i].syntax;
+        const tokens = syntax.text ? [{ from: 0, to: syntax.text.length, type: i === 0 || i === end ? "formatting hmd-frontmatter" : "hmd-frontmatter" }] : [];
+        lines[i] = { ...lines[i], syntax: frontMatterSyntax(syntax, tokens) };
+        lastRead.set(lines[i].node, lines[i].syntax);
+      }
+    }
+  }
+  // fenced code blocks
+  const code: CodeBlockRange[] = [];
+  let first = -1;
+  lines.forEach((line, i) => {
+    const f = line.syntax.facts;
+    if (f.codeBegin) first = i;
+    else if (f.codeEnd && first >= 0) {
+      code.push({ first, last: i, lang: lines[first].syntax.facts.codeLang });
+      first = -1;
+    }
+  });
+  if (first >= 0) code.push({ first, last: lines.length - 1, lang: lines[first].syntax.facts.codeLang });
+  return { lines, code, others };
+}
+
 // ------------------------------------------------------------------------------------------------- drawing it
+
+const TOKEN_CLASSES: Array<[string, string]> = [
+  ["strong", "md-strong"],
+  ["em", "md-em"],
+  ["strikethrough", "md-strike"],
+  ["highlight", "md-highlight"],
+  ["inline-code", "md-code"],
+];
 
 const STYLE_CLASS: Record<SourceStyle["kind"], string> = {
   strong: "md-strong", em: "md-em", strike: "md-strike", highlight: "md-highlight", code: "md-code", link: "md-link",
   url: "md-url", underline: "md-underline", superscript: "md-sup", subscript: "md-sub", kbd: "md-kbd", color: "md-color",
 };
 
-function styleAttrs(style: SourceStyle): Record<string, string> {
-  const attrs: Record<string, string> = { class: STYLE_CLASS[style.kind] };
-  if (style.href) attrs["data-href"] = style.href;
-  const css = [style.color ? `color:${style.color}` : "", style.background ? `background-color:${style.background}` : ""].filter(Boolean).join(";");
-  if (css) attrs.style = css;
-  return attrs;
+/** The selection as the drawing uses it: its ranges (none while the editor does not have the focus, as in Obsidian). */
+type Ranges = ReadonlyArray<{ from: number; to: number }>;
+
+/** Inclusive overlap (Obsidian's test): a range touches [from, to] when it reaches either end. */
+function touched(ranges: Ranges, from: number, to: number): boolean {
+  return ranges.some((r) => r.from <= to && r.to >= from);
 }
 
-/** Whether the selection touches [from, to] (both ends counted, as Obsidian shows a span's markers at its edges). */
-function touches(state: EditorState, from: number, to: number): boolean {
-  return state.selection.ranges.some((range) => range.$from.pos <= to && range.$to.pos >= from);
+function rangesOf(state: EditorState): Ranges {
+  return state.selection.ranges.map((r) => ({ from: r.$from.pos, to: r.$to.pos }));
 }
 
-/** The line (between line breaks) of [from, to] in a block's text. */
-function lineAround(text: string, from: number, to: number): [number, number] {
-  const start = from === 0 ? 0 : text.lastIndexOf("\n", from - 1) + 1;
-  const end = text.indexOf("\n", to);
-  return [start, end < 0 ? text.length : end];
+function checkboxDOM(checked: boolean) {
+  return (view: EditorView, getPos: () => number | undefined) => {
+    const label = document.createElement("span");
+    label.className = "md-task";
+    label.contentEditable = "false";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = checked;
+    box.tabIndex = -1;
+    label.appendChild(box);
+    label.addEventListener("mousedown", (event) => event.preventDefault());
+    box.addEventListener("click", (event) => {
+      event.preventDefault();
+      const pos = getPos();
+      if (pos === undefined) return;
+      // the "[ ]" / "[x]" the box stands for starts at the widget's place
+      const $pos = view.state.doc.resolve(pos);
+      const text = $pos.parent.textBetween($pos.parentOffset, $pos.parent.content.size, undefined, OBJECT_CHAR);
+      if (!/^\[.\]/.test(text)) return;
+      const mark = pos + 1;
+      const now = view.state.doc.textBetween(mark, mark + 1);
+      view.dispatch(view.state.tr.insertText(now === " " ? "x" : " ", mark, mark + 1));
+    });
+    return label;
+  };
 }
 
-/** Whether a span's markers show: the selection at the span (its ends counted), or in its line for a heading. */
-function unitShown(state: EditorState, text: string, start: number, unit: SourceUnit): boolean {
-  if (unit.reveal !== "line") return touches(state, start + unit.from, start + unit.to);
-  const [from, to] = lineAround(text, unit.from, unit.to);
-  return touches(state, start + from, start + to);
+function quoteBorder() {
+  const border = document.createElement("span");
+  border.className = "md-quote-border";
+  border.textContent = ">";
+  return border;
 }
 
 function pictureWidget(src: string, alt: string) {
@@ -403,213 +474,409 @@ function pictureWidget(src: string, alt: string) {
 
 const lineBreakWidget = () => document.createElement("br");
 
-function blockDecorations(node: Node, pos: number, state: EditorState | null): Decoration[] {
-  const syntax = blockSyntax(node);
-  const start = pos + 1;
-  const decorations: Decoration[] = [];
-  const blockEnd = start + node.content.size;
-  const inBlock = state ? touches(state, start, blockEnd) : false;
-  for (const style of syntax.styles) decorations.push(Decoration.inline(start + style.from, start + style.to, styleAttrs(style)));
-  for (const unit of syntax.units) {
-    const shown = !!state && inBlock && unitShown(state, syntax.text, start, unit);
-    for (const [from, to] of unit.marks) {
-      if (to > from) decorations.push(Decoration.inline(start + from, start + to, { class: shown ? "md-mark" : "md-mark md-hidden" }, { unit: unit.kind }));
-    }
-    if (!shown) for (const [from, to] of unit.plain ?? []) if (to > from) decorations.push(Decoration.inline(start + from, start + to, { class: "md-hidden" }, { unit: unit.kind }));
-    if (unit.widget?.kind === "image") {
-      decorations.push(Decoration.widget(start + unit.to, pictureWidget(unit.widget.src, unit.widget.alt), { side: -1, widget: "image", key: `image:${unit.widget.src}` }));
-    } else if (unit.widget?.kind === "break" && !shown) {
-      decorations.push(Decoration.widget(start + unit.to, lineBreakWidget, { side: -1, widget: "break", key: "break" }));
-    }
-  }
-  if (state && inBlock) decorations.push(...typingDecorations(syntax, start, state));
-  return decorations;
+/** A zero-width character that keeps a line whose text is hidden one line high. */
+function lineHolder() {
+  const holder = document.createElement("span");
+  holder.className = "md-line-holder";
+  holder.textContent = "\u200b";
+  return holder;
 }
 
-/** The quote the selection's head is in (the outermost): its "> " before each of its lines, as Obsidian shows them. */
-function quoteMarks(state: EditorState): Decoration[] {
-  const $head = state.selection.$head;
-  let depth = 0;
-  for (let d = 1; d <= $head.depth && !depth; d++) if ($head.node(d).type.name === "blockquote") depth = d;
-  if (!depth) return [];
-  const quotePos = $head.before(depth);
-  const widgets: Decoration[] = [];
-  $head.node(depth).descendants((node, offset) => {
-    if (!node.isTextblock) return true;
-    const pos = quotePos + 1 + offset;
-    const $pos = state.doc.resolve(pos);
-    let quotes = 0;
-    for (let d = $pos.depth; d > 0; d--) if ($pos.node(d).type.name === "blockquote") quotes++;
-    const text = "> ".repeat(quotes);
-    widgets.push(Decoration.widget(pos + 1, quoteMarkWidget(text), { side: -1, widget: "quote", text, key: `quote:${quotes}` }));
-    return false;
-  });
-  return widgets;
+function ruleWidget() {
+  const rule = document.createElement("span");
+  rule.className = "md-rule";
+  rule.contentEditable = "false";
+  return rule;
 }
 
-function quoteMarkWidget(text: string) {
+function codeLabel(lang: string) {
   return () => {
-    const mark = document.createElement("span");
-    mark.className = "md-mark md-quote-mark";
-    mark.contentEditable = "false";
-    mark.textContent = text;
-    return mark;
+    const label = document.createElement("span");
+    label.className = "md-code-language";
+    label.contentEditable = "false";
+    label.textContent = lang;
+    return label;
   };
 }
 
-/** Which characters of a block show nothing as the selection stands (markers of spans it is away from). */
-function hiddenAt(node: Node, start: number, state: EditorState): Uint8Array {
-  const syntax = blockSyntax(node);
-  const hidden = new Uint8Array(syntax.text.length);
-  for (const unit of syntax.units) {
-    if (unitShown(state, syntax.text, start, unit)) continue;
-    for (const [from, to] of unit.marks) hidden.fill(1, from, to);
-    for (const [from, to] of unit.plain ?? []) hidden.fill(1, from, to);
-  }
-  return hidden;
+function calloutTitle(type: string, title: string) {
+  return () => {
+    const label = document.createElement("span");
+    label.className = "md-callout-title";
+    label.contentEditable = "false";
+    label.textContent = title || type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+    return label;
+  };
 }
 
-/** CommonMark's flanking of a run of delimiter characters at [from, to) of a text (CJK-friendly, as the parser's). */
-function textFlanking(text: string, from: number, to: number) {
-  const before = text.slice(Math.max(0, from - 1), from);
-  const after = text.slice(to, to + 1);
-  const cjk = CJK.test(before) || CJK.test(after);
-  const pBefore = !cjk && PUNCTUATION.test(before);
-  const pAfter = !cjk && PUNCTUATION.test(after);
-  const sBefore = /\s|^$/.test(before);
-  const sAfter = /\s|^$/.test(after);
-  return { left: !sAfter && (!pAfter || sBefore || pBefore), right: !sBefore && (!pBefore || sAfter || pAfter), pBefore };
+interface LineContext {
+  /** the selection's ranges (empty: drawn with nothing revealed) */
+  ranges: Ranges;
+  /** the fenced code block the line is in */
+  block: CodeBlockRange | null;
+  /** the document range of that block (first line's start to last line's end) */
+  blockRange: [number, number] | null;
+  /** a callout the line starts ("> [!NOTE] Title") */
+  callout: { type: string; title: string } | null;
+  /** whether the line is in a callout */
+  inCallout: string | null;
+  /** a plain line right after another line of the same paragraph (Markdown joins them; no first-line indent) */
+  continuation: boolean;
 }
+
+const hide = (from: number, to: number) => Decoration.inline(from, to, { class: "md-hidden" }, { md: "hide" });
 
 /**
- * Feedback while formatting is typed (Obsidian's editor shows it): an empty pair around the caret ("**|**", "`|`",
- * "[|]") shows as markers, and an opening marker before the caret with no closing one yet ("a **bold|") shows as a
- * marker with the rest of its line in its formatting.
+ * A line's decorations, as Obsidian's Live Preview draws its tokens (FINDINGS.md "The reveal rule"): styles for every
+ * token; formatting tokens grouped with the span they belong to, hidden unless the selection touches the group.
  */
-function typingDecorations(syntax: BlockSyntax, start: number, state: EditorState): Decoration[] {
-  if (!state.selection.empty) return [];
-  const caret = state.selection.head - start;
-  const text = syntax.text;
-  if (caret < 0 || caret > text.length) return [];
-  const [lineFrom, lineTo] = lineAround(text, caret, caret);
-  const unitAt = (i: number) => syntax.units.find((unit) => unit.kind !== "heading" && i >= unit.from && i < unit.to);
-  const marker = (from: number, to: number) => Decoration.inline(start + from, start + to, { class: "md-mark" }, { unit: "typing" });
-  const before = text.charAt(caret - 1);
-  const after = text.charAt(caret);
-  if (before && after && !unitAt(caret - 1) && !unitAt(caret)) {
-    if (before === after && "*_~=`".includes(before)) {
-      let from = caret;
-      while (from > lineFrom && text[from - 1] === before) from--;
-      let to = caret;
-      while (to < lineTo && text[to] === before) to++;
-      const n = caret - from;
-      // ("*|*" stays as it is: Obsidian)
-      if (n === to - caret && (before === "`" ? n <= 3 : "*_".includes(before) ? n === 2 || n === 3 : n === 2)) return [marker(from, caret), marker(caret, to)];
-    }
-    if (before === "[" && after === "]") return [marker(caret - 1, caret), marker(caret, caret + 1)];
+function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
+  const { node, pos, syntax } = line;
+  const start = pos + 1;
+  const end = start + node.content.size;
+  const { text, tokens, facts } = syntax;
+  const out: Decoration[] = [];
+  const lineTouched = touched(cx.ranges, start, end);
+
+  // the line itself: a list's hanging indent, a quote's border, code, a rule, a task done
+  const lineClasses: string[] = [];
+  const lineStyle: string[] = [];
+  if (facts.codeBegin || facts.codeInside || facts.codeEnd) {
+    lineClasses.push("md-codeline");
+    if (facts.codeBegin) lineClasses.push("md-codeline-begin");
+    if (facts.codeEnd) lineClasses.push("md-codeline-end");
+  } else if (facts.list) {
+    const prefix = /^([>\s]*)(([*+-] |(\d+)([.)] ))(?:\[(.)\] )?)?/.exec(text);
+    const indent = prefix ? prefix[0].replace(/\t/g, "    ").length : 0;
+    lineClasses.push("md-listline");
+    if (prefix?.[6] && prefix[6] !== " ") lineClasses.push("md-task-done");
+    lineStyle.push(`padding-left:${indent}ch`, `text-indent:-${indent}ch`);
   }
-  for (let i = caret - 1; i >= lineFrom; ) {
-    const unit = unitAt(i);
-    if (unit) {
-      i = unit.from - 1;
+  if (facts.quote) {
+    lineClasses.push("md-quoteline", `md-quote-${Math.min(facts.quote, 6)}`);
+    if (cx.inCallout) lineClasses.push("md-calloutline", `md-callout-${cx.inCallout}`);
+  }
+  if (facts.hr && !lineTouched) lineClasses.push("md-ruleline");
+  if (cx.continuation) lineClasses.push("md-cont");
+  if (lineClasses.length || lineStyle.length) {
+    out.push(Decoration.node(pos, pos + node.nodeSize, { class: lineClasses.join(" "), ...(lineStyle.length ? { style: lineStyle.join(";") } : {}) }));
+  }
+
+  // a fenced code block's fences: shown while the selection is in the block, else hidden (the first with its language)
+  if ((facts.codeBegin || facts.codeEnd) && cx.blockRange) {
+    const inBlock = touched(cx.ranges, cx.blockRange[0], cx.blockRange[1]);
+    for (const token of tokens) out.push(Decoration.inline(start + token.from, start + token.to, { class: "md-mark" }));
+    if (!inBlock && text.length) {
+      out.push(hide(start, end));
+      // (the line keeps its height: Up / Down stop on it, as on Obsidian's)
+      out.push(Decoration.widget(end, lineHolder, { side: 1, md: "holder", key: "holder" }));
+      if (facts.codeBegin && cx.block?.lang) {
+        // the language's name as the code block's header shows it ("js" -> "JavaScript")
+        const id = blockLanguage(cx.block.lang);
+        const name = CODE_LANGUAGES.find((l) => l.id === id)?.label ?? cx.block.lang;
+        out.push(Decoration.widget(end, codeLabel(name), { side: 1, md: "widget", key: `lang:${name}` }));
+      }
+    }
+    return out;
+  }
+  if (facts.frontMatter) {
+    out.push(Decoration.node(pos, pos + node.nodeSize, { class: "md-frontmatter" }));
+    return out;
+  }
+  if (facts.codeInside) return out;
+  // an indented code line (four spaces or a tab): its text styled as code, in a line of its own (Obsidian)
+  if (facts.indentedCode) {
+    const at = text.search(/\S/);
+    if (at >= 0) out.push(Decoration.inline(start + at, end, { class: "md-code" }));
+    return out;
+  }
+
+  // a rule: drawn as a rule unless the selection touches its line
+  if (facts.hr) {
+    // (a rule's "---" shown is text, as Obsidian shows it)
+    if (!lineTouched) {
+      out.push(hide(start, end));
+      out.push(Decoration.widget(end, ruleWidget, { side: 1, md: "widget", key: "rule" }));
+    }
+    return out;
+  }
+
+  // every token's style
+  for (const token of tokens) {
+    const classes: string[] = [];
+    if (has(token, "formatting")) classes.push("md-mark");
+    for (const [cls, name] of TOKEN_CLASSES) if (has(token, cls)) classes.push(name);
+    if (has(token, "link") && !has(token, "formatting") && !has(token, "url")) classes.push("md-link");
+    if (has(token, "url") && !has(token, "formatting")) classes.push(has(token, "string") ? "md-url" : "md-link");
+    if (classes.length) out.push(Decoration.inline(start + token.from, start + token.to, { class: classes.join(" ") }));
+  }
+
+  // the groups (Obsidian's walk): a group runs while tokens follow one another and belong to a span or a link
+  type Pending = { from: number; to: number; deco: Decoration; always?: boolean };
+  let groupFrom = 0;
+  let groupTo = 0;
+  let pending: Pending[] | null = null;
+  const flush = (at: number) => {
+    if (pending) {
+      if (touched(cx.ranges, start + groupFrom, start + groupTo)) {
+        for (const p of pending) if (p.always) out.push(p.deco);
+      } else for (const p of pending) out.push(p.deco);
+      pending = null;
+    }
+    groupFrom = groupTo = at;
+  };
+  const add = (p: Pending) => (pending ??= []).push(p);
+  const taskOnLine = /^([>\s]*)([*+-] |\d+[.)] )\[(.)\] /.exec(text);
+  // brackets with no address or label after them ("[ ]", "[word]") stay as written (Obsidian hides only a link's)
+  const keptBrackets = new Set<number>();
+  {
+    const stack: number[] = [];
+    tokens.forEach((token, k) => {
+      if (!has(token, "formatting-link") || has(token, "formatting-link-string")) return;
+      const piece = text.slice(token.from, token.to);
+      if (piece === "[") stack.push(k);
+      else if (piece === "]" && stack.length) {
+        const open = stack.pop()!;
+        if (!/^\s?[([]/.test(text.slice(token.to, token.to + 2))) {
+          keptBrackets.add(open);
+          keptBrackets.add(k);
+        }
+      }
+    });
+  }
+  // a callout's "[!TYPE]": markup of the quote, not a link
+  const calloutTag = cx.callout ? /^>\s*(\[!\w+\][+-]?)/.exec(text) : null;
+  const calloutFrom = calloutTag ? text.indexOf(calloutTag[1]) : -1;
+  const calloutTo = calloutTag ? calloutFrom + calloutTag[1].length : -1;
+  tokens.forEach((token, tokenIndex) => {
+    const x = token.from;
+    const e = token.to;
+    const classed = token.type !== "";
+    if (calloutTag && x >= calloutFrom && e <= calloutTo) {
+      out.push(Decoration.inline(start + x, start + e, { class: "md-mark" }));
+      return;
+    }
+    if (keptBrackets.has(tokenIndex)) {
+      if (x !== groupTo) flush(x);
+      return;
+    }
+    if (x !== groupTo || !classed) flush(x);
+    if (!classed) return;
+    if (has(token, "formatting-header")) {
+      if (!lineTouched && text.trim() !== text.slice(x, e).trim()) out.push(hide(start + x, start + e));
+      return;
+    }
+    if (has(token, "formatting-quote")) {
+      if (!lineTouched) {
+        if (has(token, "formatting-quote-1")) out.push(Decoration.inline(start + x, start + x + 1, { class: "md-transparent" }, { md: "mark" }));
+        else {
+          out.push(hide(start + x, start + x + 1));
+          out.push(Decoration.widget(start + x, quoteBorder, { side: 1, md: "widget", key: "quote" }));
+        }
+        // a callout's "[!TYPE] Title": its type drawn as the title
+        if (cx.callout && has(token, "formatting-quote-1")) {
+          const m = /^>\s*(\[!(\w+)\][+-]?)\s*/.exec(text);
+          if (m) {
+            const from = text.indexOf(m[1]);
+            out.push(hide(start + from, start + from + m[1].length));
+            if (!cx.callout.title) out.push(Decoration.widget(start + from + m[1].length, calloutTitle(cx.callout.type, ""), { side: -1, md: "widget", key: `callout:${cx.callout.type}` }));
+          }
+        }
+      }
+      return;
+    }
+    if (has(token, "formatting-escape")) {
+      if (!lineTouched) out.push(hide(start + x, start + x + 1));
+    }
+    const span = TOKEN_CLASSES.some(([cls]) => has(token, cls));
+    const linkish = span || has(token, "link") || has(token, "image") || has(token, "formatting-link") || has(token, "formatting-image");
+    const formatting = has(token, "formatting");
+    const urlPart = has(token, "string") && has(token, "url");
+    const task = has(token, "formatting-task");
+    const bullet = has(token, "formatting-list-ul");
+    const autolinkText = has(token, "url") && !has(token, "string");
+    const continues = urlPart || task || bullet || autolinkText || has(token, "formatting-link") || has(token, "formatting-image");
+    if (linkish || continues) {
+      groupTo = e;
+      if (formatting || continues) {
+        if (task) {
+          const checked = text.charAt(x + 1) !== " ";
+          add({ from: x, to: e, deco: Decoration.inline(start + x, start + e, { class: "md-hidden" }, { md: "hide" }) });
+          add({ from: x, to: e, deco: Decoration.widget(start + x, checkboxDOM(checked), { side: 1, md: "widget", key: `task:${checked}` }) });
+        } else if (bullet) {
+          if (!taskOnLine) {
+            groupTo = x + 1;
+            add({ from: x, to: x + 1, deco: Decoration.inline(start + x, start + x + 1, { class: "md-bullet" }, { md: "mark" }) });
+          } else add({ from: x, to: e, deco: hide(start + x, start + e) });
+        } else if (autolinkText) {
+          // an address in "<…>": shown, underlined (its "<" ">" are the group's markers)
+        } else add({ from: x, to: e, deco: hide(start + x, start + e) });
+      }
+    }
+    if (has(token, "formatting-list-ol")) {
+      groupTo = e;
+      add({ from: x, to: e, deco: Decoration.inline(start + x, start + e, { class: "md-number" }, { md: "mark" }) });
+    }
+  });
+  flush(text.length);
+
+  // inline HTML, <br>, pictures and bare addresses: their own spans
+  for (const unit of syntax.units) {
+    if (unit.kind === "escape" || SPAN_KINDS.some(([, kind]) => kind === unit.kind) || unit.kind === "link" || unit.kind === "image") {
+      if (unit.widget?.kind === "image") out.push(Decoration.widget(start + unit.to, pictureWidget(unit.widget.src, unit.widget.alt), { side: -1, md: "widget", key: `image:${unit.widget.src}` }));
       continue;
     }
-    const ch = text[i];
-    if (ch !== "*" && ch !== "_" && ch !== "~" && ch !== "=" && ch !== "`") {
-      i--;
-      continue;
+    const shown = touched(cx.ranges, start + unit.from, start + unit.to);
+    for (const [from, to] of unit.marks) {
+      if (to > from) out.push(Decoration.inline(start + from, start + to, { class: shown ? "md-mark" : "md-mark md-hidden" }, { md: shown ? "mark" : "hide" }));
     }
-    let from = i;
-    while (from > lineFrom && text[from - 1] === ch && !unitAt(from - 1)) from--;
-    const run = i + 1 - from;
-    const { left, right, pBefore } = textFlanking(text, from, i + 1);
-    // (a backtick opens code whatever stands around it)
-    const opens = ch === "`" ? i + 1 < lineTo : ch === "~" || ch === "=" ? run === 2 && left : left && (ch === "*" || !right || pBefore);
-    if (opens) {
-      const kinds: SourceStyle["kind"][] =
-        ch === "`" ? ["code"] : ch === "~" ? ["strike"] : ch === "=" ? ["highlight"] : run >= 3 ? ["strong", "em"] : run === 2 ? ["strong"] : ["em"];
-      return [
-        marker(from, i + 1),
-        Decoration.inline(start + i + 1, start + lineTo, { class: kinds.map((kind) => STYLE_CLASS[kind]).join(" ") }, { unit: "typing" }),
-      ];
-    }
-    i = from - 1;
+    if (unit.widget?.kind === "break" && !shown) out.push(Decoration.widget(start + unit.to, lineBreakWidget, { side: -1, md: "widget", key: "break" }));
   }
-  return [];
+  for (const style of syntax.styles) {
+    if (style.kind === "color" || style.kind === "underline" || style.kind === "superscript" || style.kind === "subscript" || style.kind === "kbd" || (style.kind === "link" && !tokens.some((t) => t.from <= style.from && t.to >= style.to && (has(t, "link") || has(t, "url"))))) {
+      const attrs: Record<string, string> = { class: STYLE_CLASS[style.kind] };
+      if (style.href) attrs["data-href"] = style.href;
+      const css = [style.color ? `color:${style.color}` : "", style.background ? `background-color:${style.background}` : ""].filter(Boolean).join(";");
+      if (css) attrs.style = css;
+      out.push(Decoration.inline(start + style.from, start + style.to, attrs));
+    }
+  }
+  return out;
+}
+
+/** Decorations of a textblock that is not a line (a table cell, a caption, the title): inline Markdown only. */
+function alonePieceDecorations(node: Node, pos: number, syntax: BlockSyntax, ranges: Ranges): Decoration[] {
+  return lineDecorations({ node, pos, syntax: { ...syntax, facts: { ...syntax.facts, header: 0, list: 0, quote: 0, hr: false, codeBegin: false, codeEnd: false, codeInside: false, indentedCode: false } } }, { ranges, block: null, blockRange: null, callout: null, inCallout: null, continuation: false });
 }
 
 interface SourceLiveState {
-  /** every block's decorations with its markers hidden */
+  read: DocumentLines;
+  /** every line's decorations with nothing revealed */
   base: DecorationSet;
+  /** what the view draws: the selection's lines (and code block) as the selection shows them */
+  shown: DecorationSet;
+  focused: boolean;
+  composing: boolean;
+  pointer: boolean;
   /** every marker hidden whatever the selection (printing) until the selection or the text changes */
   away?: boolean;
 }
+
+type LiveMeta = { focused: boolean } | { composing: boolean } | { pointer: boolean } | "away" | "caret" | "headings" | "renumber";
+
+export const sourceLiveKey = new PluginKey<SourceLiveState>("visualtex-document-source");
 
 /** Every marker hidden, the selection's too (the page view printed as it reads), until the selection moves. */
 export function hideSourceMarkers(state: EditorState): Transaction {
   return state.tr.setMeta(sourceLiveKey, "away");
 }
 
-export const sourceLiveKey = new PluginKey<SourceLiveState>("visualtex-document-source");
-
-function allDecorations(doc: Node): DecorationSet {
-  const decorations: Decoration[] = [];
-  doc.descendants((node, pos) => {
-    if (node.isTextblock) {
-      decorations.push(...blockDecorations(node, pos, null));
-      return false;
-    }
-    return true;
+/** The callouts of a document: per line index, the callout it is in (its type), and the lines that start one. */
+function calloutsOf(lines: SourceLine[]): { inside: Map<number, string>; starts: Map<number, { type: string; title: string }> } {
+  const inside = new Map<number, string>();
+  const starts = new Map<number, { type: string; title: string }>();
+  let current: string | null = null;
+  lines.forEach((line, i) => {
+    const m = /^>\s*\[!(\w+)\][+-]?\s*(.*)$/.exec(line.syntax.text);
+    if (m && line.syntax.facts.quote) {
+      current = m[1].toLowerCase();
+      starts.set(i, { type: current, title: m[2] });
+    } else if (!line.syntax.facts.quote) current = null;
+    if (current) inside.set(i, current);
   });
+  return { inside, starts };
+}
+
+function contextOf(read: DocumentLines, index: number, ranges: Ranges, callouts: ReturnType<typeof calloutsOf>): LineContext {
+  const block = read.code.find((b) => index >= b.first && index <= b.last) ?? null;
+  const blockRange: [number, number] | null = block ? [read.lines[block.first].pos + 1, read.lines[block.last].pos + 1 + read.lines[block.last].node.content.size] : null;
+  const line = read.lines[index];
+  const previous = index > 0 ? read.lines[index - 1] : null;
+  const plain = (f: LineFacts) => !f.blank && !f.list && !f.quote && !f.header && !f.hr && !f.codeBegin && !f.codeInside && !f.codeEnd && !f.indentedCode;
+  const continuation = !!previous && previous.pos + previous.node.nodeSize === line.pos && plain(line.syntax.facts) && plain(previous.syntax.facts);
+  return { ranges, block, blockRange, callout: callouts.starts.get(index) ?? null, inCallout: callouts.inside.get(index) ?? null, continuation };
+}
+
+function allDecorations(doc: Node, read: DocumentLines): DecorationSet {
+  const decorations: Decoration[] = [];
+  const callouts = calloutsOf(read.lines);
+  read.lines.forEach((line, i) => decorations.push(...lineDecorations(line, contextOf(read, i, [], callouts))));
+  for (const other of read.others) decorations.push(...alonePieceDecorations(other.node, other.pos, other.syntax, []));
   return DecorationSet.create(doc, decorations);
 }
 
-/** The textblocks a transaction's steps touched (their positions in the new document). */
-function changedBlocks(tr: Transaction): Array<{ node: Node; pos: number }> {
-  const ranges: Array<[number, number]> = [];
-  tr.mapping.maps.forEach((map, index) => {
-    map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-      // where this step's change is in the final document
-      const rest = tr.mapping.slice(index + 1);
-      ranges.push([rest.map(newStart, -1), rest.map(newEnd, 1)]);
-    });
-  });
-  const seen = new Set<number>();
-  const blocks: Array<{ node: Node; pos: number }> = [];
-  for (const [from, to] of ranges) {
-    tr.doc.nodesBetween(Math.max(0, from), Math.min(tr.doc.content.size, to), (node, pos) => {
-      if (node.isTextblock) {
-        if (!seen.has(pos)) {
-          seen.add(pos);
-          blocks.push({ node, pos });
-        }
-        return false;
-      }
-      return true;
-    });
-  }
-  return blocks;
+/** The decorations a line's range holds or overlaps (one mapped across a split or a join too), not its neighbours'
+ *  line decorations, which only touch its ends. */
+function ownDecorations(set: DecorationSet, from: number, to: number): Decoration[] {
+  return set.find(from, to).filter((d) => (d.from < to && d.to > from) || (d.from === d.to && d.from > from && d.from < to));
 }
 
-/** A paragraph whose text begins "# " is a heading of that level, a heading without it a paragraph. */
-function normalizeHeadings(state: EditorState, blocks: Array<{ node: Node; pos: number }>): Transaction | null {
+/** The base set with the lines the selection reaches drawn as it shows them. */
+function shownDecorations(state: EditorState, value: { read: DocumentLines; base: DecorationSet }): DecorationSet {
+  const ranges = rangesOf(state);
+  const { read } = value;
+  let decorations = value.base;
+  const redo = new Set<number>();
+  read.lines.forEach((line, i) => {
+    if (touched(ranges, line.pos + 1, line.pos + 1 + line.node.content.size)) redo.add(i);
+  });
+  // a code block the selection is in: all its lines (its fences show)
+  for (const block of read.code) {
+    const from = read.lines[block.first].pos + 1;
+    const to = read.lines[block.last].pos + 1 + read.lines[block.last].node.content.size;
+    if (touched(ranges, from, to)) {
+      redo.add(block.first);
+      redo.add(block.last);
+    }
+  }
+  if (redo.size) {
+    const callouts = calloutsOf(read.lines);
+    for (const i of redo) {
+      const line = read.lines[i];
+      decorations = decorations.remove(ownDecorations(decorations, line.pos, line.pos + line.node.nodeSize)).add(state.doc, lineDecorations(line, contextOf(read, i, ranges, callouts)));
+    }
+  }
+  for (const other of read.others) {
+    if (!touched(ranges, other.pos + 1, other.pos + 1 + other.node.content.size)) continue;
+    decorations = decorations.remove(ownDecorations(decorations, other.pos, other.pos + other.node.nodeSize)).add(state.doc, alonePieceDecorations(other.node, other.pos, other.syntax, ranges));
+  }
+  return decorations;
+}
+
+/** The base decorations after a change: lines read otherwise than before drawn again, the others mapped. */
+function rebaseDecorations(tr: Transaction, old: SourceLiveState, read: DocumentLines): DecorationSet {
+  let base = old.base.map(tr.mapping, tr.doc);
+  const before = new Set<BlockSyntax>(old.read.lines.map((l) => l.syntax));
+  // a callout or code block's context comes from other lines: when the block structure moved, draw all again
+  const shape = (r: DocumentLines) => r.code.map((b) => `${b.first}-${b.last}`).join(",") + "|" + [...calloutsOf(r.lines).inside.keys()].join(",");
+  if (shape(old.read) !== shape(read)) return allDecorations(tr.doc, read);
+  const callouts = calloutsOf(read.lines);
+  read.lines.forEach((line, i) => {
+    if (before.has(line.syntax)) return;
+    base = base.remove(ownDecorations(base, line.pos, line.pos + line.node.nodeSize)).add(tr.doc, lineDecorations(line, contextOf(read, i, [], callouts)));
+  });
+  const oldOthers = new Set<BlockSyntax>(old.read.others.map((o) => o.syntax));
+  for (const other of read.others) {
+    if (oldOthers.has(other.syntax)) continue;
+    base = base.remove(ownDecorations(base, other.pos, other.pos + other.node.nodeSize)).add(tr.doc, alonePieceDecorations(other.node, other.pos, other.syntax, []));
+  }
+  return base;
+}
+
+/** A paragraph whose text begins "# " (or underlined) is a heading of that level, a heading without it a paragraph. */
+function normalizeHeadings(state: EditorState, lines: SourceLine[]): Transaction | null {
   const { heading, paragraph } = state.schema.nodes;
   if (!heading || !paragraph) return null;
   let tr: Transaction | null = null;
-  for (const { pos } of blocks) {
-    const node = (tr ?? state.tr).doc.nodeAt(pos);
-    if (!node || !headingCapable(node)) continue;
-    const syntax = headingSyntax(blockText(node));
-    const $pos = (tr ?? state.tr).doc.resolve(pos);
-    const parent = $pos.parent;
-    const index = $pos.index();
+  for (const line of lines) {
+    const node = line.node;
+    const syntax = line.syntax.heading;
+    const pos = tr ? tr.mapping.map(line.pos) : line.pos;
     if (syntax) {
       if (node.type === heading && node.attrs.level === syntax.level && !!node.attrs.unnumbered === syntax.unnumbered) continue;
-      if (!parent.canReplaceWith(index, index + 1, heading)) continue;
       tr = (tr ?? state.tr).setNodeMarkup(pos, heading, { ...(node.type === heading ? node.attrs : {}), level: syntax.level, unnumbered: syntax.unnumbered });
     } else if (node.type === heading) {
-      if (!parent.canReplaceWith(index, index + 1, paragraph)) continue;
-      tr = (tr ?? state.tr).setNodeMarkup(pos, paragraph, null);
+      tr = (tr ?? state.tr).setNodeMarkup(pos, paragraph, { align: node.attrs.align ?? null, indent: node.attrs.indent ?? 0 });
     }
   }
   return tr;
@@ -633,8 +900,8 @@ function graphemeLength(text: string, atEnd: boolean): number {
 
 /**
  * Left / Right: one character in the text, markers included (the browser's own step passes over hidden markers, and the
- * markers come into view as the caret reaches them). At a block's end, beside a formula or other object, in code and
- * in right-to-left text the editor's own keys and the browser do it.
+ * markers come into view as the caret reaches them). At a line's end, beside a formula or other object and in
+ * right-to-left text the editor's own keys and the browser do it.
  */
 function stepCharacter(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const { state } = view;
@@ -647,14 +914,13 @@ function stepCharacter(view: EditorView, dir: -1 | 1, extend: boolean): boolean 
   const size = graphemeLength(next.text, dir < 0);
   if (RTL.test(dir < 0 ? next.text.slice(-size) : next.text.slice(0, size))) return false;
   const pos = $head.pos + dir * size;
-  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, pos) : TextSelection.create(state.doc, pos)).scrollIntoView());
+  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, pos) : TextSelection.create(state.doc, pos)).setMeta(sourceLiveKey, "caret").scrollIntoView());
   return true;
 }
 
 /**
  * Home / End: to the start / end of the caret's line, a selection collapsed there (Shift: extended), markers included —
- * on a block's first / last line its start / end (the browser's own key stops at hidden markers, reads the caret back a
- * moment later, and on the Mac only scrolls); on a wrapped block's other lines where the line is drawn to start / end.
+ * on a line's first / last row its start / end; on a wrapped line's other rows where the row is drawn to start / end.
  */
 function stepLineEdge(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const { state } = view;
@@ -673,18 +939,31 @@ function stepLineEdge(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
     if (!found || found.pos < $head.start() || found.pos > $head.end()) return false;
     pos = found.pos;
   }
-  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, pos) : TextSelection.create(state.doc, pos)).scrollIntoView());
+  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, pos) : TextSelection.create(state.doc, pos)).setMeta(sourceLiveKey, "caret").scrollIntoView());
   return true;
+}
+
+/** Which characters of a textblock show nothing as the view draws it now. */
+function hiddenAt(view: EditorView | null, state: EditorState, pos: number, node: Node): Uint8Array {
+  const hidden = new Uint8Array(node.content.size);
+  const set = sourceLiveKey.getState(state)?.shown;
+  if (!set) return hidden;
+  for (const d of set.find(pos + 1, pos + 1 + node.content.size)) {
+    if ((d.spec as { md?: string }).md !== "hide") continue;
+    hidden.fill(1, Math.max(0, d.from - pos - 1), Math.min(node.content.size, d.to - pos - 1));
+  }
+  void view;
+  return hidden;
 }
 
 /** Up / Down: the column kept through a run of presses (the caret's x when the run began). */
 const goals = new WeakMap<EditorView, { pos: number; x: number }>();
 
 /**
- * Up / Down from the first or last line of a block into the block before or after it, when that block shows less than
- * its text (hidden markers; a heading's "#" with the number floated before it, where the browser's own step puts the
- * caret at the line's start or end): to the place under (over) the caret as the line is drawn before its markers show,
- * as Obsidian's editor does. Within a block, and next to other blocks, the browser does it.
+ * Up / Down from a line's first or last row into the line before or after it: to the place under (over) the caret's
+ * column, as that line is drawn before its markers show (Obsidian's editor measures the line as drawn), the column kept
+ * through a run of presses; a line that shows only a rule or hidden fences: its start when the column is at the left
+ * edge, else its end. Within a wrapped line, and next to objects, the browser does it.
  */
 function stepLine(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const { state } = view;
@@ -698,26 +977,43 @@ function stepLine(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const sibling = index >= 0 && index < container.childCount ? container.child(index) : null;
   if (!sibling || !sibling.isTextblock || sibling.type.spec.code) return false;
   const siblingPos = dir < 0 ? $head.before() - sibling.nodeSize : $head.after();
-  if (!hiddenAt(sibling, siblingPos + 1, state).some(Boolean)) return false;
   const dom = view.nodeDOM(siblingPos);
   if (!(dom instanceof HTMLElement)) return false;
-  const range = document.createRange();
-  range.selectNodeContents(dom);
-  const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);
-  if (!rects.length) return false;
-  const line = dir < 0 ? rects[rects.length - 1] : rects[0];
   const goal = goals.get(view);
-  const x = goal && goal.pos === $head.pos ? goal.x : view.coordsAtPos($head.pos).left;
-  const found = view.posAtCoords({ left: x, top: (line.top + line.bottom) / 2 });
-  if (!found || found.pos < siblingPos + 1 || found.pos > siblingPos + 1 + sibling.content.size) return false;
-  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, found.pos) : TextSelection.create(state.doc, found.pos)).scrollIntoView());
-  goals.set(view, { pos: view.state.selection.head, x });
+  const caretBox = view.coordsAtPos($head.pos);
+  const x = goal && goal.pos === $head.pos ? goal.x : caretBox.left;
+  const lineStart = siblingPos + 1;
+  const lineEnd = siblingPos + 1 + sibling.content.size;
+  let target: number;
+  const hidden = hiddenAt(view, state, siblingPos, sibling);
+  if (sibling.content.size && hidden.every(Boolean)) {
+    // nothing of its text shows: a rule (its line's start, as Obsidian's block rule) or a code block's fence (its
+    // start when the column is at the left edge, else its end)
+    const box = dom.getBoundingClientRect();
+    const left = box.left + parseFloat(getComputedStyle(dom).paddingLeft || "0");
+    target = blockSyntax(sibling).facts.hr || x <= left + 2 ? lineStart : lineEnd;
+  } else {
+    const range = document.createRange();
+    range.selectNodeContents(dom);
+    const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);
+    if (!rects.length) target = lineStart;
+    else {
+      const row = dir < 0 ? rects[rects.length - 1] : rects[0];
+      const found = view.posAtCoords({ left: x, top: (row.top + row.bottom) / 2 });
+      if (!found || found.pos < lineStart || found.pos > lineEnd) return false;
+      target = found.pos;
+    }
+  }
+  view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, target) : TextSelection.create(state.doc, target)).setMeta(sourceLiveKey, "caret").scrollIntoView());
+  // (on a rule the column starts again from the line's start, as Obsidian's block rule does)
+  const rule = sibling.content.size > 0 && hidden.every(Boolean) && blockSyntax(sibling).facts.hr;
+  goals.set(view, { pos: view.state.selection.head, x: rule ? view.coordsAtPos(view.state.selection.head).left : x });
   return true;
 }
 
 /**
  * A click, End or Up / Down that put the caret where only hidden markers follow it in its line ("**bold|**" with the
- * markers hidden): the caret goes to the line's end, where it looks to be.
+ * markers hidden): the caret goes to the line's end, where it looks to be (Obsidian moves a caret out of a hidden closer).
  */
 function caretPastHidden(old: EditorState, state: EditorState): Transaction | null {
   const selection = state.selection;
@@ -726,130 +1022,157 @@ function caretPastHidden(old: EditorState, state: EditorState): Transaction | nu
   const node = $head.parent;
   if (!node.isTextblock || node.type.spec.code) return null;
   const offset = $head.parentOffset;
-  const syntax = blockSyntax(node);
-  const [, lineTo] = lineAround(syntax.text, offset, offset);
-  if (lineTo <= offset) return null;
-  const hidden = hiddenAt(node, $head.start(), old);
-  for (let i = offset; i < lineTo; i++) if (!hidden[i]) return null;
-  return state.tr.setSelection(TextSelection.create(state.doc, $head.start() + lineTo)).setMeta(sourceLiveKey, "caret");
+  if (offset >= node.content.size) return null;
+  const hidden = hiddenAt(null, old, $head.before(), node);
+  for (let i = offset; i < node.content.size; i++) if (!hidden[i]) return null;
+  return state.tr.setSelection(TextSelection.create(state.doc, $head.end())).setMeta(sourceLiveKey, "caret");
 }
 
-/** Every paragraph and heading of a document (headings follow their "#" again after an input method's composition). */
-function headingBlocks(doc: Node): Array<{ node: Node; pos: number }> {
-  const blocks: Array<{ node: Node; pos: number }> = [];
-  doc.descendants((node, pos) => {
-    if (node.isTextblock) {
-      if (headingCapable(node)) blocks.push({ node, pos });
-      return false;
-    }
-    return true;
-  });
-  return blocks;
-}
-
-/** The source editor: decorations from each block's Markdown, headings from their "#". */
+/** The source editor: each line's Markdown read and drawn as Obsidian draws it, headings from their "#". */
 export function sourceLivePlugin(options: { enabled: () => boolean } = { enabled: () => true }): Plugin<SourceLiveState> {
-  // An input method composing: a block never changes its type under it (the composition would end, its first letters
-  // left in the text); the headings are made right when it ends.
-  let composing = false;
   return new Plugin<SourceLiveState>({
     key: sourceLiveKey,
     state: {
-      init: (_config, state) => ({ base: allDecorations(state.doc) }),
-      apply(tr, value) {
-        const away = tr.getMeta(sourceLiveKey) === "away" ? true : tr.docChanged || tr.selectionSet ? false : value.away;
-        if (!tr.docChanged) return away === value.away ? value : { ...value, away };
-        let base = value.base.map(tr.mapping, tr.doc);
-        for (const { node, pos } of changedBlocks(tr)) {
-          // the block's own decorations (inline ones: its range) made again from its text
-          const own = base.find(pos + 1, pos + 1 + node.content.size);
-          if (own.length) base = base.remove(own);
-          base = base.add(tr.doc, blockDecorations(node, pos, null));
+      init: (_config, state) => {
+        const read = readDocument(state.doc);
+        const base = allDecorations(state.doc, read);
+        return { read, base, shown: base, focused: false, composing: false, pointer: false };
+      },
+      apply(tr, value, _old, state) {
+        const meta = tr.getMeta(sourceLiveKey) as LiveMeta | undefined;
+        let { focused, composing, pointer } = value;
+        if (meta && typeof meta === "object") {
+          if ("focused" in meta) focused = meta.focused;
+          if ("composing" in meta) composing = meta.composing;
+          if ("pointer" in meta) pointer = meta.pointer;
         }
-        return { base, away };
+        const away = meta === "away" ? true : tr.docChanged || tr.selectionSet ? false : value.away;
+        let { read, base } = value;
+        if (tr.docChanged) {
+          read = readDocument(tr.doc);
+          base = rebaseDecorations(tr, value, read);
+        }
+        let shown: DecorationSet;
+        // (Obsidian draws nothing again while an input method composes or the mouse button is down: only mapped)
+        if ((composing || pointer) && !(meta && typeof meta === "object" && ("composing" in meta || "pointer" in meta))) shown = value.shown.map(tr.mapping, tr.doc);
+        else if (away || !focused) shown = base;
+        else shown = shownDecorations(state, { read, base });
+        return { read, base, shown, focused, composing, pointer, away };
       },
     },
     appendTransaction(transactions, old, state) {
       if (!options.enabled()) return null;
-      if (transactions.some((tr) => tr.getMeta(sourceLiveKey) === "headings")) return normalizeHeadings(state, headingBlocks(state.doc));
+      const value = sourceLiveKey.getState(state);
+      if (!value) return null;
+      if (transactions.some((tr) => tr.getMeta(sourceLiveKey) === "headings")) return normalizeHeadings(state, value.read.lines);
       if (!transactions.some((tr) => tr.docChanged)) {
-        // the caret put in by a click or the browser's keys (not by this plugin)
         if (!transactions.some((tr) => tr.selectionSet && !tr.getMeta(sourceLiveKey))) return null;
         return caretPastHidden(old, state);
       }
-      if (composing) return null;
-      const blocks: Array<{ node: Node; pos: number }> = [];
-      transactions.forEach((tr, index) => {
-        if (!tr.docChanged) return;
-        // positions in the final state
-        const later = transactions.slice(index + 1).filter((t) => t.docChanged);
-        for (const block of changedBlocks(tr)) {
-          let pos = block.pos;
-          for (const t of later) pos = t.mapping.map(pos, 1);
-          blocks.push({ node: block.node, pos });
-        }
-      });
-      return normalizeHeadings(state, blocks);
+      // (not under an input method's composition: a line changing its type would end it)
+      if (value.composing) return null;
+      const headings = normalizeHeadings(state, value.read.lines);
+      // ordered lists numbered on (not after this plugin's own renumbering)
+      if (transactions.some((tr) => tr.getMeta(sourceLiveKey) === "renumber")) return headings;
+      const changed: number[] = [];
+      for (const tr of transactions) {
+        if (!tr.docChanged) continue;
+        tr.mapping.maps.forEach((map, k) => {
+          const rest = tr.mapping.slice(k + 1);
+          map.forEach((_a, _b, from, to) => {
+            const $from = state.doc.resolve(Math.min(state.doc.content.size, rest.map(from, -1)));
+            const $to = state.doc.resolve(Math.min(state.doc.content.size, rest.map(to, 1)));
+            for (let i = $from.index(0); i <= $to.index(0); i++) changed.push(i);
+          });
+        });
+      }
+      const base = headings ? state.apply(headings) : state;
+      const renumber = renumberLists(old, base, changed);
+      if (!renumber) return headings;
+      if (!headings) return renumber.setMeta(sourceLiveKey, "renumber");
+      for (const step of renumber.steps) headings.step(step);
+      return headings.setMeta(sourceLiveKey, "renumber");
     },
     props: {
       decorations(state) {
         if (!options.enabled()) return DecorationSet.empty;
-        const value = sourceLiveKey.getState(state);
-        const base = value?.base ?? DecorationSet.empty;
-        if (value?.away) return base;
-        // the blocks the selection is in: their markers as the selection shows them
-        let decorations = base;
-        const done = new Set<number>();
-        for (const range of state.selection.ranges) {
-          state.doc.nodesBetween(range.$from.pos, range.$to.pos, (node, pos) => {
-            if (node.isTextblock) {
-              if (!done.has(pos)) {
-                done.add(pos);
-                const own = decorations.find(pos + 1, pos + 1 + node.content.size);
-                decorations = decorations.remove(own).add(state.doc, blockDecorations(node, pos, state));
-              }
-              return false;
-            }
-            return true;
-          });
-        }
-        const quotes = quoteMarks(state);
-        return quotes.length ? decorations.add(state.doc, quotes) : decorations;
+        return sourceLiveKey.getState(state)?.shown ?? DecorationSet.empty;
       },
       handleKeyDown(view, event) {
         if (!options.enabled() || view.composing || event.isComposing) return false;
         if (event.altKey || event.metaKey || event.ctrlKey) return false;
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") return stepCharacter(view, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
         if (event.key === "ArrowUp" || event.key === "ArrowDown") return stepLine(view, event.key === "ArrowUp" ? -1 : 1, event.shiftKey);
+        // Home in an item: to its text first (Obsidian)
+        if (event.key === "Home" && !event.shiftKey && homeInLine(view.state, view.dispatch, view)) return true;
         if (event.key === "Home" || event.key === "End") return stepLineEdge(view, event.key === "Home" ? -1 : 1, event.shiftKey);
         return false;
       },
-      // what is pasted (from a web page, a word processor, the app's own copy) comes in as source
+      // what is pasted (from a web page, a word processor, the app's own copy) comes in as source lines
       transformPasted: (slice) => (options.enabled() ? toSourceSlice(slice) : slice),
+      // pasted text: its lines as lines, blank ones too (formulas, tables, pictures as objects)
+      clipboardTextParser: (text, $context, plain, view) => {
+        if (!options.enabled() || $context.parent.type.spec.code) return null as unknown as Slice;
+        void plain;
+        const doc = sourceTextToDocument(view.state.schema, text);
+        const lone = doc.childCount === 1 && doc.firstChild!.isTextblock;
+        return lone ? new Slice(doc.firstChild!.content, 0, 0) : new Slice(doc.content, doc.firstChild!.isTextblock ? 1 : 0, doc.lastChild!.isTextblock ? 1 : 0);
+      },
       handleDOMEvents: {
-        compositionstart: () => {
-          composing = true;
+        focus: (view) => {
+          view.dispatch(view.state.tr.setMeta(sourceLiveKey, { focused: true } satisfies LiveMeta).setMeta("addToHistory", false));
+          return false;
+        },
+        blur: (view) => {
+          view.dispatch(view.state.tr.setMeta(sourceLiveKey, { focused: false } satisfies LiveMeta).setMeta("addToHistory", false));
+          return false;
+        },
+        mousedown: (view, event) => {
+          if (event.button !== 0) return false;
+          view.dispatch(view.state.tr.setMeta(sourceLiveKey, { pointer: true } satisfies LiveMeta).setMeta("addToHistory", false));
+          const up = () => {
+            window.removeEventListener("mouseup", up, true);
+            if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(sourceLiveKey, { pointer: false } satisfies LiveMeta).setMeta("addToHistory", false));
+          };
+          window.addEventListener("mouseup", up, true);
+          return false;
+        },
+        compositionstart: (view) => {
+          view.dispatch(view.state.tr.setMeta(sourceLiveKey, { composing: true } satisfies LiveMeta).setMeta("addToHistory", false));
           return false;
         },
         compositionend: (view) => {
           // (the committed text is read a moment after the event)
           setTimeout(() => {
-            composing = false;
-            if (!view.isDestroyed && options.enabled()) view.dispatch(view.state.tr.setMeta(sourceLiveKey, "headings").setMeta("addToHistory", false));
+            if (view.isDestroyed) return;
+            view.dispatch(view.state.tr.setMeta(sourceLiveKey, { composing: false } satisfies LiveMeta).setMeta("addToHistory", false));
+            if (options.enabled()) view.dispatch(view.state.tr.setMeta(sourceLiveKey, "headings").setMeta("addToHistory", false));
           }, 30);
           return false;
         },
       },
     },
+    view: (view) => {
+      // the editor may have the focus before the plugin sees a focus event
+      if (view.hasFocus()) queueMicrotask(() => !view.isDestroyed && view.dispatch(view.state.tr.setMeta(sourceLiveKey, { focused: true } satisfies LiveMeta).setMeta("addToHistory", false)));
+      return {};
+    },
   });
 }
 
-/** Whether a position is in a code span's text (between its backticks): what is typed there stays as typed. */
+/** The document's lines as the source editor read them (for the keys that edit lines). */
+export function sourceLines(state: EditorState): SourceLine[] {
+  return sourceLiveKey.getState(state)?.read.lines ?? [];
+}
+
+/** Whether a position is in a code span's text or a code block line: what is typed there stays as typed. */
 export function inSourceCode($pos: ResolvedPos): boolean {
   const node = $pos.parent;
   if (!node.isTextblock || node.type.spec.code) return false;
+  const syntax = blockSyntax(node);
+  if (syntax.facts.codeInside || syntax.facts.indentedCode) return true;
   const offset = $pos.parentOffset;
-  return blockSyntax(node).units.some((unit) => unit.kind === "code" && offset >= unit.marks[0][1] && offset <= unit.marks[unit.marks.length - 1][0]);
+  return syntax.units.some((unit) => unit.kind === "code" && unit.marks.length > 1 && offset >= unit.marks[0][1] && offset <= unit.marks[unit.marks.length - 1][0]);
 }
 
 // ------------------------------------------------------------------------------------------------- commands
@@ -1047,12 +1370,225 @@ function inlineMarkOf(mark: Mark): InlineMark | null {
 }
 
 /**
- * A document whose formatting is marks (a document saved before the source editor, Markdown read by markdown.ts, a
- * paste) as source: each textblock's formatting written as markers in its text, each heading given its "#" prefix.
- * Other marks (underline, colour, size, …) stay marks.
+ * A document as source lines: each textblock's formatting written as markers in its text (other marks — colour, size —
+ * stay marks), each heading given its "#" prefix, and the blocks Obsidian keeps as text made lines: a list's items
+ * "- " / "1. " / "- [ ] " (nested ones a tab deeper), a quote's lines "> " (an alert's first "> [!NOTE]"), a code block
+ * between "```lang" fences, a rule "---", line breaks new lines. Objects (formulas, tables, pictures, the title, page
+ * commands) stay. Already source lines: unchanged.
  */
 export function toSourceDocument(doc: Node): Node {
   const schema = doc.type.schema;
+  const out: Node[] = [];
+  let previous: Node | null = null;
+  doc.forEach((block) => {
+    const lines = linesOf(block, schema, "", "");
+    // what a converted list, quote or code block ends: a blank line before the next text (else it would be read as
+    // part of them)
+    if (previous && CONTAINER.has(previous.type.name) && lines[0]?.isTextblock && lines[0].content.size) out.push(schema.nodes.paragraph.create());
+    out.push(...lines);
+    previous = block;
+  });
+  if (!out.length) out.push(schema.nodes.paragraph.create());
+  const converted = doc.type.create(doc.attrs, out, doc.marks);
+  return converted.eq(doc) ? doc : converted;
+}
+
+/** Blocks that become lines of text. */
+const CONTAINER = new Set(["bullet_list", "ordered_list", "blockquote", "code_block", "horizontal_rule"]);
+
+/** A document's lines given the node type their text says (a "#" line a heading; read as the document reads them). */
+export function withHeadings(doc: Node): Node {
+  const { heading, paragraph } = doc.type.schema.nodes;
+  const read = readDocument(doc);
+  const byNode = new Map(read.lines.map((l) => [l.node, l.syntax.heading]));
+  let changed = false;
+  const children: Node[] = [];
+  doc.forEach((node) => {
+    if (!byNode.has(node)) {
+      children.push(node);
+      return;
+    }
+    const h = byNode.get(node);
+    if (h && (node.type !== heading || node.attrs.level !== h.level || !!node.attrs.unnumbered !== h.unnumbered)) {
+      children.push(heading.create({ ...(node.type === heading ? node.attrs : {}), level: h.level, unnumbered: h.unnumbered }, node.content, node.marks));
+      changed = true;
+    } else if (!h && node.type === heading) {
+      children.push(paragraph.create(null, node.content, node.marks));
+      changed = true;
+    } else children.push(node);
+  });
+  return changed ? doc.type.create(doc.attrs, children, doc.marks) : doc;
+}
+
+/** Formulas typed in a line of Markdown text as `$…$` (Pandoc's rule: no space inside the dollars, no digit after). */
+const INLINE_MATH = /(?<![\\$])\$(?!\$)([^\s$](?:[^$\n]*?[^\s$\\])?)\$(?![$\d])/g;
+
+/**
+ * Markdown text as the source editor's document: a line of text per line (headings typed per their "#"); display
+ * formulas (`$$` lines), tables (a header and a delimiter row) and lines of only pictures become the document's
+ * objects as `readBlock` (Markdown read into the document's nodes) gives them; `$…$` in a line a formula.
+ */
+export function sourceTextToDocument(schema: Schema, text: string, readBlock: (markdown: string) => Node = (markdown) => readMarkdown(schema, markdown).doc): Node {
+  const rows = text.replace(/\r\n?/g, "\n").split("\n");
+  if (rows.length > 1 && rows[rows.length - 1] === "") rows.pop();
+  const out: Node[] = [];
+  let fence: string | null = null;
+  const objects = (markdown: string) => {
+    const read = readBlock(markdown);
+    const nodes: Node[] = [];
+    read.forEach((node) => nodes.push(node));
+    return nodes;
+  };
+  const lineNode = (row: string) => {
+    if (!row) return schema.nodes.paragraph.create();
+    const children: Node[] = [];
+    let at = 0;
+    if (!fence) {
+      for (const m of row.matchAll(INLINE_MATH)) {
+        // (not in a code span)
+        const before = row.slice(0, m.index!);
+        if (((before.match(/`/g) ?? []).length % 2) === 1) continue;
+        if (m.index! > at) children.push(schema.text(row.slice(at, m.index!)));
+        children.push(schema.nodes.math_inline.create({ latex: m[1] }));
+        at = m.index! + m[0].length;
+      }
+    }
+    if (at < row.length) children.push(schema.text(row.slice(at)));
+    return schema.nodes.paragraph.create(null, children);
+  };
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const fenceMark = /^\s*(`{3,}|~{3,})/.exec(row)?.[1];
+    if (fence) {
+      if (fenceMark && fenceMark[0] === fence[0] && fenceMark.length >= fence.length && !row.trim().slice(fenceMark.length).trim()) fence = null;
+      out.push(lineNode(row));
+      continue;
+    }
+    if (fenceMark) {
+      fence = fenceMark;
+      out.push(lineNode(row));
+      continue;
+    }
+    // a display formula: "$$" … "$$" (or one line "$$…$$")
+    if (/^\s*\$\$/.test(row)) {
+      let j = i;
+      if (!(row.trim().length > 4 && row.trim().endsWith("$$"))) {
+        j = i + 1;
+        while (j < rows.length && !rows[j].trim().endsWith("$$")) j++;
+      }
+      if (j < rows.length) {
+        const nodes = objects(rows.slice(i, j + 1).join("\n"));
+        if (nodes.length === 1 && nodes[0].type.name === "math_display") {
+          out.push(nodes[0]);
+          i = j;
+          continue;
+        }
+      }
+    }
+    // a table: a row of cells and a delimiter row under it, then its rows
+    if (/^\s*\|/.test(row) && i + 1 < rows.length && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1]) && rows[i + 1].includes("-")) {
+      let j = i + 2;
+      while (j < rows.length && /^\s*\|/.test(rows[j])) j++;
+      const nodes = objects(rows.slice(i, j).join("\n"));
+      if (nodes.length && nodes.every((n) => !n.isTextblock)) {
+        out.push(...nodes);
+        i = j - 1;
+        continue;
+      }
+    }
+    // a line of pictures
+    if (/^\s*(!\[[^\]]*\]\([^)]*\)\s*)+$/.test(row)) {
+      const nodes = objects(row);
+      if (nodes.length === 1 && (!nodes[0].isTextblock || nodes[0].childCount && [...Array(nodes[0].childCount).keys()].every((k) => nodes[0].child(k).type.name === "image"))) {
+        out.push(nodes[0]);
+        continue;
+      }
+    }
+    out.push(lineNode(row));
+  }
+  if (!out.length) out.push(schema.nodes.paragraph.create());
+  return withHeadings(schema.topNodeType.create(null, out));
+}
+
+/** A paragraph-based document (saved before the line model, read from Markdown): a blank line between paragraphs. */
+export function separateParagraphs(doc: Node): Node {
+  const schema = doc.type.schema;
+  const out: Node[] = [];
+  let previous: Node | null = null;
+  doc.forEach((block) => {
+    if (previous && previous.type.name === "paragraph" && block.type.name === "paragraph" && previous.content.size && block.content.size) out.push(schema.nodes.paragraph.create());
+    out.push(block);
+    previous = block;
+  });
+  return doc.type.create(doc.attrs, out, doc.marks);
+}
+
+/** A line: a paragraph (or heading) of `prefix` and the inline source of `content`. */
+function line(schema: Schema, prefix: string, content: Fragment, attrs: Record<string, unknown> | null = null): Node {
+  const children: Node[] = [];
+  if (prefix) children.push(schema.text(prefix));
+  content.forEach((child) => children.push(child));
+  return schema.nodes.paragraph.create(attrs, children);
+}
+
+/** A block as lines; `first` is the first line's prefix (a list item's marker), `rest` the others'. */
+function linesOf(block: Node, schema: Schema, rest: string, first: string): Node[] {
+  const name = block.type.name;
+  if (name === "paragraph" || name === "heading") {
+    const source = sourceBlock(block, schema);
+    if (name === "heading" && !first) return [source];
+    // line breaks: new lines
+    const out: Node[] = [];
+    let piece: Node[] = [];
+    let prefix = first;
+    const keep = name === "paragraph" ? { align: block.attrs.align ?? null, indent: block.attrs.indent ?? 0 } : null;
+    const flush = () => {
+      out.push(line(schema, prefix, Fragment.fromArray(piece), keep));
+      piece = [];
+      prefix = rest;
+    };
+    source.forEach((child) => {
+      if (child.type.name === "hard_break") flush();
+      else piece.push(child);
+    });
+    flush();
+    return out;
+  }
+  if (name === "bullet_list" || name === "ordered_list") {
+    const out: Node[] = [];
+    const startAt = Number(block.attrs.order ?? 1) || 1;
+    block.forEach((item, _offset, index) => {
+      const marker = name === "bullet_list" ? "- " : `${startAt + index}. `;
+      const checked = item.attrs.checked;
+      const task = checked === null || checked === undefined ? "" : checked ? "[x] " : "[ ] ";
+      item.forEach((child, _o, k) => {
+        out.push(...linesOf(child, schema, rest + "\t", k === 0 ? (index === 0 ? first : rest) + marker + task : rest + "\t"));
+      });
+      if (!item.childCount) out.push(line(schema, (index === 0 ? first : rest) + marker + task, Fragment.empty));
+    });
+    return out;
+  }
+  if (name === "blockquote") {
+    const out: Node[] = [];
+    const quote = rest + "> ";
+    if (block.attrs.alert) out.push(line(schema, (first || rest) + "> ", Fragment.from(schema.text(`[!${String(block.attrs.alert).toUpperCase()}]`))));
+    block.forEach((child, _o, k) => {
+      if (k > 0 && child.type.name === "paragraph") out.push(line(schema, rest + ">", Fragment.empty));
+      out.push(...linesOf(child, schema, quote, k === 0 && !block.attrs.alert ? (first || rest) + "> " : quote));
+    });
+    return out;
+  }
+  if (name === "code_block") {
+    const lang = String(block.attrs.language ?? "");
+    const out = [line(schema, first + "```" + lang, Fragment.empty)];
+    for (const text of block.textContent.split("\n")) out.push(line(schema, rest, text ? Fragment.from(schema.text(text)) : Fragment.empty));
+    out.push(line(schema, rest + "```", Fragment.empty));
+    return out;
+  }
+  if (name === "horizontal_rule") return [line(schema, first + "---", Fragment.empty)];
+  // an object: its own textblocks (table cells, captions) as source; itself stays
+  if (block.isLeaf) return [block];
+  if (block.isTextblock) return [sourceBlock(block, schema)];
   const convert = (node: Node): Node => {
     if (node.isTextblock) return sourceBlock(node, schema);
     if (node.isLeaf) return node;
@@ -1060,7 +1596,7 @@ export function toSourceDocument(doc: Node): Node {
     node.forEach((child) => children.push(convert(child)));
     return node.copy(Fragment.fromArray(children));
   };
-  return convert(doc);
+  return [convert(block)];
 }
 
 function sourceBlock(node: Node, schema: Schema): Node {
@@ -1131,34 +1667,21 @@ function sourceBlock(node: Node, schema: Schema): Node {
   return node.type.create(node.attrs, content, node.marks);
 }
 
-/** Pasted content as source: its textblocks' formatting written as markers (toSourceDocument for a slice). */
+/** Pasted content as source lines (toSourceDocument for a slice: lists, quotes, code become lines). */
 export function toSourceSlice(slice: Slice): Slice {
   const first = slice.content.firstChild;
   if (!first) return slice;
   const schema = first.type.schema;
-  const convert = (fragment: Fragment): Fragment => {
-    const out: Node[] = [];
-    let inline: Node[] = [];
-    const flushInline = () => {
-      // inline content at the top of a slice: as a paragraph's
-      if (!inline.length) return;
-      sourceBlock(schema.nodes.paragraph.create(null, inline), schema).forEach((child) => out.push(child));
-      inline = [];
-    };
-    fragment.forEach((node) => {
-      if (node.isInline) {
-        inline.push(node);
-        return;
-      }
-      flushInline();
-      if (node.isTextblock) out.push(sourceBlock(node, schema));
-      else if (node.isLeaf) out.push(node);
-      else out.push(node.copy(convert(node.content)));
-    });
-    flushInline();
-    return Fragment.from(out);
-  };
-  return new Slice(convert(slice.content), slice.openStart, slice.openEnd);
+  // inline content alone: one line's
+  if (slice.content.firstChild?.isInline) {
+    const lineNode = sourceBlock(schema.nodes.paragraph.create(null, slice.content), schema);
+    return new Slice(lineNode.content, 0, 0);
+  }
+  const out: Node[] = [];
+  slice.content.forEach((block) => out.push(...linesOf(block, schema, "", "")));
+  // (a slice opened into a list item or quote: its lines are whole blocks now)
+  const flat = out.every((n) => n.isTextblock);
+  return new Slice(Fragment.from(out), flat && slice.openStart > 0 ? 1 : 0, flat && slice.openEnd > 0 ? 1 : 0);
 }
 
 function sameMarkSet(a: readonly Mark[], b: readonly Mark[]): boolean {

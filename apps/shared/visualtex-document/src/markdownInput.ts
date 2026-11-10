@@ -27,6 +27,7 @@ import { blockLanguage } from "./markdown.ts";
 import { ALERTS } from "./schema.ts";
 import { clearFormat, isEscaped, markEscaped, markdownLiveKey, shownMarkdown, typoraFormat as typoraFormatKey, typoraLink } from "./markdownLive.ts";
 import { inSourceCode } from "./sourceMarkdown.ts";
+import { closeFenceAfterTyping, cycleLineTask, indentLines, insertCodeFence, outdentLines, toggleLineList, toggleLineQuote } from "./sourceKeys.ts";
 
 export type InputMode = "latex" | "markdown";
 
@@ -178,6 +179,8 @@ function nestItem(state: EditorState, $cursor: ResolvedPos, type: Node["type"], 
 
 /** The line-start conversion the text before the caret calls for, if any. */
 function conversionAtCaret(state: EditorState, rules: MarkdownRuleSwitches): Transaction | null {
+  // (in the source editor a list, a quote, a task are their lines' text)
+  if (rules.source) return null;
   const { $cursor } = state.selection as TextSelection;
   if (!$cursor || !$cursor.parent.isTextblock || $cursor.parent.type.spec.code) return null;
   return lineStartConversion(state, $cursor, textBefore($cursor), rules);
@@ -316,6 +319,19 @@ function enterConversion(state: EditorState, $cursor: ResolvedPos, line: string,
   const before = $cursor.before();
   const after = $cursor.after();
   const atEnd = $cursor.parentOffset === $cursor.parent.content.size;
+  // the source editor: only what becomes an object — a table (from its typed rows), a table of contents
+  if (rules.source) {
+    if (!atEnd) return null;
+    const row = ENTER_TABLE.exec(line);
+    if (row) return sourceTableEnter(state, $cursor, tableCells(row[1]));
+    if (ENTER_TOC.test(line) && nodes.toc) {
+      const content = Fragment.from([nodes.toc.create({ id: newNodeId() }), nodes.paragraph.create()]);
+      if (!parent.canReplace(index, index + 1, content)) return null;
+      const tr = state.tr.replaceWith(before, after, content);
+      return tr.setSelection(TextSelection.create(tr.doc, before + 2));
+    }
+    return null;
+  }
   // "# Title": a section; Enter goes on with body text (the line is split where the caret is)
   const heading = rules.headings !== false && $cursor.parentOffset > 0 ? headingOf(line, rules.chinese) : null;
   if (heading) {
@@ -429,6 +445,7 @@ export function markdownHeadingEnter(mode: () => InputMode): Command {
 
 /** The Markdown of a line typed and left (Typora): "# Title" a section, "```lang" a code block, "---" a rule. */
 function leftLineConversion(state: EditorState, pos: number, rules: MarkdownRuleSwitches): Transaction | null {
+  if (rules.source) return null;
   const node = state.doc.nodeAt(pos);
   if (!node || node.type !== state.schema.nodes.paragraph || isEscaped(state, pos + 1, pos + node.nodeSize - 1)) return null;
   const line = lineText(node);
@@ -642,6 +659,14 @@ export function markdownInputPlugin(mode: () => InputMode, rules: () => Markdown
             view.dispatch(tr.scrollIntoView());
             return true;
           }
+        }
+        // a backtick: paired or stepped over, else typed — and "```" at a line's start gets its closing fence (Obsidian)
+        if (source && text === "`" && from === to) {
+          if (sourcePairInput(view, from, to, text)) return true;
+          view.dispatch(deflt());
+          const fence = closeFenceAfterTyping(view.state);
+          if (fence) view.dispatch(fence);
+          return true;
         }
         const typed = source
           ? typedImage(view, from, to, text) || typedFootnote(view, from, to, text) || sourcePairInput(view, from, to, text)
@@ -861,19 +886,6 @@ const taskKey: Command = (state, dispatch) => {
   return true;
 };
 
-/** Ctrl+L in the source editor (Obsidian's checklist key): a line becomes a task, a task is ticked, a ticked one unticked. */
-const cycleTask: Command = (state, dispatch, view) => {
-  const { $from } = state.selection;
-  const { list_item } = state.schema.nodes;
-  for (let d = $from.depth; d > 0; d--) {
-    const node = $from.node(d);
-    if (node.type !== list_item) continue;
-    if (dispatch) dispatch(state.tr.setNodeAttribute($from.before(d), "checked", node.attrs.checked === null ? false : !node.attrs.checked));
-    return true;
-  }
-  return taskKey(state, dispatch, view);
-};
-
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Typora's keys, in Markdown input (its macOS keys on the Mac: ⌥⌘ for blocks, ⌃` for code). */
@@ -889,11 +901,11 @@ export function markdownKeymap(
   const typoraFormat = (kind: Parameters<typeof typoraFormatKey>[0], command: Command): Command => (source ? command : typoraFormatKey(kind, command));
   const mac: Record<string, Command> = MAC
     ? {
-        "Alt-Mod-q": only(quoteKey),
-        "Alt-Mod-o": only(toggleList("ordered_list")),
-        "Alt-Mod-u": only(toggleList("bullet_list")),
-        "Alt-Mod-x": only(taskKey),
-        "Alt-Mod-c": only(insertCodeBlock("")),
+        "Alt-Mod-q": only(source ? toggleLineQuote : quoteKey),
+        "Alt-Mod-o": only(source ? toggleLineList("ordered") : toggleList("ordered_list")),
+        "Alt-Mod-u": only(source ? toggleLineList("bullet") : toggleList("bullet_list")),
+        "Alt-Mod-x": only(source ? cycleLineTask : taskKey),
+        "Alt-Mod-c": only(source ? insertCodeFence : insertCodeBlock("")),
         "Alt-Mod-b": only(insertDisplayLatex("")),
         "Alt-Mod-t": only(insertTable(3, 3)),
         "Ctrl-`": only(typoraFormat("code", keys.code)),
@@ -915,13 +927,13 @@ export function markdownKeymap(
     "Mod--": only(headingStep(false, headingKey)),
     "Mod-t": only(insertTable(3, 3)),
     // on the Mac ⌘⇧K stays the keypad's (Typora's code block there is ⌥⌘C)
-    ...(MAC ? {} : { "Shift-Mod-k": only(insertCodeBlock("")) }),
+    ...(MAC ? {} : { "Shift-Mod-k": only(source ? insertCodeFence : insertCodeBlock("")) }),
     "Shift-Mod-m": only(insertDisplayLatex("")),
-    "Shift-Mod-q": only(quoteKey),
-    "Shift-Mod-[": only(toggleList("ordered_list")),
-    "Shift-Mod-]": only(toggleList("bullet_list")),
-    "Mod-]": only(listLevel(true)),
-    "Mod-[": only(listLevel(false)),
+    "Shift-Mod-q": only(source ? toggleLineQuote : quoteKey),
+    "Shift-Mod-[": only(source ? toggleLineList("ordered") : toggleList("ordered_list")),
+    "Shift-Mod-]": only(source ? toggleLineList("bullet") : toggleList("bullet_list")),
+    "Mod-]": only(source ? indentLines : listLevel(true)),
+    "Mod-[": only(source ? outdentLines : listLevel(false)),
     "Shift-Mod-i": only((_state, _dispatch, view) => !!view && requestImage(view)),
     "Mod-b": only(typoraFormat("strong", keys.bold)),
     "Mod-i": only(typoraFormat("em", keys.italic)),
@@ -930,7 +942,7 @@ export function markdownKeymap(
     "Shift-Alt-5": only(typoraFormat("strike", keys.strike)),
     "Mod-k": only(source ? source.link : typoraLink(keys.link)),
     "Mod-\\": only(source ? source.clear : clearFormat),
-    "Mod-l": only(source ? cycleTask : selectLine),
+    "Mod-l": only(source ? cycleLineTask : selectLine),
     "Mod-d": only(selectWord),
     "Mod-e": only(selectScope),
     Backspace: only(
