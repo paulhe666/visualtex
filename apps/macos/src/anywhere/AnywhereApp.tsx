@@ -185,6 +185,10 @@ function formulaBox() {
  * the field put the line's first piece to where the line's formula ends (the last line: to where
  * the held space ends, when the field tells). `line`: the field's line height and descent.
  */
+/** How long after a key the cover reaches past the formula (the field tells where the new space
+ *  ends about a key repeat later). */
+const TYPING_COVER_MS = 260;
+
 function placeCovers(
   layer: HTMLElement | null,
   background: string | null,
@@ -192,6 +196,7 @@ function placeCovers(
   places: [number, number][],
   start: [number, number] | null,
   end: [number, number] | null,
+  typing: boolean,
 ): { right: number; bottom: number } | null {
   if (!layer) return null;
   const box = formulaBox();
@@ -222,6 +227,11 @@ function placeCovers(
       let right = span.right + (last ? 1 : Math.max(4, line.height * 0.6));
       // (the field's caret may stand at its end: two pixels more)
       if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
+      // While a key is being typed the field holds the new space before it tells where it ends
+      // (a key later): the end of the space and the field's caret showed past the formula for
+      // that moment, all along a held key (2026-11-10). The space is the formula's and at most a
+      // filler and a third more: so much is covered until the field has told.
+      if (last && typing) right = Math.max(right, span.right + line.height * 0.85);
       const baseline = box.baseline + y;
       // (a field's caret is drawn a pixel taller than its line: Chrome)
       covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
@@ -612,6 +622,10 @@ export function AnywhereApp() {
   const piecePlacesRef = useRef<[number, number][]>([]);
   const pieceStartRef = useRef<[number, number] | null>(null);
   const pieceEndRef = useRef<[number, number] | null>(null);
+  /** When the input method last gave a key (the cover reaches a little further for a moment after:
+   *  placeCovers), and the timer that brings it back. */
+  const lastKeyRef = useRef(0);
+  const typingTimerRef = useRef<number | null>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const lastModeRef = useRef<boolean | null>(null);
   const composingRef = useRef(false);
@@ -853,6 +867,7 @@ export function AnywhereApp() {
       piecePlacesRef.current,
       pieceStartRef.current,
       pieceEndRef.current,
+      performance.now() - lastKeyRef.current < TYPING_COVER_MS,
     );
     const layout: AnywhereLayout = {
       width: Math.ceil(
@@ -1073,6 +1088,12 @@ export function AnywhereApp() {
           void pasteIntoFormula();
           return;
         }
+        lastKeyRef.current = performance.now();
+        if (typingTimerRef.current !== null) window.clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = window.setTimeout(() => {
+          typingTimerRef.current = null;
+          measureRef.current();
+        }, TYPING_COVER_MS + 20);
         const shortcut = formulaShortcut(key);
         if (shortcut) runFormulaShortcut(shortcut);
         else typeKey(key);

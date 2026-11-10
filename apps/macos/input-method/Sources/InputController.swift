@@ -92,6 +92,32 @@ final class VTInputController: IMKInputController {
     /// The field keeps answering a place that is not the space's: the
     /// formula stays where the caret was.
     private var anchorDistrusted = false
+    /// Applications that learn a marked text's places one set late (hold).
+    private static var lateClients: Set<String> = []
+    /// Where the field had the held space in its text when it last told, and
+    /// the space then; polls since it told of no marked text at all.
+    private var heldRange = NSRange(location: NSNotFound, length: 0)
+    private var heldText = ""
+    private var lostPolls = 0
+    /// Held spaces a field may have kept as its own text when it ended a
+    /// composition (blank characters nobody sees), by application: taken out
+    /// when found before the caret (takeOutLeftovers).
+    private static var leftovers: [String: [Left]] = [:]
+    /// A held space is being taken out (its outcome is read in a moment).
+    private var takingOut = false
+
+    /// A held space a field may have kept as its text: where it was in the
+    /// field's text and on the screen, when, and what goes in its place (the formula's text when the field
+    /// ended the composition; nothing when the input method left the field:
+    /// VisualTeX keeps the formula).
+    private struct Left {
+        var text: String
+        var location: Int
+        var at: Date
+        var first: NSRect
+        var end: [Double]?
+        var replacement: String
+    }
     /// How often the space held now was set again for places of an earlier
     /// one (stalePlaces), and a field where that changed nothing.
     private var staleKicks = 0
@@ -121,12 +147,23 @@ final class VTInputController: IMKInputController {
         message["t"] = "activate"
         message["client"] = clientID(sender)
         AppLink.shared.send(message)
+        // a held space this field kept as its text when the input method left it
+        if Self.leftovers[clientID(sender)]?.isEmpty == false {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, Self.active === self, !self.composing, self.marked.isEmpty, let client = self.client() else { return }
+                self.takeOutLeftovers(client)
+            }
+        }
     }
 
     override func deactivateServer(_ sender: Any!) {
         InputLog.write("deactivate client=\(clientID(sender)) composing=\(composing)")
         let client = sender as? IMKTextInput
-        if !marked.isEmpty, let client { clearMarked(client) }
+        // (Chrome has kept the space as its text by now: taken out where it is; else cleared as
+        // marked text is)
+        if !marked.isEmpty, let client, !takeOutKept(client, with: "") { clearMarked(client) }
+        marked = ""
+        holdGeneration += 1
         if composing { setFormulaInputMode(on: false) }
         composing = false
         formulaText = ""
@@ -149,6 +186,8 @@ final class VTInputController: IMKInputController {
             return pinyinModifiers(event, client: client)
         }
         guard event.type == .keyDown else { return false }
+        // a held space this field kept as its text (it has the keyboard now)
+        if !composing, marked.isEmpty, Self.leftovers[clientID(client)]?.isEmpty == false { takeOutLeftovers(client) }
         if composing, [36, 53, 76].contains(event.keyCode) {
             InputLog.write("formula key \(event.keyCode == 53 ? "escape" : "return")")
         }
@@ -375,17 +414,209 @@ final class VTInputController: IMKInputController {
             return
         }
         if composing {
-            if !formulaText.isEmpty {
-                client?.insertText(formulaText, replacementRange: Self.noRange)
-            } else if !marked.isEmpty, let client {
+            if let client { endedByField(client) }
+        }
+    }
+
+    /// The field ended the composition: the formula's text goes in where the
+    /// space was. Chrome has kept the space as its own text by then (blank
+    /// characters nobody sees, sent with the next message): the text replaces
+    /// them where they are found; a field that still has the space marked
+    /// has it replaced as marked text is.
+    private func endedByField(_ client: IMKTextInput) {
+        let text = formulaText
+        if !takeOutKept(client, with: text) {
+            if Self.lateClients.contains(clientID(client)) {
+                // Chrome tells nothing of its text or its caret while it ends the composition: the
+                // text goes in where the space was once it does (takeOutLeftovers)
+                for delay in [0.15, 0.6] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard let self, !self.composing, self.marked.isEmpty, let client = self.client() else { return }
+                        self.takeOutLeftovers(client)
+                    }
+                }
+            } else if !text.isEmpty {
+                client.insertText(text, replacementRange: Self.noRange)
+            } else if !marked.isEmpty {
                 clearMarked(client)
             }
-            marked = ""
-            formulaText = ""
-            setFormulaInputMode(on: false)
-            composing = false
-            AppLink.shared.send(["t": "forced"])
         }
+        marked = ""
+        formulaText = ""
+        holdGeneration += 1
+        space = FormulaSpace.Layout(text: "", starts: [], counts: [])
+        setFormulaInputMode(on: false)
+        composing = false
+        AppLink.shared.send(["t": "forced"])
+    }
+
+    /// The held space, where the field last had it, replaced by `text` when
+    /// the field's text there is the space (as much of it as the field tells:
+    /// Chrome tells a hundred characters around its caret). The space is
+    /// remembered as possibly left behind all the same (a field that has lost
+    /// the keyboard drops what it is given).
+    private func takeOutKept(_ client: IMKTextInput, with text: String) -> Bool {
+        guard heldRange.location != NSNotFound else { return false }
+        // (the space as it was set last, or as the field last told of it)
+        var candidates: [String] = []
+        for candidate in [marked, space.text, heldText] where !candidate.isEmpty && !candidates.contains(candidate) {
+            candidates.append(candidate)
+        }
+        guard !candidates.isEmpty else { return false }
+        let id = clientID(client)
+        let location = heldRange.location
+        Self.leftovers[id] = Array(((Self.leftovers[id] ?? []).filter { !candidates.contains($0.text) }
+            + candidates.map { Left(text: $0, location: location, at: Date(), first: heldRect, end: lastEnd, replacement: text) }).suffix(6))
+        heldRange = NSRange(location: NSNotFound, length: 0)
+        heldText = ""
+        for candidate in candidates {
+            let range = NSRange(location: location, length: (candidate as NSString).length)
+            guard keptThere(client, range, candidate) else { continue }
+            replace(client, range, with: text)
+            InputLog.write("the held space (\(range.length) characters at \(location)) replaced by \((text as NSString).length) characters")
+            Self.leftovers[id]?.removeAll { candidates.contains($0.text) }
+            return true
+        }
+        let selected = client.selectedRange()
+        InputLog.write("the held space (\(candidates.map { String(($0 as NSString).length) }.joined(separator: "/")) characters at \(location)) is not found in the field's text: selected=\(selected.location == NSNotFound ? -1 : selected.location)+\(selected.length)")
+        return false
+    }
+
+    /// `range` of the field's text replaced by `text`. (Chrome does nothing
+    /// with an empty text: a marked character in the range's place, then no
+    /// marked text.)
+    private func replace(_ client: IMKTextInput, _ range: NSRange, with text: String) {
+        if !text.isEmpty {
+            client.insertText(text, replacementRange: range)
+            return
+        }
+        client.setMarkedText("\u{200B}", selectionRange: NSRange(location: 0, length: 0), replacementRange: range)
+        client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: Self.noRange)
+    }
+
+    private enum Told { case same, different, nothing }
+
+    /// Whether the field's text in `range` is `text`, as far as the field
+    /// tells it: its end at least (Chrome tells the text around its caret
+    /// only, of a range reaching past that the part it has, and often
+    /// nothing at all).
+    private func textThere(_ client: IMKTextInput, _ range: NSRange, _ text: String) -> Told {
+        let whole = text as NSString
+        guard whole.length == range.length, range.length > 0 else { return .different }
+        var checked = 0
+        var end = range.length
+        while end > 0 {
+            let count = min(32, end)
+            let part = NSRange(location: range.location + end - count, length: count)
+            let expected = whole.substring(with: NSRange(location: end - count, length: count))
+            guard let told = client.attributedSubstring(from: part)?.string, !told.isEmpty else { break }
+            if told == expected {
+                checked += count
+                end -= count
+                continue
+            }
+            // a part of what was asked: its end, as far as the field's text goes back
+            let length = (told as NSString).length
+            if length < count, expected.hasSuffix(told) {
+                checked += length
+                break
+            }
+            return .different
+        }
+        return checked >= min(range.length, 12) ? .same : (checked == 0 ? .nothing : .different)
+    }
+
+    /// The field kept the space in `range` as its text: its text there is the
+    /// space; or, when it tells nothing of its text, it is Chrome (which
+    /// keeps what it was composing) or its caret stands right after the
+    /// space (a composition dropped would have left it where the space
+    /// began).
+    private func keptThere(_ client: IMKTextInput, _ range: NSRange, _ text: String) -> Bool {
+        switch textThere(client, range, text) {
+        case .same: return true
+        case .different: return false
+        case .nothing:
+            let selected = client.selectedRange()
+            guard selected.location != NSNotFound else { return false }
+            // (Chrome keeps the text of a composition it ends itself, wherever the click that
+            // ended it put the caret)
+            return Self.lateClients.contains(clientID(client)) || (selected.location == NSMaxRange(range) && selected.length == 0)
+        }
+    }
+
+    /// A held space this application's field kept as its text a moment ago
+    /// (it lost the keyboard and dropped what it was given then), where it
+    /// was, with the caret right after it: taken out. (Only what the field's
+    /// text or, within a minute, its caret's place vouches for.)
+    private func takeOutLeftovers(_ client: IMKTextInput) {
+        let id = clientID(client)
+        // (a field that lost the keyboard has the input method deactivated: it drops what it is
+        // given then, and answers as if it had not)
+        guard Self.active === self else { return }
+        guard !takingOut, let lefts = Self.leftovers[id]?.filter({ Date().timeIntervalSince($0.at) < 60 }), !lefts.isEmpty else {
+            if !takingOut { Self.leftovers[id] = [] }
+            return
+        }
+        let selected = client.selectedRange()
+        let markedRange = client.markedRange()
+        guard selected.location != NSNotFound, selected.length == 0,
+              markedRange.location == NSNotFound || markedRange.length == 0
+        else { return }
+        for left in lefts.sorted(by: { $0.text.count > $1.text.count }) {
+            let length = (left.text as NSString).length
+            guard length > 0 else { continue }
+            let range = NSRange(location: left.location, length: length)
+            let told = textThere(client, range, left.text)
+            var vouched = told == .same
+            if told == .nothing {
+                // the caret right after the space, or (Chrome: a click ended the composition) in it,
+                // and on the screen where the space was
+                let there = selected.location == NSMaxRange(range)
+                    || (Self.lateClients.contains(id) && selected.location >= range.location && selected.location <= NSMaxRange(range))
+                vouched = there && caretWhere(left, client)
+            }
+            guard vouched else { continue }
+            // The space out first, then what goes in its place. A field that has not the keyboard
+            // (the click that ended the composition was outside it) drops what it is given and
+            // still answers as if it had it: the space is gone when the caret has moved (it stood
+            // after the space's start), and until then it is looked for again.
+            let before = caretRect(client)
+            replace(client, range, with: "")
+            let sure = told == .same || selected.location <= range.location
+            takingOut = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self else { return }
+                self.takingOut = false
+                guard Self.active === self, let client = self.client() else { return }
+                let after = self.caretRect(client)
+                let moved = abs(after.minX - before.minX) >= 2 || abs(after.minY - before.minY) >= 2
+                guard sure || moved else {
+                    InputLog.write("a held space left in \(id) (\(length) characters) is still there: the field has not the keyboard")
+                    return
+                }
+                Self.leftovers[id] = []
+                InputLog.write("took out \(length) characters a held space left in \(id)")
+                // (a formula opened meanwhile takes the place)
+                if !left.replacement.isEmpty, !self.composing, self.marked.isEmpty {
+                    client.insertText(left.replacement, replacementRange: NSRange(location: left.location, length: 0))
+                    InputLog.write("the formula's text (\((left.replacement as NSString).length) characters) in its place")
+                }
+            }
+            return
+        }
+    }
+
+    /// The field's caret is on the screen where that space was.
+    private func caretWhere(_ left: Left, _ client: IMKTextInput) -> Bool {
+        let caret = caretRect(client)
+        guard isOnScreen(caret), isOnScreen(left.first) else { return false }
+        let height = max(left.first.height, caret.height)
+        let down = left.end.flatMap { $0.count > 1 ? CGFloat($0[1]) : nil } ?? 0
+        guard caret.midY <= left.first.maxY + height * 0.5, caret.midY >= left.first.minY - down - height * 0.5 else { return false }
+        if down < height * 0.5, let across = left.end?.first {
+            return caret.minX >= left.first.minX - 4 && caret.minX <= left.first.minX + CGFloat(across) + 4
+        }
+        return true
     }
 
     // MARK: VisualTeX's messages (main thread)
@@ -424,6 +655,10 @@ final class VTInputController: IMKInputController {
             controller.holdDeferred = false
             controller.staleHolds = 0
             controller.suspectAnchor = nil
+            controller.heldRange = NSRange(location: NSNotFound, length: 0)
+            controller.heldText = ""
+            controller.lostPolls = 0
+            if on { controller.takeOutLeftovers(client) }
             controller.staleKicks = 0
             controller.kickedText = ""
             controller.kicksUseless = false
@@ -515,16 +750,31 @@ final class VTInputController: IMKInputController {
             kickedText = layout.text
         }
         space = layout
-        marked = layout.text
         InputLog.write("hold pieces=\(layout.starts.count) fillers=\(layout.counts.reduce(0, +)) filler=\(String(format: "%.2f", Double(fillerWidth))) joint=\(String(format: "%.2f", Double(jointWidth)))")
         lastHold = Date()
-        client.setMarkedText(
-            NSAttributedString(string: layout.text),
-            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
-            replacementRange: Self.noRange
-        )
         holdGeneration += 1
-        pollAnchor(generation: holdGeneration, last: nil, polls: 0)
+        let generation = holdGeneration
+        let selection = NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length)
+        guard Self.lateClients.contains(clientID(client)) else {
+            marked = layout.text
+            client.setMarkedText(Self.heldString(layout.text), selectionRange: selection, replacementRange: Self.noRange)
+            pollAnchor(generation: generation, last: nil, polls: 0)
+            return
+        }
+        // Chrome and Electron learn where a marked text's characters are one set late (and keep
+        // what they learnt until the next): the space with a character of no width after it first,
+        // the space itself a moment later, whose places are then the ones they answer. (Typing
+        // goes on meanwhile: a space held before the moment is up takes its place.)
+        let other = layout.text + "\u{200B}"
+        marked = other
+        client.setMarkedText(Self.heldString(other), selectionRange: selection, replacementRange: Self.noRange)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+            guard let self, generation == self.holdGeneration, self.composing, self.space == layout, let client = self.client() else { return }
+            self.marked = layout.text
+            client.setMarkedText(Self.heldString(layout.text), selectionRange: selection, replacementRange: Self.noRange)
+            self.lastHold = Date()
+            self.pollAnchor(generation: generation, last: nil, polls: 0)
+        }
     }
 
     /// Chrome and Electron place marked text a frame or so after it is set
@@ -536,6 +786,23 @@ final class VTInputController: IMKInputController {
         guard generation == holdGeneration, composing, let client = client() else { return }
         let starts = space.starts.isEmpty ? [0] : space.starts
         if polls == 0, !anchorTrusted { InputLog.write("held \(fieldState(client, brief: true))") }
+        // Where the field has the space in its text; a field that says it has no marked text any
+        // more (it had) ended the composition on its own and kept the space as its text (a click in
+        // it; Chrome when its window or its page's focus changes) without telling: as when it tells
+        // (commitComposition).
+        let markedRange = client.markedRange()
+        if markedRange.location != NSNotFound, markedRange.length == (marked as NSString).length {
+            heldRange = markedRange
+            heldText = marked
+            lostPolls = 0
+        } else if markedRange.location == NSNotFound, heldRange.location != NSNotFound {
+            lostPolls += 1
+            if lostPolls >= 4 {
+                InputLog.write("the field has no marked text any more: the composition ended")
+                endedByField(client)
+                return
+            }
+        }
         let started = Date()
         var stop: String?
         var rects: [NSRect] = []
@@ -616,6 +883,10 @@ final class VTInputController: IMKInputController {
                 }
             }
             reportPlaces(rects, end: rects.count == space.starts.count ? endPlace(client, rects) : nil, anchor: characterRect(client, 0))
+            // (a field that answers nothing after the last character: Chrome, Electron)
+            if (marked as NSString).length >= 2, characterRect(client, (marked as NSString).length) == nil {
+                Self.lateClients.insert(clientID(client))
+            }
             // places of a space held before, still answered once typing has paused: the space is
             // set again (twice a space at most; a field that answers so all the same is left alone).
             // The widths are read off places that passed (read off an earlier space's, the joint
@@ -646,23 +917,22 @@ final class VTInputController: IMKInputController {
         }
     }
 
-    /// Another text for a moment (the same one again changes nothing for
-    /// Chrome), then the space: Chrome places it anew. The other text is the
-    /// space and a character of no width, so the text after the formula
-    /// stays where it is meanwhile.
+    /// The held space as marked text: with the thin underline. (Given no
+    /// attribute the field draws a thick one. Its colour is the system's,
+    /// whatever colour is given: an underline nobody sees cannot be asked
+    /// for, 2026-11-10.)
+    private static func heldString(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue])
+    }
+
+    /// The space set again so that Chrome places it anew: as hold does for
+    /// a field known to learn places late (another text first, the space and
+    /// a character of no width, so the text after the formula stays where it
+    /// is meanwhile; the same text again changes nothing for Chrome).
     private func setAgain(_ client: IMKTextInput) {
-        let other = space.text + "\u{200B}"
-        client.setMarkedText(
-            NSAttributedString(string: other),
-            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
-            replacementRange: Self.noRange
-        )
-        marked = other
-        holdGeneration += 1
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, self.composing, let client = self.client() else { return }
-            self.hold(client)
-        }
+        Self.lateClients.insert(clientID(client))
+        marked = ""
+        hold(client)
     }
 
     /// Chrome answers a character's place from what its page told it of the
@@ -677,7 +947,9 @@ final class VTInputController: IMKInputController {
     /// others', or that starts where the joint before it does, has a place
     /// that is not its own.
     private func stalePlaces(_ client: IMKTextInput, _ rects: [NSRect]) -> String? {
-        guard rects.count == space.starts.count else { return nil }
+        guard rects.count == space.starts.count else {
+            return "piece \(rects.count) of \(space.starts.count) has no place after the one before it"
+        }
         let length = (space.text as NSString).length
         var widths: [(piece: Int, width: CGFloat)] = []
         // (Chrome answers nothing after the last character; a field that does is not asked why it
