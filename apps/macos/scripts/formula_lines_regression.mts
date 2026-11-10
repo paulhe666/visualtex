@@ -95,6 +95,12 @@ test("a piece wider than the longest is cut at atom starts", () => {
   for (let k = 1; k < pieces.length; k++) assert.equal(pieces[k].start, pieces[k - 1].end);
 });
 
+test("the parts of a long piece are short: the field breaks its line between them", () => {
+  const pieces = formulaPieces(run(20) as any);
+  assert.equal(pieces.length, 10);
+  for (const p of pieces) assert.ok(p.end - p.start <= 2 * EM, `piece ${p.start / EM}-${p.end / EM} em`);
+});
+
 test("a script box stays with its atom", () => {
   const pieces = formulaPieces(run(12, true) as any, 4.2);
   // the shifted box after x4 starts at 5em: no piece starts there
