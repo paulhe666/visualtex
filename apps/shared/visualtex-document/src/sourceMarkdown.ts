@@ -652,17 +652,27 @@ function stepCharacter(view: EditorView, dir: -1 | 1, extend: boolean): boolean 
 }
 
 /**
- * Home / End on a block's first / last line: to the block's start / end, markers included (the browser's own key stops
- * at hidden markers, and reads the caret back a moment later). On the other lines of a wrapped block the browser does it.
+ * Home / End: to the start / end of the caret's line, a selection collapsed there (Shift: extended), markers included —
+ * on a block's first / last line its start / end (the browser's own key stops at hidden markers, reads the caret back a
+ * moment later, and on the Mac only scrolls); on a wrapped block's other lines where the line is drawn to start / end.
  */
 function stepLineEdge(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const { state } = view;
   const selection = state.selection;
-  if (!(selection instanceof TextSelection) || (!selection.empty && !extend)) return false;
+  if (!(selection instanceof TextSelection)) return false;
   const $head = selection.$head;
   if (!$head.parent.isTextblock || $head.parent.type.spec.code) return false;
-  if (!view.endOfTextblock(dir < 0 ? "up" : "down")) return false;
-  const pos = dir < 0 ? $head.start() : $head.end();
+  let pos: number;
+  if (view.endOfTextblock(dir < 0 ? "up" : "down")) pos = dir < 0 ? $head.start() : $head.end();
+  else {
+    const dom = view.nodeDOM($head.before());
+    if (!(dom instanceof HTMLElement)) return false;
+    const box = dom.getBoundingClientRect();
+    const caret = view.coordsAtPos($head.pos);
+    const found = view.posAtCoords({ left: dir < 0 ? box.left + 1 : box.right - 1, top: (caret.top + caret.bottom) / 2 });
+    if (!found || found.pos < $head.start() || found.pos > $head.end()) return false;
+    pos = found.pos;
+  }
   view.dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, pos) : TextSelection.create(state.doc, pos)).scrollIntoView());
   return true;
 }
