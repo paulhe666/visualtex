@@ -17,7 +17,7 @@ import { blockLanguage, documentToMarkdown, NO_CAPTION, readMarkdown } from "./m
 import { captionLabelLength } from "./figures.ts";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { homeInLine, renumberLists } from "./sourceKeys.ts";
-import { blankLine as tokenizerBlankLine, copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
+import { copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
 
 // ------------------------------------------------------------------------------------------------- a line's syntax
 
@@ -259,9 +259,7 @@ function makeSyntax(text: string, tokens: MarkdownToken[], facts: LineFacts): Bl
   const { units, styles } = spansOf(text, tokens);
   let heading: HeadingSyntax | null = null;
   if (facts.header && !facts.list && !facts.quote && !facts.codeInside && !facts.codeBegin) {
-    const atx = headingSyntax(text);
-    if (atx) heading = atx;
-    else if (!/^\s*(=+|-+)\s*$/.test(text)) heading = { level: facts.header, prefixEnd: 0, close: null, attributes: null, unnumbered: false };
+    heading = headingSyntax(text);
   }
   return { text, tokens, facts, units, styles, heading };
 }
@@ -272,7 +270,7 @@ const frontMatterReads = new WeakMap<BlockSyntax, BlockSyntax>();
 function frontMatterSyntax(syntax: BlockSyntax, tokens: MarkdownToken[]): BlockSyntax {
   let read = frontMatterReads.get(syntax);
   if (!read) {
-    read = { text: syntax.text, tokens, facts: { header: 0, list: 0, quote: 0, codeBegin: false, codeEnd: false, codeInside: false, indentedCode: false, codeLang: "", hr: false, blank: !syntax.text, frontMatter: true }, units: [], styles: [], heading: null };
+    read = { text: syntax.text, tokens, facts: { header: 0, list: 0, quote: 0, codeBegin: false, codeEnd: false, codeInside: false, codeLang: "", hr: false, blank: !syntax.text, frontMatter: true }, units: [], styles: [], heading: null };
     frontMatterReads.set(syntax, read);
   }
   return read;
@@ -293,12 +291,10 @@ const reads = new WeakMap<Node, Map<string, LineRead>>();
 /** Each textblock's syntax as last read in its document (blockSyntax). */
 const lastRead = new WeakMap<Node, BlockSyntax>();
 
-const SETEXT = /^ {0,3}(?:=+|-{2,})\s*$/;
-
 /** A textblock read alone (a title, a caption, a table cell; a line not read in its document yet). */
 function readAlone(node: Node): BlockSyntax {
   const text = blockText(node);
-  const { tokens, facts } = tokenizeLine(text, startState(), () => undefined);
+  const { tokens, facts } = tokenizeLine(text, startState());
   const syntax = makeSyntax(text, tokens, headingCapable(node) ? facts : { ...facts, header: 0 });
   lastRead.set(node, syntax);
   return syntax;
@@ -329,27 +325,25 @@ interface DocumentLines {
   others: Array<{ node: Node; pos: number; syntax: BlockSyntax }>;
 }
 
-/** Every line of a document read in order (unchanged lines with the same state before them are not read again). */
+/**
+ * Every line of a document, each read by itself (cm5Markdown.ts: what a line is does not depend on the lines around
+ * it); only a fenced code block goes on from line to line. A line read before in the same state is not read again.
+ */
 function readDocument(doc: Node): DocumentLines {
   const lines: SourceLine[] = [];
   const others: DocumentLines["others"] = [];
   const children: Array<{ node: Node; pos: number }> = [];
   doc.forEach((node, pos) => children.push({ node, pos }));
   let state = startState();
-  const textOf = (i: number) => {
-    const child = children[i];
-    return child && child.node.isTextblock && headingCapable(child.node) ? blockText(child.node) : undefined;
-  };
-  children.forEach(({ node, pos }, i) => {
+  children.forEach(({ node, pos }) => {
     if (node.isTextblock && headingCapable(node)) {
-      const next = textOf(i + 1);
-      const key = stateKey(state) + (next !== undefined && SETEXT.test(next) ? "|s" : "");
+      const key = stateKey(state);
       let byState = reads.get(node);
       let read = byState?.get(key);
       if (!read) {
         const text = blockText(node);
         const working = copyState(state);
-        const { tokens, facts } = tokenizeLine(text, working, (n) => textOf(i + n));
+        const { tokens, facts } = tokenizeLine(text, working);
         read = { syntax: makeSyntax(text, tokens, facts), out: working };
         if (!byState) reads.set(node, (byState = new Map()));
         byState.set(key, read);
@@ -359,10 +353,8 @@ function readDocument(doc: Node): DocumentLines {
       lines.push({ node, pos, syntax: read.syntax });
       return;
     }
-    // an object between lines (a formula, a table, a picture, the title): what was open ends there
-    tokenizerBlankLine(state);
-    state.code = 0;
-    state.fencedEndRE = null;
+    // an object between lines (a formula, a table, a picture, the title): a fenced code block open there ends
+    state = startState();
     if (node.isTextblock) others.push({ node, pos, syntax: readAlone(node) });
     else
       node.descendants((child, offset) => {
@@ -521,8 +513,6 @@ interface LineContext {
   callout: { type: string; title: string } | null;
   /** whether the line is in a callout */
   inCallout: string | null;
-  /** a plain line right after another line of the same paragraph (Markdown joins them; no first-line indent) */
-  continuation: boolean;
 }
 
 const hide = (from: number, to: number) => Decoration.inline(from, to, { class: "md-hidden" }, { md: "hide" });
@@ -558,7 +548,6 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
     if (cx.inCallout) lineClasses.push("md-calloutline", `md-callout-${cx.inCallout}`);
   }
   if (facts.hr) lineClasses.push("md-ruleline");
-  if (cx.continuation) lineClasses.push("md-cont");
   if (lineClasses.length || lineStyle.length) {
     out.push(Decoration.node(pos, pos + node.nodeSize, { class: lineClasses.join(" "), ...(lineStyle.length ? { style: lineStyle.join(";") } : {}) }));
   }
@@ -585,12 +574,6 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
     return out;
   }
   if (facts.codeInside) return out;
-  // an indented code line (four spaces or a tab): its text styled as code, in a line of its own (Obsidian)
-  if (facts.indentedCode) {
-    const at = text.search(/\S/);
-    if (at >= 0) out.push(Decoration.inline(start + at, end, { class: "md-code" }));
-    return out;
-  }
 
   // a rule: drawn as a rule unless the selection touches its line
   if (facts.hr) {
@@ -747,7 +730,7 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
 
 /** Decorations of a textblock that is not a line (a table cell, a caption, the title): inline Markdown only. */
 function alonePieceDecorations(node: Node, pos: number, syntax: BlockSyntax, ranges: Ranges): Decoration[] {
-  return lineDecorations({ node, pos, syntax: { ...syntax, facts: { ...syntax.facts, header: 0, list: 0, quote: 0, hr: false, codeBegin: false, codeEnd: false, codeInside: false, indentedCode: false } } }, { ranges, block: null, blockRange: null, callout: null, inCallout: null, continuation: false });
+  return lineDecorations({ node, pos, syntax: { ...syntax, facts: { ...syntax.facts, header: 0, list: 0, quote: 0, hr: false, codeBegin: false, codeEnd: false, codeInside: false } } }, { ranges, block: null, blockRange: null, callout: null, inCallout: null });
 }
 
 interface SourceLiveState {
@@ -791,11 +774,7 @@ function calloutsOf(lines: SourceLine[]): { inside: Map<number, string>; starts:
 function contextOf(read: DocumentLines, index: number, ranges: Ranges, callouts: ReturnType<typeof calloutsOf>): LineContext {
   const block = read.code.find((b) => index >= b.first && index <= b.last) ?? null;
   const blockRange: [number, number] | null = block ? [read.lines[block.first].pos + 1, read.lines[block.last].pos + 1 + read.lines[block.last].node.content.size] : null;
-  const line = read.lines[index];
-  const previous = index > 0 ? read.lines[index - 1] : null;
-  const plain = (f: LineFacts) => !f.blank && !f.list && !f.quote && !f.header && !f.hr && !f.codeBegin && !f.codeInside && !f.codeEnd && !f.indentedCode;
-  const continuation = !!previous && previous.pos + previous.node.nodeSize === line.pos && plain(line.syntax.facts) && plain(previous.syntax.facts);
-  return { ranges, block, blockRange, callout: callouts.starts.get(index) ?? null, inCallout: callouts.inside.get(index) ?? null, continuation };
+  return { ranges, block, blockRange, callout: callouts.starts.get(index) ?? null, inCallout: callouts.inside.get(index) ?? null };
 }
 
 function allDecorations(doc: Node, read: DocumentLines): DecorationSet {
@@ -1173,7 +1152,7 @@ export function inSourceCode($pos: ResolvedPos): boolean {
   const node = $pos.parent;
   if (!node.isTextblock || node.type.spec.code) return false;
   const syntax = blockSyntax(node);
-  if (syntax.facts.codeInside || syntax.facts.indentedCode) return true;
+  if (syntax.facts.codeInside) return true;
   const offset = $pos.parentOffset;
   return syntax.units.some((unit) => unit.kind === "code" && unit.marks.length > 1 && offset >= unit.marks[0][1] && offset <= unit.marks[unit.marks.length - 1][0]);
 }

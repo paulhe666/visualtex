@@ -164,6 +164,13 @@ function documentFormulaMarkup(latex: string, display: boolean): string {
   return markup;
 }
 
+/**
+ * The live formula editors' "draw at the page's size": an editor draws at the size it is given, and the zoom changes
+ * under the ones on the page (they stayed the size they were opened at, small or large beside the text, and the pages
+ * measured with them depended on the zooms the window had been through).
+ */
+const liveFormulaResizers = new Set<() => void>();
+
 function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) => void) | undefined): FormulaHost {
   return {
     renderStatic(latex, display) {
@@ -177,7 +184,13 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
     open(container, { latex, display, entry, callbacks, passive }): FormulaSession {
       const apiRef: { current: DocumentFormulaFieldApi | null } = { current: null };
       const root: Root = createRoot(container);
-      flushSync(() =>
+      const setApi = (api: DocumentFormulaFieldApi | null) => {
+        apiRef.current = api;
+      };
+      const onPasteImage = onImage();
+      const pageSize = () => parseFloat(getComputedStyle(container).fontSize) || mathSize();
+      let fontSize = pageSize();
+      const draw = () =>
         root.render(
           <DocumentFormulaField
             id="doc-formula"
@@ -185,15 +198,20 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
             display={display}
             entry={entry}
             passive={passive}
-            onPasteImage={onImage()}
-            fontSize={parseFloat(getComputedStyle(container).fontSize) || mathSize()}
+            onPasteImage={onPasteImage}
+            fontSize={fontSize}
             callbacks={callbacks}
-            apiRef={(api) => {
-              apiRef.current = api;
-            }}
+            apiRef={setApi}
           />,
-        ),
-      );
+        );
+      flushSync(draw);
+      const resize = () => {
+        const size = pageSize();
+        if (!container.isConnected || Math.abs(size - fontSize) < 0.01) return;
+        fontSize = size;
+        draw();
+      };
+      liveFormulaResizers.add(resize);
       return {
         showPart: (range) => apiRef.current?.showPart(range),
         stopAt: (x, y) => apiRef.current?.stopAt(x, y) ?? null,
@@ -240,6 +258,7 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
           apiRef.current?.flush();
         },
         destroy() {
+          liveFormulaResizers.delete(resize);
           // Outside ProseMirror's update cycle: an edit not yet reported is stored, then the field unmounts.
           queueMicrotask(() => {
             apiRef.current?.flush();
@@ -639,9 +658,10 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     observer.observe(frame);
     return () => observer.disconnect();
   }, [fitWidth, frame, settings, manualZoom]);
-  // the zoom or the page changed: the pages are measured again
+  // the zoom or the page changed: the formulas' live editors take the page's size, and the pages are measured again
   useEffect(() => {
     const view = viewRef.current;
+    for (const resize of liveFormulaResizers) resize();
     if (view && settings) refreshPagination(view);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom, settings, layoutKey]);

@@ -122,12 +122,18 @@ function spacer(height: number, inline: boolean, row?: number): () => HTMLElemen
   };
 }
 
+/** The block whose top border is a break's spacer (a text block's own line; else a spacer stands before the place). */
+function borderBlock(doc: Node, block: number | undefined): Node | null {
+  const node = block !== undefined ? doc.nodeAt(block) : null;
+  return node && (node.isTextblock || node.type.name === "abstract") ? node : null;
+}
+
 function buildDecorations(doc: Node, breaks: PageBreak[]): DecorationSet {
   return DecorationSet.create(
     doc,
     breaks.map((b) => {
-      const block = b.block !== undefined ? doc.nodeAt(b.block) : null;
-      if (block?.isTextblock || block?.type.name === "abstract") {
+      const block = borderBlock(doc, b.block);
+      if (block) {
         return Decoration.node(b.block!, b.block! + block.nodeSize, {
           class: "vtx-page-break-before",
           style: `border-top:${b.height}px solid transparent`,
@@ -283,9 +289,17 @@ class PaginationView {
   private timer = 0;
   private readonly layer: HTMLElement;
   private readonly measurer: HTMLElement;
+  private readonly probe: HTMLElement;
   private lastKey = "";
-  /** The page breaks measured since the document or the page last changed: one of them again is not taken. */
+  /** The page breaks measured since the document, the page or a block's height last changed: one of them again is
+   *  not taken. */
   private seen = new Set<string>();
+  /** The foot of the last block, the spacers aside, when last measured: the blocks' own heights. */
+  private extent = -1;
+  /** Breaks taken one soon after the other with no change in the document or the page (and when the last was). */
+  private turns = 0;
+  private turnedAt = 0;
+  private readonly observer: ResizeObserver | null;
 
   constructor(
     private view: EditorView,
@@ -295,12 +309,18 @@ class PaginationView {
     this.layer.className = "vtx-page-layer";
     this.measurer = document.createElement("div");
     this.measurer.className = "vtx-page-footnotes is-measuring";
-    this.layer.append(this.measurer);
+    this.probe = document.createElement("div");
+    this.probe.style.cssText = "position:absolute;visibility:hidden;height:0;border-top:0 solid transparent";
+    this.layer.append(this.measurer, this.probe);
     this.layer.addEventListener("mousedown", this.onLayerMouseDown);
     this.sheet()?.append(this.layer);
     this.schedule();
     window.addEventListener("resize", this.changed);
     document.fonts?.addEventListener?.("loadingdone", this.changed);
+    // A block's height changing with no change in the document (a formula's editor drawn at the zoom's size a moment
+    // after the zoom, a picture loaded): the pages are measured again.
+    this.observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(this.schedule);
+    this.observer?.observe(view.dom);
   }
 
   /** The sheet the editor lies on (its pages are drawn by its background; the layer is placed on it). */
@@ -319,7 +339,7 @@ class PaginationView {
   update(view: EditorView, previous: EditorState) {
     this.view = view;
     if (this.layer.parentElement !== this.sheet()) this.sheet()?.append(this.layer);
-    if (view.state.doc !== previous.doc) this.seen.clear();
+    if (view.state.doc !== previous.doc) this.forget();
     if (view.state.doc !== previous.doc || paginationKey.getState(view.state) !== paginationKey.getState(previous)) this.schedule();
   }
 
@@ -334,14 +354,20 @@ class PaginationView {
 
   /** Measure again now (the geometry or the fonts changed). */
   refresh() {
-    this.seen.clear();
+    this.forget();
     this.schedule();
   }
 
   private changed = () => {
-    this.seen.clear();
+    this.forget();
     this.schedule();
   };
+
+  /** What was measured before counts no more. */
+  private forget() {
+    this.seen.clear();
+    this.turns = 0;
+  }
 
   private measure() {
     const view = this.view;
@@ -376,6 +402,14 @@ class PaginationView {
       return y - origin - shift;
     };
     const units = collectUnits(view, contentHeight).map((u) => ({ ...u, top: natural(u.top), bottom: natural(u.bottom) }));
+    // The blocks' own heights changed with the document as it was (a formula's editor redrawn, a picture loaded): what
+    // was measured before counts no more. (Not for ever: breaks that keep changing in quick turns with nothing else
+    // changed are going back and forth, and the ones measured before stay barred.)
+    const extent = units.length ? units[units.length - 1].bottom : 0;
+    if (Math.abs(extent - this.extent) > 0.5) {
+      this.extent = extent;
+      if (this.turns < 12) this.seen.clear();
+    }
     // the sections' marks (the running head of \pagestyle{headings}) and \maketitle's \thispagestyle{plain}
     const layout = bodyLayout(view.state.doc);
     const numbers = headingNumbers(view.state.doc);
@@ -407,6 +441,10 @@ class PaginationView {
       unit?.footnotes.push(index);
     });
 
+    // A spacer that is a block's top border is as high as the browser draws a border that wide (whole device pixels):
+    // what follows is lower by that, not by what was asked for. (Else every such page lay a fraction of a pixel higher
+    // than the one before it, a pixel and a half by the sixth page of a document measured.)
+    const spacerHeight = (unit: Unit, push: number) => (borderBlock(view.state.doc, unit.block) ? this.drawnBorder(push) : push);
     // place the units page by page
     const breaks: PageBreak[] = [];
     const pageNotes: number[][] = [[]];
@@ -428,7 +466,7 @@ class PaginationView {
         if (top < (page + 1) * stride) {
           const push = (page + 1) * stride - top;
           breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block, row: unit.row });
-          offset += push;
+          offset += spacerHeight(unit, push);
           top += push;
           bottom += push;
         }
@@ -449,7 +487,7 @@ class PaginationView {
         if (page > 0 && top < page * stride) {
           const push = page * stride - top;
           breaks.push({ pos: unit.pos, inline: unit.inline, height: push, block: unit.block, row: unit.row });
-          offset += push;
+          offset += spacerHeight(unit, push);
           top += push;
           bottom += push;
         }
@@ -468,7 +506,7 @@ class PaginationView {
         const firstTop = first.top + offset;
         const push = (page + 1) * stride - firstTop;
         breaks.push({ pos: first.pos, inline: first.inline, height: push, block: first.block, row: first.row });
-        offset += push;
+        offset += spacerHeight(first, push);
         page++;
         reserve = 0;
         pageNotes[page] = [];
@@ -503,6 +541,9 @@ class PaginationView {
       if (!this.seen.has(key)) {
         this.seen.add(state.breaks.map((b) => `${b.pos}${b.inline ? "i" : "b"}${b.block ?? ""}:${Math.round(b.height)}`).join(" "));
         this.seen.add(key);
+        const now = performance.now();
+        this.turns = now - this.turnedAt < 2000 ? this.turns + 1 : 1;
+        this.turnedAt = now;
         view.dispatch(view.state.tr.setMeta(paginationKey, breaks).setMeta("addToHistory", false));
       }
     }
@@ -517,6 +558,13 @@ class PaginationView {
       if (own.length) mark = own[own.length - 1];
     }
     this.renderLayer(sheet, settings, pxPerMm, stride, pages, pageNotes, notes, labels, marks);
+  }
+
+  /** How wide the browser draws a top border asked to be `height` wide. */
+  private drawnBorder(height: number): number {
+    this.probe.style.borderTopWidth = `${height}px`;
+    const drawn = parseFloat(getComputedStyle(this.probe).borderTopWidth);
+    return Number.isFinite(drawn) && drawn > 0 ? drawn : height;
   }
 
   /** Each footnote's height at the foot of a page (its text set at the text area's width). */
@@ -582,7 +630,7 @@ class PaginationView {
     const html = parts.join("");
     // the measurer stays in the layer
     this.layer.innerHTML = html;
-    this.layer.append(this.measurer);
+    this.layer.append(this.measurer, this.probe);
     // the heads and feet are placed by their baseline: each one's top moved up by its baseline's depth in it (a
     // zero-height box on the baseline tells it, whatever the fonts)
     for (const el of Array.from(this.layer.querySelectorAll<HTMLElement>(".vtx-page-head, .vtx-page-layer > .vtx-page-number"))) {
@@ -598,6 +646,7 @@ class PaginationView {
     cancelAnimationFrame(this.frame);
     window.removeEventListener("resize", this.changed);
     document.fonts?.removeEventListener?.("loadingdone", this.changed);
+    this.observer?.disconnect();
     this.layer.removeEventListener("mousedown", this.onLayerMouseDown);
     this.layer.remove();
   }
@@ -616,10 +665,18 @@ export function paginationPlugin(options: PaginationOptions): Plugin<PaginationS
         const breaks = tr.getMeta(paginationKey) as PageBreak[] | undefined;
         if (breaks) return { decorations: buildDecorations(tr.doc, breaks), breaks };
         if (!tr.docChanged) return value;
-        // until the next measurement the spacers keep their places in the changed text
-        const decorations = value.decorations.map(tr.mapping, tr.doc);
-        const mapped = value.breaks.map((b) => ({ ...b, pos: tr.mapping.map(b.pos, -1) }));
-        return { decorations, breaks: mapped };
+        // Until the next measurement the breaks keep their places in the changed text, and the spacers are drawn again
+        // from them. (They were mapped apart before: a spacer that is a line's own top border is a node decoration, and
+        // one does not live through its line being split, joined or retyped as a heading, while the break stayed in the
+        // list; the next measurement then found the same breaks, drew nothing, and the page's first line and all after
+        // it stood a spacer too high: text in the bottom margin and in the gap between pages.)
+        const mapped = value.breaks.map((b) => {
+          const pos = tr.mapping.map(b.pos, -1);
+          if (b.block === undefined) return { ...b, pos };
+          const at = tr.mapping.mapResult(b.block, 1);
+          return { ...b, pos, block: at.deleted ? undefined : at.pos };
+        });
+        return { decorations: buildDecorations(tr.doc, mapped), breaks: mapped };
       },
     },
     view: (view) => {

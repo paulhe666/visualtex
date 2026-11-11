@@ -5,7 +5,15 @@
 // is text, as in Obsidian), `==highlight==` added, code spans classed "inline-code" and code block lines
 // "hmd-codeblock" (Obsidian's names), no HTML mode (inline HTML is the source editor's own), and next to Chinese,
 // Japanese or Korean text punctuation does not stop "*" / "_" from opening or closing ("前**粗体。**后" is bold —
-// the one place the source editor reads Markdown otherwise than Obsidian, on the user's word, 2026-11-10).
+// one place the source editor reads Markdown otherwise than Obsidian, on the user's word, 2026-11-10).
+//
+// The other place (2026-11-11): A LINE IS READ BY ITSELF. What a line is never depends on the lines around it; the one
+// thing that goes on from a line to the next is a fenced code block, which the user opens and closes. CommonMark's
+// rules that read a line by its neighbours are gone: no indented code (a tab or spaces before a line are its
+// indentation, whatever is above it), no setext heading ("---" under text is a rule, "===" text), no lazy
+// continuation (a line after a quote or a list item with no marker of its own is a plain line), no emphasis, code
+// span or link that runs on into the next line, and a list item, quote, rule or fence may be indented as far as its
+// line likes (nothing above it decides how far is too far).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -15,7 +23,6 @@ export class StringStream {
   start = 0;
   constructor(
     public string: string,
-    private next_lines: (n: number) => string | undefined,
     public tabSize = 4,
   ) {}
   eol() {
@@ -79,9 +86,6 @@ export class StringStream {
   current(): string {
     return this.string.slice(this.start, this.pos);
   }
-  lookAhead(n: number): string | undefined {
-    return this.next_lines(n);
-  }
 }
 
 const CJK = /[ᄀ-ᇿ⺀-⿿　-〿぀-ヿ㄀-ㇿ㈀-㏿㐀-䶿一-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-￯]|[\ud840-\ud87f]/;
@@ -90,10 +94,8 @@ const hrRE = /^([*\-_])(?:\s*\1){2,}\s*$/;
 const listRE = /^(?:[*\-+]|^[0-9]+([.)]))\s+/;
 const taskListRE = /^\[(x| )\](?=\s)/i;
 const atxHeaderRE = /^(#+)(?: |$)/;
-const setextHeaderRE = /^ {0,3}(?:={1,}|-{2,})\s*$/;
 const textRE = /^[^#!\[\]*_\\<>` "'(~:=]+/;
 const fencedCodeRE = /^(~~~+|```+)[ \t]*([\w\/+#-]*)[^\n`]*$/;
-const linkDefRE = /^\s*\[[^\]]+?\]:.*$/;
 const punctuation = /[!"#$%&'()*+,\-.\/:;<=>?@\[\\\]^_`{|}~\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061E\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u0AF0\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166D\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E42\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC9\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDF3C-\uDF3E]|\uD809[\uDC70-\uDC74]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]/;
 const expandedTab = "    ";
 
@@ -105,16 +107,7 @@ function switchInline(stream: StringStream, state: MarkdownState, f: any) {
   return f(stream, state);
 }
 
-function switchBlock(stream: StringStream, state: MarkdownState, f: any) {
-  state.f = state.block = f;
-  return f(stream, state);
-}
-
-function lineIsEmpty(line: StringStream | null) {
-  return !line || !/\S/.test(line.string);
-}
-
-export function blankLine(state: MarkdownState) {
+function blankLine(state: MarkdownState) {
   state.linkTitle = false;
   state.linkHref = false;
   state.linkText = false;
@@ -123,7 +116,6 @@ export function blankLine(state: MarkdownState) {
   state.strikethrough = false;
   state.highlight = false;
   state.quote = 0;
-  state.indentedCode = false;
   state.trailingSpace = 0;
   state.trailingSpaceNewLine = false;
   state.prevLine = state.thisLine;
@@ -131,65 +123,43 @@ export function blankLine(state: MarkdownState) {
   return null;
 }
 
+/**
+ * A line's start, read with nothing known of the lines before it (see the top of the file): a rule, a heading ("#" at
+ * the line's very start), a quote, a list item or a fence after any indentation; anything else is text.
+ */
 function blockNormal(stream: StringStream, state: MarkdownState): string | null {
   const firstTokenOnLine = stream.column() === state.indentation;
-  const prevLineLineIsEmpty = lineIsEmpty(state.prevLine.stream);
-  const prevLineIsIndentedCode = state.indentedCode;
-  const prevLineIsHr = state.prevLine.hr;
-  const prevLineIsList = state.list !== false;
-  const maxNonCodeIndentation = (state.listStack[state.listStack.length - 1] || 0) + 3;
-  state.indentedCode = false;
-  const lineIndentation = state.indentation;
-  if (state.indentationDiff === null) {
-    state.indentationDiff = state.indentation;
-    if (prevLineIsList) {
-      state.list = null;
-      while (lineIndentation < state.listStack[state.listStack.length - 1]) {
-        state.listStack.pop();
-        if (state.listStack.length) state.indentation = state.listStack[state.listStack.length - 1];
-        else state.list = false;
-      }
-      if (state.list !== false) state.indentationDiff = lineIndentation - state.listStack[state.listStack.length - 1];
-    }
-  }
-  const allowsInlineContinuation =
-    !prevLineLineIsEmpty && !prevLineIsHr && !state.prevLine.header && (!prevLineIsList || !prevLineIsIndentedCode) && !state.prevLine.fencedCodeEnd;
-  const isHr = (state.list === false || prevLineIsHr || prevLineLineIsEmpty) && state.indentation <= maxNonCodeIndentation && stream.match(hrRE);
   let match: any = null;
-  if (state.indentationDiff >= 4 && (prevLineIsIndentedCode || state.prevLine.fencedCodeEnd || state.prevLine.header || prevLineLineIsEmpty)) {
+  if (stream.match(hrRE)) {
     stream.skipToEnd();
-    state.indentedCode = true;
-    return "comment hmd-codeblock hmd-indented-code";
+    state.hr = true;
+    state.thisLine.hr = true;
+    return "hr";
   } else if (stream.eatSpace()) {
     return null;
-  } else if (firstTokenOnLine && state.indentation <= maxNonCodeIndentation && (match = stream.match(atxHeaderRE)) && match[1].length <= 6) {
+  } else if (firstTokenOnLine && state.indentation === 0 && (match = stream.match(atxHeaderRE)) && match[1].length <= 6) {
     state.quote = 0;
     state.header = match[1].length;
     state.thisLine.header = true;
     state.formatting = "header";
     state.f = state.inline;
     return getType(state);
-  } else if (state.indentation <= maxNonCodeIndentation && stream.eat(">")) {
+  } else if (stream.eat(">")) {
     state.quote = firstTokenOnLine ? 1 : state.quote + 1;
     state.formatting = "quote";
     stream.eatSpace();
     return getType(state);
-  } else if (!isHr && !state.setext && firstTokenOnLine && state.indentation <= maxNonCodeIndentation && (match = stream.match(listRE))) {
+  } else if (firstTokenOnLine && (match = stream.match(listRE))) {
     const listType = match[1] ? "ol" : "ul";
-    state.indentation = lineIndentation + stream.current().length;
+    state.indentation = state.indentation + stream.current().length;
     state.list = true;
     state.quote = 0;
     state.listStack.push(state.indentation);
-    state.em = false;
-    state.strong = false;
-    state.code = false;
-    state.strikethrough = false;
-    state.highlight = false;
     if (stream.match(taskListRE, false)) state.taskList = true;
     state.f = state.inline;
     state.formatting = ["list", "list-" + listType];
     return getType(state);
-  } else if (firstTokenOnLine && state.indentation <= maxNonCodeIndentation && (match = stream.match(fencedCodeRE, true))) {
+  } else if (firstTokenOnLine && (match = stream.match(fencedCodeRE, true))) {
     state.quote = 0;
     state.fencedEndRE = new RegExp(match[1] + "+ *$");
     state.fencedLang = match[2] || "";
@@ -198,34 +168,6 @@ function blockNormal(stream: StringStream, state: MarkdownState): string | null 
     state.code = -1;
     state.thisLine.fencedCodeBegin = true;
     return getType(state);
-  } else if (
-    state.setext ||
-    ((!allowsInlineContinuation || !prevLineIsList) &&
-      !state.quote &&
-      state.list === false &&
-      !state.code &&
-      !isHr &&
-      !linkDefRE.test(stream.string) &&
-      (match = stream.lookAhead(1)) &&
-      (match = match.match(setextHeaderRE)))
-  ) {
-    if (!state.setext) {
-      state.header = match[0].charAt(0) === "=" ? 1 : 2;
-      state.setext = state.header;
-    } else {
-      state.header = state.setext;
-      state.setext = 0;
-      stream.skipToEnd();
-      state.formatting = "header";
-    }
-    state.thisLine.header = true;
-    state.f = state.inline;
-    return getType(state);
-  } else if (isHr) {
-    stream.skipToEnd();
-    state.hr = true;
-    state.thisLine.hr = true;
-    return "hr";
   } else if (stream.peek() === "[") {
     return switchInline(stream, state, footnoteLink);
   }
@@ -233,19 +175,14 @@ function blockNormal(stream: StringStream, state: MarkdownState): string | null 
 }
 
 function local(stream: StringStream, state: MarkdownState): string | null {
-  const currListInd = state.listStack[state.listStack.length - 1] || 0;
-  const hasExitedList = state.indentation < currListInd;
-  const maxFencedEndInd = currListInd + 3;
-  if (state.fencedEndRE && state.indentation <= maxFencedEndInd && (hasExitedList || stream.match(state.fencedEndRE))) {
+  if (state.fencedEndRE && stream.match(state.fencedEndRE)) {
     state.formatting = "code-block";
-    let returnType: string | null = null;
-    if (!hasExitedList) returnType = getType(state);
+    const returnType = getType(state);
     state.block = blockNormal;
     state.f = inlineNormal;
     state.fencedEndRE = null;
     state.code = 0;
     state.thisLine.fencedCodeEnd = true;
-    if (hasExitedList) return switchBlock(stream, state, state.block);
     return returnType;
   }
   stream.skipToEnd();
@@ -562,9 +499,13 @@ export function startState(): MarkdownState {
     em: false,
     strong: false,
     header: 0,
-    setext: 0,
     hr: false,
     taskList: false,
+    taskOpen: false,
+    taskClosed: false,
+    image: false,
+    imageAltText: false,
+    imageMarker: false,
     list: false,
     listStack: [],
     quote: 0,
@@ -596,13 +537,11 @@ export function copyState(s: MarkdownState): MarkdownState {
     strikethrough: s.strikethrough,
     highlight: s.highlight,
     header: s.header,
-    setext: s.setext,
     hr: s.hr,
     taskList: s.taskList,
     list: s.list,
     listStack: s.listStack.slice(0),
     quote: s.quote,
-    indentedCode: s.indentedCode,
     trailingSpace: s.trailingSpace,
     trailingSpaceNewLine: s.trailingSpaceNewLine,
     fencedEndRE: s.fencedEndRE,
@@ -622,8 +561,6 @@ function token(stream: StringStream, state: MarkdownState): string | null {
     state.prevLine = state.thisLine;
     state.thisLine = { stream };
     state.taskList = false;
-    // (Obsidian's tokenizer: a code span of one or two backticks does not go on into the next line)
-    if (state.code === 1 || state.code === 2) state.code = 0;
     state.trailingSpace = 0;
     state.trailingSpaceNewLine = false;
     state.f = state.block;
@@ -652,8 +589,6 @@ export interface LineFacts {
   codeBegin: boolean;
   codeEnd: boolean;
   codeInside: boolean;
-  /** an indented code line */
-  indentedCode: boolean;
   codeLang: string;
   hr: boolean;
   blank: boolean;
@@ -662,19 +597,27 @@ export interface LineFacts {
 }
 
 /**
- * One line read with the state the lines before it left (the state is changed in place): its tokens and facts.
- * `ahead(n)` gives the n-th line after it (setext headings look one line ahead).
+ * One line read by itself: its tokens and facts. `state` says only whether a fenced code block is open at the line's
+ * start, and is left saying whether one is open after it (changed in place).
  */
-export function tokenizeLine(text: string, state: MarkdownState, ahead: (n: number) => string | undefined): { tokens: MarkdownToken[]; facts: LineFacts } {
+export function tokenizeLine(text: string, state: MarkdownState): { tokens: MarkdownToken[]; facts: LineFacts } {
   const tokens: MarkdownToken[] = [];
   const inCodeBefore = state.code === -1;
   const lang = state.fencedLang;
-  if (!/\S/.test(text)) {
-    // CodeMirror reads a blank line with blankLine (inside a fenced block it stays a code line)
-    blankLine(state);
-    return { tokens, facts: { header: 0, list: 0, quote: 0, codeBegin: false, codeEnd: false, codeInside: inCodeBefore, indentedCode: false, codeLang: lang, hr: false, blank: true } };
+  // nothing but an open fence goes on from the line before
+  const fence = inCodeBefore ? { fencedEndRE: state.fencedEndRE, fencedLang: state.fencedLang } : null;
+  Object.assign(state, startState());
+  if (fence) {
+    state.f = state.block = local;
+    state.code = -1;
+    state.fencedEndRE = fence.fencedEndRE;
+    state.fencedLang = fence.fencedLang;
   }
-  const stream = new StringStream(text, ahead);
+  if (!/\S/.test(text)) {
+    // (inside a fenced block a blank line stays a code line)
+    return { tokens, facts: { header: 0, list: 0, quote: 0, codeBegin: false, codeEnd: false, codeInside: inCodeBefore, codeLang: lang, hr: false, blank: true } };
+  }
+  const stream = new StringStream(text);
   let header = 0;
   let quote = 0;
   while (!stream.eol()) {
@@ -703,7 +646,6 @@ export function tokenizeLine(text: string, state: MarkdownState, ahead: (n: numb
       codeBegin: !!thisLine.fencedCodeBegin,
       codeEnd: !!thisLine.fencedCodeEnd,
       codeInside: inCodeBefore && !thisLine.fencedCodeEnd,
-      indentedCode: !!state.indentedCode,
       codeLang: thisLine.fencedCodeBegin ? state.fencedLang : lang,
       hr: !!thisLine.hr,
       blank: false,
@@ -711,29 +653,8 @@ export function tokenizeLine(text: string, state: MarkdownState, ahead: (n: numb
   };
 }
 
-/** A signature of the state between lines: two lines read alike when it and their text are the same. */
+/** A signature of the state between lines (an open fence, or nothing): two lines read alike when it and their text are
+ *  the same. */
 export function stateKey(state: MarkdownState): string {
-  return [
-    state.block === local ? "L" : "N",
-    state.code,
-    state.em || "",
-    state.strong || "",
-    state.strikethrough ? 1 : 0,
-    state.highlight ? 1 : 0,
-    state.list === false ? "f" : state.list === null ? "n" : "t",
-    state.listStack.join(","),
-    state.quote,
-    state.indentation,
-    state.indentedCode ? 1 : 0,
-    state.linkTitle ? 1 : 0,
-    state.linkText ? 1 : 0,
-    state.linkHref ? 1 : 0,
-    state.setext,
-    state.fencedEndRE ? state.fencedEndRE.source : "",
-    state.fencedLang,
-    lineIsEmpty(state.thisLine.stream) ? "b" : "",
-    state.thisLine.header ? "h" : "",
-    state.thisLine.hr ? "r" : "",
-    state.thisLine.fencedCodeEnd ? "e" : "",
-  ].join("|");
+  return state.block === local ? `${state.fencedEndRE ? state.fencedEndRE.source : ""}|${state.fencedLang}` : "";
 }
