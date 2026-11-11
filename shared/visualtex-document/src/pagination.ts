@@ -10,6 +10,7 @@ import { bodyLayout, documentSettings, headingNumbers, PAPER_SIZES, type Documen
 import { requestFootnoteEdit } from "./notes.ts";
 import { isPageBreak, pageLabels, type PageLabel } from "./pageCommands.ts";
 import { CJK_TEXT } from "./titleBlock.ts";
+import { shownContent } from "./sourceMarkdown.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -83,13 +84,14 @@ function slanted(text: string): string {
  */
 function sectionMark(view: EditorView, node: Node, pos: number, number: string | undefined, documentClass: LatexClass): string {
   let title = "";
-  node.forEach((child, offset) => {
-    if (child.isText) title += slanted(escapeHtml((child.text ?? "").toUpperCase()));
-    else if (child.isInline) {
-      const dom = view.nodeDOM(pos + 1 + offset);
+  // (the heading as it reads: its "#" and markers left out)
+  for (const piece of shownContent(node)) {
+    if ("text" in piece) title += slanted(escapeHtml(piece.text.toUpperCase()));
+    else if (piece.node.isInline) {
+      const dom = view.nodeDOM(pos + 1 + piece.offset);
       if (dom instanceof HTMLElement && dom.classList.contains("vtx-math-inline")) title += dom.outerHTML;
     }
-  });
+  }
   const shown = number?.replace(/\.$/, "") ?? (documentClass === "article" ? "0" : "");
   return shown ? `${slanted(shown)}<span class="vtx-page-quad"></span>${title}` : title;
 }
@@ -194,6 +196,13 @@ function lineStart(view: EditorView, start: number, end: number, line: { top: nu
   return pos;
 }
 
+/** The block at `pos` comes first in a table float with a caption (figures.ts): a caption above its table, or a
+ *  table with its caption below it. It goes to a page with what follows it. */
+function firstOfCaptionedTable(doc: Node, pos: number): boolean {
+  const $pos = doc.resolve(pos);
+  return $pos.parent.type.name === "table_figure" && $pos.index() === 0 && $pos.parent.childCount > 1;
+}
+
 /** What the page view divides into pages, in document order, at their places on the screen. */
 /** Lines that go to the next page with what follows them: a section's, and the title block's (\maketitle's box). */
 const KEEP_WITH_NEXT = new Set(["heading", "title", "author", "date"]);
@@ -225,8 +234,8 @@ function collectUnits(view: EditorView, pageHeight = Infinity): Unit[] {
           bottom: index === 0 ? Math.max(line.bottom, wrapBottom) : line.bottom,
           pos: start,
           inline: true,
-          // a table's caption (figures.ts) goes with its table, as a heading with its text
-          keepWithNext: (keep || (node.type.name === "caption" && view.state.doc.resolve(pos).parent.type.name === "table_figure")) && index === lines.length - 1,
+          // a table's caption above it (figures.ts) goes with its table, as a heading with its text
+          keepWithNext: (keep || (node.type.name === "caption" && firstOfCaptionedTable(view.state.doc, pos))) && index === lines.length - 1,
           footnotes: [],
           ...(index === 0 ? { block: container?.pos ?? pos } : {}),
         });
@@ -241,22 +250,24 @@ function collectUnits(view: EditorView, pageHeight = Infinity): Unit[] {
       return;
     }
     const r = dom.getBoundingClientRect();
+    // a table with its caption below it: the table's end goes with the caption
+    const captionBelow = node.type.name === "table" && firstOfCaptionedTable(view.state.doc, pos);
     // a table longer than a page (without the rows of space its breaks put in): its rows, as longtable breaks it
     // (figures.ts)
     const breaksIn = node.type.name === "table" ? Array.from(dom.querySelectorAll("tr.vtx-page-break")).reduce((sum, tr) => sum + tr.getBoundingClientRect().height, 0) : 0;
     if (node.type.name === "table" && r.height - breaksIn > pageHeight) {
       let columns = 0;
       node.firstChild?.forEach((cell) => (columns += cell.attrs.colspan ?? 1));
-      node.forEach((_row, offset) => {
+      node.forEach((_row, offset, index) => {
         const rowDom = view.nodeDOM(pos + 1 + offset);
         if (!(rowDom instanceof HTMLElement)) return;
         const rr = rowDom.getBoundingClientRect();
-        units.push({ top: rr.top, bottom: rr.bottom, pos: pos + 1 + offset, inline: false, keepWithNext: false, footnotes: [], row: Math.max(1, columns) });
+        units.push({ top: rr.top, bottom: rr.bottom, pos: pos + 1 + offset, inline: false, keepWithNext: captionBelow && index === node.childCount - 1, footnotes: [], row: Math.max(1, columns) });
       });
       return;
     }
     // a wrapped figure goes to the next page with the first line of the paragraph beside it (wrapfig)
-    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: node.type.name === "figure" && (dom.classList.contains("is-wrap-left") || dom.classList.contains("is-wrap-right")), footnotes: [] };
+    const unit: Unit = { top: r.top, bottom: r.bottom, pos, inline: false, keepWithNext: captionBelow || (node.type.name === "figure" && (dom.classList.contains("is-wrap-left") || dom.classList.contains("is-wrap-right"))), footnotes: [] };
     if (node.type.name === "page_command") {
       unit.breakAfter = isPageBreak(node);
       unit.command = { command: node.attrs.command, value: node.attrs.value };

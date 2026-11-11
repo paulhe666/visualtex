@@ -25,7 +25,9 @@ import { insertFootnote, setFootnoteText } from "./notes.ts";
 import { newNodeId } from "./ids.ts";
 import { blockLanguage } from "./markdown.ts";
 import { ALERTS } from "./schema.ts";
-import { clearFormat, isEscaped, markEscaped, markdownLiveKey, shownMarkdown, typoraFormat, typoraLink } from "./markdownLive.ts";
+import { clearFormat, isEscaped, markEscaped, markdownLiveKey, shownMarkdown, typoraFormat as typoraFormatKey, typoraLink } from "./markdownLive.ts";
+import { inSourceCode } from "./sourceMarkdown.ts";
+import { closeFenceAfterTyping, cycleLineTask, indentLines, insertCodeFence, outdentLines, toggleLineList, toggleLineQuote } from "./sourceKeys.ts";
 
 export type InputMode = "latex" | "markdown";
 
@@ -37,9 +39,15 @@ export interface MarkdownRuleSwitches {
   marks: boolean;
   /** a Chinese input method's full-width variants (》 1。 ··· 、 ／, the full-width space) */
   chinese: boolean;
+  /** "# Title" made a section (and its "#" taken out) on Enter or when the line is left; off in the source editor,
+   *  where a heading is its text's "#" (sourceMarkdown.ts) */
+  headings?: boolean;
+  /** the source editor (sourceMarkdown.ts): every character typed stays in the text ("\*" keeps its "\", ":smile:"
+   *  stays text, "</" is not completed); "*", "_" and "`" pair and typed over a selection wrap it, as in Obsidian */
+  source?: boolean;
 }
 
-export const ALL_RULES: MarkdownRuleSwitches = { blocks: true, marks: true, chinese: true };
+export const ALL_RULES: MarkdownRuleSwitches = { blocks: true, marks: true, chinese: true, headings: true };
 
 interface MarkdownInputState {
   /** the last change was a conversion: the next one starts an undo step of its own */
@@ -171,6 +179,8 @@ function nestItem(state: EditorState, $cursor: ResolvedPos, type: Node["type"], 
 
 /** The line-start conversion the text before the caret calls for, if any. */
 function conversionAtCaret(state: EditorState, rules: MarkdownRuleSwitches): Transaction | null {
+  // (in the source editor a list, a quote, a task are their lines' text)
+  if (rules.source) return null;
   const { $cursor } = state.selection as TextSelection;
   if (!$cursor || !$cursor.parent.isTextblock || $cursor.parent.type.spec.code) return null;
   return lineStartConversion(state, $cursor, textBefore($cursor), rules);
@@ -259,6 +269,49 @@ function ruleConversion(tr: Transaction, pos: number, node: Node): boolean {
   return true;
 }
 
+/** A table in a block (a table, or the figure holding one) and its position. */
+function tableIn(node: Node, pos: number): { table: Node; pos: number } | null {
+  if (node.type.name === "table") return { table: node, pos };
+  let found: { table: Node; pos: number } | null = null;
+  node.forEach((child, offset) => {
+    if (!found && child.type.name === "table") found = { table: child, pos: pos + 1 + offset };
+  });
+  return found;
+}
+
+/**
+ * Enter on a line of cells in the source editor (Obsidian: a table is its rows typed): a delimiter row ("| --- | :-: |")
+ * under a row of as many cells makes the two a table, the caret on a line after it; a row typed on the line after a table
+ * of as many columns becomes its next row. A row alone stays a line.
+ */
+function sourceTableEnter(state: EditorState, $cursor: ResolvedPos, cells: string[]): Transaction | null {
+  const { nodes } = state.schema;
+  const parent = $cursor.node(-1);
+  const index = $cursor.index(-1);
+  const before = $cursor.before();
+  const after = $cursor.after();
+  const prev = index > 0 ? parent.child(index - 1) : null;
+  if (!prev) return null;
+  const prevPos = before - prev.nodeSize;
+  const cell = (text: string) => nodes.table_cell.create(null, nodes.paragraph.create(null, text ? state.schema.text(text) : null));
+  if (cells.every((text) => /^:?-+:?$/.test(text)) && prev.type === nodes.paragraph) {
+    const head = ENTER_TABLE.exec(lineText(prev));
+    const headCells = head ? tableCells(head[1]) : null;
+    if (!headCells || headCells.length !== cells.length) return null;
+    const table = nodes.table.create({ id: newNodeId() }, [nodes.table_row.create(null, headCells.map(cell))]);
+    const content = Fragment.from([table, nodes.paragraph.create()]);
+    if (!parent.canReplace(index - 1, index + 1, content)) return null;
+    const tr = state.tr.replaceWith(prevPos, after, content);
+    return tr.setSelection(TextSelection.create(tr.doc, prevPos + table.nodeSize + 1));
+  }
+  const found = tableIn(prev, prevPos);
+  if (!found || found.table.firstChild?.childCount !== cells.length) return null;
+  const tr = state.tr.insert(found.pos + found.table.nodeSize - 1, nodes.table_row.create(null, cells.map(cell)));
+  const line = tr.mapping.map(before);
+  tr.delete(line + 1, line + 1 + $cursor.parent.content.size);
+  return tr.setSelection(TextSelection.create(tr.doc, line + 1));
+}
+
 function enterConversion(state: EditorState, $cursor: ResolvedPos, line: string, rules: MarkdownRuleSwitches): Transaction | null {
   const { nodes } = state.schema;
   const parent = $cursor.node(-1);
@@ -266,8 +319,21 @@ function enterConversion(state: EditorState, $cursor: ResolvedPos, line: string,
   const before = $cursor.before();
   const after = $cursor.after();
   const atEnd = $cursor.parentOffset === $cursor.parent.content.size;
+  // the source editor: only what becomes an object — a table (from its typed rows), a table of contents
+  if (rules.source) {
+    if (!atEnd) return null;
+    const row = ENTER_TABLE.exec(line);
+    if (row) return sourceTableEnter(state, $cursor, tableCells(row[1]));
+    if (ENTER_TOC.test(line) && nodes.toc) {
+      const content = Fragment.from([nodes.toc.create({ id: newNodeId() }), nodes.paragraph.create()]);
+      if (!parent.canReplace(index, index + 1, content)) return null;
+      const tr = state.tr.replaceWith(before, after, content);
+      return tr.setSelection(TextSelection.create(tr.doc, before + 2));
+    }
+    return null;
+  }
   // "# Title": a section; Enter goes on with body text (the line is split where the caret is)
-  const heading = $cursor.parentOffset > 0 ? headingOf(line, rules.chinese) : null;
+  const heading = rules.headings !== false && $cursor.parentOffset > 0 ? headingOf(line, rules.chinese) : null;
   if (heading) {
     const tr = state.tr;
     if (!headingConversion(tr, before, $cursor.parent, heading)) return null;
@@ -291,6 +357,7 @@ function enterConversion(state: EditorState, $cursor: ResolvedPos, line: string,
   }
   if ((match = ENTER_TABLE.exec(line))) {
     const cells = tableCells(match[1]);
+    if (rules.source) return sourceTableEnter(state, $cursor, cells);
     if (cells.length < 2) return null;
     const cell = (text: string) => nodes.table_cell.create(null, nodes.paragraph.create(null, text ? state.schema.text(text) : null));
     const header = nodes.table_row.create(null, cells.map(cell));
@@ -378,11 +445,12 @@ export function markdownHeadingEnter(mode: () => InputMode): Command {
 
 /** The Markdown of a line typed and left (Typora): "# Title" a section, "```lang" a code block, "---" a rule. */
 function leftLineConversion(state: EditorState, pos: number, rules: MarkdownRuleSwitches): Transaction | null {
+  if (rules.source) return null;
   const node = state.doc.nodeAt(pos);
   if (!node || node.type !== state.schema.nodes.paragraph || isEscaped(state, pos + 1, pos + node.nodeSize - 1)) return null;
   const line = lineText(node);
   const tr = state.tr;
-  const heading = headingOf(line, rules.chinese);
+  const heading = rules.headings !== false ? headingOf(line, rules.chinese) : null;
   if (heading && heading.end > heading.start && headingConversion(tr, pos, node, heading)) return tr;
   const fence = (rules.chinese ? ENTER_FENCE : ENTER_FENCE_PLAIN).exec(line);
   if (fence && fenceConversion(tr, pos, node, fence[1])) return tr;
@@ -394,6 +462,46 @@ function leftLineConversion(state: EditorState, pos: number, rules: MarkdownRule
 
 /** Brackets and quotes typed in pairs (Typora's "Auto pair brackets and quotes"). */
 const PAIRS: Record<string, string> = { "(": ")", "[": "]", "{": "}", '"': '"', "'": "'" };
+/** The source editor's pairs (Obsidian's "Auto pair brackets" and "Auto pair Markdown syntax"). */
+const SOURCE_PAIRS: Record<string, string> = { ...PAIRS, "*": "*", _: "_", "`": "`" };
+/** Characters that, typed over a selection in the source editor, go around it (Obsidian). */
+const SOURCE_WRAPS: Record<string, string> = { ...SOURCE_PAIRS, "~": "~", "=": "=" };
+
+/**
+ * The source editor's pairs (CodeMirror's closeBrackets, as Obsidian has it): a closing character typed where the one
+ * put in with its opening one stands steps over it; a pair character typed over a selection in one line goes around it,
+ * the selection staying on the text; an opening character goes in with its closing one before a space, the line's end
+ * or a closing bracket (a quote not after a letter, "don't"; a "*", "_" or "`" only after a space or at the line's start).
+ */
+function sourcePairInput(view: EditorView, from: number, to: number, text: string): boolean {
+  const state = view.state;
+  const $from = state.doc.resolve(from);
+  const pairs = markdownInputKey.getState(state)?.pairs ?? [];
+  const next = $from.parent.textBetween($from.parentOffset, Math.min($from.parent.content.size, $from.parentOffset + 1), undefined, OBJECT);
+  const prev = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, undefined, OBJECT);
+  if (from === to && next === text && pairs.includes(from)) {
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from + 1)).scrollIntoView());
+    return true;
+  }
+  if (from !== to) {
+    const close = SOURCE_WRAPS[text];
+    if (!close || !state.doc.resolve(to).sameParent($from)) return false;
+    const { anchor, head } = state.selection;
+    const tr = state.tr.insertText(close, to).insertText(text, from);
+    tr.setSelection(TextSelection.create(tr.doc, anchor + 1, head + 1));
+    view.dispatch(tr.scrollIntoView());
+    return true;
+  }
+  const close = SOURCE_PAIRS[text];
+  if (!close || prev === "\\") return false;
+  if (next && !/[\s)\]}:;>]/.test(next)) return false;
+  // a quote not after a letter; "*", "_", "`" only after a space or at the line's start ("**bold*" + "*" closes it)
+  if (text === close && ("*_`".includes(text) ? prev !== "" && !/[\s([{]/.test(prev) : /[\p{L}\p{N}_]/u.test(prev))) return false;
+  const tr = state.tr.insertText(text + close, from, to);
+  tr.setSelection(TextSelection.create(tr.doc, from + 1));
+  view.dispatch(tr.setMeta(markdownInputKey, { pairs: [from + 1] } satisfies InputMeta).scrollIntoView());
+  return true;
+}
 
 /** The typed character `text` at `from..to`: a pair, a step over a closing character, a wrapped selection. */
 function pairInput(view: EditorView, from: number, to: number, text: string): boolean {
@@ -539,8 +647,11 @@ export function markdownInputPlugin(mode: () => InputMode, rules: () => Markdown
         const $from = state.doc.resolve(from);
         if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
         if ($from.marks().some((m) => m.type.spec.code)) return false;
-        // Markdown's escape: "\" and a punctuation character type the character, for good.
-        if (from === to && text.length === 1 && ESCAPABLE.includes(text) && $from.parentOffset > 0) {
+        const source = rules().source === true;
+        // in a code span's text only its closing backtick, put in with the opening one, is stepped over
+        if (inSourceCode($from)) return source && text === "`" && sourcePairInput(view, from, to, text);
+        // Markdown's escape: "\" and a punctuation character type the character, for good (the source editor keeps the "\").
+        if (!source && from === to && text.length === 1 && ESCAPABLE.includes(text) && $from.parentOffset > 0) {
           const before = textBefore($from);
           const backslash = from - 1;
           if (before.endsWith("\\") && !isEscaped(state, backslash, from)) {
@@ -549,7 +660,18 @@ export function markdownInputPlugin(mode: () => InputMode, rules: () => Markdown
             return true;
           }
         }
-        if (text.length === 1 && (typedImage(view, from, to, text) || typedFootnote(view, from, to, text) || closeTag(view, from, to, text) || pairInput(view, from, to, text))) {
+        // a backtick: paired or stepped over, else typed — and "```" at a line's start gets its closing fence (Obsidian)
+        if (source && text === "`" && from === to) {
+          if (sourcePairInput(view, from, to, text)) return true;
+          view.dispatch(deflt());
+          const fence = closeFenceAfterTyping(view.state);
+          if (fence) view.dispatch(fence);
+          return true;
+        }
+        const typed = source
+          ? typedImage(view, from, to, text) || typedFootnote(view, from, to, text) || sourcePairInput(view, from, to, text)
+          : typedImage(view, from, to, text) || typedFootnote(view, from, to, text) || closeTag(view, from, to, text) || pairInput(view, from, to, text);
+        if (text.length === 1 && typed) {
           // stepping over a "]" can close "[!NOTE]" too
           if (from === to && text === "]" && mayConvert(textBefore($from) + text)) convert(view, rules());
           return true;
@@ -577,7 +699,7 @@ export function markdownInputPlugin(mode: () => InputMode, rules: () => Markdown
 // ------------------------------------------------------------ Typora's keys --
 
 /** Ctrl+1…6: the line a section of that level, or body text again (Typora). */
-function headingKey(level: number): Command {
+function typoraHeadingKey(level: number): Command {
   return (state, dispatch) => {
     const block = state.selection.$from.parent;
     const { heading, paragraph } = state.schema.nodes;
@@ -589,7 +711,7 @@ function headingKey(level: number): Command {
 }
 
 /** Ctrl+= / Ctrl+-: a section a level up (body text becomes level 6) / down (level 6 becomes body text). */
-function headingStep(up: boolean): Command {
+function headingStep(up: boolean, headingKey: (level: number) => Command = typoraHeadingKey): Command {
   return (state, dispatch) => {
     const block = state.selection.$from.parent;
     const { heading, paragraph } = state.schema.nodes;
@@ -767,15 +889,23 @@ const taskKey: Command = (state, dispatch) => {
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Typora's keys, in Markdown input (its macOS keys on the Mac: ⌥⌘ for blocks, ⌃` for code). */
-export function markdownKeymap(mode: () => InputMode, keys: { bold: Command; italic: Command; underline: Command; code: Command; strike: Command; link: Command }): Plugin {
+export function markdownKeymap(
+  mode: () => InputMode,
+  keys: { bold: Command; italic: Command; underline: Command; code: Command; strike: Command; link: Command },
+  /** the source editor's own: a heading's "#" prefix set, the format keys as they are (no Typora wrapping), Obsidian's
+   *  link and checklist keys */
+  source?: { heading: (level: number) => Command; highlight: Command; link: Command; clear: Command },
+): Plugin {
   const only = (command: Command): Command => (state, dispatch, view) => mode() === "markdown" && command(state, dispatch, view);
+  const headingKey = (level: number): Command => (source ? source.heading(level) : typoraHeadingKey(level));
+  const typoraFormat = (kind: Parameters<typeof typoraFormatKey>[0], command: Command): Command => (source ? command : typoraFormatKey(kind, command));
   const mac: Record<string, Command> = MAC
     ? {
-        "Alt-Mod-q": only(quoteKey),
-        "Alt-Mod-o": only(toggleList("ordered_list")),
-        "Alt-Mod-u": only(toggleList("bullet_list")),
-        "Alt-Mod-x": only(taskKey),
-        "Alt-Mod-c": only(insertCodeBlock("")),
+        "Alt-Mod-q": only(source ? toggleLineQuote : quoteKey),
+        "Alt-Mod-o": only(source ? toggleLineList("ordered") : toggleList("ordered_list")),
+        "Alt-Mod-u": only(source ? toggleLineList("bullet") : toggleList("bullet_list")),
+        "Alt-Mod-x": only(source ? cycleLineTask : taskKey),
+        "Alt-Mod-c": only(source ? insertCodeFence : insertCodeBlock("")),
         "Alt-Mod-b": only(insertDisplayLatex("")),
         "Alt-Mod-t": only(insertTable(3, 3)),
         "Ctrl-`": only(typoraFormat("code", keys.code)),
@@ -792,27 +922,27 @@ export function markdownKeymap(mode: () => InputMode, keys: { bold: Command; ita
     "Mod-4": only(headingKey(4)),
     "Mod-5": only(headingKey(5)),
     "Mod-6": only(headingKey(6)),
-    "Mod-=": only(headingStep(true)),
-    "Mod-+": only(headingStep(true)),
-    "Mod--": only(headingStep(false)),
+    "Mod-=": only(headingStep(true, headingKey)),
+    "Mod-+": only(headingStep(true, headingKey)),
+    "Mod--": only(headingStep(false, headingKey)),
     "Mod-t": only(insertTable(3, 3)),
     // on the Mac ⌘⇧K stays the keypad's (Typora's code block there is ⌥⌘C)
-    ...(MAC ? {} : { "Shift-Mod-k": only(insertCodeBlock("")) }),
+    ...(MAC ? {} : { "Shift-Mod-k": only(source ? insertCodeFence : insertCodeBlock("")) }),
     "Shift-Mod-m": only(insertDisplayLatex("")),
-    "Shift-Mod-q": only(quoteKey),
-    "Shift-Mod-[": only(toggleList("ordered_list")),
-    "Shift-Mod-]": only(toggleList("bullet_list")),
-    "Mod-]": only(listLevel(true)),
-    "Mod-[": only(listLevel(false)),
+    "Shift-Mod-q": only(source ? toggleLineQuote : quoteKey),
+    "Shift-Mod-[": only(source ? toggleLineList("ordered") : toggleList("ordered_list")),
+    "Shift-Mod-]": only(source ? toggleLineList("bullet") : toggleList("bullet_list")),
+    "Mod-]": only(source ? indentLines : listLevel(true)),
+    "Mod-[": only(source ? outdentLines : listLevel(false)),
     "Shift-Mod-i": only((_state, _dispatch, view) => !!view && requestImage(view)),
     "Mod-b": only(typoraFormat("strong", keys.bold)),
     "Mod-i": only(typoraFormat("em", keys.italic)),
     "Mod-u": only(typoraFormat("underline", keys.underline)),
     "Shift-Mod-`": only(typoraFormat("code", keys.code)),
     "Shift-Alt-5": only(typoraFormat("strike", keys.strike)),
-    "Mod-k": only(typoraLink(keys.link)),
-    "Mod-\\": only(clearFormat),
-    "Mod-l": only(selectLine),
+    "Mod-k": only(source ? source.link : typoraLink(keys.link)),
+    "Mod-\\": only(source ? source.clear : clearFormat),
+    "Mod-l": only(source ? cycleLineTask : selectLine),
     "Mod-d": only(selectWord),
     "Mod-e": only(selectScope),
     Backspace: only(

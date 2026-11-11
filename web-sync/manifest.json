@@ -1,6 +1,6 @@
 {
   "sourceRoot": "apps/macos",
-  "commit": "46b30f8dc2e4d4014449cfe8ff71e963153b87bd",
+  "commit": "8d641d78addab06cdf1547e13c4ba5d81b90d792",
   "note": "Copies of apps/macos/<path> (and of apps/shared/<path> at shared/<path>); web-only edits live in web-sync/patches. Run scripts/sync-mac-editor.mjs.",
   "files": [
     "docs/help/VisualTeX_帮助手册.md",
@@ -95,7 +95,8 @@
     "src/desktop/",
     "src/main.tsx",
     "*.orig",
-    "src/components/UpdateDialog.tsx"
+    "src/components/UpdateDialog.tsx",
+    "src/runtime/platform.ts"
   ],
   "shared": {
     "sourceRoot": "apps/shared",

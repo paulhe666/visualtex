@@ -22,6 +22,7 @@ import { FONT_SIZES } from "./schema.ts";
 import { emojiOf, searchEmoji } from "./emoji.ts";
 import { insertAbstract, nextAuthor } from "./titleBlock.ts";
 import { addReferenceEntry, bibliographyEntries, insertCitation, insertFootnote, requestCitation } from "./notes.ts";
+import { inSourceCode } from "./sourceMarkdown.ts";
 
 /** The command being typed. */
 export interface CommandToken {
@@ -593,7 +594,7 @@ function insertedBy(tr: Transaction, pos: number): boolean {
 const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 
 /** A "\" (or "/" at a word start) this transaction typed right before the caret starts a command. */
-function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: boolean): CommandToken | null {
+function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: boolean, emoji = true): CommandToken | null {
   if (!tr.docChanged || tr.getMeta("history$") || tr.getMeta("uiEvent") === "paste" || tr.getMeta("uiEvent") === "drop") return null;
   const sel = state.selection;
   if (!(sel instanceof TextSelection) || !sel.empty) return null;
@@ -605,12 +606,12 @@ function detect(tr: Transaction, state: EditorState, mode: InputMode, chinese: b
   // In Markdown input a Chinese input method's "／", and "、" (its "\" or "/") at the start of a line, are "/" too.
   // In LaTeX input only "\" starts a command.
   const slash = mode === "markdown" && (trigger === "/" || (chinese && (trigger === "／" || (trigger === "、" && $head.parentOffset === 1))));
-  // ":" in Markdown input starts an emoji's short code (Typora), at a word's start
-  const colon = mode === "markdown" && trigger === ":";
+  // ":" in Markdown input starts an emoji's short code (Typora), at a word's start (not in the source editor: Obsidian)
+  const colon = mode === "markdown" && emoji && trigger === ":";
   if (trigger !== "\\" && !slash && !colon) return null;
   if (!insertedBy(tr, $head.pos - 1)) return null;
   // Code is literal text.
-  if (state.doc.resolve($head.pos - 1).marks().some((m) => m.type.name === "code")) return null;
+  if (state.doc.resolve($head.pos - 1).marks().some((m) => m.type.name === "code") || inSourceCode($head)) return null;
   const before = at($head.parentOffset - 2);
   // In Markdown input only "/" starts a command ("\" escapes the character after it).
   if (mode === "markdown" && trigger === "\\") return null;
@@ -657,7 +658,7 @@ export function commandMenuPlugin(
         const meta = tr.getMeta(commandMenuKey) as CommandMeta | undefined;
         if (meta && "end" in meta) return null;
         let next = value ? follow(value, tr, state) : null;
-        if (!next) next = detect(tr, state, inputMode(), rules().chinese);
+        if (!next) next = detect(tr, state, inputMode(), rules().chinese, rules().source !== true);
         if (next && meta && "dismiss" in meta) next = { ...next, dismissed: true };
         if (next && meta && "index" in meta) next = { ...next, index: meta.index, navigated: next.navigated || !!meta.keyboard };
         return next;

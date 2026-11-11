@@ -2075,7 +2075,6 @@ kbd {
 
 .secondary-button {
   height: 32px;
-  margin-top: 9px;
   padding: 0 11px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -3511,9 +3510,14 @@ button:disabled {
 
 .copy-primary {
   padding: 0 11px;
-  border-radius: 7px 0 0 7px;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* the left half of a split button only when the chevron half follows it */
+.copy-primary:has(+ .copy-chevron) {
+  border-radius: 7px 0 0 7px;
 }
 
 .copy-chevron {
@@ -5511,6 +5515,72 @@ textarea:disabled {
   line-height: 1.55;
 }
 
+.update-project-card {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+}
+
+.update-project-author,
+.update-project-link,
+.update-project-card > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-project-author > span {
+  display: grid;
+  gap: 1px;
+}
+
+.update-project-author small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.update-project-author strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.update-project-link {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update-project-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-project-link:hover span {
+  text-decoration: underline;
+}
+
+.update-project-card > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.update-project-card svg {
+  flex: 0 0 auto;
+}
+
 .update-community-card {
   display: grid;
   gap: 12px;
@@ -6613,13 +6683,16 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 }
 
 .office-settings-warning {
+  /* the icon on the first line, also when details follow */
+  align-items: flex-start;
   border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
   background: color-mix(in srgb, var(--warning) 8%, var(--surface));
   color: var(--text);
 }
 
-.office-settings-warning svg {
+.office-settings-warning > svg {
   flex: 0 0 auto;
+  margin-top: 2px;
   color: var(--warning);
 }
 

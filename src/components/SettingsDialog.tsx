@@ -176,6 +176,9 @@ const SETTINGS_PAGES = [
 
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];
 
+/** The pages this platform has (the web: no Office and no AI agents pages, taken out of the list above). */
+const VISIBLE_SETTINGS_PAGES = SETTINGS_PAGES;
+
 export function SettingsDialog({
   open,
   onClose,
@@ -546,7 +549,7 @@ export function SettingsDialog({
 
   if (!open) return null;
 
-  const pageInfo = SETTINGS_PAGES.find((item) => item.id === page) ?? SETTINGS_PAGES[0];
+  const pageInfo = VISIBLE_SETTINGS_PAGES.find((item) => item.id === page) ?? VISIBLE_SETTINGS_PAGES[0];
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -572,7 +575,7 @@ export function SettingsDialog({
 
         <div className="settings-layout">
           <nav className="settings-nav" aria-label={isEn ? "Settings" : "设置"}>
-            {SETTINGS_PAGES.map((item) => {
+            {VISIBLE_SETTINGS_PAGES.map((item) => {
               const Icon = item.icon;
               return (
                 <button

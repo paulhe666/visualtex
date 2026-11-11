@@ -1,5 +1,5 @@
 diff --git a/src/components/SettingsDialog.tsx b/src/components/SettingsDialog.tsx
-index 0b7f486..ee03911 100644
+index e4ba414..d4931f7 100644
 --- a/src/components/SettingsDialog.tsx
 +++ b/src/components/SettingsDialog.tsx
 @@ -43,7 +43,6 @@ import {
@@ -10,7 +10,15 @@ index 0b7f486..ee03911 100644
  import { KeyboardShortcutsPanel } from "./FormulaHotkeyManagerDialog";
  import { pngExportBackgroundPickerValue } from "../export/pngBackground";
  import {
-@@ -138,7 +137,6 @@ const THEME_TOOLBAR_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, st
+@@ -80,7 +79,6 @@ import {
+   type CustomThemeState,
+   type ThemePaletteColors,
+ } from "../themeCustomization";
+-import { isLinuxDesktop } from "../runtime/platform";
+ 
+ const THEME_CORE_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
+   ["accent", "Accent", "强调色"],
+@@ -139,7 +137,6 @@ const THEME_TOOLBAR_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, st
  interface Props {
    open: boolean;
    onClose: () => void;
@@ -18,7 +26,7 @@ index 0b7f486..ee03911 100644
    /** The page shown when the dialog opens (default: the last one). */
    initialPage?: SettingsPage;
  }
-@@ -174,8 +172,6 @@ const SETTINGS_PAGES = [
+@@ -175,21 +172,16 @@ const SETTINGS_PAGES = [
    { id: "fonts", en: "Formula fonts", zh: "公式字体", icon: Type },
    { id: "shortcuts", en: "Shortcuts", zh: "快捷键", icon: Keyboard },
    { id: "export", en: "Export", zh: "导出", icon: FileOutput },
@@ -27,7 +35,14 @@ index 0b7f486..ee03911 100644
  ] as const;
  
  export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];
-@@ -183,7 +179,6 @@ export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];
+ 
+-/** The pages this platform has (Linux: no Office, and the AI agents' access is to Office). */
+-const VISIBLE_SETTINGS_PAGES = SETTINGS_PAGES.filter(
+-  (item) => !(isLinuxDesktop() && (item.id === "office" || item.id === "agents")),
+-);
++/** The pages this platform has (the web: no Office and no AI agents pages, taken out of the list above). */
++const VISIBLE_SETTINGS_PAGES = SETTINGS_PAGES;
+ 
  export function SettingsDialog({
    open,
    onClose,
@@ -35,7 +50,7 @@ index 0b7f486..ee03911 100644
    initialPage,
  }: Props) {
    const dialogRef = useRef<HTMLElement>(null);
-@@ -628,30 +623,6 @@ export function SettingsDialog({
+@@ -634,30 +626,6 @@ export function SettingsDialog({
                    </button>
                  </div>
                </div>
@@ -66,7 +81,7 @@ index 0b7f486..ee03911 100644
                <div className="settings-group">
                  <h4>{isEn ? "Configuration" : "配置备份"}</h4>
                  <div className="configuration-transfer-actions">
-@@ -1017,24 +988,6 @@ export function SettingsDialog({
+@@ -1023,24 +991,6 @@ export function SettingsDialog({
                    <span className="switch-control" />
                  </label>
  
@@ -91,7 +106,7 @@ index 0b7f486..ee03911 100644
                </div>
                <div className="settings-group">
                  <h4>{isEn ? "Formula area" : "公式区"}</h4>
-@@ -1373,40 +1326,6 @@ export function SettingsDialog({
+@@ -1379,40 +1329,6 @@ export function SettingsDialog({
                </div>
              </>
            )}

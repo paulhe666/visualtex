@@ -81,13 +81,40 @@ function nodeExtent(n: Node): [number, number] {
 const discardable = (n: Node) => n.type === GLUE_NODE || n.type === KERN_NODE || n.type === PENALTY_NODE || n.type === MATH_NODE;
 
 /**
+ * A piece wider than this (em) is cut further, between atoms, where TeX
+ * leaves no break (a long run of symbols with no operator would run past the
+ * field's edge as one piece, 2026-11-09); narrower ones keep TeX's breaks only.
+ */
+export const LONGEST_PIECE = 8;
+
+/**
+ * The parts such a piece is cut into are at most this wide (em): a field
+ * breaks its line between parts only, so a long run ends its lines within so
+ * much of the field's edge, about as its own words do (parts of 8 em left up
+ * to 8 em of a line empty, 2026-11-09).
+ */
+export const LONG_PIECE_PART = 2;
+
+/** Where a node starts on the one-line formula and how far it reaches up and down. */
+interface Placed {
+  x: number;
+  height: number;
+  depth: number;
+  /** an atom starts here: a character or a box of its own (not the shifted box of the scripts of the atom before it) */
+  atom: boolean;
+}
+
+/**
  * The pieces of a one-line formula (its outermost hlist, natural widths):
  * cut at every penalty below 10000 of the outermost list. A piece ends at
  * where the next starts, the first material after its penalty (after the
- * operator and the space after it).
+ * operator and the space after it). A piece wider than `longest` em is cut
+ * again at atom starts, into parts of at most `part` em where the atoms
+ * allow (splitLong).
  */
-export function formulaPieces(box: BoxNode): FormulaPiece[] {
+export function formulaPieces(box: BoxNode, longest = LONGEST_PIECE, part = Math.min(longest, LONG_PIECE_PART)): FormulaPiece[] {
   const pieces: FormulaPiece[] = [];
+  const placed: Placed[] = [];
   let x = 0;
   let current: FormulaPiece = { start: 0, end: 0, height: 0, depth: 0 };
   let pendingEnd: number | null = null;
@@ -106,11 +133,54 @@ export function formulaPieces(box: BoxNode): FormulaPiece[] {
       current.height = Math.max(current.height, h);
       current.depth = Math.max(current.depth, d);
     }
+    const atom = n.type === CHAR_NODE || ((n.type === HLIST_NODE || n.type === VLIST_NODE) && n.shift === 0);
+    placed.push({ x, height: h, depth: d, atom });
     x += nodeWidth(n);
   }
   current.end = x;
   pieces.push(current);
-  return pieces;
+  return pieces.flatMap((piece) => splitLong(piece, placed, longest * EM, part * EM));
+}
+
+/**
+ * A piece wider than `longest` (sp) in parts at atom starts: each part ends at
+ * the last atom start that keeps it within `part` (sp); an atom wider than
+ * that is a part of its own.
+ */
+function splitLong(piece: FormulaPiece, placed: Placed[], longest: number, part: number): FormulaPiece[] {
+  if (piece.end - piece.start <= longest) return [piece];
+  const starts = placed.filter((p) => p.atom && p.x > piece.start && p.x < piece.end).map((p) => p.x);
+  const cuts: number[] = [];
+  let from = piece.start;
+  let last: number | null = null;
+  for (const at of starts) {
+    if (at <= from) continue;
+    if (at - from > part && last !== null) {
+      cuts.push(last);
+      from = last;
+      last = null;
+    }
+    if (at - from > part) {
+      cuts.push(at);
+      from = at;
+      continue;
+    }
+    last = at;
+  }
+  if (piece.end - from > part && last !== null) cuts.push(last);
+  if (cuts.length === 0) return [piece];
+  const edges = [piece.start, ...cuts, piece.end];
+  return edges.slice(0, -1).map((start, k) => {
+    const end = edges[k + 1];
+    let height = 0;
+    let depth = 0;
+    for (const p of placed) {
+      if (p.x < start || p.x >= end) continue;
+      height = Math.max(height, p.height);
+      depth = Math.max(depth, p.depth);
+    }
+    return { start, end, height, depth };
+  });
 }
 
 /**

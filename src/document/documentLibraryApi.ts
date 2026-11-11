@@ -6,6 +6,7 @@ import type { Node } from "prosemirror-model";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { safeStorage } from "../runtime/safeStorage";
+import { renderedText } from "../../shared/visualtex-document/src/index.ts";
 
 export interface LibraryDocument {
   id: string;
@@ -253,7 +254,8 @@ export function documentTitle(doc: Node): string {
   doc.descendants((node) => {
     if (title) return false;
     if (node.isTextblock) {
-      const text = node.textContent.replace(/\s+/g, " ").trim();
+      // (as it reads: a heading's "#" and the markers left out)
+      const text = renderedText(node).replace(/\s+/g, " ").trim();
       if (text && node.type.name === "title") title = text;
       else if (text && node.type.name === "heading" && !heading) heading = text;
       else if (text && !line) line = text;

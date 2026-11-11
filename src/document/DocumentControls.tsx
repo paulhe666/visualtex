@@ -7,7 +7,6 @@ import { createPortal } from "react-dom";
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { redo, redoDepth, undo, undoDepth } from "prosemirror-history";
-import { toggleMark } from "prosemirror-commands";
 import {
   AlignCenter,
   AlignJustify,
@@ -37,19 +36,22 @@ import {
 import {
   FONT_SIZES,
   currentAlign,
-  currentListKind,
-  indent,
-  insertCodeBlock,
+  lineListKind,
+  toggleLineList,
+  indentLines,
+  outdentLines,
+  insertCodeFence,
   insertTable,
   requestImage,
   isInTable,
   openFormulaId,
-  requestLink,
+  insertSourceLink,
   sectionLevel,
   setAlign,
+  setSourceHeading,
+  sourceFormatActive,
   toggleDocumentBold,
-  toggleList,
-  toggleSection,
+  toggleSourceFormat,
   CHINESE_FONT_SIZES,
   chineseSizeName,
   bodyLayout,
@@ -87,12 +89,9 @@ function run(view: EditorView | null, command: Command) {
   return done;
 }
 
-function markActive(state: EditorState, name: string) {
-  const type = state.schema.marks[name];
-  const { from, $from, to, empty } = state.selection;
-  if (empty) return !!type.isInSet(state.storedMarks ?? $from.marks());
-  return state.doc.rangeHasMark(from, to, type);
-}
+/** Bold: an open formula's own, in the text the source's "**" (sourceMarkdown.ts). */
+const sourceBold: Command = (state, dispatch, view) =>
+  openFormulaId(state) ? toggleDocumentBold(state, dispatch, view) : toggleSourceFormat("strong")(state, dispatch, view);
 
 /** The value of an attribute mark (colour, size) at the selection, if one is set. */
 function markValue(state: EditorState, name: string, attr: string): string | null {
@@ -679,7 +678,7 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
   if (!state) return <div className="document-controls document-top-toolbar">{props.leading}{props.trailing}</div>;
   const inMath = !!openFormulaId(state);
   const align = currentAlign(state);
-  const list = currentListKind(state);
+  const list = lineListKind(state);
   const level = sectionLevel(state);
   const size = markValue(state, "fontSize", "size") ?? "normalsize";
   const color = markValue(state, "textColor", "color");
@@ -736,23 +735,23 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
         </Button>
       ))}
       <Divider />
-      <Button label={t(lang, "Heading (Ctrl+1–6)", "标题 (Ctrl+1–6)")} active={level > 0} className="is-text-action" onClick={() => run(view, toggleSection)}>
+      <Button label={t(lang, "Heading (Ctrl+1–6)", "标题 (Ctrl+1–6)")} active={level > 0} className="is-text-action" onClick={() => run(view, setSourceHeading(level || 1))}>
         <span className="document-section-icon">
           1.
           <br />
           1.2.
         </span>
       </Button>
-      <Button label={t(lang, "Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)")} active={list === "ordered_list"} onClick={() => run(view, toggleList("ordered_list"))}>
+      <Button label={t(lang, "Numbered list (Ctrl+Shift+[)", "有序列表 (Ctrl+Shift+[)")} active={list === "ordered"} onClick={() => run(view, toggleLineList("ordered"))}>
         <ListOrdered size={16} />
       </Button>
-      <Button label={t(lang, "Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])")} active={list === "bullet_list"} onClick={() => run(view, toggleList("bullet_list"))}>
+      <Button label={t(lang, "Bulleted list (Ctrl+Shift+])", "无序列表 (Ctrl+Shift+])")} active={list === "bullet"} onClick={() => run(view, toggleLineList("bullet"))}>
         <List size={16} />
       </Button>
-      <Button label={t(lang, "Indent", "增加缩进")} onClick={() => run(view, indent(1))}>
+      <Button label={t(lang, "Indent", "增加缩进")} onClick={() => run(view, indentLines)}>
         <IndentIncrease size={16} />
       </Button>
-      <Button label={t(lang, "Outdent", "减少缩进")} onClick={() => run(view, indent(-1))}>
+      <Button label={t(lang, "Outdent", "减少缩进")} onClick={() => run(view, outdentLines)}>
         <IndentDecrease size={16} />
       </Button>
       <Divider />
@@ -769,10 +768,10 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
       <Button label={t(lang, "Image", "图片")} onClick={() => view && requestImage(view)}>
         <ImageIcon size={16} strokeWidth={1.8} />
       </Button>
-      <Button label={t(lang, "Code block", "代码块")} onClick={() => run(view, insertCodeBlock(""))}>
+      <Button label={t(lang, "Code block", "代码块")} onClick={() => run(view, insertCodeFence)}>
         <SquareCode size={16} strokeWidth={1.8} />
       </Button>
-      <Button label={t(lang, "Link (Ctrl+K)", "链接 (Ctrl+K)")} onClick={() => run(view, requestLink)}>
+      <Button label={t(lang, "Link (Ctrl+K)", "链接 (Ctrl+K)")} onClick={() => run(view, insertSourceLink)}>
         <Link2 size={16} strokeWidth={1.9} />
       </Button>
       <Button label={t(lang, "Footnote (Ctrl+Alt+F)", "脚注 (Ctrl+Alt+F)")} onClick={() => run(view, insertFootnote())}>
@@ -782,16 +781,16 @@ export function DocumentTextToolbar(props: { leading?: ReactNode; trailing?: Rea
         {(close) => <CitationPicker lang={lang} view={view} state={state} close={close} />}
       </Popover>
       <Divider />
-      <Button label={t(lang, "Bold (Ctrl+B)", "加粗 (Ctrl+B)")} active={markActive(state, "strong")} onClick={() => run(view, toggleDocumentBold)}>
+      <Button label={t(lang, "Bold (Ctrl+B)", "加粗 (Ctrl+B)")} active={sourceFormatActive(state, "strong")} onClick={() => run(view, sourceBold)}>
         <Bold size={15} strokeWidth={2.2} />
       </Button>
-      <Button label={t(lang, "Italic (Ctrl+I)", "斜体 (Ctrl+I)")} active={markActive(state, "em")} onClick={() => run(view, toggleMark(state.schema.marks.em))}>
+      <Button label={t(lang, "Italic (Ctrl+I)", "斜体 (Ctrl+I)")} active={sourceFormatActive(state, "em")} onClick={() => run(view, toggleSourceFormat("em"))}>
         <Italic size={15} strokeWidth={2.2} />
       </Button>
-      <Button label={t(lang, "Underline (Ctrl+U)", "下划线 (Ctrl+U)")} active={markActive(state, "underline")} onClick={() => run(view, toggleMark(state.schema.marks.underline))}>
+      <Button label={t(lang, "Underline (Ctrl+U)", "下划线 (Ctrl+U)")} active={sourceFormatActive(state, "underline")} onClick={() => run(view, toggleSourceFormat("underline"))}>
         <Underline size={15} strokeWidth={2.2} />
       </Button>
-      <Button label={t(lang, "Strikethrough (Alt+Shift+5)", "删除线 (Alt+Shift+5)")} active={markActive(state, "strike")} onClick={() => run(view, toggleMark(state.schema.marks.strike))}>
+      <Button label={t(lang, "Strikethrough (Alt+Shift+5)", "删除线 (Alt+Shift+5)")} active={sourceFormatActive(state, "strike")} onClick={() => run(view, toggleSourceFormat("strike"))}>
         <Strikethrough size={15} strokeWidth={2.2} />
       </Button>
       <ColorMenuButton

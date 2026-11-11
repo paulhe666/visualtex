@@ -482,10 +482,11 @@ class LatexWriter {
   }
 
   /**
-   * A table: a ruled grid in a center (a table on its own), or with its caption (figures.ts) in a [H] table float, or
-   * a longtable when it cannot be on one page; booktabs' rules for a table that has them.
+   * A table: a ruled grid in a center (a table on its own, or one without a caption: no number), or with its caption
+   * (figures.ts) above or below it in a [H] table float, or a longtable when it cannot be on one page; booktabs' rules
+   * for a table that has them.
    */
-  private table(table: Node, float: { caption: string; label: string; rules: string; long: boolean } | null = null): string {
+  private table(table: Node, float: { caption: string | null; below: boolean; label: string; rules: string; long: boolean } | null = null): string {
     const map = TableMap.get(table);
     const booktabs = float?.rules === "booktabs";
     const bar = booktabs ? "" : "|";
@@ -557,14 +558,24 @@ class LatexWriter {
       body += booktabs ? `${line}${row === map.height - 1 ? "\n\\bottomrule" : row === 0 ? "\n\\midrule" : ""}\n` : `${line} ${ruleAfter(row)}\n`;
     });
     if (booktabs) this.packages.add("booktabs");
-    if (!float) return `\\begin{center}\n\\begin{tabular}{${spec}}\n${body}\\end{tabular}\n\\end{center}\n`;
-    // its caption above it, as LaTeX puts a table's (the caption package's skip under it)
+    if (!float || (float.caption === null && !float.long)) return `\\begin{center}\n\\begin{tabular}{${spec}}\n${body}\\end{tabular}\n\\end{center}\n`;
+    if (float.caption === null) {
+      // a long table without a caption: longtable steps the table counter all the same, which is given back
+      this.packages.add("longtable");
+      return `\\begin{longtable}{${spec}}\n${body}\\end{longtable}\n\\addtocounter{table}{-1}\n`;
+    }
+    // its caption above it, as LaTeX puts a table's (the caption package's skip under it), or below it (the skip
+    // above it)
     this.packages.add("caption");
+    const below = float.below ? "\\captionsetup{position=below}" : "";
     if (float.long) {
       this.packages.add("longtable");
+      // (the caption a row after the last: \\captionsetup outside the table, \\caption's \\multicolumn must open its row)
+      if (float.below) return `{${below}\n\\begin{longtable}{${spec}}\n${body}\\caption{${float.caption}}${float.label}\\\\\n\\end{longtable}}\n`;
       return `\\begin{longtable}{${spec}}\n\\caption{${float.caption}}${float.label}\\\\\n${body}\\end{longtable}\n`;
     }
     this.packages.add("float");
+    if (float.below) return `\\begin{table}[H]\n\\centering\n\\begin{tabular}{${spec}}\n${body}\\end{tabular}\n${below}\n\\caption{${float.caption}}${float.label}\n\\end{table}\n`;
     return `\\begin{table}[H]\n\\centering\n\\caption{${float.caption}}${float.label}\n\\begin{tabular}{${spec}}\n${body}\\end{tabular}\n\\end{table}\n`;
   }
 
@@ -613,10 +624,12 @@ class LatexWriter {
 
   /** A table with its caption (figures.ts): a table float, or a longtable when it is longer than a page. */
   private tableFigure(node: Node): string {
-    const { caption, table } = tableFigureParts(node);
+    const { caption, table, side } = tableFigureParts(node);
     if (!table) return "";
     const long = this.document ? isLongTable(this.document, table) : false;
-    return this.table(table, { caption: this.captionText(caption), label: node.attrs.id ? `\\label{tab:${node.attrs.id}}` : "", rules: node.attrs.rules, long });
+    // (a table without a caption has no number: no label either)
+    const label = caption && node.attrs.id ? `\\label{tab:${node.attrs.id}}` : "";
+    return this.table(table, { caption: caption ? this.captionText(caption) : null, below: side === "below", label, rules: node.attrs.rules, long });
   }
 
   numberOf(id: string): number | undefined {

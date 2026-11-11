@@ -1,11 +1,12 @@
 // Figures and tables with their captions (DESIGN.md §11): an image line, an image board or a table is the
-// body of a float, LaTeX's figure / table, whose caption slot is always there, written or left empty. The caption is
-// text (marks, inline formulas) numbered as \caption numbers it: "Figure 1: …" under a figure, "Table 1: …" above a
-// table ("图 1: …" / "表 1: …" in a document ctex sets, i.e. one with Chinese text, as latex.ts decides); an empty
-// caption still numbers ("Figure 1", the caption package drops the colon). A wrapped image's figure floats beside
-// the paragraph after it with its caption under the image, as wrapfigure does.
+// body of a float, LaTeX's figure / table. A figure's caption slot is always there, written or left empty; a table's
+// caption is above it (as a new table's is), below it, or not there (the table then has no number, as a tabular
+// without \caption). The caption is text (marks, inline formulas) numbered as \caption numbers it: "Figure 1: …"
+// under a figure, "Table 1: …" by a table ("图 1: …" / "表 1: …" in a document ctex sets, i.e. one with Chinese text,
+// as latex.ts decides); an empty caption still numbers ("Figure 1", the caption package drops the colon). A wrapped
+// image's figure floats beside the paragraph after it with its caption under the image, as wrapfigure does.
 import { Fragment, Slice, type Node, type NodeSpec, type NodeType, type Schema } from "prosemirror-model";
-import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "prosemirror-state";
+import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { ReplaceAroundStep } from "prosemirror-transform";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { bodyLayout, documentSettings, PAPER_SIZES } from "./settings.ts";
@@ -28,10 +29,11 @@ export const figureNodes: Record<string, NodeSpec> = {
     parseDOM: [{ tag: "figure", getAttrs: (dom: HTMLElement | string) => (typeof dom === "string" ? {} : { id: dom.getAttribute("data-id") }) }],
     toDOM: (node) => ["figure", { class: "vtx-figure", ...(node.attrs.id ? { "data-id": node.attrs.id } : {}) }, 0],
   },
-  /** A table and its caption above it (LaTeX's table / longtable). */
+  /** A table and its caption, above or below it, or a table without one (LaTeX's table / longtable). */
   table_figure: {
     group: "block",
-    content: "caption table?",
+    // (the table may be missing for a moment, its caption above: the float then goes, figureFixes)
+    content: "caption table? | table caption?",
     isolating: true,
     attrs: { ...id, rules: { default: "grid" as TableRules } },
     parseDOM: [
@@ -94,9 +96,22 @@ export function figureParts(figure: Node): { body: Node | null; caption: Node } 
   return { body: figure.childCount > 1 ? figure.firstChild : null, caption: figure.lastChild! };
 }
 
-/** The table figure's caption and table (null: none). */
-export function tableFigureParts(node: Node): { caption: Node; table: Node | null } {
-  return { caption: node.firstChild!, table: node.childCount > 1 ? node.lastChild : null };
+/** Where a table's caption is: above the table, below it, or none (the table has no caption and no number). */
+export type CaptionSide = "above" | "below" | "none";
+
+/** The table figure's caption (null: none), its table (null: none) and where the caption is. */
+export function tableFigureParts(node: Node): { caption: Node | null; table: Node | null; side: CaptionSide } {
+  let caption: Node | null = null;
+  let table: Node | null = null;
+  let side: CaptionSide = "none";
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type.name === "caption") {
+      caption = child;
+      side = table ? "below" : "above";
+    } else table = child;
+  }
+  return { caption, table, side };
 }
 
 /** The side a figure is wrapped on (its image's), or null. */
@@ -155,6 +170,8 @@ export function captionLabels(doc: Node, chinese = documentIsChinese(doc)): Map<
       return false;
     }
     if (isTableFigure(node)) {
+      // (a table without a caption has no number, as a tabular without \caption)
+      if (!tableFigureParts(node).caption) return false;
       tables++;
       labels.set(node, { kind: "table", number: tables, name: `${chinese ? "表" : "Table"} ${tables}` });
       return false;
@@ -246,15 +263,17 @@ export function isLongTable(doc: Node, table: Node): boolean {
 
 /** What the normalising pass found to do at a place (applied from the document's end, so places stay valid). */
 type Fix =
-  | { kind: "wrap"; pos: number; node: Node; table: boolean; caption: Fragment | null }
+  | { kind: "wrap"; pos: number; node: Node; table: boolean; caption: Fragment | null; side?: CaptionSide }
   | { kind: "delete"; pos: number; node: Node }
   | { kind: "unwrap"; pos: number; node: Node }
   | { kind: "unwrapImage"; pos: number; bodyPos: number; body: Node }
   | { kind: "lift"; pos: number; node: Node; caption: Fragment | null };
 
-/** Captions with text by the body they captioned: "i:<image id>" (a figure of one image), "b:<board id>", "t:<table id>". */
-function captionsByBody(doc: Node): Map<string, Fragment> {
+/** Captions with text by the body they captioned: "i:<image id>" (a figure of one image), "b:<board id>"; and every
+ *  table's caption with where it was, by the table's id. */
+function captionsByBody(doc: Node): { captions: Map<string, Fragment>; tables: Map<string, { content: Fragment; side: CaptionSide }> } {
   const captions = new Map<string, Fragment>();
+  const tables = new Map<string, { content: Fragment; side: CaptionSide }>();
   doc.descendants((node) => {
     if (isFigure(node)) {
       const { body, caption } = figureParts(node);
@@ -264,19 +283,20 @@ function captionsByBody(doc: Node): Map<string, Fragment> {
       return false;
     }
     if (isTableFigure(node)) {
-      const { caption, table } = tableFigureParts(node);
-      if (table?.attrs.id && caption.content.size) captions.set(`t:${table.attrs.id}`, caption.content);
+      const { caption, table, side } = tableFigureParts(node);
+      if (table?.attrs.id) tables.set(table.attrs.id, { content: caption?.content ?? Fragment.empty, side });
       return false;
     }
     return node.isBlock;
   });
-  return captions;
+  return { captions, tables };
 }
 
 /**
  * What keeps every figure and table captioned (an appended transaction, and once when a document is opened):
- * - an image line, an image board or a table that is not in its float yet gets one, its caption empty — or, when it
- *   was moved out of a figure or table of its own (a drag, a wrap, an alignment), the caption it had there;
+ * - an image line, an image board or a table that is not in its float yet gets one, its caption empty (a table's above
+ *   it) — or, when it was moved out of a figure or table of its own (a drag, a wrap, an alignment), the caption it had
+ *   there (a table's where it was, or none);
  * - a figure whose image is gone goes, its caption with it (so does a table float without a table); a figure whose
  *   line got text is a paragraph again (its caption, if written, a paragraph after it);
  * - a wrapped image at the start of a body paragraph (an older document, a wrap gesture, a file read) becomes the
@@ -288,11 +308,17 @@ export function figureFixes(state: EditorState, previous: EditorState | null = n
   const { figure, table_figure: tableFigure, caption: captionType, paragraph } = schema.nodes;
   if (!figure || !tableFigure || !captionType) return null;
   const fixes: Fix[] = [];
-  let carried: Map<string, Fragment> | null = null;
+  let carried: ReturnType<typeof captionsByBody> | null = null;
   const carry = (key: string | null): Fragment | null => {
     if (!key || !previous) return null;
     carried ??= captionsByBody(previous.doc);
-    return carried.get(key) ?? null;
+    return carried.captions.get(key) ?? null;
+  };
+  // a table moved out of its float: its caption, where it was (above, below, none)
+  const carryTable = (id: string | null): { content: Fragment; side: CaptionSide } | null => {
+    if (!id || !previous) return null;
+    carried ??= captionsByBody(previous.doc);
+    return carried.tables.get(id) ?? null;
   };
   const canHold = (parent: Node, index: number, type: NodeType) => parent.canReplaceWith(index, index + 1, type);
   state.doc.descendants((node, pos, parent, index) => {
@@ -318,7 +344,10 @@ export function figureFixes(state: EditorState, previous: EditorState | null = n
       return false;
     }
     if (name === "table") {
-      if (canHold(parent, index, tableFigure)) fixes.push({ kind: "wrap", pos, node, table: true, caption: carry(node.attrs.id ? `t:${node.attrs.id}` : null) });
+      if (canHold(parent, index, tableFigure)) {
+        const had = carryTable(node.attrs.id ?? null);
+        fixes.push({ kind: "wrap", pos, node, table: true, caption: had?.content ?? null, side: had?.side ?? "above" });
+      }
       return false;
     }
     if (name === "image_board") {
@@ -352,9 +381,11 @@ export function figureFixes(state: EditorState, previous: EditorState | null = n
     else if (fix.kind === "wrap") {
       const end = fix.pos + fix.node.nodeSize;
       const caption = makeCaption(fix.caption);
-      const wrapper = fix.table ? tableFigure.create(null, caption) : figure.create(null, caption);
+      // a table's caption above it (the gap, its table, after the caption), below it (the table before it) or none
+      const side = fix.table ? (fix.side ?? "above") : "below";
+      const wrapper = fix.table ? tableFigure.create(null, side === "none" ? Fragment.empty : caption) : figure.create(null, caption);
       // not a "structure" step: its undo takes the caption away with the float
-      tr.step(new ReplaceAroundStep(fix.pos, end, fix.pos, end, new Slice(Fragment.from(wrapper), 0, 0), fix.table ? 1 + caption.nodeSize : 1, false));
+      tr.step(new ReplaceAroundStep(fix.pos, end, fix.pos, end, new Slice(Fragment.from(wrapper), 0, 0), side === "above" ? 1 + caption.nodeSize : 1, false));
     } else if (fix.kind === "unwrap") {
       // the line with its text back as a paragraph; a written caption after it as a paragraph of its own
       const { body, caption } = figureParts(fix.node);
@@ -418,6 +449,57 @@ export function outsideCaptioned(doc: Node, pos: number, depth: number): number 
   return depth;
 }
 
+/** The table float the selection is in (in its table or its caption, or the float selected), or null. */
+function tableFigureAt(state: EditorState): { node: Node; pos: number } | null {
+  const sel = state.selection;
+  if (sel instanceof NodeSelection && isTableFigure(sel.node)) return { node: sel.node, pos: sel.from };
+  const found = captionedAt(state.doc, sel.from);
+  return found && isTableFigure(found.node) ? { node: found.node, pos: found.pos } : null;
+}
+
+/** Where the caption is of the table the selection is in (above, below, none), or null outside a table. */
+export function tableCaptionSide(state: EditorState): CaptionSide | null {
+  const at = tableFigureAt(state);
+  return at ? tableFigureParts(at.node).side : null;
+}
+
+/**
+ * The caption of the table the selection is in put above the table, below it, or taken away (the table then has no
+ * number). A caption moved keeps its text; one put back is empty. An empty caption gets the caret (its hint shows).
+ */
+export function setTableCaption(side: CaptionSide): Command {
+  return (state, dispatch) => {
+    const at = tableFigureAt(state);
+    if (!at) return false;
+    const parts = tableFigureParts(at.node);
+    if (!parts.table || parts.side === side) return false;
+    if (!dispatch) return true;
+    const tr = state.tr;
+    let captionFrom = -1;
+    at.node.forEach((child, offset) => {
+      if (child.type.name === "caption") captionFrom = at.pos + 1 + offset;
+    });
+    const sel = state.selection;
+    // the caret's offset in the caption it is in (-1: elsewhere)
+    const inCaption = parts.caption && sel instanceof TextSelection && sel.from > captionFrom && sel.to < captionFrom + parts.caption.nodeSize ? sel.from - captionFrom - 1 : -1;
+    if (parts.caption) tr.delete(captionFrom, captionFrom + parts.caption.nodeSize);
+    if (side !== "none") {
+      const caption = parts.caption ?? state.schema.nodes.caption.create();
+      const figure = tr.doc.nodeAt(at.pos)!;
+      const place = side === "above" ? at.pos + 1 : at.pos + 1 + figure.firstChild!.nodeSize;
+      tr.insert(place, caption);
+      // the caret into it when it was there, or when it is empty (its hint shows: it is to be written)
+      if (inCaption >= 0 || !caption.content.size) tr.setSelection(TextSelection.create(tr.doc, place + 1 + Math.max(0, inCaption)));
+    } else if (inCaption >= 0) {
+      // the caption gone with the caret: the caret into the table
+      const near = Selection.findFrom(tr.doc.resolve(at.pos + 1), 1, true);
+      if (near) tr.setSelection(near);
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
+  };
+}
+
 // ------------------------------------------------------------------- view --
 
 export interface CaptionLabels {
@@ -450,6 +532,13 @@ function captionDecorations(doc: Node, hint: string): DecorationSet {
     const label = labels.get(node);
     let captionPos = pos + 1;
     let caption = node.firstChild!;
+    if (isTableFigure(node)) {
+      // above or below its table, or none (nothing to number)
+      const parts = tableFigureParts(node);
+      if (!parts.caption) return false;
+      caption = parts.caption;
+      if (parts.side === "below") captionPos = pos + node.nodeSize - 1 - caption.nodeSize;
+    }
     if (isFigure(node)) {
       caption = node.lastChild!;
       captionPos = pos + node.nodeSize - 1 - caption.nodeSize;
@@ -517,10 +606,12 @@ function captionKeys(view: EditorView, event: KeyboardEvent): boolean {
     const wrapper = $pos.node(depth - 1);
     const wrapperPos = $pos.before(depth - 1);
     const wrapperEnd = wrapperPos + wrapper.nodeSize;
+    const tableSide = isTableFigure(wrapper) ? tableFigureParts(wrapper) : null;
     if (key === "Enter") {
       if (event.shiftKey) return false;
-      // a table's caption: on into its first cell; a figure's: a new paragraph after the figure
-      if (isTableFigure(wrapper) && tableFigureParts(wrapper).table) {
+      // a table's caption above it: on into its first cell; a figure's, or a table's below it: a new paragraph after
+      // the float
+      if (tableSide?.table && tableSide.side === "above") {
         const near = caretNear(doc, $pos.after(), 1);
         if (near) return dispatch(state.tr.setSelection(near));
       }
@@ -528,10 +619,16 @@ function captionKeys(view: EditorView, event: KeyboardEvent): boolean {
       return dispatch(tr.setSelection(TextSelection.create(tr.doc, wrapperEnd + 1)));
     }
     if (key === "Backspace" && $pos.parentOffset === 0) {
-      // the caption stays: a figure's image is selected, above a table's caption the caret goes to the text before
+      // the caption stays: a figure's image is selected; under a table the caret goes into the table's last cell,
+      // above one to the text before
       if (isFigure(wrapper)) {
         const image = lastImageOf(wrapper, wrapperPos);
         if (image >= 0) return dispatch(state.tr.setSelection(NodeSelection.create(doc, image)));
+        return true;
+      }
+      if (tableSide?.side === "below") {
+        const inTable = caretNear(doc, $pos.before(), -1);
+        if (inTable) dispatch(state.tr.setSelection(inTable));
         return true;
       }
       const before = wrapperPos > 0 ? caretNear(doc, wrapperPos, -1) : null;

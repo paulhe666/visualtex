@@ -148,6 +148,8 @@ export const FOOTNOTE_EDIT_EVENT = "vtx-footnote-edit";
 
 export interface FootnoteEditRequest {
   pos: number;
+  /** the footnote's id: it is found by it when the document changed before the editor opened */
+  id: string | null;
   /** the mark on the screen, for placing the editor */
   rect: DOMRect | null;
 }
@@ -166,7 +168,8 @@ export const requestCitation: Command = (state, _dispatch, view) => {
 export function requestFootnoteEdit(view: EditorView, pos: number, at?: DOMRect) {
   const dom = view.nodeDOM(pos);
   const rect = at ?? (dom instanceof Element ? dom.getBoundingClientRect() : null);
-  view.dom.dispatchEvent(new CustomEvent<FootnoteEditRequest>(FOOTNOTE_EDIT_EVENT, { bubbles: true, detail: { pos, rect } }));
+  const id = (view.state.doc.nodeAt(pos)?.attrs.id as string | null | undefined) ?? null;
+  view.dom.dispatchEvent(new CustomEvent<FootnoteEditRequest>(FOOTNOTE_EDIT_EVENT, { bubbles: true, detail: { pos, id, rect } }));
 }
 
 class FootnoteView {

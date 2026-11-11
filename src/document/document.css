@@ -99,6 +99,200 @@
   text-underline-offset: 2px;
 }
 
+/* ---- the source editor (sourceMarkdown.ts): the text is its Markdown; a span's markers light grey while the selection
+   touches it and hidden otherwise, a heading's "#" while the selection is in its line; the formatting read from the
+   text ---- */
+.vtx-document .md-mark {
+  color: #b4b9c1;
+  font-weight: normal;
+  font-style: normal;
+  text-decoration: none;
+  background: none;
+}
+.vtx-document .md-hidden {
+  display: none;
+}
+.vtx-document .md-strong {
+  font-weight: 700;
+}
+.vtx-document .md-em {
+  font-style: italic;
+}
+.vtx-document .md-strike {
+  text-decoration: line-through;
+}
+.vtx-document .md-underline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.vtx-document .md-strike.md-underline {
+  text-decoration: underline line-through;
+}
+.vtx-document .md-highlight {
+  background-color: #fff59d;
+}
+.vtx-document .md-code {
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+  background: rgba(135, 131, 120, 0.15);
+  border-radius: 3px;
+  padding: 0.1em 0.2em;
+}
+.vtx-document .md-link {
+  color: #1f6fd0;
+  text-decoration: underline;
+  text-decoration-color: rgba(31, 111, 208, 0.45);
+  text-underline-offset: 2px;
+}
+/* a link's address while its markers show */
+.vtx-document .md-url {
+  color: #5b7896;
+  text-decoration: underline;
+  text-decoration-color: rgba(91, 120, 150, 0.45);
+  text-underline-offset: 2px;
+}
+.vtx-document .md-sup {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document .md-sub {
+  vertical-align: sub;
+  font-size: 0.75em;
+  line-height: 0;
+}
+.vtx-document .md-kbd {
+  padding: 0 0.3em;
+  border: 1px solid #c8ccd2;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f6f8fa;
+  font: 0.85em ui-monospace, "SF Mono", Consolas, monospace;
+}
+/* a picture written as ![text](https://…): drawn after its source */
+.vtx-document .md-picture img {
+  max-width: 100%;
+  vertical-align: bottom;
+}
+/* lines (the source editor's line model, as Obsidian draws them): a bullet's "-" drawn as a bullet, a task's box, a
+   quote's border (its first ">" kept as room, a deeper one a border of its own), code lines, a rule, a callout */
+.vtx-document .md-transparent {
+  color: transparent;
+}
+.vtx-document .md-bullet {
+  position: relative;
+  color: transparent;
+}
+.vtx-document .md-bullet::after {
+  content: "•";
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #000;
+}
+.vtx-document .md-task {
+  display: inline-block;
+  text-indent: 0;
+}
+.vtx-document .md-task input {
+  width: 0.9em;
+  height: 0.9em;
+  margin: 0 0.15em 0 0;
+  vertical-align: -0.08em;
+  cursor: pointer;
+}
+.vtx-document p.md-task-done {
+  color: #8a8f98;
+  text-decoration: line-through;
+}
+.vtx-document p.md-quoteline {
+  border-left: 3px solid #d0d7de;
+  padding-left: 0.6em;
+  color: #3b4148;
+}
+.vtx-document .md-quote-border {
+  display: inline-block;
+  width: 0;
+  margin: 0 0.7em 0 0.1em;
+  border-left: 3px solid #d0d7de;
+  color: transparent;
+  text-indent: 0;
+}
+.vtx-document p.md-calloutline {
+  background: #f3f7fc;
+  border-left-color: #0969da;
+}
+.vtx-document p.md-callout-tip,
+.vtx-document p.md-callout-success {
+  background: #f1f8f3;
+  border-left-color: #1a7f37;
+}
+.vtx-document p.md-callout-warning,
+.vtx-document p.md-callout-caution,
+.vtx-document p.md-callout-attention {
+  background: #fdf8ec;
+  border-left-color: #9a6700;
+}
+.vtx-document p.md-callout-danger,
+.vtx-document p.md-callout-error,
+.vtx-document p.md-callout-bug,
+.vtx-document p.md-callout-failure {
+  background: #fdf2f2;
+  border-left-color: #d1242f;
+}
+.vtx-document p.md-callout-important {
+  background: #f6f3fd;
+  border-left-color: #8250df;
+}
+.vtx-document .md-callout-title {
+  font-weight: 600;
+}
+.vtx-document p.md-codeline {
+  padding: 0 0.8em;
+  background: #f6f8fa;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  text-align: left;
+}
+.vtx-document p.md-codeline-begin {
+  padding-top: 0.3em;
+  border-radius: 4px 4px 0 0;
+}
+.vtx-document p.md-codeline-end {
+  padding-bottom: 0.3em;
+  border-radius: 0 0 4px 4px;
+}
+.vtx-document .md-code-language {
+  float: right;
+  color: #8a8f98;
+  font-size: 12px;
+  user-select: none;
+}
+/* (in the line's own height: the line does not change height when the caret comes onto it and shows its "---") */
+.vtx-document .md-rule {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 1px solid #c8ccd2;
+}
+/* the document's front matter ("---" … "---" at its top): YAML lines */
+.vtx-document p.md-frontmatter {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  color: #6a737d;
+  text-indent: 0;
+  text-align: left;
+}
+/* a line of a paragraph after its first, a list item, a quote or code line: no first-line indent */
+.vtx-document > p:is(.md-cont, .md-quoteline, .md-codeline, .md-ruleline),
+.vtx-sheet[data-class] .vtx-document > p:is(.md-cont, .md-quoteline, .md-codeline, .md-ruleline) {
+  text-indent: 0;
+}
+.vtx-sheet[data-class] .vtx-document > p.md-listline {
+  text-align: left;
+}
+
 /* ---- document mode in the workspace (DESIGN.md §6.4): the document takes the formula rows' card ---- */
 .workspace.is-document-mode .editor-pane-scroll {
   overflow: hidden;
@@ -452,6 +646,13 @@
   color: var(--text-faint);
   font: inherit;
   font-size: 12px;
+}
+.mc-menu-item.is-checked {
+  color: var(--text);
+}
+.mc-menu-check {
+  margin-left: auto;
+  color: var(--accent);
 }
 .mc-menu-sep {
   height: 1px;
@@ -2526,6 +2727,10 @@
 }
 .vtx-document .vtx-table-figure > .vtx-caption {
   margin: 0 auto calc(10 * var(--vtx-pt, 1.333px));
+}
+/* a table's caption below it: the skip above it, as under a figure's image */
+.vtx-document .vtx-table-figure > .tableWrapper + .vtx-caption {
+  margin: calc(10 * var(--vtx-pt, 1.333px)) auto 0;
 }
 .vtx-document .vtx-table-figure > .tableWrapper {
   margin: 0;

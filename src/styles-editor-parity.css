@@ -1062,6 +1062,11 @@
   gap: 6px;
 }
 
+/* as tall as the path field beside it */
+.export-browse-button {
+  height: 36px;
+}
+
 .export-error {
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));

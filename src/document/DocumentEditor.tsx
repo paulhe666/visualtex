@@ -17,7 +17,8 @@ import {
   documentToMarkdown,
   markdownSourceKey,
   markdownSourceOf,
-  readMarkdown,
+  sourceTextToDocument,
+  toSourceDocument,
   FORMULAS_REFRESH_EVENT,
   LINK_REQUEST_EVENT,
   openFormulaId,
@@ -379,6 +380,8 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     try {
       doc = initialJson ? documentSchema.nodeFromJSON(initialJson) : emptyDoc();
       doc.check();
+      // the source editor's text is Markdown: formatting kept as marks (an older document) goes into the text
+      doc = toSourceDocument(doc);
     } catch {
       doc = emptyDoc();
     }
@@ -519,6 +522,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
         formulaLatex: portableFormulaLatex,
         references: useDocumentFormatStore.getState().markdownReferences,
         source: markdownSourceOf(view.state),
+        sourceText: true,
       });
     },
     serialize() {
@@ -528,17 +532,17 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     loadMarkdown(text) {
       const view = viewRef.current;
       if (!view) return;
-      // The file is kept with the document: blocks left as they were are written back exactly as they were read.
-      const { doc, source } = readMarkdown(documentSchema, text);
+      // the file's lines are the document's lines (formulas, tables and pictures its objects)
+      const doc = sourceTextToDocument(documentSchema, text);
       // Replaced in the history, so Ctrl+Z gives the previous document back; ids come from the ids plugin.
-      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, source).scrollIntoView());
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta(markdownSourceKey, null).scrollIntoView());
       view.focus();
     },
     load(text) {
       replaceState(parseDocument(documentSchema, text).doc);
     },
     setDoc(doc) {
-      replaceState(doc);
+      replaceState(toSourceDocument(doc));
     },
     focus() {
       viewRef.current?.focus();
@@ -736,6 +740,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
           key={`${footnote.pos}`}
           view={view}
           pos={footnote.pos}
+          id={footnote.id ?? null}
           rect={footnote.rect}
           lang={lang}
           host={noteFormulaHost}

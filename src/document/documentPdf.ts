@@ -4,7 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import type { EditorView } from "prosemirror-view";
-import { closeFormula, collapseTransaction, openFormulaId } from "../../shared/visualtex-document/src/index.ts";
+import { closeFormula, collapseTransaction, hideSourceMarkers, openFormulaId } from "../../shared/visualtex-document/src/index.ts";
 import { buildPrintCopy } from "./printCopy";
 import { PAGE_GAP } from "./DocumentEditor";
 
@@ -31,14 +31,15 @@ function once<T>(event: string, timeoutMs: number): { promise: Promise<T>; ready
   return { promise, ready };
 }
 
-/** Every formula closed (the copy shows their static markup) and no Markdown shown around the caret; the pages laid
- *  out again after that. */
+/** Every formula closed (the copy shows their static markup) and no Markdown shown around the caret (the source
+ *  editor's markers all hidden); the pages laid out again after that. */
 async function settleForPrint(view: EditorView) {
   const hide = collapseTransaction(view.state);
   if (hide) view.dispatch(hide);
   const open = openFormulaId(view.state);
   if (open) view.dispatch(closeFormula(view.state.tr));
-  if (hide || open) await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  view.dispatch(hideSourceMarkers(view.state));
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 /** Print the document's pages to `path`. */

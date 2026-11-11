@@ -1,9 +1,10 @@
-// The document's right-click menu (Mathcha's): copy variants, cut, delete; in a table, rows and columns. The
-// formatting controls are DocumentControls.tsx (the workspace's bottom bar), the "\" menu CommandMenu.tsx.
+// The document's right-click menu (Mathcha's): copy variants, cut, delete; in a table, rows and columns, and where
+// its caption is (above, below, none). The formatting controls are DocumentControls.tsx (the workspace's bottom bar),
+// the "\" menu CommandMenu.tsx.
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { CellSelection } from "prosemirror-tables";
-import { isInTable, tableCommands } from "../../shared/visualtex-document/src/index.ts";
+import { isInTable, setTableCaption, tableCaptionSide, tableCommands, type CaptionSide } from "../../shared/visualtex-document/src/index.ts";
 
 export type Lang = "en" | "zh";
 const t = (lang: Lang, en: string, zh: string) => (lang === "en" ? en : zh);
@@ -32,7 +33,7 @@ export interface ContextMenuActions {
   remove(): void;
 }
 
-/** Mathcha's right-click menu: copy variants, cut, delete; in a table, rows and columns. */
+/** Mathcha's right-click menu: copy variants, cut, delete; in a table, rows and columns, and its caption's place. */
 export function ContextMenu(props: {
   view: EditorView | null;
   state: EditorState | null;
@@ -44,14 +45,17 @@ export function ContextMenu(props: {
   const { view, state, lang, at, actions, onClose } = props;
   if (!at || !view || !state) return null;
   const inTable = isInTable(state);
+  // in a table or its caption
+  const captionSide = tableCaptionSide(state);
   const c = tableCommands;
   const cellSelection = state.selection instanceof CellSelection;
   const empty = state.selection.empty;
-  const item = (label: string, fn: () => void, options: { disabled?: boolean; hint?: string } = {}) => (
+  const item = (label: string, fn: () => void, options: { disabled?: boolean; hint?: string; checked?: boolean } = {}) => (
     <button
       type="button"
-      className="mc-menu-item"
+      className={"mc-menu-item" + (options.checked ? " is-checked" : "")}
       disabled={options.disabled}
+      {...(options.checked !== undefined ? { role: "menuitemradio", "aria-checked": options.checked } : {})}
       onClick={() => {
         onClose();
         fn();
@@ -60,10 +64,13 @@ export function ContextMenu(props: {
     >
       <span>{label}</span>
       {options.hint && <kbd>{options.hint}</kbd>}
+      {options.checked && <span className="mc-menu-check" aria-hidden="true">✓</span>}
     </button>
   );
   const command = (cmd: Command) => () => run(view, cmd);
-  const style = { left: Math.min(at.x, window.innerWidth - 240), top: Math.min(at.y, window.innerHeight - (inTable ? 470 : 230)) };
+  const caption = (side: CaptionSide, label: string) => item(label, command(setTableCaption(side)), { checked: captionSide === side });
+  const height = 230 + (inTable ? 240 : 0) + (captionSide ? 110 : 0);
+  const style = { left: Math.min(at.x, window.innerWidth - 240), top: Math.min(at.y, window.innerHeight - height) };
   return (
     <>
       <div className="mc-dismiss" onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
@@ -85,6 +92,14 @@ export function ContextMenu(props: {
             {item(t(lang, "Delete Row", "删除行"), command(c.deleteRow))}
             {item(t(lang, "Delete Column", "删除列"), command(c.deleteColumn))}
             {item(t(lang, "Delete Table", "删除表格"), command(c.deleteTable))}
+          </>
+        )}
+        {captionSide && (
+          <>
+            <div className="mc-menu-sep" />
+            {caption("above", t(lang, "Caption Above", "题注在上方"))}
+            {caption("below", t(lang, "Caption Below", "题注在下方"))}
+            {caption("none", t(lang, "No Caption", "无题注"))}
           </>
         )}
       </div>

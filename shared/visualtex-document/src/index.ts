@@ -157,6 +157,28 @@ export {
 } from "./notes.ts";
 export { paginationKey, paginationPlugin, refreshPagination, type PageGeometry, type PaginationOptions } from "./pagination.ts";
 export {
+  blockSyntax,
+  headingSyntax,
+  hideSourceMarkers,
+  insertSourceLink,
+  renderedBlock,
+  renderedDocument,
+  renderedText,
+  setSourceHeading,
+  clearSourceFormat,
+  shownContent,
+  sourceFormatActive,
+  sourceLiveKey,
+  sourceLines,
+  sourceLivePlugin,
+  toggleSourceFormat,
+  toSourceDocument,
+  toSourceSlice,
+  sourceTextToDocument,
+  separateParagraphs,
+  withHeadings,
+} from "./sourceMarkdown.ts";
+export {
   DEFAULT_IMAGE_WIDTH,
   IMAGE_GAP,
   documentImageKeys,
@@ -188,4 +210,5 @@ export {
   leaveEmptyAuthorLine,
   nextAuthor,
 } from "./titleBlock.ts";
-export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels } from "./figures.ts";
+export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, setTableCaption, tableCaptionSide, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels, type CaptionSide } from "./figures.ts";
+export { cycleLineTask, indentLines, insertCodeFence, lineListKind, outdentLines, sourceEnter, sourceShiftEnter, toggleLineList, toggleLineQuote } from "./sourceKeys.ts";
