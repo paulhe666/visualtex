@@ -1326,24 +1326,14 @@ export function visualTexAutoExitScriptAfterDirectInput(mathfield: _Mathfield, a
 function insertMathModeChar(mathfield: _Mathfield, c: string): void {
   const model = mathfield.model;
   if (!/\d/.test(c)) formatScientificNotationIfApplicable(mathfield);
-  // VisualTeX editing core: Space leaves the structure (a macro as a whole) or,
-  // at the top level, inserts a visible space (navigation.ts).
+  // VisualTeX editing core: Space is a visible space (a word space beside
+  // text), never a move (navigation.ts). (It no longer closes an open fence
+  // either: the fence is closed by its closing character, Tab or Right.)
   const selector = {
     "^": "moveToSuperscript",
     "_": "moveToSubscript",
     " ": mathfield.options.mathModeSpace ? ["insert", mathfield.options.mathModeSpace] : "visualTexSpace"
   }[c];
-  if (selector === "visualTexSpace") {
-    const child = model.at(Math.max(model.position, model.anchor));
-    const { parent } = child;
-    if (parent instanceof LeftRightAtom && child.isLastSibling && mathfield.options.smartFence && parent.rightDelim === "?") {
-      mathfield.snapshot();
-      parent.rightDelim = parent.matchingRightDelim();
-      parent.isDirty = true;
-      model.contentDidChange({ inputType: "insertText" });
-      mathfield.snapshot("insert-fence");
-    }
-  }
   if (selector) {
     mathfield.executeCommand(selector as any);
     return;
@@ -1561,12 +1551,15 @@ function insertSmartFence(model: _Model, key: string, style?: Style): boolean {
         format: "latex",
         style
       });
-      // the new fence takes the rest of the slot and the caret goes to its
-      // start (VisualTeX: the insertion leaves the caret in its empty body)
+      // The new fence closes right where it is typed, empty, the caret in it:
+      // what follows the caret stays after it. (It took the rest of the slot,
+      // so a bracket typed after the integrand of a\,\mathrm{d}x closed after
+      // the dx, 2026-11-11.) Wrapping material is typing the bracket over a
+      // selection, or before a closing bracket already there (above).
       const newFence = atom.rightSibling;
       // (setting the body, even to nothing, also drops the verbatim \right?)
       if (newFence instanceof LeftRightAtom) {
-        newFence.body = newFence.lastSibling !== newFence ? model.extractAtoms([model.offsetOf(newFence), model.offsetOf(newFence.lastSibling)]) : [];
+        newFence.body = [];
         model.position = model.offsetOf(newFence.firstChild);
       }
       model.mathfield.snapshot("insert-fence");
