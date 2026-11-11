@@ -25,9 +25,10 @@ package installs:
 - `/usr/share/ibus/component/visualtex.xml` — its IBus component;
 - `/usr/share/visualtex/rime` — RIME's data (万象拼音 tables, CC-BY-4.0).
 
-The AppImage carries the same files and installs the input method on its first start, asking for
-the administrator's password (pkexec): IBus reads engines only from its system folder. A refused
-install is not asked again for that version. Both need glibc 2.39 or newer (Ubuntu 24.04, Fedora 40).
+The AppImage carries the same files and installs the input method (with its icon) on its first start,
+asking for the administrator's password (pkexec): IBus reads engines only from its system folder.
+A cancelled password dialog is not asked again for that version; with no dialog to ask (no polkit
+agent running) or a refused password it asks again at the next start. Both need glibc 2.39 or newer (Ubuntu 24.04, Fedora 40).
 
 ## The input method
 

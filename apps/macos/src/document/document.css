@@ -647,6 +647,13 @@
   font: inherit;
   font-size: 12px;
 }
+.mc-menu-item.is-checked {
+  color: var(--text);
+}
+.mc-menu-check {
+  margin-left: auto;
+  color: var(--accent);
+}
 .mc-menu-sep {
   height: 1px;
   margin: 4px 2px;
@@ -2720,6 +2727,10 @@
 }
 .vtx-document .vtx-table-figure > .vtx-caption {
   margin: 0 auto calc(10 * var(--vtx-pt, 1.333px));
+}
+/* a table's caption below it: the skip above it, as under a figure's image */
+.vtx-document .vtx-table-figure > .tableWrapper + .vtx-caption {
+  margin: calc(10 * var(--vtx-pt, 1.333px)) auto 0;
 }
 .vtx-document .vtx-table-figure > .tableWrapper {
   margin: 0;

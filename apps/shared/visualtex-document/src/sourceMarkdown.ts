@@ -13,7 +13,8 @@ import { Fragment, Slice, type Mark, type Node, type ResolvedPos, type Schema } 
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { OBJECT, writeInline, type InlineMark, type WriteUnit } from "./inlineMarkdown.ts";
-import { blockLanguage, documentToMarkdown, readMarkdown } from "./markdown.ts";
+import { blockLanguage, documentToMarkdown, NO_CAPTION, readMarkdown } from "./markdown.ts";
+import { captionLabelLength } from "./figures.ts";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { homeInLine, renumberLists } from "./sourceKeys.ts";
 import { blankLine as tokenizerBlankLine, copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
@@ -1487,10 +1488,19 @@ export function sourceTextToDocument(schema: Schema, text: string, readBlock: (m
         }
       }
     }
-    // a table: a row of cells and a delimiter row under it, then its rows
-    if (/^\s*\|/.test(row) && i + 1 < rows.length && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1]) && rows[i + 1].includes("-")) {
-      let j = i + 2;
-      while (j < rows.length && /^\s*\|/.test(rows[j])) j++;
+    // a table: a row of cells and a delimiter row under it, then its rows; its caption above it ("Table: …", Pandoc's,
+    // a blank line between or not), or below it, or the note that it has none (markdown.ts: a caption between two tables
+    // is the second's unless that one has its own after it)
+    const captionAbove = captionLabelLength(row, "table") > 0 ? tableAfter(rows, i + 1) : -1;
+    const tableStart = tableAt(rows, i) ? i : captionAbove;
+    if (tableStart >= 0) {
+      let j = tableEnd(rows, tableStart);
+      if (captionAbove < 0) {
+        const k = rows[j] === "" ? j + 1 : j;
+        const following = k < rows.length ? tableAfter(rows, k + 1) : -1;
+        const below = k < rows.length && captionLabelLength(rows[k], "table") > 0 && (following < 0 || captionAfter(rows, tableEnd(rows, following)));
+        if (below || (k < rows.length && NO_CAPTION.test(rows[k]))) j = k + 1;
+      }
       const nodes = objects(rows.slice(i, j).join("\n"));
       if (nodes.length && nodes.every((n) => !n.isTextblock)) {
         out.push(...nodes);
@@ -1535,6 +1545,29 @@ function sourceSliceText(slice: Slice, schema: Schema): string {
   const content = Fragment.from(blocks);
   if (!blocks.length || !schema.topNodeType.validContent(content)) return "";
   return documentToMarkdown(schema.topNodeType.create(null, content), { sourceText: true }).replace(/\n$/, "");
+}
+
+/** A table starts at row `i` of a text: a row of cells and a delimiter row under it. */
+function tableAt(rows: string[], i: number): boolean {
+  return i + 1 < rows.length && /^\s*\|/.test(rows[i]) && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1]) && rows[i + 1].includes("-");
+}
+
+/** Where a table starts at row `i` or after one blank row there, or -1. */
+function tableAfter(rows: string[], i: number): number {
+  return tableAt(rows, i) ? i : rows[i] === "" && tableAt(rows, i + 1) ? i + 1 : -1;
+}
+
+/** The row after a table that starts at row `start`. */
+function tableEnd(rows: string[], start: number): number {
+  let j = start + 2;
+  while (j < rows.length && /^\s*\|/.test(rows[j])) j++;
+  return j;
+}
+
+/** A table's own caption or the note that it has none follows at row `j` (a blank row between or not). */
+function captionAfter(rows: string[], j: number): boolean {
+  const k = rows[j] === "" ? j + 1 : j;
+  return k < rows.length && (captionLabelLength(rows[k], "table") > 0 || NO_CAPTION.test(rows[k]));
 }
 
 /** A paragraph-based document (saved before the line model, read from Markdown): a blank line between paragraphs. */

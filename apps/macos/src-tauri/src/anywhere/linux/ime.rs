@@ -23,6 +23,8 @@ pub(super) const APP_IDENTIFIER: &str = "visualtex";
 pub(super) const DEFAULT_SOURCE: &str = "xkb:us::eng";
 const SOCKET_NAME: &str = "anywhere-ime.sock";
 const ENGINE_PROGRAM: &str = "visualtex-ibus";
+/// The engine's icon, where its IBus component names it.
+const ENGINE_ICON: &str = "usr/share/icons/hicolor/128x128/apps/visualtex.png";
 
 /// The last engine other than VisualTeX's seen, and the one the shortcut switched from.
 static LAST_OTHER: Mutex<Option<String>> = Mutex::new(None);
@@ -125,9 +127,11 @@ pub(super) fn switch_back() {
 }
 
 /// The input method for IBus. The package installs it for every user. The AppImage carries it
-/// ($APPDIR/usr/lib/visualtex, its RIME data and component) and installs it the same way, with the
-/// administrator's permission (pkexec), since IBus reads engines only from its system folder: once,
-/// and again for a newer engine; a refusal is kept per version.
+/// ($APPDIR/usr/lib/visualtex, its RIME data, component and icon) and installs it the same way, with
+/// the administrator's permission (pkexec), since IBus reads engines only from its system folder:
+/// once, and again for a newer engine. A dismissed password dialog is kept per version (not asked
+/// again); no dialog (no polkit agent), a refused password or a failed copy asks again at the next
+/// start.
 pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     let Some(appdir) = std::env::var_os("APPDIR").map(PathBuf::from) else {
         return if installed() {
@@ -150,8 +154,10 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     };
     let system = PathBuf::from("/usr/lib/visualtex/visualtex-ibus");
     let wanted = version(&carried).unwrap_or_default();
+    // (an engine installed by an earlier AppImage, without its icon, is installed again with it)
+    let icon_missing = appdir.join(ENGINE_ICON).is_file() && !PathBuf::from("/").join(ENGINE_ICON).is_file();
     if installed() && system.is_file() {
-        if version(&system).as_deref() == Some(wanted.as_str()) {
+        if version(&system).as_deref() == Some(wanted.as_str()) && !icon_missing {
             return Ok(());
         }
         // the package's files are the package's to update
@@ -177,6 +183,11 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     copy(appdir.join("usr/lib/visualtex"), stage.join("engine"))?;
     copy(appdir.join("usr/share/visualtex/rime"), stage.join("rime"))?;
     copy(appdir.join("usr/share/ibus/component/visualtex.xml"), stage.join("visualtex.xml"))?;
+    // the icon the component names
+    let icon = appdir.join(ENGINE_ICON);
+    if icon.is_file() {
+        copy(icon, stage.join("visualtex.png"))?;
+    }
     let script = stage.join("install.sh");
     std::fs::write(
         &script,
@@ -193,6 +204,7 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
          mv \"$R/usr/lib/visualtex.new\" \"$R/usr/lib/visualtex\"\n\
          mv \"$R/usr/share/visualtex/rime.new\" \"$R/usr/share/visualtex/rime\"\n\
          install -m 644 \"$S/visualtex.xml\" \"$R/usr/share/ibus/component/visualtex.xml\"\n\
+         if [ -f \"$S/visualtex.png\" ]; then install -D -m 644 \"$S/visualtex.png\" \"$R/usr/share/icons/hicolor/128x128/apps/visualtex.png\"; fi\n\
          chmod -R a+rX \"$R/usr/lib/visualtex\" \"$R/usr/share/visualtex\"\n\
          if [ -z \"$R\" ]; then ibus write-cache --system >/dev/null 2>&1 || true; fi\n",
     )
@@ -211,10 +223,13 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
             super::log(&format!("input method {wanted} installed"));
             Ok(())
         }
-        Ok(status) => {
+        // 126: the password dialog was dismissed — not asked again for this version
+        Ok(status) if status.code() == Some(126) => {
             let _ = std::fs::write(&declined, &wanted);
-            Err(format!("the input method was not installed ({status})"))
+            Err(format!("installing the input method {wanted} was declined"))
         }
+        // 127 (no polkit agent to ask, not authorized) or the copy failed: asked again at the next start
+        Ok(status) => Err(format!("the input method was not installed ({status})")),
         Err(error) => Err(format!("pkexec: {error}")),
     }
 }
