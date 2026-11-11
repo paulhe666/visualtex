@@ -59,6 +59,8 @@ struct WidthFit {
     private(set) var widths: Widths
     /// The most fillers a span was measured over (0: nothing measured).
     private(set) var longest = 0
+    /// Every span measured so far was a whole number of points wide (a field that rounds its places).
+    private var wholePoints = true
     /// A span with a joint in it was measured.
     var jointMeasured: Bool { spans.contains { $0.joints > 0 } }
 
@@ -86,7 +88,22 @@ struct WidthFit {
         }
         longest = max(longest, fillers)
         let before = widths
-        solve()
+        // The widths stand while they account for every span to within what a field's whole points
+        // allow (a point): fitted anew at every measure, they moved by hundredths, the space was held
+        // a filler longer or shorter for it at every key, and a long formula's lines went back and
+        // forth (Chrome, 2026-11-11). The hair follows its own measure.
+        let hair = spans.last(where: { $0.fillers == 0 && $0.joints == 0 })?.width ?? widths.hair
+        // (a field that gives places to fractions of a point is taken at its word: a third of a point)
+        if abs(width - width.rounded()) > 0.01 { wholePoints = false }
+        let allowed: CGFloat = wholePoints ? 1.05 : 0.3
+        let contradicted = spans.contains {
+            ($0.fillers > 0 || $0.joints > 0) && abs($0.fillers * widths.filler + $0.joints * widths.joint + $0.hairs * hair - $0.width) > allowed
+        }
+        if contradicted {
+            solve()
+        } else if abs(hair - widths.hair) > 0.05 {
+            widths.hair = min(max(hair, 0), widths.filler * 1.3)
+        }
         return before != widths
     }
 
@@ -450,6 +467,21 @@ struct SpaceModel {
         // the widths, from pieces after one another on a line and from runs inside pieces
         for (fillers, width) in evidence.runs { fit.measured(fillers: fillers, joints: 0, hairs: 0, width: width) }
         if let hair = evidence.hair { fit.measured(fillers: 0, joints: 0, hairs: 1, width: hair) }
+        // (and from a line's first piece the field told of to its last: many fillers and joints, a
+        // point's rounding at most between them)
+        var from: Int?
+        var previous: Int?
+        for piece in evidence.pieces.keys.sorted() + [-1] {
+            if let start = from, let last = previous, piece < 0 || abs(evidence.pieces[piece]!.y - evidence.pieces[start]!.y) > tolerance {
+                if last - start >= 2 {
+                    fit.measured(fillers: layout.counts[start..<last].reduce(0, +), joints: last - start, hairs: 0, width: evidence.pieces[last]!.x - evidence.pieces[start]!.x)
+                }
+                from = piece < 0 ? nil : piece
+            } else if from == nil, piece >= 0 {
+                from = piece
+            }
+            previous = piece
+        }
         let known = evidence.pieces.keys.sorted()
         for (order, piece) in known.enumerated() where order > 0 && known[order - 1] == piece - 1 {
             let a = evidence.pieces[piece - 1]!, b = evidence.pieces[piece]!
@@ -480,8 +512,13 @@ struct SpaceModel {
         for index in 0..<count {
             let width = CGFloat(layout.counts[index]) * widths.filler
             if let told = evidence.pieces[index] {
-                x = told.x
-                y = told.y
+                // where the field told; on the line the piece before is on, and within a point or so of
+                // where the widths put it, where the widths put it (a field's whole points would move
+                // every piece a point back and forth between a key and the field's answer to it)
+                if !(abs(told.y - y) <= 0.01 && abs(told.x - x) <= 1.5) {
+                    x = told.x
+                    y = told.y
+                }
             } else if x + width > (rightHigh.isFinite ? rightHigh - 0.01 : .infinity), x > leftEdge + 0.5 {
                 // (the next line as the field told it before, else a line further down)
                 y = downs.map { origin.y + $0 }.first(where: { $0 > y + tolerance }) ?? y + step
@@ -528,19 +565,29 @@ struct SpaceModel {
         var high = CGFloat.infinity
         var lefts: [CGFloat] = []
         var steps: [CGFloat] = []
+        // (How far a line's pieces reach is reckoned as arranged() reckons it: from the line's start by
+        // the widths, not from each piece's own place as the field told it. A field's whole points
+        // put a piece a point off that, and an edge learnt on one footing did not hold on the other:
+        // the last piece of a full line went up and down at every key.)
+        var along: CGFloat = 0
         for index in pieces.indices {
             let width = CGFloat(layout.counts[index]) * widths.filler
-            let reached = pieces[index].x + width
             let known = told?.contains(index) ?? true
-            if index > 0, pieces[index].y - pieces[index - 1].y > tolerance {
+            let begins = index == 0 || pieces[index].y - pieces[index - 1].y > tolerance
+            let before = along
+            if begins {
+                along = index == 0 && pieces[0].y - origin.y <= tolerance ? origin.x + (hairCount > 0 ? widths.hair : 0) : (left ?? pieces[index].x)
+            }
+            let reached = along + width
+            if index > 0, begins {
                 // a line begins: the piece did not fit after the one before
                 if known {
                     lefts.append(pieces[index].x)
                     steps.append(pieces[index].y - pieces[index - 1].y)
                 }
                 if known, told?.contains(index - 1) ?? true {
-                    let wouldEnd = pieces[index - 1].x + CGFloat(layout.counts[index - 1]) * widths.filler + widths.joint + width
-                    high = min(high, wouldEnd)
+                    // (`before`: where this piece would have begun on the line above)
+                    high = min(high, before + width)
                 }
             } else if index == 0, pieces[0].y - origin.y > tolerance, known {
                 // the formula itself went to the line below
@@ -549,6 +596,7 @@ struct SpaceModel {
                 high = min(high, origin.x + (hairCount > 0 ? widths.hair : 0) + width)
             }
             if known { low = max(low, reached) }
+            along = reached + widths.joint
         }
         if let first = lefts.min() { left = first }
         if let step = steps.min(), step > lineHeight * 0.5 { pitch = step }
