@@ -175,11 +175,12 @@ function selectedLines(state: EditorState): number[] {
   return out;
 }
 
-/** Tab (Obsidian's indentMore): a tab before each line the selection takes, wherever the caret is in it. */
+/** Tab (Obsidian's indentMore): a tab before each line the selection takes, wherever the caret is in it. A heading
+ *  stays as it is (a tab before its "#" would make it text). */
 export const indentLines: Command = (state, dispatch) => {
-  const lines = selectedLines(state);
-  if (!lines.length) return false;
-  if (dispatch) dispatch(editLines(state, lines.map((index) => ({ index, from: 0, to: 0, text: "\t" }))).scrollIntoView());
+  const lines = selectedLines(state).filter((index) => !/^#{1,6}(?=[ \t]|$)/.test(lineText(state.doc, index) ?? ""));
+  if (!selectedLines(state).length) return false;
+  if (dispatch && lines.length) dispatch(editLines(state, lines.map((index) => ({ index, from: 0, to: 0, text: "\t" }))).scrollIntoView());
   return true;
 };
 

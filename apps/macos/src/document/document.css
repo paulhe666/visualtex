@@ -284,13 +284,24 @@
   text-indent: 0;
   text-align: left;
 }
-/* a line of a paragraph after its first, a list item, a quote or code line: no first-line indent */
-.vtx-document > p:is(.md-cont, .md-quoteline, .md-codeline, .md-ruleline),
-.vtx-sheet[data-class] .vtx-document > p:is(.md-cont, .md-quoteline, .md-codeline, .md-ruleline) {
+/* a quote, code or rule line: no first-line indent (every other line of text is a paragraph of its own, indented
+   as one whatever is above it; a tab or spaces before it are drawn as they are, after that indent) */
+.vtx-document > p:is(.md-quoteline, .md-codeline, .md-ruleline),
+.vtx-sheet[data-class] .vtx-document > p:is(.md-quoteline, .md-codeline, .md-ruleline) {
   text-indent: 0;
 }
 .vtx-sheet[data-class] .vtx-document > p.md-listline {
   text-align: left;
+}
+/* a tab before a line's text: one \parindent more than a plain line's (the tab stops are that far apart, so the
+   first-line indent ends on one and the tab is a whole step, not what was left to the next stop); a list's nesting
+   and code keep four columns */
+.vtx-sheet[data-class] .vtx-document > p {
+  tab-size: var(--vtx-parindent, 2em);
+}
+.vtx-document > p:is(.md-listline, .md-codeline),
+.vtx-sheet[data-class] .vtx-document > p:is(.md-listline, .md-codeline) {
+  tab-size: 4;
 }
 
 /* ---- document mode in the workspace (DESIGN.md §6.4): the document takes the formula rows' card ---- */
@@ -710,7 +721,8 @@
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
-  tab-size: 4;
+  /* a tab is one step of indentation, two characters wide (a classed sheet: its \parindent, below) */
+  tab-size: 2em;
   caret-color: #000;
 }
 .vtx-document p {
