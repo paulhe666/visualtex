@@ -802,10 +802,40 @@ function takeCaptionLabel(tokens: Token[], i: number, kind: "figure" | "table"):
 /**
  * Figures and tables with their captions (figures.ts): an image line or board, with the centred paragraph after it
  * that starts with its label as its caption ("Figure 1: …", what documentToMarkdown writes); a table, with a paragraph
- * "Table: …" (Pandoc's caption) before or after it; a wrapped image opening a paragraph, as its figure before that
- * paragraph (its title "Figure 1: …" the caption). Every image line, board and table is a figure or a table float,
- * as in the editor (its caption empty when the file has none).
+ * "Table: …" (Pandoc's caption) before it (the caption above the table) or after it (below; one between two tables is
+ * the second's), or "<!-- no caption -->" after it (no caption); a wrapped image opening a paragraph, as its figure
+ * before that paragraph (its title "Figure 1: …" the caption). Every image line, board and table is a figure or a
+ * table float, as in the editor (a table's caption above it and empty when the file says nothing).
  */
+/** What follows a table that has no caption (documentToMarkdown; readers show nothing). */
+export const NO_CAPTION = /^\s*<!--\s*no caption\s*-->\s*$/i;
+
+/** The note that a table has no caption (an HTML block, kept as HTML by tidy). */
+function noCaptionNote(token: Token): boolean {
+  if (token.type === "html_block") return NO_CAPTION.test(token.content);
+  return token.type === "vtx_html" && NO_CAPTION.test(token.attrGet("html") ?? "");
+}
+
+/** A paragraph at `i` that starts with a table's caption label ("Table: …"), read without taking the label off. */
+function tableCaptionAt(tokens: Token[], i: number): boolean {
+  return tokens[i]?.type === "paragraph_open" && tokens[i + 1]?.type === "inline" && captionLabelLength(tokens[i + 1].content.replace(/^[*_]+/, ""), "table") > 0;
+}
+
+/**
+ * The caption paragraph at `i`, after a table, is the next table's (its caption above it): another table follows it
+ * that has no caption of its own after it ("Table: …", or the note that it has none). The writer says an empty caption
+ * above a table after a caption below one ("Table:"), so its own files read back as written.
+ */
+function captionOfNextTable(tokens: Token[], i: number, level: number): boolean {
+  const table = tokens[i + 3];
+  if (table?.type !== "table_open" || table.level !== level) return false;
+  const k = blockEnd(tokens, i + 3) + 1;
+  const after = tokens[k];
+  if (!after || after.level !== level) return true;
+  if (noCaptionNote(after)) return false;
+  return !tableCaptionAt(tokens, k);
+}
+
 function figureCaptions(state: StateCore) {
   const tokens = state.tokens;
   const Token = state.Token;
@@ -858,18 +888,25 @@ function figureCaptions(state: StateCore) {
       let inline: Token | null = null;
       let start = token.map?.[0] ?? null;
       let last = end;
+      let side: "above" | "below" | "none" = "above";
+      const next = tokens[end + 1];
       if (before >= 0 && out[before].level === level && !out.slice(before).some((t) => t.type.startsWith("vtx_")) && takeCaptionLabel(out, before, "table")) {
         inline = out[before + 1];
         start = out[before].map?.[0] ?? start;
         out.splice(before, 3);
-      } else if (tokens[end + 1]?.level === level && takeCaptionLabel(tokens, end + 1, "table")) {
+      } else if (next?.level === level && next.type === "paragraph_open" && !captionOfNextTable(tokens, end + 1, level) && takeCaptionLabel(tokens, end + 1, "table")) {
         inline = tokens[end + 2];
         last = end + 3;
+        side = "below";
+      } else if (next?.level === level && noCaptionNote(next)) {
+        last = end + 1;
+        side = "none";
       }
       const stop = last === end ? token.map?.[1] : tokens[end + 1].map?.[1];
       shift(table);
       const float = open("vtx_table_figure", "div", level, start !== null && stop !== undefined && stop !== null ? [start, stop] : token.map);
-      out.push(float, ...caption(level, inline), ...table, close("vtx_table_figure", "div", level));
+      const captionTokens = side === "none" ? [] : caption(level, inline);
+      out.push(float, ...(side === "above" ? captionTokens : []), ...table, ...(side === "below" ? captionTokens : []), close("vtx_table_figure", "div", level));
       i = last;
       continue;
     }
@@ -1363,15 +1400,24 @@ function serializerFor(
       state.write("</p>");
       state.closeBlock(caption);
     },
-    table_figure(state, node) {
-      // figures.ts: Pandoc's caption "Table: …" before the table (Typora and GitHub show it as a line above it)
-      const { caption, table } = tableFigureParts(node);
-      if (caption.content.size) {
-        state.write("Table: ");
+    table_figure(state, node, parent, index) {
+      // figures.ts: Pandoc's caption "Table: …" before the table (Typora and GitHub show it as a line above it), or
+      // after it for a caption below the table (said even when empty); a table without a caption says so after it
+      const { caption, table, side } = tableFigureParts(node);
+      if (caption && side === "above" && (caption.content.size || emptyCaptionSaid(index > 0 ? parent.child(index - 1) : null, node))) {
+        state.write(caption.content.size ? "Table: " : "Table:");
         state.renderInline(caption);
         state.closeBlock(caption);
       }
-      if (table) writeBody(state, table, node, 1);
+      if (table) writeBody(state, table, node, side === "above" ? 1 : 0);
+      if (caption && side === "below") {
+        state.write(caption.content.size ? "Table: " : "Table:");
+        state.renderInline(caption);
+        state.closeBlock(caption);
+      } else if (!caption) {
+        state.write("<!-- no caption -->");
+        state.closeBlock(node);
+      }
     },
     caption() {},
     toc(state, node) {
@@ -1663,6 +1709,8 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
       if (wrappedFigure(node) && index + 1 < doc.childCount) return;
       const nodes = previous && wrappedFigure(previous) ? [previous, node] : [node];
       if (!blankLast()) out.push("");
+      // (an empty caption above a table after a table whose caption is below: said, as the serializer says it)
+      if (emptyCaptionSaid(previous, node)) out.push("Table:", "");
       out.push(serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
       const next = index + 1 < doc.childCount ? doc.child(index + 1) : null;
       if (next && next.content.size) out.push("");
@@ -1677,7 +1725,7 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
     const previous = index > 0 ? doc.child(index - 1) : null;
     if (wrappedFigure(node) && index + 1 < doc.childCount) return "";
     const nodes = previous && wrappedFigure(previous) ? [previous, node] : [node];
-    return serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, "");
+    return (emptyCaptionSaid(previous, node) ? "Table:\n\n" : "") + serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, "");
   });
   if (!definitions) return text;
   const newline = source.crlf ? "\r\n" : "\n";
@@ -1739,6 +1787,16 @@ function signature(node: Node, numbers: { byNode: Map<Node, string>; byId: Map<s
     return true;
   });
   return JSON.stringify(node.toJSON(), (key, value) => (key === "id" ? undefined : value)) + marks.join(",");
+}
+
+/**
+ * A table whose caption is above it and empty, right after a table whose caption is below it: its caption is said
+ * ("Table:"), or the caption below, between the two tables, would be read as this table's (captionOfNextTable).
+ */
+function emptyCaptionSaid(previous: Node | null | undefined, node: Node): boolean {
+  if (!previous || !isTableFigure(previous) || !isTableFigure(node) || tableFigureParts(previous).side !== "below") return false;
+  const { caption, side } = tableFigureParts(node);
+  return side === "above" && !!caption && !caption.content.size;
 }
 
 /** A figure that text wraps (figures.ts): written on the line of the paragraph after it. */

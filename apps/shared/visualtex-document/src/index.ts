@@ -210,5 +210,5 @@ export {
   leaveEmptyAuthorLine,
   nextAuthor,
 } from "./titleBlock.ts";
-export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels } from "./figures.ts";
+export { captionLabels, captionPrefix, documentIsChinese, figureFixes, isCaptioned, isFigure, isLongTable, isTableFigure, setTableCaption, tableCaptionSide, DEFAULT_CAPTION_LABELS, type CaptionLabel, type CaptionLabels, type CaptionSide } from "./figures.ts";
 export { cycleLineTask, indentLines, insertCodeFence, lineListKind, outdentLines, sourceEnter, sourceShiftEnter, toggleLineList, toggleLineQuote } from "./sourceKeys.ts";
