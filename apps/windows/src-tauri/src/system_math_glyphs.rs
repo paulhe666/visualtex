@@ -767,6 +767,24 @@ mod tests {
     }
 
     #[test]
+    fn lists_every_installed_family_once_with_the_chinese_ones_marked() {
+        let families = windows::list_families();
+        assert!(families.len() > 20, "only {} font families listed", families.len());
+        let mut seen = std::collections::HashSet::new();
+        for family in &families {
+            assert!(!family.family.is_empty() && !family.family.starts_with('@'));
+            assert!(seen.insert(normalize_font_family(&family.family)), "{} listed twice", family.family);
+        }
+        let times = families.iter().find(|family| family.family == "Times New Roman").expect("Times New Roman is listed");
+        assert!(!times.cjk);
+        if let Some(simsun) = families.iter().find(|family| family.family == "SimSun") {
+            assert!(simsun.cjk);
+            assert_eq!(simsun.localized.as_deref(), Some("宋体"));
+        }
+        println!("{} families, {} with Chinese characters", families.len(), families.iter().filter(|family| family.cjk).count());
+    }
+
+    #[test]
     fn reads_only_a_resolved_system_font_asset_with_matching_hash() {
         let probes = windows::probe_fonts(&["Cambria Math".to_string()]);
         if !probes.first().is_some_and(|probe| probe.available) {
