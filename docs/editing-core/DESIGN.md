@@ -236,8 +236,11 @@ DOM, style geometry.
 5. The fraction-order setting applies to Tab as well.
 6. A placeholder inside an accent is reachable by keys exactly when it is reachable by clicks.
 7. Last-cell Tab in align/split keeps the column of the new row.
-8. Space inside a structure leaves it (a macro as a whole) without inserting anything; at the top level it inserts a
-   visible space. (The old build inserted a stray `\ ` inside the structure and also moved out.)
+8. Space is a visible space `\ ` everywhere (a word space beside text); it never moves the caret. Besides that it only
+   chooses a candidate, confirms a quick escape and finishes a function name. Leaving a structure is Tab, Right or its
+   closing character. (2026-11-11: Space used to leave the structure it was typed in: "(n mod p)" lost its parentheses
+   at the first space.) An opening bracket typed with material after the caret closes right there, empty; it does not
+   take the rest of the slot.
 9. The start of a macro argument (before ψ in `\ket{ψ}`) is a stop; the engine draws it apart from "before the macro".
 10. Backspace right after a script always enters it first (caret after its last character); the next Backspace
     deletes. The old build sometimes deleted in one press, depending on whether the script was written with braces.

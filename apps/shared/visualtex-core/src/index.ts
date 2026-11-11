@@ -97,7 +97,7 @@ export interface EditingCore {
   moveToSlotEdge(model: CoreModel, direction: -1 | 1, thenFormula: boolean): boolean;
   tab(model: CoreModel, direction: -1 | 1, fractionOrder: FractionOrder, kernel: TabKernel): boolean;
   vertical(model: CoreModel, direction: -1 | 1, fractionOrder: FractionOrder, extend?: boolean): boolean;
-  /** Space in math: a word space beside text, leave the structure, or insert a visible space at the top level. */
+  /** Space in math: a word space beside text, else a visible space (\ ); it never moves the caret. */
   space(model: CoreModel, kernel: SpaceKernel): boolean;
 
   // --- text runs (DESIGN §6.6) ---

@@ -268,18 +268,14 @@ export interface SpaceKernel {
 }
 
 /**
- * Space in math (after the input conversion had its turn): beside a text run
- * it is a word space of that text; inside a structure it leaves the structure
- * (a macro such as \ket as a whole); at the top level it inserts a visible
- * space.
+ * Space in math (after candidates, quick escapes and function names had their turn): beside a text run it is a word
+ * space of that text; anywhere else it is a visible space (\ ), inside a structure too. It never moves the caret:
+ * leaving a structure is Tab, Right or its closing character. (It left the structure it was typed in, so "(n mod p)"
+ * lost its parentheses at the first space and a space typed again after a quick escape jumped out, 2026-11-11.)
  */
 export function space(model: CoreModel, kernel: SpaceKernel): boolean {
   if (model.selectionIsCollapsed && besideTextRun(model, model.position)) return kernel.insertTextSpace();
-  const atom = model.at(originStop(model, 1));
-  const slot = atom ? slotOf(atom) : null;
-  const structure = slot ? logicalStructure(slot) : null;
-  if (!structure || structure.type === "root" || !structure.parent) return kernel.insertVisibleSpace();
-  return goTo(model, model.offsetOf(structure));
+  return kernel.insertVisibleSpace();
 }
 
 // ---------------------------------------------------------------- Up/Down --
