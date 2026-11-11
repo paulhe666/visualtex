@@ -261,6 +261,27 @@ function flushWaitingKeys(view: EditorView, open: FormulaView) {
   for (const key of waiting) open.typeKey(key);
 }
 
+/**
+ * Keys pressed while nothing has the focus go to the formula `id` just opened, until something takes the focus (its
+ * editor). (Its view is looked up at each key: a formula made by the transaction that opened it goes live a moment
+ * later.)
+ */
+function handKeysTo(view: EditorView, id: string) {
+  const onKey = (event: KeyboardEvent) => {
+    const active = document.activeElement;
+    if (openFormulaId(view.state) !== id || (active && active !== document.body)) return stop();
+    if (!openViews.get(view)?.forwardKey(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const stop = () => {
+    window.removeEventListener("keydown", onKey, true);
+    window.clearTimeout(timer);
+  };
+  window.addEventListener("keydown", onKey, true);
+  const timer = window.setTimeout(stop, 1000);
+}
+
 /** Text typed into the formula that was just opened (it goes in once its editor is there). */
 export function typeIntoOpenFormula(view: EditorView, text: string) {
   deliverKeys(
@@ -1133,7 +1154,13 @@ export class FormulaView implements NodeView {
     if (typing)
       queueMicrotask(() => {
         const active = document.activeElement;
-        if (view.dom.isConnected && (!active || active === document.body)) view.focus();
+        if (!view.dom.isConnected || (active && active !== document.body)) return;
+        // Another formula opened in its place ("$$$$"): its editor takes the focus itself, the keys typed until then
+        // go to it. (The text taking the focus meanwhile lost that formula's selection in WebKit: the caret dropped
+        // onto the line after it and the formula closed, 2026-11-10.)
+        const next = openFormulaId(view.state);
+        if (next && next !== this.registeredId) handKeysTo(view, next);
+        else view.focus();
       });
   }
 }

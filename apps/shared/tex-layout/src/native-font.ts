@@ -11,6 +11,8 @@ export interface NativeMetrics {
   descent: number;
   /** how far the ink reaches right of the advance (a slanted letter), used as its italic correction */
   italic?: number;
+  /** how far the ink reaches left of the origin (the tail of an italic f) */
+  left?: number;
 }
 
 /** Measures text at 1em in a CSS font: family list and style words ("italic", "bold", "italic bold" or none). */
@@ -54,6 +56,7 @@ export class NativeFont extends TeXFont {
   private readonly h: number[] = [0];
   private readonly d: number[] = [0];
   private readonly ic: number[] = [0];
+  private readonly lo: number[] = [0];
   private measuredSpace: number | undefined;
 
   constructor(family: string, size: number, measure: NativeMeasure, options: NativeFontOptions = {}) {
@@ -77,6 +80,7 @@ export class NativeFont extends TeXFont {
     this.h.push(Math.round(m.ascent * this.size));
     this.d.push(Math.round(m.descent * this.size));
     this.ic.push(Math.round(Math.max(0, m.italic ?? 0) * this.size));
+    this.lo.push(Math.round(Math.max(0, m.left ?? 0) * this.size));
     i = { exists: true, wi: k, hi: k, di: k, ii: k, tag: 0, rem: 0 };
     this.cache.set(c, i);
     return i;
@@ -111,6 +115,19 @@ export class NativeFont extends TeXFont {
 
   override charItalic(i: CharInfo): number {
     return this.ic[i.ii] ?? 0;
+  }
+
+  /**
+   * The measured ink past the box sideways: left of the origin and right of the advance (ascent and descent are the
+   * ink's already). The editor keeps that much room around the formula: WebKit cut the tail of an italic f at the
+   * formula's start and its hook at the end (2026-11-10).
+   */
+  override inkOverhang(c: number): [number, number, number, number] | null {
+    const i = this.charInfo(c);
+    if (!i.exists) return null;
+    const left = this.lo[i.ii] ?? 0;
+    const right = this.ic[i.ii] ?? 0;
+    return left || right ? [left, right, 0, 0] : null;
   }
 }
 

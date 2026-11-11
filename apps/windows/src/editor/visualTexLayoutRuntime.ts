@@ -260,6 +260,7 @@ function measureNative(family: string, text: string, style = "") {
     ascent: Math.max(0, m.actualBoundingBoxAscent) / MEASURE_PX,
     descent: Math.max(0, m.actualBoundingBoxDescent) / MEASURE_PX,
     italic: Math.max(0, m.actualBoundingBoxRight - m.width) / MEASURE_PX,
+    left: Math.max(0, m.actualBoundingBoxLeft) / MEASURE_PX,
   };
 }
 

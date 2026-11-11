@@ -175,7 +175,8 @@ function applyEntry(field: MathfieldElement, entry: FormulaEntry) {
   }
   const stops = visualTexEditingCore.allowedStops(model);
   const stop = entry.kind === "start" ? stops[0] : stops[stops.length - 1];
-  if (stop !== undefined) visualTexEditingCore.goToStop(model, stop);
+  // (drawn there at once: a formula entered again kept its caret painted where it was left, 2026-11-10)
+  if (stop !== undefined) field.visualTexGoToStop(stop);
   // a template (\begin{align}, a fraction): its first slot
   // a template (\begin{align}, a fraction): its first slot selected, so that typing fills it
   if (entry.kind === "start" && /\\placeholder\b/.test(field.value)) {
