@@ -79,7 +79,10 @@ type DollarMeta = { closing: number } | { pending: number | null };
  * first "$" is a character until the second one comes right after it, and the third and fourth reach the new inline
  * formula, which then gives way to a display formula (DocumentFormulaField). A single "$" stays text ("$5"), "\$"
  * too; "￥", the same key (Shift+4) with a Chinese input method's punctuation, counts as "$". Inside code they stay
- * characters. Right after "$" closed a formula, the rest of its closing delimiter does nothing: one more "$" after an
+ * characters. A "$" that closes "$…$" typed the LaTeX way (text after an earlier "$" in the line, no space just inside
+ * the dollars: the rule Markdown is read by) makes that text a formula. (It stayed text, and in "$a$$b$" the first
+ * formula's closing "$" and the second's opening one were taken for "$$": "$a" was left as text, a formula opened
+ * there, and what was typed next, the sentence's words too, went into it, 2026-11-11.) Right after "$" closed a formula, the rest of its closing delimiter does nothing: one more "$" after an
  * inline formula, up to three after a display formula. (LaTeX input: "$" opens an inline formula at once.)
  */
 function dollarPlugin(inputMode: () => InputMode) {
@@ -129,6 +132,30 @@ function dollarPlugin(inputMode: () => InputMode) {
         // "\$" is Markdown's escape (the Markdown input rules make it the character).
         const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 2), $from.parentOffset, undefined, "￼");
         if (before.endsWith("\\") && !before.endsWith("\\\\")) return false;
+        // "$…$": this "$" closes a formula typed after an earlier "$" in the line
+        if (from === to) {
+          const line = $from.parent.textBetween(0, $from.parentOffset, undefined, "￼");
+          const open = Math.max(line.lastIndexOf("$"), line.lastIndexOf("￥"));
+          const content = open >= 0 ? line.slice(open + 1) : "";
+          const lead = open >= 0 ? line.slice(0, open) : "";
+          // (not "$$", an escaped "\$", a "$" inside a code span, or text with an object or a space at an end)
+          const opens =
+            content !== "" &&
+            !/^\s|\s$|￼/.test(content) &&
+            !/[$￥]$/.test(lead) &&
+            !/(?:^|[^\\])(?:\\\\)*\\$/.test(lead) &&
+            (lead.match(/`/g) ?? []).length % 2 === 0;
+          if (opens) {
+            const node = state.schema.nodes.math_inline.create({ id: newNodeId(), latex: content });
+            view.dispatch(
+              state.tr
+                .replaceWith($from.start() + open, from, node)
+                .setMeta(key, { pending: null } satisfies DollarMeta)
+                .scrollIntoView(),
+            );
+            return true;
+          }
+        }
         view.dispatch(state.tr.insertText(text, from, to).setMeta(key, { pending: from } satisfies DollarMeta));
         return true;
       },
