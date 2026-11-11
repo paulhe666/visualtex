@@ -94,13 +94,16 @@ pub(super) fn field_colors(caret: ScreenRect, panel_window: u32) -> Option<Field
         return None;
     }
     let height = caret.height.max(10.0);
-    // The line around the caret, mostly before it (after it the field may
-    // still show a placeholder).
-    let before = 160.0;
+    // The line right around the caret: what the cover must match is the
+    // field's colour where the formula stands. (A wide stretch before the
+    // caret reached past the field's left edge in a chat's message box, and
+    // the cover took the colour of what is beside the box: a grey box under
+    // the formula in WeChat, 2026-11-11.)
+    let before = 14.0;
     let rect = CGRect {
         x: caret.x - before,
         y: caret.y,
-        width: before + 80.0,
+        width: before + 44.0,
         height,
     };
     let image = capture_without(rect, panel_window)?;
@@ -203,8 +206,22 @@ fn luminance(color: [f64; 3]) -> f64 {
     0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]
 }
 
-/// The most common colour.
+/// The most common colour: the one colour most pixels have exactly (a
+/// field's background is flat), when a fifth of them have it; else the most
+/// common among colours taken coarsely (a gradient, a translucent field),
+/// averaged. (Coarsely alone, two near greys, the field's and its
+/// neighbour's, fell together and the cover was neither.)
 fn background(pixels: &Pixels) -> [f64; 3] {
+    let mut exact = std::collections::HashMap::<(u8, u8, u8), usize>::new();
+    for color in &pixels.rgb {
+        let key = ((color[0] * 255.0).round() as u8, (color[1] * 255.0).round() as u8, (color[2] * 255.0).round() as u8);
+        *exact.entry(key).or_insert(0) += 1;
+    }
+    if let Some((key, count)) = exact.iter().max_by_key(|(_, count)| **count) {
+        if *count * 5 >= pixels.rgb.len() {
+            return [key.0 as f64 / 255.0, key.1 as f64 / 255.0, key.2 as f64 / 255.0];
+        }
+    }
     let mut buckets = std::collections::HashMap::<(u8, u8, u8), (usize, [f64; 3])>::new();
     for color in &pixels.rgb {
         let key = ((color[0] * 15.0) as u8, (color[1] * 15.0) as u8, (color[2] * 15.0) as u8);

@@ -201,6 +201,7 @@ function placeCovers(
   start: [number, number] | null,
   end: [number, number] | null,
   keep: { y: number; right: number } | null,
+  caretLine: [number, number] | null,
 ): { right: number; bottom: number; last: { y: number; right: number } | null } | null {
   if (!layer) return null;
   const box = formulaBox();
@@ -232,7 +233,8 @@ function placeCovers(
     ys.forEach((y, index) => {
       const span = byLine.get(y)!;
       // the first line from the anchor (the selected hair space before the formula)
-      const left = index === 0 ? Math.min(span.left, box.left + (start?.[0] ?? -3)) - 1 : span.left - 1;
+      // (not past it: the letter before the formula ends there, and lost its last pixel under the cover)
+      const left = index === 0 ? Math.min(span.left, box.left + (start?.[0] ?? -3)) - 0.25 : span.left - 1;
       // a line the field broke after holds its last piece to about a space past the formula; the
       // last line's held space ends where the field says (else a little past the formula)
       const last = index === ys.length - 1;
@@ -248,6 +250,23 @@ function placeCovers(
       const baseline = box.baseline + y;
       // (a field's caret is drawn a pixel taller than its line: Chrome)
       covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
+      // The field's own caret stands where the held space ends, under the formula, and may be a few
+      // points taller than its line (WeChat's showed above the cover as a green dash, 2026-11-11):
+      // a cover of its own, a caret wide, taller than the line's.
+      if (last && end && Math.abs(end[1] - y) < 2) {
+        const at = box.left + end[0];
+        const over = Math.max(3, line.height * 0.2);
+        let top = baseline - (line.height - line.descent) - over;
+        let bottom = baseline + line.descent + over * 0.7;
+        // (as tall as the field has the space's last character: its caret is; WebKit sets the blanks
+        // in a taller font than the text, and its caret showed above the cover as a dot)
+        if (caretLine) {
+            const low = baseline + line.descent + caretLine[0];
+            top = Math.min(top, low - caretLine[1] - 2);
+            bottom = Math.max(bottom, low + 1.5);
+        }
+        covers.push({ left: at - 2, right: at + 3, top, bottom });
+      }
     });
   }
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();
@@ -639,6 +658,7 @@ export function AnywhereApp() {
   const piecePlacesRef = useRef<[number, number][]>([]);
   const pieceStartRef = useRef<[number, number] | null>(null);
   const pieceEndRef = useRef<[number, number] | null>(null);
+  const pieceCaretRef = useRef<[number, number] | null>(null);
   /** The last line's cover widths of the last moments (placeCovers keeps the widest of them for
    *  SHRINK_COVER_MS), the timer that lets it shrink after, and the frame the field is told in
    *  (scheduleInline). */
@@ -921,6 +941,7 @@ export function AnywhereApp() {
       pieceStartRef.current,
       pieceEndRef.current,
       keep,
+      pieceCaretRef.current,
     );
     if (covers?.last) {
       widths.push({ at: now, ...covers.last });
@@ -1020,6 +1041,7 @@ export function AnywhereApp() {
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
+      pieceCaretRef.current = null;
       coverWidthsRef.current = [];
       inputMethodRef.current = Boolean(activation.inputMethod);
       setInputMethod(Boolean(activation.inputMethod));
@@ -1187,6 +1209,7 @@ export function AnywhereApp() {
         pieceStartRef.current = pieces.start ?? null;
         // an estimated end is no place to cover to (it may lie past the held space, over the field's text)
         pieceEndRef.current = pieces.endEstimated ? null : pieces.end ?? null;
+        pieceCaretRef.current = pieces.caretLine ?? null;
         if (same) {
           measureRef.current();
           return;

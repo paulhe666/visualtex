@@ -94,6 +94,9 @@ export interface AnywherePieces {
   end?: [number, number] | null;
   /** The end is the input method's estimate (the field did not tell it). */
   endEstimated?: boolean;
+  /** The field's own caret after the held space: how far its line's bottom is below the last line's
+   *  (points), and its height. */
+  caretLine?: [number, number] | null;
 }
 
 export function isAnywherePieces(value: unknown): value is AnywherePieces {

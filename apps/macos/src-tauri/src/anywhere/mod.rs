@@ -1178,6 +1178,8 @@ fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
             .filter(|[x, y]| x.is_finite() && y.is_finite() && x.abs() < 20000.0 && y.abs() < 20000.0)
     };
     let (start, end) = (point("start"), point("end"));
+    // the field's own caret after the space: how far its line's bottom is below the last line's, and its height
+    let caret_line = point("caretLine");
     // an end the field did not tell (the input method's estimate)
     let estimated = message
         .get("end")
@@ -1187,7 +1189,7 @@ fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.emit(
             PIECES_EVENT,
-            serde_json::json!({ "generation": generation, "places": places, "start": start, "end": end, "endEstimated": estimated }),
+            serde_json::json!({ "generation": generation, "places": places, "start": start, "end": end, "endEstimated": estimated, "caretLine": caret_line }),
         );
     }
 }

@@ -8,13 +8,14 @@ import Cocoa
 /// break the line (every text system breaks there). A joint counts in the
 /// piece before it. So the field wraps the formula as it wraps its own text,
 /// in its own box, and pushes the text after the caret along; the input
-/// method reads back where each piece went and VisualTeX draws it there,
-/// over the field's background (what the field draws for a composition, its
-/// underline, the selected anchor and its caret, is covered).
+/// method works out where each piece went (SpaceModel) and VisualTeX draws
+/// it there, over the field's background (what the field draws for a
+/// composition, its underline and its caret, is covered).
 ///
-/// The marked text starts with one hair space, selected: being selected (not
-/// a caret) it hides the field's own caret, so the formula's caret is the
-/// only one, and it lets the field break the line before the formula.
+/// The marked text starts with one hair space: it lets the field break the
+/// line before the formula, and where the field has it is where the space
+/// starts. (It is set selected. Fields show their caret at the space's end
+/// all the same, measured 2026-11-11: VisualTeX covers it there.)
 enum FormulaSpace {
     static let anchor = "\u{200A}"
     /// Braille pattern blank: drawn as nothing, and a letter to line breaking

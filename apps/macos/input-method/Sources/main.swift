@@ -11,4 +11,5 @@ InputLog.write("server started \(Bundle.main.infoDictionary?["CFBundleShortVersi
 RimeEngine.shared.start()
 AppLink.shared.onMessage = { message in VTInputController.receive(message) }
 AppLink.shared.keepConnected()
+HostProbe.install()
 NSApplication.shared.run()
