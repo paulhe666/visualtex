@@ -809,9 +809,12 @@ export function visualTexIsDisplayEnvironment(name: string): boolean {
   return /^(align|flalign|alignat|gather|multline|eqnarray)\*?$/.test(name);
 }
 export function visualTexCanDeleteEmptyEnvironmentRow(array: Atom | undefined, row: number): array is ArrayAtom {
-  if (!(array instanceof ArrayAtom) ||
-      !(["cases", "dcases", "rcases", "aligned", "gathered"].includes(array.environmentName) ||
-        visualTexIsDisplayEnvironment(array.environmentName)) ||
+  if (!(array instanceof ArrayAtom)) return false;
+  // Lists of lines and cases give up any empty row; a table (matrix, array) every empty row but its first, so the
+  // row Tab added in the last cell goes the way it came and Backspace in a new, empty matrix stays what it was.
+  const list = ["cases", "dcases", "rcases", "aligned", "gathered"].includes(array.environmentName) ||
+    visualTexIsDisplayEnvironment(array.environmentName);
+  if ((!list && (row === 0 || array.environmentName === "lines")) ||
       array.rowCount <= 1 ||
       row < 0 ||
       row >= array.rowCount) return false;

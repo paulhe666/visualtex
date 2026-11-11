@@ -189,6 +189,17 @@ export function enterSlot(model: CoreModel, slot: Slot, direction: Direction): b
   return goTo(model, model.offsetOf(last));
 }
 
+/**
+ * Rows that are lines of a formula rather than rows of a table: the multi-line environments, and an array of one
+ * column (what a pasted \begin{array}{r} of lines is).
+ */
+function isLineBlock(structure: CoreAtom): boolean {
+  const name = structure.environmentName ?? "";
+  if (/^(lines|aligned|alignedat|gathered|split|multlined|subarray|substack)$/.test(name)) return true;
+  if (/^(align|flalign|alignat|gather|multline|eqnarray)\*?$/.test(name)) return true;
+  return name === "array" && (structure.rows?.[0]?.length ?? 0) <= 1;
+}
+
 export function tab(model: CoreModel, direction: Direction, context: NavigationContext, kernel: TabKernel): boolean {
   if (model.mode === "latex") return false;
   const from = originStop(model, direction);
@@ -223,9 +234,10 @@ export function tab(model: CoreModel, direction: Direction, context: NavigationC
   const next = current < 0 ? undefined : slots[current + direction];
   const inLastCell = !!structure.rows && Array.isArray(slot.key) && next === undefined && direction > 0;
   if (next) return enterSlot(model, next, direction);
-  // 3. The last cell of a matrix, cases or aligned block: a new row (the
-  // kernel puts the caret in it).
-  if (inLastCell && structure.environmentName !== "lines") {
+  // 3. The last cell of a matrix or cases: a new row (the kernel puts the caret in it). A block of lines does not
+  // grow with Tab: its lines are made with Enter, and a row nobody asked for is what Tab left behind there.
+  const lines = isLineBlock(structure);
+  if (inLastCell && !lines) {
     if (kernel.addRowAfter()) return true;
   }
   // 4. Out of the structure, one level. At the top level the host may leave the formula forward (a
@@ -233,6 +245,11 @@ export function tab(model: CoreModel, direction: Direction, context: NavigationC
   if (!structure.parent || structure.type === "root") {
     if (direction > 0 && context.host?.horizontalExit?.(1)) return true;
     return plonk(model);
+  }
+  // A block of lines that ends the formula is the formula's end: Tab leaves a document's formula from its last
+  // line as it does from a formula of one line.
+  if (direction > 0 && inLastCell && lines && structure.parent.type === "root" && !structure.rightSibling) {
+    if (context.host?.horizontalExit?.(1)) return true;
   }
   // (after it; a placeholder right after it is selected by goTo)
   if (direction > 0) return goTo(model, model.offsetOf(structure));
