@@ -269,7 +269,10 @@ function FontList(props: { lang: Lang; cjkOnly: boolean; value: string; onPick: 
   const [query, setQuery] = useState("");
   useEffect(() => {
     let live = true;
-    void systemFontFamilies().then((list) => live && setFonts(list));
+    // the list at hand first; then, in a browser, the fonts it may use (asked once: the user opened this menu)
+    const take = (list: SystemFontFamily[]) => live && setFonts((shown) => (shown && shown.length > list.length ? shown : list));
+    void systemFontFamilies().then(take);
+    void systemFontFamilies({ ask: true }).then(take);
     return () => {
       live = false;
     };

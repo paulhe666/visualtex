@@ -900,6 +900,27 @@ mod linux {
     }
 }
 
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    #[test]
+    fn lists_the_fontconfig_families_once_with_the_chinese_ones_marked() {
+        let families = super::linux::list_families();
+        // (no fontconfig, no fonts: nothing to list)
+        if families.is_empty() {
+            return;
+        }
+        let mut seen = std::collections::HashSet::new();
+        for family in &families {
+            assert!(!family.family.is_empty() && !family.family.starts_with('.'));
+            assert!(seen.insert(family.family.clone()), "{} listed twice", family.family);
+            if let Some(localized) = &family.localized {
+                assert_ne!(localized, &family.family);
+            }
+        }
+        println!("{} families, {} with Chinese characters", families.len(), families.iter().filter(|family| family.cjk).count());
+    }
+}
+
 #[tauri::command]
 pub(crate) fn probe_macos_math_fonts(
     font_families: Vec<String>,
@@ -946,6 +967,22 @@ mod tests {
         assert!(validate_character("AB").is_err());
         assert!(validate_character("αβ").is_err());
         assert_eq!(validate_character("𝛼").as_deref(), Ok("𝛼"));
+    }
+
+    #[test]
+    fn lists_every_installed_family_once_with_the_chinese_ones_marked() {
+        let families = macos::list_families();
+        assert!(families.len() > 20, "only {} font families listed", families.len());
+        let mut seen = std::collections::HashSet::new();
+        for family in &families {
+            assert!(!family.family.is_empty() && !family.family.starts_with('.'));
+            assert!(seen.insert(family.family.clone()), "{} listed twice", family.family);
+        }
+        let helvetica = families.iter().find(|family| family.family == "Helvetica").expect("Helvetica is listed");
+        assert!(!helvetica.cjk);
+        let pingfang = families.iter().find(|family| family.family == "PingFang SC").expect("PingFang SC is listed");
+        assert!(pingfang.cjk);
+        println!("{} families, {} with Chinese characters", families.len(), families.iter().filter(|family| family.cjk).count());
     }
 
     #[test]
