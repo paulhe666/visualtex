@@ -1159,8 +1159,11 @@ export class FormulaView implements NodeView {
         // go to it. (The text taking the focus meanwhile lost that formula's selection in WebKit: the caret dropped
         // onto the line after it and the formula closed, 2026-11-10.)
         const next = openFormulaId(view.state);
-        if (next && next !== this.registeredId) handKeysTo(view, next);
-        else view.focus();
+        if (next && next !== this.registeredId) {
+          // (nor is the page's caret left in the text: the Mac app drew the system's caret at the document's start)
+          document.getSelection()?.removeAllRanges();
+          handKeysTo(view, next);
+        } else view.focus();
       });
   }
 }
