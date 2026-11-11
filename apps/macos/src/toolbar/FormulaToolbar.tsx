@@ -616,9 +616,11 @@ function sameToolbarCategoryList(
   );
 }
 
-const matrixGridCells = Array.from({ length: 100 }, (_, index) => ({
-  row: Math.floor(index / 10) + 1,
-  column: (index % 10) + 1,
+/** The matrix size grid: up to 5 rows by 5 columns (a larger matrix grows with Tab and the row/column commands). */
+const MATRIX_GRID_SIZE = 5;
+const matrixGridCells = Array.from({ length: MATRIX_GRID_SIZE * MATRIX_GRID_SIZE }, (_, index) => ({
+  row: Math.floor(index / MATRIX_GRID_SIZE) + 1,
+  column: (index % MATRIX_GRID_SIZE) + 1,
 }));
 const matrixDelimiterOptions: Array<{
   id: MatrixDelimiter;
@@ -1869,8 +1871,8 @@ export function FormulaToolbar({
                 ? "Select matrix rows and columns"
                 : "选择矩阵行数和列数"
             }
-            aria-rowcount={10}
-            aria-colcount={10}
+            aria-rowcount={MATRIX_GRID_SIZE}
+            aria-colcount={MATRIX_GRID_SIZE}
             onPointerLeave={() => setMatrixHover(null)}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {

@@ -611,14 +611,24 @@ export function EditorWorkspace({
       const left = Math.round(
         Math.max(10, Math.min(rect.left, window.innerWidth - width - 10)),
       );
-      const opensUpward = rect.top + rect.height / 2 > window.innerHeight / 2;
+      // Above the trigger or below it, wherever there is more room, and never
+      // taller than that room (it scrolls inside). Both edges are set: the
+      // stylesheet's top (100% + 7px, for the old in-strip popover) stayed
+      // when only bottom was given, and the popover opened below the window's
+      // bottom edge, out of reach (2026-11-11).
+      const above = rect.top - 7 - 10;
+      const below = window.innerHeight - rect.bottom - 7 - 10;
+      const height = formulaColorPopoverRef.current?.scrollHeight ?? 0;
+      const opensUpward = below < height && above > below;
+      const room = Math.max(120, Math.round(opensUpward ? above : below));
       const next: CSSProperties = opensUpward
-        ? { left, bottom: Math.round(window.innerHeight - rect.top + 7) }
-        : { left, top: Math.round(rect.bottom + 7) };
+        ? { left, top: "auto", bottom: Math.round(window.innerHeight - rect.top + 7), maxHeight: room, overflowY: "auto" }
+        : { left, top: Math.round(rect.bottom + 7), bottom: "auto", maxHeight: room, overflowY: "auto" };
       setFormulaColorPopoverStyle((current) =>
         current?.left === next.left &&
         current?.top === next.top &&
-        current?.bottom === next.bottom
+        current?.bottom === next.bottom &&
+        current?.maxHeight === next.maxHeight
           ? current
           : next,
       );

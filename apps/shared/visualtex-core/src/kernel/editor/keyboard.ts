@@ -209,6 +209,13 @@ export function delegateKeyboardEvents(
         keydownEvent = null;
         return;
       }
+      // A character key the input method has handled (keyCode 229, outside a composition): its text comes, or came,
+      // as input; run as a key as well it typed twice (VisualTeX's input method commits "（" before WebKit sends this
+      // keydown for Shift+9, and the bracket key then added a fence pair: three brackets, 2026-11-11).
+      if (!compositionInProgress && event.keyCode === 229 && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        keydownEvent = null;
+        return;
+      }
       if (macTextInput?.keydownDefer(event, compositionInProgress, resetPendingKeys)) return;
 
       keydownEvent = event;
