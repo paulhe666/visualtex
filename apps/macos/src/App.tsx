@@ -141,7 +141,6 @@ import {
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
-import { isLinuxDesktop } from "./runtime/platform";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -329,7 +328,6 @@ function App() {
   useEffect(() => {
     if (
       !isTauriEnvironment() ||
-      isLinuxDesktop() ||
       macOfficeInstallStatusCheckedRef.current
     ) {
       return;
@@ -468,7 +466,7 @@ function App() {
   // PowerPoint's own scripting command. Once per PowerPoint session; PowerPoint
   // is never launched for it.
   useEffect(() => {
-    if (!isTauriEnvironment() || isLinuxDesktop()) return;
+    if (!isTauriEnvironment()) return;
     let cancelled = false;
     let timer: number | undefined;
     let runningSince: number | null = null;

@@ -20,8 +20,6 @@ mod ocr_provider;
 mod anywhere;
 mod office;
 mod quick_ocr;
-#[cfg(target_os = "linux")]
-mod linux_screenshot;
 mod svg_font_stabilizer;
 mod system_math_glyphs;
 
@@ -2005,12 +2003,6 @@ fn prefer_key_repeat_over_accent_menu() {
 }
 
 pub fn run() {
-    // Linux under Wayland: VisualTeX's windows on XWayland, where the formula strip can stand on
-    // the field's caret (a Wayland window cannot place itself) and reads the screen's colours
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() && std::env::var_os("GDK_BACKEND").is_none() {
-        std::env::set_var("GDK_BACKEND", "x11");
-    }
     #[cfg(target_os = "macos")]
     prefer_key_repeat_over_accent_menu();
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
@@ -2121,14 +2113,11 @@ pub fn run() {
                     if let Err(error) = quick_ocr::initialize(app.handle()) {
                         eprintln!("VisualTeX quick OCR initialization warning: {error}");
                     }
-                    // Linux has no Office: no Office shortcuts, monitors, editors or companion server
-                    #[cfg(not(target_os = "linux"))]
                     if let Err(error) = office::hotkeys::initialize(app.handle()) {
                         eprintln!("VisualTeX Office hotkey initialization warning: {error}");
                     }
                     let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                         .map_err(std::io::Error::other)?;
-                    #[cfg(not(target_os = "linux"))]
                     if let Err(error) = office::powerpoint_native::start_double_click_monitor(
                         app.handle().clone(),
                         office_state.powerpoint_interactions.clone(),
@@ -2156,7 +2145,6 @@ pub fn run() {
                         );
                         office::wps::installer::auto_install_in_background(office_state.clone());
                     }
-                    #[cfg(not(target_os = "linux"))]
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())
                     {
@@ -2167,7 +2155,7 @@ pub fn run() {
                     if let Err(error) = anywhere::initialize(app.handle()) {
                         eprintln!("VisualTeX Anywhere initialization warning: {error}");
                     }
-                    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+                    #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
                     // The Mac add-ins need no companion server; AI agents reach /mcp on it.
                     #[cfg(target_os = "macos")]

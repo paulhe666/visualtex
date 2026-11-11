@@ -23,13 +23,8 @@ if (process.platform === "darwin") {
 if (process.platform === "darwin") {
   run("node", ["scripts/build_macos_input_method.mjs"]);
 }
-if (process.platform === "linux") {
-  // the IBus engine, its RIME data and its component (tauri.linux.conf.json packages them)
-  run("node", ["scripts/build_linux_input_method.mjs"]);
-}
 run("npm", ["run", "build:desktop"]);
-// the offline OCR runtime is built for macOS; Linux uses the OCR APIs
-if (process.env.VISUALTEX_API_ONLY_OCR !== "1" && process.platform !== "linux") {
+if (process.env.VISUALTEX_API_ONLY_OCR !== "1") {
   run("npm", ["run", "prepare:ocr-offline"]);
 } else {
   process.stdout.write("Skipping bundled offline OCR runtime for API-only build.\n");

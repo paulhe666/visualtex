@@ -3188,32 +3188,6 @@ fn wake_resident_editor_for_hydration(window: &WebviewWindow) -> Result<(), Stri
     window.show().map_err(|error| error.to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn wake_resident_editor_invisibly(_window: &WebviewWindow) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn configure_resident_editor_space_behavior(_window: &WebviewWindow) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn center_resident_editor_on_pointer_screen(window: &WebviewWindow) -> Result<(), String> {
-    window.center().map_err(|error| error.to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn order_resident_editor_to_front(window: &WebviewWindow) -> Result<(), String> {
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn execute_word_vba_apple_event() -> Result<(), String> {
-    Err("Word automation is available only on macOS.".to_string())
-}
-
 #[cfg(target_os = "macos")]
 fn order_main_window_behind_office_editor(app: &AppHandle) -> Result<(), String> {
     let Some(main_window) = app.get_webview_window("main") else {

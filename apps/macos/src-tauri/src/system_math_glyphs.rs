@@ -842,82 +842,9 @@ pub(crate) async fn list_system_font_families() -> Result<Vec<SystemFontFamily>,
             .await
             .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
     }
-    #[cfg(target_os = "linux")]
-    {
-        return tauri::async_runtime::spawn_blocking(linux::list_families)
-            .await
-            .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         Ok(Vec::new())
-    }
-}
-
-/// The font families fontconfig knows (fc-list), with their Chinese names.
-#[cfg(target_os = "linux")]
-mod linux {
-    use super::SystemFontFamily;
-    use std::collections::BTreeMap;
-    use std::process::Command;
-
-    pub(super) fn list_families() -> Vec<SystemFontFamily> {
-        let Ok(output) = Command::new("fc-list")
-            .args([":", "-f", "%{family}\\t%{familylang}\\t%{lang}\\n"])
-            .output()
-        else {
-            return Vec::new();
-        };
-        let mut families: BTreeMap<String, SystemFontFamily> = BTreeMap::new();
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let mut fields = line.split('\t');
-            let names: Vec<&str> = fields.next().unwrap_or("").split(',').collect();
-            let languages: Vec<&str> = fields.next().unwrap_or("").split(',').collect();
-            let cjk = fields.next().unwrap_or("").split('|').any(|lang| lang.starts_with("zh"));
-            let Some(family) = names.first().map(|name| name.trim()).filter(|name| !name.is_empty()) else {
-                continue;
-            };
-            if family.starts_with('.') {
-                continue;
-            }
-            let localized = names
-                .iter()
-                .zip(languages.iter())
-                .find(|(_, lang)| lang.starts_with("zh"))
-                .map(|(name, _)| name.trim().to_string())
-                .filter(|name| name != family);
-            let entry = families.entry(family.to_string()).or_insert(SystemFontFamily {
-                family: family.to_string(),
-                localized: None,
-                cjk: false,
-            });
-            entry.cjk |= cjk;
-            if entry.localized.is_none() {
-                entry.localized = localized;
-            }
-        }
-        families.into_values().collect()
-    }
-}
-
-#[cfg(all(test, target_os = "linux"))]
-mod linux_tests {
-    #[test]
-    fn lists_the_fontconfig_families_once_with_the_chinese_ones_marked() {
-        let families = super::linux::list_families();
-        // (no fontconfig, no fonts: nothing to list)
-        if families.is_empty() {
-            return;
-        }
-        let mut seen = std::collections::HashSet::new();
-        for family in &families {
-            assert!(!family.family.is_empty() && !family.family.starts_with('.'));
-            assert!(seen.insert(family.family.clone()), "{} listed twice", family.family);
-            if let Some(localized) = &family.localized {
-                assert_ne!(localized, &family.family);
-            }
-        }
-        println!("{} families, {} with Chinese characters", families.len(), families.iter().filter(|family| family.cjk).count());
     }
 }
 

@@ -9,102 +9,96 @@
 //! the foreground and its text field keeps its caret and selection, so
 //! delivering the formula is an ordinary paste.
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/ax.rs")]
+#[cfg(target_os = "macos")]
 mod ax;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/deliver.rs")]
+#[cfg(target_os = "macos")]
 mod deliver;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/hotkey.rs")]
+#[cfg(target_os = "macos")]
 mod hotkey;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/ime.rs")]
+#[cfg(target_os = "macos")]
 mod ime;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/panel.rs")]
+#[cfg(target_os = "macos")]
 mod panel;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(target_os = "linux", path = "linux/screen_colors.rs")]
+#[cfg(target_os = "macos")]
 mod screen_colors;
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use std::sync::Mutex;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use std::time::Duration;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use tauri::{Emitter, Manager};
 
 pub(crate) const WINDOW_LABEL: &str = "anywhere";
 /// tao builds windows with this title as non-activating panels.
 pub(crate) const PANEL_TITLE: &str = "VisualTeX Anywhere";
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const ACTIVATE_EVENT: &str = "visualtex-anywhere-activate";
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const SUSPEND_EVENT: &str = "visualtex-anywhere-suspend";
 /// A key the input method took from the field, for the editor.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const KEY_EVENT: &str = "visualtex-anywhere-key";
 /// The field's text size or colour, learnt after the formula opened.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const STYLE_EVENT: &str = "visualtex-anywhere-style";
 /// Pinyin spelled in the formula's text: the editor's composition.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const COMPOSE_EVENT: &str = "visualtex-anywhere-compose";
 /// Where the field put the formula's pieces (it wraps them as its text).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
 /// The most pieces a formula is cut into for the field (a longer formula's
 /// last piece holds the rest).
 const MAX_PIECES: usize = 512;
 /// The shortcut switched the field to the input method; a field that has
 /// not activated it by then does not take text (or the switch failed).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const INPUT_METHOD_WAIT: Duration = Duration::from_millis(1500);
 /// When the field has not switched to the input method after this long, the "Select the previous
 /// input source" shortcut is sent once more (macOS sometimes drops the first one; the formula then
 /// fell back to the pasting strip, somewhere else, and took the keys there).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const SWITCH_RETRY: Duration = Duration::from_millis(450);
 /// The input method reconnects to VisualTeX within a second of being started
 /// or of VisualTeX starting (input-method/Sources/AppLink.swift).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const IME_RELINK_WAIT: Duration = Duration::from_millis(1500);
 /// The shortcut found this process on VisualTeX's input method before the input
 /// method reported any field: it is asked for the caret, and a field it has
 /// answers within this (else the field is switched to it).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const ALREADY_PROBE: Duration = Duration::from_millis(400);
 /// Keys typed before the card is up wait for it, up to this many.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const MAX_PENDING_KEYS: usize = 256;
 /// A session shows the panel when the strip reports its layout, which the
 /// page does once it has rendered the activation. A page that has not
 /// answered after this long is broken (a render error that unmounted it, a
 /// lost WebContent process) and is reloaded; an invisible panel that takes
 /// the keyboard is never shown.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const PAGE_ANSWER_WAIT: Duration = Duration::from_millis(600);
 /// What a line of the field's text is to its font size (Chrome reports the line box).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const LINE_TO_FONT: f64 = 1.19;
 /// The shortest believable line of a field's text, points (a 9 pt font's): a
 /// shorter rectangle is not the text's and does not size the formula.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub(super) const MIN_TEXT_HEIGHT: f64 = 11.0;
 /// The tallest, points.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const MAX_TEXT_HEIGHT: f64 = 96.0;
 /// How far the anchor's height may be from the field's first report and
 /// still size the formula (an empty line first reports its whole line box,
 /// taller than its text); outside this only its place is used.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const ANCHOR_RATIO: std::ops::RangeInclusive<f64> = 0.6..=1.6;
 /// The system's text size (NSFont.systemFontSize), points: what the formula
 /// is sized from when the field tells nothing believable.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const SYSTEM_TEXT_SIZE: f64 = 13.0;
 
 /// A rectangle in global screen coordinates as Accessibility and Quartz
@@ -208,7 +202,7 @@ struct Activation {
 }
 
 /// How the field's text looks where the formula goes (input method).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FieldText {
@@ -246,7 +240,7 @@ pub(crate) struct AnywhereStatus {
     shortcut: String,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 struct Session {
     generation: u64,
     target: Option<Target>,
@@ -304,7 +298,7 @@ struct Session {
 /// input method has the field, which shows the formula's text as marked
 /// text; the card sits under the line and Enter inserts through the input
 /// method.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Delivery {
     Paste,
@@ -315,7 +309,7 @@ enum Delivery {
 /// strip is laying out; its layout report shows the panel. Presented: the
 /// strip is up. Only an activation leads to Presented, so a late layout
 /// report never brings back a strip that was closed.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Hidden,
@@ -323,7 +317,7 @@ enum Phase {
     Presented,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 static SESSION: Mutex<Session> = Mutex::new(Session {
     generation: 0,
     target: None,
@@ -360,10 +354,10 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
 /// deactivate). This process's own input source is not the field's: on macOS
 /// 27 a frontmost application keeps its source when another process selects
 /// one, and VisualTeX's own windows (the strip) change this process's.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 static IME_FIELD: Mutex<Option<String>> = Mutex::new(None);
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn note_ime_field(kind: &str, client: Option<&str>) {
     let Ok(mut field) = IME_FIELD.lock() else { return };
     match kind {
@@ -374,19 +368,19 @@ fn note_ime_field(kind: &str, client: Option<&str>) {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn ime_field() -> Option<String> {
     IME_FIELD.lock().ok().and_then(|field| field.clone())
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 static LOG_PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 const MAX_LOG_BYTES: u64 = 512 * 1024;
 
 /// One line of the diagnostics log (app data, anywhere.log): timings, where
 /// the strip stood and what each commit did. Formulas are not logged.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn log(line: &str) {
     use std::io::Write;
     let Some(path) = LOG_PATH.get() else { return };
@@ -402,7 +396,7 @@ pub(crate) fn log(line: &str) {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn session() -> Result<std::sync::MutexGuard<'static, Session>, String> {
     SESSION
         .lock()
@@ -411,7 +405,7 @@ fn session() -> Result<std::sync::MutexGuard<'static, Session>, String> {
 
 /// At startup (main thread): register the shortcut and prewarm the panel.
 pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         if let Ok(directory) = app.path().app_data_dir() {
             let _ = std::fs::create_dir_all(&directory);
@@ -442,7 +436,7 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
         log("started");
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
         Ok(())
@@ -452,7 +446,7 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
 /// A shortcut: show the strip at the caret (`display`: the formula's row is
 /// a display row), or hide it (keeping its formula) when it is up, as
 /// switching an input method off keeps nothing half-typed in the document.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn toggle(app: &AppHandle, display: bool) {
     if session().map(|session| session.phase != Phase::Hidden).unwrap_or(false) {
         hide(app, true, "shortcut");
@@ -476,7 +470,7 @@ fn toggle(app: &AppHandle, display: bool) {
 
 /// The pasting strip (`reopen_app`: the field's application selected the input
 /// method without starting it, see Activation::reopen_app).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     let started = std::time::Instant::now();
     let trusted = ax::is_trusted();
@@ -532,7 +526,7 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
 }
 
 /// The activation of the current session, for its page.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
     let target = session.target.as_ref()?;
     Some(Activation {
@@ -557,7 +551,7 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
 
 /// The shortcut with the input method enabled: switch the field to it; its
 /// "activate" (input_method_message) opens the formula there.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn begin_input_method(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     let field_app = ax::frontmost_bundle();
@@ -678,7 +672,7 @@ fn begin_input_method(app: &AppHandle, display: bool) {
 
 /// Switches the field to the input method from `previous` (ime::switch_in);
 /// false when macOS refused.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn switch_field(app: &AppHandle, generation: u64, previous: Option<&str>) -> bool {
     // the field took the input method: its activate opened this formula
     let taken = || {
@@ -686,11 +680,7 @@ fn switch_field(app: &AppHandle, generation: u64, previous: Option<&str>) -> boo
             .map(|session| session.generation != generation || session.awaiting_input_method != generation)
             .unwrap_or(true)
     };
-    #[cfg(target_os = "macos")]
-    let fallback = "com.apple.keylayout.ABC";
-    #[cfg(target_os = "linux")]
-    let fallback = ime::DEFAULT_SOURCE;
-    match ime::switch_in(app, previous.unwrap_or(fallback), &taken) {
+    match ime::switch_in(app, previous.unwrap_or("com.apple.keylayout.ABC"), &taken) {
         Ok(()) => true,
         Err(error) => {
             log(&format!("input method switch failed gen={generation}: {error}"));
@@ -701,7 +691,7 @@ fn switch_field(app: &AppHandle, generation: u64, previous: Option<&str>) -> boo
 
 /// The field did not take the input method: back to the input source it
 /// had, and the pasting strip instead.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool, display: bool, reopen_app: Option<String>) {
     let return_to = {
         let Ok(mut session) = session() else { return };
@@ -725,7 +715,7 @@ fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool, displ
 /// The input method's report of the field: where the formula goes (the
 /// marked text, or the caret's line before there is any) and how its text
 /// looks there.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 struct FieldGeometry {
     /// Quartz coordinates (y down).
     caret: ScreenRect,
@@ -744,7 +734,7 @@ struct FieldGeometry {
 /// A rectangle from the input method (AppKit screen coordinates, y up) in
 /// the Quartz coordinates the panel code uses, with the baseline from the
 /// field's font descent.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn input_method_geometry(message: &serde_json::Value) -> Option<FieldGeometry> {
     let values: Vec<f64> = message.get("caret")?.as_array()?.iter().filter_map(|value| value.as_f64()).collect();
     let &[x, y, width, height] = values.as_slice() else { return None };
@@ -796,10 +786,8 @@ fn input_method_geometry(message: &serde_json::Value) -> Option<FieldGeometry> {
         .map(|descent| descent * scale)
         .filter(|descent| *descent < text_height)
         .unwrap_or(text_height * 0.22);
-    #[cfg(target_os = "macos")]
-    let top = panel::main_display_height() - (y + height);
-    #[cfg(target_os = "linux")]
-    let top = y;
+    let main_height = panel::main_display_height();
+    let top = main_height - (y + height);
     // Text sits in the middle of a taller line box.
     let below_text = (height - text_height) / 2.0;
     Some(FieldGeometry {
@@ -834,7 +822,7 @@ fn input_method_geometry(message: &serde_json::Value) -> Option<FieldGeometry> {
 
 /// How text whose line (its caret) is `line` points tall looks: its font
 /// size, the line and how far it reaches below the baseline.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn text_of_line(line: f64) -> FieldText {
     FieldText {
         font_size: Some((line / LINE_TO_FONT).clamp(9.0, 64.0)),
@@ -846,7 +834,7 @@ fn text_of_line(line: f64) -> FieldText {
 
 /// The field's text where the formula opens: as the field tells it when the
 /// report is believable, else the system's text size in the field's colour.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn opening_text(geometry: &FieldGeometry) -> FieldText {
     if geometry.measured.is_some() {
         return geometry.text.clone();
@@ -860,7 +848,7 @@ fn opening_text(geometry: &FieldGeometry) -> FieldText {
 
 /// Whether the anchor's height (points, None: not believable) sizes the
 /// formula, given the height that sized it first (None: the system's).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn anchor_sizes(measured: Option<f64>, reference: Option<f64>) -> bool {
     match (measured, reference) {
         (Some(height), Some(reference)) => ANCHOR_RATIO.contains(&(height / reference)),
@@ -869,7 +857,7 @@ fn anchor_sizes(measured: Option<f64>, reference: Option<f64>) -> bool {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn describe_text(text: &FieldText) -> String {
     format!(
         "font={} line={}",
@@ -878,7 +866,7 @@ fn describe_text(text: &FieldText) -> String {
     )
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn inline_anchor(geometry: &FieldGeometry) -> ScreenRect {
     ScreenRect {
         x: geometry.caret.x,
@@ -889,7 +877,7 @@ fn inline_anchor(geometry: &FieldGeometry) -> ScreenRect {
 }
 
 /// A message from the input method (its link thread).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value) {
     let kind = message.get("t").and_then(|value| value.as_str()).unwrap_or("");
     note_ime_field(kind, message.get("client").and_then(|value| value.as_str()));
@@ -899,12 +887,7 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             message.get("version").and_then(|value| value.as_str()).unwrap_or("?")
         )),
         "activate" | "geometry" => input_method_caret_reported(app, message),
-        "start" => {
-            #[cfg(target_os = "linux")]
-            input_method_shortcut(app, message);
-            #[cfg(target_os = "macos")]
-            input_method_started(app, message);
-        }
+        "start" => input_method_started(app, message),
         "key" => input_method_key(app, message),
         "pieces" => input_method_pieces(app, message),
         "compose" => {
@@ -944,7 +927,7 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
 
 /// The field took the input method (or answered with its geometry): open
 /// the formula the shortcut asked for, or follow the formula's place.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
     let geometry = input_method_geometry(message);
     let client = message.get("client").and_then(|value| value.as_str()).unwrap_or("").to_string();
@@ -1085,7 +1068,7 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
 /// field's background, so it does not depend on the text before the caret)
 /// and gives it to the page; without the permission the field's own colour
 /// or the system appearance's stays.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn read_field_color(app: &AppHandle, generation: u64, caret: ScreenRect) {
     let app = app.clone();
     let _ = std::thread::Builder::new()
@@ -1121,7 +1104,7 @@ fn read_field_color(app: &AppHandle, generation: u64, caret: ScreenRect) {
 
 /// VisualTeX was chosen in the input menu and a character key started a
 /// formula: a session without an input source to go back to.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
     let geometry = input_method_geometry(message);
     let client = message.get("client").and_then(|value| value.as_str()).unwrap_or("").to_string();
@@ -1134,7 +1117,7 @@ fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
         session.phase = Phase::Activating;
         session.delivery = Delivery::InputMethod;
         session.return_to = None;
-        session.display = message.get("display").and_then(|value| value.as_bool()).unwrap_or(false);
+        session.display = false;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
         session.field_text = geometry.as_ref().map(opening_text).unwrap_or_default();
@@ -1159,47 +1142,9 @@ fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
     }
 }
 
-/// Linux: the input method took the formula's shortcut in its field (VisualTeX cannot take global
-/// shortcuts under Wayland): a formula opens there, as when the shortcut finds the field typing with
-/// VisualTeX already (the field's report opens it and tells the input method); the shortcut again
-/// closes it, keeping the formula.
-#[cfg(target_os = "linux")]
-fn input_method_shortcut(app: &AppHandle, message: &serde_json::Value) {
-    if session().map(|session| session.phase != Phase::Hidden).unwrap_or(false) {
-        hide(app, true, "shortcut");
-        return;
-    }
-    let display = message.get("display").and_then(|value| value.as_bool()).unwrap_or(false);
-    log(&format!("shortcut (input method) display={display}"));
-    {
-        let Ok(mut session) = session() else { return };
-        session.generation += 1;
-        session.phase = Phase::Activating;
-        session.target = None;
-        session.delivery = Delivery::InputMethod;
-        session.return_to = None;
-        session.field_app = message.get("client").and_then(|value| value.as_str()).map(str::to_string);
-        session.display = display;
-        session.awaiting_input_method = session.generation;
-        session.pending_keys.clear();
-        session.field_text = FieldText::default();
-        session.reference_height = None;
-        session.inline_anchor = None;
-    }
-    if let Err(error) = panel::ensure(app) {
-        log(&format!("input method shortcut: no panel: {error}"));
-        return;
-    }
-    let mut report = message.clone();
-    if let Some(object) = report.as_object_mut() {
-        object.insert("t".to_string(), serde_json::json!("geometry"));
-    }
-    input_method_caret_reported(app, &report);
-}
-
 /// Where the field put the formula's pieces (points from the first piece's
 /// start, y down): for the page, which draws each piece there.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
     let Some(generation) = session()
         .ok()
@@ -1249,7 +1194,7 @@ fn input_method_pieces(app: &AppHandle, message: &serde_json::Value) {
 
 /// A key the input method took: to the editor once the card is up (until
 /// then it waits, so fast typing after the shortcut is not lost).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn input_method_key(app: &AppHandle, message: &serde_json::Value) {
     let mut key = message.clone();
     let deliver_now = {
@@ -1277,7 +1222,7 @@ fn input_method_key(app: &AppHandle, message: &serde_json::Value) {
 }
 
 /// The card is up: the keys typed before it, in order.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn flush_pending_keys(app: &AppHandle, generation: u64) {
     let keys = {
         let Ok(mut session) = session() else { return };
@@ -1298,7 +1243,7 @@ fn flush_pending_keys(app: &AppHandle, generation: u64) {
 
 /// Hands the session to the page and watches for its answer (the strip's
 /// layout report, which shows the panel).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn send_activation(app: &AppHandle, window: &tauri::WebviewWindow, activation: Activation) {
     let generation = activation.generation;
     if let Err(error) = window.emit(ACTIVATE_EVENT, activation) {
@@ -1319,7 +1264,7 @@ fn send_activation(app: &AppHandle, window: &tauri::WebviewWindow, activation: A
 
 /// The page did not answer an activation: reload it once (the activation is
 /// sent again when it reports ready), or give the session up.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn recover_unanswered(app: &AppHandle, generation: u64) {
     let reload = {
         let Ok(mut session) = session() else { return };
@@ -1349,7 +1294,7 @@ fn recover_unanswered(app: &AppHandle, generation: u64) {
 }
 
 /// Orders the panel in at the caret, once per session.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn present(app: &AppHandle, generation: u64) {
     let (target, layout, delivery, inline, read_color) = {
         let Ok(mut session) = session() else { return };
@@ -1386,7 +1331,7 @@ fn present(app: &AppHandle, generation: u64) {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn hide(app: &AppHandle, keep_draft: bool, reason: &str) {
     hide_with(app, keep_draft, reason, true);
 }
@@ -1394,7 +1339,7 @@ fn hide(app: &AppHandle, keep_draft: bool, reason: &str) {
 /// Hides the strip. With the input method, `tell_input_method` clears the
 /// field's marked text and hands it back to the input source it came from
 /// (not when the input method itself ended the session).
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method: bool) {
     let (generation, delivery, return_to, strip_source) = {
         let Ok(mut session) = session() else { return };
@@ -1422,7 +1367,7 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
 
 /// The panel lost the keyboard (the user clicked elsewhere): hide it and keep
 /// the formula for the next shortcut press.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn handle_focus_lost(app: &AppHandle) {
     hide(app, true, "focus lost");
 }
@@ -1430,7 +1375,7 @@ pub(crate) fn handle_focus_lost(app: &AppHandle) {
 /// The page mounted its editor: from now on it takes activations directly.
 #[tauri::command]
 pub(crate) fn anywhere_ready(app: AppHandle) -> Result<(), String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let (pending, phase) = {
             let mut session = session()?;
@@ -1457,7 +1402,7 @@ pub(crate) fn anywhere_ready(app: AppHandle) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
         Ok(())
@@ -1470,7 +1415,7 @@ pub(crate) fn anywhere_layout(app: AppHandle, generation: u64, layout: PanelLayo
     if !layout.is_valid() {
         return Err("The VisualTeX Anywhere layout is invalid".to_string());
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let (phase, anchor, placement) = {
             let mut session = session()?;
@@ -1492,7 +1437,7 @@ pub(crate) fn anywhere_layout(app: AppHandle, generation: u64, layout: PanelLayo
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, generation);
         Ok(())
@@ -1513,7 +1458,7 @@ pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_
     if png.len() > 50 * 1024 * 1024 || !png.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err("The formula image is not a PNG".to_string());
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let input_method = {
             let mut session = session()?;
@@ -1550,7 +1495,7 @@ pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_
         pasted?;
         Ok(CommitOutcome::Inserted)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, generation, png);
         Err("VisualTeX Anywhere is available on macOS only".to_string())
@@ -1562,7 +1507,7 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
     if text.len() > 1024 * 1024 {
         return Err("The formula is too long to insert".to_string());
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let input_method = {
             let mut session = session()?;
@@ -1622,7 +1567,7 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
         pasted?;
         Ok(CommitOutcome::Inserted)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, generation);
         Err("VisualTeX Anywhere is available on macOS only".to_string())
@@ -1632,7 +1577,7 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
 /// Escape (keep_draft false) or the strip's own close.
 #[tauri::command]
 pub(crate) fn anywhere_dismiss(app: AppHandle, generation: u64, keep_draft: bool) -> Result<(), String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let current = session()?.generation == generation;
         if current {
@@ -1640,7 +1585,7 @@ pub(crate) fn anywhere_dismiss(app: AppHandle, generation: u64, keep_draft: bool
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, generation, keep_draft);
         Ok(())
@@ -1661,7 +1606,7 @@ pub(crate) fn anywhere_marked(
     if text.len() > 256 * 1024 {
         return Err("The formula is too long to show".to_string());
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let current = {
             let session = session()?;
@@ -1689,7 +1634,7 @@ pub(crate) fn anywhere_marked(
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (generation, text, width, caret_x, caret_y, pieces);
         Ok(())
@@ -1700,7 +1645,7 @@ pub(crate) fn anywhere_marked(
 /// spells pinyin there.
 #[tauri::command]
 pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let current = {
             let session = session()?;
@@ -1711,7 +1656,7 @@ pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (generation, text);
         Ok(())
@@ -1721,12 +1666,12 @@ pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
 /// The page's own diagnostics (commit outcomes, errors), into anywhere.log.
 #[tauri::command]
 pub(crate) fn anywhere_log(line: String) {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let line: String = line.chars().take(1600).map(|c| if c.is_control() { ' ' } else { c }).collect();
         log(&format!("page {line}"));
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     let _ = line;
 }
 
@@ -1757,7 +1702,7 @@ pub(crate) enum AnywhereClipboard {
 
 #[tauri::command]
 pub(crate) async fn anywhere_read_clipboard(app: AppHandle) -> Result<AnywhereClipboard, String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         use base64::Engine as _;
         let content = tauri::async_runtime::spawn_blocking(move || deliver::read_clipboard(&app))
@@ -1777,7 +1722,7 @@ pub(crate) async fn anywhere_read_clipboard(app: AppHandle) -> Result<AnywhereCl
             deliver::ClipboardContent::Nothing => AnywhereClipboard::Nothing,
         })
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
         Ok(AnywhereClipboard::Nothing)
@@ -1793,7 +1738,7 @@ pub(crate) async fn anywhere_configure_hotkey(
     chord: serde_json::Value,
     action: Option<String>,
 ) -> Result<String, String> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         let slot = match action.as_deref() {
             None => hotkey::Slot::Toggle,
@@ -1803,7 +1748,7 @@ pub(crate) async fn anywhere_configure_hotkey(
             serde_json::from_value(chord).map_err(|error| format!("Unreadable shortcut: {error}"))?;
         hotkey::configure(&app, slot, chord)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, chord, action);
         Err("VisualTeX Anywhere is available on macOS only".to_string())
@@ -1812,14 +1757,14 @@ pub(crate) async fn anywhere_configure_hotkey(
 
 #[tauri::command]
 pub(crate) fn anywhere_status() -> AnywhereStatus {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
         AnywhereStatus {
             accessibility_trusted: ax::is_trusted(),
             shortcut: hotkey::shortcut_label(),
         }
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         AnywhereStatus {
             accessibility_trusted: false,
@@ -1847,7 +1792,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     fn the_anchor_sizes_only_near_the_first_report() {
         assert!(anchor_sizes(Some(18.0), Some(19.0)));
         // an empty line's line box first, the text's height on the anchor
