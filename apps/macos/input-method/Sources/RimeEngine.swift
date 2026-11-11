@@ -138,6 +138,22 @@ final class RimeEngine {
         return state
     }
 
+    /// The session is still librime's (one it no longer has takes no keys: everything typed would pass as English
+    /// and Shift would switch nothing). During librime's maintenance every session reads as missing: kept then.
+    func isAlive(_ session: RimeSessionId) -> Bool {
+        guard session != 0, let api else { return false }
+        if api.pointee.is_maintenance_mode?() != 0 { return true }
+        return api.pointee.find_session?(session) != 0
+    }
+
+    /// What is being spelled as the letters typed (librime's input), the composition cleared.
+    func takeInput(_ session: RimeSessionId) -> String? {
+        guard session != 0, let api, let input = api.pointee.get_input?(session) else { return nil }
+        let text = String(cString: input)
+        api.pointee.clear_composition?(session)
+        return text
+    }
+
     func isAsciiMode(_ session: RimeSessionId) -> Bool {
         guard session != 0, let api else { return false }
         return api.pointee.get_option?(session, "ascii_mode") != 0

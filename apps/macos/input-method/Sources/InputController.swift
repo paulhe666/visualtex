@@ -142,6 +142,13 @@ final class VTInputController: IMKInputController {
     /// How far from the caret an application placed a formula's start when
     /// that was its own doing (staleAnchor), points.
     private static var anchorOffsets: [String: CGFloat] = [:]
+    /// A Shift press that becomes a tap when it is let go soon with nothing pressed or clicked meanwhile: its key,
+    /// when, and the input events counted then (shiftChanged).
+    private var shiftTap: (keyCode: UInt16, at: TimeInterval, events: UInt32)?
+    /// Shift's changes and taps while this field had the keyboard (logged when it ends: a field whose Shift never
+    /// arrives shows there).
+    private var shiftChanges = 0
+    private var shiftTaps = 0
 
     deinit {
         RimeEngine.shared.destroySession(rimeSession)
@@ -166,7 +173,10 @@ final class VTInputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
-        InputLog.write("deactivate client=\(clientID(sender)) composing=\(composing)")
+        InputLog.write("deactivate client=\(clientID(sender)) composing=\(composing) shift=\(shiftChanges)/\(shiftTaps)")
+        shiftChanges = 0
+        shiftTaps = 0
+        shiftTap = nil
         let client = sender as? IMKTextInput
         // (Chrome has kept the space as its text by now: taken out where it is; else cleared as
         // marked text is)
@@ -192,9 +202,11 @@ final class VTInputController: IMKInputController {
         Self.active = self
         if event.type == .flagsChanged {
             // Shift switches Chinese and English in a formula too.
-            return pinyinModifiers(event, client: client)
+            return shiftChanged(event, client: client)
         }
         guard event.type == .keyDown else { return false }
+        // a key with Shift down: Shift was part of a chord
+        shiftTap = nil
         // a held space this field kept as its text (it has the keyboard now)
         if !composing, marked.isEmpty, Self.leftovers[clientID(client)]?.isEmpty == false { takeOutLeftovers(client) }
         if composing, [36, 53, 76].contains(event.keyCode) {
@@ -230,6 +242,10 @@ final class VTInputController: IMKInputController {
     // MARK: Pinyin and English (RIME)
 
     private func ensureRimeSession() -> RimeSessionId {
+        if rimeSession != 0, !RimeEngine.shared.isAlive(rimeSession) {
+            InputLog.write("rime session lost: a new one")
+            rimeSession = 0
+        }
         if rimeSession == 0 {
             rimeSession = RimeEngine.shared.createSession()
             // A formula that opened before RIME was ready (the first one after the input method
@@ -257,28 +273,76 @@ final class VTInputController: IMKInputController {
         return handled
     }
 
-    /// Shift alone switches between Chinese and English (RIME's
-    /// ascii_composer sees the press and the release).
-    private func pinyinModifiers(_ event: NSEvent, client: IMKTextInput) -> Bool {
-        let keysym: Int32
-        let isDown: Bool
-        switch event.keyCode {
-        case 56: keysym = RimeKeys.shiftLeft; isDown = event.modifierFlags.contains(.shift)
-        case 60: keysym = RimeKeys.shiftRight; isDown = event.modifierFlags.contains(.shift)
-        default: return false
+    /// The input events so far (keys, modifiers, clicks): a Shift press and its release with nothing else between
+    /// are two apart (Squirrel's test).
+    private static func inputEventCount() -> UInt32 {
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        return types.reduce(UInt32(0)) { $0 &+ CGEventSource.counterForEventType(.combinedSessionState, eventType: $1) }
+    }
+
+    /// Shift alone, let go within half a second with nothing else pressed or clicked meanwhile (no chord, no
+    /// Shift-click), switches between Chinese and English, as macOS Pinyin's does. VisualTeX tells the tap itself:
+    /// RIME's ascii_composer is left out of it (its own Shift state could keep Shift from switching after a while,
+    /// 2026-11-10). With Caps Lock on, letters are English capitals and Shift switches nothing.
+    private func shiftChanged(_ event: NSEvent, client: IMKTextInput) -> Bool {
+        guard event.keyCode == 56 || event.keyCode == 60 else {
+            // another modifier: a chord, not a tap
+            if event.keyCode != 57 { shiftTap = nil }
+            return false
         }
+        shiftChanges += 1
+        // this side's Shift (the device's left and right bits; .shift when the device sets neither)
+        let raw = event.modifierFlags.rawValue
+        let down = raw & 0x6 != 0 ? raw & (event.keyCode == 56 ? 0x2 : 0x4) != 0 : event.modifierFlags.contains(.shift)
+        if down {
+            // (with Command, Control, Option or Fn, or both Shifts: a chord)
+            let chord = !event.modifierFlags.intersection([.command, .control, .option, .function]).isEmpty || raw & 0x6 == 0x6
+            if chord {
+                shiftTap = nil
+            } else {
+                shiftTap = (keyCode: event.keyCode, at: event.timestamp, events: Self.inputEventCount())
+            }
+            return false
+        }
+        guard let tap = shiftTap, tap.keyCode == event.keyCode else {
+            shiftTap = nil
+            return false
+        }
+        shiftTap = nil
+        guard event.timestamp - tap.at < 0.5, Self.inputEventCount() &- tap.events <= 1 else { return false }
+        if event.modifierFlags.contains(.capsLock) {
+            InputLog.write("shift tap with Caps Lock on: no switch")
+            return false
+        }
+        switchChineseEnglish(client)
+        return false
+    }
+
+    /// Chinese ⇄ English: what is being spelled goes in as the letters typed (as macOS Pinyin's Shift does), the
+    /// mode changes and its indicator shows.
+    private func switchChineseEnglish(_ client: IMKTextInput) {
         let session = ensureRimeSession()
-        guard session != 0 else { return false }
-        let wasAscii = RimeEngine.shared.isAsciiMode(session)
-        var mask = RimeKeys.modifiers(event.modifierFlags)
-        if !isDown { mask |= RimeKeys.releaseMask }
-        let handled = RimeEngine.shared.process(session, keysym: keysym, mask: mask)
-        if composing { showFormulaPinyin(client) } else { showPinyin(client) }
-        let isAscii = RimeEngine.shared.isAsciiMode(session)
-        if isAscii != wasAscii {
-            ModeIndicator.shared.show(isAscii ? "英" : "中", under: composing ? formulaCaret(client) : caretRect(client))
+        guard session != 0 else {
+            InputLog.write("shift tap before RIME is ready")
+            return
         }
-        return handled
+        let english = !RimeEngine.shared.isAsciiMode(session)
+        if RimeEngine.shared.state(session).isComposing, let typed = RimeEngine.shared.takeInput(session) {
+            if composing {
+                AppLink.shared.send(["t": "compose", "phase": "end", "text": typed])
+                formulaPinyin = false
+            } else if !typed.isEmpty {
+                client.insertText(typed, replacementRange: Self.noRange)
+                marked = ""
+                lastPinyinCommit = Date()
+            } else if !marked.isEmpty {
+                clearMarked(client)
+            }
+            CandidateWindow.shared.hide()
+        }
+        RimeEngine.shared.setAsciiMode(session, english)
+        shiftTaps += 1
+        ModeIndicator.shared.show(english ? "英" : "中", under: composing ? formulaCaret(client) : caretRect(client))
     }
 
     /// RIME's commit into the field, its spelling as marked text, its
