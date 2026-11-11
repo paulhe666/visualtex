@@ -1606,7 +1606,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
   }
 
   onInput(text: string): void {
-    onInput(this, text);
+    onInput(this, visualTexHalfWidthBrackets(text));
   }
 
   onKeystroke(evt: KeyboardEvent): boolean {
@@ -1666,6 +1666,9 @@ If you are using Vue, this may be because you are using the runtime-only build o
       this.model.setState(this.visualTexCompositionState);
       visualTexNormalizeTextBoundaryMode(this);
       requestUpdate(this);
+    } else if (visualTexHalfWidthBrackets(composition.trim()) !== composition.trim()) {
+      // a Chinese bracket committed by a composition: one plain bracket (onInput)
+      onInput(this, visualTexHalfWidthBrackets(composition.trim()));
     } else {
       this.visualTexCompositionCommit = true;
       try {
@@ -1854,4 +1857,14 @@ If you are using Vue, this may be because you are using the runtime-only build o
       atomIdsSettings: { seed: 'random', groupNumbers: false },
     };
   }
+}
+
+/**
+ * A Chinese input method's brackets typed in a formula, "（" "）" (Shift+9 and Shift+0 with Chinese punctuation), are
+ * one plain half-width bracket each, as the input method committed them: no full-width bracket, no fence pair. (The
+ * commit came as text and the key after it, keyCode 229, also ran the bracket key: "（" and an auto-completed "()",
+ * three brackets, 2026-11-11.) Only a commit that is nothing but these brackets changes.
+ */
+function visualTexHalfWidthBrackets(text: string): string {
+  return /^[（）]+$/.test(text) ? text.replace(/（/g, "(").replace(/）/g, ")") : text;
 }
