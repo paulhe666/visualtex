@@ -454,17 +454,25 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     let changed = build_id(&bundled) != build_id(&installed);
     if changed {
         std::fs::create_dir_all(&folder).map_err(|error| format!("Input Methods folder: {error}"))?;
-        if installed.exists() {
-            std::fs::remove_dir_all(&installed).map_err(|error| format!("old input method: {error}"))?;
+        // The new build is copied aside and swapped in at once: never is the input method's bundle missing or half
+        // there. An application that reaches for the input method while it cannot be started writes it off for as
+        // long as it runs (its keys swallowed or typed as English whatever is selected; VS Code and TextEdit after
+        // the copies of 2026-11-09/10, reproduced with a test field).
+        let staging = folder.join(".VisualTeX Input.staging");
+        if staging.exists() {
+            std::fs::remove_dir_all(&staging).map_err(|error| format!("{}: {error}", staging.display()))?;
         }
         let copied = Command::new("/usr/bin/ditto")
             .arg(&bundled)
-            .arg(&installed)
+            .arg(&staging)
             .status()
             .map_err(|error| format!("ditto: {error}"))?;
         if !copied.success() {
             return Err(format!("ditto failed: {copied}"));
         }
+        swap_into_place(&staging, &installed)?;
+        // (the old build, now under the staging name; a running copy keeps the files it has open)
+        let _ = std::fs::remove_dir_all(&staging);
         // A running copy keeps the old code; macOS starts the new one when
         // it is next selected.
         let _ = Command::new("/usr/bin/pkill")
@@ -479,6 +487,28 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
         listed()
     ));
     Ok(())
+}
+
+/// Puts the bundle at `fresh` where `installed` is in one step (the two exchanged when `installed` exists).
+fn swap_into_place(fresh: &Path, installed: &Path) -> Result<(), String> {
+    if !installed.exists() {
+        return std::fs::rename(fresh, installed).map_err(|error| format!("{}: {error}", installed.display()));
+    }
+    let from = CString::new(fresh.as_os_str().as_encoded_bytes()).map_err(|error| error.to_string())?;
+    let to = CString::new(installed.as_os_str().as_encoded_bytes()).map_err(|error| error.to_string())?;
+    if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } == 0 {
+        return Ok(());
+    }
+    // A volume that cannot exchange: two renames, the bundle away for an instant only.
+    let error = std::io::Error::last_os_error();
+    let old = fresh.with_extension("old");
+    let _ = std::fs::remove_dir_all(&old);
+    std::fs::rename(installed, &old).map_err(|rename| format!("swap: {error}; {}: {rename}", installed.display()))?;
+    if let Err(rename) = std::fs::rename(fresh, installed) {
+        let _ = std::fs::rename(&old, installed);
+        return Err(format!("{}: {rename}", installed.display()));
+    }
+    std::fs::rename(&old, fresh).map_err(|rename| format!("{}: {rename}", fresh.display()))
 }
 
 /// input-method build output: Contents/Resources/build-id.
