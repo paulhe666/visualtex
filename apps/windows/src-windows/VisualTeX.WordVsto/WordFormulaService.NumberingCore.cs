@@ -197,6 +197,9 @@ internal sealed partial class WordFormulaService
         EquationReferenceStyle style,
         WdColor color)
     {
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.Insert");
         if (target.Source ==
             EquationReferenceSource.MathType)
         {
@@ -237,10 +240,11 @@ internal sealed partial class WordFormulaService
                 "VisualTeX Insert Native Word Equation Reference",
                 () =>
                 {
+                    // (the target re-read in its own paragraph, as the whole-document listing reads it)
                     var current =
-                        WordFormulaNumberingKernel
-                            .GetCanonicalReferenceTargets(
-                                document)
+                        GetTargetsAround(
+                                document,
+                                target)
                             .SingleOrDefault(candidate =>
                                 candidate.Source ==
                                     EquationReferenceSource.WordOmml
@@ -308,18 +312,20 @@ internal sealed partial class WordFormulaService
             "VisualTeX Insert Equation Reference",
             () =>
             {
-                EnsureVisualTeXReferenceTargetExists(
-                    document,
-                    target,
-                    bookmarkName);
-                WordEquationReferenceFields
-                    .InsertDirectReference(
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Insert.EnsureTarget"))
+                    EnsureVisualTeXReferenceTargetExists(
                         document,
-                        selection,
-                        bookmarkName,
-                        prefix,
-                        suffix,
-                        color);
+                        target,
+                        bookmarkName);
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Insert.DirectReference"))
+                    WordEquationReferenceFields
+                        .InsertDirectReference(
+                            document,
+                            selection,
+                            bookmarkName,
+                            prefix,
+                            suffix,
+                            color);
                 return true;
             });
     }
@@ -351,10 +357,21 @@ internal sealed partial class WordFormulaService
         // New VisualTeX paragraph numbering deliberately creates no permanent
         // bookmark. Match MathType's behavior: materialize VTEqNum_<FormulaId>
         // only when the user actually inserts a body reference.
-        var host =
+        using var captureMetric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.Insert.CaptureIndexForBookmark");
+        // (the host indexed in its own paragraph: the same identity anchors and table boundaries
+        // as a whole-document index there, without indexing every other formula)
+        Range? scope = null;
+        WordFormulaHostDescriptor host;
+        try
+        {
+            scope = TargetParagraphs(document, target);
+            host =
             WordFormulaHostResolver
-                .CaptureDocumentIndex(
-                    document)
+                .CaptureScopeIndex(
+                    document,
+                    scope)
                 .VisualTeX
                 .SingleOrDefault(candidate =>
                     string.Equals(
@@ -367,6 +384,11 @@ internal sealed partial class WordFormulaService
                         target.EndPosition)
             ?? throw new InvalidDataException(
                 "The selected VisualTeX equation reference target moved before bookmark creation.");
+        }
+        finally
+        {
+            Release(scope);
+        }
 
         var numbering =
             WordFormulaNumberingResolver
@@ -386,10 +408,48 @@ internal sealed partial class WordFormulaService
                 bookmarkName);
     }
 
+    /// The paragraphs holding a captured reference target (the main story).
+    private static Range TargetParagraphs(
+        Document document,
+        EquationReferenceTarget target)
+    {
+        var scope =
+            document.Range(
+                target.Position,
+                Math.Max(
+                    target.Position,
+                    target.EndPosition));
+        scope.Expand(
+            WdUnits.wdParagraph);
+        return scope;
+    }
+
+    private static IReadOnlyList<EquationReferenceTarget>
+        GetTargetsAround(
+            Document document,
+            EquationReferenceTarget target)
+    {
+        Range? scope = null;
+        try
+        {
+            scope = TargetParagraphs(document, target);
+            return WordFormulaNumberingKernel
+                .GetCanonicalReferenceTargets(
+                    document,
+                    scope);
+        }
+        finally
+        {
+            Release(scope);
+        }
+    }
+
     internal IReadOnlyList<EquationReferenceTarget>
         GetCanonicalEquationReferenceTargets(
-            Document document) =>
+            Document document,
+            bool deferPreviews = false) =>
         WordFormulaNumberingKernel
             .GetCanonicalReferenceTargets(
-                document);
+                document,
+                deferPreviews);
 }

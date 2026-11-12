@@ -30,23 +30,61 @@ internal sealed class EquationReferenceTarget
         FormulaId = formulaId;
         NativeReferenceItem = nativeReferenceItem;
         NumberText = numberText;
-        LatexPreview = latexPreview;
+        _latexPreview = latexPreview;
         Position = position;
         EndPosition = endPosition;
         Source = source;
     }
 
+    /// A target whose LaTeX preview is read when it is first needed (reading it is a Word OOXML or OLE
+    /// read per formula: in a 400-formula document most of the time of listing the targets).
+    public EquationReferenceTarget(
+        string formulaId,
+        int nativeReferenceItem,
+        string numberText,
+        Func<string> latexPreview,
+        int position,
+        EquationReferenceSource source,
+        int endPosition)
+        : this(formulaId, nativeReferenceItem, numberText, string.Empty, position, source, endPosition)
+    {
+        _readLatexPreview = latexPreview;
+    }
+
+    private string _latexPreview;
+    private Func<string>? _readLatexPreview;
+
     public string FormulaId { get; }
     public int NativeReferenceItem { get; }
     public string NumberText { get; }
-    public string LatexPreview { get; }
+    public string LatexPreview
+    {
+        get
+        {
+            var read = _readLatexPreview;
+            if (read is not null)
+            {
+                _readLatexPreview = null;
+                try { _latexPreview = read() ?? string.Empty; }
+                catch { _latexPreview = string.Empty; }
+            }
+            return _latexPreview;
+        }
+    }
+    /// Whether the preview has been read (ToString shows it only then: a list of targets does not
+    /// read every formula to draw itself).
+    public bool LatexPreviewReady => _readLatexPreview is null;
     public int Position { get; }
     public int EndPosition { get; }
     public EquationReferenceSource Source { get; }
 
-    public override string ToString() => Source == EquationReferenceSource.MathType
-        ? $"{NumberText}    {LatexPreview}"
-        : $"({NumberText})    {LatexPreview}";
+    public override string ToString()
+    {
+        var preview = LatexPreviewReady ? LatexPreview : string.Empty;
+        return Source == EquationReferenceSource.MathType
+            ? $"{NumberText}    {preview}"
+            : $"({NumberText})    {preview}";
+    }
 }
 
 internal enum EquationReferenceStyle

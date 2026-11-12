@@ -266,6 +266,22 @@ public sealed partial class ThisAddIn
         return result;
     }
 
+    /// Timings of the equation-reference command (listing the targets, inserting), written to the add-in's
+    /// trace (VISUALTEX_WORD_HOOK_TRACE_PATH) when one is set; nothing is measured otherwise.
+    private static VisualTeX.WindowsOffice.Contracts.WordOperationMetrics? StartReferenceMetrics() =>
+        string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH"))
+            ? null
+            : new VisualTeX.WindowsOffice.Contracts.WordOperationMetrics();
+
+    private static void TraceReferenceMetrics(VisualTeX.WindowsOffice.Contracts.WordOperationMetrics? metrics, string phase)
+    {
+        if (metrics is null) return;
+        var entries = string.Join(" ", metrics.Entries
+            .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+            .Select(entry => $"{entry.Key}={entry.Value.Calls}x{entry.Value.Milliseconds:F0}ms"));
+        WordDoubleClickHook.TraceMessage($"reference-metrics phase={phase} {entries}");
+    }
+
     /// The Ribbon's "Insert equation reference" with the target named by its number
     /// instead of picked in the dialog.
     private string InsertAutomationEquationReference(WordFormulaService service, string number, string? source)
@@ -273,6 +289,7 @@ public sealed partial class ThisAddIn
         var application = _application ?? throw new OfficeAutomationException("internal", "Word is not available.");
         Document? document = null;
         Selection? selection = null;
+        using var metrics = StartReferenceMetrics();
         try
         {
             document = application.ActiveDocument;
@@ -280,7 +297,8 @@ public sealed partial class ThisAddIn
             var start = selection.Start;
             var end = selection.End;
             var color = selection.Font.Color;
-            var targets = service.GetCanonicalEquationReferenceTargets(document)
+            // (matched by number alone: no LaTeX preview is read)
+            var targets = service.GetCanonicalEquationReferenceTargets(document, deferPreviews: true)
                 .Concat(MathTypeEquationReferences.GetTargets(document))
                 .Where(target => source switch
                 {
@@ -291,6 +309,7 @@ public sealed partial class ThisAddIn
                     _ => throw new OfficeAutomationException("invalid_arguments", $"Unknown source {source}."),
                 })
                 .ToList();
+            TraceReferenceMetrics(metrics, "listed");
             static string Bare(string? text) => (text ?? string.Empty).Trim().Trim('(', ')', ' ');
             var matches = targets.Where(target => Bare(target.NumberText) == number).ToList();
             if (matches.Count != 1)
@@ -308,6 +327,7 @@ public sealed partial class ThisAddIn
                 MathTypeEquationReferences.InsertReference(document, selection, chosen, color);
             else
                 service.InsertEquationReference(document, selection, chosen, EquationReferenceStyle.Parenthesized, color);
+            TraceReferenceMetrics(metrics, "inserted");
             return $"Inserted a reference to equation ({number}).";
         }
         finally

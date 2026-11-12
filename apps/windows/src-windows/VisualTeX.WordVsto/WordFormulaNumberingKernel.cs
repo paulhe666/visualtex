@@ -395,13 +395,41 @@ internal static partial class WordFormulaNumberingKernel
         return count;
     }
 
+    /// <paramref name="deferPreviews"/>: each target's LaTeX preview is read when first asked for
+    /// (the reference picker fills them in while it shows; a reference named by its number needs none).
     internal static IReadOnlyList<EquationReferenceTarget>
         GetCanonicalReferenceTargets(
-            Document document)
+            Document document,
+            bool deferPreviews = false) =>
+        GetCanonicalReferenceTargets(
+            document,
+            scope: null,
+            deferPreviews);
+
+    /// The reference targets whose hosts lie in <paramref name="scope"/> (null: the whole document),
+    /// read exactly as for the whole document: a native OMML target's cross-reference item still
+    /// counts every Equation SEQ field of the document. (Inserting a reference re-checks its one target
+    /// this way; it re-listed every target of the document, the whole listing cost again.)
+    internal static IReadOnlyList<EquationReferenceTarget>
+        GetCanonicalReferenceTargets(
+            Document document,
+            Range? scope,
+            bool deferPreviews = false)
     {
-        var index =
-            WordFormulaHostResolver.CaptureDocumentIndex(
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                scope is null ? "Reference.CanonicalTargets" : "Reference.CanonicalTargets.Scoped");
+        // (listing reads only; a deferred preview is read later, outside this scope, with the full checks)
+        using var noRevisions =
+            WordNumberingFieldCollection.AssumeNoRevisionsWhileReading(
                 document);
+        var index =
+            scope is null
+                ? WordFormulaHostResolver.CaptureDocumentIndex(
+                    document)
+                : WordFormulaHostResolver.CaptureScopeIndex(
+                    document,
+                    scope);
         var targets =
             new List<EquationReferenceTarget>();
         // Native equation items per SEQ series, captured when a host first needs one.
@@ -413,10 +441,12 @@ internal static partial class WordFormulaNumberingKernel
                      .Concat(index.VisualTeX)
                      .OrderBy(item => item.Range.Start))
         {
-            var numbering =
-                WordFormulaNumberingResolver.ResolveLocal(
-                    document,
-                    host);
+            WordFormulaNumberingDescriptor numbering;
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.ResolveLocal"))
+                numbering =
+                    WordFormulaNumberingResolver.ResolveLocal(
+                        document,
+                        host);
             if (!numbering.Numbered
                 || numbering.ContainerKind is not
                     (WordFormulaNumberingContainerKind.CanonicalNativeOmml
@@ -429,25 +459,37 @@ internal static partial class WordFormulaNumberingKernel
             Range? numberRange = null;
             try
             {
-                numberRange =
-                    WordFormulaHostSemanticReader.CreateRange(
-                        document,
-                        numbering.NumberRange);
-                var numberText =
-                    host.Kind == WordFormulaHostKind.VisualTeX
-                    && numbering.ContainerKind ==
-                        WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
-                        ? WordVisualTeXParagraphNumbering
-                            .ReadVisibleNumberText(
-                                document,
-                                host)
-                        : (numberRange.Text ?? string.Empty)
-                            .Trim()
-                            .Trim('(', ')');
-                var latexPreview =
-                    ReadLatexPreview(
-                        document,
-                        host);
+                string numberText;
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.NumberText"))
+                {
+                    numberRange =
+                        WordFormulaHostSemanticReader.CreateRange(
+                            document,
+                            numbering.NumberRange);
+                    numberText =
+                        host.Kind == WordFormulaHostKind.VisualTeX
+                        && numbering.ContainerKind ==
+                            WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
+                            ? WordVisualTeXParagraphNumbering
+                                .ReadVisibleNumberText(
+                                    document,
+                                    host)
+                            : (numberRange.Text ?? string.Empty)
+                                .Trim()
+                                .Trim('(', ')');
+                }
+                var previewHost = host;
+                string ReadPreview()
+                {
+                    using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.LatexPreview." + previewHost.Kind))
+                        return ReadLatexPreview(
+                            document,
+                            previewHost);
+                }
+                EquationReferenceTarget Target(string formulaId, int nativeReferenceItem, EquationReferenceSource source) =>
+                    deferPreviews
+                        ? new EquationReferenceTarget(formulaId, nativeReferenceItem, numberText, ReadPreview, previewHost.Range.Start, source, previewHost.Range.End)
+                        : new EquationReferenceTarget(formulaId, nativeReferenceItem, numberText, ReadPreview(), previewHost.Range.Start, source, previewHost.Range.End);
 
                 if (host.Kind == WordFormulaHostKind.Omml)
                 {
@@ -455,23 +497,21 @@ internal static partial class WordFormulaNumberingKernel
                         WordFormulaNumberingContainerKind.CanonicalNativeOmml)
                         continue;
 
-                    var nativeReferenceItem =
-                        ResolveNativeEquationReferenceItem(
-                            document,
-                            host,
-                            nativeEquationItems);
+                    int nativeReferenceItem;
+                    using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.NativeItem"))
+                        nativeReferenceItem =
+                            ResolveNativeEquationReferenceItem(
+                                document,
+                                host,
+                                nativeEquationItems);
                     if (nativeReferenceItem <= 0)
                         continue;
 
                     targets.Add(
-                        new EquationReferenceTarget(
-                            formulaId: string.Empty,
+                        Target(
+                            string.Empty,
                             nativeReferenceItem,
-                            numberText,
-                            latexPreview,
-                            host.Range.Start,
-                            EquationReferenceSource.WordOmml,
-                            host.Range.End));
+                            EquationReferenceSource.WordOmml));
                     continue;
                 }
 
@@ -481,14 +521,10 @@ internal static partial class WordFormulaNumberingKernel
                     continue;
 
                 targets.Add(
-                    new EquationReferenceTarget(
+                    Target(
                         formulaId.ToString("D"),
-                        nativeReferenceItem: 0,
-                        numberText,
-                        latexPreview,
-                        host.Range.Start,
-                        EquationReferenceSource.VisualTeX,
-                        host.Range.End));
+                        0,
+                        EquationReferenceSource.VisualTeX));
             }
             finally
             {
@@ -506,53 +542,53 @@ internal static partial class WordFormulaNumberingKernel
     {
         var result =
             new Dictionary<int, int>();
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
-        Range? fieldResult = null;
+        Range? content = null;
         try
         {
-            fields = document.Fields;
+            content = document.Content;
             var nativeItem = 0;
-            for (var index = 1;
-                 index <= fields.Count;
-                 index++)
-            {
-                Release(fieldResult);
-                fieldResult = null;
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                code = field.Code.Duplicate;
-                if (!IsNativeEquationSequenceField(
-                        code.Text,
-                        sequenceName))
-                    continue;
+            // (bounded windows: an indexed pass over document.Fields is O(n^2) in a long document)
+            WordNumberingFieldCollection.ForEachFieldInScope(
+                content,
+                field =>
+                {
+                    Range? code = null;
+                    Range? fieldResult = null;
+                    try
+                    {
+                        code = field.Code.Duplicate;
+                        if (!IsNativeEquationSequenceField(
+                                code.Text,
+                                sequenceName))
+                            return true;
 
-                fieldResult =
-                    field.Result.Duplicate;
-                if (fieldResult.StoryType !=
-                    WdStoryType.wdMainTextStory)
-                    continue;
+                        fieldResult =
+                            field.Result.Duplicate;
+                        if (fieldResult.StoryType !=
+                            WdStoryType.wdMainTextStory)
+                            return true;
 
-                nativeItem++;
-                if (result.ContainsKey(
-                        fieldResult.Start))
-                    throw new InvalidDataException(
-                        "Two native Equation SEQ fields share the same Word result boundary.");
-                result.Add(
-                    fieldResult.Start,
-                    nativeItem);
-            }
+                        nativeItem++;
+                        if (result.ContainsKey(
+                                fieldResult.Start))
+                            throw new InvalidDataException(
+                                "Two native Equation SEQ fields share the same Word result boundary.");
+                        result.Add(
+                            fieldResult.Start,
+                            nativeItem);
+                        return true;
+                    }
+                    finally
+                    {
+                        Release(fieldResult);
+                        Release(code);
+                    }
+                });
             return result;
         }
         finally
         {
-            Release(fieldResult);
-            Release(code);
-            Release(field);
-            Release(fields);
+            Release(content);
         }
     }
 

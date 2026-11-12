@@ -242,6 +242,32 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         finally { Release(local); }
     }
 
+    [ThreadStatic] private static int _noRevisionsProven;
+
+    private sealed class NoRevisionsScope : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _noRevisionsProven--;
+        }
+    }
+
+    /// <summary>
+    /// For a read that changes nothing: when the document holds no tracked change at all, field
+    /// reads on this thread skip the two per-field Revisions queries (TryCaptureCurrentCode) until the
+    /// scope ends. Null when the document has revisions (nothing changes then). Listing reference
+    /// targets spent about 30 ms a native Word equation in those queries.
+    /// </summary>
+    internal static IDisposable? AssumeNoRevisionsWhileReading(Document document)
+    {
+        if (HasRevisions(document)) return null;
+        _noRevisionsProven++;
+        return new NoRevisionsScope();
+    }
+
     internal static bool HasRevisions(Document document)
     {
         Revisions? revisions = null;
@@ -445,6 +471,7 @@ internal sealed class WordNumberingFieldCollection : IDisposable
     internal static bool TryCaptureCurrentCode(Field field, out Range? currentCode, out string instruction,
         bool hasRevisions = true)
     {
+        if (_noRevisionsProven > 0) hasRevisions = false;
         currentCode = null;
         instruction = string.Empty;
         Range? code = null;
@@ -520,6 +547,59 @@ internal sealed class WordNumberingFieldCollection : IDisposable
             return false;
         }
         finally { Release(revisions); }
+    }
+
+    /// <summary>
+    /// Every field whose code begins in <paramref name="scope"/> (one story), in story order, each
+    /// given once to <paramref name="visit"/> (released afterwards; return false to stop). The same
+    /// bounded paragraph windows as <see cref="Capture"/>: Fields[index] on a whole document walks
+    /// the collection from its start at every index, so a full pass costs O(n^2) COM work (a
+    /// 400-formula document: about 12 s a pass, three passes to list reference targets).
+    /// No type or revision filter: the callers see exactly what scope.Fields held.
+    /// </summary>
+    internal static void ForEachFieldInScope(Range scope, Func<Field, bool> visit)
+    {
+        if (scope is null) throw new ArgumentNullException(nameof(scope));
+        if (visit is null) throw new ArgumentNullException(nameof(visit));
+        using var metric = WordOperationMetrics.Measure("Fields.ScopePass");
+        var start = scope.Start;
+        var end = scope.End;
+        var lastCodeStart = int.MinValue;
+        Range? window = null;
+        try
+        {
+            for (var cursor = start; cursor < end;)
+            {
+                Release(window);
+                window = CaptureFieldWindow(scope, cursor, end);
+                Fields? local = null;
+                try
+                {
+                    local = WordFormulaHost.GetLocalFields(window);
+                    var count = local.Count;
+                    for (var index = 1; index <= count; index++)
+                    {
+                        Field? field = null;
+                        Range? code = null;
+                        try
+                        {
+                            field = local[index];
+                            code = field.Code;
+                            var codeStart = code.Start;
+                            // (windows can overlap at a boundary: a field already given is skipped)
+                            if (codeStart <= lastCodeStart || codeStart < start || codeStart > end)
+                                continue;
+                            lastCodeStart = codeStart;
+                            if (!visit(field)) return;
+                        }
+                        finally { Release(code); Release(field); }
+                    }
+                }
+                finally { Release(local); }
+                cursor = window.End;
+            }
+        }
+        finally { Release(window); }
     }
 
     internal static bool HasVisualTeXNumbering(Document document)

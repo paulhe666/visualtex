@@ -6270,6 +6270,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Document? document = null;
                 Selection? selection = null;
                 Window? window = null;
+                using var metrics = StartReferenceMetrics();
                 try
                 {
                     document = application.ActiveDocument;
@@ -6284,7 +6285,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     var referenceInsertionStart = selection.Start;
                     var referenceInsertionEnd = selection.End;
                     var referenceInsertionColor = selection.Font.Color;
-                    var canonicalTargets = service.GetCanonicalEquationReferenceTargets(document);
+                    // (the picker shows at once and fills the LaTeX previews in while it shows)
+                    var canonicalTargets = service.GetCanonicalEquationReferenceTargets(document, deferPreviews: true);
                     var visualTexTargets = canonicalTargets
                         .Where(target => target.Source == EquationReferenceSource.VisualTeX)
                         .ToArray();
@@ -6292,6 +6294,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         .Where(target => target.Source == EquationReferenceSource.WordOmml)
                         .ToArray();
                     var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
+                    TraceReferenceMetrics(metrics, "listed");
                     if (visualTexTargets.Length == 0
                         && wordOmmlTargets.Length == 0
                         && mathTypeTargets.Count == 0)
@@ -6399,6 +6402,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
                     service.InsertEquationReference(document, selection, dialog.SelectedTarget,
                         dialog.SelectedStyle, referenceInsertionColor);
+                    TraceReferenceMetrics(metrics, "inserted");
                     return DescribeReferenceTarget(dialog.SelectedTarget);
                 }
                 finally

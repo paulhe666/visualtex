@@ -506,24 +506,16 @@ internal static class WordFormulaHostResolver
     {
         var result =
             new List<WordFormulaRangeAddress>();
-        Fields? fields = null;
-        Field? field = null;
-        Range? fieldResult = null;
-        try
-        {
-            fields = scope.Fields;
-            for (var index = 1;
-                 index <= fields.Count;
-                 index++)
+        // (bounded windows: an indexed pass over scope.Fields is O(n^2) in a long document)
+        WordNumberingFieldCollection.ForEachFieldInScope(
+            scope,
+            field =>
             {
-                Release(fieldResult);
-                fieldResult = null;
-                Release(field);
-                field = fields[index];
                 if (field.Type !=
                     WdFieldType.wdFieldRef)
-                    continue;
+                    return true;
 
+                Range? fieldResult = null;
                 try
                 {
                     fieldResult =
@@ -536,20 +528,18 @@ internal static class WordFormulaHostResolver
                     // A broken REF can reject Result access. It cannot be used
                     // as positive evidence that an OMath is only cached rendering.
                 }
-            }
+                finally
+                {
+                    Release(fieldResult);
+                }
+                return true;
+            });
 
-            return result
-                .OrderBy(item => item.StoryType)
-                .ThenBy(item => item.Start)
-                .ThenBy(item => item.End)
-                .ToArray();
-        }
-        finally
-        {
-            Release(fieldResult);
-            Release(field);
-            Release(fields);
-        }
+        return result
+            .OrderBy(item => item.StoryType)
+            .ThenBy(item => item.Start)
+            .ThenBy(item => item.End)
+            .ToArray();
     }
 
     private static bool IsInsideReferenceResult(

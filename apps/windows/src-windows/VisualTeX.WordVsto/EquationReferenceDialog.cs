@@ -14,7 +14,14 @@ internal sealed class EquationReferenceDialog : Form
     private readonly IReadOnlyList<EquationReferenceTarget> _mathTypeTargets;
     private readonly ComboBox _sourceBox = new();
     private readonly TextBox _searchBox = new();
-    private readonly ListBox _listBox = new();
+    private readonly TargetListBox _listBox = new();
+    // Fills the targets' LaTeX previews in a few at a time while the dialog shows (each is a Word read).
+    private readonly System.Windows.Forms.Timer _previewTimer = new() { Interval = 1 };
+
+    private sealed class TargetListBox : ListBox
+    {
+        public void RefreshTarget(int index) => RefreshItem(index);
+    }
     private readonly Label _styleLabel = new();
     private readonly ComboBox _styleBox = new();
 
@@ -162,6 +169,38 @@ internal sealed class EquationReferenceDialog : Form
         CancelButton = cancelButton;
         ConfigureStyleForSource();
         RefreshTargets();
+        _previewTimer.Tick += (_, _) => FillPreviews();
+        Shown += (_, _) => _previewTimer.Start();
+        FormClosed += (_, _) => _previewTimer.Stop();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _previewTimer.Dispose();
+        base.Dispose(disposing);
+    }
+
+    /// Reads previews for about 30 ms: the listed targets first (in list order), then the other
+    /// sources'. Each one read is drawn at once; a search that matched on LaTeX is run again when all
+    /// are in.
+    private void FillPreviews()
+    {
+        var started = Environment.TickCount;
+        for (var index = 0; index < _listBox.Items.Count; index++)
+        {
+            if (_listBox.Items[index] is not EquationReferenceTarget target || target.LatexPreviewReady) continue;
+            _ = target.LatexPreview;
+            _listBox.RefreshTarget(index);
+            if (Environment.TickCount - started > 30) return;
+        }
+        foreach (var target in _visualTexTargets.Concat(_wordOmmlTargets).Concat(_mathTypeTargets))
+        {
+            if (target.LatexPreviewReady) continue;
+            _ = target.LatexPreview;
+            if (Environment.TickCount - started > 30) return;
+        }
+        _previewTimer.Stop();
+        if (_searchBox.Text.Trim().Length > 0) RefreshTargets();
     }
 
     private IReadOnlyList<EquationReferenceTarget> CurrentTargets =>
@@ -206,19 +245,26 @@ internal sealed class EquationReferenceDialog : Form
         var targets = CurrentTargets;
         var filtered = string.IsNullOrWhiteSpace(query)
             ? targets
+            // (a preview not read yet matches once it is: FillPreviews runs the search again)
             : targets.Where(target =>
                     target.NumberText.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
-                    || target.LatexPreview.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    || target.LatexPreviewReady
+                        && target.LatexPreview.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToArray();
 
+        var selected = SelectedTarget;
         _listBox.BeginUpdate();
         try
         {
             _listBox.Items.Clear();
             foreach (var target in filtered) _listBox.Items.Add(target);
-            if (_listBox.Items.Count > 0) _listBox.SelectedIndex = 0;
+            var keep = selected is null ? -1 : _listBox.Items.IndexOf(selected);
+            if (keep >= 0) _listBox.SelectedIndex = keep;
+            else if (_listBox.Items.Count > 0) _listBox.SelectedIndex = 0;
         }
         finally { _listBox.EndUpdate(); }
+        if (filtered.Any(target => !target.LatexPreviewReady) || targets.Any(target => !target.LatexPreviewReady))
+            _previewTimer.Start();
     }
 
     private void ConfirmSelection()

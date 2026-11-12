@@ -37,37 +37,37 @@ internal static class MathTypeEquationReferences
     internal static IReadOnlyList<EquationReferenceTarget> GetTargets(Document document)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.MathTypeTargets");
 
         var targets = new List<EquationReferenceTarget>();
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
+        Range? content = null;
         try
         {
-            fields = document.Fields;
-            for (var index = 1; index <= fields.Count; index++)
+            content = document.Content;
+            var contentStart = content.Start;
+            // (bounded windows: an indexed pass over document.Fields is O(n^2) in a long document)
+            WordNumberingFieldCollection.ForEachFieldInScope(content, field =>
             {
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                code = field.Code;
-                if (!IsMathTypePlaceRefCode(code.Text)) continue;
-
-                var position = Math.Max(document.Content.Start, code.Start - 1);
+                Range? code = null;
                 Range? numberRange = null;
                 try
                 {
+                    code = field.Code;
+                    if (!IsMathTypePlaceRefCode(code.Text)) return true;
+
+                    var position = Math.Max(contentStart, code.Start - 1);
                     if (!TryGetVisibleNumberRange(document, field, out numberRange)
                         || numberRange is null)
-                        continue;
+                        return true;
                     if (!TryFindMathTypeEquationLatex(field, out var latexPreview))
-                        continue;
+                        return true;
 
                     var numberText = ReadVisibleNumberText(field);
                     if (string.IsNullOrWhiteSpace(numberText))
                         numberText = (numberRange.Text ?? string.Empty).Trim();
-                    if (string.IsNullOrWhiteSpace(numberText)) continue;
+                    if (string.IsNullOrWhiteSpace(numberText)) return true;
 
                     targets.Add(new EquationReferenceTarget(
                         $"mathtype:{position}",
@@ -82,14 +82,17 @@ internal static class MathTypeEquationReferences
                     // A malformed legacy MTPlaceRef must not hide other valid
                     // numbered MathType equations from the reference picker.
                 }
-                finally { Release(numberRange); }
-            }
+                finally
+                {
+                    Release(numberRange);
+                    Release(code);
+                }
+                return true;
+            });
         }
         finally
         {
-            Release(code);
-            Release(field);
-            Release(fields);
+            Release(content);
         }
 
         return targets

@@ -77,10 +77,12 @@ internal static class WordNativeOmmlNumbering
             // Numbering is a live OMath/Field topology, not an XML export result.
             // Word can omit an exact OMath at a serialization boundary; that
             // must never turn an ordinary edit into a number-attachment edit.
-            numberRange = TryResolveNumberContentRange(math, exact);
+            using (WordOperationMetrics.Measure("NativeOmml.NumberRange"))
+                numberRange = TryResolveNumberContentRange(math, exact);
             if (numberRange is null)
                 return false;
 
+            using var fieldsMetric = WordOperationMetrics.Measure("NativeOmml.Fields");
             fields = exact.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {
