@@ -211,7 +211,8 @@ export function delegateKeyboardEvents(
       }
       // A character key the input method has handled (keyCode 229, outside a composition): its text comes, or came,
       // as input; run as a key as well it typed twice (VisualTeX's input method commits "（" before WebKit sends this
-      // keydown for Shift+9, and the bracket key then added a fence pair: three brackets, 2026-11-11).
+      // keydown for Shift+9, and the bracket key then added a fence pair: three brackets, 2026-11-11). So a Chinese
+      // bracket stays the one full-width bracket the input method gave; an English "(" still opens a fence pair.
       if (!compositionInProgress && event.keyCode === 229 && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         keydownEvent = null;
         return;
