@@ -13,6 +13,7 @@
 import type { BoxNode, Tag } from "./nodes.ts";
 import { isNativeFont } from "./native-font.ts";
 import { isPathFont } from "./path-font.ts";
+import { ZERO_WIDTH_GLYPHS } from "./zero-width-glyphs.ts";
 import type { PlacedGlyph, ShipResult } from "./shipout.ts";
 import type { TeXFont } from "./tfm.ts";
 
@@ -293,6 +294,20 @@ export function formulaHtml(box: BoxNode, ship: ShipResult, opts: PaintOptions):
       svgPart(
         g.x,
         `<path transform="translate(${u(g.x)} ${u(g.y)}) scale(${fix(k)} ${fix(-k)})" d="${esc(g.font.outlines[g.char] ?? "")}"` +
+          (cls ? ` class="${cls}"` : "") + svgPaint(color) + `/>`,
+      );
+      continue;
+    }
+    // A character TeX sets with no width over the next one (\not's slash in \neq, \mapstochar's bar in \mapsto):
+    // its outline, at the same place. As text its whole ink lies outside its zero-wide box, and WebKit on some Macs
+    // drew nothing of it: \neq showed as "=" (2026-11-12).
+    const zeroWidth = !isNativeFont(g.font) ? ZERO_WIDTH_GLYPHS[g.font.name] : undefined;
+    const zeroOutline = zeroWidth?.glyphs[String(g.char)];
+    if (zeroWidth && zeroOutline) {
+      const k = u(g.font.size) / zeroWidth.unitsPerEm;
+      svgPart(
+        g.x,
+        `<path transform="translate(${u(g.x)} ${u(g.y)}) scale(${fix(k)} ${fix(-k)})" d="${esc(zeroOutline)}"` +
           (cls ? ` class="${cls}"` : "") + svgPaint(color) + `/>`,
       );
       continue;
