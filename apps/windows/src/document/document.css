@@ -2552,45 +2552,78 @@
 }
 
 /* ---- candidates in one row (Settings > Formula editor > Candidates > Horizontal): the "\" menu laid out as the AxMath
-   style, in the default colours (border, surface, current and hover marks from the rules above) ---- */
+   style — a dark band (number, command) above a light picture, the current one brighter — in the default box's blues ---- */
 :root[data-candidate-style="row"] .vtx-cmd-menu {
+  --cand-head: #1d4f71;
+  --cand-head-hover: #245e86;
+  --cand-head-current: #2b78ad;
+  --cand-head-text: #ffffff;
+  --cand-cell: #eef4f8;
+  --cand-cell-current: #d9eaf6;
+  --cand-line: #ffffff;
   width: auto;
   max-width: min(calc(100% - 8px), 760px);
+  background: var(--cand-line);
+}
+:root[data-theme="dark"][data-candidate-style="row"] .vtx-cmd-menu {
+  --cand-head: #132c40;
+  --cand-head-hover: #1a3a52;
+  --cand-head-current: #2c6f99;
+  --cand-cell: #363d47;
+  --cand-cell-current: #27495f;
+  --cand-line: #202328;
 }
 :root[data-candidate-style="row"] .vtx-cmd-list {
   display: flex;
   flex-direction: row;
-  column-gap: 3px;
+  column-gap: 1px;
   max-height: none;
+  padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  background: var(--cand-line);
 }
 :root[data-candidate-style="row"] .vtx-cmd-item,
-:root[data-candidate-style="row"] .vtx-cmd-item + .vtx-cmd-item {
+:root[data-candidate-style="row"] .vtx-cmd-item + .vtx-cmd-item,
+:root[data-candidate-style="row"] .vtx-cmd-item:hover,
+:root[data-candidate-style="row"] .vtx-cmd-item.is-current {
   flex: none;
   grid-template-columns: auto auto;
   grid-template-rows: auto 1fr;
   align-items: stretch;
-  column-gap: 5px;
-  row-gap: 3px;
+  gap: 0;
   min-height: 0;
   margin: 0;
-  padding: 5px 8px 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 :root[data-candidate-style="row"] .vtx-cmd-index,
 :root[data-candidate-style="row"] .vtx-cmd-copy {
   grid-row: 1;
-  align-self: center;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  background: var(--cand-head);
+  color: var(--cand-head-text);
 }
 :root[data-candidate-style="row"] .vtx-cmd-index {
   grid-column: 1;
+  padding-left: 8px;
+  padding-right: 5px;
   text-align: left;
 }
 :root[data-candidate-style="row"] .vtx-cmd-copy {
   grid-column: 2;
+  padding-right: 9px;
 }
-:root[data-candidate-style="row"] .vtx-cmd-label {
+:root[data-candidate-style="row"] .vtx-cmd-label,
+:root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-label {
   overflow: visible;
+  color: var(--cand-head-text);
 }
 :root[data-candidate-style="row"] .vtx-cmd-desc {
   display: none;
@@ -2600,8 +2633,22 @@
   grid-column: 1 / span 2;
   min-width: 0;
   max-width: none;
-  min-height: 34px;
-  padding: 2px 4px;
+  min-height: 36px;
+  padding: 4px 8px;
+  background: var(--cand-cell);
+  color: var(--text);
+}
+:root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-index,
+:root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-copy {
+  background: var(--cand-head-current);
+  color: var(--cand-head-text);
+}
+:root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-preview {
+  background: var(--cand-cell-current);
+}
+:root[data-candidate-style="row"] .vtx-cmd-item:not(.is-current):hover .vtx-cmd-index,
+:root[data-candidate-style="row"] .vtx-cmd-item:not(.is-current):hover .vtx-cmd-copy {
+  background: var(--cand-head-hover);
 }
 
 /* ---- candidate bar (Settings > Formula editor > Candidates): the "\" menu in one row ---- */

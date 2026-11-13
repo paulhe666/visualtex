@@ -10646,11 +10646,27 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 }
 
 /* Candidates in one row (Settings > Formula editor > Candidates > Horizontal): the AxMath style's layout — a column per
-   candidate, its number and command above its picture — in the default list's colours (its border, surface, current
-   and hover marks come from the rules above). */
+   candidate, its number and command on a dark band above its picture on a light one, the current one brighter — in
+   the default box's blues, frame and shadow. */
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
+  --cand-head: #1d4f71;
+  --cand-head-hover: #245e86;
+  --cand-head-current: #2b78ad;
+  --cand-head-text: #ffffff;
+  --cand-cell: #eef4f8;
+  --cand-cell-current: #d9eaf6;
+  --cand-line: #ffffff;
   min-width: 0;
   max-width: calc(100vw - 16px);
+  background: var(--cand-line) !important;
+}
+:root[data-theme="dark"][data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
+  --cand-head: #132c40;
+  --cand-head-hover: #1a3a52;
+  --cand-head-current: #2c6f99;
+  --cand-cell: #363d47;
+  --cand-cell-current: #27495f;
+  --cand-line: #202328;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).top-tip::after,
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).bottom-tip::after {
@@ -10659,37 +10675,54 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) ul {
   flex-flow: row nowrap !important;
   align-items: stretch !important;
-  column-gap: 3px;
+  column-gap: 1px;
   max-height: none;
+  padding: 0 !important;
   overflow-x: auto;
   overflow-y: hidden;
+  background: var(--cand-line) !important;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li,
-:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li {
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li,
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current,
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover,
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.is-active,
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.is-pressed {
   width: auto !important;
   min-height: 0;
   display: grid !important;
   grid-template-columns: auto auto;
   grid-template-rows: auto 1fr;
-  column-gap: 5px;
-  row-gap: 3px;
+  gap: 0;
   align-items: stretch !important;
   margin: 0 !important;
-  padding: 5px 8px 6px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index,
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__latex {
   grid-row: 1;
-  align-self: center;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  background: var(--cand-head);
+  color: var(--cand-head-text) !important;
   white-space: nowrap;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index {
   grid-column: 1;
   flex: none;
+  padding-left: 8px;
+  padding-right: 5px;
   text-align: left;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__latex {
   grid-column: 2;
+  padding-right: 9px;
   overflow: visible;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__label,
@@ -10702,15 +10735,26 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   grid-column: 1 / span 2;
   align-self: stretch !important;
   min-width: 0 !important;
-  min-height: 34px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 4px;
+  padding: 4px 8px;
+  background: var(--cand-cell);
+  color: var(--text) !important;
   font-size: 1.15rem !important;
 }
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__index,
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__latex {
-  color: var(--text) !important;
+  background: var(--cand-head-current);
+  color: var(--cand-head-text) !important;
+}
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__command {
+  background: var(--cand-cell-current);
+}
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:not(.ML__popover__current):hover .ML__popover__index,
+:root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:not(.ML__popover__current):hover .ML__popover__latex {
+  background: var(--cand-head-hover);
 }
 
 /* Settings: a label and its choice on one row */
