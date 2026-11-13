@@ -57,6 +57,7 @@ import { requestLink } from "./links.ts";
 import { bibliographyEntries, insertFootnote, noteText, notesPlugin } from "./notes.ts";
 import { bracketLabel, equationLabels, headingNumbers, ownEquationTag } from "./settings.ts";
 import { paginationPlugin, type PaginationOptions } from "./pagination.ts";
+import { compositionGuardPlugin } from "./composition.ts";
 import { imagesPlugin, type ImageLabels } from "./images.ts";
 import { boardFixes, DEFAULT_BOARD_LABELS, imageBoardsPlugin, type BoardLabels } from "./imageBoards.ts";
 import { DEFAULT_CAPTION_LABELS, figureFixes, figuresPlugin, type CaptionLabels } from "./figures.ts";
@@ -581,6 +582,8 @@ export function documentPlugins(schema: Schema, options: DocumentPluginOptions):
   const sourceBold: Command = (state, dispatch, view) =>
     openFormulaId(state) ? toggleDocumentBold(state, dispatch, view) : toggleSourceFormat("strong")(state, dispatch, view);
   return [
+    // first: a composition ProseMirror missed the end of is ended before anything asks whether one is going on
+    compositionGuardPlugin(),
     idsPlugin(),
     markdownSourcePlugin(),
     // before the drag and selection gestures: a press on a task's box ticks it

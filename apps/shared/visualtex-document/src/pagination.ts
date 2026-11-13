@@ -11,6 +11,7 @@ import { requestFootnoteEdit } from "./notes.ts";
 import { isPageBreak, pageLabels, type PageLabel } from "./pageCommands.ts";
 import { CJK_TEXT } from "./titleBlock.ts";
 import { shownContent } from "./sourceMarkdown.ts";
+import { composingInText } from "./composition.ts";
 
 export interface PageGeometry {
   /** screen pixels per millimetre (the zoom included) */
@@ -67,6 +68,8 @@ interface Unit {
 }
 
 const SEPARATOR_HEIGHT_EM = 0.9;
+/** the longest the pages wait for an input method's composition to end before they are measured anyway */
+const COMPOSITION_WAIT_MS = 2000;
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -299,6 +302,8 @@ class PaginationView {
   /** Breaks taken one soon after the other with no change in the document or the page (and when the last was). */
   private turns = 0;
   private turnedAt = 0;
+  /** when the measurement started waiting for a composition to end */
+  private waitingSince = 0;
   private readonly observer: ResizeObserver | null;
 
   constructor(
@@ -373,11 +378,13 @@ class PaginationView {
     const view = this.view;
     const sheet = this.sheet();
     if (!sheet || !view.dom.isConnected) return;
-    // an input method is composing: a spacer changed next to it would end the composition (Chrome); later
-    if (view.composing) {
+    // an input method is composing in the text: a spacer changed next to it would end the composition (Chrome); later —
+    // but not for long (a composition ProseMirror never saw end must not leave the pages unmeasured)
+    if (composingInText(view) && (this.waitingSince ||= Date.now()) > Date.now() - COMPOSITION_WAIT_MS) {
       this.schedule();
       return;
     }
+    this.waitingSince = 0;
     const settings = documentSettings(view.state.doc);
     const { pxPerMm, gap } = this.options.geometry();
     if (!(pxPerMm > 0)) return;
