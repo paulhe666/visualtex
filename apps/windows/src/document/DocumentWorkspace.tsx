@@ -303,10 +303,16 @@ function restorePlace(id: string, view: EditorView | null | undefined) {
   } catch {
     return;
   }
-  // the page where it was: the caret at the same height on the screen (once the pages are measured, and again after
-  // the formulas near it have their editors)
+  // the page where it was: the caret at the same height on the screen — again while the page settles (the pages
+  // measured, the formulas near it given their editors), until the user scrolls, clicks or types
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    for (const name of ["wheel", "pointerdown", "keydown", "touchstart"]) window.removeEventListener(name, stop, true);
+  };
+  for (const name of ["wheel", "pointerdown", "keydown", "touchstart"]) window.addEventListener(name, stop, true);
   const settle = () => {
-    if (view.isDestroyed || !view.dom.isConnected) return;
+    if (stopped || view.isDestroyed || !view.dom.isConnected) return;
     const scroller = scrollerOf(view);
     if (!scroller) return;
     if (place.caretTop === null) {
@@ -321,8 +327,8 @@ function restorePlace(id: string, view: EditorView | null | undefined) {
     }
   };
   requestAnimationFrame(settle);
-  window.setTimeout(settle, 150);
-  window.setTimeout(settle, 450);
+  for (const delay of [150, 400, 800, 1300, 2000]) window.setTimeout(settle, delay);
+  window.setTimeout(stop, 2100);
 }
 
 export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
