@@ -584,7 +584,7 @@ type VisualTexCompletionPreferences = {
 };
 
 /** A candidate as the suggestion list shows and inserts it */
-type VisualTexCandidateInfo = { id: string; command: string; preview: string; label: string };
+type VisualTexCandidateInfo = { id: string; command: string; preview: string; label: string; name?: string; nameEn?: string };
 
 export const visualTexCompletionCatalog = visualTexCompletionCatalogData;
 export const VISUALTEX_COMMAND_FREQUENCY = visualTexCommandFrequencyData;

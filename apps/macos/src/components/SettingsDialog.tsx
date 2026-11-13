@@ -1190,6 +1190,14 @@ export function SettingsDialog({
                     </button>
                     <button
                       type="button"
+                      className={candidateStyle === "card" ? "is-active" : ""}
+                      aria-pressed={candidateStyle === "card"}
+                      onClick={() => setCandidateStyle("card")}
+                    >
+                      {isEn ? "Cards" : "卡片"}
+                    </button>
+                    <button
+                      type="button"
                       className={candidateStyle === "row" ? "is-active" : ""}
                       aria-pressed={candidateStyle === "row"}
                       onClick={() => setCandidateStyle("row")}
