@@ -268,10 +268,9 @@ interface Props {
 /**
  * Where the caret and the page were in each document opened in this run of the app: leaving document mode (for
  * formula mode) takes the editor down, and coming back the document opened with the caret at its start and the page
- * at its top. Kept per document: the caret, and the block at the top of the screen with how far it was from it (the
- * caret may be off the screen; what was shown is what comes back).
+ * at its top. Kept per document: the caret and how far the page was scrolled (the same document lays out the same).
  */
-const documentPlaces = new Map<string, { selection: unknown; anchor: { pos: number; offset: number } | null; scrollTop: number }>();
+const documentPlaces = new Map<string, { selection: unknown; scrollTop: number }>();
 
 function scrollerOf(view: EditorView): HTMLElement | null {
   for (let node = view.dom.parentElement; node; node = node.parentElement) {
@@ -281,28 +280,10 @@ function scrollerOf(view: EditorView): HTMLElement | null {
   return null;
 }
 
-/** The top-level block at the top of the scroller's view, and how far its top is below the view's top. */
-function topBlock(view: EditorView, scroller: HTMLElement): { pos: number; offset: number } | null {
-  const frame = scroller.getBoundingClientRect();
-  let found: { pos: number; offset: number } | null = null;
-  view.state.doc.forEach((_node, pos) => {
-    if (found) return;
-    const dom = view.nodeDOM(pos);
-    if (!(dom instanceof HTMLElement)) return;
-    const r = dom.getBoundingClientRect();
-    if (r.bottom > frame.top + 1) found = { pos, offset: r.top - frame.top };
-  });
-  return found;
-}
-
 function rememberPlace(id: string | null, view: EditorView | null | undefined) {
   if (!id || !view || view.isDestroyed || !view.dom.isConnected) return;
   const scroller = scrollerOf(view);
-  documentPlaces.set(id, {
-    selection: view.state.selection.toJSON(),
-    anchor: scroller ? topBlock(view, scroller) : null,
-    scrollTop: scroller?.scrollTop ?? 0,
-  });
+  documentPlaces.set(id, { selection: view.state.selection.toJSON(), scrollTop: scroller?.scrollTop ?? 0 });
 }
 
 function restorePlace(id: string, view: EditorView | null | undefined) {
@@ -316,7 +297,7 @@ function restorePlace(id: string, view: EditorView | null | undefined) {
   } catch {
     return;
   }
-  // the page where it was: the same block at the same height — again while the page settles (the pages measured, the
+  // the page where it was — again while the page settles (the pages measured, the
   // formulas near it given their editors), until the user scrolls, clicks or types
   let stopped = false;
   const stop = () => {
@@ -328,14 +309,7 @@ function restorePlace(id: string, view: EditorView | null | undefined) {
     if (stopped || view.isDestroyed || !view.dom.isConnected) return;
     const scroller = scrollerOf(view);
     if (!scroller) return;
-    const anchor = place.anchor;
-    const dom = anchor && anchor.pos < view.state.doc.content.size ? view.nodeDOM(anchor.pos) : null;
-    if (!anchor || !(dom instanceof HTMLElement)) {
-      scroller.scrollTop = place.scrollTop;
-      return;
-    }
-    const now = dom.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    if (Math.abs(now - anchor.offset) > 0.5) scroller.scrollTop += now - anchor.offset;
+    if (Math.abs(scroller.scrollTop - place.scrollTop) > 0.5) scroller.scrollTop = place.scrollTop;
   };
   requestAnimationFrame(settle);
   for (const delay of [150, 400, 800, 1300, 2000]) window.setTimeout(settle, delay);

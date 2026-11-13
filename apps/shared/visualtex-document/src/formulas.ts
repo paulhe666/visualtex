@@ -331,6 +331,9 @@ type SelectEnd = { kind: "text"; pos: number } | { kind: "formula"; id: string; 
  * the formula's top level (an end inside a structure takes the whole structure), shown selected in the formula.
  * Only moves with the left button held count (AxMath); past the top or bottom of the document it scrolls.
  */
+/** How far the pointer may move between press and release and still be a click (CSS px). */
+const CLICK_SLOP_PX = 3;
+
 export class SelectGesture {
   private last: { x: number; y: number } | null = null;
   private timer = 0;
@@ -435,9 +438,17 @@ export class SelectGesture {
     return formulaViewOf(this.view, this.anchor.id)?.stopAt(this.press.x, this.press.y) ?? null;
   }
 
+  /** the pointer has moved from the press by more than a click's wobble: a drag */
+  private dragged = false;
+
   /** The selection for the pointer's place; true when the gesture (not the formula's editor) made it. */
   private update(): boolean {
     if (!this.last) return false;
+    // a click (a press and a release without moving): no selection — the press already put the caret (a formula opened
+    // at the point); asked again at the release, a formula whose editor had just been drawn in its picture's place
+    // could miss the point by a pixel, and the click selected from the formula back to the line's start
+    if (!this.dragged && Math.hypot(this.last.x - this.press.x, this.last.y - this.press.y) < CLICK_SLOP_PX) return false;
+    this.dragged = true;
     if (this.editorFollows && this.anchor.kind === "formula" && formulaViewOf(this.view, this.anchor.id)?.dom.querySelector(".visualtex-selection-drag")) {
       // the press was on the formula's selection: the editor drags it (out of the formula too); no selection here
       this.finish();

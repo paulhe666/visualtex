@@ -112,6 +112,13 @@
 .vtx-document .md-hidden {
   display: none;
 }
+/* a heading's "#" marks while the caret is on it: hung to the left of its text, taking no room (the text does not move) */
+.vtx-document .md-heading-mark {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 0;
+  white-space: pre;
+}
 .vtx-document .md-strong {
   font-weight: 700;
 }

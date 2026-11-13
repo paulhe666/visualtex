@@ -391,7 +391,12 @@ class PaginationView {
     const paper = PAPER_SIZES[settings.paper];
     const stride = paper.height * pxPerMm + gap;
     const contentHeight = (paper.height - settings.marginTop - settings.marginBottom) * pxPerMm;
-    const origin = view.dom.getBoundingClientRect().top;
+    // the text area's top: the sheet's content box (the editor's own top is higher when its first block is raised, as a
+    // section at the document's top is for LaTeX's \topskip: every later page's first line then stood that much above
+    // its top margin, under the margin's grip)
+    const sheetBox = sheet.getBoundingClientRect();
+    const sheetStyle = getComputedStyle(sheet);
+    const origin = sheetBox.top + (parseFloat(sheetStyle.borderTopWidth) || 0) + (parseFloat(sheetStyle.paddingTop) || 0);
 
     // the spacers now on the screen: what is below them is that much lower than it would be without them
     const spacers = Array.from(view.dom.querySelectorAll<HTMLElement>(".vtx-page-break, [data-page-break]")).map((el) => {

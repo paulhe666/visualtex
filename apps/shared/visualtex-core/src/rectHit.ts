@@ -171,6 +171,19 @@ function hitRect(view: RectHitView, atom: CoreAtom): PixelRect | null {
 }
 
 /**
+ * Where a click on an atom turns from the caret before it to the caret after it: the middle of the atom's own box (its
+ * glyph), not of its rectangle — the rectangle starts at the caret before it, which stands right after the item before
+ * (an operator's or a script's ink), so it also holds the space between them, and its middle fell inside the glyph's
+ * left half: a click on the left part of a letter put the caret after it.
+ */
+function middleOf(view: RectHitView, atom: CoreAtom, rect: PixelRect): number {
+  const own = boxOf(view, atom);
+  const page = own && view.toPage(own);
+  if (!page || !(page.right > page.left)) return Math.trunc((rect.left + rect.right) / 2);
+  return Math.trunc(((page.left + page.right) / 2) * view.scale);
+}
+
+/**
  * The atom the caret goes after (a slot's "first": the slot's start) along a
  * slot's atoms, or null when no atom's rectangle holds the point.
  */
@@ -185,7 +198,7 @@ function hitSlot(view: RectHitView, atoms: CoreAtom[], x: number, y: number): Co
     if (atom.type === "first") return atom;
     const inSlots = hitSlots(view, atom, x, y);
     if (inSlots) return inSlots;
-    const middle = Math.trunc((rect.left + rect.right) / 2);
+    const middle = middleOf(view, atom, rect);
     return x >= middle ? atom : (atoms[i - 1] ?? atom);
   }
   return null;
@@ -256,7 +269,7 @@ export function rectHitTest(view: RectHitView, clientX: number, clientY: number)
     if (!a && !b) continue;
     if (a && b) {
       const rect = hitRect(view, atom);
-      if (rect) return x >= Math.trunc((rect.left + rect.right) / 2) ? after : before;
+      if (rect) return x >= middleOf(view, atom, rect) ? after : before;
     }
     return a ? after : before;
   }

@@ -648,6 +648,10 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
     if (!classed) return;
     if (has(token, "formatting-header")) {
       if (!lineTouched && text.trim() !== text.slice(x, e).trim()) out.push(hide(start + x, start + e));
+      // shown (the caret on the line): hung to the left of the text, taking no room — the heading's text stays where it
+      // was (shown in the flow, the marks pushed it 16-45 px to the right the moment a click put the caret on it: the
+      // caret then stood a character or two from where the mouse was)
+      else if (lineTouched && text.trim() !== text.slice(x, e).trim()) out.push(Decoration.inline(start + x, start + e, { class: "md-heading-mark" }));
       return;
     }
     if (has(token, "formatting-quote")) {
