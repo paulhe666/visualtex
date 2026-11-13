@@ -380,6 +380,8 @@ internal static class WordMathTypeHostAdapter
                 source.DisplayMode,
                 "block",
                 StringComparison.OrdinalIgnoreCase);
+            if (display && SharesParagraphWithUserText(selectedRange))
+                display = false;
             if (display)
             {
                 Paragraphs? paragraphs = null;
@@ -637,6 +639,56 @@ internal static class WordMathTypeHostAdapter
         }
     }
 
+    // A display equation that shares a field-free paragraph with the user's own
+    // text (an exercise label "1." and a closing ";") owns only its object.
+    private static bool SharesParagraphWithUserText(Range equation)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? owner = null;
+        Fields? fields = null;
+        try
+        {
+            paragraphs = equation.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            owner = paragraph.Range;
+            fields = WordFormulaHost.GetLocalFields(owner);
+            return !HasMathTypeNumberingField(fields) && !IsSafeMathTypeDisplayParagraph(owner);
+        }
+        finally
+        {
+            Release(fields);
+            Release(owner);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    // Any field besides the equation's own EMBED field: MathType numbering
+    // (MTPlaceRef, SEQ MTEqn/MTChap/MTSec) or something unknown.
+    internal static bool HasMathTypeNumberingField(Fields fields)
+    {
+        for (var index = 1; index <= fields.Count; index++)
+        {
+            Field? field = null;
+            Range? code = null;
+            try
+            {
+                field = fields[index];
+                code = field.Code;
+                if ((code.Text ?? string.Empty).IndexOf("EMBED ", StringComparison.OrdinalIgnoreCase) < 0)
+                    return true;
+            }
+            finally
+            {
+                Release(code);
+                Release(field);
+            }
+        }
+        return false;
+    }
+
     private static bool IsSafeMathTypeDisplayParagraph(
         Range paragraphRange)
     {
@@ -657,34 +709,12 @@ internal static class WordMathTypeHostAdapter
                 Release(field); field = null;
             }
 
-            var text = paragraphRange.Text ?? string.Empty;
-            var fieldDepth = 0;
-            foreach (var character in text)
-            {
-                if (character == '\u0013')
-                {
-                    fieldDepth++;
-                    continue;
-                }
-                if (character == '\u0015')
-                {
-                    if (fieldDepth > 0) fieldDepth--;
-                    continue;
-                }
-                if (fieldDepth > 0 || character == '\u0014')
-                    continue;
-
-                if (char.IsWhiteSpace(character)
-                    || char.IsDigit(character))
-                    continue;
-                if (character < ' ') continue;
-                if (character is '\u0001' or '\uFFFC')
-                    continue;
-                if ("()[]{}.-–—_:;,+/\\".IndexOf(character) >= 0)
-                    continue;
-                return false;
-            }
-            return fieldDepth == 0;
+            // Range.Text shows a field's result (MathType's number "(1.2)") as
+            // plain text, so the number cannot be told apart from the user's own
+            // "1." or ";" by its characters. Read only the text outside the
+            // fields, by their story positions: anything there but whitespace and
+            // the object character is user content and must not be removed.
+            return IsScaffoldText(OutsideFieldText(paragraphRange, fields));
         }
         finally
         {
@@ -692,6 +722,60 @@ internal static class WordMathTypeHostAdapter
             Release(field);
             Release(fields);
         }
+    }
+
+    internal static bool IsScaffoldText(string text) =>
+        text.All(character => char.IsWhiteSpace(character) || character < ' '
+            || character is '\u0001' or '\uFFFC');
+
+    // The paragraph's text with every field (code and result, nested fields
+    // included) cut out by its story positions.
+    internal static string OutsideFieldText(Range paragraphRange, Fields fields)
+    {
+        var spans = new List<(int Start, int End)>();
+        for (var index = 1; index <= fields.Count; index++)
+        {
+            Field? field = null;
+            Range? code = null;
+            Range? result = null;
+            try
+            {
+                field = fields[index];
+                code = field.Code;
+                result = field.Result;
+                // The field-begin character precedes the code; the field-end
+                // character follows the result (or the code when it has none).
+                spans.Add((code.Start - 1, Math.Max(code.End, result.End) + 1));
+            }
+            finally
+            {
+                Release(result);
+                Release(code);
+                Release(field);
+            }
+        }
+        var builder = new System.Text.StringBuilder();
+        var position = paragraphRange.Start;
+        foreach (var span in spans.OrderBy(item => item.Start))
+        {
+            if (span.Start > position) builder.Append(ReadText(paragraphRange, position, Math.Min(span.Start, paragraphRange.End)));
+            position = Math.Max(position, span.End);
+        }
+        if (position < paragraphRange.End) builder.Append(ReadText(paragraphRange, position, paragraphRange.End));
+        return builder.ToString();
+    }
+
+    private static string ReadText(Range anchor, int start, int end)
+    {
+        if (end <= start) return string.Empty;
+        Range? range = null;
+        try
+        {
+            range = anchor.Duplicate;
+            range.SetRange(start, end);
+            return range.Text ?? string.Empty;
+        }
+        finally { Release(range); }
     }
 
     private static bool IsKnownMathTypeDisplayFieldCode(

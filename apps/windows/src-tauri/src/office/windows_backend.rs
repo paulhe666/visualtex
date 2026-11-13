@@ -444,6 +444,12 @@ pub fn word_formula_shortcut_conflicts() -> String {
     registry_string_value(OFFICE_MODE_KEY, WORD_FORMULA_SHORTCUT_CONFLICTS_VALUE).unwrap_or_default()
 }
 
+/// Whether the add-ins run in WPS Office (the installer's components page writes it; the
+/// add-ins read it when a WPS window opens).
+pub fn set_wps_host_enabled(enabled: bool) -> Result<(), String> {
+    registry_set_dword(OFFICE_MODE_KEY, "Wps", u32::from(enabled))
+}
+
 pub fn background_start_enabled() -> bool {
     registry_value_exists(WINDOWS_RUN_KEY, WINDOWS_RUN_VALUE)
 }

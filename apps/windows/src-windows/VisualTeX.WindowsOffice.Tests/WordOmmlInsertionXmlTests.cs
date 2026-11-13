@@ -92,4 +92,29 @@ public sealed class WordOmmlInsertionXmlTests
                 equation,
                 other));
     }
+
+    [Fact]
+    public void OtherContentOfTheMarkerRunIsKeptOnItsSide()
+    {
+        const string marker = "VTXmarker";
+        var paragraph = XElement.Parse(
+            $"<w:p xmlns:w=\"{W}\" xmlns:m=\"{M}\">"
+            + "<w:r><w:rPr><w:i/></w:rPr><w:t>Text</w:t><w:tab/><w:t>a VTXmarker b</w:t><w:tab/><w:br/><w:t>end</w:t></w:r>"
+            + "</w:p>");
+        var markerNode = Assert.Single(
+            paragraph.Descendants(W + "t"),
+            node => node.Value.Contains(marker, StringComparison.Ordinal));
+        var equation = XElement.Parse(
+            $"<m:oMath xmlns:m=\"{M}\"><m:r><m:t>x</m:t></m:r></m:oMath>");
+
+        WordOmmlInsertionXml.ReplaceOrdinaryMarkerRun(markerNode, marker, equation, paragraph);
+
+        var children = paragraph.Elements().ToArray();
+        Assert.Equal(3, children.Length);
+        Assert.Equal(new[] { "rPr", "t", "tab", "t" }, children[0].Elements().Select(e => e.Name.LocalName));
+        Assert.Equal("Texta ", string.Concat(children[0].Elements(W + "t").Select(e => e.Value)));
+        Assert.Equal(M + "oMath", children[1].Name);
+        Assert.Equal(new[] { "rPr", "t", "tab", "br", "t" }, children[2].Elements().Select(e => e.Name.LocalName));
+        Assert.Equal(" bend", string.Concat(children[2].Elements(W + "t").Select(e => e.Value)));
+    }
 }

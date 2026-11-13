@@ -27,6 +27,9 @@ internal sealed class MathTypeLocalEditScope : IDisposable
     private string _paragraphText = string.Empty;
     private string _rightWhitespace = string.Empty;
     private string _originalSignature = string.Empty;
+    // Only with a trace path: the normalized evidence behind the signature, so a
+    // failed rollback check can show what differs.
+    private string? _originalEvidence;
     private bool _insertionCapture;
     private int _insertionOffset;
     private string _insertionSerializedSignature = string.Empty;
@@ -121,6 +124,8 @@ internal sealed class MathTypeLocalEditScope : IDisposable
                     $"mathtype-local-scope-perf stage=geometry ms={evidenceWatch.ElapsedMilliseconds} objects={geometry.Count}");
             evidenceWatch?.Restart();
             result._originalSignature = RecoverySignature(evidence, result.ParagraphXml, geometry);
+            if (RecoveryTracePath is not null)
+                result._originalEvidence = RecoveryEvidenceBody(evidence, result.ParagraphXml, geometry);
             if (evidenceWatch is not null)
                 WordDoubleClickHook.TraceMessage(
                     $"mathtype-local-scope-perf stage=signature ms={evidenceWatch.ElapsedMilliseconds}");
@@ -567,9 +572,22 @@ internal sealed class MathTypeLocalEditScope : IDisposable
                 return;
             }
 
-            if (!string.Equals(RecoverySignature(range, range.WordOpenXML),
+            var restoredXml = range.WordOpenXML;
+            if (!string.Equals(RecoverySignature(range, restoredXml),
                     _originalSignature, StringComparison.Ordinal))
+            {
+                if (RecoveryTracePath is { } trace && _originalEvidence is not null)
+                {
+                    try
+                    {
+                        var stamp = Guid.NewGuid().ToString("N");
+                        File.WriteAllText(trace + ".mathtype-rollback-" + stamp + "-before.xml", _originalEvidence);
+                        File.WriteAllText(trace + ".mathtype-rollback-" + stamp + "-after.xml", RecoveryEvidenceBody(range, restoredXml));
+                    }
+                    catch (Exception error) { WordDoubleClickHook.TraceMessage($"mathtype-rollback-evidence-failed error={error.Message}"); }
+                }
                 throw new InvalidOperationException("Word undo did not restore the original local MathType content, layout and bookmarks.");
+            }
         }
         finally
         {
@@ -578,20 +596,29 @@ internal sealed class MathTypeLocalEditScope : IDisposable
         }
     }
 
+    private static string? RecoveryTracePath =>
+        Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH") is { Length: > 0 } path ? path : null;
+
     private static string RecoverySignature(Range range, string xml,
         IReadOnlyList<WordInlineObjectGeometry.Item>? capturedGeometry = null)
     {
+        using var hash = System.Security.Cryptography.SHA256.Create();
+        return Convert.ToBase64String(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(
+            RecoveryEvidenceBody(range, xml, capturedGeometry))));
+    }
+
+    private static string RecoveryEvidenceBody(Range range, string xml,
+        IReadOnlyList<WordInlineObjectGeometry.Item>? capturedGeometry = null)
+    {
+        // Values are compared before/after in the same COM view; a zero or
+        // unset size of a neighbouring picture is still exact evidence.
         var geometry = capturedGeometry ?? WordInlineObjectGeometry.Capture(range);
-        foreach (var item in geometry)
-            if (!(item.Width > 0) || !(item.Height > 0)
-                || float.IsInfinity(item.Width) || float.IsInfinity(item.Height))
-                throw new InvalidDataException("Word returned invalid local recovery geometry.");
         var live = new XElement("geometry", geometry.Select(item => new XElement("object",
             new XAttribute("start", item.Start), new XAttribute("end", item.End),
             new XAttribute("type", item.Type), new XAttribute("progId", item.ProgId),
             new XAttribute("width", item.Width.ToString("R", CultureInfo.InvariantCulture)),
             new XAttribute("height", item.Height.ToString("R", CultureInfo.InvariantCulture)))));
-        return WordLocalEditSnapshot.Signature(MathTypeLocalFragment.RecoveryEvidence(
+        return WordLocalEditSnapshot.NormalizedBody(MathTypeLocalFragment.RecoveryEvidence(
             xml, live.ToString(SaveOptions.DisableFormatting), geometry.Count(item => item.Type is 1 or 2)));
     }
 
@@ -663,7 +690,7 @@ internal sealed class MathTypeLocalEditScope : IDisposable
                     or WdInlineShapeType.wdInlineShapeLinkedOLEObject)
                 {
                     ole = shape.OLEFormat;
-                    progId = ole.ProgID;
+                    progId = WordOleObjectAccessor.ReadProgId(ole);
                 }
                 rows.Add(string.Join(",",
                     shapeRange.Start - position,

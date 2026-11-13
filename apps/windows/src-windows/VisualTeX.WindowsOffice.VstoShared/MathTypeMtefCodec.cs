@@ -74,6 +74,7 @@ internal static partial class MathTypeMtefCodec
     private const byte TemplateDoubleBar = 5;
     private const byte TemplateFloor = 6;
     private const byte TemplateCeiling = 7;
+    private const byte TemplateDoubleBracket = 8;
     private const byte TemplateInterval = 9;
     private const byte TemplateRoot = 10;
     private const byte TemplateFraction = 11;
@@ -212,6 +213,37 @@ internal static partial class MathTypeMtefCodec
         return true;
     }
 
+    // MathType's Function style says a name is applied to what follows; MTEF
+    // has no record for the application itself. MathML states it with U+2061,
+    // which is what gives \ln and Word's m:func (and their spacing) instead of
+    // upright letters set against the argument.
+    private static void MarkFunctionApplications(XElement math)
+    {
+        foreach (var name in math.Descendants()
+                     .Where(e => (string?)e.Attribute("data-mtef-run") == "function"
+                         && e.Name.LocalName == "mi")
+                     .ToArray())
+        {
+            var owner = name;
+            if (name.Parent is { } script
+                && script.Name.LocalName is "msub" or "msup" or "msubsup"
+                && script.Elements().First() == name)
+                owner = script;
+            if (owner.Parent is null
+                || owner.Parent.Name.LocalName is not ("math" or "mrow" or "mtd" or "msqrt" or "mstyle"
+                    or "menclose" or "mpadded" or "mphantom" or "mfenced"))
+                continue;
+            if (owner.Parent.Name.LocalName == "mfenced" && owner.Parent.Elements().Count() != 1
+                && owner.Parent.Attribute("separators") is null)
+                continue;
+            var argument = owner.ElementsAfterSelf().FirstOrDefault();
+            if (argument is null || argument.Name.LocalName is "mspace" or "mtext") continue;
+            if (argument.Name.LocalName == "mo" && argument.Value.Trim() is not ("(" or "[" or "{")) continue;
+            if ((string?)argument.Attribute("data-mtef-run") == "function") continue;
+            owner.AddAfterSelf(new XElement("mo", ((char)0x2061).ToString()));
+        }
+    }
+
     private static string ReadMtefMathMl(byte[] mtef)
     {
         var structureOffset = FindRootStructureOffset(mtef);
@@ -225,6 +257,7 @@ internal static partial class MathTypeMtefCodec
         var math = new XElement(
             mathMlNamespace + "math",
             content);
+        MarkFunctionApplications(math);
 
         // MtefStructureReader deliberately builds compact XElement trees using
         // local names (mi/mo/mrow/...). Once those nodes are attached below a
@@ -8994,6 +9027,7 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                 case TemplateDoubleBar:
                 case TemplateFloor:
                 case TemplateCeiling:
+                case TemplateDoubleBracket:
                 case TemplateInterval:
                 {
                     var main = ReadNextLineSlot();
@@ -9177,10 +9211,14 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                 ? DecorateWithLimitsAbove(operatorNode, lower, upper)
                 : DecorateWithLimits(operatorNode, lower, upper);
             var row = new XElement("mrow", decorated);
-            foreach (var node in main.Nodes().ToArray())
+            // The template's operand slot is one group, as it is in MathType.
+            // As loose tokens after the operator it lost that ownership, and
+            // the OMML projection took none of it as the n-ary body.
+            var operand = main.Nodes().ToArray();
+            if (main.HasElements)
             {
-                node.Remove();
-                row.Add(node);
+                foreach (var node in operand) node.Remove();
+                row.Add(new XElement("mrow", operand));
             }
             return new ParsedTemplate { Node = row };
         }
@@ -9267,7 +9305,11 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                 "∫" => contour ? "∮" : "∫",
                 "∫∫" => contour ? "∯" : "∬",
                 "∫∫∫" => contour ? "∰" : "∭",
-                _ when signs.Length == 1 && IsIntegralSignScalar(signs[0]) => signs,
+                // These two selectors do not name their operator: a sum, a
+                // product or any other sign the user chose is in this line.
+                _ when signs.Length == 1
+                       && signs[0] is not (>= (char)0xE000 and <= (char)0xF8FF) and not (char)0xFFFD
+                       && !char.IsWhiteSpace(signs[0]) => signs,
                 _ => "∫",
             };
             var signNode = new XElement("mo", sign);
@@ -9304,8 +9346,12 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
             // Keep kind 4 readable for documents produced by older VisualTeX builds.
             0x04 => "∮",
             0x05 => "∮",
-            0x08 => "∲",
-            0x0C => "∳",
+            // Count in the low two bits, loop kind above them (MTEF tvINT_*):
+            // 4 a loop, 8 a clockwise loop, 12 a counter-clockwise one.
+            0x06 => "∯",
+            0x07 => "∰",
+            0x08 or 0x09 => "∲",
+            0x0C or 0x0D => "∳",
             _ => "∫",
         };
 
@@ -9631,6 +9677,7 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                 TemplateDoubleBar => ("‖", "‖"),
                 TemplateFloor => ("⌊", "⌋"),
                 TemplateCeiling => ("⌈", "⌉"),
+                TemplateDoubleBracket => ("⟦", "⟧"),
                 _ => (string.Empty, string.Empty),
             };
             return (presentLeft ? pair.Item1 : string.Empty, presentRight ? pair.Item2 : string.Empty);

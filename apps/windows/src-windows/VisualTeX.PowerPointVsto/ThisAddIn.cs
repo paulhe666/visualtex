@@ -373,6 +373,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         object addInInstance,
         ref Array custom)
     {
+        OfficeHostSelection.RecordLoad(OfficeHostEnvironment.IsWps ? "WpsPresentation" : "PowerPoint");
         // Microsoft Office or WPS left out at installation: stay inert in this host.
         if (!OfficeHostSelection.IsCurrentHostEnabled()) return;
         _application = (Application)application;
@@ -1057,11 +1058,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 // came to the front while the formula was drawn
                 if (OfficeAutomationRun.Current is not null)
                     service.AutomationActivateByIdentity(session.SourceDocumentId);
-                var current = service.ReadSelection();
-                if (!string.Equals(
-                        current.DocumentId,
-                        session.SourceDocumentId,
-                        StringComparison.OrdinalIgnoreCase))
+                if (!service.IsActiveSourceDocument(session.SourceDocumentId))
                     throw new InvalidOperationException(T(
                         "活动演示文稿已切换，未写入公式。",
                         "The active PowerPoint presentation changed, so the formula was not written."));

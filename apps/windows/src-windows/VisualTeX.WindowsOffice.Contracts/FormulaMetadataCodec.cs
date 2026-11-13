@@ -32,6 +32,7 @@ public static class FormulaMetadataCodec
         try
         {
             var metadata = JsonSerializer.Deserialize<FormulaMetadata>(json, JsonOptions.Default);
+            metadata?.NormalizeForRead();
             metadata?.Validate();
             return metadata;
         }
@@ -59,6 +60,7 @@ public static class FormulaMetadataCodec
             var bytes = json.ToArray();
             var metadata = JsonSerializer.Deserialize<FormulaMetadata>(bytes, JsonOptions.Default);
             if (metadata is not null) AdoptReferenceRenderSize(metadata, bytes);
+            metadata?.NormalizeForRead();
             metadata?.Validate();
             return metadata;
         }

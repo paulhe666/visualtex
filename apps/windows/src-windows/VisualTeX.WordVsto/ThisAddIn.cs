@@ -514,6 +514,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         object addInInstance,
         ref Array custom)
     {
+        WordInlineObjectGeometry.Diagnostics = WordDoubleClickHook.TraceMessage;
         // Real VSTO-flow acceptances host the current source assembly manually
         // while Word may also auto-load the installed COM add-in into the same
         // application. Keep that installed instance inert only in acceptance so
@@ -529,6 +530,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "installed-addin-suppressed-for-manual-acceptance");
             return;
         }
+        OfficeHostSelection.RecordLoad(OfficeHostEnvironment.IsWps ? "WpsWriter" : "Word");
         // Microsoft Office or WPS left out at installation: stay inert in this host.
         if (!OfficeHostSelection.IsCurrentHostEnabled())
         {
@@ -3394,11 +3396,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 var applied = await dispatcher.InvokeAsync(() =>
                 {
-                    var activeDocumentId = service.ReadActiveDocumentId();
-                if (!string.Equals(
-                        activeDocumentId,
-                        session.SourceDocumentId,
-                        StringComparison.OrdinalIgnoreCase))
+                if (!service.IsActiveSourceDocument(session.SourceDocumentId))
                     throw new InvalidOperationException("活动 Word 文档已切换，未写入公式。");
                 if (string.Equals(
                         session.ObjectMode,
@@ -4304,13 +4302,35 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     var missingPreviewKeys = mathTypeStandalone.Keys
                         .Where(key => !nativePreviews.ContainsKey(key))
                         .ToArray();
+                    string? LatexOf(string key) => plan.Targets.FirstOrDefault(target =>
+                        formulaKeys.TryGetValue(target.Id, out var targetKey) && targetKey == key)?.Latex;
+                    if (missingPreviewKeys.Length > 0
+                        && !MathTypeNativePreviewRenderer.LastFailureWasFonts
+                        && nativePreviews.Count > 0)
+                    {
+                        // The renderer works; only these formulas could not be
+                        // drawn. They keep their LaTeX source and are reported,
+                        // exactly like a formula that failed to render.
+                        var previewFailures = MathTypeNativePreviewRenderer.LastFailures;
+                        foreach (var key in missingPreviewKeys)
+                        {
+                            renderFailures[key] = previewFailures.TryGetValue(key, out var previewReason)
+                                ? OfficePluginLanguage.SafeErrorMessage(previewReason)
+                                : MathTypeNativePreviewRenderer.NoResultMessage;
+                            mathTypeStandalone.Remove(key);
+                            WriteRedrawAcceptanceLog(
+                                $"mathtype-native-preview-skipped reason={renderFailures[key]} latex={LatexOf(key)}");
+                        }
+                        missingPreviewKeys = Array.Empty<string>();
+                        renderedAllNativePreviews = true;
+                    }
                     if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
                     {
+                        // The renderer itself is unusable (no MathType fonts,
+                        // nothing rendered): no formula can be written.
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        string? LatexOf(string key) => plan.Targets.FirstOrDefault(target =>
-                            formulaKeys.TryGetValue(target.Id, out var targetKey) && targetKey == key)?.Latex;
                         foreach (var failure in MathTypeNativePreviewRenderer.LastFailures)
                             WriteRedrawAcceptanceLog(
                                 $"mathtype-native-preview-failed reason={failure.Value} latex={LatexOf(failure.Key)}");
@@ -4883,10 +4903,35 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .ConfigureAwait(false);
             WriteRedrawAcceptanceLog(
                 $"formula-to-latex-complete scope={(wholeDocument ? "document" : "selection")} "
-                + $"mode={objectMode} formulas={result.FormulaCount}");
-            SetStatus(T(
-                $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码。",
-                $"Equation to LaTeX finished: {result.FormulaCount} {modeLabel} equation(s) were restored to source."));
+                + $"mode={objectMode} formulas={result.FormulaCount} skipped={result.Skipped.Count}");
+            if (result.Skipped.Count == 0)
+            {
+                SetStatus(T(
+                    $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码。",
+                    $"Equation to LaTeX finished: {result.FormulaCount} {modeLabel} equation(s) were restored to source."));
+            }
+            else
+            {
+                var summary = T(
+                    $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码，{result.Skipped.Count} 个无法读取，保持原样。",
+                    $"Equation to LaTeX finished: {result.FormulaCount} {modeLabel} equation(s) were restored to source; {result.Skipped.Count} could not be read and were left as they are.");
+                SetStatus(summary);
+                if (!string.Equals(Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"), "1", StringComparison.Ordinal))
+                {
+                    var details = string.Join("\r\n", result.Skipped.OrderBy(item => item.Ordinal).Take(15).Select(item =>
+                        T($"第 {item.Ordinal} 个公式：{item.Reason}", $"Equation {item.Ordinal}: {item.Reason}")));
+                    progress.Dispose();
+                    await dispatcher.InvokeAsync(() =>
+                    {
+                        AutomationMessageBox.Show(
+                            summary + "\r\n\r\n" + details,
+                            T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
+                            System.Windows.Forms.MessageBoxButtons.OK,
+                            System.Windows.Forms.MessageBoxIcon.Warning);
+                        return true;
+                    }).ConfigureAwait(false);
+                }
+            }
         }
         catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {

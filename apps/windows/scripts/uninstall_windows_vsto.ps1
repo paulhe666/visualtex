@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$wpsCompanionScript = Join-Path $PSScriptRoot "windows_wps_companion.ps1"
+if (Test-Path -LiteralPath $wpsCompanionScript -PathType Leaf) { . $wpsCompanionScript }
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -217,6 +219,11 @@ try {
     }
 
     & (Join-Path $PSScriptRoot 'manage_windows_native_render.ps1') -Action Uninstall
+
+    # The add-ins registered for a WPS Office of the other bitness.
+    if ((Get-Command Remove-WpsCompanionRegistration -ErrorAction SilentlyContinue) -and (Remove-WpsCompanionRegistration)) {
+        Write-UninstallLog "Removed the add-ins registered for WPS Office of the other bitness."
+    }
 
     foreach ($key in @(
         "HKLM:\Software\Microsoft\Office\Word\Addins\VisualTeX.WordVsto",

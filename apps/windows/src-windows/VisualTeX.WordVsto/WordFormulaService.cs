@@ -48,6 +48,7 @@ internal sealed partial class WordFormulaService
 
     private sealed class FormulaToLatexTarget
     {
+        internal int Ordinal { get; set; }
         internal FormulaMetadata Metadata { get; set; } = new();
         internal string ObjectMode { get; set; } = string.Empty;
         internal string LatexSource { get; set; } = string.Empty;
@@ -352,8 +353,14 @@ internal sealed partial class WordFormulaService
                           && selectionRange.End > candidateRange.Start;
                     if (!touches) continue;
                     if (selected is not null)
+                    {
+                        // A caret between two adjacent equations touches both:
+                        // it belongs to the one before it (shapes come in
+                        // document order). A real selection of two stays ambiguous.
+                        if (selectionRange.Start == selectionRange.End) continue;
                         throw new InvalidDataException(
                             "The selected range contains more than one MathType formula.");
+                    }
                     selected = candidate;
                     candidate = null;
                     selectedRange = candidateRange;
@@ -780,6 +787,19 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    public bool IsActiveSourceDocument(string? expectedIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(expectedIdentity)) return true;
+        Document? document = null;
+        try
+        {
+            document = _application.ActiveDocument;
+            return document is not null && IsSameSourceDocument(document, expectedIdentity!);
+        }
+        catch (COMException) { return false; }
+        finally { Release(document); }
+    }
+
     public string ReadActiveDocumentId()
     {
         Document? document = null;
@@ -914,10 +934,11 @@ internal sealed partial class WordFormulaService
         try
         {
             format = shape.OLEFormat;
-            var progId = format.ProgID;
+            var progId = WordOleObjectAccessor.ReadProgId(format);
             if (string.Equals(progId, FormulaOleContract.ProgId, StringComparison.OrdinalIgnoreCase))
                 return SelectedOleKind.VisualTeX;
-            return MathTypeOleInterop.TryResolveCapabilities(progId, out _)
+            return string.Equals(progId, MathTypeOleInterop.CanonicalProgId, StringComparison.OrdinalIgnoreCase)
+                || MathTypeOleInterop.TryResolveCapabilities(progId, out _)
                 ? SelectedOleKind.MathType
                 : SelectedOleKind.Unresolved;
         }
@@ -1213,7 +1234,7 @@ internal sealed partial class WordFormulaService
                         return null;
                     var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
                     return FormulaFontSize.Normalize(
-                        MathTypeMtefCodec.ReadEquationNativeFullFontSize(equationNative));
+                        MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(equationNative));
                 }
                 var metadata = WordFormulaMetadataReader.TryRead(shape);
                 if (metadata is not null)
@@ -1456,7 +1477,7 @@ internal sealed partial class WordFormulaService
 
             format = sourceShape.OLEFormat;
             if (!string.Equals(
-                    format.ProgID,
+                    WordOleObjectAccessor.ReadProgId(format),
                     FormulaOleContract.ProgId,
                     StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException(
@@ -3049,6 +3070,8 @@ internal sealed partial class WordFormulaService
         WordViewState? viewState = null;
         List<FormulaToLatexTarget>? targets = null;
         WordDocumentEditSnapshot? rollbackSnapshot = null;
+        var coordinateShifts = new WordCoordinateShifts();
+        var converted = false;
         try
         {
             document = _application.ActiveDocument
@@ -3058,12 +3081,40 @@ internal sealed partial class WordFormulaService
             scope = wholeDocument
                 ? document.Content.Duplicate
                 : selection.Range.Duplicate;
+            var skipped = new List<(int Ordinal, string Reason)>();
             targets = CaptureFormulaToLatexTargets(
                 document,
                 scope,
                 wholeDocument,
                 objectMode,
-                refreshOmmlMetadata: true);
+                refreshOmmlMetadata: true,
+                failures: skipped);
+            // Preflight every source before opening a destructive Word undo record.
+            // Corrupt/empty metadata must never turn a visible formula into an empty
+            // replacement merely because the object itself can still be located.
+            // Such a formula is left as it is; the others are still converted.
+            foreach (var target in targets.ToArray())
+            {
+                try
+                {
+                    ApplyFormulaToLatexEmptySourceInjection(target);
+                    target.LatexSource = BuildFormulaLatexSource(target.Metadata);
+                }
+                catch (Exception error) when (error is InvalidDataException or InvalidOperationException
+                    or ArgumentException or NotSupportedException or COMException)
+                {
+                    WordDoubleClickHook.TraceMessage($"formula-to-latex-source-skipped start={target.Start} error={error}");
+                    skipped.Add((target.Ordinal, OfficeErrorText.Describe(error)));
+                    targets.Remove(target);
+                    ReleaseFormulaToLatexTargets(new List<FormulaToLatexTarget> { target });
+                }
+            }
+            if (targets.Count == 0 && skipped.Count > 0)
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "没有可以转为 LaTeX 的公式：",
+                    "No equation could be converted to LaTeX: ")
+                    + string.Join("; ", skipped.Select(item => OfficePluginLanguage.Text(
+                        $"第 {item.Ordinal} 个公式：{item.Reason}", $"equation {item.Ordinal}: {item.Reason}"))));
             if (targets.Count == 0)
             {
                 var modeLabel = string.Equals(
@@ -3085,15 +3136,6 @@ internal sealed partial class WordFormulaService
                         : OfficePluginLanguage.Text(
                             $"所选内容中没有找到可转换的 {modeLabel} 公式。",
                             $"No convertible {modeLabel} equations were found in the current selection."));
-            }
-
-            // Preflight every source before opening a destructive Word undo record.
-            // Corrupt/empty metadata must never turn a visible formula into an empty
-            // replacement merely because the object itself can still be located.
-            foreach (var target in targets)
-            {
-                ApplyFormulaToLatexEmptySourceInjection(target);
-                target.LatexSource = BuildFormulaLatexSource(target.Metadata);
             }
 
             // A single native Undo is not a sufficient recovery contract here.
@@ -3124,17 +3166,22 @@ internal sealed partial class WordFormulaService
                 var convertedIds = new List<string>(targets.Count);
                 foreach (var target in targets.OrderByDescending(item => item.Start))
                 {
+                    var storyEndBefore = ReadMainStoryEnd(document);
                     ConvertFormulaTargetToLatex(
                         document,
                         target,
                         ref documentMutationStarted);
+                    // Back to front: earlier captured positions are still valid.
+                    coordinateShifts.Add(target.End, ReadMainStoryEnd(document) - storyEndBefore);
                     convertedIds.Add(target.Metadata.FormulaId);
                 }
                 WordEquationNumbering.TryReconcile(document);
+                converted = true;
                 return new WordFormulaToLatexResult
                 {
                     FormulaCount = convertedIds.Count,
                     FormulaIds = convertedIds,
+                    Skipped = skipped,
                 };
             }
             catch (Exception conversionError)
@@ -3164,6 +3211,13 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            // A failed conversion is rolled back to the original text, so only a
+            // completed one moves the captured selection.
+            if (converted && viewState is not null)
+            {
+                viewState.SelectionStart = coordinateShifts.Map(viewState.SelectionStart);
+                viewState.SelectionEnd = coordinateShifts.Map(viewState.SelectionEnd);
+            }
             RestoreViewState(document, viewState, preferredSelection: null);
             Release(undoRecord);
             ReleaseFormulaToLatexTargets(targets);
@@ -3179,7 +3233,8 @@ internal sealed partial class WordFormulaService
         bool wholeDocument,
         string objectMode,
         bool refreshOmmlMetadata,
-        ISet<string>? ignoredDeletedNumberedOmmlIds = null)
+        ISet<string>? ignoredDeletedNumberedOmmlIds = null,
+        List<(int Ordinal, string Reason)>? failures = null)
     {
         _ = refreshOmmlMetadata;
         _ = ignoredDeletedNumberedOmmlIds;
@@ -3197,6 +3252,7 @@ internal sealed partial class WordFormulaService
 
         var targets =
             new List<FormulaToLatexTarget>();
+        var candidates = 0;
         InlineShapes? shapes = null;
         try
         {
@@ -3225,14 +3281,28 @@ internal sealed partial class WordFormulaService
                             wholeDocument))
                         continue;
 
-                    var sourceMathMl =
-                        MathTypeOleStorage.ReadMathMl(
-                            shape);
-                    var metadata =
-                        MathTypeOleInterop.ReadMetadata(
-                            document.Application,
-                            shape,
-                            sourceMathMl);
+                    var ordinal = ++candidates;
+                    string? sourceMathMl;
+                    FormulaMetadata metadata;
+                    try
+                    {
+                        sourceMathMl =
+                            MathTypeOleStorage.ReadMathMl(
+                                shape);
+                        metadata =
+                            MathTypeOleInterop.ReadMetadata(
+                                document.Application,
+                                shape,
+                                sourceMathMl);
+                    }
+                    catch (Exception error) when (failures is not null
+                        && error is not OperationCanceledException and not OutOfMemoryException)
+                    {
+                        // One unreadable object stays as it is; the others convert.
+                        WordDoubleClickHook.TraceMessage($"formula-to-latex-capture-skipped start={formulaRange.Start} error={error}");
+                        failures.Add((ordinal, OfficeErrorText.Describe(error)));
+                        continue;
+                    }
 
                     int? sourceInlineWordPosition =
                         null;
@@ -3264,6 +3334,7 @@ internal sealed partial class WordFormulaService
                             Metadata = metadata,
                             ObjectMode =
                                 FormulaOleContract.MathTypeOleMode,
+                            Ordinal = ordinal,
                             Start = formulaRange.Start,
                             End = formulaRange.End,
                             FormulaRange = formulaRange,
@@ -3638,7 +3709,20 @@ internal sealed partial class WordFormulaService
         try
         {
             frames = inserted.Frames;
-            if (frames.Count > 0)
+            // Only a hidden (clipped) frame makes the source invisible; a formula
+            // the user placed in a visible text frame keeps its source there.
+            var hiddenFrame = false;
+            for (var index = 1; index <= frames.Count && !hiddenFrame; index++)
+            {
+                Frame? frame = null;
+                try
+                {
+                    frame = frames[index];
+                    hiddenFrame = frame.Width <= 1f && frame.Height <= 1f;
+                }
+                finally { Release(frame); }
+            }
+            if (hiddenFrame)
                 throw new InvalidDataException(OfficePluginLanguage.Text(
                     $"公式 {formulaId} 的 LaTeX 源码被 Word Frame 包围。为避免源码不可见，本次转换已撤销。",
                     $"The LaTeX source of equation {formulaId} ended up inside a Word frame. The conversion was undone so the source does not become invisible."));
@@ -8007,7 +8091,7 @@ internal sealed partial class WordFormulaService
                 }
                 format = candidate.OLEFormat;
                 if (!string.Equals(
-                        format.ProgID,
+                        WordOleObjectAccessor.ReadProgId(format),
                         FormulaOleContract.ProgId,
                         StringComparison.OrdinalIgnoreCase))
                 {
@@ -13814,21 +13898,50 @@ internal sealed partial class WordFormulaService
         string? expectedIdentity)
     {
         if (string.IsNullOrWhiteSpace(expectedIdentity)) return;
-        var actual = DocumentIdentity(document);
-        if (!string.Equals(actual, expectedIdentity, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                "The active Word document changed while the VisualTeX editor was open.");
+        if (IsSameSourceDocument(document, expectedIdentity!)) return;
+        throw new InvalidOperationException(
+            "The active Word document changed while the VisualTeX editor was open.");
+    }
+
+    // Saving, Save As or a OneDrive move changes the path while the editor is
+    // open; the same live document object is still the source.
+    internal static bool IsSameSourceDocument(Document document, string expectedIdentity)
+    {
+        if (string.Equals(DocumentIdentity(document), expectedIdentity, StringComparison.OrdinalIgnoreCase))
+            return true;
+        IntPtr expectedObject;
+        lock (IdentityObjects)
+            if (!IdentityObjects.TryGetValue(expectedIdentity, out expectedObject)) expectedObject = IntPtr.Zero;
+        return expectedObject != IntPtr.Zero && expectedObject == ObjectIdentity(document);
+    }
+
+    // Identity string -> the COM identity (IUnknown) of the document that had it.
+    private static readonly Dictionary<string, IntPtr> IdentityObjects = new(StringComparer.OrdinalIgnoreCase);
+
+    private static IntPtr ObjectIdentity(Document document)
+    {
+        try
+        {
+            var unknown = Marshal.GetIUnknownForObject(document);
+            Marshal.Release(unknown);
+            return unknown;
+        }
+        catch { return IntPtr.Zero; }
     }
 
     private static string DocumentIdentity(Document document)
     {
+        string identity;
         try
         {
             var fullName = ReadWordStateWithRetry(() => document.FullName);
-            if (!string.IsNullOrWhiteSpace(fullName)) return fullName;
+            identity = !string.IsNullOrWhiteSpace(fullName) ? fullName : ReadWordStateWithRetry(() => document.Name);
         }
-        catch { }
-        return ReadWordStateWithRetry(() => document.Name);
+        catch { identity = ReadWordStateWithRetry(() => document.Name); }
+        var objectIdentity = ObjectIdentity(document);
+        if (objectIdentity != IntPtr.Zero)
+            lock (IdentityObjects) IdentityObjects[identity] = objectIdentity;
+        return identity;
     }
 
     private static void EnsureWritable(Document document)

@@ -864,7 +864,7 @@ internal static class MathTypeEquationNumbering
                     "MathType MTPlaceRef is not separated from its Equation.DSMT4 object by exactly one native tab.");
 
             oleFormat = shape.OLEFormat;
-            var progId = oleFormat.ProgID ?? string.Empty;
+            var progId = WordOleObjectAccessor.ReadProgId(oleFormat);
             if (!progId.StartsWith("Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException(
                     $"MathType MTPlaceRef owner is not Equation.DSMT4: '{progId}'.");
@@ -1229,7 +1229,7 @@ internal static class MathTypeEquationNumbering
             shapeRange = shape.Range;
             oleFormat = shape.OLEFormat;
             if (!string.Equals(
-                    oleFormat.ProgID,
+                    WordOleObjectAccessor.ReadProgId(oleFormat),
                     plan.OleProgId,
                     StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException(

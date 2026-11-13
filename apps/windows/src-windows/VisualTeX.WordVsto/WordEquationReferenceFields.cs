@@ -641,7 +641,7 @@ internal static partial class WordEquationReferenceFields
                         break;
                     }
                 }
-                catch (COMException error)
+                catch (Exception error) when (error is COMException or InvalidDataException)
                 {
                     failures.Add(new InvalidOperationException(
                         $"Word could not refresh navigable formula reference {outerIndex}.", error));
@@ -659,8 +659,10 @@ internal static partial class WordEquationReferenceFields
             }
         }
         finally { outerFields?.Dispose(); }
-        if (failures.Count > 0)
-            throw new AggregateException("Some formula references could not be refreshed.", failures);
+        // One user cross-reference whose jump target cannot be proven keeps its
+        // old target; it must not undo the numbering of every formula.
+        foreach (var failure in failures)
+            WordDoubleClickHook.TraceMessage($"navigable-reference-refresh-skipped error={failure}");
         return updated;
     }
 

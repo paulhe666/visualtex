@@ -10,6 +10,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.Canonical.cs" Link="MathTypeCore\MathTypeMtefCodec.Canonical.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleInterop.cs" Link="MathTypeCore\MathTypeOleInterop.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleStorage.cs" Link="MathTypeCore\MathTypeOleStorage.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeCompObj.cs" Link="MathTypeCore\MathTypeCompObj.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleClipboardProxy.cs" Link="MathTypeCore\MathTypeOleClipboardProxy.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeNativePreviewRenderer.cs" Link="MathTypeCore\MathTypeNativePreviewRenderer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NativePreviewRetry.cs" Link="MathTypeCore\NativePreviewRetry.cs" />

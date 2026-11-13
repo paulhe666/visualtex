@@ -20,6 +20,9 @@ internal sealed class WordFormulaFormatConversionPlan
     // sessions were being prepared, without resolving every OMML identity again.
     internal string? SourceDocumentXmlHash { get; set; }
     internal List<WordFormulaFormatConversionTarget> Targets { get; set; } = new();
+    // Source formulas that could not be read. They keep their format and are
+    // reported; the readable ones are still converted.
+    internal List<(int SourceStart, string Reason)> CaptureFailures { get; set; } = new();
     internal List<DeletedNumberedOmmlResidue> DeletedNumberedOmmlResidues { get; set; } = new();
 }
 
@@ -67,6 +70,12 @@ internal sealed class WordFormulaFormatConversionTarget
     internal string? FollowingInlineTableText { get; set; }
     internal WordCharacterFormatting? FollowingInlineTableFormatting { get; set; }
     internal string DisplayMode { get; set; } = "inline";
+    // The mode the converted formula is written in when it differs from the
+    // source's: a display-looking formula alone in a list item ("A. ...") is
+    // written inline, because Word cannot hold display math in a list paragraph
+    // and a display writer would replace the paragraph's style and numbering.
+    internal string? WriteDisplayModeOverride { get; set; }
+    internal string WriteDisplayMode => WriteDisplayModeOverride ?? DisplayMode;
     internal bool Numbered { get; set; }
     internal int PrecedingPlainBlankParagraphCount { get; set; }
     internal string MathTypeNumberPosition { get; set; } = "right";

@@ -911,6 +911,65 @@ pub fn open_windows_office_logs() -> Result<(), String> {
     }
 }
 
+/// WPS Office installations and whether the add-ins are registered for, allowed in and
+/// loaded by them (Settings > Office).
+#[tauri::command]
+pub async fn get_wps_integration_status() -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let status = tauri::async_runtime::spawn_blocking(crate::office::wps_status::status)
+            .await
+            .map_err(|error| format!("Unable to read the WPS Office status: {error}"))?;
+        return serde_json::to_value(status).map_err(|error| error.to_string());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("WPS Office status is available only on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn set_wps_host_enabled(enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return crate::office::windows_backend::set_wps_host_enabled(enabled);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = enabled;
+        Err("WPS Office settings are available only on Windows".to_string())
+    }
+}
+
+/// The service that draws MathType equations for Word, PowerPoint and WPS.
+#[tauri::command]
+pub fn get_native_render_status() -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return serde_json::to_value(crate::office::wps_status::native_render_status())
+            .map_err(|error| error.to_string());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("The renderer service exists only on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn start_native_render_service() -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let status = tauri::async_runtime::spawn_blocking(crate::office::wps_status::start_native_render)
+            .await
+            .map_err(|error| format!("Unable to start the renderer service: {error}"))??;
+        return serde_json::to_value(status).map_err(|error| error.to_string());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("The renderer service exists only on Windows".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn open_word() -> Result<(), String> {
     #[cfg(target_os = "windows")]

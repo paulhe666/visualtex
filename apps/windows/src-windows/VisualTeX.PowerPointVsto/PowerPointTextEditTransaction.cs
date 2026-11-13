@@ -59,7 +59,17 @@ internal static class PowerPointTextEditTransaction
             return;
         }
         application.StartNewUndoEntry(); // Failure here must precede any mutation.
-        var originalHistory = ReadHistory(application);
+        // The history only serves recovery after a failed write. Where it is not
+        // readable (no legacy Undo control, inconsistent state) the write still
+        // runs, and a failure is checked against the saved text as in WPS.
+        string[] originalHistory;
+        try { originalHistory = ReadHistory(application); }
+        catch (Exception error) when (error is InvalidOperationException or InvalidDataException or COMException)
+        {
+            PowerPointOperationLog.Write($"native-undo-history-unreadable error={error.Message}");
+            ExecuteInWps(application, presentation, slideId, host, expectedSource, mutate);
+            return;
+        }
         try
         {
             RequireActive(application, presentation);
@@ -124,8 +134,8 @@ internal static class PowerPointTextEditTransaction
             catch { unchanged = false; }
             if (unchanged) throw;
             throw new AggregateException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
-                "WPS 公式写入失败，文本框已被部分修改；请用撤销恢复并检查。",
-                "Writing the WPS formula failed after the text box was partly changed. Use Undo to restore it and check the slide."),
+                "公式写入失败，文本框已被部分修改；请用撤销恢复并检查。",
+                "Writing the formula failed after the text box was partly changed. Use Undo to restore it and check the slide."),
                 primary);
         }
     }

@@ -283,6 +283,10 @@ internal sealed partial class WordFormulaService
                 int Start,
                 int End)>(
                 plan.Targets.Count);
+        ParagraphCoordinateMap? paragraphMap = null;
+        // Neither coordinate space could be proven for the whole scope: use the
+        // direct offsets only as a first guess and prove every formula locally.
+        var unprovenCoordinates = false;
         try
         {
             if (!directCoordinatesProven)
@@ -291,9 +295,20 @@ internal sealed partial class WordFormulaService
                     scope.Characters;
                 if (characters.Count
                     != logicalCharacterCount)
-                    throw new InvalidDataException(OfficePluginLanguage.Text(
-                        "Word 的字符位置与读取的 LaTeX 文本不一致（该范围可能包含域、隐藏文字或其他特殊内容）。",
-                        "Word's character positions do not match the LaTeX text that was read (the range may contain fields, hidden text or other special content)."));
+                {
+                    // One object whose text and Characters disagree (WPS counts
+                    // some native equations one short) must not make every formula
+                    // in the scope unlocatable: map paragraph by paragraph instead.
+                    Release(characters);
+                    characters = null;
+                    paragraphMap = ParagraphCoordinateMap.Build(
+                        document,
+                        scope,
+                        plan.SourceText);
+                    unprovenCoordinates = paragraphMap is null;
+                    if (unprovenCoordinates)
+                        WordDoubleClickHook.TraceMessage("latex-redraw-coordinates-unproven fallback=local-proof");
+                }
             }
 
             foreach (var target in plan.Targets
@@ -328,7 +343,7 @@ internal sealed partial class WordFormulaService
                 Range? last = null;
                 try
                 {
-                    if (directCoordinatesProven)
+                    if (directCoordinatesProven || unprovenCoordinates)
                     {
                         sourceStart =
                             scope.Start
@@ -336,6 +351,18 @@ internal sealed partial class WordFormulaService
                         sourceEnd =
                             scope.Start
                             + logicalEnd;
+                    }
+                    else if (paragraphMap is not null)
+                    {
+                        sourceStart = paragraphMap.Map(target.RelativeStart, isEnd: false);
+                        sourceEnd = paragraphMap.Map(relativeEnd, isEnd: true);
+                        if (sourceStart < 0 || sourceEnd < 0)
+                        {
+                            plan.Skipped.Add((target.Id, target.Latex, OfficePluginLanguage.Text(
+                                $"无法在 Word 中定位 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”的字符范围。",
+                                $"Word could not locate the characters of the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”.")));
+                            continue;
+                        }
                     }
                     else
                     {
@@ -360,9 +387,12 @@ internal sealed partial class WordFormulaService
                 if (sourceStart < scope.Start
                     || sourceEnd <= sourceStart
                     || sourceEnd > scope.End)
-                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                {
+                    plan.Skipped.Add((target.Id, target.Latex, OfficePluginLanguage.Text(
                         $"Word 为 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”返回了无效的范围。",
-                        $"Word returned an invalid range for the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”."));
+                        $"Word returned an invalid range for the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”.")));
+                    continue;
+                }
 
                 mapped.Add(
                     (
@@ -372,14 +402,49 @@ internal sealed partial class WordFormulaService
                 ReportOperationProgress(LocateFormulasStage, mapped.Count, plan.Targets.Count);
             }
 
+            RemoveSkippedLatexRedrawTargets(plan);
             if (!TryValidateLatexRedrawCoordinateChain(
                     document,
                     scope,
                     plan,
                     mapped))
-                throw new InvalidDataException(OfficePluginLanguage.Text(
-                    "Word 的字符位置无法与读取的 LaTeX 文本逐字对应（该范围可能包含域、隐藏文字或其他特殊内容）。",
-                    "Word's character positions do not reproduce the LaTeX text that was read exactly (the range may contain fields, hidden text or other special content)."));
+            {
+                // The whole-scope chain is the strongest proof, but one region
+                // whose text Word reads differently must not stop every formula.
+                // Prove each formula where it is: its own text and the text on
+                // both sides of it; skip and report only the ones that fail.
+                // Hidden story positions (fields, objects) shift every later
+                // formula by the same few positions, so a formula that is not at
+                // its mapped position is looked for nearby, keeping the shift.
+                const int maximumShift = 64;
+                var shift = 0;
+                var locallyProven = new List<(WordLatexRedrawTarget Target, int Start, int End)>(mapped.Count);
+                foreach (var item in mapped)
+                {
+                    int? found = null;
+                    foreach (var candidate in new[] { shift, 0 }.Concat(Enumerable.Range(1, maximumShift)
+                                 .SelectMany(distance => new[] { shift + distance, shift - distance })).Distinct())
+                    {
+                        if (TryVerifyLatexRedrawTargetLocally(document, scope, plan, item.Target,
+                                item.Start + candidate, item.End + candidate))
+                        {
+                            found = candidate;
+                            break;
+                        }
+                    }
+                    if (found is int proven)
+                    {
+                        shift = proven;
+                        locallyProven.Add((item.Target, item.Start + proven, item.End + proven));
+                    }
+                    else
+                        plan.Skipped.Add((item.Target.Id, item.Target.Latex, OfficePluginLanguage.Text(
+                            $"LaTeX 公式“{WordFormulaRenderException.Excerpt(item.Target.Latex, 80)}”在 Word 中的位置与读取的文本不一致，已跳过。",
+                            $"The LaTeX formula “{WordFormulaRenderException.Excerpt(item.Target.Latex, 80)}” does not match the text read at its Word position and was skipped.")));
+                }
+                mapped = locallyProven;
+                RemoveSkippedLatexRedrawTargets(plan);
+            }
 
             foreach (var item in mapped)
             {
@@ -392,6 +457,81 @@ internal sealed partial class WordFormulaService
         finally
         {
             Release(characters);
+        }
+    }
+
+    private static void RemoveSkippedLatexRedrawTargets(WordLatexRedrawPlan plan)
+    {
+        if (plan.Skipped.Count == 0) return;
+        var skipped = new HashSet<string>(plan.Skipped.Select(item => item.TargetId), StringComparer.Ordinal);
+        plan.Targets.RemoveAll(target => skipped.Contains(target.Id));
+        if (plan.Targets.Count == 0)
+            throw new InvalidDataException(plan.Skipped[0].Error);
+    }
+
+    // One formula proven at its own position: the exact source text, plus up to
+    // 16 characters on each side counted by Word's own character movement.
+    private static bool TryVerifyLatexRedrawTargetLocally(
+        Document document,
+        Range scope,
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        int start,
+        int end)
+    {
+        const int contextLength = 16;
+        Range? source = null;
+        Range? before = null;
+        Range? after = null;
+        if (start < scope.Start || end > scope.End || end <= start) return false;
+        try
+        {
+            source = document.Range(start, end);
+            var expected = plan.SourceText.Substring(target.RelativeStart, target.SourceLength);
+            if (!string.Equals(source.Text ?? string.Empty, expected, StringComparison.Ordinal))
+                return false;
+
+            var beforeLength = Math.Min(contextLength, target.RelativeStart);
+            if (beforeLength > 0)
+            {
+                before = document.Range(start, start);
+                object unit = WdUnits.wdCharacter;
+                object count = -beforeLength;
+                before.MoveStart(ref unit, ref count);
+                if (before.Start < scope.Start
+                    || !string.Equals(
+                        before.Text ?? string.Empty,
+                        plan.SourceText.Substring(target.RelativeStart - beforeLength, beforeLength),
+                        StringComparison.Ordinal))
+                    return false;
+            }
+
+            var relativeEnd = target.RelativeStart + target.SourceLength;
+            var afterLength = Math.Min(contextLength, plan.SourceText.Length - relativeEnd);
+            if (afterLength > 0)
+            {
+                after = document.Range(end, end);
+                object unit = WdUnits.wdCharacter;
+                object count = afterLength;
+                after.MoveEnd(ref unit, ref count);
+                if (after.End > scope.End
+                    || !string.Equals(
+                        after.Text ?? string.Empty,
+                        plan.SourceText.Substring(relativeEnd, afterLength),
+                        StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            Release(after);
+            Release(before);
+            Release(source);
         }
     }
 
@@ -608,6 +748,10 @@ internal sealed partial class WordFormulaService
             applyStageStart = applyWatch.ElapsedMilliseconds;
             try
             {
+                // The selection was captured before the LaTeX source shrank into
+                // formula objects; keep it on the same text, not the same numbers.
+                viewState.SelectionStart = result.CoordinateShifts.Map(viewState.SelectionStart);
+                viewState.SelectionEnd = result.CoordinateShifts.Map(viewState.SelectionEnd);
                 RestoreViewState(
                     document,
                     viewState,
@@ -676,6 +820,7 @@ internal sealed partial class WordFormulaService
         WordFormulaHostKind TargetKind(WordLatexRedrawTarget target) =>
             ObjectModeToHostKind(streamed?.ObjectMode ?? prepared[target.Id].Session.ObjectMode);
         var result = new WordLatexRedrawResult();
+        result.Failures.AddRange(plan.Skipped);
         var successfulTargetIds =
             new HashSet<string>(StringComparer.Ordinal);
         var sourceMutationTotal = 0L;
@@ -795,11 +940,23 @@ internal sealed partial class WordFormulaService
             // them outside the custom undo record: if the document changed under
             // us, there is no redraw mutation to undo and therefore no risk of
             // accidentally undoing an earlier user edit.
-            ValidateLatexRedrawTargetSourceBeforeTransaction(
-                document,
-                plan,
-                target,
-                cumulativeCoordinateDelta);
+            // A formula whose source is no longer exactly where it was read is
+            // left untouched and reported; nothing was written for it, so the
+            // later formulas keep their coordinates.
+            try
+            {
+                ValidateLatexRedrawTargetSourceBeforeTransaction(
+                    document,
+                    plan,
+                    target,
+                    cumulativeCoordinateDelta);
+            }
+            catch (Exception error) when (error is InvalidDataException or COMException or OverflowException)
+            {
+                visualTeXNumbers?.Discard(target.Id);
+                result.Failures.Add((target.Id, target.Latex, OfficeErrorText.Describe(error)));
+                continue;
+            }
             var targetKind =
                 ObjectModeToHostKind(
                     formula.Session.ObjectMode);
@@ -842,6 +999,9 @@ internal sealed partial class WordFormulaService
                 continue;
             }
 
+            result.CoordinateShifts.Add(
+                target.AbsoluteEnd,
+                targetResult.MainStoryEnd - previousMainStoryEnd);
             cumulativeCoordinateDelta = checked(
                 cumulativeCoordinateDelta
                 + targetResult.MainStoryEnd
@@ -1381,8 +1541,8 @@ internal sealed partial class WordFormulaService
                     expected,
                     StringComparison.Ordinal))
                 throw new InvalidDataException(OfficePluginLanguage.Text(
-                    "重绘前，这个公式的 LaTeX 源码在 Word 中被修改了。为避免替换错误位置，重绘已停止。",
-                    "This formula's LaTeX source changed in Word before it was redrawn. To avoid replacing the wrong text, the redraw was stopped."));
+                    "重绘前，这个公式的 LaTeX 源码在 Word 中被修改了。为避免替换错误位置，这个公式没有重绘。",
+                    "This formula's LaTeX source changed in Word before it was redrawn. To avoid replacing the wrong text, this formula was not redrawn."));
         }
         finally
         {

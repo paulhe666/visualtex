@@ -7705,6 +7705,22 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   overflow-wrap: anywhere;
 }
 
+.office-wps-installation {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.office-wps-installation > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .office-status-card dl {
   display: grid;
   gap: 5px;

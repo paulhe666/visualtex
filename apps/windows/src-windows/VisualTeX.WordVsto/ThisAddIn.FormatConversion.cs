@@ -135,6 +135,13 @@ public sealed partial class ThisAddIn
                 .ConfigureAwait(false);
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-plan sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
+            if (plan.Targets.Count == 0 && plan.CaptureFailures.Count > 0)
+                throw new FormatConversionReport(
+                    T("公式格式转换失败：没有可以转换的公式，Word 文档未修改。",
+                        "Equation format conversion failed: no equation could be converted. The Word document was not changed."),
+                    BuildFormatConversionFailureReport(
+                        plan.CaptureFailures.Select((failure, index) => (index + 1, string.Empty, failure.Reason)).ToList(),
+                        plan.CaptureFailures.Count, null));
             if (plan.Targets.Count == 0)
             {
                 var sourceLabel = FormatConversionModeLabel(sourceMode);
@@ -184,9 +191,17 @@ public sealed partial class ThisAddIn
 
             // Document-order ordinal of every target ("Equation 3"): plan targets
             // are captured in document order within the converted scope.
+            // Unreadable sources count in the same document order.
             var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
-            for (var index = 0; index < plan.Targets.Count; index++)
-                ordinals[plan.Targets[index].Id] = index + 1;
+            var captureSkipped = new List<(int Ordinal, string Latex, string Reason)>();
+            var ordered = plan.Targets.Select(target => (Start: target.SourceStart, Target: (WordFormulaFormatConversionTarget?)target, Reason: (string?)null))
+                .Concat(plan.CaptureFailures.Select(failure => (Start: failure.SourceStart, Target: (WordFormulaFormatConversionTarget?)null, Reason: (string?)failure.Reason)))
+                .OrderBy(item => item.Start).ToArray();
+            for (var index = 0; index < ordered.Length; index++)
+            {
+                if (ordered[index].Target is { } orderedTarget) ordinals[orderedTarget.Id] = index + 1;
+                else captureSkipped.Add((index + 1, string.Empty, ordered[index].Reason!));
+            }
             // Every formula that could not be prepared, with its own reason. The
             // conversion is all-or-nothing, so all of them are reported together
             // before Word is touched.
@@ -194,8 +209,8 @@ public sealed partial class ThisAddIn
             // A formula that fails before Word is written keeps its original
             // format; the others are still converted and the skipped ones are
             // listed afterwards. Returns how many targets were left out.
-            var skipped = new List<(int Ordinal, string Latex, string Reason)>();
-            var totalTargets = plan.Targets.Count;
+            var skipped = new List<(int Ordinal, string Latex, string Reason)>(captureSkipped);
+            var totalTargets = plan.Targets.Count + captureSkipped.Count;
             int SkipFailedTargets()
             {
                 if (conversionFailures.Count == 0) return 0;
@@ -251,12 +266,12 @@ public sealed partial class ThisAddIn
                     Id = target.Id,
                     IsFormula = true,
                     Latex = target.Latex,
-                    DisplayMode = target.DisplayMode,
+                    DisplayMode = target.WriteDisplayMode,
                 };
                 var key = string.Join(
                     "\u001F",
                     targetMode,
-                    target.DisplayMode,
+                    target.WriteDisplayMode,
                     target.WriteFontSizePt.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     target.Latex);
                 targetKeys[target.Id] = key;
@@ -365,7 +380,7 @@ public sealed partial class ThisAddIn
                     Id = target.Id,
                     IsFormula = true,
                     Latex = target.Latex,
-                    DisplayMode = target.DisplayMode,
+                    DisplayMode = target.WriteDisplayMode,
                 };
                 if (targetAcceptsDirectSourceMathMl
                     && !string.IsNullOrWhiteSpace(target.SourceMathMl))
@@ -444,7 +459,7 @@ public sealed partial class ThisAddIn
                                     "该公式没有可写入 MathType 的 MathML。",
                                     "This equation has no MathML to write as MathType."));
                             var inline = string.Equals(
-                                target.DisplayMode,
+                                target.WriteDisplayMode,
                                 "inline",
                                 StringComparison.OrdinalIgnoreCase);
                             var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(

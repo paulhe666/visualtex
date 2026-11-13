@@ -102,6 +102,9 @@ internal sealed class WordLatexRedrawPlan
     internal string SourceText { get; set; } = string.Empty;
     internal bool NumberDisplayFormulas { get; set; }
     internal List<WordLatexRedrawTarget> Targets { get; set; } = new();
+    // Formulas Word could not locate; reported with the per-formula failures
+    // instead of stopping the formulas that could be located.
+    internal List<(string TargetId, string Latex, string Error)> Skipped { get; } = new();
     internal Dictionary<string, long> CaptureTimings { get; } =
         new(StringComparer.Ordinal);
     internal List<DeletedNumberedOmmlResidue> DeletedNumberedOmmlResidues { get; set; } = new();
@@ -230,6 +233,7 @@ internal sealed class WordLatexRedrawResult
     internal List<(string TargetId, string Latex, string Error)> Failures { get; } =
         new();
     internal List<string> Warnings { get; } = new();
+    internal WordCoordinateShifts CoordinateShifts { get; } = new();
 }
 
 /// <summary>
@@ -261,4 +265,8 @@ internal sealed class WordFormulaToLatexResult
 {
     internal int FormulaCount { get; set; }
     internal List<string> FormulaIds { get; set; } = new();
+    internal WordCoordinateShifts CoordinateShifts { get; } = new();
+    // Formulas (document-order ordinal in the scope) whose source could not be
+    // read; they stay as they are and the others are converted.
+    internal List<(int Ordinal, string Reason)> Skipped { get; set; } = new();
 }

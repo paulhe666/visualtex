@@ -134,7 +134,14 @@ internal static class WordOmmlMathFontPolicy
     {
         var preferred = PreferredFont;
         if (preferred is null) return mathFontName;
-        _applyDocumentFont?.Invoke(document, preferred);
+        // A document that refuses the font (not loaded on this PC, a .doc in
+        // compatibility mode) still takes the equation in its current font.
+        try { _applyDocumentFont?.Invoke(document, preferred); }
+        catch (Exception error) when (error is InvalidOperationException or System.Runtime.InteropServices.COMException
+            or ArgumentException or IOException or InvalidDataException)
+        {
+            return mathFontName;
+        }
         return preferred;
     }
 

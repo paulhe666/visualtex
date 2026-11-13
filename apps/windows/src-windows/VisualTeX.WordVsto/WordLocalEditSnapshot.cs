@@ -25,30 +25,42 @@ internal static class WordLocalEditSnapshot
         XNamespace r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
         XNamespace v = "urn:schemas-microsoft-com:vml";
         XNamespace o = "urn:schemas-microsoft-com:office:office";
+        // This normalizer is total: both sides of a comparison go through the
+        // same code, so unusual packages (third-party writers, WPS, duplicate
+        // ids) get a deterministic placeholder instead of refusing the edit.
         var parts = document.Descendants(pkg + "part")
-            .ToDictionary(p => (string)p.Attribute(pkg + "name")!, p => p, StringComparer.Ordinal);
+            .Where(p => p.Attribute(pkg + "name") is not null)
+            .GroupBy(p => (string)p.Attribute(pkg + "name")!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         if (parts.TryGetValue("/word/_rels/document.xml.rels", out var relationships))
         {
             var targets = relationships.Descendants(rel + "Relationship")
-                .ToDictionary(e => (string)e.Attribute("Id")!, e => e, StringComparer.Ordinal);
+                .Where(e => e.Attribute("Id") is not null)
+                .GroupBy(e => (string)e.Attribute("Id")!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
             foreach (var reference in body.DescendantsAndSelf().Attributes()
                          .Where(a => a.Name.Namespace == r).ToArray())
             {
                 if (!targets.TryGetValue(reference.Value, out var relationship))
-                    throw new InvalidDataException("A Word content relationship cannot be resolved for recovery verification.");
-                var target = (string)relationship.Attribute("Target")!;
+                {
+                    reference.Value = "unresolved";
+                    continue;
+                }
+                var target = (string?)relationship.Attribute("Target") ?? string.Empty;
                 var mode = (string?)relationship.Attribute("TargetMode");
                 var type = (string?)relationship.Attribute("Type");
                 if (mode == "External") reference.Value = type + ":external:" + target;
                 else
                 {
-                    var path = new Uri(new Uri("http://word/word/document.xml"), target).AbsolutePath;
+                    var path = Uri.TryCreate(new Uri("http://word/word/document.xml"), target, out var resolved)
+                        ? resolved.AbsolutePath : target;
                     if (!parts.TryGetValue(path, out var part))
-                        throw new InvalidDataException("A Word content payload is missing from recovery evidence.");
+                    {
+                        reference.Value = type + ":missing:" + target;
+                        continue;
+                    }
                     var binary = part.Element(pkg + "binaryData");
                     var xmlPayload = part.Element(pkg + "xmlData");
-                    if (binary is null && xmlPayload is null)
-                        throw new InvalidDataException("A Word recovery relationship has neither binary nor XML payload.");
                     var normalizedPayload = xmlPayload is null ? string.Empty
                         : type is not null && (type.EndsWith("/header", StringComparison.Ordinal)
                             || type.EndsWith("/footer", StringComparison.Ordinal))
@@ -56,6 +68,14 @@ internal static class WordLocalEditSnapshot
                             : xmlPayload.ToString(SaveOptions.DisableFormatting);
                     var bytes = binary is not null ? Convert.FromBase64String(binary.Value)
                         : Encoding.UTF8.GetBytes(normalizedPayload);
+                    // An embedded OLE object is compared by its streams, not by
+                    // its container layout (WPS rewrites it after an undo).
+                    if (binary is not null
+                        && OleCompoundFileDigest.TryCompute(bytes) is { } oleContent)
+                    {
+                        reference.Value = type + ":ole-content:" + oleContent;
+                        continue;
+                    }
                     using var payloadHash = SHA256.Create();
                     reference.Value = type + ":sha256:" + Convert.ToBase64String(payloadHash.ComputeHash(bytes));
                 }
@@ -69,8 +89,7 @@ internal static class WordLocalEditSnapshot
         for (var index = 0; index < shapes.Length; index++)
         {
             var shape = shapes[index];
-            var id = (string?)shape.Attribute("id")
-                ?? throw new InvalidDataException("A recovery shape has no physical ID.");
+            var id = (string?)shape.Attribute("id");
             var canonical = "shape:" + index;
             // Word can reallocate o:spid independently of v:shape/@id during
             // native Undo. Both names identify this SAME physical shape. Bind
@@ -78,9 +97,9 @@ internal static class WordLocalEditSnapshot
             // or an OLE reference; never erase a real owner/payload mismatch.
             foreach (var alias in new[] { id, (string?)shape.Attribute(o + "spid") })
             {
-                if (string.IsNullOrEmpty(alias)) continue;
-                if (shapeIds.TryGetValue(alias!, out var previous) && previous != canonical)
-                    throw new InvalidDataException("A recovery shape alias has multiple physical owners.");
+                // A pasted shape can repeat another's id; the first owner
+                // keeps the alias and both documents bind it the same way.
+                if (string.IsNullOrEmpty(alias) || shapeIds.ContainsKey(alias!)) continue;
                 shapeIds[alias!] = canonical;
             }
         }
@@ -105,7 +124,9 @@ internal static class WordLocalEditSnapshot
                          || a.Name.LocalName == "paraId" || a.Name.LocalName == "textId").ToArray())
             attribute.Remove();
         var names = body.Descendants(w + "bookmarkStart")
-            .ToDictionary(e => (string)e.Attribute(w + "id")!, e => (string)e.Attribute(w + "name")!);
+            .Where(e => e.Attribute(w + "id") is not null)
+            .GroupBy(e => (string)e.Attribute(w + "id")!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (string?)g.First().Attribute(w + "name") ?? string.Empty, StringComparer.Ordinal);
         foreach (var bookmark in body.Descendants().Where(e => e.Name == w + "bookmarkStart" || e.Name == w + "bookmarkEnd"))
         {
             var id = bookmark.Attribute(w + "id");

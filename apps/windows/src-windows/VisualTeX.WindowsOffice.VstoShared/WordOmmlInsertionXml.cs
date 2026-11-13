@@ -77,7 +77,22 @@ internal static class WordOmmlInsertionXml
         var prefix = markerNode.Value.Substring(0, markerIndex);
         var suffix = markerNode.Value.Substring(markerIndex + markerText.Length);
 
-        XElement CreateSiblingRun(string text)
+        // Word often keeps text, tabs and breaks of the same formatting in the
+        // marker's run. Everything before the marker stays in the run before the
+        // equation and everything after it in the run after; nothing is dropped.
+        var before = markerNode.NodesBeforeSelf()
+            .Where(node => node is not XElement element || element.Name != Word + "rPr").ToArray();
+        var after = markerNode.NodesAfterSelf().ToArray();
+
+        XElement CreateTextElement(string text)
+        {
+            var textElement = new XElement(Word + "t", text);
+            if (char.IsWhiteSpace(text[0]) || char.IsWhiteSpace(text[text.Length - 1]))
+                textElement.SetAttributeValue(XNamespace.Xml + "space", "preserve");
+            return textElement;
+        }
+
+        XElement CreateSiblingRun(IEnumerable<XNode> leading, string text, IEnumerable<XNode> trailing)
         {
             var run = new XElement(
                 Word + "r",
@@ -85,24 +100,25 @@ internal static class WordOmmlInsertionXml
             var runProperties = sourceRun.Element(Word + "rPr");
             if (runProperties is not null)
                 run.Add(new XElement(runProperties));
-
-            var textElement = new XElement(Word + "t", text);
-            if (text.Length > 0
-                && (char.IsWhiteSpace(text[0])
-                    || char.IsWhiteSpace(text[text.Length - 1])))
-            {
-                textElement.SetAttributeValue(XNamespace.Xml + "space", "preserve");
-            }
-            run.Add(textElement);
+            foreach (var node in leading) run.Add(CloneNode(node));
+            if (text.Length > 0) run.Add(CreateTextElement(text));
+            foreach (var node in trailing) run.Add(CloneNode(node));
             return run;
         }
 
+        static XNode CloneNode(XNode node) => node switch
+        {
+            XElement element => new XElement(element),
+            XText text => new XText(text),
+            _ => node,
+        };
+
         var replacements = new List<object>();
-        if (!string.IsNullOrEmpty(prefix))
-            replacements.Add(CreateSiblingRun(prefix));
+        if (!string.IsNullOrEmpty(prefix) || before.OfType<XElement>().Any())
+            replacements.Add(CreateSiblingRun(before, prefix, Array.Empty<XNode>()));
         replacements.Add(new XElement(equation));
-        if (!string.IsNullOrEmpty(suffix))
-            replacements.Add(CreateSiblingRun(suffix));
+        if (!string.IsNullOrEmpty(suffix) || after.OfType<XElement>().Any())
+            replacements.Add(CreateSiblingRun(Array.Empty<XNode>(), suffix, after));
 
         // Replace in place. The source run may be a direct child of w:p, or it
         // may be nested under Word-owned run-level wrappers such as w:ins. Keeping

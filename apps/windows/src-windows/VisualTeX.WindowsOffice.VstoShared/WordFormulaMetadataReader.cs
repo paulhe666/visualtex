@@ -179,7 +179,7 @@ internal static class WordFormulaMetadataReader
                 return false;
             format = shape.OLEFormat;
             return string.Equals(
-                format.ProgID,
+                WordOleObjectAccessor.ReadProgId(format),
                 FormulaOleContract.ProgId,
                 StringComparison.OrdinalIgnoreCase);
         }

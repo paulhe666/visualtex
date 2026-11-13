@@ -30,39 +30,11 @@ internal sealed partial class WordFormulaService
                     return false;
             }
 
-            var text =
-                paragraphRange.Text
-                ?? string.Empty;
-            var fieldDepth = 0;
-            foreach (var character in text)
-            {
-                if (character == '\u0013')
-                {
-                    fieldDepth++;
-                    continue;
-                }
-                if (character == '\u0015')
-                {
-                    if (fieldDepth > 0)
-                        fieldDepth--;
-                    continue;
-                }
-                if (fieldDepth > 0
-                    || character == '\u0014')
-                    continue;
-
-                if (char.IsWhiteSpace(character)
-                    || char.IsDigit(character)
-                    || character < ' '
-                    || character is '\u0001'
-                        or '\uFFFC'
-                    || "()[]{}.-–—_:;,+/\\"
-                        .IndexOf(character) >= 0)
-                    continue;
-                return false;
-            }
-
-            return fieldDepth == 0;
+            // As in WordMathTypeHostAdapter: only the text outside the fields,
+            // read by story positions, decides; it may hold nothing but
+            // whitespace and the object character.
+            return WordMathTypeHostAdapter.IsScaffoldText(
+                WordMathTypeHostAdapter.OutsideFieldText(paragraphRange, fields));
         }
         finally
         {

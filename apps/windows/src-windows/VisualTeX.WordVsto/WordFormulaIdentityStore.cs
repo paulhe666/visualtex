@@ -118,14 +118,12 @@ internal static class WordFormulaIdentityStore
                     || bookmarkRange.End != shapeRange.End)
                     continue;
 
-                if (resolved is not null
-                    && !string.Equals(
-                        resolved,
-                        candidate,
-                        StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException(
-                        "One MathType host owns multiple VisualTeX identities.");
-                resolved = candidate;
+                // Two identity bookmarks on one object (a copy pasted onto its
+                // original's position): the identity is only a convenience, so
+                // pick one deterministically instead of refusing every read.
+                if (resolved is null
+                    || string.Compare(candidate, resolved, StringComparison.OrdinalIgnoreCase) < 0)
+                    resolved = candidate;
             }
 
             if (resolved is null)

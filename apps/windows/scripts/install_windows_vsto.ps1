@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows_wps_companion.ps1")
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -71,6 +72,9 @@ function Resolve-EarlyOfficePlatform {
         } finally { $baseKey.Dispose() }
     }
 
+    # No Microsoft Office: the add-ins are for WPS Office alone, in its bitness.
+    $wps = @(Get-WpsInstallations)
+    if ($wps.Count -gt 0) { return $wps[0].Architecture }
     return $(if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" })
 }
 
@@ -430,16 +434,28 @@ function Resolve-OfficePlatform([string]$RequestedPlatform) {
         $powerPoint = Get-OfficeExecutablePath PowerPoint $architecture
         if ($word -and $powerPoint) { return $architecture }
     }
-    throw "Unable to determine whether installed Office is x86 or x64. Pass -OfficePlatform x86 or x64."
+    foreach ($architecture in @("x64", "x86")) {
+        if ((Get-OfficeExecutablePath Word $architecture) -or (Get-OfficeExecutablePath PowerPoint $architecture)) { return $architecture }
+    }
+    # No Microsoft Office: the add-ins are for WPS Office alone, in its bitness.
+    $wps = @(Get-WpsInstallations)
+    if ($wps.Count -gt 0) { return $wps[0].Architecture }
+    throw "Neither Microsoft Office nor WPS Office was found. Pass -OfficePlatform x86 or x64."
 }
 
+# Word and PowerPoint, Word or PowerPoint alone, or WPS Office alone: the add-ins serve
+# whichever of them is installed.
 function Assert-OfficeApplicationsInstalled([string]$Architecture) {
     $word = Get-OfficeExecutablePath Word $Architecture
     $powerPoint = Get-OfficeExecutablePath PowerPoint $Architecture
-    if (-not $word) { throw "Microsoft Word was not found for the detected $Architecture Office installation." }
-    if (-not $powerPoint) { throw "Microsoft PowerPoint was not found for the detected $Architecture Office installation." }
-    Add-DiagnosticCheck "Microsoft Word present" $true $word "prerequisite"
-    Add-DiagnosticCheck "Microsoft PowerPoint present" $true $powerPoint "prerequisite"
+    if ($word) { Add-DiagnosticCheck "Microsoft Word present" $true $word "prerequisite" }
+    if ($powerPoint) { Add-DiagnosticCheck "Microsoft PowerPoint present" $true $powerPoint "prerequisite" }
+    if ($word -or $powerPoint) { return }
+    $wps = @(Get-WpsInstallations)
+    if ($wps.Count -eq 0) {
+        throw "Neither Microsoft Word, PowerPoint nor WPS Office was found for the detected $Architecture platform."
+    }
+    Add-DiagnosticCheck "WPS Office present" $true (($wps | ForEach-Object { "$($_.Path) ($($_.Architecture))" }) -join "; ") "prerequisite"
 }
 
 function Assert-VstoRuntimeInstalled([string]$Architecture) {
@@ -1033,6 +1049,38 @@ try {
     $oleServer = Assert-NativeOleRegistration $installRoot $script:resolvedOfficePlatform
     Assert-NativeOleServerStarts $oleServer
 
+    # A WPS Office of the other bitness reads its own registry view: give it the add-ins of
+    # its bitness too. A failure here is reported but leaves the Office add-ins installed.
+    $wpsCompanionError = ""
+    $wpsInstallations = @()
+    try {
+        $wpsInstallations = @(Get-WpsInstallations)
+        foreach ($wps in $wpsInstallations) {
+            Add-DiagnosticCheck "WPS Office" $true "$($wps.Path); version $($wps.Version); $($wps.Architecture)" "wps"
+        }
+        $companionArchitectures = @($wpsInstallations |
+            Where-Object { $_.Architecture -ne $script:resolvedOfficePlatform } |
+            ForEach-Object { $_.Architecture } | Select-Object -Unique)
+        $companionRecord = Get-WpsCompanionRecord
+        if ($null -ne $companionRecord -and $companionRecord.Architecture -notin $companionArchitectures) {
+            [void](Remove-WpsCompanionRegistration $script:resolvedOfficePlatform)
+            Add-DiagnosticCheck "WPS add-ins of the other bitness" $true "Removed: no WPS Office of $($companionRecord.Architecture) is installed now." "wps"
+        }
+        foreach ($architecture in $companionArchitectures) {
+            $companionRoot = Install-WpsCompanionRegistration -Architecture $architecture `
+                -PackageDirectory (Split-Path -Parent $MsiPath) `
+                -PrimaryArchitecture $script:resolvedOfficePlatform `
+                -LogDirectory $logRoot
+            Assert-WpsCompanionRegistration $architecture $companionRoot
+            Test-WpsCompanionActivation $architecture "VisualTeX.WordVsto"
+            Test-WpsCompanionActivation $architecture "VisualTeX.PowerPointVsto"
+            Add-DiagnosticCheck "WPS add-ins of the other bitness" $true "$architecture add-ins for WPS Office in $companionRoot; registration and COM activation verified." "wps"
+        }
+    } catch {
+        $wpsCompanionError = $_.Exception.Message
+        Add-DiagnosticCheck "WPS add-ins of the other bitness" $false $wpsCompanionError "wps"
+    }
+
     $modeKey = "HKCU:\Software\VisualTeX\OfficeIntegration"
     if (-not (Test-Path -LiteralPath $modeKey)) { New-Item -Path $modeKey -Force | Out-Null }
     New-ItemProperty -LiteralPath $modeKey -Name "ExecutablePath" -PropertyType String -Value $script:resolvedVisualTeXPath -Force | Out-Null
@@ -1055,12 +1103,13 @@ try {
     }
     New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeError" -PropertyType String -Value "Companion runtime verification has not started." -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "LastDiagnosticReport" -PropertyType String -Value $DiagnosticReportPath -Force | Out-Null
+    New-ItemProperty -LiteralPath $modeKey -Name "WpsCompanionError" -PropertyType String -Value $wpsCompanionError -Force | Out-Null
     Remove-ItemProperty -LiteralPath $modeKey -Name "OleManifestEnabled" -Force -ErrorAction SilentlyContinue
     # WPS Office loads the add-ins from the Office registration above, but Presentation
     # (and Writer in some editions) only loads add-ins in its whitelist. The MSI writes
     # the machine list; WPS also keeps a per-user copy.
     $wpsUserRoot = "HKCU:\Software\Kingsoft\Office"
-    if (Test-Path -LiteralPath $wpsUserRoot) {
+    if ((Test-Path -LiteralPath $wpsUserRoot) -or $wpsInstallations.Count -gt 0) {
         foreach ($entry in @(@("WPS", "VisualTeX.WordVsto"), @("WPP", "VisualTeX.PowerPointVsto"))) {
             $whitelist = Join-Path $wpsUserRoot ($entry[0] + "\AddinsWL")
             if (-not (Test-Path -LiteralPath $whitelist)) { New-Item -Path $whitelist -Force | Out-Null }

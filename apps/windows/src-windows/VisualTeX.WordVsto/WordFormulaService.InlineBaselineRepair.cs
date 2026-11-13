@@ -61,7 +61,7 @@ internal sealed partial class WordFormulaService
                     if (shape.Type != WdInlineShapeType.wdInlineShapeEmbeddedOLEObject)
                         continue;
                     format = shape.OLEFormat;
-                    var progId = format.ProgID ?? string.Empty;
+                    var progId = WordOleObjectAccessor.ReadProgId(format);
                     var isVisualTeX = string.Equals(progId, FormulaOleContract.ProgId,
                         StringComparison.OrdinalIgnoreCase);
                     var isMathType = progId.StartsWith("Equation.", StringComparison.OrdinalIgnoreCase);
@@ -261,7 +261,7 @@ internal sealed partial class WordFormulaService
                     range = shape.Range;
                     if (range.Start != target.Start || range.End != target.End) continue;
                     format = shape.OLEFormat;
-                    if (!string.Equals(format.ProgID, target.ProgId, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!string.Equals(WordOleObjectAccessor.ReadProgId(format), target.ProgId, StringComparison.OrdinalIgnoreCase)) continue;
                     keep = true;
                     return shape;
                 }

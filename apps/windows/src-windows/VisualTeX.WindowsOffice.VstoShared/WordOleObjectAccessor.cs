@@ -6,6 +6,19 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordOleObjectAccessor
 {
+    // Word looks OLEFormat.ProgID up in the registry: on a machine where the
+    // server is not installed (MathType replaced by VisualTeX's private runtime,
+    // Visio absent) it is "" for every such object, while ClassType and the
+    // document XML still carry the stored class, e.g. Equation.DSMT4.
+    public static string ReadProgId(OLEFormat format)
+    {
+        if (format is null) throw new ArgumentNullException(nameof(format));
+        var progId = format.ProgID;
+        if (!string.IsNullOrWhiteSpace(progId)) return progId;
+        try { return format.ClassType ?? string.Empty; }
+        catch (COMException) { return string.Empty; }
+    }
+
     public static object GetRunningObject(OLEFormat format)
     {
         if (format is null) throw new ArgumentNullException(nameof(format));

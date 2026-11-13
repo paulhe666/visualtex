@@ -1894,8 +1894,12 @@ internal static class WordOmmlFormulaStore
                 if (distance > bestDistance
                     || (distance == bestDistance && priority >= bestPriority))
                     continue;
+                // An empty equation nearby is simply not a candidate.
+                Range candidate;
+                try { candidate = TrimToNativeMath(range); }
+                catch (InvalidDataException) { continue; }
                 Release(bestRange);
-                bestRange = TrimToNativeMath(range);
+                bestRange = candidate;
                 bestDistance = distance;
                 bestPriority = priority;
             }
@@ -1958,9 +1962,14 @@ internal static class WordOmmlFormulaStore
                     if (requireDisplay && math.Type != WdOMathType.wdOMathDisplay)
                         continue;
                     range = math.Range;
-                    trimmed = TrimToNativeMath(range);
+                    // An unrelated empty or unreadable equation is not a match;
+                    // it must not stop the search for this formula.
                     string fingerprint;
-                    try { fingerprint = GetEquationFingerprint(trimmed, expectedFingerprint); }
+                    try
+                    {
+                        trimmed = TrimToNativeMath(range);
+                        fingerprint = GetEquationFingerprint(trimmed, expectedFingerprint);
+                    }
                     catch { continue; }
                     if (!string.Equals(
                             fingerprint,

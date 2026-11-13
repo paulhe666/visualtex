@@ -72,13 +72,21 @@ internal sealed partial class WordFormulaService
                 ? document.Content.Duplicate
                 : selection.Range.Duplicate;
 
+            var skipped = new List<(int Ordinal, string Reason)>();
             var targets =
                 CaptureFormulaToLatexCoreTargets(
                     document,
                     scope,
                     wholeDocument,
                     objectMode,
-                    readSemanticPayload: true);
+                    readSemanticPayload: true,
+                    failures: skipped);
+            if (targets.Count == 0 && skipped.Count > 0)
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "没有可以转为 LaTeX 的公式：",
+                    "No equation could be converted to LaTeX: ")
+                    + string.Join("; ", skipped.Select(item => OfficePluginLanguage.Text(
+                        $"第 {item.Ordinal} 个公式：{item.Reason}", $"equation {item.Ordinal}: {item.Reason}"))));
             if (targets.Count == 0)
                 throw new InvalidDataException(
                     wholeDocument
@@ -107,7 +115,7 @@ internal sealed partial class WordFormulaService
                         // once their target no longer exists. Never freeze them
                         // into plain text here.
                         var converted =
-                            new WordFormulaToLatexResult();
+                            new WordFormulaToLatexResult { Skipped = skipped };
                         foreach (var target in targets
                                      .OrderByDescending(
                                          item => item.Host.Range.Start))
@@ -121,6 +129,7 @@ internal sealed partial class WordFormulaService
                                             target.Host.Range),
                                         sourceKind,
                                         target.Host.FormulaId);
+                            var storyEndBefore = ReadMainStoryEnd(document);
 
                             _ = WordFormulaHostMutationKernel
                                 .ReplaceSourceWithExternalTargetInActiveTransaction(
@@ -165,6 +174,10 @@ internal sealed partial class WordFormulaService
                                         }
                                     });
 
+                            // Back to front: earlier captured positions are still valid.
+                            converted.CoordinateShifts.Add(
+                                target.Host.Range.End,
+                                ReadMainStoryEnd(document) - storyEndBefore);
                             converted.FormulaCount++;
                             ReportOperationProgress(OfficePluginLanguage.Text("正在恢复 LaTeX 源码…", "Restoring LaTeX source…"), converted.FormulaCount, targets.Count);
                             converted.FormulaIds.Add(
@@ -176,6 +189,8 @@ internal sealed partial class WordFormulaService
 
             try
             {
+                viewState.SelectionStart = result.CoordinateShifts.Map(viewState.SelectionStart);
+                viewState.SelectionEnd = result.CoordinateShifts.Map(viewState.SelectionEnd);
                 RestoreViewState(
                     document,
                     viewState,
@@ -202,7 +217,8 @@ internal sealed partial class WordFormulaService
             Range scope,
             bool wholeDocument,
             string objectMode,
-            bool readSemanticPayload)
+            bool readSemanticPayload,
+            List<(int Ordinal, string Reason)>? failures = null)
     {
         var sourceKind =
             ObjectModeToHostKind(
@@ -236,6 +252,7 @@ internal sealed partial class WordFormulaService
 
         var result =
             new List<CoreFormulaToLatexTarget>();
+        var candidates = 0;
         foreach (var captured in hosts
                      .OrderBy(item => item.Range.Start))
         {
@@ -255,6 +272,24 @@ internal sealed partial class WordFormulaService
                 continue;
             }
 
+            var ordinal = ++candidates;
+            try
+            {
+                result.Add(CaptureTarget(captured));
+            }
+            catch (Exception error) when (failures is not null
+                && error is not OperationCanceledException and not OutOfMemoryException)
+            {
+                // One unreadable formula stays as it is; the others convert.
+                WordDoubleClickHook.TraceMessage($"formula-to-latex-capture-skipped start={captured.Range.Start} error={error}");
+                failures.Add((ordinal, OfficeErrorText.Describe(error)));
+            }
+        }
+
+        return result;
+
+        CoreFormulaToLatexTarget CaptureTarget(WordFormulaHostDescriptor captured)
+        {
             var host = captured;
             host.Numbering =
                 WordFormulaNumberingResolver.ResolveLocal(
@@ -330,8 +365,7 @@ internal sealed partial class WordFormulaService
                         MidpointRounding.AwayFromZero)
                     : null;
 
-            result.Add(
-                new CoreFormulaToLatexTarget
+            return new CoreFormulaToLatexTarget
                 {
                     Host = host,
                     Metadata = metadata,
@@ -346,9 +380,7 @@ internal sealed partial class WordFormulaService
                                 .WordInlineSourceBottomWhitespacePt
                                 .Value
                             : null,
-                });
+                };
         }
-
-        return result;
     }
 }

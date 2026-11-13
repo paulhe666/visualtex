@@ -113,7 +113,7 @@ public sealed partial class PowerPointFormulaService
             var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(native);
             var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The MathType equation is empty or unsupported.");
-            var size = MathTypeMtefCodec.ReadEquationNativeFullFontSize(native);
+            var size = MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(native);
             var now = DateTimeOffset.UtcNow.ToString("O");
             var metadata = new FormulaMetadata
             {

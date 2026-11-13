@@ -1688,6 +1688,16 @@ internal static partial class WordOmmlConverter
                             math + "oMath")
                             .Any())
                     .ToArray();
+            if (xmlMaths.Length != paragraphMaths.Count)
+            {
+                // Track Changes keeps deleted or moved-away copies in the XML;
+                // the ordinal mapping holds once those are left out.
+                XNamespace word = WordNamespace;
+                xmlMaths = xmlMaths
+                    .Where(element => !element.Ancestors().Any(ancestor =>
+                        ancestor.Name == word + "del" || ancestor.Name == word + "moveFrom"))
+                    .ToArray();
+            }
             if (xmlMaths.Length !=
                 paragraphMaths.Count)
                 throw new InvalidDataException(
@@ -4447,6 +4457,61 @@ internal static partial class WordOmmlConverter
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
+    private static readonly HashSet<string> NaryRowParents = new(StringComparer.Ordinal)
+    {
+        "math", "mrow", "mstyle", "msqrt", "mtd", "mpadded", "menclose", "mphantom", "merror",
+    };
+
+    private const string NaryOperandOpeners = "([{⟨⌈⌊";
+    private const string NaryOperandClosers = ")]}⟩⌉⌋";
+    private const string NaryOperandStops = "=<>≤≥≠≈≡∼≃≅∝→←↔⇒⇐⇔↦∈∉⊂⊆⊃⊇≪≫≺≻⩽⩾,;";
+    private const string NaryOperandSigns = "+-−±∓";
+
+    // The run of siblings a big operator applies to when the producer left
+    // them loose: up to a relation, a separator or a fence closing something
+    // opened before the operator. A sum also ends at a top-level sign; an
+    // integral only at one that comes after its differential.
+    private static List<XElement> NaryLooseOperand(IEnumerable<XElement> following, string operatorText)
+    {
+        var isIntegral = operatorText.All(character =>
+            character is >= '∫' and <= '∳' or >= '⨋' and <= '⨜');
+        var siblings = following.ToArray();
+        var operand = new List<XElement>();
+        var depth = 0;
+        var sawDifferential = false;
+        for (var index = 0; index < siblings.Length; index++)
+        {
+            var element = siblings[index];
+            var text = element.Value.Trim();
+            if (element.Name.LocalName == "mo" && text.Length == 1)
+            {
+                if (NaryOperandOpeners.IndexOf(text[0]) >= 0) depth++;
+                else if (NaryOperandClosers.IndexOf(text[0]) >= 0)
+                {
+                    if (depth == 0) break;
+                    depth--;
+                }
+                else if (depth == 0)
+                {
+                    if (NaryOperandStops.IndexOf(text[0]) >= 0) break;
+                    if (text[0] == '.' && index == siblings.Length - 1) break;
+                    if (NaryOperandSigns.IndexOf(text[0]) >= 0
+                        && operand.Count > 0
+                        && (!isIntegral || sawDifferential))
+                        break;
+                }
+            }
+            if (depth == 0
+                && text is "d" or "ⅆ"
+                && !element.HasElements
+                && index + 1 < siblings.Length
+                && siblings[index + 1].Name.LocalName == "mi")
+                sawDifferential = true;
+            operand.Add(element);
+        }
+        return operand;
+    }
+
     internal static string NormalizeNaryArguments(string mathMl)
     {
         if (string.IsNullOrWhiteSpace(mathMl)) return mathMl;
@@ -4483,7 +4548,7 @@ internal static partial class WordOmmlConverter
             // is carried by a limit structure. Apply that structure to inline
             // formulas too; later normalization hides the synthetic empty
             // limit (NormalizeDisplayNaryOmml).
-            var hasArgument = op.ElementsAfterSelf().Any();
+            var hasArgument = op.ElementsAfterSelf().Any() || LooseOperandGroup(op) is not null;
             var syntheticLimit = new XElement(
                 mathMlNamespace + "msub",
                 new XElement(op),
@@ -4497,6 +4562,20 @@ internal static partial class WordOmmlConverter
                         new XElement(mathMlNamespace + "mspace", new XAttribute("width", "0em"))));
             }
         }
+
+        // A group that holds the operator alone, in a row with more after it:
+        // MathType writes this when the template's operand slot was left empty
+        // and the operand typed after the template.
+        XElement? LooseOperandGroup(XElement owner) =>
+            owner.Parent is { } group
+            && group.Name == mathMlNamespace + "mrow"
+            && group.Elements().Count() == 1
+            && group.Parent is { } outer
+            && NaryRowParents.Contains(outer.Name.LocalName)
+            && outer.Name.Namespace == mathMlNamespace
+            && group.ElementsAfterSelf().Any()
+                ? group
+                : null;
 
         bool IsNaryLimit(XElement element)
         {
@@ -4586,6 +4665,17 @@ internal static partial class WordOmmlConverter
                 || op.Value.Any(character => NaryCharacters.IndexOf(character) < 0))
                 continue;
             var argument = limit.ElementsAfterSelf().FirstOrDefault();
+            if (argument is null && LooseOperandGroup(limit) is { } group)
+            {
+                var loose = NaryLooseOperand(group.ElementsAfterSelf(), op.Value);
+                foreach (var element in loose) element.Remove();
+                group.Add(loose.Count > 0
+                    ? new XElement(mathMlNamespace + "mrow", loose)
+                    : new XElement(
+                        mathMlNamespace + "mrow",
+                        new XElement(mathMlNamespace + "mspace", new XAttribute("width", "0em"))));
+                continue;
+            }
             if (argument is null
                 || argument.Name == mathMlNamespace + "mrow"
                 || argument.Name == mathMlNamespace + "mstyle")
@@ -6823,7 +6913,13 @@ internal static partial class WordOmmlConverter
         XNamespace math = MathNamespace;
         // This API promises one complete equation, not the first equation in a
         // larger range. Counting also detects an illegally nested oMath root.
-        var equations = document.Descendants(math + "oMath").Take(2).ToArray();
+        // A tracked-deleted or moved-away copy (Track Changes) is history, not
+        // a second current equation.
+        XNamespace word = WordNamespace;
+        var equations = document.Descendants(math + "oMath")
+            .Where(equation => !equation.Ancestors().Any(ancestor =>
+                ancestor.Name == word + "del" || ancestor.Name == word + "moveFrom"))
+            .Take(2).ToArray();
         if (equations.Length == 0)
             throw new InvalidDataException("Office MathML conversion did not produce an m:oMath node.");
         if (equations.Length != 1)
@@ -6874,12 +6970,13 @@ internal static partial class WordOmmlConverter
         return CountOMathElements(xml) == 1 ? xml : null;
     }
 
-    // Streams the package and stops at a second equation; callers parse the
-    // accepted XML themselves.
+    // Streams the package and stops at a second current equation (copies inside
+    // tracked deletions or moves are history); callers parse the XML themselves.
     internal static int CountOMathElements(string xml)
     {
         if (string.IsNullOrWhiteSpace(xml)) return 0;
         var count = 0;
+        var revisionDepths = new Stack<int>();
         try
         {
             using var reader = XmlReader.Create(
@@ -6887,7 +6984,21 @@ internal static partial class WordOmmlConverter
                 new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
             while (reader.Read())
             {
-                if (reader.NodeType == XmlNodeType.Element
+                var revision = reader.NamespaceURI == WordNamespace
+                    && reader.LocalName is "del" or "moveFrom";
+                if (reader.NodeType == XmlNodeType.EndElement)
+                {
+                    if (revision && revisionDepths.Count > 0 && revisionDepths.Peek() == reader.Depth)
+                        revisionDepths.Pop();
+                    continue;
+                }
+                if (reader.NodeType != XmlNodeType.Element) continue;
+                if (revision)
+                {
+                    if (!reader.IsEmptyElement) revisionDepths.Push(reader.Depth);
+                    continue;
+                }
+                if (revisionDepths.Count == 0
                     && reader.LocalName == "oMath"
                     && reader.NamespaceURI == MathNamespace
                     && ++count > 1)

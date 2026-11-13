@@ -52,8 +52,10 @@ public sealed class MathTypeRecoveryShapeAliasTests
     [Theory]
     [InlineData("_s1","_s1")]
     [InlineData("_b","_s2")]
-    public void AliasesCannotNameTwoDifferentPhysicalShapes(string firstAlias,string secondAlias)
+    public void AnAliasNamingTwoShapesBindsDeterministicallyToTheFirst(string firstAlias,string secondAlias)
     {
-        Assert.Throws<InvalidDataException>(()=>Signature(Fixture(sa:firstAlias,sb:secondAlias)));
+        // Pasted shapes can repeat an id. The signature must not refuse the edit;
+        // the same document always yields the same signature.
+        Assert.Equal(Signature(Fixture(sa:firstAlias,sb:secondAlias)),Signature(Fixture(sa:firstAlias,sb:secondAlias)));
     }
 }

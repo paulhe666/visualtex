@@ -40,6 +40,25 @@ function Get-OwnedProduct {
         } finally { $key.Dispose() }
     } finally { $hive.Dispose() }
 }
+# MathType equations in Word, PowerPoint and WPS are drawn by this service. Windows restarts
+# it after a crash, and the signed-in user may start it (the add-ins and VisualTeX start it
+# when it is found stopped, e.g. after an installation stopped it and did not finish).
+function Set-ServiceRecovery {
+    & sc.exe failure $serviceName reset= 86400 actions= restart/2000/restart/5000/restart/30000 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Unable to set the native-render service recovery actions (sc.exe exit $LASTEXITCODE)." }
+    $descriptor = (@(& sc.exe sdshow $serviceName) | Where-Object { $_ -match '^D:' } | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($descriptor)) { throw 'Unable to read the native-render service security descriptor.' }
+    $descriptor = $descriptor.Trim()
+    if ($descriptor -notmatch '\(A;;[A-Z]*RP[A-Z]*;;;IU\)') {
+        $updated = $descriptor -replace '\(A;;CCLCSWLOCRRC;;;IU\)', '(A;;CCLCSWRPLOCRRC;;;IU)'
+        if ($updated -ceq $descriptor) {
+            $split = $descriptor.IndexOf('S:')
+            $updated = if ($split -ge 0) { $descriptor.Insert($split, '(A;;RP;;;IU)') } else { $descriptor + '(A;;RP;;;IU)' }
+        }
+        & sc.exe sdset $serviceName $updated | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to let signed-in users start the native-render service (sc.exe exit $LASTEXITCODE)." }
+    }
+}
 function Invoke-OwnedMsi([string[]]$Arguments) {
     $process=Start-Process -FilePath "$env:windir\System32\msiexec.exe" -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try { $process.WaitForExit(); $code=$process.ExitCode } finally { $process.Dispose() }
@@ -267,6 +286,7 @@ if ($Action -eq 'Install') {
         }
         $service=Get-OwnedService
     }
+    try { Set-ServiceRecovery } catch { Write-Warning $_.Exception.Message }
     # A font problem must not undo a working renderer install; the app reports
     # it and its Repair action runs this step again.
     try { Ensure-MathTypeFonts } catch { Write-Warning $_.Exception.Message }

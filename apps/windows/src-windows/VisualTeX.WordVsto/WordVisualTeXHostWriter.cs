@@ -387,10 +387,14 @@ internal static class WordVisualTeXHostWriter
             suffix = document.Range(
                 hostRange.End,
                 bodyEnd);
+            // User text after the equation: the tab may be the user's too, so
+            // remove only the object itself, as the branches above do.
             if (!ContainsOnlyStructuralText(
                     suffix.Text))
-                throw new InvalidDataException(
-                    "VisualTeX refused to remove its display tab because user content follows the equation in the same paragraph.");
+                return DeleteExact(
+                    document,
+                    host,
+                    preparedSource);
 
             var insertionStart = paragraphRange.Start;
             var expectedSuffix = suffix.Text ?? string.Empty;

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
-    [ValidateSet('Check', 'Stop', 'RepairRegistration')][string]$Mode = 'Check',
+    [ValidateSet('Check', 'Stop', 'Start', 'RepairRegistration')][string]$Mode = 'Check',
     [switch]$Elevated
 )
 
@@ -13,7 +13,7 @@ param(
 # Exit codes:
 #   0  = clear/stopped/repaired
 #   10 = owned renderer service is running (Check only)
-#   11 = owned renderer service did not stop
+#   11 = owned renderer service did not stop (Stop) or start (Start)
 #   20 = ownership/inspection/elevation failed
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -52,7 +52,7 @@ function Invoke-ElevatedSelf {
         '-InstallRoot',
         (Quote-ProcessArgument $InstallRoot),
         '-Mode',
-        'Stop',
+        $Mode,
         '-Elevated'
     )) {
         [void]$arguments.Add($value)
@@ -156,6 +156,42 @@ function Stop-OwnedNativeRenderService {
         if ($null -ne $service) {
             try { $service.Dispose() } catch { }
         }
+    }
+}
+
+# The installer stops the service before it replaces files and starts it again when it
+# reinstalls the renderer; every other way out of the installation (Office step skipped,
+# declined or failed) ends here, so the service is never left stopped.
+function Start-OwnedNativeRenderService {
+    $service = Get-OwnedNativeRenderService
+    if ($null -eq $service) {
+        Write-Output 'NATIVE_RENDER_SERVICE_CLEAR'
+        return 0
+    }
+    try {
+        if ($service.Status -eq [ServiceProcess.ServiceControllerStatus]::Running) {
+            Write-Output 'NATIVE_RENDER_SERVICE_RUNNING already=true'
+            return 0
+        }
+        try {
+            if ($service.Status -ne [ServiceProcess.ServiceControllerStatus]::StartPending) { $service.Start() }
+        } catch {
+            # Older installations let only administrators start it.
+            if (-not (Test-IsAdministrator) -and -not $Elevated) { Invoke-ElevatedSelf }
+            throw
+        }
+        $service.WaitForStatus(
+            [ServiceProcess.ServiceControllerStatus]::Running,
+            [TimeSpan]::FromSeconds(20))
+        $service.Refresh()
+        if ($service.Status -ne [ServiceProcess.ServiceControllerStatus]::Running) {
+            Write-Output ('NATIVE_RENDER_SERVICE_NOT_STARTED status=' + $service.Status)
+            return 11
+        }
+        Write-Output 'NATIVE_RENDER_SERVICE_RUNNING'
+        return 0
+    } finally {
+        $service.Dispose()
     }
 }
 
@@ -267,6 +303,10 @@ try {
 
     if ($Mode -eq 'Stop') {
         exit (Stop-OwnedNativeRenderService)
+    }
+
+    if ($Mode -eq 'Start') {
+        exit (Start-OwnedNativeRenderService)
     }
 
     $service = Get-OwnedNativeRenderService

@@ -128,6 +128,9 @@ internal static class WordDocumentXml
             && c != '\u200B' && c != '\u200C' && c != '\u2060');
     }
 
+    internal static bool IsScratchExport(int exportedMaths, int exportedOles, int liveMaths, int liveOles) =>
+        exportedMaths == 0 && exportedOles == 0 && (liveMaths > 0 || liveOles > 0);
+
     internal static string Read(Document document, Range? ownedScope = null)
     {
         using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordDocumentXml.Read");
@@ -182,7 +185,16 @@ internal static class WordDocumentXml
                 // checkpoint for a nonempty source document.
                 var missingPlainText = mathCount == 0 && shapeCount == 0
                     && IsUnexpectedlyEmptyBody(body, content.Text ?? string.Empty);
-                if (exportedMaths == mathCount && exportedOles == oleCount && !missingPlainText) return xml;
+                // Only the empty scratch body is rejected. COM and XML count
+                // different things (floating OLE, text boxes, AlternateContent
+                // fallbacks, tracked deletions), so other count differences
+                // are diagnostics, not a reason to refuse the operation.
+                if (!IsScratchExport(exportedMaths, exportedOles, mathCount, oleCount) && !missingPlainText)
+                {
+                    if (exportedMaths != mathCount || exportedOles != oleCount)
+                        WordDoubleClickHook.TraceMessage($"word-xml-inventory-differs document={document.FullName} maths={exportedMaths}/{mathCount} oles={exportedOles}/{oleCount}");
+                    return xml;
+                }
                 WordDoubleClickHook.TraceMessage($"word-xml-incomplete-export document={document.FullName} attempt={attempt + 1} maths={exportedMaths}/{mathCount} oles={exportedOles}/{oleCount}");
                 Marshal.ReleaseComObject(export); export = null;
             }

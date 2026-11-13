@@ -136,6 +136,87 @@ export function decodeOfficeCompanionStatus(value: unknown): OfficeCompanionStat
   return status as unknown as OfficeCompanionStatus;
 }
 
+export interface WpsInstallation {
+  path: string;
+  version: string;
+  architecture: "x86" | "x64";
+  perUser: boolean;
+  writerRegistered: boolean;
+  presentationRegistered: boolean;
+  writerWhitelisted: boolean;
+  presentationWhitelisted: boolean;
+  formulaOleRegistered: boolean;
+}
+
+/** A host that loaded the add-in (the add-in notes it at every start). */
+export interface WpsHostLoad {
+  at: string;
+  version: string;
+  architecture: string;
+  enabled: boolean;
+}
+
+export interface WpsIntegrationStatus {
+  installations: WpsInstallation[];
+  hostEnabled: boolean;
+  writerLoaded: WpsHostLoad | null;
+  presentationLoaded: WpsHostLoad | null;
+  companionError: string | null;
+}
+
+export interface NativeRenderStatus {
+  installed: boolean;
+  running: boolean;
+}
+
+function hostLoad(value: unknown, path: string): WpsHostLoad | null {
+  if (value === null) return null;
+  const load = record(value, path);
+  stringValue(load.at, `${path}.at`);
+  stringValue(load.version, `${path}.version`);
+  stringValue(load.architecture, `${path}.architecture`);
+  booleanValue(load.enabled, `${path}.enabled`);
+  return load as unknown as WpsHostLoad;
+}
+
+export function decodeWpsIntegrationStatus(value: unknown): WpsIntegrationStatus {
+  const status = record(value, "wpsIntegrationStatus");
+  if (!Array.isArray(status.installations)) {
+    invalid("wpsIntegrationStatus.installations", "an array");
+  }
+  status.installations.forEach((entry, index) => {
+    const path = `wpsIntegrationStatus.installations[${index}]`;
+    const installation = record(entry, path);
+    stringValue(installation.path, `${path}.path`);
+    stringValue(installation.version, `${path}.version`);
+    if (installation.architecture !== "x86" && installation.architecture !== "x64") {
+      invalid(`${path}.architecture`, '"x86" or "x64"');
+    }
+    for (const key of [
+      "perUser",
+      "writerRegistered",
+      "presentationRegistered",
+      "writerWhitelisted",
+      "presentationWhitelisted",
+      "formulaOleRegistered",
+    ] as const) {
+      booleanValue(installation[key], `${path}.${key}`);
+    }
+  });
+  booleanValue(status.hostEnabled, "wpsIntegrationStatus.hostEnabled");
+  hostLoad(status.writerLoaded, "wpsIntegrationStatus.writerLoaded");
+  hostLoad(status.presentationLoaded, "wpsIntegrationStatus.presentationLoaded");
+  nullableString(status.companionError, "wpsIntegrationStatus.companionError");
+  return status as unknown as WpsIntegrationStatus;
+}
+
+export function decodeNativeRenderStatus(value: unknown): NativeRenderStatus {
+  const status = record(value, "nativeRenderStatus");
+  booleanValue(status.installed, "nativeRenderStatus.installed");
+  booleanValue(status.running, "nativeRenderStatus.running");
+  return status as unknown as NativeRenderStatus;
+}
+
 export function decodeBooleanStatus(value: unknown, path: string): boolean {
   return booleanValue(value, path);
 }

@@ -1163,6 +1163,7 @@ internal static class MathMlToLatexConverter
             "˘" => @"\breve{" + body + "}",
             "˚" => @"\mathring{" + body + "}",
             "⏞" or "\uFE37" => @"\overbrace{" + body + "}",
+            "⎴" => @"\overbracket{" + body + "}",
             _ => @"\overset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };
         if (styleCommand is not null) result = styleCommand + "{" + result + "}";
@@ -1212,6 +1213,7 @@ internal static class MathMlToLatexConverter
         {
             "_" or "¯" or "‾" or "―" => @"\underline{" + body + "}",
             "⏟" or "\uFE38" => @"\underbrace{" + body + "}",
+            "⎵" => @"\underbracket{" + body + "}",
             _ => @"\underset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };
     }
@@ -1240,14 +1242,17 @@ internal static class MathMlToLatexConverter
         // presentation forms U+FE37/U+FE38, or as replacement glyphs on some
         // machines. The nested mover/munder shape plus stretchy operator remains
         // the stable signal for recovering an annotated brace.
-        if (marker != expectedMark
+        var bracket = marker == (top ? "⎴" : "⎵");
+        if (!bracket
+            && marker != expectedMark
             && marker != presentationMark
             && !(replacementOnly && stretchy)) return false;
         var body = ConvertElement(inner[0]);
         var note = ConvertElement(annotation).TrimEnd();
+        var shape = bracket ? "bracket" : "brace";
         latex = top
-            ? @"\overbrace{" + body + "}^{" + note + "}"
-            : @"\underbrace{" + body + "}_{" + note + "}";
+            ? @"\over" + shape + "{" + body + "}^{" + note + "}"
+            : @"\under" + shape + "{" + body + "}_{" + note + "}";
         return true;
     }
 
@@ -1852,6 +1857,8 @@ internal static class MathMlToLatexConverter
             ["}"] = @"\}",
             ["⟨"] = @"\langle",
             ["⟩"] = @"\rangle",
+            ["⟦"] = @"\llbracket",
+            ["⟧"] = @"\rrbracket",
             ["⌈"] = @"\lceil",
             ["⌉"] = @"\rceil",
             ["⌊"] = @"\lfloor",

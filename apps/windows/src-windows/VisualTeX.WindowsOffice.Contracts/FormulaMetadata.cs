@@ -93,6 +93,58 @@ public sealed class FormulaMetadata
     [JsonPropertyName("updatedAt")]
     public string UpdatedAt { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Makes metadata read from a document usable: the formula's identity and
+    /// LaTeX stay; derived layout and presentation values that are out of range
+    /// (another build or platform, a rounding residue) are dropped so the add-in
+    /// recomputes them. Validate() stays strict for metadata the add-in writes.
+    /// </summary>
+    public void NormalizeForRead()
+    {
+        static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+        static bool SupportedSize(double value) =>
+            Finite(value) && value >= FormulaFontSize.MinimumPt && value <= FormulaFontSize.MaximumPt;
+        var display = string.Equals(DisplayMode, "block", StringComparison.Ordinal);
+        var inline = string.Equals(DisplayMode, "inline", StringComparison.OrdinalIgnoreCase);
+        Lines ??= new List<FormulaLine>();
+        if (Lines.Count == 0 && !string.IsNullOrWhiteSpace(Latex))
+            Lines.Add(new FormulaLine { Id = Guid.NewGuid().ToString("D"), Latex = Latex });
+        if (Numbered && !display) Numbered = false;
+        if (!string.IsNullOrWhiteSpace(EquationTag) && (!display || EquationTag!.Length > 256)) EquationTag = null;
+        if (RenderWidthPx is double width && !(width > 0 && Finite(width))) RenderWidthPx = null;
+        if (RenderHeightPx is double height && !(height > 0 && Finite(height))) RenderHeightPx = null;
+        if (Baseline is double baseline
+            && (!Finite(baseline) || baseline < 0 || (RenderHeightPx.HasValue && baseline > RenderHeightPx.Value)))
+            Baseline = null;
+        if (FontSizePt is double fontSize && !SupportedSize(fontSize)) FontSizePt = null;
+        if (RenderFontSizePt is double renderSize && !SupportedSize(renderSize)) RenderFontSizePt = null;
+        if (FormulaLetterFont is not null && !IsSupportedFormulaLetterFont(FormulaLetterFont)) FormulaLetterFont = null;
+        if (FormulaChineseFont is not null && !IsSupportedFormulaChineseFont(FormulaChineseFont)) FormulaChineseFont = null;
+        if (WordInlineOleWidthPt.HasValue != WordInlineOleHeightPt.HasValue || !inline
+            || WordInlineOleWidthPt is double oleWidth && !(oleWidth > 0 && Finite(oleWidth))
+            || WordInlineOleHeightPt is double oleHeight && !(oleHeight > 0 && Finite(oleHeight)))
+        {
+            WordInlineOleWidthPt = null;
+            WordInlineOleHeightPt = null;
+        }
+        if (WordInlineOlePositionPt is int position && (!inline || position < -256 || position > 256))
+            WordInlineOlePositionPt = null;
+        if (WordInlineSourceBottomWhitespacePt is double bottom && (!inline || !Finite(bottom) || bottom < 0 || bottom > 256))
+            WordInlineSourceBottomWhitespacePt = null;
+        if (WordInlinePreviewShiftPx is double shift && (!inline || !Finite(shift) || shift < -2 || shift > 2))
+            WordInlinePreviewShiftPx = null;
+        if (WordDisplayPreviewInkHeightRatio.HasValue != WordDisplayPreviewBottomWhitespaceRatio.HasValue
+            || WordDisplayPreviewInkHeightRatio is double ink
+                && (!string.Equals(DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                    || !Finite(ink) || ink <= 0 || ink > 1
+                    || WordDisplayPreviewBottomWhitespaceRatio is not double whitespace
+                    || !Finite(whitespace) || whitespace < 0 || whitespace > 1 || ink + whitespace > 1.001))
+        {
+            WordDisplayPreviewInkHeightRatio = null;
+            WordDisplayPreviewBottomWhitespaceRatio = null;
+        }
+    }
+
     public void Validate()
     {
         if (Schema != "visualtex-formula" || SchemaVersion != 1)

@@ -42,8 +42,7 @@ internal static class MathTypeLocalFragment
         // paragraph marks are tracked deletions. Object/Shape IDs are allocated
         // afresh for each export and cannot correlate the two packages. Use the
         // exact source's ordinal in the already-captured LOCAL physical OLE set.
-        var ownerObjects = ownerBody.Descendants(O + "OLEObject")
-            .Where(o => o.Parent?.Name == W + "object" && !o.Ancestors(W + "txbxContent").Any()).ToArray();
+        var ownerObjects = InlineObjects(ownerBody);
         if (expectedOwnerOleCount >= 0 && ownerObjects.Length != expectedOwnerOleCount)
             throw new InvalidDataException("The local owner export disagrees with its captured physical OLE set.");
         if (sourceOleOrdinal == 0 && ownerObjects.Length == 1) sourceOleOrdinal = 1;
@@ -157,26 +156,42 @@ internal static class MathTypeLocalFragment
         return package.ToString(SaveOptions.DisableFormatting);
     }
 
+    private static readonly XNamespace V = "urn:schemas-microsoft-com:vml";
+
+    // The OLE objects Word lists in Range.InlineShapes: floating objects
+    // (position:absolute VML) and text-box content are Shapes, not inline, so
+    // counting them would misalign the live ordinal with the serialized one.
+    internal static XElement[] InlineObjects(XElement body) => body.Descendants(O + "OLEObject")
+        .Where(o => o.Parent?.Name == W + "object" && !o.Ancestors(W + "txbxContent").Any()
+            && !IsFloating(o))
+        .ToArray();
+
+    private static bool IsFloating(XElement ole)
+    {
+        var id = (string?)ole.Attribute("ShapeID");
+        var shape = ole.Parent!.Elements(V + "shape").FirstOrDefault(e => (string?)e.Attribute("id") == id);
+        var style = (string?)shape?.Attribute("style") ?? string.Empty;
+        return style.Split(';').Any(d => d.Split(':')[0].Trim() == "position"
+            && d.Substring(d.IndexOf(':') + 1).Trim() == "absolute");
+    }
+
     private static int NormalizeRecoveryPreviewGeometry(XElement body)
     {
-        XNamespace v = "urn:schemas-microsoft-com:vml";
-        var objects = body.Descendants(O + "OLEObject")
-            .Where(e => e.Parent?.Name == W + "object" && !e.Ancestors(W + "txbxContent").Any()).ToArray();
+        var objects = InlineObjects(body);
         foreach (var ole in objects)
         {
+            // Normalization is evidence hygiene only. A preview shape Word
+            // wrote without a unique id or size stays as serialized; both
+            // sides of the comparison go through the same code.
             var id = (string?)ole.Attribute("ShapeID");
-            var shape = ole.Parent!.Elements(v + "shape")
-                .Single(e => (string?)e.Attribute("id") == id);
-            var style = shape.Attribute("style")
-                ?? throw new InvalidDataException("Local OLE recovery preview has no geometry.");
+            var shapes = ole.Parent!.Elements(V + "shape").Where(e => (string?)e.Attribute("id") == id).ToArray();
+            if (shapes.Length != 1 || shapes[0].Attribute("style") is not XAttribute style) continue;
             var declarations = style.Value.Split(';');
             foreach (var dimension in new[] { "width", "height" })
             {
                 var matches = Enumerable.Range(0, declarations.Length)
                     .Where(i => declarations[i].Split(':')[0].Trim() == dimension).ToArray();
-                if (matches.Length != 1)
-                    throw new InvalidDataException("Local OLE preview geometry is ambiguous.");
-                declarations[matches[0]] = dimension + ":word-host";
+                if (matches.Length == 1) declarations[matches[0]] = dimension + ":word-host";
             }
             style.Value = string.Join(";", declarations);
         }

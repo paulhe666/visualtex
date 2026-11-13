@@ -123,7 +123,7 @@ internal static class WordInlineObjectGeometry
                     if (type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject or WdInlineShapeType.wdInlineShapeLinkedOLEObject)
                     {
                         ole = shape.OLEFormat;
-                        progId = ole.ProgID;
+                        progId = WordOleObjectAccessor.ReadProgId(ole);
                     }
                     result.Add(new Item { Start = range.Start - scope.Start, End = range.End - scope.Start,
                         Type = (int)type, ProgId = progId, Width = shape.Width, Height = shape.Height });
@@ -135,6 +135,8 @@ internal static class WordInlineObjectGeometry
         finally { Release(shapes); }
     }
 
+    internal static Action<string>? Diagnostics;
+
     internal static void BindToEvidence(XElement body, IReadOnlyList<Item> actual)
     {
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -143,8 +145,12 @@ internal static class WordInlineObjectGeometry
         var xmlObjects = body.Descendants(o + "OLEObject")
             .Where(e => e.Parent?.Name == w + "object" && !e.Ancestors(w + "txbxContent").Any()).ToArray();
         var liveObjects = actual.Where(e => e.Type is 1 or 2).ToArray();
-        if (xmlObjects.Length != liveObjects.Length)
-            throw new InvalidDataException("COM and XML disagree on inline OLE recovery ownership.");
+        // The two views are Word's own and need not agree: an object's ProgID or
+        // Embed/Link label can differ between them, and so can the count. That
+        // is no reason to refuse the edit. An object that cannot be paired keeps
+        // its XML bounds as serialized and its live geometry below, so the
+        // evidence still covers it.
+        var unbound = 0;
 
         double GeometryScore(XElement xmlObject, Item live)
         {
@@ -188,38 +194,45 @@ internal static class WordInlineObjectGeometry
         foreach (var live in liveObjects)
         {
             var expectedType = live.Type == 1 ? "Embed" : "Link";
-            var candidates = unmatchedXmlObjects
+            var sameProgId = unmatchedXmlObjects
                 .Where(xmlObject =>
                     string.Equals(
                         (string?)xmlObject.Attribute("ProgID"),
                         live.ProgId,
-                        StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            var sameType = sameProgId
+                .Where(xmlObject =>
+                    string.Equals(
                         (string?)xmlObject.Attribute("Type"),
                         expectedType,
                         StringComparison.Ordinal))
-                .OrderBy(xmlObject => GeometryScore(xmlObject, live))
                 .ToArray();
-            if (candidates.Length == 0)
-                throw new InvalidDataException(
-                    "COM and XML disagree on the inline OLE type or ownership.");
-            var xmlObject = candidates[0];
+            var xmlObject = (sameType.Length > 0 ? sameType : sameProgId)
+                .OrderBy(candidate => GeometryScore(candidate, live))
+                .FirstOrDefault();
+            if (xmlObject is null)
+            {
+                unbound++;
+                continue;
+            }
             unmatchedXmlObjects.Remove(xmlObject);
             if (!live.ProgId.StartsWith("Equation.DSMT", StringComparison.OrdinalIgnoreCase)) continue;
             var shapeId = (string?)xmlObject.Attribute("ShapeID");
             var shapes = xmlObject.Parent!.Elements(v + "shape")
                 .Where(e => (string?)e.Attribute("id") == shapeId).ToArray();
-            if (shapeId is null || shapes.Length != 1)
-                throw new InvalidDataException("MathType recovery geometry has no unique XML shape owner.");
-            var style = shapes[0].Attribute("style")
-                ?? throw new InvalidDataException("MathType recovery geometry is missing its XML bounds.");
+            var style = shapeId is null || shapes.Length != 1 ? null : shapes[0].Attribute("style");
+            if (style is null)
+            {
+                unbound++;
+                continue;
+            }
             var declarations = style.Value.Split(';');
             foreach (var dimension in new[] { (Name: "width", Value: live.Width), (Name: "height", Value: live.Height) })
             {
                 var matches = Enumerable.Range(0, declarations.Length)
                     .Where(i => declarations[i].Split(':')[0].Trim() == dimension.Name).ToArray();
-                if (matches.Length != 1)
-                    throw new InvalidDataException("MathType XML bounds are ambiguous.");
+                if (matches.Length != 1) continue;
                 var declaration = declarations[matches[0]];
                 var value = declaration.Substring(declaration.IndexOf(':') + 1).Trim();
                 if (!value.EndsWith("pt", StringComparison.Ordinal)
@@ -227,7 +240,7 @@ internal static class WordInlineObjectGeometry
                     continue; // Other encodings retain their strict XML comparison.
                 var livePoints = (double)dimension.Value;
                 if (livePoints <= 0 || double.IsNaN(livePoints) || double.IsInfinity(livePoints))
-                    throw new InvalidDataException("Word returned invalid inline object dimensions.");
+                    continue; // Not laid out yet: keep the strict serialized value.
                 // Only the observed integer-point preview encoding, or the actual
                 // COM point value, is equivalent. Arbitrary nearby values remain
                 // in the strict XML signature. Actual dimensions below are always
@@ -236,6 +249,15 @@ internal static class WordInlineObjectGeometry
                     declarations[matches[0]] = dimension.Name + ":" + dimension.Value.ToString("R", CultureInfo.InvariantCulture) + "pt";
             }
             style.Value = string.Join(";", declarations);
+        }
+        if (unbound > 0 || unmatchedXmlObjects.Count > 0)
+        {
+            Diagnostics?.Invoke(
+                "inline-ole-evidence-unbound live=["
+                + string.Join(";", liveObjects.Select(e => e.Type + ":" + e.ProgId))
+                + "] xml=["
+                + string.Join(";", xmlObjects.Select(e => (string?)e.Attribute("Type") + ":" + (string?)e.Attribute("ProgID")))
+                + "]");
         }
         body.SetAttributeValue("recoveryInlineGeometry", string.Join("|", actual.Select(e =>
             string.Join(",", e.Start, e.End, e.Type, e.ProgId,

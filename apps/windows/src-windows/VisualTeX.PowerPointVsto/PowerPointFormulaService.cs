@@ -2429,19 +2429,60 @@ public sealed partial class PowerPointFormulaService : IDisposable
     {
         if (string.IsNullOrWhiteSpace(expectedIdentity)) return;
         var actual = DocumentIdentity(presentation);
-        if (!string.Equals(actual, expectedIdentity, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                "The active PowerPoint presentation changed while the VisualTeX editor was open.");
+        if (string.Equals(actual, expectedIdentity, StringComparison.OrdinalIgnoreCase)) return;
+        // Saving, Save As, renaming or a OneDrive move changes the path while
+        // the editor is open. The same live presentation object is still the
+        // source; only a different presentation is refused.
+        IntPtr expectedObject;
+        lock (IdentityObjects)
+            if (!IdentityObjects.TryGetValue(expectedIdentity!, out expectedObject)) expectedObject = IntPtr.Zero;
+        if (expectedObject != IntPtr.Zero && expectedObject == ObjectIdentity(presentation))
+            return;
+        throw new InvalidOperationException(
+            "The active PowerPoint presentation changed while the VisualTeX editor was open.");
+    }
+
+    internal bool IsActiveSourceDocument(string? expectedIdentity)
+    {
+        Presentation? presentation = null;
+        try
+        {
+            presentation = _application.ActivePresentation;
+            EnsureSourceDocument(presentation, expectedIdentity);
+            return true;
+        }
+        catch (InvalidOperationException) { return false; }
+        catch (COMException) { return false; }
+        finally { Release(presentation); }
+    }
+
+    // Identity string -> the COM identity (IUnknown) of the presentation that
+    // had it, so a renamed presentation is still recognised as the same one.
+    private static readonly Dictionary<string, IntPtr> IdentityObjects = new(StringComparer.OrdinalIgnoreCase);
+
+    private static IntPtr ObjectIdentity(Presentation presentation)
+    {
+        try
+        {
+            var unknown = Marshal.GetIUnknownForObject(presentation);
+            Marshal.Release(unknown);
+            return unknown;
+        }
+        catch { return IntPtr.Zero; }
     }
 
     private static string DocumentIdentity(Presentation presentation)
     {
+        string identity;
         try
         {
-            if (!string.IsNullOrWhiteSpace(presentation.FullName)) return presentation.FullName;
+            identity = !string.IsNullOrWhiteSpace(presentation.FullName) ? presentation.FullName : presentation.Name;
         }
-        catch { }
-        return presentation.Name;
+        catch { identity = presentation.Name; }
+        var objectIdentity = ObjectIdentity(presentation);
+        if (objectIdentity != IntPtr.Zero)
+            lock (IdentityObjects) IdentityObjects[identity] = objectIdentity;
+        return identity;
     }
 
     private static void EnsureWritable(Presentation presentation)

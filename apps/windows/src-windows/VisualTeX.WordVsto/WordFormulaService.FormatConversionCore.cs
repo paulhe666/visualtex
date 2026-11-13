@@ -124,14 +124,14 @@ internal sealed partial class WordFormulaService
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
-                    // The LaTeX is not known yet: name the formula by its order
-                    // and its Word character position.
-                    var ordinal = plan.Targets.Count + 1;
-                    throw new InvalidOperationException(
-                        OfficePluginLanguage.Text(
-                            $"无法读取第 {ordinal} 个源公式（Word 字符位置 {host.Range.Start}）：{OfficeErrorText.Describe(error)}",
-                            $"Could not read source equation {ordinal} (Word character position {host.Range.Start}): {OfficeErrorText.Describe(error)}"),
-                        error);
+                    // Nothing is written while reading. This formula keeps its
+                    // format and is reported; the others are still converted.
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-capture-failed start={host.Range.Start} error={error}");
+                    plan.CaptureFailures.Add((host.Range.Start, OfficePluginLanguage.Text(
+                        $"无法读取源公式（Word 字符位置 {host.Range.Start}）：{OfficeErrorText.Describe(error)}",
+                        $"Could not read the source equation (Word character position {host.Range.Start}): {OfficeErrorText.Describe(error)}")));
+                    continue;
                 }
                 plan.Targets.Add(target);
             }
@@ -375,7 +375,8 @@ internal sealed partial class WordFormulaService
                     request.BatchMutation = true;
                     if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
                         request.PreparedVisualTeXNumbering = visualTeXNumbers!.For(target.Id);
-                    if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable)
+                    if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable
+                        && string.Equals(target.WriteDisplayMode, "block", StringComparison.OrdinalIgnoreCase))
                     {
                         var section = displaySectionTabs.First(item => item.Start <= source.Range.Start && item.End > source.Range.Start);
                         request.DisplayCenterTabPoints = section.Center;
@@ -935,9 +936,13 @@ internal sealed partial class WordFormulaService
             }
         }
 
+        var writeInlineInList = !numberedIntent
+            && string.Equals(host.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+            && IsInListParagraph(document, host.Range.Start, host.Range.End);
         return new WordFormulaFormatConversionTarget
         {
             Id = Guid.NewGuid().ToString("D"),
+            WriteDisplayModeOverride = writeInlineInList ? "inline" : null,
             SourceFormulaId = formulaId,
             SourceObjectId =
                 RangeReferenceFromAddress(host.Range),
@@ -958,6 +963,31 @@ internal sealed partial class WordFormulaService
                 numberedIntent || string.Equals(host.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)),
             Metadata = metadata,
         };
+    }
+
+    private static bool IsInListParagraph(Document document, int start, int end)
+    {
+        Range? range = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            range = document.Range(start, end);
+            paragraphs = range.Paragraphs;
+            if (paragraphs.Count != 1) return false;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            return MathTypeOleInterop.IsListParagraph(paragraphRange);
+        }
+        catch (COMException) { return false; }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(range);
+        }
     }
 
     private static float? ReadMathTypeInlinePresentationFontSize(
@@ -1012,7 +1042,7 @@ internal sealed partial class WordFormulaService
         session.SourceObjectId =
             target.SourceObjectId;
         session.DisplayMode =
-            target.DisplayMode;
+            target.WriteDisplayMode;
         session.ObjectMode =
             plan.TargetMode;
         session.Numbered =
@@ -1024,6 +1054,7 @@ internal sealed partial class WordFormulaService
         session.OriginalMetadata =
             CloneCoreMetadata(
                 target.Metadata);
+        session.OriginalMetadata.DisplayMode = target.WriteDisplayMode;
     }
 
     private static FormulaMetadata CloneCoreMetadata(

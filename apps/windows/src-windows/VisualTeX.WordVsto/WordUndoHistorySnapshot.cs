@@ -24,7 +24,12 @@ internal sealed class WordUndoHistorySnapshot
     private const int BoundarySize = 8;
     private const int TailSize = 4;
     private readonly string documentName;
-    private readonly Boundary original;
+    private readonly Boundary? original;
+    // Set when Word's history could not be read before the operation (another
+    // active document, no legacy Undo combo box, an empty or inconsistent list).
+    // The operation itself is unaffected; only automatic recovery after a
+    // failure is unavailable, and it is then refused instead of guessed.
+    private readonly string? unreadableReason;
     // WPS keeps an undo stack but exposes no readable history list (the Undo control's
     // List is always empty). There, recovery relies on WPS's measured record semantics
     // instead (see UndoChanges).
@@ -47,7 +52,12 @@ internal sealed class WordUndoHistorySnapshot
             original = new Boundary();
             return;
         }
-        original = ReadBoundary(document, originalDepth: null);
+        try { original = ReadBoundary(document, originalDepth: null); }
+        catch (Exception error) when (error is InvalidOperationException or InvalidDataException or COMException)
+        {
+            unreadableReason = error.Message;
+            WordDoubleClickHook.TraceMessage($"word-undo-history-unreadable reason={error.Message}");
+        }
     }
 
     internal int UndoChanges(Document document)
@@ -67,6 +77,10 @@ internal sealed class WordUndoHistorySnapshot
                 throw new InvalidOperationException("WPS could not undo the failed operation.");
             return 1;
         }
+        if (original is null)
+            throw new InvalidOperationException(
+                "Word's undo history was not readable when the operation started (" + unreadableReason
+                + "), so the failed change was not undone automatically.");
         var current = ReadBoundary(document, original.Depth);
         var count = CountOwnedPrefixAtBoundary(original.Depth, original.Head,
             current.Depth, current.Head);

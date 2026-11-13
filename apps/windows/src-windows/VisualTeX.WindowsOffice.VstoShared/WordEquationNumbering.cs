@@ -626,9 +626,16 @@ internal static partial class WordEquationNumbering
         // has nothing for this numbering engine. MathType is refreshed separately.
         if (fastPath && updated == 0 && requiredIds.Count == 0) return 0;
         var result = fastPath ? updated : Reconcile(document);
-        if (!fastPath && requiredIds.Count > 0
-            && !TryRefreshHealthyEquationNumbersInPlace(document, out result, requiredIds))
-            throw new InvalidDataException("Numbering did not create a complete host for every required formula.");
+        // The whole-document health proof also fails for unrelated leftovers
+        // elsewhere; what this operation needs is a number host for each of
+        // its own formulas.
+        if (!fastPath && requiredIds.Count > 0)
+        {
+            if (TryRefreshHealthyEquationNumbersInPlace(document, out var healthyCount, requiredIds))
+                result = healthyCount;
+            else if (!RequiredFormulasHaveNumberHosts(document, requiredIds))
+                throw new InvalidDataException("Numbering did not create a complete host for every required formula.");
+        }
         // References retain their original names across format conversions.
         // The numeric-identity inventory alone cannot enumerate inherited ZEqnNum
         // references. Finalize both direct and nested references by their actual
@@ -647,6 +654,26 @@ internal static partial class WordEquationNumbering
                 $"    [perf] UpdateEquationNumbers.{(fastPath ? "fast" : "reconcile")}: {result} formulas in {watch.ElapsedMilliseconds}ms");
         }
         return result;
+    }
+
+    private static bool RequiredFormulasHaveNumberHosts(Document document, IEnumerable<string> formulaIds)
+    {
+        Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var id in formulaIds)
+            {
+                if (!bookmarks.Exists(EquationBookmarkName(id))
+                    || !bookmarks.Exists(NativeCaptionBookmarkName(id))
+                    || !bookmarks.Exists(NativeNumberBookmarkName(id)))
+                    return false;
+            }
+            WordDoubleClickHook.TraceMessage("equation-number-health-local-proof");
+            return true;
+        }
+        catch (COMException) { return false; }
+        finally { Release(bookmarks); }
     }
 
     private static bool TryRefreshHealthyEquationNumbersInPlace(
@@ -14217,19 +14244,26 @@ internal static partial class WordEquationNumbering
                 }
                 if (name.StartsWith(NativeDisplayAnchorBookmarkPrefix, StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith(NativeDisplayAnchorCommitBookmarkPrefix, StringComparison.OrdinalIgnoreCase))
-                    return false;
+                    WordDoubleClickHook.TraceMessage($"equation-number-scaffold-leftover-anchor name={name}");
             }
 
-            if (visibleIds.Count == 0
-                || !visibleIds.SetEquals(captionIds)
-                || !visibleIds.SetEquals(numberIds))
+            // Numbers are computed from complete triples (visible, caption and
+            // number bookmark of one formula). A leftover bookmark of a deleted
+            // equation elsewhere is reported, not a reason to refuse numbering.
+            var complete = new HashSet<string>(visibleIds, StringComparer.OrdinalIgnoreCase);
+            complete.IntersectWith(captionIds);
+            complete.IntersectWith(numberIds);
+            if (complete.Count == 0)
                 return false;
+            if (complete.Count != visibleIds.Count || complete.Count != captionIds.Count || complete.Count != numberIds.Count)
+                WordDoubleClickHook.TraceMessage(
+                    $"equation-number-scaffold-incomplete complete={complete.Count} visible={visibleIds.Count} captions={captionIds.Count} numbers={numberIds.Count}");
 
             var resolved = GetNativeEquationCaptionEntries(document, nativeSequenceName);
             var resolvedIds = resolved
                 .Select(item => item.FormulaId)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (resolved.Count != visibleIds.Count || !resolvedIds.SetEquals(visibleIds))
+            if (!resolvedIds.SetEquals(complete))
                 return false;
             captions = resolved;
             return true;

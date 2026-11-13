@@ -276,19 +276,10 @@ internal static partial class MathTypeOleStorage
             var identity = MathTypeOleInterop.ResolvePreferredStorageIdentity();
             var clsid = identity.Clsid;
             storage.SetClass(ref clsid);
-            var mathTypeFormat = RegisterClipboardFormatW("MathType EF");
-            if (mathTypeFormat == 0)
-                throw new InvalidOperationException(
-                    "Could not register the MathType EF clipboard format.");
-            result = WriteFmtUserTypeStg(
-                storage,
-                checked((ushort)mathTypeFormat),
-                identity.UserType);
-            if (result < 0) Marshal.ThrowExceptionForHR(result);
+            WriteMathTypeCompObj(storage, clsid, identity.UserType, identity.ProgId);
             // These are the standard OLE2 containment metadata streams written by
             // MathType 7 for an Equation.DSMT4 embedded object.  They contain no
-            // formula/vendor document payload; CompObj is generated above by the
-            // Windows OLE API from the registered class/user type/clipboard format.
+            // formula/vendor document payload.
             CreateAndWriteStream(
                 storage,
                 "\u0001Ole",
@@ -583,35 +574,12 @@ internal static partial class MathTypeOleStorage
             var storage = OpenStorage(path, StgmReadWrite | StgmShareExclusive);
             try
             {
-                ushort clipboardFormat = 0;
-                IntPtr existingUserType = IntPtr.Zero;
-                try
-                {
-                    _ = ReadFmtUserTypeStg(
-                        storage,
-                        out clipboardFormat,
-                        out existingUserType);
-                }
-                finally
-                {
-                    if (existingUserType != IntPtr.Zero)
-                        Marshal.FreeCoTaskMem(existingUserType);
-                }
-                if (clipboardFormat == 0)
-                {
-                    var registered = RegisterClipboardFormatW("MathType EF");
-                    if (registered == 0 || registered > ushort.MaxValue)
-                        throw new InvalidOperationException(
-                            "Could not register the MathType EF clipboard format.");
-                    clipboardFormat = checked((ushort)registered);
-                }
-
                 storage.SetClass(ref rootClsid);
-                var result = WriteFmtUserTypeStg(
+                WriteMathTypeCompObj(
                     storage,
-                    clipboardFormat,
-                    userType.Trim());
-                if (result < 0) Marshal.ThrowExceptionForHR(result);
+                    rootClsid,
+                    userType.Trim(),
+                    MathTypeOleInterop.CanonicalProgId);
                 storage.Commit(0);
             }
             finally { Release(storage); }
@@ -1045,6 +1013,17 @@ internal static partial class MathTypeOleStorage
         }
         finally { Release(stream); }
     }
+
+    // Not WriteFmtUserTypeStg: see MathTypeCompObj.
+    private static void WriteMathTypeCompObj(
+        IStorageNative storage,
+        Guid clsid,
+        string userType,
+        string progId) =>
+        CreateAndWriteStream(
+            storage,
+            (char)1 + "CompObj",
+            MathTypeCompObj.Build(clsid, userType, progId));
 
     private static void CreateAndWriteStream(
         IStorageNative storage,

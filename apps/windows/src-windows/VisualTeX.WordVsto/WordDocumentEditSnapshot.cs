@@ -8,8 +8,12 @@ namespace VisualTeX.WordVsto;
 // bookmark spans may be restored explicitly, followed by full verification.
 internal sealed class WordDocumentEditSnapshot
 {
-    private readonly string bodySignature;
-    private readonly string normalizedOriginalBody;
+    // Null when the body evidence could not be captured. The evidence only
+    // verifies recovery after a failure, so it never blocks the operation;
+    // a failed operation then reports that recovery could not be verified.
+    private readonly string? bodySignature;
+    private readonly string normalizedOriginalBody = string.Empty;
+    private readonly string? bodyEvidenceError;
     private readonly int documentEnd;
     private readonly int evidenceStart = -1;
     private readonly int evidenceEnd;
@@ -48,22 +52,34 @@ internal sealed class WordDocumentEditSnapshot
                 evidenceEnd = isolatedMutationScope.End;
                 Release(content); content = ReadEvidenceRange(document);
             }
-            var originalXml = WordDocumentXml.Read(document, content);
-            Trace("xml");
-            var geometry = WordInlineObjectGeometry.Capture(content);
-            bodySignature = WordLocalEditSnapshot.Signature(originalXml, geometry);
-            normalizedOriginalBody = WordLocalEditSnapshot.NormalizedBody(originalXml, geometry);
-            Trace("signature");
-            if (ownedBookmarkNames is not null)
-                bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, content,
-                    WordLocalEditSnapshot.NormalizedBody(originalXml, geometry), ownedBookmarkNames);
-            Trace("bookmarks");
-            if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_RECOVERY_XML") == "1")
+            try
             {
-                diagnosticPath = (Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH")
-                    ?? throw new InvalidOperationException("Diagnostic evidence needs a configured trace path."))
-                    + ".recovery-" + Guid.NewGuid().ToString("N");
-                File.WriteAllText(diagnosticPath + "-before.xml", WordLocalEditSnapshot.NormalizedBody(originalXml, geometry));
+                var originalXml = WordDocumentXml.Read(document, content);
+                Trace("xml");
+                var geometry = WordInlineObjectGeometry.Capture(content);
+                bodySignature = WordLocalEditSnapshot.Signature(originalXml, geometry);
+                normalizedOriginalBody = WordLocalEditSnapshot.NormalizedBody(originalXml, geometry);
+                Trace("signature");
+                if (ownedBookmarkNames is not null)
+                    bookmarkRecovery = new WordBookmarkRecoverySnapshot(document, content,
+                        normalizedOriginalBody, ownedBookmarkNames);
+                Trace("bookmarks");
+                if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_RECOVERY_XML") == "1")
+                {
+                    diagnosticPath = (Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH")
+                        ?? throw new InvalidOperationException("Diagnostic evidence needs a configured trace path."))
+                        + ".recovery-" + Guid.NewGuid().ToString("N");
+                    File.WriteAllText(diagnosticPath + "-before.xml", normalizedOriginalBody);
+                }
+            }
+            catch (Exception error) when (error is InvalidDataException or InvalidOperationException
+                or System.Xml.XmlException or System.Runtime.InteropServices.COMException
+                or ArgumentException or IOException)
+            {
+                bodySignature = null;
+                bookmarkRecovery = null;
+                bodyEvidenceError = error.Message;
+                WordDoubleClickHook.TraceMessage($"document-checkpoint-body-unavailable error={error}");
             }
             mathFont = document.OMathFontName;
             metadata = ReadMetadata(document);
@@ -80,6 +96,7 @@ internal sealed class WordDocumentEditSnapshot
 
     private bool BodyMatches(Document document)
     {
+        if (bodySignature is null) return false;
         Range? content = null;
         try
         {
@@ -147,6 +164,9 @@ internal sealed class WordDocumentEditSnapshot
         var variablesRestored = ReadVariables(document).OrderBy(p => p.Key).SequenceEqual(variables.OrderBy(p => p.Key));
         WordDoubleClickHook.TraceMessage(
             $"format-conversion-recovery-verified body={bodyRestored} scope={(evidenceStart < 0 ? "document" : evidenceStart + ":" + evidenceEnd)} mathFont={fontRestored} metadata={metadataRestored} variables={variablesRestored}");
+        if (bodyEvidenceError is not null && fontRestored && metadataRestored && variablesRestored)
+            throw new InvalidDataException("Word undo ran, but the original content could not be verified ("
+                + bodyEvidenceError + ").");
         if (!bodyRestored || !fontRestored || !metadataRestored || !variablesRestored)
             throw new InvalidDataException("Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.");
     }

@@ -325,7 +325,13 @@ public sealed partial class ThisAddIn
                             $"format-conversion-unit-not-converted slide={unit.SlideIndex} shape={unit.ShapeId} reason={reason} detail={detail}");
                         if (reason == PowerPointConversionSkipReason.Failed) consecutiveFailures.Add(skip);
                     }
-                    if (consecutiveFailures.Count >= StopAfterConsecutiveFailures)
+                    // Every unit rolls back on its own. Stop only when the last
+                    // failures share one cause (PowerPoint itself is failing);
+                    // unrelated failures are reported and the batch goes on.
+                    if (consecutiveFailures.Count >= StopAfterConsecutiveFailures
+                        && consecutiveFailures.Skip(consecutiveFailures.Count - StopAfterConsecutiveFailures)
+                            .Select(failed => failed.Detail ?? string.Empty)
+                            .Distinct(StringComparer.Ordinal).Count() == 1)
                     {
                         // name the failures that stopped the batch, not just "several"
                         stoppedReason = T(

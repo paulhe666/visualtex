@@ -529,6 +529,10 @@ visualtex_office_missing:
   Goto visualtex_office_done
 
 visualtex_office_done:
+  ; PREINSTALL stopped the renderer service (MathType equations in Word, PowerPoint and WPS)
+  ; before replacing files. Reinstalling the renderer starts it again; every other way out of
+  ; the Office step (skipped, declined, failed, acceptance) must not leave it stopped.
+  !insertmacro VisualTeXRunPrivateRuntimeGuard Start
   ; VisualTeX's input method (VisualTeX Anywhere: pinyin, English and formulas in any
   ; application) is a machine-wide text service: registering it may show one UAC prompt.
   ; The script leaves a current registration alone. Acceptance installs skip it.

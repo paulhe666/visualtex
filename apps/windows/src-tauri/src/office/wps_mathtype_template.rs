@@ -184,7 +184,7 @@ fn registry_string(root: HKEY, key: &str, value: &str) -> Option<String> {
 }
 
 /// The machine type in a PE file's header.
-fn pe_machine(path: &Path) -> Option<u16> {
+pub(crate) fn pe_machine(path: &Path) -> Option<u16> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = fs::File::open(path).ok()?;
     let mut dos = [0u8; 64];

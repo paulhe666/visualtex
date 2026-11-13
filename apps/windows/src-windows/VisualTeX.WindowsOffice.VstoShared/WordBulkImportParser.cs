@@ -442,8 +442,8 @@ internal static class WordBulkImportParser
             index++;
         }
 
-        if (spans.Count > 1_000)
-            throw new InvalidDataException("LaTeX 重绘包含过多公式（上限 1000）。");
+        // No formula-count limit: the redraw renders in chunks and writes each
+        // formula in its own undo record, so a long thesis is just more chunks.
         return spans;
     }
 

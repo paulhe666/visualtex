@@ -15,6 +15,15 @@ internal static partial class MathTypeMtefCodec
         byte[] equationNative, string mathMl, bool inline, double fontSizePt)
         => SetFullFontSize(RewriteEquationNative(equationNative, mathMl, inline), fontSizePt);
 
+    // Reading an existing equation: a missing or relative Full size (another
+    // writer, an old MathType) does not make its content unreadable; the
+    // formula takes the default size instead.
+    internal static double ReadEquationNativeFullFontSizeOrDefault(byte[] equationNative)
+    {
+        try { return ReadEquationNativeFullFontSize(equationNative); }
+        catch (InvalidDataException) { return VisualTeX.WindowsOffice.Contracts.FormulaFontSize.DefaultPt; }
+    }
+
     internal static double ReadEquationNativeFullFontSize(byte[] equationNative)
     {
         var mtef = ExtractNativeMtef(equationNative);

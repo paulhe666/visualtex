@@ -105,13 +105,28 @@ public sealed class MathTypeRecoveryOwnershipTests
     }
 
     [Fact]
-    public void MissingOwnerOrAmbiguousGeometryFailsClosed()
+    public void MissingOwnerFailsClosedAndAmbiguousGeometryStaysStrict()
     {
         var missing = Package();
         missing.Descendants(O + "OLEObject").First().Remove();
         Assert.Throws<InvalidDataException>(() => Evidence(missing));
+        // An ambiguous preview style is kept as serialized instead of refusing
+        // the edit, so a change to it is still detected.
         var duplicated = Package();
         duplicated.Descendants(V + "shape").First().SetAttributeValue("style", "width:64pt;height:19.5pt;width:64pt");
-        Assert.Throws<InvalidDataException>(() => Evidence(duplicated));
+        var changed = Package();
+        changed.Descendants(V + "shape").First().SetAttributeValue("style", "width:64pt;height:19.5pt;width:65pt");
+        Assert.NotEqual(Evidence(duplicated), Evidence(changed));
+    }
+
+    [Fact]
+    public void FloatingOleIsNotCountedAgainstInlineObjects()
+    {
+        var package = Package(stale: false);
+        var paragraph = package.Descendants(W + "p").Last();
+        paragraph.Add(new XElement(W + "r", new XElement(W + "object",
+            new XElement(V + "shape", new XAttribute("id", "floating"), new XAttribute("style", "position:absolute;width:40pt;height:40pt")),
+            new XElement(O + "OLEObject", new XAttribute("Type", "Embed"), new XAttribute("ProgID", "Visio.Drawing.11"), new XAttribute("ShapeID", "floating")))));
+        Assert.NotNull(Evidence(package, Live("Equation.3")));
     }
 }

@@ -12,8 +12,38 @@ namespace VisualTeX.WindowsOffice.Contracts;
 
 public static class NativeRenderClient
 {
-    // Read-only SCM check: Office neither starts nor stops a native engine.
-    public static bool IsAvailable => GetServiceProcessId() != 0;
+    // The service is running, or was stopped and has been started now: an installation that
+    // stopped it and did not finish leaves it so until Windows restarts. Signed-in users may
+    // start it (manage_windows_native_render.ps1); Office never stops a native engine.
+    public static bool IsAvailable => GetServiceProcessId() != 0 || StartStoppedService();
+
+    private const int StartTimeoutMs = 20000;
+
+    private static bool StartStoppedService()
+    {
+        IntPtr manager = OpenSCManager(null, null, 1);
+        if (manager == IntPtr.Zero) return false;
+        try
+        {
+            // SERVICE_START | SERVICE_QUERY_STATUS; refused where only administrators may start it.
+            IntPtr service = OpenService(manager, NativeRenderProtocol.ServiceName, 0x10 | 4);
+            if (service == IntPtr.Zero) return false;
+            try
+            {
+                // 1056: ERROR_SERVICE_ALREADY_RUNNING (it is starting)
+                if (!StartService(service, 0, IntPtr.Zero) && Marshal.GetLastWin32Error() != 1056) return false;
+            }
+            finally { CloseServiceHandle(service); }
+        }
+        finally { CloseServiceHandle(manager); }
+        var started = Environment.TickCount;
+        while (unchecked(Environment.TickCount - started) < StartTimeoutMs)
+        {
+            Thread.Sleep(200);
+            if (GetServiceProcessId() != 0) return true;
+        }
+        return false;
+    }
 
     public static async Task<NativeRenderResponse> RenderAsync(NativeRenderRequest request, CancellationToken token)
     {
@@ -84,6 +114,7 @@ public static class NativeRenderClient
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr OpenService(IntPtr manager, string name, uint access);
     [DllImport("advapi32.dll", SetLastError = true)] private static extern bool QueryServiceStatusEx(IntPtr service, int kind, out ServiceStatus status, int size, out int needed);
     [DllImport("advapi32.dll")] private static extern bool CloseServiceHandle(IntPtr service);
+    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool StartService(IntPtr service, int argumentCount, IntPtr arguments);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint pid);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafePipeHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
 }

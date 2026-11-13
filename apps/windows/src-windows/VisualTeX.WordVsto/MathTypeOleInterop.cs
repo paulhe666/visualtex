@@ -22,7 +22,7 @@ internal static partial class MathTypeOleInterop
             try
             {
                 format = shape.OLEFormat;
-                var progId = format.ProgID;
+                var progId = WordOleObjectAccessor.ReadProgId(format);
                 if (string.Equals(progId, CanonicalProgId, StringComparison.OrdinalIgnoreCase))
                     return true;
                 if (TryResolveCapabilities(progId, out _))
@@ -181,7 +181,7 @@ internal static partial class MathTypeOleInterop
     {
         var native = MathTypeOleStorage.ReadEquationNative(
             knownCompoundFile ?? MathTypeOleStorage.CaptureCompoundFile(shape));
-        var fontSizePt = MathTypeMtefCodec.ReadEquationNativeFullFontSize(native);
+        var fontSizePt = MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(native);
         string mathMl;
         try
         {
@@ -549,6 +549,18 @@ internal static partial class MathTypeOleInterop
         }
     }
 
+    internal static bool IsListParagraph(Range paragraphRange)
+    {
+        ListFormat? list = null;
+        try
+        {
+            list = paragraphRange.ListFormat;
+            return list.ListType != WdListType.wdListNoNumbering;
+        }
+        catch (COMException) { return false; }
+        finally { Release(list); }
+    }
+
     private static string InferDisplayMode(Range range, out bool numbered)
     {
         numbered = false;
@@ -575,6 +587,12 @@ internal static partial class MathTypeOleInterop
             // with the MathType OLE, this is unambiguously a display equation.
             numbered = ContainsMathTypeDisplayNumberField(paragraphRange);
             if (numbered) return "block";
+
+            // A list item ("A. <equation>" from automatic numbering, a bullet)
+            // is a line of text: Word cannot even hold display math there
+            // (OMath.Type = display fails with 0x800A1066), so the equation is
+            // inline however alone it is in the paragraph.
+            if (IsListParagraph(paragraphRange)) return "inline";
 
             // An unnumbered MathType display equation is a single equation object
             // occupying its paragraph. A paragraph containing multiple inline
@@ -768,40 +786,14 @@ internal static partial class MathTypeOleInterop
         }
     }
 
-    private static bool LooksLikeDisplayEquationDecoration(string text)
+    // A visible equation number is an enclosed number: "(1)", "(1.2)", "[3]".
+    // An exercise label and punctuation around an inline formula ("1. …;")
+    // are prose, and the formula stays inline.
+    internal static bool LooksLikeDisplayEquationDecoration(string text)
     {
-        var sawNumber = false;
-        foreach (var character in text)
-        {
-            if (char.IsWhiteSpace(character)) continue;
-            if (char.IsDigit(character))
-            {
-                sawNumber = true;
-                continue;
-            }
-
-            switch (character)
-            {
-                case '(':
-                case ')':
-                case '[':
-                case ']':
-                case '{':
-                case '}':
-                case '.':
-                case ',':
-                case ':':
-                case ';':
-                case '-':
-                case '–':
-                case '—':
-                case '/':
-                case '\\':
-                    continue;
-                default:
-                    return false;
-            }
-        }
-        return sawNumber;
+        var compact = new string(text.Where(character => !char.IsWhiteSpace(character)).ToArray());
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            compact,
+            @"^(\(\d+(?:[.\-–—:,/]\d+)*\)|\[\d+(?:[.\-–—:,/]\d+)*\]|\{\d+(?:[.\-–—:,/]\d+)*\})$");
     }
 }

@@ -999,9 +999,11 @@ internal static class WordOmmlHostWriter
     {
         if (string.IsNullOrEmpty(text))
             return true;
+        // Spaces around a display equation ("<OMath> ", a pasted no-break
+        // space) hold no content; any visible character does.
         foreach (var value in text!)
         {
-            if (value is '\t' or '\v')
+            if (value is '\t' or '\v' or '\u200B' or '\uFEFF' || char.IsWhiteSpace(value))
                 continue;
             return false;
         }

@@ -37,7 +37,19 @@ public sealed class WordInlineObjectGeometryTests
 
     [Fact]
     public void DifferentPhysicalObjectTypeCannotClaimGeometry()
-        => Assert.Throws<InvalidDataException>(() => Evidence("111", progId:"VisualTeX.Formula.1"));
+        => Assert.Contains("width:111pt", Evidence("111", progId:"VisualTeX.Formula.1"));
+
+    [Fact]
+    public void EmbedOrLinkLabelDifferenceStillBindsTheSameObject()
+    {
+        var body = XElement.Parse("<w:body xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\""
+            + " xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:v=\"urn:schemas-microsoft-com:vml\">"
+            + "<w:p><w:r><w:object><v:shape id=\"s1\" style=\"width:111pt;height:68pt\"/>"
+            + "<o:OLEObject Type=\"Link\" ProgID=\"Equation.DSMT4\" ShapeID=\"s1\"/></w:object></w:r></w:p></w:body>");
+        WordInlineObjectGeometry.BindToEvidence(body, new[] {
+            new WordInlineObjectGeometry.Item { Start=2, End=28, Type=1, ProgId="Equation.DSMT4", Width=110.9f, Height=68.05f } });
+        Assert.Contains("width:110.9", body.ToString(SaveOptions.DisableFormatting));
+    }
 
     [Fact]
     public void DifferentComAndFlatOpcCrossTypeOrderBindsByPhysicalOwnership()
@@ -78,10 +90,18 @@ public sealed class WordInlineObjectGeometryTests
     }
 
     [Fact]
-    public void UnmatchedLiveOleObjectCannotBeIgnored()
+    public void UnmatchedLiveOleObjectStaysInTheEvidence()
     {
         var body = XElement.Parse("<w:body xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>");
-        Assert.Throws<InvalidDataException>(() => WordInlineObjectGeometry.BindToEvidence(body,
-            new[] {new WordInlineObjectGeometry.Item {Type=1, ProgId="Equation.DSMT4",Width=10,Height=10}}));
+        string? reported = null;
+        WordInlineObjectGeometry.Diagnostics = message => reported = message;
+        try
+        {
+            WordInlineObjectGeometry.BindToEvidence(body,
+                new[] {new WordInlineObjectGeometry.Item {Type=1, ProgId="Equation.DSMT4",Width=10,Height=10}});
+        }
+        finally { WordInlineObjectGeometry.Diagnostics = null; }
+        Assert.Equal("0,0,1,Equation.DSMT4,10,10", (string?)body.Attribute("recoveryInlineGeometry"));
+        Assert.Contains("1:Equation.DSMT4", reported);
     }
 }
