@@ -1195,6 +1195,14 @@ export function SettingsDialog({
                     </button>
                     <button
                       type="button"
+                      className={candidateStyle === "row" ? "is-active" : ""}
+                      aria-pressed={candidateStyle === "row"}
+                      onClick={() => setCandidateStyle("row")}
+                    >
+                      {isEn ? "Horizontal" : "横排"}
+                    </button>
+                    <button
+                      type="button"
                       className={candidateStyle === "bar" ? "is-active" : ""}
                       aria-pressed={candidateStyle === "bar"}
                       onClick={() => setCandidateStyle("bar")}

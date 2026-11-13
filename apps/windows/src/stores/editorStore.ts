@@ -782,7 +782,7 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
-      setCandidateStyle: (candidateStyle) => set({ candidateStyle: candidateStyle === "bar" ? "bar" : "list" }),
+      setCandidateStyle: (candidateStyle) => set({ candidateStyle: normalizeCandidateStyle(candidateStyle) }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
       setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
@@ -1263,12 +1263,17 @@ export const useEditorStore = create<EditorState>()(
   ),
 );
 
-export type CandidateStyle = "list" | "bar";
+/** The candidates' look: a list (default), one row in the default colours, one row in AxMath's colours. */
+export type CandidateStyle = "list" | "row" | "bar";
+
+function normalizeCandidateStyle(style: unknown): CandidateStyle {
+  return style === "bar" || style === "row" ? style : "list";
+}
 
 // The candidates' look applies to every window's popovers (the formula fields' and the document's "\" menu).
 if (typeof document !== "undefined") {
   const applyCandidateStyle = (style: CandidateStyle) => {
-    document.documentElement.dataset.candidateStyle = style === "bar" ? "bar" : "list";
+    document.documentElement.dataset.candidateStyle = normalizeCandidateStyle(style);
   };
   applyCandidateStyle(useEditorStore.getState().candidateStyle);
   useEditorStore.subscribe((state) => applyCandidateStyle(state.candidateStyle));
