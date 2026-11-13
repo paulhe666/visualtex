@@ -110,6 +110,12 @@ const THEME_FORMULA_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, st
   ["formulaCaret", "Formula caret", "公式光标"],
 ];
 
+const THEME_DOCUMENT_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
+  ["documentPaper", "Paper", "纸张"],
+  ["documentInk", "Text", "文字"],
+  ["documentDesk", "Background", "背景"],
+];
+
 const THEME_SYNTAX_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
   ["syntaxCommand", "Command", "命令"],
   ["syntaxKeyword", "Keyword", "关键字"],
@@ -808,6 +814,11 @@ export function SettingsDialog({
                   <details className="theme-color-details">
                     <summary>{isEn ? "Formula colors" : "公式区域颜色"}</summary>
                     {renderThemeColorFields(THEME_FORMULA_COLOR_FIELDS)}
+                  </details>
+
+                  <details className="theme-color-details">
+                    <summary>{isEn ? "Document colors" : "文档颜色"}</summary>
+                    {renderThemeColorFields(THEME_DOCUMENT_COLOR_FIELDS)}
                   </details>
 
                   <details className="theme-color-details">

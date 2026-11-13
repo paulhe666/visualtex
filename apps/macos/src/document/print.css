@@ -1,4 +1,10 @@
 /* The PDF's pages (print-main.ts): one paper-sized box per page, each a window onto the copy of the page view. */
+/* the print copy is white paper and black ink whatever the window's theme */
+body.vtx-print {
+  --vtx-paper: #ffffff;
+  --vtx-ink: #000000;
+  --vtx-desk: #ffffff;
+}
 html,
 body.vtx-print {
   width: auto !important;
