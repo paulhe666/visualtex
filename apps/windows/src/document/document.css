@@ -112,11 +112,11 @@
 .vtx-document .md-hidden {
   display: none;
 }
-/* a heading's "#" marks while the caret is on it: hung to the left of its text, taking no room (the text does not move) */
+/* a heading's "#" marks while the caret is on it: hung to the left of its text, taking no room (the text does not move;
+   out of the flow, not a zero-wide box: WebKit drew the caret before such a box at the line's left end) */
 .vtx-document .md-heading-mark {
-  display: inline-flex;
-  justify-content: flex-end;
-  width: 0;
+  position: absolute;
+  transform: translateX(-100%);
   white-space: pre;
 }
 .vtx-document .md-strong {
