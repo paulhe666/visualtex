@@ -44,6 +44,13 @@ function latexToMarkup(mf: _Mathfield, latex: string): string {
   return visualTexLayoutEngine.renderAtoms(root.body ?? [], { display: true });
 }
 
+/** A candidate's command with the start the typed letters match marked (case aside), escaped. */
+function commandWithTyped(command: string, typed: string): string {
+  if (typed.length < 2 || !command.toLowerCase().startsWith(typed.toLowerCase()))
+    return escapeHtmlAttr(command);
+  return `<span class="ML__popover__match">${escapeHtmlAttr(command.slice(0, typed.length))}</span>${escapeHtmlAttr(command.slice(typed.length))}`;
+}
+
 export function showSuggestionPopover(
   mf: _Mathfield,
   suggestions: string[]
@@ -54,6 +61,9 @@ export function showSuggestionPopover(
   }
 
   let template = '';
+  // the letters typed so far (the start of each candidate's command that they match), and the interface language
+  const typed = mf.visualTexCompletion?.command ?? '';
+  const english = (globalThis.document?.documentElement.lang ?? '').startsWith('en');
   for (const [i, suggestion] of suggestions.entries()) {
     // A suggestion is the LaTeX it inserts; the list shows its command,
     // label and preview
@@ -66,7 +76,9 @@ export function showSuggestionPopover(
 
     template += `<li role="button" data-command="${escapeHtmlAttr(command)}" ${
       i === mf.suggestionIndex ? 'class=ML__popover__current' : ''
-    }>${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">${escapeHtmlAttr(info.command)}${info.label ? '<span class="ML__popover__label"> · ' + escapeHtmlAttr(info.label) + '</span>' : ''}</span><span class="ML__popover__command">${commandMarkup}</span>`;
+    }>${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">${commandWithTyped(info.command, typed)}${info.label ? '<span class="ML__popover__label"> · ' + escapeHtmlAttr(info.label) + '</span>' : ''}</span><span class="ML__popover__command">${commandMarkup}</span>`;
+    const name = english ? info.nameEn : info.name;
+    if (name) template += `<span class="ML__popover__name">${escapeHtmlAttr(name)}</span>`;
 
     if (keybinding)
       template += `<span class="ML__popover__keybinding">${keybinding}</span>`;

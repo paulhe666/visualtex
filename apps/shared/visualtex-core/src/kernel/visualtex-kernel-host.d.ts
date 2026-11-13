@@ -12,6 +12,9 @@ declare module 'virtual:visualtex-kernel-host' {
     latex: string;
     preview: string;
     label: string;
+    /** the command's name (Chinese, English): the candidates' card look shows it */
+    name?: string;
+    nameEn?: string;
     /** English label, aliases and keywords */
     words: string[];
     priority?: number;

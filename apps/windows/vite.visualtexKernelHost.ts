@@ -95,6 +95,9 @@ function completionCatalog() {
     // Search can still use translated keywords, but the native list only
     // presents the command and its mathematical preview.
     label: "",
+    // its name, shown by the candidates' card look (Settings > Candidates)
+    name: c.labelZh,
+    nameEn: c.labelEn,
     words: [c.labelEn, ...c.aliases, ...c.keywords],
     priority: c.defaultPriority,
   }));

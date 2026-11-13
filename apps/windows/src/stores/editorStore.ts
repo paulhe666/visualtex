@@ -1263,11 +1263,14 @@ export const useEditorStore = create<EditorState>()(
   ),
 );
 
-/** The candidates' look: a list (default), one row in the default colours, one row in AxMath's colours. */
-export type CandidateStyle = "list" | "row" | "bar";
+/**
+ * The candidates' look: a list (default: the number and command on a soft band, the picture beside it), cards (the
+ * picture in a tile, the command over its name, number keys), one row in the default colours, one row in AxMath's.
+ */
+export type CandidateStyle = "list" | "card" | "row" | "bar";
 
 function normalizeCandidateStyle(style: unknown): CandidateStyle {
-  return style === "bar" || style === "row" ? style : "list";
+  return style === "bar" || style === "row" || style === "card" ? style : "list";
 }
 
 // The candidates' look applies to every window's popovers (the formula fields' and the document's "\" menu).

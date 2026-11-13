@@ -1,3 +1,27 @@
+/* The page's own colours: the paper, its ink (text, bullets, numbers; formulas follow the theme's text colour, the same
+   ink) and the desk around the pages. White paper and black ink in the light theme; in any other theme the paper
+   and ink follow it (a dark theme's page was white with formulas drawn in its light text colour — hardly visible).
+   The print copy (print.css) keeps white and black. */
+:root {
+  --vtx-paper: #ffffff;
+  --vtx-ink: #000000;
+  --vtx-desk: #e8e9ec;
+  --vtx-link: #1f6fd0;
+}
+/* the base themes; a palette theme (themeCustomization.ts: the built-in palettes and the custom theme) sets the three
+   on the root from its own document colours */
+:root[data-theme]:not([data-theme="light"]) {
+  --vtx-paper: var(--bg-paper, var(--surface));
+  --vtx-ink: var(--text);
+  --vtx-desk: var(--bg);
+  --vtx-link: var(--accent);
+}
+/* formulas on the page (their pictures and their editors, which draw in the theme's text colour) in the page's ink */
+.vtx-sheet :is(.vtx-math-inline, .vtx-math-display) {
+  --text: var(--vtx-ink);
+  color: var(--vtx-ink);
+}
+
 /* The document mode: Mathcha's editor (docs/document-editor/MATHCHA-SPEC.md). Sizes inside the page are in
    em of the document's text size (15px at zoom 1), so the zoom scales everything together. */
 
@@ -79,7 +103,7 @@
 
 /* ---- links ([text](url)): the address shows on hover ---- */
 .vtx-document a.vtx-link {
-  color: #1f6fd0;
+  color: var(--vtx-link);
   text-decoration: underline;
   text-decoration-color: rgba(31, 111, 208, 0.45);
   text-underline-offset: 2px;
@@ -137,6 +161,9 @@
 }
 .vtx-document .md-highlight {
   background-color: #fff59d;
+  /* black on the yellow whatever the page's ink (a dark theme's light text, its formulas too, were unreadable on it) */
+  color: #000;
+  --text: #000;
 }
 .vtx-document .md-code {
   font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -146,7 +173,7 @@
   padding: 0.1em 0.2em;
 }
 .vtx-document .md-link {
-  color: #1f6fd0;
+  color: var(--vtx-link);
   text-decoration: underline;
   text-decoration-color: rgba(31, 111, 208, 0.45);
   text-underline-offset: 2px;
@@ -196,7 +223,7 @@
   left: 0;
   right: 0;
   text-align: center;
-  color: #000;
+  color: var(--vtx-ink);
 }
 .vtx-document .md-task {
   display: inline-block;
@@ -723,14 +750,14 @@
 }
 .vtx-document {
   outline: none;
-  color: #000;
+  color: var(--vtx-ink);
   font-family: Arial, Helvetica, "Microsoft YaHei", "PingFang SC", sans-serif;
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
   /* a tab is one step of indentation, two characters wide (a classed sheet: its \parindent, below) */
   tab-size: 2em;
-  caret-color: #000;
+  caret-color: var(--vtx-ink);
 }
 .vtx-document p {
   margin: 0;
@@ -1148,7 +1175,7 @@
   transform: translateY(-50%);
   font-family: "Times New Roman", serif;
   font-size: calc(15em / 17);
-  color: #000;
+  color: var(--vtx-ink);
 }
 .vtx-math-display .vtx-formula-number.is-placeholder {
   color: #9e9e9e;
@@ -1566,7 +1593,7 @@
 /* ---- the page view (DESIGN.md §8.2): a sheet of the paper's size on a grey desk; its background draws the pages
    and the gaps between them, the page layer prints the footnotes and page numbers on it ---- */
 .mc-canvas.is-paged {
-  background: #e8e9ec;
+  background: var(--vtx-desk);
 }
 .vtx-sheet {
   position: relative;
@@ -2551,6 +2578,136 @@
   outline-offset: 2px;
 }
 
+/* ---- the default list (Settings > Formula editor > Candidates > Default): the "\" and "/" menus as a table — number
+   and command (its description under it) on a soft blue band, the picture beside it; rows flush, 1 px lines ---- */
+:root[data-candidate-style="list"] .vtx-cmd-menu {
+  --cand-band: #e2edf5;
+  --cand-band-current: #c9dfef;
+  --cand-picture: var(--surface);
+  --cand-picture-current: #eef4f8;
+  --cand-line: #ffffff;
+  --cand-band-width: 196px;
+  background: var(--cand-line);
+}
+:root[data-theme="dark"][data-candidate-style="list"] .vtx-cmd-menu {
+  --cand-band: #26394a;
+  --cand-band-current: #2f5470;
+  --cand-picture-current: #363d47;
+  --cand-line: #202328;
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-list {
+  display: flex;
+  flex-direction: column;
+  row-gap: 1px;
+  padding: 0;
+  background: var(--cand-line);
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item,
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item + .vtx-cmd-item,
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item:hover,
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item.is-current {
+  grid-template-columns: 28px calc(var(--cand-band-width) - 28px) minmax(64px, 1fr);
+  gap: 0;
+  min-height: 46px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(to right, var(--cand-band) 0 var(--cand-band-width), var(--cand-picture) var(--cand-band-width));
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item.is-current {
+  background: linear-gradient(to right, var(--cand-band-current) 0 var(--cand-band-width), var(--cand-picture-current) var(--cand-band-width));
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item:not(.is-current):hover {
+  background: linear-gradient(to right, color-mix(in srgb, var(--cand-band) 55%, var(--cand-band-current)) 0 var(--cand-band-width), var(--cand-picture) var(--cand-band-width));
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-index,
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-index {
+  color: var(--accent);
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-copy {
+  padding: 5px 10px 5px 0;
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-label {
+  color: var(--text);
+}
+:root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-preview {
+  justify-self: center;
+  max-width: none;
+  padding: 4px 10px;
+}
+
+/* ---- cards (Settings > Formula editor > Candidates > Cards): the menus with the picture in a tile at the left, the
+   command over its description, the number as a key at the right, a soft rounded fill for the current one ---- */
+:root[data-candidate-style="card"] .vtx-cmd-menu {
+  border-radius: 12px;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item,
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item + .vtx-cmd-item,
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item:hover,
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current {
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  min-height: 52px;
+  margin: 0;
+  padding: 5px 10px 5px 6px;
+  border: 0;
+  border-radius: 9px;
+  box-shadow: none;
+  background: transparent;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item:hover {
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current {
+  background: var(--accent-soft);
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-preview {
+  grid-column: 1;
+  grid-row: 1;
+  width: 88px;
+  min-width: 0;
+  max-width: none;
+  height: 42px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 6%, var(--surface));
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-preview {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-label {
+  color: var(--text);
+  font-size: 13px;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-index {
+  grid-column: 3;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-index:empty {
+  visibility: hidden;
+}
+:root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-index {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
 /* ---- candidates in one row (Settings > Formula editor > Candidates > Horizontal): the "\" menu laid out as the AxMath
    style — a dark band (number, command) above a light picture, the current one brighter — in the default box's blues ---- */
 :root[data-candidate-style="row"] .vtx-cmd-menu {
@@ -3040,7 +3197,7 @@
 .vtx-page-head {
   position: absolute;
   right: auto;
-  color: #000;
+  color: var(--vtx-ink);
   font-size: 1em;
   line-height: 1;
   white-space: nowrap;

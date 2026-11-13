@@ -111,6 +111,12 @@ const THEME_FORMULA_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, st
   ["formulaCaret", "Formula caret", "公式光标"],
 ];
 
+const THEME_DOCUMENT_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
+  ["documentPaper", "Paper", "纸张"],
+  ["documentInk", "Text", "文字"],
+  ["documentDesk", "Background", "背景"],
+];
+
 const THEME_SYNTAX_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
   ["syntaxCommand", "Command", "命令"],
   ["syntaxKeyword", "Keyword", "关键字"],
@@ -816,6 +822,11 @@ export function SettingsDialog({
                   </details>
 
                   <details className="theme-color-details">
+                    <summary>{isEn ? "Document colors" : "文档颜色"}</summary>
+                    {renderThemeColorFields(THEME_DOCUMENT_COLOR_FIELDS)}
+                  </details>
+
+                  <details className="theme-color-details">
                     <summary>{isEn ? "Source editor colors" : "源码编辑器颜色"}</summary>
                     {renderThemeColorFields(THEME_SYNTAX_COLOR_FIELDS)}
                   </details>
@@ -1192,6 +1203,14 @@ export function SettingsDialog({
                       onClick={() => setCandidateStyle("list")}
                     >
                       {isEn ? "Default" : "默认"}
+                    </button>
+                    <button
+                      type="button"
+                      className={candidateStyle === "card" ? "is-active" : ""}
+                      aria-pressed={candidateStyle === "card"}
+                      onClick={() => setCandidateStyle("card")}
+                    >
+                      {isEn ? "Cards" : "卡片"}
                     </button>
                     <button
                       type="button"
