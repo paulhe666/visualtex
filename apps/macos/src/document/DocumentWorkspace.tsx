@@ -2,9 +2,9 @@
 // editor area beside the document library (saved as you type), the file actions of the main menu (new, import, save,
 // export) and an editor handle so that formula commands from the rest of the app (tools, tiles, OCR) go into the
 // document.
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Node } from "prosemirror-model";
-import { TextSelection } from "prosemirror-state";
+import { NodeSelection, Selection, TextSelection } from "prosemirror-state";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { EditorView } from "prosemirror-view";
 import { strToU8, unzipSync, zipSync } from "fflate";
@@ -269,6 +269,66 @@ interface Props {
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
 }
 
+/**
+ * Where the caret and the page were in each document opened in this run of the app: leaving document mode (for
+ * formula mode) takes the editor down, and coming back the document opened with the caret at its start and the page
+ * at its top. Kept per document; the caret goes back to its place and the page to where the caret was on the screen.
+ */
+const documentPlaces = new Map<string, { selection: unknown; caretTop: number | null; scrollTop: number }>();
+
+function scrollerOf(view: EditorView): HTMLElement | null {
+  for (let node = view.dom.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return node;
+  }
+  return null;
+}
+
+function rememberPlace(id: string | null, view: EditorView | null | undefined) {
+  if (!id || !view || view.isDestroyed || !view.dom.isConnected) return;
+  const scroller = scrollerOf(view);
+  let caretTop: number | null = null;
+  try {
+    if (scroller) caretTop = view.coordsAtPos(view.state.selection.head).top - scroller.getBoundingClientRect().top;
+  } catch {
+    caretTop = null;
+  }
+  documentPlaces.set(id, { selection: view.state.selection.toJSON(), caretTop, scrollTop: scroller?.scrollTop ?? 0 });
+}
+
+function restorePlace(id: string, view: EditorView | null | undefined) {
+  const place = documentPlaces.get(id);
+  if (!place || !view || view.isDestroyed) return;
+  try {
+    let selection = Selection.fromJSON(view.state.doc, place.selection as Parameters<typeof Selection.fromJSON>[1]);
+    // a formula that was selected or open: the caret after it (it is not reopened)
+    if (selection instanceof NodeSelection) selection = TextSelection.near(view.state.doc.resolve(selection.to));
+    view.dispatch(view.state.tr.setSelection(selection).setMeta("addToHistory", false));
+  } catch {
+    return;
+  }
+  // the page where it was: the caret at the same height on the screen (once the pages are measured, and again after
+  // the formulas near it have their editors)
+  const settle = () => {
+    if (view.isDestroyed || !view.dom.isConnected) return;
+    const scroller = scrollerOf(view);
+    if (!scroller) return;
+    if (place.caretTop === null) {
+      scroller.scrollTop = place.scrollTop;
+      return;
+    }
+    try {
+      const now = view.coordsAtPos(view.state.selection.head).top - scroller.getBoundingClientRect().top;
+      if (Math.abs(now - place.caretTop) > 1) scroller.scrollTop += now - place.caretTop;
+    } catch {
+      scroller.scrollTop = place.scrollTop;
+    }
+  };
+  requestAnimationFrame(settle);
+  window.setTimeout(settle, 150);
+  window.setTimeout(settle, 450);
+}
+
 export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const documentRef = useRef<DocumentEditorHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -355,6 +415,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         documentRef.current?.focus();
         return true;
       }
+      rememberPlace(current.current.id, documentRef.current?.view());
       await ops.current.saveNow();
       try {
         const text = await api.read(id);
@@ -371,6 +432,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       current.current = { id, saved: doc, latest: doc };
       setCurrentId(id);
       useDocumentLibraryStore.getState().setLastId(id);
+      restorePlace(id, documentRef.current?.view());
       documentRef.current?.focus();
       return true;
     },
@@ -505,6 +567,13 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       live = false;
     };
   }, [api]);
+
+  // Leaving document mode: the caret's and the page's place are kept for coming back (before the editor is taken
+  // down: a layout effect's cleanup runs while it is still on the page).
+  useLayoutEffect(
+    () => () => rememberPlace(current.current.id, documentRef.current?.view()),
+    [],
+  );
 
   // Leaving document mode, the window or the app: what is not saved yet is saved now.
   useEffect(() => {

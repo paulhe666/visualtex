@@ -1043,6 +1043,8 @@ export class FormulaView implements NodeView {
   release() {
     window.clearTimeout(this.releaseTimer);
     if (!this.session || this.near || this.wanted.open || this.wanted.part) return;
+    // not while the document scrolls (taking an editor down is a React unmount and a layout too)
+    if (residencyOf(this.view).scrolling()) return this.scheduleRelease();
     const session = this.session;
     this.session = null;
     this.drawn = false;
@@ -1170,18 +1172,26 @@ export class FormulaView implements NodeView {
 
 /** How long a formula far from the screen keeps its editor (scrolling back and forth does not rebuild it). */
 const RELEASE_DELAY_MS = 4000;
-/** Editors started per frame while formulas come near the screen. */
-const STARTS_PER_FRAME = 3;
+/** How long the document must have stood still before editors are started (none are built while it scrolls). */
+const SCROLL_IDLE_MS = 180;
+/** Time a run of editor starts may take before it lets a frame be drawn. */
+const START_BUDGET_MS = 8;
 
 /**
  * Which formulas are near the screen (an IntersectionObserver on the document's scroller, a screen and a half ahead):
- * their editors are started a few per frame, before they come into view; those far away are let go after a while.
+ * their editors are started, before they come into view, once the document stands still — one after another, each
+ * run short enough for the next frame; those far away are let go after a while. (Started while scrolling, three a
+ * frame, each a React render and layout, the frames took 100–200 ms: the document scrolled in jerks. The picture
+ * stands in until then and a formula clicked meanwhile starts its editor at once.)
  */
 class Residency {
   private observer: IntersectionObserver | null = null;
   private readonly views = new Map<Element, FormulaView>();
   private readonly queue = new Set<FormulaView>();
   private frame = 0;
+  private idleTimer = 0;
+  private scrolledAt = 0;
+  private scroller: HTMLElement | null = null;
 
   constructor(private readonly view: EditorView) {}
 
@@ -1206,7 +1216,18 @@ class Residency {
     const root = scrollParent(this.view.dom);
     const margin = Math.round((root?.clientHeight || window.innerHeight || 800) * 1.5);
     this.observer = new IntersectionObserver(this.changed, { root, rootMargin: `${margin}px 0px` });
+    this.scroller = root;
+    (root ?? window).addEventListener("scroll", this.onScroll, { passive: true });
     return this.observer;
+  }
+
+  private onScroll = () => {
+    this.scrolledAt = performance.now();
+  };
+
+  /** The document has scrolled a moment ago (or a wheel/trackpad gesture is going on). */
+  scrolling(): boolean {
+    return performance.now() - this.scrolledAt < SCROLL_IDLE_MS;
   }
 
   private changed = (entries: IntersectionObserverEntry[]) => {
@@ -1224,21 +1245,45 @@ class Residency {
 
   private start(formula: FormulaView) {
     this.queue.add(formula);
-    if (!this.frame) this.frame = requestAnimationFrame(this.run);
+    this.plan();
+  }
+
+  private plan() {
+    if (this.frame || this.idleTimer || !this.queue.size) return;
+    const wait = this.scrolling() ? SCROLL_IDLE_MS - (performance.now() - this.scrolledAt) : 0;
+    if (wait > 0) {
+      this.idleTimer = window.setTimeout(() => {
+        this.idleTimer = 0;
+        this.plan();
+      }, wait + 10);
+      return;
+    }
+    this.frame = requestAnimationFrame(() => {
+      // after this frame is drawn: the starts take the time between frames
+      window.setTimeout(this.run, 0);
+    });
   }
 
   private run = () => {
     this.frame = 0;
-    let started = 0;
-    for (const formula of this.queue) {
+    if (this.scrolling()) return this.plan();
+    const began = performance.now();
+    // the ones on the screen first, then those above and below it
+    const frame = (this.scroller ?? document.documentElement).getBoundingClientRect();
+    const distance = (f: FormulaView) => {
+      const r = f.dom.getBoundingClientRect();
+      return r.bottom < frame.top ? frame.top - r.bottom : r.top > frame.bottom ? r.top - frame.bottom : 0;
+    };
+    const order = [...this.queue].sort((a, b) => distance(a) - distance(b));
+    for (const formula of order) {
       this.queue.delete(formula);
       if (!formula.near || formula.hasSession() || !formula.dom.isConnected) continue;
       // an empty formula keeps its dashed box until it is opened
       if (!formula.hasContent()) continue;
       formula.goLive();
-      if (++started >= STARTS_PER_FRAME) break;
+      if (performance.now() - began >= START_BUDGET_MS) break;
     }
-    if (this.queue.size) this.frame = requestAnimationFrame(this.run);
+    this.plan();
   };
 }
 

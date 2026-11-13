@@ -24,20 +24,22 @@ const editor = createRef<DocumentEditorHandle>();
 const workspace = new URLSearchParams(window.location.search).has("workspace");
 const editorHandle = createRef<MathEditorHandle>();
 
-// The workspace's bottom-bar controls above the editor (in the app they sit in the bottom bar).
-createRoot(document.getElementById("root")!).render(
+// The workspace's bottom-bar controls above the editor (in the app they sit in the bottom bar). __docLab.showWorkspace(false)
+// takes the workspace down and (true) puts it back, as leaving document mode for formula mode and coming back does.
+const root = createRoot(document.getElementById("root")!);
+const render = (shown: boolean) => root.render(
   workspace ? (
     <div style={{ background: "#fff", height: "100vh", display: "flex", flexDirection: "column" }}>
       <div className="classic-bottom-workspace-controls lab-controls" style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, padding: "4px 8px", borderBottom: "1px solid #ddd" }}>
         <DocumentControls />
       </div>
       <div className="editor-surface document-editor-surface" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <DocumentWorkspace
+        {shown && <DocumentWorkspace
           editorRef={editorHandle}
           onPasteImage={(file, target) => {
             (window as unknown as Record<string, unknown>).__pastedImage = { name: file.name, type: file.type, target };
           }}
-        />
+        />}
       </div>
     </div>
   ) :
@@ -52,3 +54,5 @@ createRoot(document.getElementById("root")!).render(
     </div>
   </div>,
 );
+render(true);
+(window as unknown as { __docLab: Record<string, unknown> }).__docLab.showWorkspace = render;

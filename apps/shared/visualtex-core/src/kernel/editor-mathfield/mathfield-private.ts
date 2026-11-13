@@ -904,7 +904,11 @@ If you are using Vue, this may be because you are using the runtime-only build o
     // 1/ If using a mathfield element, make sure that the element is visible.
     //
 
-    if (this.host) {
+    // VisualTeX: only the field being typed in brings itself into view. A
+    // resting field (a document's formula given its editor ahead of the
+    // screen, its LaTeX normalized and its caret restored as it starts) moved
+    // the page to itself: the document jumped while it was scrolled.
+    if (this.host && this.hasFocus()) {
       if (this.options.onScrollIntoView) this.options.onScrollIntoView(this);
       else {
         // 1.1/ Bring the mathfield into the viewport
