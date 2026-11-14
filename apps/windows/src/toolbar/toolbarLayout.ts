@@ -8,7 +8,7 @@ import {
   calculusCommandIds,
   commandRegistry,
   commonCommandIds,
-} from "../autocomplete/commandRegistry";
+} from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 export const BUILT_IN_GROUP_IDS = [

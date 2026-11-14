@@ -1,7 +1,7 @@
 // The formula editor's LaTeX commands, offered when a command is typed in the document text (\alpha, \frac, ...):
 // found as the formula editor finds its suggestions, and put into a new inline formula by the formula editor.
 import type { MathCommandProvider, MathCommandSuggestion } from "../../../shared/visualtex-document/src/index.ts";
-import { searchCommands } from "../autocomplete/CommandSearchEngine";
+import { searchCommands } from "../../../shared/visualtex-app/src/autocomplete/CommandSearchEngine";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula, waitForOpenFormula } from "./formulaInsert";

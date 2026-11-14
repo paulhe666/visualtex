@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import {
   getCustomSymbolRevision,
   subscribeCustomSymbols,
-} from "./customSymbolRegistry.ts";
+} from "../../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
 
 export function useCustomSymbolRevision() {
   return useSyncExternalStore(

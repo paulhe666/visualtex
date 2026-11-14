@@ -89,13 +89,13 @@ import {
   inspectMathLiveSourceSafety,
   mathLiveSourceSafetyMessage,
 } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
-import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
+import { composeCustomSymbolMacrosForMathfield } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment";
 import {
   installCustomSymbolGlobalStyle,
   installCustomSymbolShadowStyle,
   refreshCustomSymbolMathfield,
-} from "../math/customSymbolRendering";
+} from "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { installMathLiveOptionMutationGuard } from "../../../shared/visualtex-app/src/editor/mathLiveOptionCompatibility";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";

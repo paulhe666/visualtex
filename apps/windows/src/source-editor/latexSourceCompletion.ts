@@ -13,7 +13,7 @@ import {
 import { Prec, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, keymap, type KeyBinding } from "@codemirror/view";
 import { visualTexLatexCommandSignatures } from "mathlive";
-import { commandRegistry } from "../autocomplete/commandRegistry";
+import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { COMMAND_FREQUENCY } from "../../../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";

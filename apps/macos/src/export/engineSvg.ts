@@ -3,7 +3,7 @@ import type { GlyphTable, SvgFormula } from "../../../shared/tex-layout/src/inde
 import { expandVisualTexLatexForLayout } from "../editor/mathLiveIntegralCompatibility.ts";
 import { formulaLayoutReady, withFormulaLayoutFonts } from "../editor/visualTexLayoutRuntime.ts";
 import type { FormulaChineseFont, FormulaLetterFont } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences.ts";
-import { customSymbolArtworkForClass } from "../math/customSymbolRendering.ts";
+import { customSymbolArtworkForClass } from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
 
 // Exported, copied and Office images drawn by the editor's own layout engine:
 // the formula is parsed and laid out exactly as the editor shows it (font

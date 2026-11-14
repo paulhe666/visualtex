@@ -22,7 +22,7 @@ import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src
 import {
   registerCustomSymbol,
   replaceCustomSymbolLibrary,
-} from "../src/math/customSymbolRegistry.ts";
+} from "../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
 import {
   clearsOfficeEditorActivation,
   isOfficeEditorActivation,

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import type { Plugin } from "vite";
-import { commandRegistry } from "./src/autocomplete/commandRegistry";
+import { commandRegistry } from "../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { latestSharedCommands } from "../shared/visualtex-app/src/autocomplete/latestSharedCommands";
 import { COMMAND_FREQUENCY } from "../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "./src/editor/sourceWrapperRegistry";

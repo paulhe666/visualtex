@@ -8,7 +8,7 @@ import "../../styles-latest-macos-ui.css";
 import "../../styles-windows-shared-latest.css";
 import "../../../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "../../styles-windows-responsive.css";
-import "../../math/customSymbolRendering";
+import "../../../../shared/visualtex-app/src/math/customSymbolRendering";
 import { configureOcrTransport } from "../../ocr/ocrService";
 import { officeOcrTransport } from "../api/ocrHttpTransport";
 import { OfficeDialogApp } from "./OfficeDialogApp";

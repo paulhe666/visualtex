@@ -1,9 +1,6 @@
-import type {
-  LegacyMacroDictionary,
-  LegacyMathfieldLike,
-} from "../editor/legacyMathfieldTypes";
+import type { MacroDictionary, MathfieldElement } from "mathlive";
 import { commandRegistry } from "../autocomplete/commandRegistry";
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { safeStorage } from "../runtime/safeStorage";
 import type {
   CustomSymbolDefinition,
   CustomSymbolDesignerSourceArchive,
@@ -14,7 +11,7 @@ import type {
   CustomSymbolMetrics,
   CustomSymbolVectorShape,
   CustomSymbolVectorTransform,
-} from "../../../shared/visualtex-app/src/math/customSymbolTypes";
+} from "./customSymbolTypes";
 
 export const CUSTOM_SYMBOL_STORAGE_KEY = "visualtex.custom-symbols.v1";
 export const CUSTOM_SYMBOL_STORAGE_INDEX_KEY = "visualtex.custom-symbols.v2.index";
@@ -150,7 +147,7 @@ const listeners = new Set<() => void>();
 let broadcastChannel: BroadcastChannel | null = null;
 let browserEventsInstalled = false;
 let runtimeCommandAvailabilityValidator: ((command: string) => boolean) | null = null;
-const appliedMathfieldCommands = new WeakMap<LegacyMathfieldLike, Set<string>>();
+const appliedMathfieldCommands = new WeakMap<MathfieldElement, Set<string>>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1164,17 +1161,17 @@ export function addCustomSymbolMacros<T extends Record<string, unknown>>(macros:
 }
 
 export function getAppliedCustomSymbolCommandsForMathfield(
-  field: LegacyMathfieldLike,
+  field: MathfieldElement,
 ) {
   return new Set(appliedMathfieldCommands.get(field) ?? []);
 }
 
 export function composeCustomSymbolMacrosForMathfield(
-  field: LegacyMathfieldLike,
-  baseMacros: LegacyMacroDictionary,
-  additionalMacros: LegacyMacroDictionary = {},
+  field: MathfieldElement,
+  baseMacros: MacroDictionary,
+  additionalMacros: MacroDictionary = {},
 ) {
-  const macros: LegacyMacroDictionary = { ...baseMacros };
+  const macros: MacroDictionary = { ...baseMacros };
   const previous = appliedMathfieldCommands.get(field);
   previous?.forEach((command) => delete macros[command]);
   Object.assign(macros, additionalMacros);
@@ -1184,7 +1181,7 @@ export function composeCustomSymbolMacrosForMathfield(
   return macros;
 }
 
-export function applyCustomSymbolMacrosToMathfield(field: LegacyMathfieldLike) {
+export function applyCustomSymbolMacrosToMathfield(field: MathfieldElement) {
   field.macros = composeCustomSymbolMacrosForMathfield(field, field.macros);
 }
 

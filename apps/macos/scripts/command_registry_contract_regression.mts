@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { commandRegistry } from "../src/autocomplete/commandRegistry";
+import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import {
   compatibilityCommandNames,
   compatibilityCommands,

@@ -5,7 +5,7 @@ import { validateLatex } from "mathlive/ssr";
 import {
   calculusCommandIds,
   commandRegistry,
-} from "../src/autocomplete/commandRegistry.ts";
+} from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
 
 const byId = new Map(commandRegistry.map((command) => [command.id, command]));
 

@@ -31,7 +31,7 @@ import {
   categoryLabels,
   categoryLabelsEn,
   commandRegistry,
-} from "../autocomplete/commandRegistry";
+} from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { MathPreview } from "../components/MathPreview";
 import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
 import {
@@ -39,11 +39,11 @@ import {
   formulaTileLibraryById,
 } from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
 import { FormulaHotkeyRecorderDialog } from "../components/FormulaHotkeyRecorderDialog";
-import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
+import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
 import {
   deleteCustomSymbol,
   readCustomSymbolLibrary,
-} from "../math/customSymbolRegistry";
+} from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import {
   createFormulaHotkeyTarget,

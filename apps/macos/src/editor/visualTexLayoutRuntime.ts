@@ -14,7 +14,7 @@ import type { PathGlyphSet } from "../../../shared/tex-layout/src/path-font.ts";
 import type { NativeMeasure } from "../../../shared/tex-layout/src/native-font.ts";
 import { gunzipSync, strFromU8 } from "fflate";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../../../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData";
-import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
+import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 
 /** A custom operator's italic correction, by the class of its box (editor and export classes). */
 function customSymbolOperatorItalic(className: string) {

@@ -16,7 +16,7 @@ import {
 import { cachedPreviewMarkup } from "../components/MathPreview";
 import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { getFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
-import { getCustomSymbolRevision } from "../math/customSymbolRegistry";
+import { getCustomSymbolRevision } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 
 type Lang = "en" | "zh";
 

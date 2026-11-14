@@ -10,7 +10,7 @@ import {
   CUSTOM_SYMBOL_STORAGE_KEY,
   readCustomSymbolLibrary,
   replaceCustomSymbolLibrary,
-} from "../math/customSymbolRegistry";
+} from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 
 export const VISUALTEX_CONFIGURATION_SCHEMA = "visualtex-user-configuration";
 export const VISUALTEX_CONFIGURATION_VERSION = 1;

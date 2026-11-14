@@ -1,5 +1,5 @@
 import { commandRegistry } from "./commandRegistry";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import type { LatexCommand } from "../types/command";
 import { readCustomSymbolLibrary } from "../math/customSymbolRegistry";
 
 export function customSymbolCommands(): LatexCommand[] {

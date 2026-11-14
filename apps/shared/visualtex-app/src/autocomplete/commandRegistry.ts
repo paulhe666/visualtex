@@ -1,8 +1,8 @@
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
-import { additionalCommands } from "../../../shared/visualtex-app/src/autocomplete/additionalCommands.ts";
-import { compatibilityCommands } from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
-import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands.ts";
-import { physicsToolbarCommands } from "../../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
+import type { LatexCommand } from "../types/command";
+import { additionalCommands } from "./additionalCommands.ts";
+import { compatibilityCommands } from "./compatibilityCommands.ts";
+import { latestSharedCommands } from "./latestSharedCommands.ts";
+import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 
 // Accents with no other registry entry; the rest live in additionalCommands.
 const accentSemanticCommands: LatexCommand[] = [

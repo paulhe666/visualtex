@@ -1,11 +1,11 @@
 import { validateLatex } from "mathlive/ssr";
-import { commandRegistry } from "../autocomplete/commandRegistry.ts";
+import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
 import { normalizeMathModeSource } from "../../../shared/visualtex-app/src/math/mathModeSource";
 import {
   normalizeCanonicalUprightCommands,
   normalizeMathLiveCanonicalUprightCommands,
 } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
-import { findCustomSymbolByCommand } from "../math/customSymbolRegistry.ts";
+import { findCustomSymbolByCommand } from "../../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
 import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import {

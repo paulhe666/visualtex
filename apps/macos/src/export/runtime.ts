@@ -23,7 +23,7 @@ import {
   applyCustomSymbolArtworkToSvg,
   expandCustomSymbolsForMathMl,
   expandCustomSymbolsForSvg,
-} from "../math/customSymbolRendering.ts";
+} from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
 import {
   assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,

@@ -2,15 +2,15 @@ import {
   CustomSymbolDesigner,
   type CustomSymbolDesignerPlatform,
 } from "../../../shared/custom-symbol-designer/src/index.ts";
-import { categoryLabels, categoryLabelsEn, commandRegistry } from "../autocomplete/commandRegistry";
-import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
+import { categoryLabels, categoryLabelsEn, commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
+import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
 import { renderEngineSvg } from "../export/engineSvg";
 import { formulaLayoutReady } from "../editor/visualTexLayoutRuntime";
 import { latexToMathMl } from "../export/runtime";
-import { registerCustomSymbolSafely, updateCustomSymbolSafely } from "../math/customSymbolRegistration";
-import { deleteCustomSymbol, readCustomSymbolLibrary } from "../math/customSymbolRegistry";
+import { registerCustomSymbolSafely, updateCustomSymbolSafely } from "../../../shared/visualtex-app/src/math/customSymbolRegistration";
+import { deleteCustomSymbol, readCustomSymbolLibrary } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
-import { containsCustomSymbolCommand } from "../math/customSymbolRendering";
+import { containsCustomSymbolCommand } from "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import { compileNativeSystemMathGlyphAsset, probeNativeSystemMathFonts } from "../../../shared/visualtex-app/src/math/systemMathGlyphLibrary";
 import { MathPreview } from "./MathPreview";
 

@@ -49,7 +49,7 @@ import { cachedPreviewMarkup } from "../components/MathPreview";
 import { convertVisualTexLatexToFieldMarkup } from "../editor/mathLiveIntegralCompatibility";
 import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
-import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customSymbolRegistry";
+import { getCustomSymbolRevision, subscribeCustomSymbols } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";

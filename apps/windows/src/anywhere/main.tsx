@@ -9,7 +9,7 @@ import "../styles-latest-macos-ui.css";
 import "../styles-windows-shared-latest.css";
 import "../../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "../styles-windows-responsive.css";
-import "../math/customSymbolRendering";
+import "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import "../../../shared/visualtex-app/src/anywhere/anywhere.css";
 import { AnywhereApp } from "./AnywhereApp";
 import { logAnywhere } from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";

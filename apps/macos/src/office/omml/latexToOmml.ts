@@ -23,7 +23,7 @@ import {
   VISUALTEX_MATHML_MACROS,
 } from "../../math/latexCompatibility.ts";
 import { errorMessage } from "../../runtime/errorMessage";
-import { expandCustomSymbolsForMathMl } from "../../math/customSymbolRendering";
+import { expandCustomSymbolsForMathMl } from "../../../../shared/visualtex-app/src/math/customSymbolRendering";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,

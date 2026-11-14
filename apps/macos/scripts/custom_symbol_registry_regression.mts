@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { customSymbolCommands } from "../src/autocomplete/runtimeCommandRegistry.ts";
+import { customSymbolCommands } from "../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import {
   CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
@@ -10,7 +10,7 @@ import {
   registerCustomSymbol,
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
-} from "../src/math/customSymbolRegistry.ts";
+} from "../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
 import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";

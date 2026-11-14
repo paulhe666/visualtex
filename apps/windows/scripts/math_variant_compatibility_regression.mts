@@ -6,7 +6,7 @@ import {
   compatibilityWrapperCanonicalTargets,
   compatibilityWrapperPreviews,
 } from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
-import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
+import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
 import {
   formatLatex,
   parseLatexSourceDraft,

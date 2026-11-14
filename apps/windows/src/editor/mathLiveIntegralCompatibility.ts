@@ -3,11 +3,11 @@ import {
   visualTexPackageCommands,
   type MathfieldElement,
 } from "mathlive";
-import "../math/customSymbolRegistration.ts";
+import "../../../shared/visualtex-app/src/math/customSymbolRegistration.ts";
 import {
   expandCustomSymbolsForMathLiveMarkup,
   installCustomSymbolGlobalStyle,
-} from "../math/customSymbolRendering.ts";
+} from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
 import { expandVisualTexMathLiveCompatibilityMacros } from "../math/mathLiveCompatibilityMacros.ts";
 import {
   OIINT_SIZE1_OVAL_HEIGHT_EM,

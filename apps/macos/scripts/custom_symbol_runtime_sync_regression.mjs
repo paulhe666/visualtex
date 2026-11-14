@@ -227,7 +227,7 @@ async function main() {
     officeClient = await connectTarget(officeTarget);
     await sleep(450);
     const officeInitial = await officeClient.evaluate(`(async () => {
-      const registry = await import("/src/math/customSymbolRegistry.ts");
+      const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
       return {
         revision: registry.getCustomSymbolRevision(),
         count: registry.readCustomSymbolLibrary().symbols.length,
@@ -264,8 +264,8 @@ async function main() {
     process.stdout.write("[custom-symbol-runtime] cross-window storage removal cache invalidation verified\n");
 
     const collisionChecks = await mainClient.evaluate(`(async () => {
-      const registration = await import("/src/math/customSymbolRegistration.ts");
-      const registry = await import("/src/math/customSymbolRegistry.ts");
+      const registration = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistration.ts"))});
+      const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
       const editorStore = await import("/src/stores/editorStore.ts");
       const exportRuntime = await import("/src/export/runtime.ts");
       const officeRender = await import("/src/office/shared/formulaRenderArtifacts.ts");
@@ -710,14 +710,14 @@ async function main() {
     await waitUntil(
       officeClient,
       `(async () => {
-        const registry = await import("/src/math/customSymbolRegistry.ts");
+        const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
         return registry.readCustomSymbolLibrary().symbols.some(
           (symbol) => symbol.command === "selfdefa"
         );
       })()`,
     );
     const officeSynchronized = await officeClient.evaluate(`(async () => {
-      const registry = await import("/src/math/customSymbolRegistry.ts");
+      const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
       return {
         revision: registry.getCustomSymbolRevision(),
         commands: registry.readCustomSymbolLibrary().symbols.map((symbol) => symbol.command),
@@ -956,7 +956,7 @@ async function main() {
     await waitUntil(
       officeClient,
       `(async () => {
-        const registry = await import("/src/math/customSymbolRegistry.ts");
+        const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
         return !registry.readCustomSymbolLibrary().symbols.some(
           (symbol) => symbol.command === "selfdefa"
         );
@@ -977,7 +977,7 @@ async function main() {
     await waitUntil(
       officeClient,
       `(async () => {
-        const registry = await import("/src/math/customSymbolRegistry.ts");
+        const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
         return registry.readCustomSymbolLibrary().symbols.some(
           (symbol) => symbol.command === "selfdefa"
         );
@@ -1001,7 +1001,7 @@ async function main() {
     await waitUntil(
       officeClient,
       `(async () => {
-        const registry = await import("/src/math/customSymbolRegistry.ts");
+        const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
         return registry.readCustomSymbolLibrary().symbols.length === 0;
       })()`,
     );
