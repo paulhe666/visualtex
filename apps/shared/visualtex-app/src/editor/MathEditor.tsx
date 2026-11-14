@@ -700,7 +700,11 @@ function predictedFormulaRowHeight(
       probe.style.lineHeight = "normal";
       probe.innerHTML = markup;
       measurementHost.append(probe);
-      renderedHeight = probe.getBoundingClientRect().height;
+      // the drawn formula box, as measureFrameSize measures it in the field: the probe's own line box adds the
+      // strut of a line of text at this font size (simple rows were predicted ~18 px taller than they draw, so a
+      // row shrank a few frames after a split or an undo)
+      const drawn = probe.querySelector<HTMLElement>(".ML__vtx");
+      renderedHeight = (drawn ?? probe).getBoundingClientRect().height;
       probe.remove();
     }
   }
