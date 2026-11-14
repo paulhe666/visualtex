@@ -1,4 +1,4 @@
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { safeStorage } from "./safeStorage";
 
 const EDITOR_STORAGE_KEY = "visualtex-editor";
 const CRASH_BACKUP_STORAGE_KEY = "visualtex-editor.crash-backup.v1";

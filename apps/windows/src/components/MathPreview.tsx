@@ -4,7 +4,7 @@ import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
-import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
+import { createLayoutOscillationGuard } from "../../../shared/visualtex-app/src/runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
   latex: string;

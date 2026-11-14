@@ -85,12 +85,12 @@ const tauriConfig = JSON.parse(
   bundle?: { resources?: Record<string, string> };
 };
 assert.equal(
-  tauriConfig.bundle?.resources?.["../src/math/STIXTwoMath-OFL-1.1.txt"],
+  tauriConfig.bundle?.resources?.["../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt"],
   "licenses/STIXTwoMath-OFL-1.1.txt",
   "Windows installer must ship the STIX Two Math OFL next to public licenses",
 );
 const license = await readFile(
-  new URL("../src/math/STIXTwoMath-OFL-1.1.txt", import.meta.url),
+  new URL("../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt", import.meta.url),
   "utf8",
 );
 assert.match(license, /SIL OPEN FONT LICENSE Version 1\.1/);

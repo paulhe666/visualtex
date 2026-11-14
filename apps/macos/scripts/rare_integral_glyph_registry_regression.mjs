@@ -32,10 +32,10 @@ const expected = [
   ["lowint", 0x2a1c],
 ];
 
-const licenseResourceSource = "../src/math/STIXTwoMath-OFL-1.1.txt";
+const licenseResourceSource = "../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt";
 const licenseResourceTarget = "licenses/STIXTwoMath-OFL-1.1.txt";
 const licenseUrl = new URL(
-  "../src/math/STIXTwoMath-OFL-1.1.txt",
+  "../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt",
   import.meta.url,
 );
 const tauriConfigUrl = new URL("../src-tauri/tauri.conf.json", import.meta.url);

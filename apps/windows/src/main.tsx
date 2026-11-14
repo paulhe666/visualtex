@@ -1,6 +1,6 @@
 import "./editor/visualTexLayoutRuntime";
 import { installBrowserCompatibility } from "../../shared/visualtex-app/src/runtime/browserCompatibility";
-import { prepareEditorCrashSafeRestart } from "./runtime/editorCrashRecovery";
+import { prepareEditorCrashSafeRestart } from "../../shared/visualtex-app/src/runtime/editorCrashRecovery";
 import { installFloatingLayerAutoAvoidance } from "../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";
 import "./styles.css";
 import "./styles-macos-main.css";
