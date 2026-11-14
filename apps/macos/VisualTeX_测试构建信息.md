@@ -43,7 +43,6 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 编辑器输入、Office 或导出相关改动还应选择相应回归：
 
 ```bash
-npm run test:ime-enter
 npm run test:input-behavior
 npm run test:latex-format
 npm run test:svg-export

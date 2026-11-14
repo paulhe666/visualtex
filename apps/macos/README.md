@@ -28,7 +28,6 @@ macOS 使用完全离线的原生 Office 路线：
 ```bash
 npm ci
 npm run build:desktop
-npm run test:ime-enter
 npm run test:word-omml
 npm run test:platform-onboarding
 npm run test:custom-symbols
