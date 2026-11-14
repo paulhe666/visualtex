@@ -66,7 +66,6 @@ import {
   type UpdateOfficeSessionInput,
 } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
-import { messageOfficeParent } from "./dialogMessages";
 import { registerOfficeApplyShortcut } from "../../../../shared/visualtex-app/src/office/dialog/officeApplyShortcut";
 import {
   OCR_MODELS,
@@ -386,7 +385,6 @@ export function OfficeDialogApp() {
   } | null>(null);
   const skipAutosaveForSessionRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
-  const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const allowNativeCloseRef = useRef(false);
   const nativeCloseRequestInFlightRef = useRef(false);
@@ -580,7 +578,6 @@ export function OfficeDialogApp() {
     loadedSessionIdRef.current = "";
     skipAutosaveForSessionRef.current = "";
     lastSavedFingerprintRef.current = "";
-    readyMessageSentRef.current = false;
     readyReportedSessionKeyRef.current = "";
     initialEditorFocusSessionRef.current = "";
     finalizingRef.current = false;
@@ -1544,19 +1541,6 @@ export function OfficeDialogApp() {
   ]);
 
   useEffect(() => {
-    if (
-      !session ||
-      !sessionHydrated ||
-      readyMessageSentRef.current ||
-      isMacosOfflineTauriTransport()
-    ) {
-      return;
-    }
-    readyMessageSentRef.current = true;
-    messageOfficeParent({ type: "visualtex-ready", sessionId: session.id });
-  }, [session?.id, sessionHydrated]);
-
-  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2200);
     return () => window.clearTimeout(timer);
@@ -1939,7 +1923,6 @@ export function OfficeDialogApp() {
       }
 
       const next = await saveCurrentSession("committing");
-      messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
       // The parent bridge owns both Word and PowerPoint mutations. Keep the
       // action busy until the host confirms the durable final state; a failed
       // PowerPoint decoration therefore leaves this editor open with a useful
@@ -2061,11 +2044,7 @@ export function OfficeDialogApp() {
         await closeOfficeEditorWindow();
         return;
       }
-      if (next.host === "powerpoint") {
-        window.close();
-        return;
-      }
-      messageOfficeParent({ type: "visualtex-cancel", sessionId: next.id });
+      window.close();
     } catch (error) {
       if (activeSessionKeyRef.current !== targetSessionKey) return;
       finalizingRef.current = false;

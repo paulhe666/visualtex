@@ -90,7 +90,6 @@ import {
   type FormulaEditorLine,
 } from "../shared/formulaEditorDocument";
 import { canonicalOfficeFingerprintLines } from "../shared/officeEditPersistence";
-import { messageOfficeParent } from "./dialogMessages";
 import { registerOfficeApplyShortcut } from "../../../../shared/visualtex-app/src/office/dialog/officeApplyShortcut";
 import {
   applyDocumentTheme,
@@ -448,7 +447,6 @@ export function OfficeDialogApp() {
   const skipAutosaveForSessionRef = useRef("");
   const originalFingerprintRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
-  const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const commitFromShortcutRef = useRef<() => void>(() => undefined);
   const closeFromNativeWindowRef = useRef<() => void>(() => undefined);
@@ -508,7 +506,6 @@ export function OfficeDialogApp() {
     skipAutosaveForSessionRef.current = "";
     originalFingerprintRef.current = "";
     lastSavedFingerprintRef.current = "";
-    readyMessageSentRef.current = false;
     finalizingRef.current = false;
     conversionStartedRef.current = false;
     initialEditorFocusSessionRef.current = "";
@@ -1674,12 +1671,6 @@ export function OfficeDialogApp() {
   ]);
 
   useEffect(() => {
-    if (!session || readyMessageSentRef.current) return;
-    readyMessageSentRef.current = true;
-    messageOfficeParent({ type: "visualtex-ready", sessionId: session.id });
-  }, [session?.id]);
-
-  useEffect(() => {
     if (
       !IS_VSTO_DESKTOP_RUNTIME ||
       !session ||
@@ -2130,7 +2121,6 @@ export function OfficeDialogApp() {
       const next = await saveCurrentSession("committing");
       if (!next) return;
 
-      messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
       // The parent bridge owns both Word and PowerPoint mutations. Keep the
       // action busy until the host confirms the durable final state; a failed
       // PowerPoint decoration therefore leaves this editor open with a useful
@@ -2183,15 +2173,7 @@ export function OfficeDialogApp() {
         await closeOfficeSessionWindow(next.id);
         return;
       }
-      if (next.host === "powerpoint") {
-        window.close();
-        return;
-      }
-      const delivered = messageOfficeParent({
-        type: "visualtex-cancel",
-        sessionId: next.id,
-      });
-      if (!delivered) window.close();
+      window.close();
     } catch (error) {
       if (!isActive()) return;
       finalizingRef.current = false;
