@@ -21,12 +21,12 @@ import {
   sourceTransaction,
   type SourceLoss,
   type SourceProblem,
-} from "../../../shared/visualtex-document/src/index.ts";
-import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import type { Theme } from "../../../shared/visualtex-app/src/types/formula";
-import { portableFormulaLatex } from "../../../shared/visualtex-app/src/document/DocumentEditor";
+} from "../../../visualtex-document/src/index.ts";
+import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { useDocumentFormatStore } from "../stores/documentFormatStore";
+import { useEditorStore } from "../stores/editorStore";
+import type { Theme } from "../types/formula";
+import { portableFormulaLatex } from "./DocumentEditor";
 
 export const highlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.definitionKeyword, tags.macroName, tags.labelName, tags.heading], color: "var(--syntax-command)" },

@@ -139,7 +139,7 @@ import {
   SILENT_OCR_SHORTCUT,
   SILENT_OCR_STORAGE_KEY,
   type QuickOcrCaptureMode,
-} from "./ocr/quickOcr";
+} from "@platform/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";

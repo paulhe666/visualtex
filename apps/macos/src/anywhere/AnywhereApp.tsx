@@ -780,7 +780,7 @@ export function AnywhereApp() {
           ocrStatus(null);
           return;
         }
-        const { quickOcrCaptureToFile } = await import("../ocr/quickOcr");
+        const { quickOcrCaptureToFile } = await import("@platform/quickOcr");
         await recognizeIntoFormula(quickOcrCaptureToFile({ dataBase64: data, extension: "png" }), target, generation);
       }),
     [withOcr, ocrStatus, recognizeIntoFormula],
@@ -809,7 +809,7 @@ export function AnywhereApp() {
     const { dataBase64, extension } = clipboard;
     void logAnywhere(`paste image ${extension}`);
     await withOcr(async (target, inGeneration) => {
-      const { quickOcrCaptureToFile } = await import("../ocr/quickOcr");
+      const { quickOcrCaptureToFile } = await import("@platform/quickOcr");
       await recognizeIntoFormula(quickOcrCaptureToFile({ dataBase64, extension }), target, inGeneration);
     });
   }, [withOcr, recognizeIntoFormula]);

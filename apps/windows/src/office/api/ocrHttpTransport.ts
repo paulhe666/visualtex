@@ -1,4 +1,4 @@
-import type { QuickOcrCapture } from "../../ocr/quickOcr";
+import type { QuickOcrCapture } from "@platform/quickOcr";
 import { decodeQuickOcrCapture } from "../../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
 import { formatOcrError, type OcrTransport } from "../../ocr/ocrService";
 

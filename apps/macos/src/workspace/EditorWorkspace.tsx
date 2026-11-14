@@ -39,7 +39,7 @@ import {
 } from "../../../shared/visualtex-app/src/editor/MathEditor";
 import { DocumentWorkspace } from "../../../shared/visualtex-app/src/document/DocumentWorkspace";
 import { DocumentControls } from "../../../shared/visualtex-app/src/document/DocumentControls";
-import { DocumentSourceView } from "../document/DocumentSourceView";
+import { DocumentSourceView } from "../../../shared/visualtex-app/src/document/DocumentSourceView";
 import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../../../shared/visualtex-app/src/document/documentEvents";
 import { useDocumentModeStore } from "../../../shared/visualtex-app/src/stores/documentModeStore";
 import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
@@ -48,7 +48,7 @@ import { trackHorizontalOverflow } from "../../../shared/visualtex-app/src/runti
 import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime/priorityCollapse";
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
-import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
+import { LatexSourceEditor } from "../../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
 import {
   DEFAULT_CLASSIC_DOCK_HEIGHT,

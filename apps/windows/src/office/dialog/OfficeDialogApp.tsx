@@ -18,7 +18,7 @@ import {
   inConversionStage,
 } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
-import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
+import { quickOcrCaptureToFile } from "@platform/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { sameConfirmEscapeChord } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {

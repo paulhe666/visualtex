@@ -137,8 +137,11 @@ function checkTrackedPath(relativePath) {
     const content = readFileSync(resolve(root, relativePath), "utf8");
     for (const [, module] of content.matchAll(platformImportPattern)) {
       for (const app of ["windows", "macos"]) {
+        // a module named with its extension (styles.css) is that file; otherwise a .ts or .tsx file
         const base = resolve(root, `apps/${app}/src/platform/${module.replace(/\.tsx?$/, "")}`);
-        if (![".ts", ".tsx"].some((extension) => existsSync(base + extension))) {
+        const named = /\.[a-z]+$/.test(module) && !/\.tsx?$/.test(module);
+        if (named ? !existsSync(resolve(root, `apps/${app}/src/platform/${module}`))
+          : ![".ts", ".tsx"].some((extension) => existsSync(base + extension))) {
           failures.push(`${relativePath} needs @platform/${module}, which apps/${app}/src/platform does not provide`);
         }
       }

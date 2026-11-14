@@ -14,7 +14,7 @@ import {
   formulaHotkeyChordId,
   type FormulaHotkeyChord,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { SILENT_OCR_STORAGE_KEY } from "../ocr/quickOcr";
+import { SILENT_OCR_STORAGE_KEY } from "@platform/quickOcr";
 import { readLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 /**

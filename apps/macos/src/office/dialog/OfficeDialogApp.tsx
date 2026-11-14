@@ -84,7 +84,7 @@ import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
 import {
   captureQuickOcrScreenshot,
   quickOcrCaptureToFile,
-} from "../../ocr/quickOcr";
+} from "@platform/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";

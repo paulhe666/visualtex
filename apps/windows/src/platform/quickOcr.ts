@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
-import type { OcrModelName } from "./ocrService";
+import type { OcrModelName } from "../ocr/ocrService";
 import {
   decodeQuickOcrCapture,
   decodeSilentOcrShortcut,
 } from "../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
+import type { QuickOcrCaptureModeTexts } from "../../../shared/visualtex-app/src/ocr/quickOcrFile";
+export { quickOcrCaptureToFile, type QuickOcrCapture } from "../../../shared/visualtex-app/src/ocr/quickOcrFile";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "Ctrl+Alt+O";
@@ -13,6 +15,35 @@ export const QUICK_OCR_CAPTURE_MODE_STORAGE_KEY =
   "visualtex.quick-ocr.capture-mode";
 
 export type QuickOcrCaptureMode = "windows" | "pixpin" | "clipboard";
+
+/** Windows' capture modes, the default first: Snipping Tool, PixPin (its scripting command), or the next image
+ *  any tool writes to the clipboard. */
+export const QUICK_OCR_CAPTURE_MODES: readonly ({ id: QuickOcrCaptureMode } & QuickOcrCaptureModeTexts)[] = [
+  {
+    id: "windows",
+    option: ["Windows 截图工具（默认）", "Windows Snipping Tool (default)"],
+    current: ["Windows 截图工具", "Windows Snipping Tool"],
+    waiting: ["在截图工具中框选公式", "Select the formula in Snipping Tool"],
+    missed: ["已取消截图", "Screenshot cancelled"],
+    changed: ["截图来源：截图工具", "Capture source: Snipping Tool"],
+  },
+  {
+    id: "pixpin",
+    option: ["PixPin", "PixPin"],
+    current: ["PixPin", "PixPin"],
+    waiting: ["在 PixPin 中框选公式", "Select the formula in PixPin"],
+    missed: ["已取消截图", "Screenshot cancelled"],
+    changed: ["截图来源：PixPin", "Capture source: PixPin"],
+  },
+  {
+    id: "clipboard",
+    option: ["其他截图工具 / 剪贴板", "Other screenshot tool / clipboard"],
+    current: ["剪贴板", "Clipboard"],
+    waiting: ["等待剪贴板图片（60 秒）", "Waiting for a clipboard image (60 s)"],
+    missed: ["60 秒内未收到剪贴板图片", "No new clipboard image was detected within 60 seconds"],
+    changed: ["截图来源：剪贴板", "Capture source: clipboard"],
+  },
+];
 
 /**
  * Keep configuration imports from older 1.2.x builds working while exposing
@@ -34,10 +65,6 @@ export function isQuickOcrCaptureMode(
   return value === "windows" || value === "pixpin" || value === "clipboard";
 }
 
-export interface QuickOcrCapture {
-  dataBase64: string;
-  extension: string;
-}
 
 function hasTauriRuntime() {
   return Boolean(
@@ -104,21 +131,4 @@ export async function configureSilentOcr(
       captureMode,
     }),
   );
-}
-
-export function quickOcrCaptureToFile(capture: QuickOcrCapture) {
-  const binary = atob(capture.dataBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  const extension = capture.extension || "png";
-  return new File([bytes], `VisualTeX-Quick-OCR.${extension}`, {
-    type:
-      extension === "jpg" || extension === "jpeg"
-        ? "image/jpeg"
-        : extension === "webp"
-          ? "image/webp"
-          : "image/png",
-  });
 }

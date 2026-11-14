@@ -1,14 +1,36 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
-import type { OcrModelName } from "./ocrService";
+import type { OcrModelName } from "../ocr/ocrService";
 import { decodeQuickOcrCapture } from "../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
+import type { QuickOcrCaptureModeTexts } from "../../../shared/visualtex-app/src/ocr/quickOcrFile";
+export { quickOcrCaptureToFile, type QuickOcrCapture } from "../../../shared/visualtex-app/src/ocr/quickOcrFile";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "⌘⇧O";
 export const QUICK_OCR_CAPTURE_MODE_STORAGE_KEY = "visualtex.quick-ocr.capture-mode";
 
 export type QuickOcrCaptureMode = "immediate" | "system-screenshot";
+
+/** macOS' capture modes, the default first: select at once, or wait for a system screenshot (⌘⇧3 / 4 / 5). */
+export const QUICK_OCR_CAPTURE_MODES: readonly ({ id: QuickOcrCaptureMode } & QuickOcrCaptureModeTexts)[] = [
+  {
+    id: "immediate",
+    option: ["立即框选（默认）", "Immediate selection (default)"],
+    current: ["立即框选", "Immediate selection"],
+    waiting: ["框选公式", "Select the formula"],
+    missed: ["已取消截图", "Screenshot cancelled"],
+    changed: ["快捷 OCR：立即框选", "Quick OCR: select at once"],
+  },
+  {
+    id: "system-screenshot",
+    option: ["等待系统截图（⌘⇧3 / 4 / 5）", "Wait for system screenshot (⌘⇧3 / 4 / 5)"],
+    current: ["等待 macOS 系统截图", "Wait for macOS screenshot"],
+    waiting: ["请在 60 秒内截图", "Take a screenshot within 60 seconds"],
+    missed: ["60 秒内未收到系统截图", "No screenshot within 60 seconds"],
+    changed: ["快捷 OCR：等待系统截图", "Quick OCR: wait for a screenshot"],
+  },
+];
 
 export function normalizeQuickOcrCaptureMode(
   value: unknown,
@@ -24,10 +46,6 @@ export function isQuickOcrCaptureMode(value: unknown): value is QuickOcrCaptureM
   return normalizeQuickOcrCaptureMode(value) !== null;
 }
 
-export interface QuickOcrCapture {
-  dataBase64: string;
-  extension: string;
-}
 
 export async function captureQuickOcrScreenshot(
   captureMode: QuickOcrCaptureMode = "immediate",
@@ -64,15 +82,4 @@ export async function configureSilentOcr(
 ) {
   await invoke("configure_silent_ocr", { enabled, model, copyFormat });
   return enabled ? SILENT_OCR_SHORTCUT : "";
-}
-
-export function quickOcrCaptureToFile(capture: QuickOcrCapture) {
-  const binary = atob(capture.dataBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return new File([bytes], `VisualTeX-Quick-OCR.${capture.extension}`, {
-    type: capture.extension === "png" ? "image/png" : "application/octet-stream",
-  });
 }

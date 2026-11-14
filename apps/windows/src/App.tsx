@@ -56,7 +56,7 @@ import {
   type MathEditorInsertionTarget,
 } from "../../shared/visualtex-app/src/editor/MathEditor";
 import { FormulaToolbar } from "./toolbar/FormulaToolbar";
-import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
+import { LatexSourceEditor } from "../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
 import { HelpDialog } from "./components/HelpDialog";
@@ -133,7 +133,7 @@ import {
   SILENT_OCR_SHORTCUT,
   SILENT_OCR_STORAGE_KEY,
   type QuickOcrCaptureMode,
-} from "./ocr/quickOcr";
+} from "@platform/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 

@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from "react";
-import type { QuickOcrCaptureMode } from "../ocr/quickOcr";
+import type { QuickOcrCaptureMode } from "@platform/quickOcr";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,

@@ -3,7 +3,7 @@ import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorS
 import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { publishSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { OCR_MODELS } from "../ocr/ocrService";
-import { normalizeQuickOcrCaptureMode } from "../ocr/quickOcr";
+import { normalizeQuickOcrCaptureMode } from "@platform/quickOcr";
 import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
 import type { FormulaDocument, FormulaHistoryItem } from "../../../shared/visualtex-app/src/types/formula";
 import {
