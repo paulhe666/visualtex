@@ -566,15 +566,22 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
 
 /* The main menu sits inside the 10px safe inset that floating layers keep
    from the window edge, so the auto-avoidance never has to nudge it; the
-   entry animation scales from the anchored corner so the menu's edges stay
-   put while it fades in. */
+   entry animation only fades and scales from the anchored corner (no slide),
+   so the menu's anchored edges stay put while it appears. */
 .app-menu-popover {
   left: 2px;
   transform-origin: top left;
+  animation-name: vt-anchored-menu-in;
 }
 
 .copy-menu {
   transform-origin: top right;
+  animation-name: vt-anchored-menu-in;
+}
+
+@keyframes vt-anchored-menu-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
 }
 
 /* ---- Width-dependent scroll containers ----------------------------------
