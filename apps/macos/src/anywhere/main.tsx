@@ -1,9 +1,10 @@
+// formulas are laid out by the shared engine; installed before any math field exists
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { Component, Fragment, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
-// formulas are laid out by the shared engine; installed before any math field exists
-import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../../../shared/visualtex-app/src/styles/index.ts";
+import "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import "../../../shared/visualtex-app/src/anywhere/anywhere.css";
 import { AnywhereApp } from "./AnywhereApp";
 import { logAnywhere } from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
