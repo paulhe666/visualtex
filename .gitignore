@@ -53,6 +53,16 @@ apps/*/office/windows/ole/licenses/
 apps/*/office/windows/ole/vendor/
 apps/*/office/windows/ole/manifests/VisualTeX.*.xml
 
+# Scratch space of local sessions and tools
+/.cache/
+apps/*/.cache-*/
+apps/*/test-results/
+apps/windows/src-windows/**/bin-*/
+apps/windows/src-windows/**/obj-*/
+apps/windows/src-windows/**/ZzTmp*.cs
+apps/windows/scripts/*.dll
+apps/windows/scripts/*.exe
+
 # Local files
 .DS_Store
 *.log
