@@ -6,8 +6,8 @@ async function source(path) {
 }
 
 const app = await source("src/App.tsx");
-const ocrDialog = await source("src/components/OcrDialog.tsx");
-const ocrService = await source("src/ocr/ocrService.ts");
+const ocrDialog = await source("../shared/visualtex-app/src/components/OcrDialog.tsx");
+const ocrService = await source("../shared/visualtex-app/src/ocr/ocrService.ts");
 const quickOcr = await source("src/platform/quickOcr.ts");
 const quickRuntime = await source("src/ocr/windowsQuickOcrRuntime.ts");
 const desktopApp = await source("src/desktop/DesktopApp.tsx");

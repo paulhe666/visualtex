@@ -60,7 +60,7 @@ import { LatexSourceEditor } from "../../shared/visualtex-app/src/source-editor/
 import { SettingsDialog } from "../../shared/visualtex-app/src/components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
 import { HelpManualDialog } from "../../shared/visualtex-app/src/components/HelpManualDialog";
-import { OcrDialog } from "./components/OcrDialog";
+import { OcrDialog } from "../../shared/visualtex-app/src/components/OcrDialog";
 import { ExportDialog } from "../../shared/visualtex-app/src/components/ExportDialog";
 import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
 import { EditorWorkspace } from "../../shared/visualtex-app/src/workspace/EditorWorkspace";
@@ -114,7 +114,7 @@ import {
   warmupOcrModel,
   type OcrModelName,
   type OcrProviderId,
-} from "./ocr/ocrService";
+} from "../../shared/visualtex-app/src/ocr/ocrService";
 import {
   checkForUpdates,
   openReleasePage,

@@ -10,7 +10,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { OcrDialog } from "../../components/OcrDialog";
+import { OcrDialog } from "../../../../shared/visualtex-app/src/components/OcrDialog";
 import {
   OfficeConversionError,
   conversionText,
@@ -118,7 +118,7 @@ import {
   warmupOcrModel,
   type OcrModelName,
   type OcrProviderId,
-} from "../../ocr/ocrService";
+} from "../../../../shared/visualtex-app/src/ocr/ocrService";
 
 type InlineOcrStatus =
   | "running"

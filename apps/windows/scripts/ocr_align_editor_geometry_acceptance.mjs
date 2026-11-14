@@ -174,7 +174,7 @@ y_{12345}&=\\frac{2}{3}\\\\
 z+q+r&s=4
 \\end{align}`;
     const ocrSetup = await evaluate(`(async () => {
-      const ocr = await import('/src/ocr/ocrService.ts');
+      const ocr = await import(${JSON.stringify(sharedSourceUrl("ocr/ocrService.ts"))});
       const storeModule = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
       const clipboard = await import(${JSON.stringify(sharedSourceUrl("clipboard/LatexCopyService.ts"))});
       const markerModule = await import('${sharedSourceUrl("editor/alignmentMarkers.ts")}');

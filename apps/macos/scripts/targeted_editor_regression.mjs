@@ -269,6 +269,7 @@ async function main() {
           const callbacks = new Map();
           let callbackId = 1;
           window.__visualtexOcrModelSelectionProbe = { prewarmed: [] };
+          globalThis.isTauri = true;
           window.__TAURI_INTERNALS__ = {
             metadata: {
               currentWindow: { label: "main" },

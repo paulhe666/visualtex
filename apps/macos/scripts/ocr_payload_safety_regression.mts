@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { PADDLE_OCR_API_MODELS } from "../src/ocr/ocrService.ts";
+import { PADDLE_OCR_API_MODELS } from "../../shared/visualtex-app/src/ocr/ocrService.ts";
 import {
   decodeOcrInstallProgress,
   decodeOcrProviderConfiguration,
   decodeOcrRecognitionProgress,
   decodeOcrRecognitionResult,
   decodeOcrRuntimeStatus,
-} from "../src/ocr/ocrPayloadValidation.ts";
+} from "../../shared/visualtex-app/src/ocr/ocrPayloadValidation.ts";
 
 assert.deepEqual(
   PADDLE_OCR_API_MODELS,

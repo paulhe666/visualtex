@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   normalizeOcrFormulaLines,
   splitOcrLatexIntoFormulaLines,
-} from "../src/ocr/ocrService.ts";
+} from "../../shared/visualtex-app/src/ocr/ocrService.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 assert.deepEqual(

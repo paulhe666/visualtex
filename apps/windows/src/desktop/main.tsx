@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../ocr/windowsQuickOcrRuntime";
-import { configureOcrTransport } from "../ocr/ocrService";
-import { desktopOcrTransport } from "../ocr/ocrTransport";
+import { configureOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrService";
+import { desktopOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrTransport";
 import { DesktopApp } from "./DesktopApp";
 import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { VisualTexErrorBoundary } from "../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";

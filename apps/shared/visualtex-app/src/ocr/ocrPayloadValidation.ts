@@ -84,6 +84,17 @@ function booleanValue(value: unknown, path: string) {
   return value;
 }
 
+function nullableBoolean(value: unknown, path: string) {
+  if (value === null) return null;
+  return booleanValue(value, path);
+}
+
+// A field the backend may leave out: it gets the fallback, a field that is there is checked.
+function optional(item: JsonRecord, key: string, fallback: unknown) {
+  if (item[key] === undefined) item[key] = fallback;
+  return item[key];
+}
+
 function finiteNumber(value: unknown, path: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     invalid(path, "a finite number");
@@ -150,7 +161,7 @@ export function decodeOcrProviderConfiguration(
   stringValue(openAi.baseUrl, "ocrProviderConfiguration.openAiCompatible.baseUrl");
   stringValue(openAi.model, "ocrProviderConfiguration.openAiCompatible.model");
   stringValue(openAi.prompt, "ocrProviderConfiguration.openAiCompatible.prompt");
-  booleanValue(openAi.hasApiKey, "ocrProviderConfiguration.openAiCompatible.hasApiKey");
+  nullableBoolean(openAi.hasApiKey, "ocrProviderConfiguration.openAiCompatible.hasApiKey");
 
   const ollama = record(config.ollama, "ocrProviderConfiguration.ollama");
   stringValue(ollama.baseUrl, "ocrProviderConfiguration.ollama.baseUrl");
@@ -160,7 +171,7 @@ export function decodeOcrProviderConfiguration(
   const mathpix = record(config.mathpix, "ocrProviderConfiguration.mathpix");
   stringValue(mathpix.baseUrl, "ocrProviderConfiguration.mathpix.baseUrl");
   stringValue(mathpix.appId, "ocrProviderConfiguration.mathpix.appId");
-  booleanValue(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
+  nullableBoolean(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
 
   const paddleOcr = record(config.paddleOcr, "ocrProviderConfiguration.paddleOcr");
   if (
@@ -172,7 +183,7 @@ export function decodeOcrProviderConfiguration(
       "a supported PaddleOCR AI Studio model",
     );
   }
-  booleanValue(
+  nullableBoolean(
     paddleOcr.hasAccessToken,
     "ocrProviderConfiguration.paddleOcr.hasAccessToken",
   );
@@ -189,7 +200,7 @@ export function decodeOcrProviderConfiguration(
       "a supported SimpleTex formula model",
     );
   }
-  booleanValue(
+  nullableBoolean(
     simpleTex.hasAccessToken,
     "ocrProviderConfiguration.simpleTex.hasAccessToken",
   );
@@ -204,24 +215,31 @@ export function decodeOcrRuntimeStatus(value: unknown): OcrRuntimeStatus {
   nullableString(status.paddleVersion, "ocrRuntimeStatus.paddleVersion");
   nullableString(status.paddleocrVersion, "ocrRuntimeStatus.paddleocrVersion");
   stringValue(status.runtimePath, "ocrRuntimeStatus.runtimePath");
-  stringValue(status.storageConfigPath, "ocrRuntimeStatus.storageConfigPath");
-  stringValue(status.storageSource, "ocrRuntimeStatus.storageSource");
-  booleanValue(status.storageManaged, "ocrRuntimeStatus.storageManaged");
-  if (status.storageAvailableBytes !== null) {
+  // the storage, quarantine and catalog fields of backends that manage them (OCR_BACKEND)
+  stringValue(optional(status, "storageConfigPath", ""), "ocrRuntimeStatus.storageConfigPath");
+  stringValue(optional(status, "storageSource", "default"), "ocrRuntimeStatus.storageSource");
+  booleanValue(optional(status, "storageManaged", false), "ocrRuntimeStatus.storageManaged");
+  if (optional(status, "storageAvailableBytes", null) !== null) {
     nonNegativeNumber(
       status.storageAvailableBytes,
       "ocrRuntimeStatus.storageAvailableBytes",
     );
   }
   booleanValue(
-    status.storagePersistentAcrossUninstall,
+    optional(status, "storagePersistentAcrossUninstall", false),
     "ocrRuntimeStatus.storagePersistentAcrossUninstall",
   );
-  booleanValue(status.runtimeBundleAvailable, "ocrRuntimeStatus.runtimeBundleAvailable");
+  booleanValue(
+    optional(status, "runtimeBundleAvailable", false),
+    "ocrRuntimeStatus.runtimeBundleAvailable",
+  );
   booleanValue(status.offlineBundleAvailable, "ocrRuntimeStatus.offlineBundleAvailable");
   stringArray(status.installedModels, "ocrRuntimeStatus.installedModels");
-  stringArray(status.damagedModels, "ocrRuntimeStatus.damagedModels");
-  booleanValue(status.modelCatalogAvailable, "ocrRuntimeStatus.modelCatalogAvailable");
+  stringArray(optional(status, "damagedModels", []), "ocrRuntimeStatus.damagedModels");
+  booleanValue(
+    optional(status, "modelCatalogAvailable", false),
+    "ocrRuntimeStatus.modelCatalogAvailable",
+  );
   stringValue(status.defaultModel, "ocrRuntimeStatus.defaultModel");
   stringValue(status.message, "ocrRuntimeStatus.message");
   return status as unknown as OcrRuntimeStatus;
@@ -251,13 +269,17 @@ export function decodeOcrInstallStatus(value: unknown): OcrInstallStatus {
 
 export function decodeOcrInstallProgress(value: unknown): OcrInstallProgress {
   const progress = record(value, "ocrInstallProgress");
-  stringValue(progress.stage, "ocrInstallProgress.stage");
-  installState(progress.state, "ocrInstallProgress.state");
+  const stage = stringValue(progress.stage, "ocrInstallProgress.stage");
+  // A backend without install recovery reports progress only while it installs, ending with the "complete" stage.
+  installState(
+    optional(progress, "state", stage === "complete" ? "complete" : "installing"),
+    "ocrInstallProgress.state",
+  );
   percentage(progress.percent, "ocrInstallProgress.percent");
   stringValue(progress.message, "ocrInstallProgress.message");
   nullableString(progress.detail, "ocrInstallProgress.detail");
-  nullableString(progress.error, "ocrInstallProgress.error");
-  nullableString(progress.logPath, "ocrInstallProgress.logPath");
+  nullableString(optional(progress, "error", null), "ocrInstallProgress.error");
+  nullableString(optional(progress, "logPath", null), "ocrInstallProgress.logPath");
   return progress as unknown as OcrInstallProgress;
 }
 

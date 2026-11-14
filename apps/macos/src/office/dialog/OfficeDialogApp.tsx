@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { MathfieldElement } from "mathlive";
 import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
-import { OcrDialog } from "../../components/OcrDialog";
+import { OcrDialog } from "../../../../shared/visualtex-app/src/components/OcrDialog";
 import { installMcpRenderBridge } from "../shared/mcpRenderBridge";
 import { EditorWorkspace } from "../../../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../../../shared/visualtex-app/src/history/EditorSession";
@@ -79,7 +79,7 @@ import {
   formatOcrError,
   recognizeFormulaImage,
   type OcrModelName,
-} from "../../ocr/ocrService";
+} from "../../../../shared/visualtex-app/src/ocr/ocrService";
 import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
 import {
   captureQuickOcrScreenshot,

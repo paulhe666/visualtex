@@ -6,7 +6,7 @@ import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
 } from "./browser_test_runtime.mjs";
-import { normalizeOcrFormulaText } from "../src/ocr/ocrService.ts";
+import { normalizeOcrFormulaText } from "../../shared/visualtex-app/src/ocr/ocrService.ts";
 import {
   formatLatexLines,
   parseLatexSource,

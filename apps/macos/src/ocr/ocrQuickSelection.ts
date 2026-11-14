@@ -5,7 +5,7 @@ import {
   type OcrProviderConfigurationUpdate,
   type OcrProviderId,
   type SimpleTexApiModel,
-} from "./ocrService";
+} from "../../../shared/visualtex-app/src/ocr/ocrService";
 
 export type OcrQuickSelectionGroup = "local" | "api";
 

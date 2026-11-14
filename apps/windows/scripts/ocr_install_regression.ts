@@ -7,8 +7,8 @@ import {
   isOcrInstallActive,
   ocrInstallStatusToProgress,
   shouldDisplayRuntimeError,
-} from "../src/ocr/ocrInstallState";
-import type { OcrInstallStatus } from "../src/ocr/ocrService";
+} from "../../shared/visualtex-app/src/ocr/ocrInstallState";
+import type { OcrInstallStatus } from "../../shared/visualtex-app/src/ocr/ocrService";
 
 const root = path.resolve(import.meta.dirname, "..");
 const rustSource = fs.readFileSync(
@@ -36,7 +36,7 @@ const privateSiteCustomizeSource = fs.readFileSync(
   "utf8",
 );
 const dialogSource = fs.readFileSync(
-  path.join(root, "src", "components", "OcrDialog.tsx"),
+  path.join(root, "..", "shared", "visualtex-app", "src", "components", "OcrDialog.tsx"),
   "utf8",
 );
 const officeTransportSource = fs.readFileSync(

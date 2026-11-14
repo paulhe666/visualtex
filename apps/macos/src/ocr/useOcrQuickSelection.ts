@@ -8,7 +8,7 @@ import {
   saveOcrProviderConfiguration,
   type OcrModelName,
   type OcrProviderConfiguration,
-} from "./ocrService";
+} from "../../../shared/visualtex-app/src/ocr/ocrService";
 import {
   activeOcrQuickSelectionId,
   buildOcrQuickSelectionOptions,

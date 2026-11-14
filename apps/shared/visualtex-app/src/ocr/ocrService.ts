@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
+import { OCR_BACKEND } from "@platform/ocrBackend";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
 import {
   decodeBooleanOcrResult,
   decodeNullableOcrModelDownloadSnapshot,
@@ -28,6 +29,18 @@ export interface OcrTransport {
     eventName: string,
     handler: (event: OcrTransportEvent<T>) => void,
   ): Promise<UnlistenFn>;
+}
+
+/** What a system's OCR backend offers besides installing the runtime, importing models and recognizing. */
+export interface OcrBackendFeatures {
+  /** the command that loads a model into the OCR worker before the first recognition */
+  warmupCommand: string;
+  /** an installation state that outlives the dialog: cancel, retry from the failed step, the install log */
+  installRecovery: boolean;
+  /** a storage folder the user chooses, shown with its free space */
+  storageLocation: boolean;
+  /** the model catalog with verified downloads */
+  modelDownloads: boolean;
 }
 
 let configuredTransport: OcrTransport | null = null;
@@ -104,8 +117,8 @@ export function formatOcrError(
   return fragments.join("\n").trim() || fallback;
 }
 
-import { OCR_MODELS, type OcrModelName } from "../../../shared/visualtex-app/src/ocr/ocrModels";
-export { DEFAULT_OCR_MODEL, OCR_MODELS, type OcrModelName } from "../../../shared/visualtex-app/src/ocr/ocrModels";
+import { OCR_MODELS, type OcrModelName } from "./ocrModels";
+export { DEFAULT_OCR_MODEL, OCR_MODELS, type OcrModelName } from "./ocrModels";
 
 export interface OcrRuntimeStatus {
   installed: boolean;
@@ -114,6 +127,8 @@ export interface OcrRuntimeStatus {
   paddleVersion: string | null;
   paddleocrVersion: string | null;
   runtimePath: string;
+  // A backend without a managed storage folder, model downloads or quarantine leaves the next fields out; the
+  // payload check fills them in ("", "default", false, null, []).
   storageConfigPath: string;
   storageSource: "configured" | "legacy" | "default" | string;
   storageManaged: boolean;
@@ -336,6 +351,8 @@ export const SIMPLETEX_API_MODELS: readonly SimpleTexApiModel[] = [
   "turbo",
 ] as const;
 
+// A secret's "has..." flag is null when the configuration was saved by a version that did not record it (macOS keeps
+// the secrets in the Keychain and does not read them just to find out).
 export interface OcrProviderConfiguration {
   activeProvider: OcrProviderId;
   openAiCompatible: {
@@ -343,7 +360,7 @@ export interface OcrProviderConfiguration {
     baseUrl: string;
     model: string;
     prompt: string;
-    hasApiKey: boolean;
+    hasApiKey: boolean | null;
   };
   ollama: {
     baseUrl: string;
@@ -353,15 +370,15 @@ export interface OcrProviderConfiguration {
   mathpix: {
     baseUrl: string;
     appId: string;
-    hasAppKey: boolean;
+    hasAppKey: boolean | null;
   };
   paddleOcr: {
     model: PaddleOcrApiModel;
-    hasAccessToken: boolean;
+    hasAccessToken: boolean | null;
   };
   simpleTex: {
     model: SimpleTexApiModel;
-    hasAccessToken: boolean;
+    hasAccessToken: boolean | null;
   };
 }
 
@@ -774,6 +791,16 @@ export async function setActiveOcrProvider(
   });
 }
 
+/** The provider configuration saved in another window (the Office editor, the main window). */
+export async function listenOcrProviderConfigurationChanged(
+  listener: (configuration: OcrProviderConfiguration) => void,
+): Promise<UnlistenFn> {
+  requireOcrEnvironment();
+  return listen<unknown>("ocr-provider-configuration-changed", (event) => {
+    listener(decodeOcrProviderConfiguration(event.payload));
+  });
+}
+
 export async function getOcrRuntimeStatus(
   forceRefresh = false,
 ): Promise<OcrRuntimeStatus> {
@@ -838,7 +865,7 @@ export async function restartOcrWorker(): Promise<void> {
 
 export async function warmupOcrModel(model: OcrModelName): Promise<void> {
   requireOcrEnvironment();
-  return invoke("warmup_ocr_model", { model });
+  return invoke(OCR_BACKEND.warmupCommand, { model });
 }
 
 export async function resetOcrRuntime(): Promise<OcrRuntimeStatus> {

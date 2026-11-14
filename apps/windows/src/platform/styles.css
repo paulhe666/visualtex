@@ -1,12 +1,10 @@
 /* Windows' own stylesheet, loaded after the shared ones (apps/shared/visualtex-app/src/styles/index.ts): the
    components and windows only the Windows app has. Its Office and WPS settings, MathType options and Office
-   formula shortcuts; the quick and silent OCR windows and the OCR storage location; the confirmation dialogs of the
-   Office add-ins; the horizontal dock's matrix builder (the delimiter rail beside the size grid, wrapped into as
-   many columns as the dock height needs: FormulaToolbar sets --matrix-delimiter-columns/rows); and the stable copy
-   of the candidate list WebView2 shows while typing a command (#visualtex-native-input-suggestion-popover,
+   formula shortcuts; the quick and silent OCR windows; the confirmation dialogs of the Office add-ins; the
+   horizontal dock's matrix builder (the delimiter rail beside the size grid, wrapped into as many columns as the
+   dock height needs: FormulaToolbar sets --matrix-delimiter-columns/rows); and the stable copy of the candidate
+   list WebView2 shows while typing a command (#visualtex-native-input-suggestion-popover,
    editor/mathLiveKernelCommands.ts). */
-
-
 
 :root.visualtex-source-editor-focused
   #visualtex-native-input-suggestion-popover {
@@ -14,112 +12,6 @@
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
-}
-
-.ocr-storage-location {
-  display: grid;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-}
-
-.ocr-storage-location.is-low-space {
-  border-color: color-mix(in srgb, var(--warning) 52%, var(--border));
-  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
-}
-
-.ocr-storage-location-main {
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-}
-
-.ocr-storage-location-main > svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--accent);
-}
-
-.ocr-storage-location-main > div {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.ocr-storage-location-main span {
-  color: var(--text-muted);
-  font-size: 8px;
-  font-weight: 700;
-}
-
-.ocr-storage-location-main code {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 7px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ocr-storage-location-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.ocr-storage-location-meta span {
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-faint);
-  font-size: 7px;
-}
-
-.ocr-storage-space-warning {
-  color: var(--warning-text, var(--warning));
-  font-size: 7px;
-  line-height: 1.45;
-}
-
-.ocr-storage-location-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.ocr-storage-location-actions button {
-  min-height: 25px;
-  padding: 0 8px;
-}
-
-.ocr-progress-label.is-failed {
-  color: var(--danger);
-}
-
-.ocr-progress-track.is-failed span {
-  background: var(--danger);
-}
-
-.ocr-install-error {
-  max-height: 112px;
-  margin: 8px 0 0;
-  padding: 8px;
-  overflow: auto;
-  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
-  color: var(--danger);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 7px;
-  line-height: 1.5;
 }
 
 html body #visualtex-native-input-suggestion-popover li {

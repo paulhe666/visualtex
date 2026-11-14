@@ -9,7 +9,7 @@ import {
   saveOcrProviderConfiguration,
   type OcrProviderConfigurationUpdate,
   type OcrTransport,
-} from "../src/ocr/ocrService.ts";
+} from "../../shared/visualtex-app/src/ocr/ocrService.ts";
 import {
   activeOcrQuickSelectionId,
   buildOcrQuickSelectionOptions,
@@ -79,6 +79,8 @@ const transport: OcrTransport = {
   },
 };
 
+// the desktop transport is used inside the Tauri runtime, which sets globalThis.isTauri
+(globalThis as { isTauri?: boolean }).isTauri = true;
 configureOcrTransport(transport);
 assert.deepEqual(await getOcrProviderConfiguration(), providerView);
 
@@ -197,7 +199,7 @@ assert.deepEqual(receivedStages, [
 
 for (const sourcePath of [
   "../src/App.tsx",
-  "../src/components/OcrDialog.tsx",
+  "../../shared/visualtex-app/src/components/OcrDialog.tsx",
   "../src/office/dialog/OfficeDialogApp.tsx",
 ]) {
   const source = readFileSync(new URL(sourcePath, import.meta.url), "utf8");

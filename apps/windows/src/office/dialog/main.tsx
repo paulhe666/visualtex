@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../../../../shared/visualtex-app/src/styles/index.ts";
 import "../../../../shared/visualtex-app/src/math/customSymbolRendering";
-import { configureOcrTransport } from "../../ocr/ocrService";
+import { configureOcrTransport } from "../../../../shared/visualtex-app/src/ocr/ocrService";
 import { officeOcrTransport } from "../api/ocrHttpTransport";
 import { OfficeDialogApp } from "./OfficeDialogApp";
 import { installFloatingLayerAutoAvoidance } from "../../../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";

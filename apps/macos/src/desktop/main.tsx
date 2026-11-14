@@ -4,8 +4,8 @@ import { createRoot } from "react-dom/client";
 // formulas are laid out by the shared engine; installed before any math field exists
 import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../../../shared/visualtex-app/src/styles/index.ts";
-import { configureOcrTransport } from "../ocr/ocrService";
-import { desktopOcrTransport } from "../ocr/ocrTransport";
+import { configureOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrService";
+import { desktopOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrTransport";
 import { OfficeDialogApp } from "../office/dialog/OfficeDialogApp";
 import { OfficeDocumentImportApp } from "../office/documentImport/OfficeDocumentImportApp";
 import { WordLatexRedrawApp } from "../office/redraw/WordLatexRedrawApp";

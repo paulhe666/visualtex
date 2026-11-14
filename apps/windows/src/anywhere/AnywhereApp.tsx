@@ -693,7 +693,7 @@ export function AnywhereApp() {
     async (image: File, target: MathEditorInsertionTarget, generation: number) => {
       ocrStatus("正在识别公式…");
       const { fileToOcrRequest, recognizeFormulaImage, normalizeOcrFormulaLines, DEFAULT_OCR_MODEL, OCR_MODELS } =
-        await import("../ocr/ocrService");
+        await import("../../../shared/visualtex-app/src/ocr/ocrService");
       let model = DEFAULT_OCR_MODEL;
       try {
         const stored = window.localStorage.getItem("visualtex.ocr.model");

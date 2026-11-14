@@ -8,8 +8,8 @@ import "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import "../../../shared/visualtex-app/src/anywhere/anywhere.css";
 import { AnywhereApp } from "./AnywhereApp";
 import { logAnywhere } from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
-import { configureOcrTransport } from "../ocr/ocrService";
-import { desktopOcrTransport } from "../ocr/ocrTransport";
+import { configureOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrService";
+import { desktopOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrTransport";
 
 // Screenshot OCR in the formula goes through the desktop app's OCR, as in the
 // main window and the Office editor.

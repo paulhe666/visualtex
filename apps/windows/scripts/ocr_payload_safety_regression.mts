@@ -10,7 +10,7 @@ import {
   decodeOcrRecognitionProgress,
   decodeOcrRecognitionResult,
   decodeOcrRuntimeStatus,
-} from "../src/ocr/ocrPayloadValidation.ts";
+} from "../../shared/visualtex-app/src/ocr/ocrPayloadValidation.ts";
 
 const provider = {
   activeProvider: "local",
