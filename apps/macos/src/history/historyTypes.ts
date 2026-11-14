@@ -124,6 +124,7 @@ export type ReplaceDocumentSource =
   | "replace-multi-line"
   | "format-multi-line"
   | "paste-multi-line"
+  | "drag-drop"
   | "ocr";
 
 export interface ReplaceDocumentEntry {

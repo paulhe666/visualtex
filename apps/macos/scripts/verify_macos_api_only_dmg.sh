@@ -34,7 +34,10 @@ BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString'
 for required in \
   "$RESOURCES/office/macos-offline/resources/VisualTeX.dotm" \
   "$RESOURCES/office/macos-offline/resources/VisualTeX.ppam" \
-  "$RESOURCES/office/macos-offline/resources/addins.json"; do
+  "$RESOURCES/office/macos-offline/resources/addins.json" \
+  "$RESOURCES/office/macos-offline/fonts/VisualTeXLatinModernMath.ttf" \
+  "$RESOURCES/office/macos-offline/fonts/VisualTeXTeXGyreTermesMath.ttf" \
+  "$RESOURCES/office/macos-offline/fonts/STIXTwoMath-Regular.ttf"; do
   [[ -f "$required" ]] || { echo "Missing Office resource: $required" >&2; exit 1; }
 done
 

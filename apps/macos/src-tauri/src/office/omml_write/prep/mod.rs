@@ -25,6 +25,7 @@
 
 #[allow(dead_code)]
 pub mod dom;
+pub mod cell_math;
 pub mod contracts;
 pub mod netstr;
 mod prepasses;

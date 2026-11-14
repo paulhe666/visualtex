@@ -1,5 +1,6 @@
 import {
   convertLatexToMarkup,
+  visualTexPackageCommands,
   type MathfieldElement,
 } from "mathlive";
 import "../math/customSymbolRegistration.ts";
@@ -143,7 +144,7 @@ export function expandVisualTexLatexForLayout(
   callerMacroNames: ReadonlySet<string> = new Set(),
 ) {
   return expandCustomSymbolsForMathLiveMarkup(
-    expandVisualTexMathLiveCompatibilityMacros(text, new Set(callerMacroNames)),
+    expandVisualTexMathLiveCompatibilityMacros(text, new Set([...callerMacroNames, ...visualTexPackageCommands])),
   );
 }
 
@@ -158,7 +159,8 @@ export function convertVisualTexLatexToMarkup(
   const expandedCompatibility =
     expandVisualTexMathLiveCompatibilityMacros(
       text,
-      new Set(Object.keys(callerMacros)),
+      // the kernel reads the package commands with their packages' arguments
+      new Set([...Object.keys(callerMacros), ...visualTexPackageCommands]),
     );
   const expandedSource = expandCustomSymbolsForMathLiveMarkup(
     expandedCompatibility,
@@ -170,6 +172,18 @@ export function convertVisualTexLatexToMarkup(
   // default macro dictionary. Passing an empty/custom dictionary replaces it.
   const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
   return convertLatexToMarkup(expandedSource, optionsWithoutMacros);
+}
+
+/**
+ * The formula drawn as an editor field draws it: the field reads the LaTeX as it is (no compatibility rewriting:
+ * \pod, \sideset, \substack… are the engine's own), custom symbols expanded.
+ */
+export function convertVisualTexLatexToFieldMarkup(...args: Parameters<typeof convertLatexToMarkup>) {
+  installMathLiveContourIntegralGlobalStyle();
+  const [text, options] = args;
+  installCustomSymbolGlobalStyle(text);
+  const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
+  return convertLatexToMarkup(expandCustomSymbolsForMathLiveMarkup(text), optionsWithoutMacros);
 }
 
 installMathLiveContourIntegralGlobalStyle();

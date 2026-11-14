@@ -126,7 +126,7 @@ function validateMacroContainer(path, kind, options = {}) {
     "VTRibbonCallbacks",
     kind === "Word" ? "VTWordAdapter" : "VTPowerPointAdapter",
     kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents",
-    ...(kind === "PowerPoint" ? ["VTPowerPointNativeTarget", "VTPowerPointNativeMath"] : []),
+    ...(kind === "PowerPoint" ? ["VTPowerPointNativeTarget", "VTPowerPointNativeMath", "VTPowerPointRedraw"] : []),
   ];
   if (requireModules) {
     if (kind === "Word") {
@@ -180,6 +180,9 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTPowerPointRibbonDisplayOmml",
             "App_WindowSelectionChange",
             "VTPowerPointRibbonApplyFormulaFontSizePreset",
+            "VisualTeX_ApplyPresentationItem",
+            "VisualTeX_CopyPresentationEquation",
+            "VTPowerPointRibbonRedrawOmmlSelection",
           ]),
     ];
     const missingMarkers = expectedMarkers.filter(
@@ -263,6 +266,9 @@ const RIBBON_ICON_FILES = {
   PowerPoint: {
     VisualTeXIcon05: "icon_05_same_subject.png",
     VisualTeXIcon07: "icon_07_same_subject.png",
+    VisualTeXPowerPointRedrawOmml: { svg: "redraw-selection.svg" },
+    VisualTeXPowerPointRedrawImage: { svg: "redraw-document.svg" },
+    VisualTeXPowerPointToLatex: { svg: "document-import.svg" },
   },
 };
 
@@ -423,6 +429,31 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+// The OMML math fonts and their notices (office/macos-offline/fonts) are fixed
+// files pinned in addins.json next to the add-ins. Every packaging keeps their
+// pins and refuses a font that no longer matches its pin.
+function pinnedFontFiles(manifest) {
+  const pinned = Object.entries(manifest?.files ?? {}).filter(([name]) =>
+    name.startsWith("fonts/"),
+  );
+  for (const [name, entry] of pinned) {
+    const path = join(offlineRoot, name);
+    if (
+      !/^fonts\/[A-Za-z0-9._-]+$/.test(name) ||
+      typeof entry?.sha256 !== "string" ||
+      !existsSync(path) ||
+      sha256(path) !== entry.sha256.toLowerCase()
+    ) {
+      throw new Error(
+        `office/macos-offline/${name} does not match its pin in resources/addins.json`,
+      );
+    }
+  }
+  return Object.fromEntries(
+    pinned.map(([name, entry]) => [name, { sha256: entry.sha256.toLowerCase() }]),
+  );
+}
+
 function atomicCopy(source, destination, mode) {
   mkdirSync(dirname(destination), { recursive: true });
   const staged = `${destination}.staged`;
@@ -532,6 +563,11 @@ try {
   let powerpointOutput;
   let manifest;
   const manifestPath = join(resourcesRoot, "addins.json");
+  // Checked before anything is packaged: a font that fails its pin leaves the
+  // resources as they were.
+  const fontPins = pinnedFontFiles(
+    existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {},
+  );
 
   if (powerpointOnly) {
     // A PowerPoint-only rebuild must not rewrite the verified Word DOTM. This is
@@ -579,6 +615,7 @@ try {
         files: {
           "VisualTeX.dotm": { sha256: sha256(wordOutput) },
           "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
+          ...fontPins,
         },
       };
     }

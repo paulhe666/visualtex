@@ -22,6 +22,56 @@
                   screentip="插入行间原生公式"
                   supertip="在当前文本框内插入独立居中的原生公式段落，不另建文本框；没有文本光标时新建独立公式。"/>
         </group>
+        <group id="VisualTeX.Mac.PowerPoint.RedrawGroup" label="LaTeX 重绘">
+          <menu id="VisualTeX.Mac.PowerPoint.RedrawOmml"
+                label="LaTeX → OMML"
+                size="large"
+                image="VisualTeXPowerPointRedrawOmml"
+                screentip="LaTeX 重绘为原生公式"
+                supertip="把文本框中完整的 LaTeX 公式（$…$、$$…$$、\(…\)、\[…\] 和公式环境）原位换成 PowerPoint 原生公式；$$ 和 \[ 成为单独居中的行间公式。所选：选中的文字、文本框或幻灯片。">
+            <button id="VisualTeX.Mac.PowerPoint.RedrawOmmlSelection"
+                    label="所选"
+                    onAction="VTPowerPointRibbonRedrawOmmlSelection"/>
+            <button id="VisualTeX.Mac.PowerPoint.RedrawOmmlSlide"
+                    label="本页"
+                    onAction="VTPowerPointRibbonRedrawOmmlSlide"/>
+            <button id="VisualTeX.Mac.PowerPoint.RedrawOmmlAll"
+                    label="全部"
+                    onAction="VTPowerPointRibbonRedrawOmmlAll"/>
+          </menu>
+          <menu id="VisualTeX.Mac.PowerPoint.RedrawImage"
+                label="LaTeX → VisualTeX"
+                size="large"
+                image="VisualTeXPowerPointRedrawImage"
+                screentip="LaTeX 重绘为 VisualTeX 公式"
+                supertip="只含一个 LaTeX 公式的文本框换成同一位置的 VisualTeX SVG 公式；文字中间的公式保持不变，请改用“LaTeX → OMML”。">
+            <button id="VisualTeX.Mac.PowerPoint.RedrawImageSelection"
+                    label="所选"
+                    onAction="VTPowerPointRibbonRedrawImageSelection"/>
+            <button id="VisualTeX.Mac.PowerPoint.RedrawImageSlide"
+                    label="本页"
+                    onAction="VTPowerPointRibbonRedrawImageSlide"/>
+            <button id="VisualTeX.Mac.PowerPoint.RedrawImageAll"
+                    label="全部"
+                    onAction="VTPowerPointRibbonRedrawImageAll"/>
+          </menu>
+          <menu id="VisualTeX.Mac.PowerPoint.ToLatex"
+                label="转为 LaTeX 代码"
+                size="large"
+                image="VisualTeXPowerPointToLatex"
+                screentip="公式转为 LaTeX 代码"
+                supertip="原生公式在文字中换成 $…$ 或 $$…$$；VisualTeX 公式换成同一位置、含 $$…$$ 的文本框，可再次重绘。">
+            <button id="VisualTeX.Mac.PowerPoint.ToLatexSelection"
+                    label="所选公式转为 LaTeX 代码"
+                    onAction="VTPowerPointRibbonToLatexSelection"/>
+            <button id="VisualTeX.Mac.PowerPoint.ToLatexSlide"
+                    label="本页公式全部转为 LaTeX 代码"
+                    onAction="VTPowerPointRibbonToLatexSlide"/>
+            <button id="VisualTeX.Mac.PowerPoint.ToLatexAll"
+                    label="全部公式转为 LaTeX 代码"
+                    onAction="VTPowerPointRibbonToLatexAll"/>
+          </menu>
+        </group>
         <group id="VisualTeX.Mac.PowerPoint.Group" label="公式工具">
           <button id="VisualTeX.Mac.PowerPoint.New"
                   label="新建公式"

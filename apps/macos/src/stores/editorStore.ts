@@ -43,11 +43,16 @@ import {
   DEFAULT_FORMULA_LETTER_FONT,
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
+  normalizeFormulaFaces,
   persistFormulaChineseFontPreference,
+  persistFormulaFaces,
   persistFormulaFontPreferences,
   persistFormulaLetterFontPreference,
+  readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
   type FormulaChineseFont,
+  type FormulaFaceRole,
+  type FormulaFaces,
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
 
@@ -387,12 +392,16 @@ interface EditorState {
   formulaChineseFont: FormulaChineseFont;
   /** spacing configurations per formula font (stored on their own, not with the editor state) */
   formulaSpacing: FormulaSpacingPreferences;
+  /** letters, Greek letters and digits in fonts of their own ("": the math font); stored on their own */
+  formulaFaces: FormulaFaces;
   classicTileWidth: number;
   classicDockHeight: number;
   keypadMinimizeOnCopy: boolean;
   inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
+  /** the command candidates: a list (cards) or one row like an input method's candidate bar */
+  candidateStyle: CandidateStyle;
   checkUpdatesOnStartup: boolean;
   powerPointDefaultFontSizePt: number;
   usage: Record<string, CommandUsage>;
@@ -428,6 +437,8 @@ interface EditorState {
   setFormulaLetterFont: (font: FormulaLetterFont) => void;
   setFormulaChineseFont: (font: FormulaChineseFont) => void;
   setFormulaSpacing: (spacing: FormulaSpacingPreferences) => void;
+  setFormulaFace: (role: FormulaFaceRole, family: string) => void;
+  setFormulaFaces: (faces: FormulaFaces) => void;
   setButtonShortcut: (id: ButtonShortcutId, chord: FormulaHotkeyChord | null) => void;
   setButtonShortcuts: (settings: unknown) => void;
   setClassicTileWidth: (width: number) => void;
@@ -439,6 +450,7 @@ interface EditorState {
   ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
+  setCandidateStyle: (style: CandidateStyle) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
   setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
@@ -479,6 +491,7 @@ export const useEditorStore = create<EditorState>()(
       formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
       formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
       formulaSpacing: defaultFormulaSpacingPreferences(),
+      formulaFaces: readPersistedFormulaFaces(),
       buttonShortcuts: {},
       classicTileWidth: legacyClassicPanelSize(
         legacyClassicTileWidthStorageKey,
@@ -496,6 +509,7 @@ export const useEditorStore = create<EditorState>()(
       inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
+      candidateStyle: "list",
       checkUpdatesOnStartup: true,
       powerPointDefaultFontSizePt: 20,
       usage: {},
@@ -614,6 +628,17 @@ export const useEditorStore = create<EditorState>()(
           const next = normalizeButtonShortcutSettings(value);
           return JSON.stringify(next) === JSON.stringify(state.buttonShortcuts) ? state : { buttonShortcuts: next };
         }),
+      setFormulaFace: (role, family) =>
+        set((state) => {
+          const formulaFaces = normalizeFormulaFaces({ ...state.formulaFaces, [role]: family });
+          persistFormulaFaces(formulaFaces);
+          return { formulaFaces };
+        }),
+      setFormulaFaces: (faces) => {
+        const formulaFaces = normalizeFormulaFaces(faces);
+        persistFormulaFaces(formulaFaces);
+        set({ formulaFaces });
+      },
       setFormulaSpacing: (formulaSpacing) => {
         const normalized = normalizeFormulaSpacingPreferences(formulaSpacing);
         persistFormulaSpacing(normalized);
@@ -641,6 +666,7 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+      setCandidateStyle: (candidateStyle) => set({ candidateStyle: normalizeCandidateStyle(candidateStyle) }),
       setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
         set({ checkUpdatesOnStartup }),
       setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
@@ -733,6 +759,9 @@ export const useEditorStore = create<EditorState>()(
               ? state.formulaSpacing
               : mergeFormulaSpacingPreferences(state.formulaSpacing, settings.formulaSpacing);
           if (settings.formulaSpacing !== undefined) persistFormulaSpacing(formulaSpacing);
+          const formulaFaces =
+            settings.formulaFaces === undefined ? state.formulaFaces : normalizeFormulaFaces(settings.formulaFaces);
+          if (settings.formulaFaces !== undefined) persistFormulaFaces(formulaFaces);
           return {
             title: document.title,
             lines,
@@ -816,6 +845,7 @@ export const useEditorStore = create<EditorState>()(
             formulaLetterFont,
             formulaChineseFont,
             formulaSpacing,
+            formulaFaces,
             inputBehavior:
               settings.inputBehavior === undefined
                 ? state.inputBehavior
@@ -900,6 +930,7 @@ export const useEditorStore = create<EditorState>()(
             formulaLetterFont: state.formulaLetterFont,
             formulaChineseFont: state.formulaChineseFont,
             formulaSpacing: state.formulaSpacing,
+            formulaFaces: { ...state.formulaFaces },
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
@@ -946,6 +977,7 @@ export const useEditorStore = create<EditorState>()(
         inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
+        candidateStyle: state.candidateStyle,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
         buttonShortcuts: state.buttonShortcuts,
@@ -1018,6 +1050,7 @@ export const useEditorStore = create<EditorState>()(
             storedFormulaFonts.formulaChineseFont ??
             normalizeFormulaChineseFont(persisted.formulaChineseFont),
           formulaSpacing: readPersistedFormulaSpacing(),
+          formulaFaces: readPersistedFormulaFaces(),
           classicTileWidth:
             persisted.classicTileWidth === undefined
               ? legacyClassicPanelSize(
@@ -1057,6 +1090,25 @@ export const useEditorStore = create<EditorState>()(
     },
   ),
 );
+
+/**
+ * The candidates' look: a list (default: the number and command on a soft band, the picture beside it), cards (the
+ * picture in a tile, the command over its name, number keys), one row in the default colours, one row in AxMath's.
+ */
+export type CandidateStyle = "list" | "card" | "row" | "bar";
+
+function normalizeCandidateStyle(style: unknown): CandidateStyle {
+  return style === "bar" || style === "row" || style === "card" ? style : "list";
+}
+
+// The candidates' look applies to every window's popovers (the formula fields' and the document's "\" menu).
+if (typeof document !== "undefined") {
+  const applyCandidateStyle = (style: CandidateStyle) => {
+    document.documentElement.dataset.candidateStyle = normalizeCandidateStyle(style);
+  };
+  applyCandidateStyle(useEditorStore.getState().candidateStyle);
+  useEditorStore.subscribe((state) => applyCandidateStyle(state.candidateStyle));
+}
 
 // The upright switch also governs normalization outside the formula fields
 // (stored, pasted and imported LaTeX).

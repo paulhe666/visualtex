@@ -1,5 +1,5 @@
 import { setVisualTexEditingCore, setVisualTexLayoutEngine } from "mathlive";
-import { createVisualTexLayout, type LayoutData } from "../../../shared/tex-layout/src/index.ts";
+import { createVisualTexLayout, type LayoutData, type PiecePlacer } from "../../../shared/tex-layout/src/index.ts";
 import { createEditingCore } from "../../../shared/visualtex-core/src/index.ts";
 import tfm from "../../../shared/tex-layout/data/tfm.json";
 import meanings from "../../../shared/tex-layout/data/latex-meanings.json";
@@ -14,14 +14,27 @@ import type { PathGlyphSet } from "../../../shared/tex-layout/src/path-font.ts";
 import type { NativeMeasure } from "../../../shared/tex-layout/src/native-font.ts";
 import { gunzipSync, strFromU8 } from "fflate";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../math/rareIntegralGlyphs.generatedData";
+import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
+
+/** A custom operator's italic correction, by the class of its box (editor and export classes). */
+function customSymbolOperatorItalic(className: string) {
+  if (!className.startsWith("visualtex-custom-symbol-")) return null;
+  const symbol = getActiveCustomSymbols().find(
+    (item) => customSymbolCssClass(item) === className || customSymbolSvgMarkerClass(item) === className,
+  );
+  return symbol?.role === "operator" ? symbol.italicCorrectionEm ?? null : null;
+}
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
   type FormulaChineseFont,
   type FormulaLetterFont,
   FORMULA_FONT_PREFERENCES_CHANGED_EVENT,
+  FORMULA_FACES_STORAGE,
   formulaChineseFontFamily,
+  formulaFaceFamilies,
   formulaLetterFontFamilies,
+  readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
 } from "./formulaFontPreferences";
 import {
@@ -33,7 +46,7 @@ import {
 
 // Formulas are laid out and drawn exactly as LaTeX does (amsmath, 10pt), by
 // the shared VisualTeX layout engine, in one of its font profiles: Computer
-// Modern, or newtxtext + newtxmath for "Times New Roman" (every symbol,
+// Modern, or newtxtext + newtxmath ("newtxmath", stored as "times"; every symbol,
 // spacing and the caret as LaTeX with those packages has them). The editing
 // core decides where the caret is shown and answers every geometry question
 // from the engine's layout (docs/editing-core/DESIGN.md).
@@ -44,6 +57,8 @@ import {
 let installed = false;
 let chineseFamily: string | null = null;
 let letterFamilies: { upright: string; italic: string } | null | undefined;
+type FaceFamilies = Record<"letter" | "greek" | "digit", { upright: string; italic: string } | null>;
+let faceFamilies: FaceFamilies | undefined;
 let profileChoice: "cm" | "ntx" | undefined;
 let spacingPreferences: FormulaSpacingPreferences | null = null;
 let fontRevision = 0;
@@ -62,6 +77,48 @@ export function subscribeFormulaFontRevision(listener: () => void): () => void {
 /** The editing core: the editor's caret, movement and geometry (docs/editing-core/DESIGN.md). */
 export const visualTexEditingCore = createEditingCore();
 
+// VisualTeX Anywhere draws the caret as tall as the host field's line (setFormulaCaretBand);
+// everywhere else formulas have the profile's caret.
+let caretBand: { up: number; down: number } | null = null;
+
+/**
+ * The caret of this page's formulas: from the baseline `up` and `down`, in em of the formula's
+ * font at text size (null: the profile's caret). Open formulas are drawn again.
+ */
+export function setFormulaCaretBand(band: { up: number; down: number } | null): void {
+  const same =
+    band === caretBand ||
+    (band !== null && caretBand !== null && Math.abs(band.up - caretBand.up) < 1e-3 && Math.abs(band.down - caretBand.down) < 1e-3);
+  if (same) return;
+  caretBand = band;
+  if (typeof document === "undefined") return;
+  document.querySelectorAll<HTMLElement>("math-field").forEach((field) => {
+    (field as unknown as { visualTexRender?: () => void }).visualTexRender?.();
+  });
+}
+
+// VisualTeX Anywhere sets its formula on several lines, where the host field wraps its text
+// (setFormulaLineLayout); everywhere else formulas stay on one line.
+let lineLayout: ((mathfield: unknown) => PiecePlacer | null) | null = null;
+
+/**
+ * How this page's edited formulas go on several lines (null: one line); open formulas are drawn
+ * again. The placer gets the widths of the pieces TeX may break the formula into (em) and gives
+ * each piece's place (shared/tex-layout lines.ts).
+ */
+export function setFormulaLineLayout(layout: ((mathfield: unknown) => PiecePlacer | null) | null): void {
+  lineLayout = layout;
+  redrawOpenFormulas();
+}
+
+/** Draws every open formula again (its line layout changed). */
+export function redrawOpenFormulas(): void {
+  if (typeof document === "undefined") return;
+  document.querySelectorAll<HTMLElement>("math-field").forEach((field) => {
+    (field as unknown as { visualTexRender?: () => void }).visualTexRender?.();
+  });
+}
+
 type CoreMathfield = Parameters<typeof visualTexEditingCore.hitTest>[0];
 
 /** The editing model of a field, for the core's decisions (null before the field mounts). */
@@ -69,12 +126,19 @@ export function editingModelOf(field: HTMLElement): CoreMathfield["model"] | nul
   return (field as unknown as { _mathfield?: CoreMathfield })._mathfield?.model ?? null;
 }
 
-/** Put a field's caret at the stop a page point means (clicks the app receives for a row). */
+/**
+ * Put a field's caret at the stop a page point means (clicks the app receives
+ * for a row) and draw it there: a field that already has the focus is not
+ * drawn again by focusing it.
+ */
 export function placeCaretAtPoint(field: HTMLElement, clientX: number, clientY: number): boolean {
   const mathfield = (field as unknown as { _mathfield?: CoreMathfield })._mathfield;
   if (!mathfield) return false;
   const stop = visualTexEditingCore.hitTest(mathfield, clientX, clientY);
-  if (stop === null || !visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
+  if (stop === null) return false;
+  const drawn = field as unknown as { visualTexGoToStop?: (stop: number) => boolean };
+  if (drawn.visualTexGoToStop) return drawn.visualTexGoToStop(stop);
+  if (!visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
   // goToStop moves the model only. A click beside the formula then left the
   // caret painted where it was (WebKit no longer refocuses, which used to
   // repaint): the element's position setter requests the render.
@@ -158,6 +222,19 @@ function currentLetterFamilies(): { upright: string; italic: string } | null {
   return letterFamilies;
 }
 
+/** Letters, Greek letters and digits in fonts of their own (Settings), over the math font. */
+function currentFaceFamilies(): FaceFamilies {
+  if (faceFamilies === undefined) {
+    const faces = readPersistedFormulaFaces();
+    faceFamilies = {
+      letter: formulaFaceFamilies(faces.letter),
+      greek: formulaFaceFamilies(faces.greek),
+      digit: formulaFaceFamilies(faces.digit),
+    };
+  }
+  return faceFamilies;
+}
+
 /** The spacing adjustments of the chosen font's active configuration (Settings), null for LaTeX's. */
 function currentSpacing() {
   if (spacingPreferences === null) spacingPreferences = readPersistedFormulaSpacing();
@@ -189,6 +266,7 @@ function measureNative(family: string, text: string, style = "") {
     ascent: Math.max(0, m.actualBoundingBoxAscent) / MEASURE_PX,
     descent: Math.max(0, m.actualBoundingBoxDescent) / MEASURE_PX,
     italic: Math.max(0, m.actualBoundingBoxRight - m.width) / MEASURE_PX,
+    left: Math.max(0, m.actualBoundingBoxLeft) / MEASURE_PX,
   };
 }
 
@@ -240,7 +318,11 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
         pathGlyphs: paths,
         caretState: visualTexEditingCore.caretState,
         letterFamilies: currentLetterFamilies,
+        faceFamilies: currentFaceFamilies,
         spacing: currentSpacing,
+        classOperatorItalic: customSymbolOperatorItalic,
+        caretBand: () => caretBand,
+        lineLayout: (mathfield) => lineLayout?.(mathfield) ?? null,
       });
       engines.set(p, e);
     }
@@ -259,6 +341,7 @@ export function createAppLayoutEngine(measure: NativeMeasure = measureNative): E
 function relayoutFormulas(): void {
   chineseFamily = null;
   letterFamilies = undefined;
+  faceFamilies = undefined;
   profileChoice = undefined;
   spacingPreferences = null;
   fontRevision++;
@@ -278,6 +361,10 @@ export function installVisualTexLayout(): void {
     // open formulas are laid out again in the new fonts
     window.addEventListener(FORMULA_FONT_PREFERENCES_CHANGED_EVENT, relayoutFormulas);
     window.addEventListener(FORMULA_SPACING_CHANGED_EVENT, relayoutFormulas);
+    // the faces chosen in another window (the main window's Settings, for an Office editor)
+    window.addEventListener("storage", (event) => {
+      if (event.key === FORMULA_FACES_STORAGE) relayoutFormulas();
+    });
   }
 }
 

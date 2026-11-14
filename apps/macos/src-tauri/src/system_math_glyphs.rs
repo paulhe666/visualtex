@@ -87,6 +87,18 @@ fn validate_character(value: &str) -> Result<String, String> {
     Ok(normalized.to_string())
 }
 
+/// A font family installed on the system, for the document's body font menus.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SystemFontFamily {
+    /// the family name fonts are asked for by (CSS, LaTeX)
+    family: String,
+    /// the family's name in the user's language, when it differs (宋体-简 for Songti SC)
+    localized: Option<String>,
+    /// the family has Chinese characters
+    cjk: bool,
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
@@ -155,6 +167,8 @@ mod macos {
             encoding: u32,
         ) -> Boolean;
         fn CFRelease(value: *const c_void);
+        fn CFArrayGetCount(array: *const c_void) -> CFIndex;
+        fn CFArrayGetValueAtIndex(array: *const c_void, index: CFIndex) -> *const c_void;
     }
 
     #[link(name = "CoreText", kind = "framework")]
@@ -165,6 +179,13 @@ mod macos {
             matrix: *const c_void,
         ) -> CTFontRef;
         fn CTFontCopyFamilyName(font: CTFontRef) -> CFStringRef;
+        fn CTFontCopyLocalizedName(
+            font: CTFontRef,
+            name_key: CFStringRef,
+            actual_language: *mut CFStringRef,
+        ) -> CFStringRef;
+        fn CTFontManagerCopyAvailableFontFamilyNames() -> *const c_void;
+        static kCTFontFamilyNameKey: CFStringRef;
         fn CTFontCreateCopyWithSymbolicTraits(
             font: CTFontRef,
             size: CGFloat,
@@ -622,6 +643,46 @@ mod macos {
         })
     }
 
+    /// The families CoreText lists (hidden system families, named with a leading dot, left out), each with its
+    /// name in the user's language and whether it has Chinese characters.
+    pub(super) fn list_families() -> Vec<SystemFontFamily> {
+        let names = OwnedCf(unsafe { CTFontManagerCopyAvailableFontFamilyNames() });
+        if names.0.is_null() {
+            return Vec::new();
+        }
+        let count = unsafe { CFArrayGetCount(names.0) }.clamp(0, 4096);
+        let mut families: Vec<SystemFontFamily> = Vec::new();
+        for index in 0..count {
+            let name = unsafe { CFArrayGetValueAtIndex(names.0, index) };
+            let Ok(family) = cf_string_to_string(name) else { continue };
+            if family.is_empty() || family.starts_with('.') || family.len() > 128 {
+                continue;
+            }
+            let font = OwnedCf(unsafe { CTFontCreateWithName(name, 12.0, ptr::null()) });
+            if font.0.is_null() {
+                continue;
+            }
+            let localized = {
+                let value = OwnedCf(unsafe {
+                    CTFontCopyLocalizedName(font.0, kCTFontFamilyNameKey, ptr::null_mut())
+                });
+                cf_string_to_string(value.0)
+                    .ok()
+                    .filter(|value| !value.is_empty() && value != &family && value.len() <= 128)
+            };
+            let characters: [UniChar; 2] = [0x4E2D, 0x6587];
+            let mut glyphs: [CGGlyph; 2] = [0; 2];
+            let cjk = unsafe {
+                CTFontGetGlyphsForCharacters(font.0, characters.as_ptr(), glyphs.as_mut_ptr(), 2)
+            } != 0
+                && glyphs.iter().all(|glyph| *glyph != 0);
+            families.push(SystemFontFamily { family, localized, cjk });
+        }
+        families.sort_by(|a, b| a.family.to_lowercase().cmp(&b.family.to_lowercase()));
+        families.dedup_by(|a, b| a.family == b.family);
+        families
+    }
+
     pub(super) fn probe_fonts(font_families: &[String]) -> Vec<SystemMathFontProbe> {
         font_families
             .iter()
@@ -772,6 +833,21 @@ pub(crate) fn extract_stable_macos_svg_glyph(
     }
 }
 
+/// The system's font families for the document's body font menus (read off the main thread).
+#[tauri::command]
+pub(crate) async fn list_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return tauri::async_runtime::spawn_blocking(macos::list_families)
+            .await
+            .map_err(|error| format!("VisualTeX could not list the system fonts: {error}"));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 #[tauri::command]
 pub(crate) fn probe_macos_math_fonts(
     font_families: Vec<String>,
@@ -818,6 +894,22 @@ mod tests {
         assert!(validate_character("AB").is_err());
         assert!(validate_character("αβ").is_err());
         assert_eq!(validate_character("𝛼").as_deref(), Ok("𝛼"));
+    }
+
+    #[test]
+    fn lists_every_installed_family_once_with_the_chinese_ones_marked() {
+        let families = macos::list_families();
+        assert!(families.len() > 20, "only {} font families listed", families.len());
+        let mut seen = std::collections::HashSet::new();
+        for family in &families {
+            assert!(!family.family.is_empty() && !family.family.starts_with('.'));
+            assert!(seen.insert(family.family.clone()), "{} listed twice", family.family);
+        }
+        let helvetica = families.iter().find(|family| family.family == "Helvetica").expect("Helvetica is listed");
+        assert!(!helvetica.cjk);
+        let pingfang = families.iter().find(|family| family.family == "PingFang SC").expect("PingFang SC is listed");
+        assert!(pingfang.cjk);
+        println!("{} families, {} with Chinese characters", families.len(), families.iter().filter(|family| family.cjk).count());
     }
 
     #[test]

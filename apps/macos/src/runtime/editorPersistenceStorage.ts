@@ -19,7 +19,10 @@ export function isOfficeEditorPersistenceScope(
 ): boolean {
   if (!location) return false;
   const view = new URLSearchParams(location.search).get("view");
+  // Office editors and VisualTeX Anywhere keep their own formula and share
+  // only the settings with the main window.
   return location.pathname.endsWith("/office-native-dialog.html") ||
+    location.pathname.endsWith("/anywhere.html") ||
     view === "office-formula" ||
     view === "office-document-import" ||
     view === "office-word-latex-redraw";

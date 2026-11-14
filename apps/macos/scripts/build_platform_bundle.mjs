@@ -20,6 +20,9 @@ if (process.platform === "darwin") {
     "packaged_office_artifacts_pass_the_real_installer_validator",
   ]);
 }
+if (process.platform === "darwin") {
+  run("node", ["scripts/build_macos_input_method.mjs"]);
+}
 run("npm", ["run", "build:desktop"]);
 if (process.env.VISUALTEX_API_ONLY_OCR !== "1") {
   run("npm", ["run", "prepare:ocr-offline"]);

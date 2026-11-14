@@ -165,7 +165,6 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
             </div>
             <div>
               <strong>{actionLabel}</strong>
-              <span>{isEn ? action.descriptionEn : action.descriptionZh}</span>
               <code>
                 {isEn ? "Default: " : "默认："}
                 {formatFormulaHotkeyChord(defaultFormulaRowHotkeyChord(action.id))}
@@ -179,14 +178,9 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
               <strong>
-                {isEn ? "Press a shortcut now" : "现在按下需要绑定的快捷键"}
+                {isEn ? "Press a shortcut" : "按下快捷键"}
               </strong>
             )}
-            <span>
-              {isEn
-                ? "Works while a formula row has focus in the editor."
-                : "在编辑区的公式行中生效。"}
-            </span>
           </div>
 
           {problem && (
@@ -200,15 +194,15 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”.`
+                  : `已分配给“${conflictLabel}”。`}
               </span>
             </div>
           )}
           {capturedChord && canSave && !conflictLabel && (
             <div className="formula-hotkey-message is-success">
               <Check size={16} />
-              <span>{isEn ? "Available." : "可以使用。"}</span>
+              <span>{isEn ? "Available" : "可用"}</span>
             </div>
           )}
         </div>

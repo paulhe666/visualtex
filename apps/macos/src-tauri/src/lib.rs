@@ -13,8 +13,11 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
+mod document_export;
+mod document_library;
 mod ocr_offline;
 mod ocr_provider;
+mod anywhere;
 mod office;
 mod quick_ocr;
 mod svg_font_stabilizer;
@@ -1737,6 +1740,28 @@ end run"#;
     }
 }
 
+/// An image file dropped from the system on a document (Tauri's drag-drop event gives its path): its bytes, base64.
+#[tauri::command]
+fn read_image_file(path: String) -> Result<String, String> {
+    let target = PathBuf::from(path.trim());
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !target.is_absolute()
+        || !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic" | "avif")
+    {
+        return Err("Not an image file".to_string());
+    }
+    let size = fs::metadata(&target).map_err(|error| format!("Unable to read the image: {error}"))?.len();
+    if size > 50 * 1024 * 1024 {
+        return Err("The image is too large".to_string());
+    }
+    let bytes = fs::read(&target).map_err(|error| format!("Unable to read the image: {error}"))?;
+    Ok(BASE64_STANDARD.encode(bytes))
+}
+
 #[tauri::command]
 fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
     let target = PathBuf::from(path.trim());
@@ -1748,7 +1773,8 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig") {
+    // zip: a document's .tex or .md with its figures; docx: a document as Word
+    if !matches!(extension.as_str(), "md" | "svg" | "png" | "vtxconfig" | "vtxdoc" | "tex" | "zip" | "docx") {
         return Err("Unsupported export file extension".to_string());
     }
     let parent = target
@@ -1982,6 +2008,10 @@ pub fn run() {
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }
+    // an AI agent's client: relay its stdio to the running companion's /mcp
+    if let Some(status) = office::automation::stdio::run_if_requested() {
+        std::process::exit(status);
+    }
     if let Some(status) = office::macos_offline::run_image_ink_center_cli_if_requested() {
         std::process::exit(status);
     }
@@ -2095,6 +2125,8 @@ pub fn run() {
                         eprintln!("Unable to start PowerPoint double-click monitor: {error}");
                     }
                     app.manage(office_state.clone());
+                    // AI agents' operations run the add-ins' macros from this app's main thread
+                    office::automation::hosts::set_app(app.handle().clone());
                     if initial_office_url.is_some() || background_mode {
                         // Hide the desktop shell before WebKit prewarming. Otherwise a
                         // cold Office URL can flash the main editor while the resident
@@ -2104,6 +2136,15 @@ pub fn run() {
                     }
                     #[cfg(target_os = "macos")]
                     office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
+                    #[cfg(target_os = "macos")]
+                    {
+                        office::wps::bridge::start(
+                            app.handle().clone(),
+                            office_state.install_token.as_str().to_string(),
+                            office::wps::installer::addin_log_path(&office_state),
+                        );
+                        office::wps::installer::auto_install_in_background(office_state.clone());
+                    }
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())
                     {
@@ -2111,8 +2152,16 @@ pub fn run() {
                         // the fixed host window lazily if WebKit was unavailable here.
                         eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
                     }
+                    if let Err(error) = anywhere::initialize(app.handle()) {
+                        eprintln!("VisualTeX Anywhere initialization warning: {error}");
+                    }
                     #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
+                    // The Mac add-ins need no companion server; AI agents reach /mcp on it.
+                    #[cfg(target_os = "macos")]
+                    if office::automation::settings::settings(&office_state.paths.root).enabled {
+                        office::lifecycle::start(office_state.clone());
+                    }
                     if let Some(url) = initial_office_url.as_deref() {
                         if let Err(error) =
                             office::macos_offline::handle_open_url_safely(app.handle(), url)
@@ -2141,11 +2190,45 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
+            read_image_file,
+            document_export::read_import_file,
+            document_export::fetch_image_url,
+            document_export::pdf_print_open,
+            document_export::pdf_print_save,
+            document_export::pdf_print_close,
             copy_png_to_clipboard,
+            document_library::document_library_list,
+            document_library::document_library_read,
+            document_library::document_library_create,
+            document_library::document_library_save,
+            document_library::document_library_rename,
+            document_library::document_library_duplicate,
+            document_library::document_library_move,
+            document_library::document_library_trash,
+            document_library::document_library_restore,
+            document_library::document_library_delete,
+            document_library::document_library_empty_trash,
+            document_library::document_library_create_folder,
+            document_library::document_library_rename_folder,
+            document_library::document_library_delete_folder,
+            document_library::document_library_search,
+            document_library::document_library_reveal,
             quick_ocr::capture_quick_ocr_screenshot,
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,
             office::hotkeys::configure_office_hotkeys,
+            anywhere::anywhere_ready,
+            anywhere::anywhere_layout,
+            anywhere::anywhere_commit,
+            anywhere::anywhere_commit_image,
+            anywhere::anywhere_configure_hotkey,
+            anywhere::anywhere_capture_screenshot,
+            anywhere::anywhere_read_clipboard,
+            anywhere::anywhere_dismiss,
+            anywhere::anywhere_marked,
+            anywhere::anywhere_mode,
+            anywhere::anywhere_status,
+            anywhere::anywhere_log,
             set_app_theme,
             get_app_window_configuration,
             apply_app_window_configuration,
@@ -2153,6 +2236,7 @@ pub fn run() {
             set_main_window_keypad_mode,
             minimize_visualtex_main_window,
             system_math_glyphs::probe_macos_math_fonts,
+            system_math_glyphs::list_system_font_families,
             system_math_glyphs::extract_macos_math_glyph,
             get_ocr_provider_configuration,
             save_ocr_provider_configuration,
@@ -2166,6 +2250,11 @@ pub fn run() {
             install_optional_ocr_model,
             remove_optional_ocr_model,
             office::lifecycle::get_office_companion_status,
+            office::automation::get_mcp_status,
+            office::automation::set_mcp_settings,
+            office::automation::reset_mcp_access,
+            office::automation::get_mcp_audit,
+            office::automation::render::mcp_render_result,
             office::lifecycle::start_office_companion,
             office::lifecycle::stop_office_companion,
             office::lifecycle::set_office_background_start,
@@ -2179,6 +2268,7 @@ pub fn run() {
             office::macos_offline::get_macos_offline_document_import_progress,
             office::macos_offline::commit_macos_offline_document_import,
             office::macos_offline::cancel_macos_offline_document_import,
+            office::macos_offline::note_macos_agent_session,
             office::macos_offline::get_macos_offline_office_session,
             office::macos_offline::report_macos_offline_office_editor_prewarm_diagnostic,
             office::macos_offline::report_macos_offline_office_editor_prewarmed,
@@ -2195,6 +2285,10 @@ pub fn run() {
             office::macos_offline_installer::install_macos_offline_office_addins,
             office::macos_offline_installer::repair_macos_offline_office_addins,
             office::macos_offline_installer::uninstall_macos_offline_office_addins,
+            office::wps::installer::get_wps_addin_status,
+            office::wps::installer::install_wps_addin,
+            office::wps::installer::uninstall_wps_addin,
+            office::wps::installer::open_wps_office,
             office::macos_offline_installer::get_macos_office_hosts_running,
             office::macos_offline_installer::register_macos_powerpoint_addin,
             office::macos_offline_installer::request_quit_macos_office_hosts_for_addin_update,

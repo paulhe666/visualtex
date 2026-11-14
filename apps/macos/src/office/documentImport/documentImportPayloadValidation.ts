@@ -89,7 +89,9 @@ export function decodeMacosDocumentImportRequest(
   if (!SESSION_ID_PATTERN.test(sessionId)) {
     invalid("documentImportRequest.sessionId", "a VisualTeX UUID session id");
   }
-  if (request.host !== "word") invalid("documentImportRequest.host", '"word"');
+  if (request.host !== "word" && request.host !== "powerpoint") {
+    invalid("documentImportRequest.host", '"word" or "powerpoint"');
+  }
   stringValue(request.sourceDocumentId, "documentImportRequest.sourceDocumentId");
   nonEmptyString(request.bookmarkName, "documentImportRequest.bookmarkName");
   fontSize(request.defaultFontSizePt, "documentImportRequest.defaultFontSizePt");
@@ -128,6 +130,24 @@ export function decodeMacosDocumentImportRequest(
     sourceKind(request.sourceKind, "documentImportRequest.sourceKind");
   }
   optionalString(request.source, "documentImportRequest.source");
+  if (request.client !== undefined && request.client !== "wps") {
+    invalid("documentImportRequest.client", '"wps"');
+  }
+  if (request.segments !== undefined) {
+    if (request.host !== "powerpoint" || !Array.isArray(request.segments)) {
+      invalid("documentImportRequest.segments", "a presentation's array of text boxes");
+    }
+    let previousEnd = 0;
+    request.segments.forEach((entry, index) => {
+      const path = `documentImportRequest.segments[${index}]`;
+      const segment = record(entry, path);
+      const start = nonNegativeInteger(segment.start, `${path}.start`);
+      const end = nonNegativeInteger(segment.end, `${path}.end`);
+      if (start < previousEnd || end <= start) invalid(path, "ordered, non-empty text box bounds");
+      if (typeof segment.whole !== "boolean") invalid(`${path}.whole`, "a boolean");
+      previousEnd = end;
+    });
+  }
   if (request.restoreTargets !== undefined) {
     if (!Array.isArray(request.restoreTargets)) {
       invalid("documentImportRequest.restoreTargets", "an array");
@@ -161,7 +181,24 @@ export function decodeMacosDocumentImportRequest(
       optionalString(target.latex, `${path}.latex`);
     });
   }
+  if (request.agent !== undefined) {
+    const agent = record(request.agent, "documentImportRequest.agent");
+    stringValue(agent.text, "documentImportRequest.agent.text");
+    sourceKindOfText(agent.sourceFormat, "documentImportRequest.agent.sourceFormat");
+    if (agent.outputKind !== "omml" && agent.outputKind !== "image") {
+      invalid("documentImportRequest.agent.outputKind", '"omml" or "image"');
+    }
+    if (typeof agent.numberDisplayFormulas !== "boolean") {
+      invalid("documentImportRequest.agent.numberDisplayFormulas", "a boolean");
+    }
+  }
   return request as unknown as MacosDocumentImportRequest;
+}
+
+function sourceKindOfText(value: unknown, path: string) {
+  if (value !== "auto" && value !== "markdown" && value !== "latex") {
+    invalid(path, '"auto", "markdown" or "latex"');
+  }
 }
 
 export function decodeMacosLatexRedrawFontSizes(value: unknown): number[] {

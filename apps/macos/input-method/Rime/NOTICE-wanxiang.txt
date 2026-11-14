@@ -1,0 +1,22 @@
+VisualTeX's pinyin input uses the dictionary and spelling rules of
+万象拼音 (wanxiang), by amzxyz and contributors:
+
+  https://github.com/amzxyz/rime_wanxiang (release v18.1.10, 2026-11-07,
+  rime-wanxiang-base.zip, sha256
+  ddebf0372a2a3d9d8f7a5017704b2afd7397a961c32be490a91e49ec3ee90999)
+
+licensed under the Creative Commons Attribution 4.0 International licence
+(CC BY 4.0): https://creativecommons.org/licenses/by/4.0/
+
+Shipped unchanged: dicts/zi, jichu, cuoyin, duoyin, diming and
+mingren.dict.yaml (the dictionary tables) and wanxiang_algebra.yaml (the
+spelling rules). Changes: VisualTeX's own schema (visualtex_pinyin.schema.yaml)
+and dictionary manifest (visualtex_wanxiang.dict.yaml) use them without
+wanxiang's Lua scripts, grammar model and other schemas, and leave out its
+entertainers' table; the binary tables beside them (build/) are compiled from
+them by RIME's rime_deployer.
+
+The punctuation, key binding and symbol presets (punctuation.yaml,
+key_bindings.yaml, symbols.yaml) come from rime-prelude (LGPL-3.0, the RIME
+developers, https://github.com/rime/rime-prelude); the engine is librime
+(BSD-3-Clause, https://github.com/rime/librime).

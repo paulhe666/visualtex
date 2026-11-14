@@ -8,6 +8,7 @@ import {
 import type {
   DocumentFormulaDisplayMode,
   DocumentFormulaOutputKind,
+  DocumentImportSourceKind,
   DocumentListKind,
   DocumentParagraphAlignment,
   DocumentParagraphStyle,
@@ -27,10 +28,18 @@ export interface MacosFormulaRestoreTarget {
   latex?: string;
 }
 
+/** Where one text box's text is in a presentation redraw's source. */
+export interface MacosPresentationSegment {
+  start: number;
+  end: number;
+  /** The box's whole text: a picture formula may replace the box. */
+  whole: boolean;
+}
+
 export interface MacosDocumentImportRequest {
   protocolVersion: number;
   sessionId: string;
-  host: "word";
+  host: "word" | "powerpoint";
   sourceDocumentId: string;
   bookmarkName: string;
   defaultFontSizePt: number;
@@ -44,6 +53,17 @@ export interface MacosDocumentImportRequest {
   sourceKind?: "omml" | "image";
   source?: string;
   restoreTargets?: MacosFormulaRestoreTarget[];
+  /** "wps" when the WPS add-in started the operation. */
+  client?: "wps";
+  /** A presentation's text boxes in `source`, each searched on its own. */
+  segments?: MacosPresentationSegment[];
+  /** An AI agent's import: inserted without waiting for the user. */
+  agent?: {
+    text: string;
+    sourceFormat: DocumentImportSourceKind;
+    outputKind: DocumentFormulaOutputKind;
+    numberDisplayFormulas: boolean;
+  };
 }
 
 export interface DocumentImportParagraphCommitMetadata {
@@ -177,6 +197,12 @@ export function cancelMacosDocumentImport(sessionId: string) {
   return invokeTauri<void>("cancel_macos_offline_document_import", {
     sessionId,
   });
+}
+
+/** Tells the agent waiting for this session what the window would show; true when an agent waits
+ *  (the window then closes instead). */
+export function noteMacosAgentSession(sessionId: string, note: string) {
+  return invokeTauri<boolean>("note_macos_agent_session", { sessionId, note }).catch(() => false);
 }
 
 export function closeMacosDocumentImportWindow() {

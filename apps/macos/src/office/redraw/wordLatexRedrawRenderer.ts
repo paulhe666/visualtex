@@ -49,6 +49,7 @@ type RenderTemplate = {
 async function renderTemplate(
   span: WordLatexRedrawRenderTarget,
   outputKind: WordLatexRedrawOutputKind,
+  host: "word" | "powerpoint",
 ): Promise<RenderTemplate> {
   const line = { id: createUuid(), latex: span.latex };
   const editorDocument =
@@ -108,13 +109,15 @@ async function renderTemplate(
     };
   }
 
+  // PowerPoint pictures are display formulas sized from their 14 pt rendering
+  // (the app scales them, as calculate_powerpoint_geometry does).
   const artifacts = await renderOfficeFormulaArtifacts({
     lines: editorDocument.lines,
     codeFormat: editorDocument.codeFormat,
-    displayMode: span.displayMode,
+    displayMode: host === "powerpoint" ? "block" : span.displayMode,
     inlineImageMathStyle: span.metadata?.inlineImageMathStyle ?? "text",
-    host: "word",
-      fontSizePt: span.fontSizePt,
+    host,
+    fontSizePt: span.fontSizePt,
     numbered: span.displayMode === "block" && Boolean(span.numbered),
     formulaLetterFont,
     formulaChineseFont,
@@ -212,6 +215,7 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
   spans: WordLatexRedrawRenderTarget[],
   outputKind: WordLatexRedrawOutputKind,
   onProgress?: (current: number, total: number) => void,
+  host: "word" | "powerpoint" = "word",
 ): Promise<{ items: DocumentImportFormulaCommitItem[]; failures: WordLatexRedrawFailure[] }> {
   const templates = new Map<string, RenderTemplate>();
   const templateFailures = new Map<string, string>();
@@ -247,7 +251,7 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
         if (templateIndex >= pendingTemplates.length) return;
         const [key, span] = pendingTemplates[templateIndex];
         try {
-          templates.set(key, await renderTemplate(span, outputKind));
+          templates.set(key, await renderTemplate(span, outputKind, host));
         } catch (reason) {
           templateFailures.set(key, describeConversionFailure(reason, isEn));
         }

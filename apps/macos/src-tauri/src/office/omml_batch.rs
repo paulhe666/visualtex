@@ -398,6 +398,30 @@ fn native_number_context(
     })
 }
 
+/// A new numbered equation for the WPS add-in (office::wps::numbering decided
+/// the number): the body numbered by the shared writer, as Word imports it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn numbered_equation(
+    body: &str,
+    sequence_name: &str,
+    heading_level: u32,
+    separator: &str,
+    literal_prefix: Option<&str>,
+    restart: Option<u32>,
+    initial: u32,
+    math_font: &str,
+) -> Result<String, String> {
+    let context = NativeNumberContext {
+        sequence_name: sequence_name.to_string(),
+        heading_level,
+        separator: separator.to_string(),
+        literal_prefix: literal_prefix.map(str::to_string),
+        restart,
+        initial: initial.max(1).to_string(),
+    };
+    native_number_equation(body, &context, math_font)
+}
+
 /// One numbered equation, as Word imports it: the body numbered by the shared
 /// writer, in the document's math font.
 fn native_number_equation(
@@ -535,7 +559,7 @@ fn build_display_numbering(values: &HashMap<String, String>, output: &Path) -> R
 
 /// The letter font an image formula's metadata records, if it is one Word
 /// numbers can follow.
-fn formula_letter_font(metadata: &str) -> Option<String> {
+pub(crate) fn formula_letter_font(metadata: &str) -> Option<String> {
     super::macos_offline::decode_metadata(metadata)
         .ok()?
         .formula_letter_font

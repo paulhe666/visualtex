@@ -50,6 +50,23 @@ export interface ThemePaletteColors {
   toolbarArrow: string;
   toolbarPhysics: string;
   toolbarSet: string;
+  /** the document's page: its paper, its text (formulas too) and the desk around the pages */
+  documentPaper: string;
+  documentInk: string;
+  documentDesk: string;
+}
+
+/** The document colours a palette has when it does not give them: paper = surface, text = foreground, the desk a step
+ *  darker than the paper (away from it toward the text in a light palette, toward black in a dark one). */
+function documentColors(
+  colors: Omit<ThemePaletteColors, "documentPaper" | "documentInk" | "documentDesk">,
+  mode: ThemePaletteMode,
+): Pick<ThemePaletteColors, "documentPaper" | "documentInk" | "documentDesk"> {
+  return {
+    documentPaper: colors.surface,
+    documentInk: colors.foreground,
+    documentDesk: mixHex(colors.surface, mode === "dark" ? "#000000" : colors.foreground, mode === "dark" ? 0.38 : 0.09),
+  };
 }
 
 export interface ThemeDefinition {
@@ -74,7 +91,7 @@ function palette(
   values: Partial<ThemePaletteColors> &
     Pick<ThemePaletteColors, "accent" | "background" | "surface" | "foreground">,
 ): ThemePaletteColors {
-  const defaults: ThemePaletteColors =
+  const defaults: Omit<ThemePaletteColors, "documentPaper" | "documentInk" | "documentDesk"> =
     mode === "dark"
       ? {
           accent: "#72B7DD",
@@ -164,7 +181,8 @@ function palette(
           toolbarPhysics: "#CAD2EF",
           toolbarSet: "#C8E4D9",
         };
-  return { ...defaults, ...values };
+  const merged = { ...defaults, ...values };
+  return { ...documentColors(merged, mode), ...merged };
 }
 
 const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
@@ -774,9 +792,15 @@ export function normalizeCustomTheme(value: unknown): CustomThemeState {
       normalizeHex(sourceColors[key as keyof ThemePaletteColors], defaultValue),
     ]),
   ) as unknown as ThemePaletteColors;
+  const mode: ThemePaletteMode = candidate.mode === "dark" ? "dark" : "light";
+  // a theme saved before it had document colours: its own, from its surface and text
+  const derived = documentColors(colors, mode);
+  for (const key of ["documentPaper", "documentInk", "documentDesk"] as const) {
+    if (typeof sourceColors[key] !== "string") colors[key] = derived[key];
+  }
   return {
     version: 1,
-    mode: candidate.mode === "dark" ? "dark" : "light",
+    mode,
     colors,
   };
 }
@@ -810,6 +834,14 @@ function rgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** `hex` moved toward `other` by `amount` (0..1). */
+function mixHex(hex: string, other: string, amount: number) {
+  const a = parseHex(hex);
+  const b = parseHex(other);
+  const channel = (x: number, y: number) => Math.round(x + (y - x) * amount).toString(16).padStart(2, "0");
+  return `#${channel(a.r, b.r)}${channel(a.g, b.g)}${channel(a.b, b.b)}`.toUpperCase();
+}
+
 function foregroundOn(hex: string) {
   const { r, g, b } = parseHex(hex);
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
@@ -818,6 +850,10 @@ function foregroundOn(hex: string) {
 
 const inlineThemeProperties = [
   "color-scheme",
+  "--vtx-paper",
+  "--vtx-ink",
+  "--vtx-desk",
+  "--vtx-link",
   "--bg",
   "--bg-elevated",
   "--surface",
@@ -979,6 +1015,11 @@ function applyColors(colors: ThemePaletteColors, mode: ThemePaletteMode) {
     "color-scheme": mode,
     "--bg": colors.background,
     "--bg-elevated": colors.elevated,
+    // the document's page (document.css)
+    "--vtx-paper": colors.documentPaper,
+    "--vtx-ink": colors.documentInk,
+    "--vtx-desk": colors.documentDesk,
+    "--vtx-link": colors.accent,
     "--surface": colors.surface,
     "--surface-primary": colors.surface,
     "--surface-secondary": colors.elevated,

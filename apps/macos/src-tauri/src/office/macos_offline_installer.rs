@@ -45,6 +45,18 @@ const POWERPOINT_MAIN_CONTENT_TYPE: &str =
 // transaction target; the VBA adapter moves the caret after it immediately.
 const PLACEHOLDER_PNG_BASE64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
+// The math fonts of Word's OMML font menu (office/macos-offline/fonts, pinned
+// in addins.json), installed into the user's font folder with the add-ins.
+// TrueType builds: Word's PDF export embeds TrueType math fonts and rasterizes
+// CFF ones. The Windows add-in uses the same families, so a document shows the
+// same fonts on both platforms.
+const BUNDLED_MATH_FONTS: [&str; 3] = [
+    "VisualTeXLatinModernMath.ttf",
+    "VisualTeXTeXGyreTermesMath.ttf",
+    "STIXTwoMath-Regular.ttf",
+];
+const BUNDLED_MATH_FONT_DIRECTORY: &str = "fonts";
+const USER_FONT_DIRECTORY: &str = "Library/Fonts";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1285,6 +1297,10 @@ fn validate_compiled_addin(
             "App_WindowBeforeDoubleClick",
             "App_WindowSelectionChange",
             "VTPowerPointRibbonApplyFormulaFontSizePreset",
+            "VTPowerPointRedraw",
+            "VisualTeX_ApplyPresentationItem",
+            "VisualTeX_CopyPresentationEquation",
+            "VTPowerPointRibbonRedrawOmmlSelection",
             env!("CARGO_PKG_VERSION"),
             POWERPOINT_VBA_SOURCE_REVISION,
         ],
@@ -1294,7 +1310,7 @@ fn validate_compiled_addin(
     Ok(bytes)
 }
 
-fn validate_compiled_artifacts(root: &Path) -> Result<(PathBuf, PathBuf), String> {
+fn read_addin_manifest(root: &Path) -> Result<AddinManifest, String> {
     let manifest_path = root.join("resources").join(ADDIN_MANIFEST_NAME);
     let manifest_bytes = fs::read(&manifest_path)
         .map_err(|error| format!("Compiled add-in manifest is missing: {error}"))?;
@@ -1306,7 +1322,11 @@ fn validate_compiled_artifacts(root: &Path) -> Result<(PathBuf, PathBuf), String
     if manifest.schema_version != 1 || manifest.plugin_version != env!("CARGO_PKG_VERSION") {
         return Err("Compiled add-in manifest version does not match VisualTeX".to_string());
     }
+    Ok(manifest)
+}
 
+fn validate_compiled_artifacts(root: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let manifest = read_addin_manifest(root)?;
     let (word, powerpoint) = source_artifacts(root);
     for (path, name, vba_entry) in [
         (&word, WORD_ADDIN_NAME, WORD_VBA_ENTRY),
@@ -1328,6 +1348,146 @@ fn validate_compiled_artifacts(root: &Path) -> Result<(PathBuf, PathBuf), String
         }
     }
     Ok((word, powerpoint))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MathFontInstallOutcome {
+    /// The font folder already holds the same bytes; nothing was written.
+    Current,
+    /// The font was missing and is now installed.
+    Installed,
+    /// A file of the same name held other bytes (an earlier build); replaced.
+    Replaced,
+}
+
+impl MathFontInstallOutcome {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Current => "already installed",
+            Self::Installed => "installed",
+            Self::Replaced => "replaced an older copy",
+        }
+    }
+}
+
+/// The bundled math fonts with the SHA-256 that addins.json pins for each.
+fn bundled_math_fonts(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
+    let manifest = read_addin_manifest(root)?;
+    BUNDLED_MATH_FONTS
+        .iter()
+        .map(|name| {
+            let key = format!("{BUNDLED_MATH_FONT_DIRECTORY}/{name}");
+            let sha256 = manifest
+                .files
+                .get(&key)
+                .map(|file| file.sha256.to_ascii_lowercase())
+                .filter(|value| {
+                    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+                .ok_or_else(|| format!("The add-in manifest does not pin {key}"))?;
+            Ok((root.join(BUNDLED_MATH_FONT_DIRECTORY).join(name), sha256))
+        })
+        .collect()
+}
+
+/// Copies one bundled font into `fonts_directory` unless the file of its name
+/// there already has its bytes. Only that one file name is ever written; the
+/// user's other fonts are never touched.
+fn install_math_font(
+    source: &Path,
+    expected_sha256: &str,
+    fonts_directory: &Path,
+) -> Result<MathFontInstallOutcome, String> {
+    let name = source
+        .file_name()
+        .ok_or_else(|| format!("Bundled font {} has no file name", source.display()))?;
+    let bytes = fs::read(source)
+        .map_err(|error| format!("Bundled font {} is missing: {error}", source.display()))?;
+    if sha256_hex(&bytes) != expected_sha256 {
+        return Err(format!(
+            "Bundled font {} failed its SHA-256 check",
+            source.display()
+        ));
+    }
+    let destination = fonts_directory.join(name);
+    let existing = match fs::read(&destination) {
+        Ok(existing) => Some(existing),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("Unable to read {}: {error}", destination.display())),
+    };
+    if existing
+        .as_deref()
+        .is_some_and(|existing| sha256_hex(existing) == expected_sha256)
+    {
+        return Ok(MathFontInstallOutcome::Current);
+    }
+    atomic_write(&destination, &bytes, 0o644)?;
+    let installed = fs::read(&destination)
+        .map_err(|error| format!("Unable to verify {}: {error}", destination.display()))?;
+    if sha256_hex(&installed) != expected_sha256 {
+        return Err(format!(
+            "Installed font {} does not match its VisualTeX source",
+            destination.display()
+        ));
+    }
+    Ok(if existing.is_some() {
+        MathFontInstallOutcome::Replaced
+    } else {
+        MathFontInstallOutcome::Installed
+    })
+}
+
+/// Every bundled math font, installed into `fonts_directory`, with its result.
+fn install_math_fonts_into(
+    root: &Path,
+    fonts_directory: &Path,
+) -> Result<Vec<(String, Result<MathFontInstallOutcome, String>)>, String> {
+    Ok(bundled_math_fonts(root)?
+        .into_iter()
+        .map(|(source, sha256)| {
+            let name = source
+                .file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            (name, install_math_font(&source, &sha256, fonts_directory))
+        })
+        .collect())
+}
+
+/// Installs the fonts of Word's OMML font menu into ~/Library/Fonts, where
+/// macOS activates them for every app (Word lists a new font once restarted).
+/// Never fails the add-in operation: every result goes to the maintenance log.
+fn install_bundled_math_fonts(root: &Path, operation: &str) {
+    append_office_maintenance_log(operation, "install-math-fonts", "begin", "");
+    let (failed, detail) = match user_home()
+        .map(|home| home.join(USER_FONT_DIRECTORY))
+        .and_then(|fonts_directory| {
+            install_math_fonts_into(root, &fonts_directory)
+                .map(|results| (fonts_directory, results))
+        }) {
+        Ok((fonts_directory, results)) => {
+            let mut failed = false;
+            let mut detail = format!("fonts_directory={}", fonts_directory.display());
+            for (name, result) in results {
+                let outcome = match result {
+                    Ok(outcome) => outcome.label().to_string(),
+                    Err(error) => {
+                        failed = true;
+                        format!("failed: {error}")
+                    }
+                };
+                detail.push_str(&format!("\n{name}: {outcome}"));
+            }
+            (failed, detail)
+        }
+        Err(error) => (true, error),
+    };
+    append_office_maintenance_log(
+        operation,
+        "install-math-fonts",
+        if failed { "error" } else { "ok" },
+        &detail,
+    );
 }
 
 fn compile_applescript(source: &Path, destination: &Path) -> Result<(), String> {
@@ -1613,7 +1773,18 @@ fn probe_office_folder_access() -> Result<(), String> {
     }
 }
 
-fn install_impl(
+fn install_impl(root: &Path, operation: &str) -> Result<MacOfflineOfficeInstallStatus, String> {
+    let result = install_addins_impl(root, operation);
+    // The fonts of Word's OMML font menu, whatever happened to the add-ins (for
+    // example Word still open): a font problem is logged, never reported as an
+    // add-in failure.
+    if cfg!(target_os = "macos") {
+        install_bundled_math_fonts(root, operation);
+    }
+    result
+}
+
+fn install_addins_impl(
     root: &Path,
     operation: &str,
 ) -> Result<MacOfflineOfficeInstallStatus, String> {
@@ -2536,6 +2707,176 @@ mod tests {
             .join("office/macos-offline");
         validate_compiled_artifacts(&root)
             .expect("Packaged DOTM/PPAM must be installable, including their Ribbon XML");
+        for (source, sha256) in
+            bundled_math_fonts(&root).expect("addins.json must pin every bundled math font")
+        {
+            let bytes = fs::read(&source).expect("every bundled math font is present");
+            assert_eq!(
+                sha256_hex(&bytes),
+                sha256,
+                "{} differs from addins.json",
+                source.display()
+            );
+            assert!(
+                bytes.starts_with(&[0, 1, 0, 0]),
+                "{} is not TrueType",
+                source.display()
+            );
+        }
+    }
+
+    /// A resource root holding `contents` as its bundled math fonts and an
+    /// add-in manifest that pins `pins` (font file name, SHA-256).
+    fn math_font_resources(contents: &[(&str, &[u8])], pins: &[(&str, String)]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("visualtex-math-fonts-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("resources")).unwrap();
+        fs::create_dir_all(root.join(BUNDLED_MATH_FONT_DIRECTORY)).unwrap();
+        for (name, bytes) in contents {
+            fs::write(root.join(BUNDLED_MATH_FONT_DIRECTORY).join(name), bytes).unwrap();
+        }
+        let files = pins
+            .iter()
+            .map(|(name, sha256)| {
+                (
+                    format!("{BUNDLED_MATH_FONT_DIRECTORY}/{name}"),
+                    serde_json::json!({ "sha256": sha256 }),
+                )
+            })
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        let manifest = serde_json::json!({
+            "schemaVersion": 1,
+            "pluginVersion": env!("CARGO_PKG_VERSION"),
+            "files": files,
+        });
+        fs::write(
+            root.join("resources").join(ADDIN_MANIFEST_NAME),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        root
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn math_fonts_install_only_missing_or_changed_files_and_leave_user_fonts() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        use MathFontInstallOutcome::{Current, Installed, Replaced};
+        let [latin_modern, termes, stix] = BUNDLED_MATH_FONTS;
+        let contents: [(&str, &[u8]); 3] = [
+            (latin_modern, b"latin modern"),
+            (termes, b"termes"),
+            (stix, b"stix 2.13"),
+        ];
+        let pins = contents
+            .iter()
+            .map(|(name, bytes)| (*name, sha256_hex(bytes)))
+            .collect::<Vec<_>>();
+        let root = math_font_resources(&contents, &pins);
+        let fonts = root.join("Library/Fonts");
+        fs::create_dir_all(&fonts).unwrap();
+        // Already installed, an older copy, and the user's own math fonts.
+        fs::write(fonts.join(latin_modern), b"latin modern").unwrap();
+        fs::write(fonts.join(stix), b"stix 2.12").unwrap();
+        fs::write(fonts.join("STIXTwoMath.otf"), b"user stix").unwrap();
+        fs::write(fonts.join("latinmodern-math.otf"), b"user latin modern").unwrap();
+        let current_inode = fs::metadata(fonts.join(latin_modern)).unwrap().ino();
+
+        let outcomes = install_math_fonts_into(&root, &fonts)
+            .unwrap()
+            .into_iter()
+            .map(|(name, result)| (name, result.unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            outcomes,
+            [
+                (latin_modern.to_string(), Current),
+                (termes.to_string(), Installed),
+                (stix.to_string(), Replaced),
+            ]
+        );
+        assert_eq!(
+            fs::metadata(fonts.join(latin_modern)).unwrap().ino(),
+            current_inode
+        );
+        assert_eq!(fs::read(fonts.join(termes)).unwrap(), b"termes");
+        assert_eq!(fs::read(fonts.join(stix)).unwrap(), b"stix 2.13");
+        assert_eq!(
+            fs::metadata(fonts.join(termes))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+        assert_eq!(
+            fs::read(fonts.join("STIXTwoMath.otf")).unwrap(),
+            b"user stix"
+        );
+        assert_eq!(
+            fs::read(fonts.join("latinmodern-math.otf")).unwrap(),
+            b"user latin modern"
+        );
+        let mut names = fs::read_dir(&fonts)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "STIXTwoMath-Regular.ttf",
+                "STIXTwoMath.otf",
+                "VisualTeXLatinModernMath.ttf",
+                "VisualTeXTeXGyreTermesMath.ttf",
+                "latinmodern-math.otf",
+            ]
+        );
+
+        // Installing again writes nothing.
+        let installed_inode = fs::metadata(fonts.join(termes)).unwrap().ino();
+        assert!(install_math_fonts_into(&root, &fonts)
+            .unwrap()
+            .iter()
+            .all(|(_, result)| result == &Ok(Current)));
+        assert_eq!(
+            fs::metadata(fonts.join(termes)).unwrap().ino(),
+            installed_inode
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn math_fonts_never_install_a_bundled_file_that_fails_its_pin() {
+        use MathFontInstallOutcome::Installed;
+        let [latin_modern, termes, stix] = BUNDLED_MATH_FONTS;
+        let contents: [(&str, &[u8]); 3] = [
+            (latin_modern, b"latin modern"),
+            (termes, b"damaged"),
+            (stix, b"stix"),
+        ];
+        let pins = vec![
+            (latin_modern, sha256_hex(b"latin modern")),
+            (termes, sha256_hex(b"termes")),
+            (stix, sha256_hex(b"stix")),
+        ];
+        let root = math_font_resources(&contents, &pins);
+        // The user's font folder does not exist yet.
+        let fonts = root.join("home/Library/Fonts");
+
+        let results = install_math_fonts_into(&root, &fonts).unwrap();
+        assert_eq!(results[0], (latin_modern.to_string(), Ok(Installed)));
+        assert!(results[1].1.as_ref().unwrap_err().contains("SHA-256"));
+        assert_eq!(results[2], (stix.to_string(), Ok(Installed)));
+        assert!(!fonts.join(termes).exists());
+        assert_eq!(fs::read_dir(&fonts).unwrap().count(), 2);
+
+        // A font addins.json does not pin is never installed.
+        let unpinned = math_font_resources(&contents, &pins[..2]);
+        assert!(install_math_fonts_into(&unpinned, &fonts)
+            .unwrap_err()
+            .contains("does not pin fonts/STIXTwoMath-Regular.ttf"));
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(unpinned);
     }
 
     #[cfg(unix)]

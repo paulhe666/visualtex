@@ -64,7 +64,10 @@ export interface OfficeFormulaSession {
   id: string;
   mode: OfficeSessionMode;
   host: OfficeHost;
-  operation?: "nativeToImage" | "imageToNative";
+  /** "wps" when the WPS add-in opened the Session. */
+  client?: "wps";
+  /** Committed by the hidden editor itself: a conversion, or an AI agent's formula. */
+  operation?: "nativeToImage" | "imageToNative" | "agent";
   formulaId: string;
   sourceDocumentId: string | null;
   sourceObjectId: string | null;

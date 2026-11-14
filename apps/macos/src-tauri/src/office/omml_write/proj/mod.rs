@@ -38,6 +38,7 @@
 #[allow(dead_code, deprecated)]
 pub mod dom;
 mod converter;
+mod keep_number;
 mod netstr;
 mod projection;
 mod unicode_tables;
@@ -47,6 +48,21 @@ mod xml_writer;
 /// MathMlOmmlProjection.Project(preparedMathMl).
 pub fn project(prepared_mathml: &str) -> Result<String, String> {
     projection::project(prepared_mathml)
+}
+
+/// Field instructions written as normal-text math, which WPS keeps (office::wps).
+pub fn instructions_as_normal_text(omml: &str) -> Result<String, String> {
+    keep_number::instructions_as_normal_text(omml)
+}
+
+/// A numbered equation edited outside Word keeps its number (office::wps).
+pub fn keep_equation_number(original_xml: &str, edited_omml: &str) -> Result<String, String> {
+    keep_number::keep_equation_number(original_xml, edited_omml)
+}
+
+/// The formula of a numbered equation without its number (office::wps).
+pub fn equation_body(numbered_xml: &str) -> Result<String, String> {
+    keep_number::equation_body(numbered_xml)
 }
 
 /// o00: WordOmmlConverter.ExtractSingleOMath(xml).

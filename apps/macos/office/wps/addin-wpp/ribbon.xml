@@ -1,0 +1,36 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddinLoad">
+  <ribbon>
+    <tabs>
+      <tab id="VisualTeXSlidesTab" label="VisualTeX" insertAfterMso="TabHome">
+        <group id="VisualTeXSlidesNativeGroup" label="原生公式">
+          <button id="vtxOmmlInline" label="行内 OMML" screentip="插入行内原生公式" supertip="在文本框当前光标或选区插入可由 WPS 原生编辑的公式，保留前后文字；没有文本光标时新建独立公式。" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" size="large" />
+          <button id="vtxOmmlDisplay" label="行间 OMML" screentip="插入行间原生公式" supertip="在当前文本框内插入独立居中的原生公式段落，不另建文本框；没有文本光标时新建独立公式。" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" size="large" />
+        </group>
+        <group id="VisualTeXSlidesRedrawGroup" label="LaTeX 重绘">
+          <menu id="vtxRedrawOmml" label="LaTeX → OMML" size="large" screentip="LaTeX 重绘为原生公式" supertip="把文本框中完整的 LaTeX 公式（$…$、$$…$$、\(…\)、\[…\] 和公式环境）原位换成 WPS 原生公式；$$ 和 \[ 成为单独居中的行间公式。所选：选中的文字、文本框或幻灯片。" getImage="OnVisualTeXImage">
+            <button id="vtxRedrawOmmlSelection" label="所选" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawOmmlSlide" label="本页" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawOmmlAll" label="全部" onAction="OnVisualTeXAction" />
+          </menu>
+          <menu id="vtxRedrawImage" label="LaTeX → VisualTeX" size="large" screentip="LaTeX 重绘为 VisualTeX 公式" supertip="只含一个 LaTeX 公式的文本框换成同一位置的 VisualTeX SVG 公式；文字中间的公式保持不变，请改用“LaTeX → OMML”。" getImage="OnVisualTeXImage">
+            <button id="vtxRedrawImageSelection" label="所选" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawImageSlide" label="本页" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawImageAll" label="全部" onAction="OnVisualTeXAction" />
+          </menu>
+          <menu id="vtxToLatex" label="转为 LaTeX 代码" size="large" screentip="公式转为 LaTeX 代码" supertip="原生公式在文字中换成 $…$ 或 $$…$$；VisualTeX 公式换成同一位置、含 $$…$$ 的文本框，可再次重绘。" getImage="OnVisualTeXImage">
+            <button id="vtxToLatexSelection" label="所选公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+            <button id="vtxToLatexSlide" label="本页公式全部转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+            <button id="vtxToLatexAll" label="全部公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+          </menu>
+        </group>
+        <group id="VisualTeXSlidesFormulaGroup" label="公式工具">
+          <button id="vtxNewFormula" label="新建公式" screentip="插入 VisualTeX 公式" supertip="在当前幻灯片中央插入一个 VisualTeX SVG 公式；编辑完成后可以像图片一样移动和缩放。" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" size="large" />
+          <button id="vtxEditSelected" label="编辑所选公式" screentip="用 VisualTeX 编辑所选公式" supertip="打开所选 VisualTeX 公式或光标所在原生公式的编辑窗口；也可以直接双击公式。" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" size="large" />
+          <button id="vtxDeleteSelected" label="删除所选公式" screentip="删除所选 VisualTeX 公式" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" size="large" />
+          <dropDown id="vtxImageFontSize" label="SVG 公式字号" sizeString="自定义（512 pt）" screentip="选择 SVG 公式字号" supertip="先选中一个或多个 VisualTeX SVG 公式，再从中文字号和磅值列表中选择；选择后立即应用，并保持中心、旋转和层级不变。" getItemCount="OnVisualTeXItemCount" getItemLabel="OnVisualTeXItemLabel" getSelectedItemIndex="OnVisualTeXSelectedIndex" onAction="OnVisualTeXSelect" />
+          <button id="vtxOpen" label="打开 VisualTeX" size="large" getImage="OnVisualTeXImage" onAction="OnVisualTeXAction" />
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

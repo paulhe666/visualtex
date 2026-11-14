@@ -111,6 +111,6 @@ export function isMacOfficeStatusUnavailable(reason: unknown): boolean {
 
 export function macOfficeStatusUnavailableText(isEn: boolean): string {
   return isEn
-    ? "VisualTeX could not read the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then refresh."
-    : "暂时读不到 Office 文件夹。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」，然后刷新状态。";
+    ? "Cannot read the Office folders. If macOS asks for access to data from other apps, click Allow, then refresh."
+    : "无法读取 Office 文件夹。如 macOS 请求访问其他 App 的数据，点击「允许」后刷新。";
 }

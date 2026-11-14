@@ -173,6 +173,13 @@ fn execute(action: OfficeHotkeyAction) {
     }
 }
 
+/// A key's macOS virtual key code by its KeyboardEvent.code, as the Office
+/// hotkeys register it (the Anywhere shortcut registers the same way).
+#[cfg(target_os = "macos")]
+pub(crate) fn carbon_key_code(code: &str) -> Option<u32> {
+    mac_hotkey::key_code(code)
+}
+
 #[cfg(target_os = "macos")]
 mod mac_hotkey {
     use super::*;

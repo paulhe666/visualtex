@@ -155,7 +155,7 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               error ||
                 (isEn
                   ? "Unable to register this global hotkey."
-                  : "无法注册这个全局快捷键。"),
+                  : "无法注册该全局快捷键。"),
             ),
       );
     } finally {
@@ -225,14 +225,9 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
               <strong>
-                {isEn ? "Press a shortcut now" : "现在按下需要绑定的快捷键"}
+                {isEn ? "Press a shortcut" : "请按快捷键"}
               </strong>
             )}
-            <span>
-              {isEn
-                ? "This is a global shortcut and only runs when the matching Office app is frontmost."
-                : "这是全局快捷键，仅在对应 Office 应用位于前台时执行。"}
-            </span>
           </div>
 
           {capturedChord && !hasModifier && (
@@ -240,8 +235,8 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? "Add Ctrl, Option/Alt or Command; Shift can be used in addition."
-                  : "请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。"}
+                  ? "Requires Ctrl, Option/Alt or Command."
+                  : "需要 Ctrl、Option/Alt 或 Command。"}
               </span>
             </div>
           )}
@@ -251,7 +246,7 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <span>
                 {isEn
                   ? "This key cannot be registered as a macOS global shortcut."
-                  : "这个按键无法注册为 macOS 全局快捷键。"}
+                  : "该按键不能注册为 macOS 全局快捷键。"}
               </span>
             </div>
           )}
@@ -260,8 +255,8 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `This shortcut is reserved for ${protectedAction} and cannot be overridden.`
-                  : `该快捷键已保留用于“${protectedAction}”，不能覆盖。`}
+                  ? `Reserved for ${protectedAction}.`
+                  : `已保留给“${protectedAction}”。`}
               </span>
             </div>
           )}
@@ -270,8 +265,8 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
-                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
+                  ? `Assigned to “${conflictLabel}”.`
+                  : `已分配给“${conflictLabel}”。`}
               </span>
             </div>
           )}
@@ -280,8 +275,8 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
               <Check size={16} />
               <span>
                 {isEn
-                  ? "Available as a macOS global Office hotkey."
-                  : "可注册为 macOS 全局 Office 快捷键。"}
+                  ? "Available"
+                  : "可用"}
               </span>
             </div>
           )}
@@ -300,8 +295,8 @@ export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
                 ? `Current: ${formatFormulaHotkeyChord(existingBinding.chord)}`
                 : `当前：${formatFormulaHotkeyChord(existingBinding.chord)}`
               : isEn
-                ? "No hotkey assigned"
-                : "尚未设置快捷键"}
+                ? "Not set"
+                : "未设置"}
           </span>
           <div>
             <button type="button" className="secondary-button" onClick={onClose}>

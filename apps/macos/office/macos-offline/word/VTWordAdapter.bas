@@ -3,6 +3,11 @@ Option Explicit
 
 #Const VT_WORD_DIAGNOSTICS = False
 
+' AI agents (VisualTeX_AgentRun, at the end of this module)
+Private VT_AGENT_REQUEST As Collection
+Private Const VT_AGENT_MAX_REQUEST_CHARACTERS As Long = 2097152
+Private Const VT_AGENT_RESPONSE_CHUNK As Long = 40000
+
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
@@ -63,6 +68,18 @@ Private Const VT_WORD_INLINE_CONVERSION_FONT_CONTROL_ID As String = _
     "VisualTeX.Mac.Word.InlineConversionFontSize"
 Private Const VT_WORD_DISPLAY_CONVERSION_FONT_CONTROL_ID As String = _
     "VisualTeX.Mac.Word.DisplayConversionFontSize"
+Private Const VT_WORD_OMML_FONT_CONTROL_PREFIX As String = _
+    "VisualTeX.Mac.Word.OmmlFont."
+Private Const VT_WORD_OMML_FONT_FILE As String = "/WordOmmlMathFont.txt"
+' The TrueType math fonts VisualTeX installs in ~/Library/Fonts with its
+' Office add-ins (office/macos-offline/fonts; the Windows add-in uses the same
+' families). A choice saved before 1.3.0 can name the CFF Latin Modern Math.
+Private Const VT_OMML_FONT_LATIN_MODERN As String = "VisualTeX Latin Modern Math"
+Private Const VT_OMML_FONT_LEGACY_LATIN_MODERN As String = "Latin Modern Math"
+Private Const VT_OMML_FONT_TERMES As String = "VisualTeX TeX Gyre Termes Math"
+' Equations per staging package when Word equations change their font.
+Private Const VT_WORD_MATH_FONT_BATCH_ITEMS As Long = 40
+Private Const VT_WORD_MATH_FONT_BATCH_CHARACTERS As Long = 400000
 Private Const VT_WORD_IMAGE_EDIT_MACRO As String = _
     "VisualTeX_EditImageField"
 Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VARIABLE As String = _
@@ -182,9 +199,75 @@ Private VT_WORD_NUMBERING_PREFERENCE_CACHE_SEPARATOR As String
 Private VT_WORD_CONVERSION_FONT_SIZES_LOADED As Boolean
 Private VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT As Double
 Private VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT As Double
+' The OMML formula font (ribbon "OMML font"): "" follows each document's
+' math font; otherwise every VisualTeX OMML write and Update Equation Format
+' make it the document math font. Saved for every document.
+Private VT_WORD_OMML_FONT_LOADED As Boolean
+Private VT_WORD_OMML_FONT_NAME As String
+' Lower-case names of the fonts Word lists (Application.FontNames), read once.
+Private VT_WORD_FONT_NAMES As Collection
+Private VT_WORD_FONT_NAMES_UNAVAILABLE As Boolean
 Private VT_WORD_REFERENCE_MENU_DOCUMENT As Document
 Private VT_WORD_REFERENCE_MENU_INSERTION_RANGE As Range
 Private VT_WORD_NATIVE_ROLLBACK_DOCUMENT As Document
+
+' AI agents: the entry macro the app runs (see the agent section at the end of this module)
+Public Sub VisualTeX_AgentRun()
+    Dim requestId As String
+    Dim operation As String
+    Dim data As String
+    Dim code As String
+    Dim message As String
+    Dim separator As Long
+
+    On Error GoTo AgentFailed
+    VT_AGENT_ERRORS = ""
+    VT_AGENT_NOTES = ""
+    VT_AGENT_SESSION_ID = ""
+    VT_AGENT_REQUEST_JSON = ""
+    Set VT_AGENT_REQUEST = VTAgentReadRequest()
+    requestId = VTAgentRaw("id")
+    operation = VTAgentRaw("op")
+    VT_AGENT_MODE = True
+    Select Case operation
+        Case "list_documents": data = VTAgentListDocuments()
+        Case "get_selection": data = VTAgentGetSelection()
+        Case "list_formulas": data = VTAgentListFormulas()
+        Case "read_formula": data = VTAgentReadFormula()
+        Case "find_vtx_formula": data = VTAgentFindVisualTeXFormula()
+        Case "begin_insert": data = VTAgentBeginInsert()
+        Case "begin_update": data = VTAgentBeginUpdate()
+        Case "begin_import": data = VTAgentBeginImport()
+        Case "select_formula": data = VTAgentSelectFormulaOperation()
+        Case "delete_formula": data = VTAgentDeleteFormula()
+        Case "set_formula_font_size": data = VTAgentSetFontSize()
+        Case "number_display_formulas": data = VTAgentNumberDisplayFormulas()
+        Case "update_equation_numbers": data = VTAgentUpdateEquationNumbers()
+        Case "set_equation_number_format": data = VTAgentSetNumberFormat()
+        Case "insert_equation_reference": data = VTAgentInsertReference()
+        Case "latex_text_to_formulas", "formulas_to_latex_text", "convert_formulas"
+            data = VTAgentDocumentOperation(operation)
+        Case Else
+            Err.Raise vbObjectError + 7900, "VisualTeX", "unknown_operation|Word has no agent operation " & operation & "."
+    End Select
+    VT_AGENT_MODE = False
+    VTAgentWriteResponse "{""id"":" & VTJsonString(requestId) & ",""ok"":true,""data"":" & data & "}"
+    Exit Sub
+
+AgentFailed:
+    message = Err.Description
+    VT_AGENT_MODE = False
+    code = "operation_failed"
+    separator = InStr(1, message, "|", vbBinaryCompare)
+    If separator > 1 And separator < 40 And InStr(1, Left$(message, separator - 1), " ", vbBinaryCompare) = 0 Then
+        code = Left$(message, separator - 1)
+        message = Mid$(message, separator + 1)
+    End If
+    If Len(VT_AGENT_ERRORS) > 0 Then message = message & " " & VT_AGENT_ERRORS
+    On Error Resume Next
+    VTAgentWriteResponse "{""id"":" & VTJsonString(requestId) & ",""ok"":false,""error"":{""code"":" & _
+        VTJsonString(code) & ",""message"":" & VTJsonString(message) & "}}"
+End Sub
 
 Private Sub VTClosePreparedNativeRollbackDocument()
     On Error Resume Next
@@ -258,6 +341,7 @@ Public Sub VisualTeX_InitializeWordHost()
     ' Word open with no document until the user double-clicks the file again.
     VTEnsureApplicationPrewarmScheduled
     VisualTeX_MigrateImageMacroButtons
+    VTRepairOpenedWpsDocuments
     VTEnsureOrphanWatchScheduled
     If Documents.Count > 0 Then _
         VTSynchronizeWordImageTypography ActiveDocument.Content
@@ -3131,7 +3215,7 @@ Private Function VTCollectFormulaRestoreTargets( _
     Set targets = New Collection
     If sourceKind = "omml" Then
         For Each formulaMath In VTOMathsInDocumentOrder(targetRange)
-            If formulaMath.Range.InlineShapes.Count = 0 Then
+            If formulaMath.Range.InlineShapes.Count = 0 And Not VTIsEquationReferenceMath(formulaMath) Then
                 targets.Add formulaMath
             End If
         Next formulaMath
@@ -4633,6 +4717,7 @@ Public Sub VTWordRibbonOnLoad(ByVal ribbon As IRibbonUI)
     VTInitializeWordEvents
     VTEnsureApplicationPrewarmScheduled
     VisualTeX_MigrateImageMacroButtons
+    VTRepairOpenedWpsDocuments
     VTEnsureOrphanWatchScheduled
     VTEnsureImageSizeWatchScheduled
     VTInvalidateWordImageFontSizeControl
@@ -5653,6 +5738,82 @@ Public Sub VTMigrateOpenedDocumentImageMacroButtons( _
 
     If documentObject Is Nothing Or VTWordVbeBuildTemplateActive() Then Exit Sub
     VTMigrateDocumentImageMacroButtons documentObject
+End Sub
+
+' WPS turns every "*" in equation text into U+2217 ASTERISK OPERATOR when it
+' opens a document, the field instructions inside numbered equations included,
+' and saves them that way. Word then reads "SEQ Equation \s 1 \<U+2217> ARABIC"
+' as a SEQ with a bookmark argument and the number shows "Error! Bookmark not
+' defined.". Word makes the same substitution in a field code typed into an
+' equation, so the number is rebuilt instead: such an equation still counts as
+' numbered (VTV2NumberedEquationEntry) and its number is not in the document's
+' style, so VTV2RestyleNumbers writes it again from the shared builder.
+Private Function VTIsWpsDamagedNumberInstruction(ByVal instruction As String) As Boolean
+    VTIsWpsDamagedNumberInstruction = _
+        InStr(1, instruction, "\" & ChrW(&H2217), vbBinaryCompare) > 0
+End Function
+
+Private Function VTHasWpsDamagedEquationNumber(ByVal documentObject As Document) As Boolean
+    Dim candidate As Field
+    Dim fieldType As Long
+
+    If documentObject.OMaths.Count = 0 Then Exit Function
+    For Each candidate In documentObject.Fields
+        fieldType = candidate.Type
+        If fieldType = wdFieldSequence Or fieldType = wdFieldStyleRef Then
+            If VTIsWpsDamagedNumberInstruction(candidate.Code.Text) Then
+                VTHasWpsDamagedEquationNumber = True
+                Exit Function
+            End If
+        End If
+    Next candidate
+End Function
+
+' Opening a document WPS has saved (it records its build in the custom
+' property KSOProductBuildVer, which Word keeps): rebuild the equation numbers
+' WPS damaged before they are read. Other documents are left alone without
+' scanning their fields.
+Public Sub VTRepairOpenedWpsDocument(ByVal documentObject As Word.Document)
+    Dim savedByWps As Boolean
+    Dim mutationStarted As Boolean
+    Dim previousScreenUpdating As Boolean
+
+    If documentObject Is Nothing Or VTWordVbeBuildTemplateActive() Then Exit Sub
+    If VT_WORD_NUMBER_UPDATE_RUNNING Then Exit Sub
+    On Error Resume Next
+    savedByWps = Len(CStr(documentObject.CustomDocumentProperties( _
+        "KSOProductBuildVer").Value)) > 0
+    On Error GoTo Finished
+    If Not savedByWps Then Exit Sub
+    If documentObject.ProtectionType <> wdNoProtection Then Exit Sub
+    If documentObject.ReadOnly Then Exit Sub
+    If Not VTHasWpsDamagedEquationNumber(documentObject) Then Exit Sub
+    previousScreenUpdating = Application.ScreenUpdating
+    VT_WORD_NUMBER_UPDATE_RUNNING = True
+    VTBeginWordInternalMutation
+    mutationStarted = True
+    Application.ScreenUpdating = False
+    VTV2RestyleNumbers documentObject
+
+Finished:
+    If mutationStarted Then
+        Application.ScreenUpdating = previousScreenUpdating
+        VTEndWordInternalMutation
+        VT_WORD_NUMBER_UPDATE_RUNNING = False
+    End If
+End Sub
+
+' Documents opened before the add-in's event sink existed (the one Word was
+' launched with) get the same repair when the Ribbon loads.
+Private Sub VTRepairOpenedWpsDocuments()
+    Dim documentObject As Document
+
+    On Error Resume Next
+    For Each documentObject In Documents
+        VTRepairOpenedWpsDocument documentObject
+        Err.Clear
+    Next documentObject
+    On Error GoTo 0
 End Sub
 
 Public Sub VisualTeX_EditSelected()
@@ -6865,9 +7026,11 @@ Private Function VTVisualTeXLetterFontFromWordFontName( _
     ByVal fontName As String) As String
 
     Select Case LCase$(Trim$(fontName))
-        Case "katex_math", "katex math", "katex_main", "katex main"
+        Case "katex_math", "katex math", "katex_main", "katex main", _
+             "visualtex latin modern math", "latin modern math"
             VTVisualTeXLetterFontFromWordFontName = "katex"
-        Case "times new roman", "times"
+        Case "times new roman", "times", _
+             "visualtex tex gyre termes math", "tex gyre termes math"
             VTVisualTeXLetterFontFromWordFontName = "times"
         Case "cambria math", "cambria"
             VTVisualTeXLetterFontFromWordFontName = "cambria"
@@ -10773,6 +10936,7 @@ Failed:
             sessionId, callbackErrorNumber, callbackErrorDescription
     End If
     On Error GoTo 0
+    If VTReportCallbackFailure(sessionId, callbackErrorNumber, callbackErrorDescription) Then Exit Sub
     Err.Raise callbackErrorNumber, "VisualTeX Word callback", _
         callbackErrorDescription
 End Sub
@@ -13043,6 +13207,9 @@ Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Ob
 
     pendingMarker = VTDispatchOptional(dispatch, "pendingMarker")
     sourceDocumentId = VTDispatchOptional(dispatch, "sourceDocumentId")
+    ' The document was closed while its editor was open: nothing is left to
+    ' clean up, and Word has no ActiveDocument (error 4248).
+    If Documents.Count = 0 Then Exit Sub
     If Len(sourceDocumentId) > 0 And sourceDocumentId <> VTWordDocumentIdentity() Then Exit Sub
     If Len(pendingMarker) > 0 Then
         On Error Resume Next
@@ -13793,6 +13960,8 @@ Private Function VTRefreshFormattedSequenceBookmark( _
         Set prefixRange = documentObject.Range( _
             Start:=formulaContainerRange.End, End:=fieldStart)
         prefixRange.Text = vbTab & "(" & prefixText
+        VTUnbiasNumberSeparators documentObject, prefixRange.Start, _
+            prefixRange.Start + Len(vbTab & "(" & prefixText)
         Set helperParagraph = documentObject.Range( _
             Start:=helperStart, End:=helperStart).Paragraphs(1).Range.Duplicate
         Set sequenceField = VTFindEquationSequenceField(helperParagraph)
@@ -13872,6 +14041,8 @@ Private Function VTRefreshFormattedSequenceBookmark( _
         Set prefixRange = documentObject.Range( _
             Start:=helperParagraph.Start, End:=helperParagraph.Start)
         prefixRange.Text = prefixText
+        VTUnbiasNumberSeparators documentObject, _
+            helperParagraph.Start, helperParagraph.Start + Len(prefixText)
         Set helperParagraph = documentObject.Range( _
             Start:=helperStart, End:=helperStart).Paragraphs(1).Range.Duplicate
         Set sequenceField = helperParagraph.Fields(1)
@@ -15088,6 +15259,70 @@ Private Sub VTApplyStaticImageEquationNumberFormatting( _
         If Abs(.Size - numberSize) > 0.1 Then .Size = numberSize
     End With
 End Sub
+
+' Word for Mac biases text the object model inserts towards East Asian
+' (w:hint="eastAsia") when the text holds the U+2010 separator and a Chinese
+' input source is selected. Word then draws the separator in the East Asian
+' font, full width when that is SimSun (every document WPS makes): "(0 - 1)".
+' NameFarEast cannot help, Word for Mac refuses a Latin East Asian font (error
+' 5844). InsertSymbol with the default font bias writes the same character as
+' ordinary text, so the number writers put every separator they wrote back
+' that way, in the font of the character before it. Only where Word edits
+' in place: in plain text, or inside a MACROBUTTON whose code is shown (with
+' the code hidden Word inserts the symbol at the field start instead). With
+' Track Changes on the replaced character would stay as a deletion.
+Private Sub VTUnbiasNumberSeparators( _
+    ByVal documentObject As Document, _
+    ByVal startPosition As Long, _
+    ByVal endPosition As Long)
+
+    Dim position As Long
+    Dim character As Range
+    Dim fontName As String
+    Dim contentEnd As Long
+
+    If documentObject.TrackRevisions Then Exit Sub
+    If startPosition < 1 Then startPosition = 1
+    For position = startPosition To endPosition - 1
+        Set character = documentObject.Range(position, position + 1)
+        If character.Text = ChrW(8208) Then
+            fontName = documentObject.Range(position - 1, position).Font.Name
+            contentEnd = documentObject.Content.End
+            If Len(fontName) > 0 And Left$(fontName, 1) <> "+" Then
+                character.InsertSymbol CharacterNumber:=8208, Font:=fontName, _
+                    Unicode:=True, Bias:=wdFontBiasDefault
+            Else
+                character.InsertSymbol CharacterNumber:=8208, _
+                    Unicode:=True, Bias:=wdFontBiasDefault
+            End If
+            If documentObject.Content.End <> contentEnd Or _
+               documentObject.Range(position, position + 1).Text <> ChrW(8208) Then
+                Err.Raise vbObjectError + 7566, "VisualTeX", _
+                    "Word did not rewrite the Equation number separator in place."
+            End If
+        End If
+    Next position
+End Sub
+
+' True when a number prefix ends in a separator Word draws in the East Asian
+' font (see VTUnbiasNumberSeparators): Font.Name is the font Word draws a
+' character in, here neither the separator's own Latin font nor the digit's.
+Private Function VTNumberSeparatorIsBiased(ByVal prefixRange As Range) As Boolean
+    Dim documentObject As Document
+    Dim separator As Range
+    Dim drawnFont As String
+
+    If prefixRange.End - prefixRange.Start < 2 Then Exit Function
+    Set documentObject = prefixRange.Document
+    If documentObject.TrackRevisions Then Exit Function
+    Set separator = documentObject.Range(prefixRange.End - 1, prefixRange.End)
+    If separator.Text <> ChrW(8208) Then Exit Function
+    drawnFont = separator.Font.Name
+    VTNumberSeparatorIsBiased = _
+        drawnFont <> documentObject.Range( _
+            prefixRange.End - 2, prefixRange.End - 1).Font.Name And _
+        drawnFont <> separator.Font.NameOther
+End Function
 
 Private Function VTNumberedImageInkCenterYRatio( _
     ByVal formulaShape As InlineShape) As Double
@@ -17630,6 +17865,24 @@ End Function
 ' local, so visiting the paragraphs of a Range and the equations inside each
 ' one returns the same equations, clipped to the same Range, in document order
 ' at a linear cost.
+' A reference to a numbered Word equation (a REF to its number) shows that number as math; it is not a formula.
+Private Function VTIsEquationReferenceMath(ByVal formulaMath As OMath) As Boolean
+    Dim candidate As Field
+    Dim mathRange As Range
+
+    On Error GoTo NotReference
+    Set mathRange = formulaMath.Range
+    For Each candidate In mathRange.Paragraphs(1).Range.Fields
+        If candidate.Type = wdFieldRef Then
+            If candidate.Result.Start <= mathRange.Start And candidate.Result.End >= mathRange.End Then
+                VTIsEquationReferenceMath = True
+                Exit Function
+            End If
+        End If
+    Next candidate
+NotReference:
+End Function
+
 Private Function VTOMathsInDocumentOrder(ByVal scanRange As Range) As Collection
     Dim result As Collection
     Dim documentObject As Document
@@ -24658,6 +24911,9 @@ Private Function VTImagePlaceRefIsCanonical( _
     prefixRange.TextRetrievalMode.IncludeFieldCodes = False
     If StrComp(prefixRange.Text, expectedPrefixText, _
        vbBinaryCompare) <> 0 Then Exit Function
+    ' Update Numbers and format changes rewrite a number whose separator Word
+    ' draws in the East Asian font (written before VTUnbiasNumberSeparators).
+    If VTNumberSeparatorIsBiased(prefixRange) Then Exit Function
     VTImagePlaceRefIsCanonical = True
 End Function
 
@@ -24710,6 +24966,8 @@ Private Function VTCreateCanonicalImagePlaceRef( _
     If Len(prefixText) > 0 Then
         Set insertion = documentObject.Range(insertionPosition, insertionPosition)
         insertion.Text = prefixText
+        VTUnbiasNumberSeparators documentObject, _
+            insertionPosition, insertionPosition + Len(prefixText)
     End If
     Set insertion = documentObject.Range(insertionPosition, insertionPosition)
     insertion.Text = "("
@@ -26203,8 +26461,15 @@ Private Function VTV2NumberedEquationEntry(ByVal exact As Range) As Variant
     Next candidate
     number.TextRetrievalMode.IncludeFieldCodes = False
     visible = Trim$(number.Text)
-    If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then Exit Function
     instruction = numberField.Code.Text
+    If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then
+        ' A number WPS damaged shows a field error: still numbered, so the
+        ' restyle rebuilds it (VTIsWpsDamagedNumberInstruction).
+        If Not VTIsWpsDamagedNumberInstruction(instruction) Then Exit Function
+        prefix = ""
+        separator = ""
+        ordinal = 0
+    End If
     VTV2NumberedEquationEntry = Array(exact.Start, VTV2SequenceName(instruction), _
         instruction, prefix, separator, ordinal, VTV2RestartValue(instruction), _
         automatic, exact.End)
@@ -26567,6 +26832,7 @@ Private Function VTV2RequestNumberDocx( _
     Dim result As Object
     Dim docxPath As String
 
+    VTApplyChosenOmmlFontToDocument doc
     manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
         "sessionId=" & sessionId & vbLf & _
         "sourceKind=nativeNumber" & vbLf & _
@@ -26936,7 +27202,8 @@ End Sub
 
 ' Word equations are written in the document's math font (Windows passes
 ' Document.OMathFontName to ApplyExplicitTransferMathFont). Every Word editor
-' request carries it; the app builds the equation package with it.
+' request carries it; the app builds the equation package with it. A chosen
+' OMML font becomes the document math font first.
 Private Function VTV2WithDocumentMathFont( _
     ByVal requestJson As String, ByVal documentObject As Document) As String
 
@@ -26944,6 +27211,7 @@ Private Function VTV2WithDocumentMathFont( _
 
     VTV2WithDocumentMathFont = requestJson
     If documentObject Is Nothing Or Right$(requestJson, 1) <> "}" Then Exit Function
+    VTApplyChosenOmmlFontToDocument documentObject
     On Error Resume Next
     fontName = Trim$(CStr(documentObject.OMathFontName))
     Err.Clear
@@ -27211,24 +27479,39 @@ End Function
 ' Ribbon: Update Equation Format. Shows what will change, converts every older
 ' Mac form into the current one (equation format v2) as one Undo step, checks
 ' the result and undoes it if anything is left or anything else changed.
+' The math font step (Windows' Update Equation Format): the chosen OMML font
+' becomes the document math font, and every Word equation follows the
+' document math font (VTV2MathFontRepairs).
 Public Sub VisualTeX_UpdateEquationFormat()
     Dim doc As Document
     Dim numbers As Long
     Dim tags As Long
     Dim baselines As Long
+    Dim fonts As Long
+    Dim mathFontName As String
+    Dim setDocumentFont As Boolean
     Dim inventory As String
     Dim message As String
     Dim recordStarted As Boolean
+    Dim mutationStarted As Boolean
     Dim failureNumber As Long
     Dim failureDescription As String
 
     On Error GoTo Failed
     VTRequireWritableWordDocument
     Set doc = ActiveDocument
+    mathFontName = VTChosenOmmlFontName()
+    If Len(mathFontName) > 0 Then
+        setDocumentFont = StrComp(VTDocumentMathFontName(doc), _
+            mathFontName, vbTextCompare) <> 0
+    Else
+        mathFontName = VTDocumentMathFontName(doc)
+    End If
     numbers = VTV2RestyleNumbers(doc, True)
     tags = VTV2LegacyTagCount(doc)
     baselines = VTV2InlineBaselineRepairs(doc, False)
-    If numbers + tags + baselines = 0 Then
+    fonts = VTV2MathFontRepairs(doc, mathFontName, False)
+    If numbers + tags + baselines + fonts = 0 And Not setDocumentFont Then
         VTShowInformation "The equations in this document already use the current format."
         Exit Sub
     End If
@@ -27239,34 +27522,54 @@ Public Sub VisualTeX_UpdateEquationFormat()
         " older VisualTeX tag(s) will be removed." & vbCr
     If baselines > 0 Then message = message & CStr(baselines) & _
         " inline image formula(s) will be aligned with the text baseline." & vbCr
+    If setDocumentFont Then message = message & _
+        "The document math font will be set to " & mathFontName & "." & vbCr
+    If fonts > 0 Then message = message & CStr(fonts) & _
+        " Word equation(s) will use the document math font (" & mathFontName & _
+        "); normal text in equations keeps its font." & vbCr
     message = message & vbCr & "Equation content does not change. Undo reverses the whole update."
     If MsgBox(message, vbOKCancel + vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
 
     inventory = VTV2EquationInventory(doc)
     Application.UndoRecord.StartCustomRecord "VisualTeX Update Equation Format"
     recordStarted = True
+    If setDocumentFont Then doc.OMathFontName = mathFontName
     VTUpgradeWordNumberFormats doc
     VTUpdateCurrentWordNumberFields doc
     VTV2InlineBaselineRepairs doc, True
+    If fonts > 0 Then
+        VTBeginWordInternalMutation
+        mutationStarted = True
+        VTV2MathFontRepairs doc, mathFontName, True
+        VTEndWordInternalMutation
+        mutationStarted = False
+    End If
     Application.UndoRecord.EndCustomRecord
     recordStarted = False
 
     If VTV2RestyleNumbers(doc, True) <> 0 Or VTV2LegacyTagCount(doc) <> 0 Or _
        VTV2InlineBaselineRepairs(doc, False) <> 0 Or _
+       VTV2MathFontRepairs(doc, mathFontName, False) <> 0 Or _
+       StrComp(VTDocumentMathFontName(doc), mathFontName, vbTextCompare) <> 0 Or _
        VTV2EquationInventory(doc) <> inventory Then
         doc.Undo 1
         Err.Raise vbObjectError + 7613, "VisualTeX", _
             "The equation format update could not be verified and was undone."
     End If
-    VTShowInformation "Updated " & CStr(numbers) & " equation number(s), aligned " & _
+    message = "Updated " & CStr(numbers) & " equation number(s), aligned " & _
         CStr(baselines) & " inline image formula(s) and removed " & _
         CStr(tags) & " older tag(s)."
+    If fonts > 0 Or setDocumentFont Then message = message & vbCr & _
+        CStr(fonts) & " Word equation(s) changed to the document math font (" & _
+        mathFontName & ")."
+    VTShowInformation message
     Exit Sub
 
 Failed:
     failureNumber = Err.Number
     failureDescription = Err.Description
     On Error Resume Next
+    If mutationStarted Then VTEndWordInternalMutation
     If recordStarted Then
         Application.UndoRecord.EndCustomRecord
         doc.Undo 1
@@ -27274,6 +27577,827 @@ Failed:
     On Error GoTo 0
     VTShowError "Update Equation Format", failureNumber, failureDescription
 End Sub
+
+' =====================================================================
+' OMML formula font (Windows: the OMML font menu of the font size group)
+'
+' The chosen font (Cambria Math, STIX Two Math, Latin Modern Math or TeX
+' Gyre Termes Math; "" follows the document) is saved for every document.
+' Choosing one makes it the active document's math font
+' (Document.OMathFontName) and rewrites the explicit fonts of its equations,
+' as one Undo step. Every later VisualTeX OMML write first makes it the
+' document math font (the app writes in the document math font). A font Word
+' does not list is never applied. VisualTeX installs the TrueType STIX Two
+' Math, VisualTeX Latin Modern Math and VisualTeX TeX Gyre Termes Math in
+' ~/Library/Fonts with its Office add-ins; Word lists them once restarted.
+' =====================================================================
+
+' The menu item (Cambria, Stix, LatinModern, Termes) of an OMML font control;
+' "" for Follow.
+Private Function VTOmmlControlChoiceKey(ByVal controlId As String) As String
+    Select Case controlId
+        Case VT_WORD_OMML_FONT_CONTROL_PREFIX & "Cambria"
+            VTOmmlControlChoiceKey = "Cambria"
+        Case VT_WORD_OMML_FONT_CONTROL_PREFIX & "Stix"
+            VTOmmlControlChoiceKey = "Stix"
+        Case VT_WORD_OMML_FONT_CONTROL_PREFIX & "LatinModern"
+            VTOmmlControlChoiceKey = "LatinModern"
+        Case VT_WORD_OMML_FONT_CONTROL_PREFIX & "Termes"
+            VTOmmlControlChoiceKey = "Termes"
+    End Select
+End Function
+
+' The menu item of a saved OMML font: the legacy CFF Latin Modern Math is the
+' Latin Modern item. "" when fontName is no menu font.
+Private Function VTOmmlFontChoiceKey(ByVal fontName As String) As String
+    Select Case fontName
+        Case "Cambria Math"
+            VTOmmlFontChoiceKey = "Cambria"
+        Case "STIX Two Math"
+            VTOmmlFontChoiceKey = "Stix"
+        Case VT_OMML_FONT_LATIN_MODERN, VT_OMML_FONT_LEGACY_LATIN_MODERN
+            VTOmmlFontChoiceKey = "LatinModern"
+        Case VT_OMML_FONT_TERMES
+            VTOmmlFontChoiceKey = "Termes"
+    End Select
+End Function
+
+' The font a menu item applies. Latin Modern is the TrueType VisualTeX Latin
+' Modern Math (Word's PDF export embeds it); the CFF original only when Word
+' lists that one alone.
+Private Function VTOmmlFontNameForChoice(ByVal choiceKey As String) As String
+    Select Case choiceKey
+        Case "Cambria"
+            VTOmmlFontNameForChoice = "Cambria Math"
+        Case "Stix"
+            VTOmmlFontNameForChoice = "STIX Two Math"
+        Case "LatinModern"
+            VTOmmlFontNameForChoice = VT_OMML_FONT_LATIN_MODERN
+            If Not VTWordFontInstalled(VT_OMML_FONT_LATIN_MODERN) Then
+                If VTWordFontInstalled(VT_OMML_FONT_LEGACY_LATIN_MODERN) Then _
+                    VTOmmlFontNameForChoice = VT_OMML_FONT_LEGACY_LATIN_MODERN
+            End If
+        Case "Termes"
+            VTOmmlFontNameForChoice = VT_OMML_FONT_TERMES
+    End Select
+End Function
+
+' The menu label of an item (the font's own name, without "VisualTeX").
+Private Function VTOmmlFontLabelForChoice(ByVal choiceKey As String) As String
+    Select Case choiceKey
+        Case "Cambria"
+            VTOmmlFontLabelForChoice = "Cambria Math"
+        Case "Stix"
+            VTOmmlFontLabelForChoice = "STIX Two Math"
+        Case "LatinModern"
+            VTOmmlFontLabelForChoice = "Latin Modern Math"
+        Case "Termes"
+            VTOmmlFontLabelForChoice = "TeX Gyre Termes Math"
+    End Select
+End Function
+
+Private Function VTOmmlFontNameForControl(ByVal controlId As String) As String
+    VTOmmlFontNameForControl = _
+        VTOmmlFontNameForChoice(VTOmmlControlChoiceKey(controlId))
+End Function
+
+Private Function VTIsOmmlFontChoice(ByVal fontName As String) As Boolean
+    VTIsOmmlFontChoice = Len(VTOmmlFontChoiceKey(fontName)) > 0
+End Function
+
+' The saved choice, read once per Word session. A missing or unreadable file
+' follows the document.
+Private Sub VTLoadOmmlFontSetting()
+    Dim settingPath As String
+    Dim value As String
+
+    If VT_WORD_OMML_FONT_LOADED Then Exit Sub
+    VT_WORD_OMML_FONT_LOADED = True
+    VT_WORD_OMML_FONT_NAME = ""
+    On Error GoTo SettingUnavailable
+    settingPath = VTApplicationSupportRoot() & VT_WORD_OMML_FONT_FILE
+    If Not VTPathFileExists(settingPath) Then Exit Sub
+    value = VTReadText(settingPath, 128)
+    value = Trim$(Replace$(Replace$(value, vbCr, ""), vbLf, ""))
+    If VTIsOmmlFontChoice(value) Then VT_WORD_OMML_FONT_NAME = value
+    Exit Sub
+
+SettingUnavailable:
+    VT_WORD_OMML_FONT_NAME = ""
+    Err.Clear
+End Sub
+
+Private Sub VTWriteOmmlFontSetting(ByVal fontName As String)
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    On Error GoTo WriteFailed
+    If Len(fontName) = 0 Then
+        VTWriteTextAtomic VTApplicationSupportRoot() & VT_WORD_OMML_FONT_FILE, "follow"
+    Else
+        VTWriteTextAtomic VTApplicationSupportRoot() & VT_WORD_OMML_FONT_FILE, fontName
+    End If
+    VT_WORD_OMML_FONT_LOADED = True
+    VT_WORD_OMML_FONT_NAME = fontName
+    Exit Sub
+
+WriteFailed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    Err.Clear
+    Err.Raise errorNumber, "VisualTeX OMML font", _
+        "Unable to save the OMML font: " & errorDescription
+End Sub
+
+' True when Word lists the font (or cannot list its fonts at all).
+Private Function VTWordFontInstalled(ByVal fontName As String) As Boolean
+    Dim names As Collection
+    Dim candidate As Variant
+    Dim key As String
+
+    If VT_WORD_FONT_NAMES Is Nothing And Not VT_WORD_FONT_NAMES_UNAVAILABLE Then
+        Set names = New Collection
+        On Error GoTo ListUnavailable
+        For Each candidate In Application.FontNames
+            key = LCase$(Trim$(CStr(candidate)))
+            If Len(key) > 0 Then
+                If Not VTCollectionHasKey(names, key) Then names.Add True, key
+            End If
+        Next candidate
+        On Error GoTo 0
+        If names.Count = 0 Then
+            VT_WORD_FONT_NAMES_UNAVAILABLE = True
+        Else
+            Set VT_WORD_FONT_NAMES = names
+        End If
+    End If
+    If VT_WORD_FONT_NAMES_UNAVAILABLE Then
+        VTWordFontInstalled = True
+    Else
+        VTWordFontInstalled = VTCollectionHasKey( _
+            VT_WORD_FONT_NAMES, LCase$(Trim$(fontName)))
+    End If
+    Exit Function
+
+ListUnavailable:
+    Err.Clear
+    VT_WORD_FONT_NAMES_UNAVAILABLE = True
+    VTWordFontInstalled = True
+End Function
+
+' The font of the chosen OMML menu item when Word has it, or "" (follow the
+' document). A saved Latin Modern Math choice uses VisualTeX Latin Modern Math
+' once Word lists it.
+Private Function VTChosenOmmlFontName() As String
+    Dim fontName As String
+
+    VTLoadOmmlFontSetting
+    If Len(VT_WORD_OMML_FONT_NAME) = 0 Then Exit Function
+    fontName = VTOmmlFontNameForChoice(VTOmmlFontChoiceKey(VT_WORD_OMML_FONT_NAME))
+    If Len(fontName) = 0 Then Exit Function
+    If VTWordFontInstalled(fontName) Then VTChosenOmmlFontName = fontName
+End Function
+
+' Document.OMathFontName (Cambria Math when Word reports none).
+Private Function VTDocumentMathFontName(ByVal documentObject As Document) As String
+    On Error Resume Next
+    VTDocumentMathFontName = Trim$(CStr(documentObject.OMathFontName))
+    Err.Clear
+    On Error GoTo 0
+    If Len(VTDocumentMathFontName) = 0 Then VTDocumentMathFontName = "Cambria Math"
+End Function
+
+' Before VisualTeX writes OMML into a document, the chosen OMML font becomes
+' its math font, so the written equation names it. Never fails the write.
+Private Sub VTApplyChosenOmmlFontToDocument(ByVal documentObject As Document)
+    Dim fontName As String
+
+    If documentObject Is Nothing Then Exit Sub
+    On Error Resume Next
+    fontName = VTChosenOmmlFontName()
+    If Len(fontName) > 0 Then
+        If StrComp(VTDocumentMathFontName(documentObject), fontName, _
+           vbTextCompare) <> 0 Then documentObject.OMathFontName = fontName
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Sub VTInvalidateOmmlFontControls()
+    Dim suffix As Variant
+
+    On Error Resume Next
+    If VT_WORD_RIBBON Is Nothing Then Exit Sub
+    For Each suffix In Array("Follow", "Cambria", "Stix", "LatinModern", "Termes")
+        VT_WORD_RIBBON.InvalidateControl VT_WORD_OMML_FONT_CONTROL_PREFIX & CStr(suffix)
+    Next suffix
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Public Sub VTWordRibbonGetOmmlFontPressed( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    returnedValue = False
+    On Error GoTo Finished
+    VTLoadOmmlFontSetting
+    returnedValue = (StrComp(VTOmmlControlChoiceKey(control.Id), _
+        VTOmmlFontChoiceKey(VT_WORD_OMML_FONT_NAME), vbBinaryCompare) = 0)
+Finished:
+End Sub
+
+Public Sub VTWordRibbonGetOmmlFontEnabled( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    Dim fontName As String
+
+    returnedValue = True
+    On Error GoTo Finished
+    fontName = VTOmmlFontNameForControl(control.Id)
+    If Len(fontName) > 0 Then returnedValue = VTWordFontInstalled(fontName)
+Finished:
+End Sub
+
+' The font's name, with "(not installed)" when Word does not list it.
+Public Sub VTWordRibbonGetOmmlFontLabel( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    Dim choiceKey As String
+
+    On Error GoTo Finished
+    choiceKey = VTOmmlControlChoiceKey(control.Id)
+    returnedValue = VTOmmlFontLabelForChoice(choiceKey)
+    If Len(choiceKey) > 0 Then
+        If Not VTWordFontInstalled(VTOmmlFontNameForChoice(choiceKey)) Then _
+            returnedValue = returnedValue & _
+                VTUnicodeText(65288, 26410, 23433, 35013, 65289)
+    End If
+Finished:
+End Sub
+
+' A menu item: applies the font to the active document (when it can be
+' changed), then saves the choice. "Follow the document" changes nothing.
+Public Sub VTWordRibbonSelectOmmlFont( _
+    ByVal control As IRibbonControl, _
+    ByVal pressed As Boolean)
+
+    Dim fontName As String
+    Dim changed As Long
+    Dim documentObject As Document
+
+    On Error GoTo Failed
+    fontName = VTOmmlFontNameForControl(control.Id)
+    If Len(fontName) > 0 Then
+        If Not VTWordFontInstalled(fontName) Then
+            Err.Raise vbObjectError + 7614, "VisualTeX", _
+                VTOmmlFontLabelForChoice(VTOmmlControlChoiceKey(control.Id)) & _
+                " is not installed in Word. Install or repair the VisualTeX " & _
+                "Office add-ins, then restart Word."
+        End If
+        If Documents.Count > 0 Then
+            Set documentObject = ActiveDocument
+            If Not documentObject.ReadOnly And _
+               documentObject.ProtectionType = wdNoProtection Then
+                changed = VTApplyOmmlFontToDocument(documentObject, fontName)
+                Application.StatusBar = "VisualTeX: Word equations use " & _
+                    fontName & " (" & CStr(changed) & " equation(s) changed)."
+            End If
+        End If
+    End If
+    VTWriteOmmlFontSetting fontName
+    VTInvalidateOmmlFontControls
+    Exit Sub
+
+Failed:
+    VTInvalidateOmmlFontControls
+    VTShowError "OMML font", Err.Number, Err.Description
+End Sub
+
+' Makes fontName the document math font and every equation follow it, as one
+' Undo step. Returns how many equations changed.
+Private Function VTApplyOmmlFontToDocument( _
+    ByVal documentObject As Document, _
+    ByVal fontName As String) As Long
+
+    Dim undoRecord As Object
+    Dim undoRecordStarted As Boolean
+    Dim internalMutationStarted As Boolean
+    Dim previousScreenUpdating As Boolean
+    Dim changed As Long
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    previousScreenUpdating = Application.ScreenUpdating
+    On Error GoTo Failed
+    Application.ScreenUpdating = False
+    Set undoRecord = CallByName(Application, "UndoRecord", VbGet)
+    undoRecord.StartCustomRecord "VisualTeX OMML Font"
+    undoRecordStarted = True
+    VTBeginWordInternalMutation
+    internalMutationStarted = True
+    If StrComp(VTDocumentMathFontName(documentObject), fontName, _
+       vbTextCompare) <> 0 Then documentObject.OMathFontName = fontName
+    changed = VTV2MathFontRepairs(documentObject, fontName, True)
+    VTEndWordInternalMutation
+    internalMutationStarted = False
+    undoRecord.EndCustomRecord
+    undoRecordStarted = False
+    Application.ScreenUpdating = previousScreenUpdating
+    VTApplyOmmlFontToDocument = changed
+    Exit Function
+
+Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    If internalMutationStarted Then VTEndWordInternalMutation
+    If undoRecordStarted Then
+        undoRecord.EndCustomRecord
+        documentObject.Undo 1
+    End If
+    Application.ScreenUpdating = previousScreenUpdating
+    On Error GoTo 0
+    Err.Raise errorNumber, "VisualTeX OMML font", errorDescription
+End Function
+
+' Word equations whose explicit math run fonts are not fontName: every
+' w:rFonts of a math run (m:nor normal text, e.g. \mathrm or \text, keeps its
+' text font) and of every control property names fontName in w:ascii and
+' w:hAnsi (Windows ApplyExplicitTransferMathFont). The number of a numbered
+' equation (the equation array, its # and the SEQ fields after it) is left
+' as it is. With apply, each such equation is rewritten from a staging
+' package and keeps its type, text, fields, bookmarks and metadata. Returns
+' how many equations do (or did) not follow fontName.
+Private Function VTV2MathFontRepairs( _
+    ByVal doc As Document, _
+    ByVal fontName As String, _
+    ByVal apply As Boolean) As Long
+
+    Dim escapedFont As String
+    Dim index As Long
+    Dim root As OMath
+    Dim exact As Range
+    Dim lastStart As Long
+    Dim packageXml As String
+    Dim bodyXml As String
+    Dim rewritten As String
+    Dim bodyStart As Long
+    Dim bodyEnd As Long
+    Dim skeleton As String
+    Dim skeletonBodyStart As Long
+    Dim skeletonBodyEnd As Long
+    Dim starts() As Long
+    Dim ends() As Long
+    Dim types() As Long
+    Dim bodies() As String
+    Dim pending As Long
+    Dim pendingCharacters As Long
+    Dim changed As Long
+    Dim numbered As Boolean
+
+    fontName = Trim$(fontName)
+    If Len(fontName) = 0 Or doc Is Nothing Then Exit Function
+    escapedFont = VTXmlAttributeValue(fontName)
+    lastStart = -1
+    ' Last to first: a rewritten equation keeps its length, so earlier
+    ' equations keep their positions and indices.
+    For index = doc.OMaths.Count To 1 Step -1
+        Set root = VTNativeMathRoot(doc.OMaths(index))
+        Set exact = root.Range.Duplicate
+        If lastStart < 0 Or exact.Start < lastStart Then
+            lastStart = exact.Start
+            packageXml = exact.WordOpenXML
+            If VTMathFontPackageBody(packageXml, bodyStart, bodyEnd) Then
+                bodyXml = Mid$(packageXml, bodyStart, bodyEnd - bodyStart)
+                numbered = False
+                If InStr(1, bodyXml, "<m:eqArr", vbBinaryCompare) > 0 Then _
+                    numbered = Not VTPureNativeNumberField(exact) Is Nothing
+                rewritten = VTMathFontRewriteBody(bodyXml, escapedFont, numbered)
+                If Len(rewritten) > 0 And rewritten <> bodyXml Then
+                    changed = changed + 1
+                    If apply Then
+                        If pending = 0 Then
+                            skeleton = packageXml
+                            skeletonBodyStart = bodyStart
+                            skeletonBodyEnd = bodyEnd
+                            pendingCharacters = 0
+                        End If
+                        pending = pending + 1
+                        ReDim Preserve starts(1 To pending)
+                        ReDim Preserve ends(1 To pending)
+                        ReDim Preserve types(1 To pending)
+                        ReDim Preserve bodies(1 To pending)
+                        starts(pending) = exact.Start
+                        ends(pending) = exact.End
+                        types(pending) = root.Type
+                        bodies(pending) = rewritten
+                        pendingCharacters = pendingCharacters + Len(rewritten)
+                        If pending >= VT_WORD_MATH_FONT_BATCH_ITEMS Or _
+                           pendingCharacters >= VT_WORD_MATH_FONT_BATCH_CHARACTERS Then
+                            VTV2CommitMathFontBatch doc, skeleton, skeletonBodyStart, _
+                                skeletonBodyEnd, starts, ends, types, bodies, pending
+                            pending = 0
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next index
+    If apply And pending > 0 Then
+        VTV2CommitMathFontBatch doc, skeleton, skeletonBodyStart, _
+            skeletonBodyEnd, starts, ends, types, bodies, pending
+    End If
+    VTV2MathFontRepairs = changed
+End Function
+
+' Opens the rewritten equations (one paragraph each, in the order given) as
+' one hidden document and copies each over the equation it came from.
+Private Sub VTV2CommitMathFontBatch( _
+    ByVal doc As Document, _
+    ByVal skeleton As String, _
+    ByVal skeletonBodyStart As Long, _
+    ByVal skeletonBodyEnd As Long, _
+    ByRef starts() As Long, _
+    ByRef ends() As Long, _
+    ByRef types() As Long, _
+    ByRef bodies() As String, _
+    ByVal itemCount As Long)
+
+    Dim stagingPath As String
+    Dim staging As Document
+    Dim source As Range
+    Dim parts() As String
+    Dim index As Long
+    Dim failureNumber As Long
+    Dim failureDescription As String
+
+    ReDim parts(1 To itemCount)
+    For index = 1 To itemCount
+        parts(index) = bodies(index)
+    Next index
+    stagingPath = VTApplicationSupportRoot() & "/math-font-" & VTNewUuidV4() & ".xml"
+    VTWriteTextAtomic stagingPath, Left$(skeleton, skeletonBodyStart - 1) & _
+        Join(parts, "") & Mid$(skeleton, skeletonBodyEnd)
+    On Error GoTo Failed
+    Set staging = Documents.Open(FileName:=stagingPath, ConfirmConversions:=False, _
+        ReadOnly:=True, AddToRecentFiles:=False, Visible:=False)
+    If staging.OMaths.Count <> itemCount Then
+        Err.Raise vbObjectError + 7615, "VisualTeX", _
+            "Word did not open every equation prepared in the new math font."
+    End If
+    doc.Activate
+    For index = 1 To itemCount
+        Set source = VTNativeMathRoot(staging.OMaths(index)).Range.Duplicate
+        If source.OMaths(1).Type <> types(index) Then source.OMaths(1).Type = types(index)
+        VTV2ReplaceEquationWithFont doc, starts(index), ends(index), types(index), source
+    Next index
+    staging.Close SaveChanges:=wdDoNotSaveChanges
+    Set staging = Nothing
+    doc.Activate
+    On Error Resume Next
+    Kill stagingPath
+    Err.Clear
+    On Error GoTo 0
+    Exit Sub
+
+Failed:
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    If Not staging Is Nothing Then staging.Close SaveChanges:=wdDoNotSaveChanges
+    doc.Activate
+    Kill stagingPath
+    On Error GoTo 0
+    Err.Raise failureNumber, "VisualTeX equation math font", failureDescription
+End Sub
+
+' Copies source (the same equation in the new font) over the equation at
+' startPosition..endPosition, keeping its type, alignment and every bookmark
+' inside it (formula identity, number targets) at the same offsets.
+Private Sub VTV2ReplaceEquationWithFont( _
+    ByVal doc As Document, _
+    ByVal startPosition As Long, _
+    ByVal endPosition As Long, _
+    ByVal mathType As Long, _
+    ByVal source As Range)
+
+    Dim target As Range
+    Dim root As OMath
+    Dim mark As Bookmark
+    Dim names As New Collection
+    Dim offsets As New Collection
+    Dim originalText As String
+    Dim alignment As Long
+    Dim hidden As Boolean
+    Dim index As Long
+
+    Set target = doc.Range(startPosition, endPosition)
+    If target.OMaths.Count < 1 Then
+        Err.Raise vbObjectError + 7615, "VisualTeX", _
+            "A Word equation moved while its math font was changed."
+    End If
+    Set root = VTNativeMathRoot(target.OMaths(1))
+    If root.Range.Start <> startPosition Or root.Range.End <> endPosition Then
+        Err.Raise vbObjectError + 7615, "VisualTeX", _
+            "A Word equation moved while its math font was changed."
+    End If
+    If mathType = wdOMathDisplay Then alignment = root.Justification
+    originalText = target.Text
+    hidden = doc.Bookmarks.ShowHidden
+    doc.Bookmarks.ShowHidden = True
+    For Each mark In target.Bookmarks
+        If mark.Start >= startPosition And mark.End <= endPosition Then
+            names.Add mark.Name
+            offsets.Add Array(mark.Start - startPosition, mark.End - startPosition)
+        End If
+    Next mark
+    doc.Bookmarks.ShowHidden = hidden
+
+    target.FormattedText = source.FormattedText
+    Set target = doc.Range(startPosition, endPosition)
+    If target.OMaths.Count < 1 Or target.Text <> originalText Then
+        Err.Raise vbObjectError + 7615, "VisualTeX", _
+            "Word did not keep an equation unchanged when changing its math font."
+    End If
+    Set root = VTNativeMathRoot(target.OMaths(1))
+    If root.Range.Start <> startPosition Or root.Range.End <> endPosition Then
+        Err.Raise vbObjectError + 7615, "VisualTeX", _
+            "Word did not keep an equation unchanged when changing its math font."
+    End If
+    If root.Type <> mathType Then root.Type = mathType
+    If mathType = wdOMathDisplay Then
+        If root.Justification <> alignment Then root.Justification = alignment
+    End If
+    For index = 1 To names.Count
+        If doc.Bookmarks.Exists(CStr(names(index))) Then _
+            doc.Bookmarks(CStr(names(index))).Delete
+        doc.Bookmarks.Add Name:=CStr(names(index)), Range:=doc.Range( _
+            startPosition + offsets(index)(0), startPosition + offsets(index)(1))
+    Next index
+End Sub
+
+' The body content of a Flat OPC package from Range.WordOpenXML: after
+' <w:body> and before its final w:sectPr (or </w:body>).
+Private Function VTMathFontPackageBody( _
+    ByVal packageXml As String, _
+    ByRef bodyStart As Long, _
+    ByRef bodyEnd As Long) As Boolean
+
+    Dim closing As Long
+    Dim sectionAt As Long
+
+    bodyStart = InStr(1, packageXml, "<w:body>", vbBinaryCompare)
+    If bodyStart = 0 Then Exit Function
+    bodyStart = bodyStart + Len("<w:body>")
+    closing = InStr(bodyStart, packageXml, "</w:body>", vbBinaryCompare)
+    If closing = 0 Then Exit Function
+    sectionAt = InStrRev(packageXml, "<w:sectPr", closing, vbBinaryCompare)
+    If sectionAt >= bodyStart Then
+        bodyEnd = sectionAt
+    Else
+        bodyEnd = closing
+    End If
+    VTMathFontPackageBody = bodyEnd > bodyStart
+End Function
+
+' The start of the next <tagName ...> (exactly that name, so m:r is not
+' m:rPr) from position and before limit, or 0.
+Private Function VTMathFontNextTag( _
+    ByVal xml As String, _
+    ByVal tagName As String, _
+    ByVal position As Long, _
+    ByVal limit As Long) As Long
+
+    Dim found As Long
+    Dim following As String
+
+    If position < 1 Then position = 1
+    found = InStr(position, xml, "<" & tagName, vbBinaryCompare)
+    Do While found > 0 And found < limit
+        following = Mid$(xml, found + Len(tagName) + 1, 1)
+        If following = ">" Or following = " " Or following = "/" Then
+            VTMathFontNextTag = found
+            Exit Function
+        End If
+        found = InStr(found + 1, xml, "<" & tagName, vbBinaryCompare)
+    Loop
+End Function
+
+' The body with every math run font rewritten (VTV2MathFontRepairs), or ""
+' when its equation cannot be read (it is then left as it is).
+Private Function VTMathFontRewriteBody( _
+    ByVal bodyXml As String, _
+    ByVal escapedFont As String, _
+    ByVal numbered As Boolean) As String
+
+    Dim mathAt As Long
+    Dim regionStart As Long
+    Dim regionEnd As Long
+    Dim arrayAt As Long
+    Dim elementAt As Long
+    Dim hashAt As Long
+    Dim runAt As Long
+    Dim candidate As Long
+    Dim textTag As Long
+
+    mathAt = VTMathFontNextTag(bodyXml, "m:oMath", 1, Len(bodyXml) + 1)
+    If mathAt = 0 Then Exit Function
+    regionStart = InStr(mathAt, bodyXml, ">", vbBinaryCompare) + 1
+    regionEnd = InStrRev(bodyXml, "</m:oMath>", -1, vbBinaryCompare)
+    If regionStart < 2 Or regionEnd < regionStart Then Exit Function
+    If numbered Then
+        ' body#(number) is the first row of the outer equation array: change
+        ' the body only.
+        arrayAt = VTMathFontNextTag(bodyXml, "m:eqArr", regionStart, regionEnd)
+        If arrayAt = 0 Then Exit Function
+        elementAt = VTMathFontNextTag(bodyXml, "m:e", arrayAt, regionEnd)
+        If elementAt = 0 Then Exit Function
+        regionStart = InStr(elementAt, bodyXml, ">", vbBinaryCompare) + 1
+        hashAt = InStrRev(bodyXml, "#</m:t>", regionEnd, vbBinaryCompare)
+        If hashAt < regionStart Then Exit Function
+        candidate = VTMathFontNextTag(bodyXml, "m:r", regionStart, hashAt)
+        Do While candidate > 0
+            runAt = candidate
+            candidate = VTMathFontNextTag(bodyXml, "m:r", candidate + 1, hashAt)
+        Loop
+        If runAt = 0 Then Exit Function
+        textTag = InStrRev(bodyXml, "<m:t", hashAt, vbBinaryCompare)
+        If textTag > runAt And _
+           InStr(textTag, bodyXml, ">", vbBinaryCompare) = hashAt - 1 Then
+            ' The # has a run of its own: the body ends before it.
+            regionEnd = runAt
+        Else
+            ' Word merged the # into the body's last run.
+            regionEnd = InStr(hashAt, bodyXml, "</m:r>", vbBinaryCompare)
+            If regionEnd = 0 Then Exit Function
+            regionEnd = regionEnd + Len("</m:r>")
+        End If
+    End If
+    VTMathFontRewriteBody = VTRewriteMathRunFonts( _
+        bodyXml, regionStart, regionEnd, escapedFont)
+End Function
+
+' Rewrites the fonts of the m:r (not m:nor) and m:ctrlPr elements that start
+' in xml(regionStart..regionEnd-1).
+Private Function VTRewriteMathRunFonts( _
+    ByVal xml As String, _
+    ByVal regionStart As Long, _
+    ByVal regionEnd As Long, _
+    ByVal escapedFont As String) As String
+
+    Dim parts As New Collection
+    Dim position As Long
+    Dim runAt As Long
+    Dim controlAt As Long
+    Dim elementAt As Long
+    Dim tagEnd As Long
+    Dim closeAt As Long
+    Dim closing As String
+    Dim segment As String
+    Dim joined() As String
+    Dim index As Long
+
+    parts.Add Left$(xml, regionStart - 1)
+    position = regionStart
+    Do
+        runAt = VTMathFontNextTag(xml, "m:r", position, regionEnd)
+        controlAt = VTMathFontNextTag(xml, "m:ctrlPr", position, regionEnd)
+        If runAt = 0 And controlAt = 0 Then Exit Do
+        If runAt = 0 Or (controlAt > 0 And controlAt < runAt) Then
+            elementAt = controlAt
+            closing = "</m:ctrlPr>"
+        Else
+            elementAt = runAt
+            closing = "</m:r>"
+        End If
+        tagEnd = InStr(elementAt, xml, ">", vbBinaryCompare)
+        If tagEnd = 0 Then Exit Do
+        If Mid$(xml, tagEnd - 1, 1) = "/" Then
+            parts.Add Mid$(xml, position, tagEnd + 1 - position)
+            position = tagEnd + 1
+        Else
+            closeAt = InStr(tagEnd, xml, closing, vbBinaryCompare)
+            If closeAt = 0 Then Exit Do
+            closeAt = closeAt + Len(closing)
+            segment = Mid$(xml, elementAt, closeAt - elementAt)
+            If closing = "</m:ctrlPr>" Or Not VTMathRunIsNormalText(segment) Then _
+                segment = VTRewriteElementFonts(segment, escapedFont)
+            parts.Add Mid$(xml, position, elementAt - position)
+            parts.Add segment
+            position = closeAt
+        End If
+    Loop
+    parts.Add Mid$(xml, position)
+    ReDim joined(1 To parts.Count)
+    For index = 1 To parts.Count
+        joined(index) = parts(index)
+    Next index
+    VTRewriteMathRunFonts = Join(joined, "")
+End Function
+
+' True for an m:r with m:nor (normal text), unless m:val turns it off.
+Private Function VTMathRunIsNormalText(ByVal runXml As String) As Boolean
+    Dim tagAt As Long
+    Dim tagEnd As Long
+    Dim tag As String
+
+    tagAt = VTMathFontNextTag(runXml, "m:nor", 1, Len(runXml) + 1)
+    If tagAt = 0 Then Exit Function
+    tagEnd = InStr(tagAt, runXml, ">", vbBinaryCompare)
+    If tagEnd = 0 Then Exit Function
+    tag = Mid$(runXml, tagAt, tagEnd - tagAt + 1)
+    VTMathRunIsNormalText = InStr(1, tag, "m:val=""0""", vbBinaryCompare) = 0 And _
+        InStr(1, tag, "m:val=""off""", vbBinaryCompare) = 0 And _
+        InStr(1, tag, "m:val=""false""", vbBinaryCompare) = 0
+End Function
+
+' The element with its w:rFonts naming the font in w:ascii and w:hAnsi (theme
+' fonts for those two removed). An element without w:rFonts is unchanged.
+Private Function VTRewriteElementFonts( _
+    ByVal elementXml As String, _
+    ByVal escapedFont As String) As String
+
+    Dim fontsAt As Long
+    Dim fontsEnd As Long
+    Dim tag As String
+
+    VTRewriteElementFonts = elementXml
+    fontsAt = VTMathFontNextTag(elementXml, "w:rFonts", 1, Len(elementXml) + 1)
+    If fontsAt = 0 Then Exit Function
+    fontsEnd = InStr(fontsAt, elementXml, ">", vbBinaryCompare)
+    If fontsEnd = 0 Then Exit Function
+    tag = Mid$(elementXml, fontsAt, fontsEnd - fontsAt + 1)
+    tag = VTXmlTagWithoutAttribute(tag, "w:asciiTheme")
+    tag = VTXmlTagWithoutAttribute(tag, "w:hAnsiTheme")
+    tag = VTXmlTagWithAttribute(tag, "w:ascii", escapedFont)
+    tag = VTXmlTagWithAttribute(tag, "w:hAnsi", escapedFont)
+    VTRewriteElementFonts = Left$(elementXml, fontsAt - 1) & tag & _
+        Mid$(elementXml, fontsEnd + 1)
+End Function
+
+' The position of attributeName in a start tag, or 0.
+Private Function VTXmlAttributePosition( _
+    ByVal tag As String, ByVal attributeName As String) As Long
+
+    Dim found As Long
+
+    found = InStr(1, tag, " " & attributeName & "=", vbBinaryCompare)
+    If found > 0 Then VTXmlAttributePosition = found + 1
+End Function
+
+Private Function VTXmlTagWithAttribute( _
+    ByVal tag As String, _
+    ByVal attributeName As String, _
+    ByVal escapedValue As String) As String
+
+    Dim attributeAt As Long
+    Dim quoteAt As Long
+    Dim valueEnd As Long
+    Dim closeAt As Long
+
+    attributeAt = VTXmlAttributePosition(tag, attributeName)
+    If attributeAt > 0 Then
+        quoteAt = attributeAt + Len(attributeName) + 1
+        valueEnd = InStr(quoteAt + 1, tag, Mid$(tag, quoteAt, 1), vbBinaryCompare)
+        If valueEnd > 0 Then
+            VTXmlTagWithAttribute = Left$(tag, quoteAt) & escapedValue & Mid$(tag, valueEnd)
+            Exit Function
+        End If
+    End If
+    If Right$(tag, 2) = "/>" Then
+        closeAt = Len(tag) - 1
+    Else
+        closeAt = Len(tag)
+    End If
+    VTXmlTagWithAttribute = RTrim$(Left$(tag, closeAt - 1)) & " " & _
+        attributeName & "=""" & escapedValue & """" & Mid$(tag, closeAt)
+End Function
+
+Private Function VTXmlTagWithoutAttribute( _
+    ByVal tag As String, ByVal attributeName As String) As String
+
+    Dim attributeAt As Long
+    Dim quoteAt As Long
+    Dim valueEnd As Long
+
+    VTXmlTagWithoutAttribute = tag
+    attributeAt = VTXmlAttributePosition(tag, attributeName)
+    If attributeAt = 0 Then Exit Function
+    quoteAt = attributeAt + Len(attributeName) + 1
+    valueEnd = InStr(quoteAt + 1, tag, Mid$(tag, quoteAt, 1), vbBinaryCompare)
+    If valueEnd = 0 Then Exit Function
+    VTXmlTagWithoutAttribute = Left$(tag, attributeAt - 2) & Mid$(tag, valueEnd + 1)
+End Function
+
+Private Function VTXmlAttributeValue(ByVal value As String) As String
+    value = Replace$(value, "&", "&amp;")
+    value = Replace$(value, "<", "&lt;")
+    value = Replace$(value, ">", "&gt;")
+    VTXmlAttributeValue = Replace$(value, """", "&quot;")
+End Function
 
 Private Function VTEnsurePureNativeNumberFormat( _
     ByVal equationRange As Range, _
@@ -27919,7 +29043,7 @@ Private Sub VTNumberDisplayFormulas(ByVal wholeDocument As Boolean)
             "There is no unnumbered display equation in " & scopeText & "." & details
         GoTo Finished
     End If
-    If Not unattended Then
+    If Not unattended And Not VT_AGENT_MODE Then
         message = "Add equation numbers to " & _
             CStr(equations.Count + images.Count) & _
             " unnumbered display equation(s) in " & scopeText & "?" & vbCr & vbCr
@@ -28813,6 +29937,7 @@ Private Sub VTSendDisplayNumberingRequest( _
         "itemCount=" & CStr(equationCount) & vbLf & _
         "imageCount=" & CStr(imageCount) & vbLf
     If equationCount > 0 Then
+        VTApplyChosenOmmlFontToDocument doc
         body(0) = body(0) & _
             "mathFont=" & VTBase64UrlEncodeUtf8(doc.OMathFontName) & vbLf & _
             "ommlRoot=" & VTBase64UrlEncodeUtf8(rootTag) & vbLf
@@ -29006,12 +30131,14 @@ Private Function VTDisplayNumberingWriteEquation( _
     If exact.OMaths.Count < 1 Then GoTo Moved
     Set exact = VTNativeMathRoot(exact.OMaths(1)).Range.Duplicate
     If exact.Start <> target(0) Or exact.End <> target(1) Then GoTo Moved
-    ' On Word for Mac the OMath Range of a display equation takes in its
+    ' On Word for Mac the OMath Range of a display equation can take in its
     ' paragraph mark. Replace the equation only: a replaced mark becomes a line
     ' break inside the numbered equation and joins the next paragraph to it.
-    If exact.End > exact.Start Then
-        If doc.Range(exact.End - 1, exact.End).Text = vbCr Then exact.End = exact.End - 1
-    End If
+    ' The paragraph's end tells: Range.Text also reads the end of a structure
+    ' that closes the equation (a fraction, a sum) as a CR, and a range that
+    ' cuts the structure cannot be replaced (error 6028).
+    If exact.End > exact.Start And _
+       exact.End = exact.Paragraphs(1).Range.End Then exact.End = exact.End - 1
     VT_WORD_DISPLAY_NUMBERING_WROTE = True
     exact.FormattedText = source.FormattedText
     ' Word for Mac can leave an empty OMath beside the replacement.
@@ -29493,4 +30620,872 @@ Private Function VTRecountSequenceField( _
         lastValue = value
     End If
     VTRecountSequenceField = True
+End Function
+
+' ---------------------------------------------------------------------------------------------------
+' AI agents (docs/office-mcp/MACOS.md): VisualTeX_AgentRun
+'
+' The app writes OfficeSessions/agent-request.txt (key=value rows: id, op, s.<name> = Base64URL UTF-8
+' text, n.<name> = number, b.<name> = 0/1, c.<name> = array length, nested names joined by ".") and runs
+' this macro through AppleScript. The answer goes to OfficeSessions/agent-response.txt:
+' {"id":...,"ok":true,"data":...} or {"id":...,"ok":false,"error":{"code":...,"message":...}}.
+' Reads report what the document holds (a VisualTeX formula's encoded metadata, a native equation's Word
+' XML); the app turns them into LaTeX with the readers Windows shares.
+' ---------------------------------------------------------------------------------------------------
+
+
+
+
+
+Private Function VTAgentRequestPath() As String
+    VTAgentRequestPath = VTSessionRoot() & "/agent-request.txt"
+End Function
+
+Private Function VTAgentResponsePath() As String
+    VTAgentResponsePath = VTSessionRoot() & "/agent-response.txt"
+End Function
+
+Private Function VTAgentReadRequest() As Collection
+    Dim values As Collection
+    Dim contents As String
+    Dim rows() As String
+    Dim row As Variant
+    Dim separator As Long
+
+    Set values = New Collection
+    contents = Replace$(VTReadText(VTAgentRequestPath(), VT_AGENT_MAX_REQUEST_CHARACTERS), vbCr, "")
+    rows = Split(contents, vbLf)
+    For Each row In rows
+        separator = InStr(1, CStr(row), "=", vbBinaryCompare)
+        If separator > 1 Then
+            If Not VTCollectionHasKey(values, Left$(CStr(row), separator - 1)) Then
+                values.Add Mid$(CStr(row), separator + 1), Left$(CStr(row), separator - 1)
+            End If
+        End If
+    Next row
+    If Not VTCollectionHasKey(values, "id") Or Not VTCollectionHasKey(values, "op") Then
+        Err.Raise vbObjectError + 7901, "VisualTeX", "invalid_arguments|The agent request is incomplete."
+    End If
+    Set VTAgentReadRequest = values
+End Function
+
+Private Function VTAgentRaw(ByVal key As String) As String
+    If VTCollectionHasKey(VT_AGENT_REQUEST, key) Then VTAgentRaw = CStr(VT_AGENT_REQUEST(key))
+End Function
+
+Private Function VTAgentHas(ByVal name As String) As Boolean
+    VTAgentHas = VTCollectionHasKey(VT_AGENT_REQUEST, "s." & name) Or _
+        VTCollectionHasKey(VT_AGENT_REQUEST, "n." & name) Or _
+        VTCollectionHasKey(VT_AGENT_REQUEST, "b." & name) Or _
+        VTCollectionHasKey(VT_AGENT_REQUEST, "c." & name)
+End Function
+
+Private Function VTAgentString(ByVal name As String) As String
+    If VTCollectionHasKey(VT_AGENT_REQUEST, "s." & name) Then
+        VTAgentString = VTBase64UrlDecodeUtf8(CStr(VT_AGENT_REQUEST("s." & name)))
+    End If
+End Function
+
+Private Function VTAgentNumber(ByVal name As String, ByVal fallback As Double) As Double
+    If VTCollectionHasKey(VT_AGENT_REQUEST, "n." & name) Then
+        VTAgentNumber = VTParseInvariantDouble(CStr(VT_AGENT_REQUEST("n." & name)))
+    Else
+        VTAgentNumber = fallback
+    End If
+End Function
+
+Private Function VTAgentBoolean(ByVal name As String, ByVal fallback As Boolean) As Boolean
+    If VTCollectionHasKey(VT_AGENT_REQUEST, "b." & name) Then
+        VTAgentBoolean = (CStr(VT_AGENT_REQUEST("b." & name)) = "1")
+    Else
+        VTAgentBoolean = fallback
+    End If
+End Function
+
+Private Function VTAgentCount(ByVal name As String) As Long
+    If VTCollectionHasKey(VT_AGENT_REQUEST, "c." & name) Then VTAgentCount = CLng(VT_AGENT_REQUEST("c." & name))
+End Function
+
+' The answer, in pieces small enough for the AppleScriptTask file bridge.
+Private Sub VTAgentWriteResponse(ByVal contents As String)
+    Dim position As Long
+    Dim path As String
+
+    path = VTAgentResponsePath()
+    VTWriteTextAtomic path, Left$(contents, VT_AGENT_RESPONSE_CHUNK)
+    position = VT_AGENT_RESPONSE_CHUNK + 1
+    Do While position <= Len(contents)
+        VTAppendText path, Mid$(contents, position, VT_AGENT_RESPONSE_CHUNK)
+        position = position + VT_AGENT_RESPONSE_CHUNK
+    Loop
+End Sub
+
+' Base64URL needs no JSON escaping (VTJsonString walks every character).
+Private Function VTAgentQuotedBase64(ByVal value As String) As String
+    If Len(value) = 0 Then
+        VTAgentQuotedBase64 = "null"
+    Else
+        VTAgentQuotedBase64 = """" & VTBase64UrlEncodeUtf8(value) & """"
+    End If
+End Function
+
+Private Function VTAgentDocument() As Document
+    Dim key As String
+    Dim found As Document
+
+    If Documents.Count = 0 Then
+        Err.Raise vbObjectError + 7902, "VisualTeX", "document_not_found|No document is open in Word."
+    End If
+    key = VTAgentString("document")
+    If Len(key) = 0 Then
+        Set VTAgentDocument = ActiveDocument
+        Exit Function
+    End If
+    Set found = VTFindOpenWordDocumentByIdentity(key)
+    If found Is Nothing Then
+        Err.Raise vbObjectError + 7902, "VisualTeX", "document_not_found|The document is no longer open; call list_documents again."
+    End If
+    Set VTAgentDocument = found
+End Function
+
+Private Function VTAgentListDocuments() As String
+    Dim result As String
+    Dim candidate As Document
+    Dim activeIdentity As String
+    Dim identity As String
+
+    If Documents.Count > 0 Then activeIdentity = VTWordDocumentIdentityForDocument(ActiveDocument)
+    For Each candidate In Documents
+        identity = VTWordDocumentIdentityForDocument(candidate)
+        If Len(result) > 0 Then result = result & ","
+        result = result & "{""key"":" & VTJsonString(identity) & _
+            ",""name"":" & VTJsonString(candidate.Name) & _
+            ",""path"":" & VTJsonNullableString(candidate.FullName) & _
+            ",""active"":" & VTJsonBoolean(identity = activeIdentity) & _
+            ",""saved"":" & VTJsonBoolean(candidate.Saved) & _
+            ",""read_only"":" & VTJsonBoolean(candidate.ReadOnly) & "}"
+    Next candidate
+    VTAgentListDocuments = "{""documents"":[" & result & "]}"
+End Function
+
+' One formula of the document as the app reads it: kind, place, display, numbering, size and the payload
+' (encoded metadata for a VisualTeX formula, the document part of WordOpenXML for a native equation).
+Private Function VTAgentFormulaJson( _
+    ByVal documentObject As Document, _
+    ByVal formulaObject As Object, _
+    ByVal isPicture As Boolean, _
+    ByVal contextChars As Long, _
+    ByVal withPayload As Boolean) As String
+
+    Dim sourceRange As Range
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim nativeBookmark As Bookmark
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim fontSizePt As Double
+    Dim payload As String
+    Dim kind As String
+    Dim agentId As String
+    Dim before As String
+    Dim after As String
+    Dim contextStart As Long
+    Dim contextEnd As Long
+
+    If isPicture Then
+        Set formulaShape = formulaObject
+        Set sourceRange = VTVisualTeXImageContainerRange(formulaShape)
+        If sourceRange Is Nothing Then Set sourceRange = formulaShape.Range.Duplicate
+        Call VTTryResolveVisualTeXInlineShapeReference( _
+            formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+            metadataNeedsWrite, formatNeedsWrite, False)
+        fontSizePt = VTWordImageFormulaFontSize(formulaShape)
+        If Not VTValidWordFormulaFontSize(fontSizePt) Then fontSizePt = VTPreferredWordFormulaFontSize(formulaShape.Range.Duplicate)
+        kind = "picture"
+        agentId = "vtx:" & formulaId
+        payload = encodedMetadata
+    Else
+        Set formulaMath = formulaObject
+        Set sourceRange = formulaMath.Range.Duplicate
+        If VTTryFindNativeFormulaBookmarkLocally(sourceRange, nativeBookmark) Then
+            If VTTryFormulaIdFromNativeBookmark(nativeBookmark.Name, formulaId) Then
+                If Not VTTryReadWordFormulaFormat(documentObject, formulaId, displayMode, numbered) Then
+                    displayMode = ""
+                    numbered = False
+                End If
+            End If
+        End If
+        If Not VTPureNativeNumberField(sourceRange) Is Nothing Then numbered = True
+        If Len(displayMode) = 0 Then
+            If formulaMath.Type = wdOMathDisplay Then displayMode = "block" Else displayMode = "inline"
+        End If
+        fontSizePt = sourceRange.Font.Size
+        If Not VTValidWordFormulaFontSize(fontSizePt) Then fontSizePt = VTPreferredWordFormulaFontSize(sourceRange)
+        kind = "office_equation"
+        agentId = "w:m:" & CStr(sourceRange.Start) & ":" & CStr(sourceRange.End)
+        If withPayload Then payload = VTFormulaRestoreNativeXml(sourceRange)
+    End If
+
+    If contextChars > 0 Then
+        contextStart = sourceRange.Start - contextChars
+        If contextStart < 0 Then contextStart = 0
+        before = documentObject.Range(contextStart, sourceRange.Start).Text
+        contextEnd = sourceRange.End + contextChars
+        If contextEnd > documentObject.Content.End Then contextEnd = documentObject.Content.End
+        after = documentObject.Range(sourceRange.End, contextEnd).Text
+    End If
+
+    VTAgentFormulaJson = "{""formula_id"":" & VTJsonString(agentId) & _
+        ",""kind"":" & VTJsonString(kind) & _
+        ",""display"":" & VTJsonString(displayMode) & _
+        ",""numbered"":" & VTJsonBoolean(numbered) & _
+        ",""font_size_pt"":" & VTJsonNumber(fontSizePt) & _
+        ",""start"":" & CStr(sourceRange.Start) & _
+        ",""end"":" & CStr(sourceRange.End) & _
+        ",""vtx_formula_id"":" & VTJsonNullableString(formulaId) & _
+        ",""payload_b64"":" & VTAgentQuotedBase64(payload) & _
+        ",""context_before"":" & VTJsonString(Replace$(before, vbCr, vbLf)) & _
+        ",""context_after"":" & VTJsonString(Replace$(after, vbCr, vbLf)) & "}"
+End Function
+
+' The VisualTeX formulas and native equations of the main story, in reading order: pairs (start, object).
+Private Function VTAgentCollectFormulas(ByVal documentObject As Document) As Collection
+    Dim result As Collection
+    Dim starts As Collection
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim entry As Variant
+    Dim index As Long
+    Dim position As Long
+
+    Set result = New Collection
+    For Each formulaShape In documentObject.Content.InlineShapes
+        formulaId = ""
+        If VTTryResolveVisualTeXInlineShapeReference( _
+           formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+           metadataNeedsWrite, formatNeedsWrite, False) Then
+            result.Add Array(formulaShape.Range.Start, formulaShape, True)
+        End If
+    Next formulaShape
+    For Each formulaMath In VTOMathsInDocumentOrder(documentObject.Content)
+        ' an image converted from an equation can leave an empty math zone behind
+        If formulaMath.Range.InlineShapes.Count = 0 And Not VTIsEquationReferenceMath(formulaMath) And _
+           Len(Trim$(Replace$(formulaMath.Range.Text, vbCr, ""))) > 0 Then
+            entry = Array(formulaMath.Range.Start, formulaMath, False)
+            position = result.Count + 1
+            For index = 1 To result.Count
+                If result(index)(0) > formulaMath.Range.Start Then
+                    position = index
+                    Exit For
+                End If
+            Next index
+            If position > result.Count Then result.Add entry Else result.Add entry, Before:=position
+        End If
+    Next formulaMath
+    Set VTAgentCollectFormulas = result
+End Function
+
+Private Function VTAgentKindWanted(ByVal kind As String) As Boolean
+    Dim count As Long
+    Dim index As Long
+
+    count = VTAgentCount("kinds")
+    If count = 0 Then
+        VTAgentKindWanted = True
+        Exit Function
+    End If
+    For index = 0 To count - 1
+        If VTAgentString("kinds." & CStr(index)) = kind Then
+            VTAgentKindWanted = True
+            Exit Function
+        End If
+    Next index
+End Function
+
+Private Function VTAgentListFormulas() As String
+    Dim documentObject As Document
+    Dim formulas As Collection
+    Dim offset As Long
+    Dim limit As Long
+    Dim contextChars As Long
+    Dim index As Long
+    Dim listed As Long
+    Dim total As Long
+    Dim items As String
+    Dim revision As String
+    Dim kind As String
+
+    Set documentObject = VTAgentDocument()
+    offset = CLng(VTAgentNumber("offset", 0))
+    limit = CLng(VTAgentNumber("limit", 50))
+    contextChars = CLng(VTAgentNumber("contextChars", 40))
+    Set formulas = VTAgentCollectFormulas(documentObject)
+    For index = 1 To formulas.Count
+        If formulas(index)(2) Then kind = "picture" Else kind = "office_equation"
+        If VTAgentKindWanted(kind) Then
+            revision = revision & CStr(formulas(index)(0)) & ";"
+            If total >= offset And listed < limit Then
+                If Len(items) > 0 Then items = items & ","
+                items = items & VTAgentFormulaJson(documentObject, formulas(index)(1), formulas(index)(2), contextChars, True)
+                listed = listed + 1
+            End If
+            total = total + 1
+        End If
+    Next index
+    VTAgentListFormulas = "{""revision"":" & VTJsonString(revision) & ",""total"":" & CStr(total) & _
+        ",""offset"":" & CStr(offset) & ",""formulas"":[" & items & "]}"
+End Function
+
+' The formula an agent id names: "vtx:<id>" (a VisualTeX formula) or "w:m:<start>:<end>" (a native equation).
+Private Function VTAgentFindFormula( _
+    ByVal documentObject As Document, _
+    ByVal agentId As String, _
+    ByRef isPicture As Boolean) As Object
+
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim parts() As String
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim startPosition As Long
+    Dim endPosition As Long
+
+    If Left$(agentId, 4) = "vtx:" Then
+        For Each formulaShape In documentObject.Content.InlineShapes
+            formulaId = ""
+            If VTTryResolveVisualTeXInlineShapeReference( _
+               formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+               metadataNeedsWrite, formatNeedsWrite, False) Then
+                If formulaId = Mid$(agentId, 5) Then
+                    isPicture = True
+                    Set VTAgentFindFormula = formulaShape
+                    Exit Function
+                End If
+            End If
+        Next formulaShape
+        Err.Raise vbObjectError + 7903, "VisualTeX", "formula_not_found|No VisualTeX formula in this document has that id."
+    End If
+    parts = Split(agentId, ":")
+    If UBound(parts) < 3 Or parts(0) <> "w" Or parts(1) <> "m" Then
+        Err.Raise vbObjectError + 7903, "VisualTeX", "formula_not_found|This is not a Word formula id from list_formulas."
+    End If
+    startPosition = CLng(parts(2))
+    endPosition = CLng(parts(3))
+    If startPosition < 0 Or endPosition > documentObject.Content.End Or endPosition <= startPosition Then
+        Err.Raise vbObjectError + 7904, "VisualTeX", "stale_formula_id|The document changed; call list_formulas again."
+    End If
+    For Each formulaMath In documentObject.Range(startPosition, endPosition).OMaths
+        If formulaMath.Range.Start = startPosition And formulaMath.Range.End = endPosition Then
+            isPicture = False
+            Set VTAgentFindFormula = formulaMath
+            Exit Function
+        End If
+    Next formulaMath
+    Err.Raise vbObjectError + 7904, "VisualTeX", "stale_formula_id|The document changed; call list_formulas again."
+End Function
+
+Private Function VTAgentReadFormula() As String
+    Dim documentObject As Document
+    Dim formulaObject As Object
+    Dim isPicture As Boolean
+
+    Set documentObject = VTAgentDocument()
+    Set formulaObject = VTAgentFindFormula(documentObject, VTAgentString("formulaId"), isPicture)
+    VTAgentReadFormula = VTAgentFormulaJson(documentObject, formulaObject, isPicture, 120, True)
+End Function
+
+Private Function VTAgentGetSelection() As String
+    Dim documentObject As Document
+    Dim selected As Range
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim kind As String
+    Dim formula As String
+    Dim preview As String
+
+    If Documents.Count = 0 Then
+        Err.Raise vbObjectError + 7902, "VisualTeX", "document_not_found|No document is open in Word."
+    End If
+    Set documentObject = ActiveDocument
+    If Len(VTAgentString("document")) > 0 Then
+        If VTWordDocumentIdentityForDocument(VTAgentDocument()) <> VTWordDocumentIdentityForDocument(ActiveDocument) Then
+            ' the document's own window holds its selection
+            Set documentObject = VTAgentDocument()
+        End If
+    End If
+    Set selected = documentObject.ActiveWindow.Selection.Range
+    kind = "none"
+    If selected.InlineShapes.Count = 1 Then
+        Set formulaShape = selected.InlineShapes(1)
+        If VTTryResolveVisualTeXInlineShapeReference( _
+           formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+           metadataNeedsWrite, formatNeedsWrite, False) Then
+            kind = "formula"
+            formula = VTAgentFormulaJson(documentObject, formulaShape, True, 60, True)
+        End If
+    End If
+    If kind = "none" And selected.OMaths.Count >= 1 Then
+        Set formulaMath = selected.OMaths(1)
+        If formulaMath.Range.InlineShapes.Count = 0 Then
+            kind = "formula"
+            formula = VTAgentFormulaJson(documentObject, formulaMath, False, 60, True)
+        End If
+    End If
+    If kind = "none" And selected.End > selected.Start Then
+        kind = "text"
+        preview = selected.Text
+        If Len(preview) > 200 Then preview = Left$(preview, 200) & ChrW(8230)
+    End If
+    If Len(formula) = 0 Then formula = "null"
+    VTAgentGetSelection = "{""document"":" & VTJsonString(VTWordDocumentIdentityForDocument(documentObject)) & _
+        ",""kind"":" & VTJsonString(kind) & ",""formula"":" & formula & _
+        ",""text_preview"":" & VTJsonNullableString(Replace$(preview, vbCr, vbLf)) & _
+        ",""location"":{""start"":" & CStr(selected.Start) & ",""end"":" & CStr(selected.End) & "}" & _
+        ",""read_only"":" & VTJsonBoolean(documentObject.ReadOnly) & "}"
+End Function
+
+' Diagnostic (docs/office-mcp/MACOS.md): proves a macro at the end of this module can be run by AppleScript.
+Public Sub VisualTeX_AgentPing()
+    VTWriteTextAtomic VTSessionRoot() & "/agent-ping.txt", "pong"
+End Sub
+
+' ---------------------------------------------------------------------------------------------------
+' AI agents: writes. Each puts its target in place (the document active, the caret or the formula selected)
+' and runs the Ribbon's command with VT_AGENT_MODE on, as the Windows add-in does: errors and notices come back
+' instead of dialogs. A command that opens the formula editor hands its session to the app instead
+' (VTAgentSessionJson), which draws the agent's LaTeX in its hidden editor and applies it like Insert.
+' ---------------------------------------------------------------------------------------------------
+
+Private Function VTAgentWritableDocument() As Document
+    Dim documentObject As Document
+
+    Set documentObject = VTAgentDocument()
+    If documentObject.ReadOnly Then
+        Err.Raise vbObjectError + 7910, "VisualTeX", "document_read_only|The document is read-only."
+    End If
+    If VTWordDocumentIdentityForDocument(ActiveDocument) <> VTWordDocumentIdentityForDocument(documentObject) Then
+        documentObject.Activate
+    End If
+    Set VTAgentWritableDocument = documentObject
+End Function
+
+Private Function VTAgentFormulaRange(ByVal formulaObject As Object, ByVal isPicture As Boolean) As Range
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+
+    If isPicture Then
+        Set formulaShape = formulaObject
+        Set VTAgentFormulaRange = VTVisualTeXImageContainerRange(formulaShape)
+        If VTAgentFormulaRange Is Nothing Then Set VTAgentFormulaRange = formulaShape.Range.Duplicate
+    Else
+        Set formulaMath = formulaObject
+        Set VTAgentFormulaRange = formulaMath.Range.Duplicate
+    End If
+End Function
+
+Private Function VTAgentIsDisplay( _
+    ByVal documentObject As Document, _
+    ByVal formulaObject As Object, _
+    ByVal isPicture As Boolean) As Boolean
+
+    VTAgentIsDisplay = InStr(1, VTAgentFormulaJson(documentObject, formulaObject, isPicture, 0, False), _
+        """display"":""block""", vbBinaryCompare) > 0
+End Function
+
+' A caret at a native equation's edge is still in its math zone, where a new formula would join it.
+Private Sub VTAgentLeaveMathZone(ByVal caret As Range, ByVal forward As Boolean)
+    Dim attempt As Long
+
+    For attempt = 1 To 2
+        If caret.OMaths.Count = 0 Then Exit Sub
+        If forward Then caret.Move wdCharacter, 1 Else caret.Move wdCharacter, -1
+    Next attempt
+End Sub
+
+' location: "cursor" (default), "document_end", {after_formula}, {before_formula} or {paragraph_end}.
+Private Sub VTAgentPlaceInsertion(ByVal documentObject As Document)
+    Dim target As Range
+    Dim formulaObject As Object
+    Dim isPicture As Boolean
+    Dim where As String
+    Dim index As Long
+
+    where = VTAgentString("location")
+    If Len(VTAgentString("location.after_formula")) > 0 Then
+        Set formulaObject = VTAgentFindFormula(documentObject, VTAgentString("location.after_formula"), isPicture)
+        Set target = VTAgentFormulaRange(formulaObject, isPicture)
+        If VTAgentIsDisplay(documentObject, formulaObject, isPicture) Then
+            Set target = target.Paragraphs(1).Range.Duplicate
+            target.MoveEnd wdCharacter, -1
+        End If
+        target.Collapse wdCollapseEnd
+        VTAgentLeaveMathZone target, True
+    ElseIf Len(VTAgentString("location.before_formula")) > 0 Then
+        Set formulaObject = VTAgentFindFormula(documentObject, VTAgentString("location.before_formula"), isPicture)
+        Set target = VTAgentFormulaRange(formulaObject, isPicture)
+        If VTAgentIsDisplay(documentObject, formulaObject, isPicture) Then Set target = target.Paragraphs(1).Range.Duplicate
+        target.Collapse wdCollapseStart
+        VTAgentLeaveMathZone target, False
+    ElseIf VTAgentHas("location.paragraph_end") Then
+        index = CLng(VTAgentNumber("location.paragraph_end", 0))
+        If index < 1 Or index > documentObject.Paragraphs.Count Then
+            Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|The document has " & _
+                CStr(documentObject.Paragraphs.Count) & " paragraphs."
+        End If
+        Set target = documentObject.Paragraphs(index).Range.Duplicate
+        target.MoveEnd wdCharacter, -1
+        target.Collapse wdCollapseEnd
+    ElseIf where = "document_end" Then
+        Set target = documentObject.Content.Duplicate
+        target.MoveEnd wdCharacter, -1
+        target.Collapse wdCollapseEnd
+    ElseIf Len(where) > 0 And where <> "cursor" Then
+        Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|Unknown location " & where & "."
+    ElseIf Selection.Start <> Selection.End Then
+        ' a new formula goes after the user's selection, never over it
+        Set target = Selection.Range.Duplicate
+        target.Collapse wdCollapseEnd
+    End If
+    If Not target Is Nothing Then target.Select
+End Sub
+
+Private Function VTAgentSelectFormula( _
+    ByVal documentObject As Document, _
+    ByVal agentId As String, _
+    ByRef isPicture As Boolean) As Object
+
+    Dim formulaObject As Object
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+
+    Set formulaObject = VTAgentFindFormula(documentObject, agentId, isPicture)
+    If isPicture Then
+        Set formulaShape = formulaObject
+        formulaShape.Select
+    Else
+        Set formulaMath = formulaObject
+        formulaMath.Range.Select
+    End If
+    Set VTAgentSelectFormula = formulaObject
+End Function
+
+' What a command that opens the formula editor left: its session for the app, or nothing when the command
+' finished by itself (a conversion read from the formula cache). Errors it reported become the agent's error.
+Private Function VTAgentSessionJson() As String
+    If Len(VT_AGENT_ERRORS) > 0 Then
+        Err.Raise vbObjectError + 7912, "VisualTeX", "operation_failed|Word could not carry out the operation."
+    End If
+    VTAgentSessionJson = "{""session_id"":" & VTJsonNullableString(VT_AGENT_SESSION_ID) & _
+        ",""request"":" & IIf(Len(VT_AGENT_REQUEST_JSON) > 0, VT_AGENT_REQUEST_JSON, "null") & _
+        ",""message"":" & VTJsonNullableString(VT_AGENT_NOTES) & "}"
+End Function
+
+Private Function VTAgentDone(ByVal message As String) As String
+    If Len(VT_AGENT_ERRORS) > 0 Then
+        Err.Raise vbObjectError + 7912, "VisualTeX", "operation_failed|Word could not carry out the operation."
+    End If
+    If Len(VT_AGENT_NOTES) > 0 Then
+        If Len(message) > 0 Then message = message & " "
+        message = message & Replace$(VT_AGENT_NOTES, vbLf, " ")
+    End If
+    VTAgentDone = "{""message"":" & VTJsonNullableString(message) & "}"
+End Function
+
+Private Function VTAgentBeginInsert() As String
+    Dim documentObject As Document
+    Dim displayMode As String
+
+    Set documentObject = VTAgentWritableDocument()
+    VTAgentPlaceInsertion documentObject
+    If VTAgentString("display") = "block" Then displayMode = "block" Else displayMode = "inline"
+    VTWordCreate displayMode, VTAgentBoolean("numbered", False) And displayMode = "block", _
+        VTAgentString("format") = "office_equation"
+    VTAgentBeginInsert = VTAgentSessionJson()
+End Function
+
+' New LaTeX and/or another format: the editor's session for the formula, or the Ribbon's conversion of it.
+Private Function VTAgentBeginUpdate() As String
+    Dim documentObject As Document
+    Dim isPicture As Boolean
+    Dim targetFormat As String
+
+    Set documentObject = VTAgentWritableDocument()
+    Call VTAgentSelectFormula(documentObject, VTAgentString("formulaId"), isPicture)
+    targetFormat = VTAgentString("format")
+    If targetFormat = "office_equation" And isPicture Then
+        VisualTeX_ConvertSelectedToNativeEquation
+    ElseIf targetFormat = "picture" And Not isPicture Then
+        VisualTeX_ConvertSelectedToImageFormula
+    Else
+        VisualTeX_EditSelected
+    End If
+    VTAgentBeginUpdate = VTAgentSessionJson()
+End Function
+
+' A VisualTeX formula by its own id (a picture's, or the anchor of an equation VisualTeX wrote).
+Private Function VTAgentFindVisualTeXFormula() As String
+    Dim documentObject As Document
+    Dim entry As Variant
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim nativeBookmark As Bookmark
+    Dim wanted As String
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+
+    Set documentObject = VTAgentDocument()
+    wanted = VTAgentString("vtxId")
+    For Each entry In VTAgentCollectFormulas(documentObject)
+        formulaId = ""
+        If entry(2) Then
+            Set formulaShape = entry(1)
+            Call VTTryResolveVisualTeXInlineShapeReference(formulaShape, formulaId, displayMode, numbered, _
+                encodedMetadata, metadataNeedsWrite, formatNeedsWrite, False)
+        Else
+            Set formulaMath = entry(1)
+            If VTTryFindNativeFormulaBookmarkLocally(formulaMath.Range.Duplicate, nativeBookmark) Then
+                Call VTTryFormulaIdFromNativeBookmark(nativeBookmark.Name, formulaId)
+            End If
+        End If
+        If Len(formulaId) > 0 And formulaId = wanted Then
+            VTAgentFindVisualTeXFormula = "{""formula"":" & _
+                VTAgentFormulaJson(documentObject, entry(1), CBool(entry(2)), 120, True) & "}"
+            Exit Function
+        End If
+    Next entry
+    VTAgentFindVisualTeXFormula = "{""formula"":null}"
+End Function
+
+Private Function VTAgentSelectFormulaOperation() As String
+    Dim documentObject As Document
+    Dim formulaObject As Object
+    Dim isPicture As Boolean
+
+    Set documentObject = VTAgentDocument()
+    If VTWordDocumentIdentityForDocument(ActiveDocument) <> VTWordDocumentIdentityForDocument(documentObject) Then
+        documentObject.Activate
+    End If
+    Set formulaObject = VTAgentSelectFormula(documentObject, VTAgentString("formulaId"), isPicture)
+    On Error Resume Next
+    ActiveWindow.ScrollIntoView Selection.Range, True
+    On Error GoTo 0
+    VTAgentSelectFormulaOperation = "{""formula"":" & VTAgentFormulaJson(documentObject, formulaObject, isPicture, 0, True) & "}"
+End Function
+
+' A display formula goes with its paragraph (and its number); the numbers after it follow.
+Private Function VTAgentDeleteFormula() As String
+    Dim documentObject As Document
+    Dim formulaObject As Object
+    Dim isPicture As Boolean
+    Dim target As Range
+    Dim numbered As Boolean
+    Dim recordStarted As Boolean
+
+    Set documentObject = VTAgentWritableDocument()
+    Set formulaObject = VTAgentFindFormula(documentObject, VTAgentString("formulaId"), isPicture)
+    numbered = InStr(1, VTAgentFormulaJson(documentObject, formulaObject, isPicture, 0, False), _
+        """numbered"":true", vbBinaryCompare) > 0
+    Set target = VTAgentFormulaRange(formulaObject, isPicture)
+    If VTAgentIsDisplay(documentObject, formulaObject, isPicture) Then Set target = target.Paragraphs(1).Range.Duplicate
+    On Error GoTo Failed
+    Application.UndoRecord.StartCustomRecord "VisualTeX Delete Formula"
+    recordStarted = True
+    target.Delete
+    If numbered Then Call VTUpdateEquationNumbersCore(documentObject, True)
+    Application.UndoRecord.EndCustomRecord
+    VTAgentDeleteFormula = VTAgentDone("Deleted the formula.")
+    Exit Function
+Failed:
+    Dim errorDescription As String
+    errorDescription = Err.Description
+    On Error Resume Next
+    If recordStarted Then Application.UndoRecord.EndCustomRecord
+    On Error GoTo 0
+    Err.Raise vbObjectError + 7913, "VisualTeX", "operation_failed|" & errorDescription
+End Function
+
+Private Function VTAgentSetFontSize() As String
+    Dim documentObject As Document
+    Dim formulaObject As Object
+    Dim formulaMath As OMath
+    Dim isPicture As Boolean
+    Dim size As Double
+
+    size = VTAgentNumber("font_size_pt", 0)
+    If size < 5 Or size > 200 Then
+        Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|font_size_pt must be from 5 to 200."
+    End If
+    Set documentObject = VTAgentWritableDocument()
+    If Len(VTAgentString("kind")) > 0 Then
+        ' every inline or every display formula, as the Ribbon's conversion sizes do
+        VTAgentSetFontSize = VTAgentDone("Resized " & CStr(VTApplyFontSizeToDocumentFormulas( _
+            IIf(VTAgentString("kind") = "display", "block", "inline"), size)) & " " & _
+            VTAgentString("kind") & " formula(s) to " & Trim$(Str$(size)) & " pt.")
+        Exit Function
+    End If
+    Set formulaObject = VTAgentSelectFormula(documentObject, VTAgentString("formulaId"), isPicture)
+    If isPicture Then
+        VisualTeX_SetSelectedImageFormulaFontSize Trim$(Str$(size))
+    Else
+        Set formulaMath = formulaObject
+        formulaMath.Range.Font.Size = size
+    End If
+    VTAgentSetFontSize = VTAgentDone("The formula is " & Trim$(Str$(size)) & " pt.")
+End Function
+
+Private Function VTAgentNumberDisplayFormulas() As String
+    Call VTAgentWritableDocument
+    If VTAgentString("scope") = "selection" Then
+        VisualTeX_NumberDisplayFormulasSelection
+    Else
+        VisualTeX_NumberDisplayFormulasDocument
+    End If
+    VTAgentNumberDisplayFormulas = VTAgentDone("")
+End Function
+
+Private Function VTAgentUpdateEquationNumbers() As String
+    Dim updated As Long
+
+    Call VTAgentWritableDocument
+    updated = VTUpdateEquationNumbersCore(ActiveDocument, True)
+    VTAgentUpdateEquationNumbers = VTAgentDone("Updated " & CStr(updated) & " equation numbers.")
+End Function
+
+Private Function VTAgentSetNumberFormat() As String
+    Dim preset As Integer
+
+    Select Case VTAgentString("format_id")
+        Case "continuous": preset = 0
+        Case "heading1-dot": preset = 1
+        Case "heading1-dash": preset = 2
+        Case "heading2-dot": preset = 3
+        Case "heading2-dash": preset = 4
+        Case Else
+            Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|Unknown format_id " & VTAgentString("format_id") & "."
+    End Select
+    Call VTAgentWritableDocument
+    VTApplyEquationNumberingFormatPreset preset
+    VTAgentSetNumberFormat = VTAgentDone("")
+End Function
+
+' The Ribbon's Equation-reference menu with the equation named by its number instead of picked.
+Private Function VTAgentInsertReference() As String
+    Dim documentObject As Document
+    Dim insertionRange As Range
+    Dim insertedRange As Range
+    Dim items As Variant
+    Dim kinds(1 To 2) As String
+    Dim sources(1 To 2) As String
+    Dim kindIndex As Long
+    Dim itemIndex As Long
+    Dim wanted As String
+    Dim source As String
+    Dim available As String
+    Dim matches As Long
+    Dim matchKind As String
+    Dim matchIndex As Long
+
+    wanted = "(" & Trim$(Replace$(Replace$(VTAgentString("number"), "(", ""), ")", "")) & ")"
+    source = VTAgentString("source")
+    Set documentObject = VTAgentWritableDocument()
+    VTAgentPlaceInsertion documentObject
+    Set insertionRange = VTResolveEquationReferenceInsertionRange(Selection.Range.Duplicate)
+    If insertionRange Is Nothing Then
+        Err.Raise vbObjectError + 7914, "VisualTeX", "operation_failed|A reference cannot go at this place."
+    End If
+    kinds(1) = VT_WORD_REFERENCE_KIND_NATIVE: sources(1) = "office_equation"
+    kinds(2) = VT_WORD_REFERENCE_KIND_IMAGE: sources(2) = "picture"
+    For kindIndex = 1 To 2
+        items = VTEquationNumberCrossReferenceItems(documentObject, kinds(kindIndex))
+        If IsArray(items) Then
+            For itemIndex = LBound(items) To UBound(items)
+                If Len(available) > 0 Then available = available & ", "
+                available = available & CStr(items(itemIndex)) & " " & sources(kindIndex)
+                If CStr(items(itemIndex)) = wanted And (Len(source) = 0 Or source = sources(kindIndex)) Then
+                    matches = matches + 1
+                    matchKind = kinds(kindIndex)
+                    matchIndex = itemIndex
+                End If
+            Next itemIndex
+        End If
+    Next kindIndex
+    If matches = 0 Then
+        If Len(available) = 0 Then available = "none"
+        Err.Raise vbObjectError + 7915, "VisualTeX", "formula_not_found|No numbered equation " & wanted & _
+            " in this document. Numbered equations: " & available & "."
+    ElseIf matches > 1 Then
+        Err.Raise vbObjectError + 7915, "VisualTeX", "invalid_arguments|Several numbered equations are " & wanted & _
+            "; give source to choose one. Numbered equations: " & available & "."
+    End If
+    Set insertedRange = VTInsertEquationNumberReferenceAtRange(insertionRange, matchIndex, True, matchKind)
+    insertedRange.Collapse wdCollapseEnd
+    insertedRange.Select
+    VTAgentInsertReference = VTAgentDone("Inserted a reference to equation " & wanted & ".")
+End Function
+
+' Redraw, restore and conversion of many formulas: the Ribbon's commands, which open VisualTeX's progress
+' window; the app waits for the session they start. A restore read from the formula cache needs none.
+Private Function VTAgentDocumentOperation(ByVal operation As String) As String
+    Dim scope As String
+    Dim source As String
+    Dim target As String
+
+    Call VTAgentWritableDocument
+    If VTAgentString("scope") = "selection" Then scope = "selection" Else scope = "document"
+    Select Case operation
+        Case "latex_text_to_formulas"
+            If VTAgentString("format") = "office_equation" Then target = "omml" Else target = "image"
+            VTStartWordLatexRedraw scope, target
+        Case "formulas_to_latex_text"
+            Select Case VTAgentString("from") & "|" & scope
+                Case "office_equation|selection": VisualTeX_RestoreSelectionOmmlToLatex
+                Case "picture|selection": VisualTeX_RestoreSelectionImageToLatex
+                Case "office_equation|document": VisualTeX_RestoreDocumentOmmlToLatex
+                Case "picture|document": VisualTeX_RestoreDocumentImageToLatex
+                Case Else
+                    Err.Raise vbObjectError + 7911, "VisualTeX", "invalid_arguments|from must be picture or office_equation."
+            End Select
+        Case "convert_formulas"
+            Select Case VTAgentString("from") & ">" & VTAgentString("to")
+                Case "picture>office_equation": source = "image": target = "omml"
+                Case "office_equation>picture": source = "omml": target = "image"
+                Case Else
+                    Err.Raise vbObjectError + 7911, "VisualTeX", _
+                        "invalid_arguments|In Word, from and to are picture and office_equation, one of each."
+            End Select
+            VTStartWordFormulaRestore scope, source, target
+    End Select
+    VTAgentDocumentOperation = VTAgentSessionJson()
+End Function
+
+' Markdown or LaTeX prose: the Ribbon's LaTeX/Markdown import at the location; the app gives the text to its
+' import window.
+Private Function VTAgentBeginImport() As String
+    Call VTAgentPlaceInsertion(VTAgentWritableDocument())
+    VisualTeX_InsertLatexMarkdownDocument
+    VTAgentBeginImport = VTAgentSessionJson()
 End Function

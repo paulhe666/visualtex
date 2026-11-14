@@ -90,6 +90,8 @@ const BUILT_IN_FUNCTIONS = [
 const OPERATORNAME_FUNCTIONS = [
   "lcm", "rank", "diag", "sgn", "erf", "erfc", "arccot", "sech", "csch",
   "arsinh", "arcosh", "artanh", "arcoth", "arcsec", "arccsc", "cosec",
+  // Names a shorter function name would otherwise split (\sup p, co\ker, \log it, \arcsin h).
+  "supp", "coker", "logit", "arcsinh", "arccosh", "arctanh",
 ] as const;
 
 const AMBIGUOUS_FUNCTIONS: Record<string, string> = {

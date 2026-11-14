@@ -243,10 +243,14 @@ fn create_window(
       masks |= NSWindowStyleMask::FullSizeContentView;
     }
 
-    // Office formula windows must be born as real AppKit panels. Turning an
-    // existing NSWindow into a "nonactivating panel" later does not let it
-    // become key while another application owns the foreground.
-    let office_panel = attrs.title == "VisualTeX Office Formula";
+    // Office formula windows and the Anywhere composition strip must be born
+    // as real AppKit panels. Turning an existing NSWindow into a
+    // "nonactivating panel" later does not let it become key while another
+    // application owns the foreground.
+    let office_panel = matches!(
+      attrs.title.as_str(),
+      "VisualTeX Office Formula" | "VisualTeX Anywhere"
+    );
     if office_panel {
       masks |= NSWindowStyleMask::NonactivatingPanel;
     }
@@ -426,7 +430,7 @@ fn register_window_class(
     );
     decl.add_method(
       sel!(canBecomeKeyWindow),
-      is_focusable as extern "C" fn(_, _) -> _,
+      if panel { is_office_panel_focusable } else { is_focusable } as extern "C" fn(_, _) -> _,
     );
     decl.add_method(sel!(sendEvent:), send_event as extern "C" fn(_, _, _));
     // progress bar states, follows ProgressState
@@ -460,6 +464,18 @@ extern "C" fn is_focusable(this: &Object, _: Sel) -> Bool {
   unsafe {
     *(this.get_ivar("focusable"))
   }
+}
+
+/// A parked Office editor stays ordered in, so WebKit keeps rendering it, but
+/// ignores the mouse. It must not become key either: when the active editor
+/// closes, AppKit would give it the keyboard (the user's typing would vanish
+/// into the hidden editor) instead of returning it to the Office app.
+extern "C" fn is_office_panel_focusable(this: &Object, sel: Sel) -> Bool {
+  let parked: bool = unsafe { msg_send![this, ignoresMouseEvents] };
+  if parked {
+    return NO;
+  }
+  is_focusable(this, sel)
 }
 
 extern "C" fn send_event(this: &Object, _sel: Sel, event: &NSEvent) {

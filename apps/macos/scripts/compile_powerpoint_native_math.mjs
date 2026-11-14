@@ -17,10 +17,15 @@ const modules=[
  ['VTLauncher','shared/VTLauncher.bas'],['VTPowerPointNativeTarget','powerpoint/VTPowerPointNativeTarget.cls'],
  ['VTPowerPointNativeMath','powerpoint/VTPowerPointNativeMath.bas'],['VTPowerPointEvents','powerpoint/VTPowerPointEvents.cls'],
  ['VTPowerPointAdapter','powerpoint/VTPowerPointAdapter.bas'],['VTRibbonCallbacks','powerpoint/VTRibbonCallbacks.bas'],
+ ['VTPowerPointRedraw','powerpoint/VTPowerPointRedraw.bas'],
 ];
 function as(lines){return execFileSync('/usr/bin/osascript',lines.flatMap(x=>['-e',x]),{encoding:'utf8',timeout:60000}).trim();}
 function ui(lines){return as(['tell application "Microsoft PowerPoint" to activate','tell application "System Events"','tell process "Microsoft PowerPoint"','set frontmost to true',...lines,'end tell','end tell']);}
 const ownWindow=[`set w to first window whose name starts with ${JSON.stringify('Microsoft Visual Basic - '+name)}`,'perform action "AXRaise" of w','delay 0.2'];
+// Tools > Macro > Visual Basic Editor in a Chinese or an English Office.
+const openVbe=['set opened to false','repeat with names in {{"工具", "宏", "Visual Basic 编辑器"}, {"Tools", "Macro", "Visual Basic Editor"}}','if opened is false then','try',
+ 'set tm to menu 1 of menu bar item (item 1 of names) of menu bar 1','set mm to menu 1 of menu item (item 2 of names) of tm','click menu item (item 3 of names) of mm','set opened to true',
+ 'end try','end if','end repeat','if opened is false then error "The Visual Basic Editor menu is unavailable"','delay 1','keystroke "r" using {command down}'];
 function selectOwnProject(){
  return ui([...ownWindow,
   'set projectOutline to first UI element of w whose role is "AXOutline"',
@@ -79,10 +84,10 @@ if(args.includes('--prepare')){
  as(['tell application "Microsoft PowerPoint"','set p to make new presentation',
  'if (count of slides of p) is 0 then make new slide at end of p',
  `save p in POSIX file ${JSON.stringify(path)} as save as Open XML presentation macro enabled`,'end tell']);
- ui(['set tm to menu 1 of menu bar item "工具" of menu bar 1','set mm to menu 1 of menu item "宏" of tm','click menu item "Visual Basic 编辑器" of mm','delay 1','keystroke "r" using {command down}']);
+ ui(openVbe);
  console.log('Prepared '+path);
 }
-if(args.includes('--vbe')) ui([`perform action "AXRaise" of window ${JSON.stringify(name)}`, 'set tm to menu 1 of menu bar item "工具" of menu bar 1','set mm to menu 1 of menu item "宏" of tm','click menu item "Visual Basic 编辑器" of mm','delay 1','keystroke "r" using {command down}']);
+if(args.includes('--vbe')) ui([`perform action "AXRaise" of window ${JSON.stringify(name)}`, ...openVbe]);
 if(args.includes('--outline'))console.log(ui([...ownWindow,'set o to first UI element of w whose role is "AXOutline"','set texts to ""','repeat with r in rows of o','set c to UI element 1 of r','set texts to texts & (name of every UI element of c as text) & linefeed','end repeat','return texts']));
 const removeIndex=args.indexOf('--remove');
 if(removeIndex>=0) for(const moduleName of args[removeIndex+1].split(',')) removeModule(moduleName);

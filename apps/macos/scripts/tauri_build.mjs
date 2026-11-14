@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 function runStatus(command, args, env = process.env) {
   const isWindowsCmd =
@@ -47,10 +47,35 @@ if (process.platform === "darwin") {
     "src-tauri/target/release/ocr/offline/macos-arm64",
     "src-tauri/target/release/office/macos-offline",
     "src-tauri/target/release/bundle/macos/VisualTeX.app",
-    "src-tauri/target/release/bundle/dmg",
   ]) {
     rmSync(generatedPath, { recursive: true, force: true });
   }
+  // bundle/dmg: the other flavours' DMGs (-no-ocr, an older -personal) are moved aside while Tauri
+  // rebuilds the folder (its DMG bundler empties it) and put back when this build ends, so building one never
+  // deletes another
+  const dmgDirectory = "src-tauri/target/release/bundle/dmg";
+  const kept = [];
+  try {
+    for (const entry of readdirSync(dmgDirectory)) {
+      if (/-(personal|no-ocr)\.dmg$/.test(entry)) {
+        const aside = join("src-tauri/target/release/bundle", `.kept-${entry}`);
+        renameSync(join(dmgDirectory, entry), aside);
+        kept.push([aside, join(dmgDirectory, entry)]);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  rmSync(dmgDirectory, { recursive: true, force: true });
+  process.on("exit", () => {
+    for (const [aside, original] of kept) {
+      if (!existsSync(aside)) continue;
+      mkdirSync(dmgDirectory, { recursive: true });
+      renameSync(aside, original);
+    }
+  });
 }
 
 const forwardedArgs = process.argv.slice(2);
@@ -114,7 +139,13 @@ function prepareMacosSigningIdentity() {
   const workDirectory = mkdtempSync(join(tmpdir(), "visualtex-signing-"));
   const keychain = join(workDirectory, "signing.keychain-db");
   const keychainPassword = randomBytes(24).toString("hex");
-  const searchList = userKeychainSearchList();
+  // A build that was killed leaves its keychain in the search list, locked, with a password
+  // nobody knows: codesign then finds the identity there first and asks for that password.
+  const searchList = userKeychainSearchList().filter((path) => {
+    if (!/[\\/]visualtex-signing-[^\\/]+[\\/]signing\.keychain-db$/.test(path)) return true;
+    rmSync(dirname(path), { recursive: true, force: true });
+    return false;
+  });
   const cleanup = () => {
     try {
       security(["list-keychains", "-d", "user", "-s", ...searchList]);
@@ -129,7 +160,8 @@ function prepareMacosSigningIdentity() {
   };
   try {
     security(["create-keychain", "-p", keychainPassword, keychain]);
-    security(["set-keychain-settings", "-t", "3600", "-u", keychain]);
+    // No lock timeout: a long build signs late.
+    security(["set-keychain-settings", keychain]);
     security(["unlock-keychain", "-p", keychainPassword, keychain]);
     security([
       "import", identityFile, "-k", keychain, "-f", "pkcs12",
@@ -146,6 +178,12 @@ function prepareMacosSigningIdentity() {
       .match(/\b([0-9A-F]{40})\s+"VisualTeX Code Signing"/)?.[1];
     if (!identity) throw new Error(`${identityFile} holds no "VisualTeX Code Signing" identity.`);
     process.stdout.write(`Signing with the VisualTeX identity ${identity}.\n`);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+      process.once(signal, () => {
+        cleanup();
+        process.exit(1);
+      });
+    }
     return { identity, cleanup };
   } catch (error) {
     cleanup();

@@ -31,6 +31,12 @@ const STANDARD_COMPATIBILITY_MACROS = {
   symbfsfup: ["\\boldsymbol{\\mathsf{#1}}", 1] as const,
   symbfsfit: ["\\boldsymbol{\\mathsf{\\mathit{#1}}}", 1] as const,
   symtt: ["\\mathtt{#1}", 1] as const,
+  // VisualTeX: LaTeX's \nobreak and stmaryrd's brackets, which MathJax lacks
+  nobreak: "",
+  llparenthesis: "\\mathopen{\\unicode{x2987}}",
+  rrparenthesis: "\\mathclose{\\unicode{x2988}}",
+  llbracket: "\\mathopen{\\unicode{x27E6}}",
+  rrbracket: "\\mathclose{\\unicode{x27E7}}",
 } satisfies Record<string, VisualTexMathJaxMacro>;
 
 export const VISUALTEX_MATHML_MACROS = {

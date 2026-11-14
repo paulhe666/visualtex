@@ -66,40 +66,40 @@ function officeErrorSummary(raw: string, isEn: boolean) {
   if (macOfficeFolderAccessDenied(raw)) return macOfficeFolderAccessDeniedText(isEn);
   if (/add-in operation timed out/i.test(raw)) {
     return isEn
-      ? "macOS did not let VisualTeX change the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then try again."
-      : "macOS 未及时允许 VisualTeX 修改 Office 文件夹。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」，然后重试。";
+      ? "macOS did not allow VisualTeX to modify the Office folders in time."
+      : "macOS 未及时允许 VisualTeX 修改 Office 文件夹。";
   }
   if (/timed out|timeout|temporarily unavailable/i.test(raw)) {
     return isEn
-      ? "Office status checking timed out. If macOS asks whether VisualTeX may access data from other apps, click Allow; otherwise quit Office and refresh. You can still uninstall the add-ins."
-      : "Office 状态读取超时。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」；否则退出 Office 后重新刷新。仍可直接卸载插件。";
+      ? "Office status check timed out."
+      : "Office 状态读取超时。";
   }
   if (/OfficePluginStatus|health file|invalid JSON|sourceRevision/i.test(raw)) {
     return isEn
-      ? "An old add-in status record was ignored. Refresh the page; repair only if the Office buttons do not work."
-      : "已忽略旧的插件状态记录。请先刷新；仅在 Office 按钮不可用时修复插件。";
+      ? "An outdated add-in status record was ignored."
+      : "已忽略旧的插件状态记录。";
   }
   if (/Fully quit|Command-Q/i.test(raw)) {
     return isEn
-      ? "Quit Word and PowerPoint completely with Command-Q before installing, repairing, or uninstalling the add-ins."
-      : "安装、修复或卸载插件前，请先使用 ⌘Q 完全退出 Word 和 PowerPoint。";
+      ? "Quit Word and PowerPoint with Command-Q first."
+      : "请先使用 ⌘Q 退出 Word 和 PowerPoint。";
   }
   if (/Operation not permitted|Permission denied|EPERM|permission/i.test(raw)) {
     return isEn
-      ? "macOS denied access to an Office add-in location. Check VisualTeX permissions, then retry."
-      : "macOS 拒绝访问 Office 插件目录。请检查 VisualTeX 的系统权限后重试。";
+      ? "macOS denied access to an Office add-in folder."
+      : "macOS 拒绝访问 Office 插件目录。";
   }
   if (/still running|taking longer|operation is still/i.test(raw)) {
     return isEn
-      ? "The Office add-in operation is taking unusually long. It may be blocked by Office, macOS permissions, or a coordinated Office folder."
-      : "Office 插件操作耗时异常，可能被 Office 进程、macOS 权限或 Office 目录协调状态阻塞。";
+      ? "The Office add-in operation is taking unusually long."
+      : "Office 插件操作耗时异常。";
   }
   return isEn
-    ? "The Office add-in operation failed. See the error details below and retry after resolving it."
-    : "Office 插件操作失败。请查看下方错误详情，处理后再重试。";
+    ? "The Office add-in operation failed."
+    : "Office 插件操作失败。";
 }
 
-function StatusLine({
+export function StatusLine({
   ok,
   pending = false,
   children,
@@ -175,8 +175,8 @@ export function MacOfficeIntegrationSettings() {
         slowOperationTimer = window.setTimeout(() => {
           setMessage(
             isEn
-              ? "Still working after 5 seconds. If macOS asks whether VisualTeX may access data from other apps, click Allow. VisualTeX stops waiting after 90 seconds."
-              : "已超过 5 秒仍在处理。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」。VisualTeX 最多等待 90 秒。",
+              ? "Still working (timeout: 90 seconds)."
+              : "仍在处理（超时：90 秒）。",
           );
         }, 5_000);
       }
@@ -278,8 +278,8 @@ export function MacOfficeIntegrationSettings() {
                 ? "Reading native add-in status…"
                 : "正在读取原生加载项状态…"
               : isEn
-                ? "The Office status check did not finish. You can retry or uninstall the add-ins directly."
-                : "Office 插件状态读取未完成。可以重试，或直接卸载插件。"}
+                ? "Office status check did not finish."
+                : "Office 插件状态读取未完成。"}
           </span>
         </div>
       ) : (
@@ -308,8 +308,8 @@ export function MacOfficeIntegrationSettings() {
                 : !status.word.filesInstalled
                   ? isEn ? "Install the add-in first" : "请先安装插件"
                   : !status.word.applicationRunning
-                    ? isEn ? "Open Word to check loading" : "打开 Word 后自动检查加载状态"
-                    : isEn ? "Not confirmed; repair only if the buttons do not work" : "尚未确认；仅在按钮不可用时点击修复"}
+                    ? isEn ? "Word is not running" : "Word 未运行"
+                    : isEn ? "Loading not confirmed" : "加载状态未确认"}
             </StatusLine>
             <details className="office-install-paths">
               <summary>{isEn ? "Install location" : "安装位置"}</summary>
@@ -341,8 +341,8 @@ export function MacOfficeIntegrationSettings() {
                 : !status.powerpoint.filesInstalled
                   ? isEn ? "Install the add-in first" : "请先安装插件"
                   : !status.powerpoint.applicationRunning
-                    ? isEn ? "Open PowerPoint to check loading" : "打开 PowerPoint 后自动检查加载状态"
-                    : isEn ? "Not confirmed; register the PPAM only if the ribbon is missing" : "尚未确认；仅在功能区缺失时重新登记 PPAM"}
+                    ? isEn ? "PowerPoint is not running" : "PowerPoint 未运行"
+                    : isEn ? "Loading not confirmed" : "加载状态未确认"}
             </StatusLine>
             <details className="office-install-paths">
               <summary>{isEn ? "Install location" : "安装位置"}</summary>
@@ -467,7 +467,7 @@ export function MacOfficeIntegrationSettings() {
               onClick={() => void refresh()}
             >
               <RefreshCw size={15} />
-              {isEn ? "Check whether PowerPoint loaded it" : "检查 PowerPoint 是否已加载"}
+              {isEn ? "Check load status" : "检查加载状态"}
             </button>
           </div>
         </div>

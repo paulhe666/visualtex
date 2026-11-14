@@ -54,7 +54,7 @@ export function ButtonShortcutSettingsSection() {
         return;
       }
       if (event.getModifierState("AltGraph")) {
-        setMessage(isEn ? "AltGr is used for text input and cannot be assigned." : "AltGr 用于文字输入，不能设置为快捷键。");
+        setMessage(isEn ? "AltGr cannot be assigned." : "AltGr 不能设置为快捷键。");
         return;
       }
       const chord = formulaHotkeyChordFromEvent(event);
@@ -70,8 +70,8 @@ export function ButtonShortcutSettingsSection() {
         const label = officeHotkeyActionLabel(officeHotkeyAction(officeBinding.actionId), isEn ? "en" : "cn");
         setMessage(
           isEn
-            ? `This shortcut is the Office global shortcut “${label}”. Change that one first.`
-            : `该快捷键已用作 Office 全局快捷键“${label}”，请先修改那一项。`,
+            ? `Already used by the Office global shortcut “${label}”.`
+            : `已被 Office 全局快捷键“${label}”占用。`,
         );
         return;
       }
@@ -112,11 +112,6 @@ export function ButtonShortcutSettingsSection() {
       <header className="formula-hotkey-section-heading">
         <MousePointerClick size={16} />
         <strong>{isEn ? "Buttons" : "常用按钮"}</strong>
-        <span>
-          {isEn
-            ? "None at first. Click + and press the keys (Esc cancels)."
-            : "初始均为“未设置”。点击 + 后按下组合键（Esc 取消）。"}
-        </span>
       </header>
       {message && (
         <p className="formula-hotkey-recorder-note" data-button-shortcut-message role="status">
@@ -175,7 +170,7 @@ export function ButtonShortcutSettingsSection() {
                         setMessage("");
                       }}
                       aria-label={isEn ? `Clear the shortcut of ${label}` : `清除“${label}”的快捷键`}
-                      title={isEn ? "Set to none" : "设为未设置"}
+                      title={isEn ? "Clear shortcut" : "清除快捷键"}
                     >
                       <Trash2 size={14} />
                     </button>

@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod background;
 pub mod certificate;
 pub mod formula_cache;
@@ -14,5 +15,6 @@ pub mod server;
 pub mod sessions;
 pub mod state;
 pub mod word_native;
+pub mod wps;
 
 pub use lifecycle::initialize;

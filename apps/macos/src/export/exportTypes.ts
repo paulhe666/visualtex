@@ -21,6 +21,8 @@ export interface SvgExportOptions {
   forceExplicitBlack?: boolean;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** The formula's ink (#rrggbb); near-black when absent. */
+  color?: string;
   /**
    * Who draws the image: the editor's layout engine (default; the image is
    * the editor's formula exactly) or MathJax.

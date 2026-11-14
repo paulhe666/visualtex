@@ -32,6 +32,12 @@ pub(crate) fn transform_mathml_to_omml(mathml: &str) -> Result<String, String> {
     )
 }
 
+/// PowerPointCellMath.Prepare: MathML for an equation PowerPoint writes into a
+/// table cell through its linear format (letter styles spelled into characters).
+pub(crate) fn prepare_mathml_for_table_cell(mathml: &str) -> Result<String, String> {
+    prep::cell_math::prepare(mathml)
+}
+
 /// WordOmmlConverter.BuildWordNativeNumberedOmml.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_word_native_numbered_omml(
@@ -62,6 +68,30 @@ pub(crate) fn extract_single_omath(xml: &str) -> Result<String, String> {
     proj::extract_single_omath(xml)
 }
 
+/// The math font a Word equation names (Cambria Math when none is given).
+pub(crate) fn normalize_math_font_name(math_font_name: &str) -> String {
+    proj::normalize_math_font_name(math_font_name)
+}
+
+/// A numbered equation for WPS: its field instructions as normal-text math,
+/// which WPS keeps intact (it turns "*" in math text into U+2217).
+pub(crate) fn wps_field_instructions(omml: &str) -> Result<String, String> {
+    proj::instructions_as_normal_text(omml)
+}
+
+/// The edited equation (one m:oMath, as imported) with the "#" and (number)
+/// of the numbered equation it replaces, from Word's export of that equation:
+/// what the WPS add-in inserts when a numbered equation is edited there.
+pub(crate) fn keep_equation_number(original_word_open_xml: &str, edited_omml: &str) -> Result<String, String> {
+    proj::keep_equation_number(original_word_open_xml, edited_omml)
+}
+
+/// The formula of a numbered equation (Word's export of it) without its "#"
+/// and (number): what WPS builds a number in another style around.
+pub(crate) fn equation_body(numbered_word_open_xml: &str) -> Result<String, String> {
+    proj::equation_body(numbered_word_open_xml)
+}
+
 /// What Windows imports into the document for an equation:
 /// ApplyExplicitTransferMathFont(ExtractSingleOMath(omml), document math font).
 /// Every mathematical run (not m:nor text) and every control property names the
@@ -74,6 +104,19 @@ pub(crate) fn insertion_omml(omml: &str, math_font_name: &str) -> Result<String,
 /// (Word for Mac cannot import OMML through Range.InsertXML). Its settings name
 /// the document's math font, as Windows' staging packages do.
 pub(crate) fn word_equation_docx(equations: &[String], math_font_name: &str) -> Result<Vec<u8>, String> {
+    equation_docx(equations, math_font_name, false)
+}
+
+/// One equation for the WPS add-in. Its paragraph is marked
+/// <w:doNotImportParagraphEnd/>, as WPS marks its own export of an equation:
+/// WPS then inserts the equation alone. A whole paragraph would give the
+/// paragraph it lands in the package paragraph's properties (no list, Normal
+/// style) and end the add-in's Undo record.
+pub(crate) fn wps_equation_docx(equation: &str, math_font_name: &str) -> Result<Vec<u8>, String> {
+    equation_docx(std::slice::from_ref(&equation.to_string()), math_font_name, true)
+}
+
+fn equation_docx(equations: &[String], math_font_name: &str, fragment: bool) -> Result<Vec<u8>, String> {
     if equations.is_empty() || equations.len() > 1000 {
         return Err("A Word equation package must contain 1 to 1000 equations".to_string());
     }
@@ -87,7 +130,7 @@ pub(crate) fn word_equation_docx(equations: &[String], math_font_name: &str) -> 
         if equation.contains("<!DOCTYPE") || equation.contains("<!ENTITY") {
             return Err("A Word equation contains a document type declaration".to_string());
         }
-        document.push_str("<w:p>");
+        document.push_str(if fragment { "<w:p><w:pPr><w:doNotImportParagraphEnd/></w:pPr>" } else { "<w:p>" });
         document.push_str(equation);
         document.push_str("</w:p>");
     }
@@ -272,5 +315,18 @@ mod tests {
         assert!(insertion.contains("Cambria Math"));
         let docx = super::word_equation_docx(&[insertion], "Cambria Math").unwrap();
         assert!(docx.starts_with(b"PK\x03\x04"));
+    }
+
+    #[test]
+    fn a_wps_package_brings_the_equation_without_its_paragraph_end() {
+        let equation = "<m:oMath><m:r><m:t>x</m:t></m:r></m:oMath>";
+        let docx = super::wps_equation_docx(equation, "Cambria Math").unwrap();
+        // The package is stored uncompressed.
+        let text = String::from_utf8_lossy(&docx);
+        assert!(text.contains(
+            "<w:p><w:pPr><w:doNotImportParagraphEnd/></w:pPr><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:p>"
+        ));
+        let word = super::word_equation_docx(&[equation.to_string()], "Cambria Math").unwrap();
+        assert!(!String::from_utf8_lossy(&word).contains("doNotImportParagraphEnd"));
     }
 }

@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -22,6 +23,7 @@ import {
   Highlighter,
   Italic,
   Minus,
+  MoveHorizontal,
   Palette,
   PanelBottomClose,
   PanelBottomOpen,
@@ -35,6 +37,12 @@ import {
   MathEditor,
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
+import { DocumentWorkspace } from "../document/DocumentWorkspace";
+import { DocumentControls } from "../document/DocumentControls";
+import { DocumentSourceView } from "../document/DocumentSourceView";
+import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
+import { useDocumentModeStore } from "../stores/documentModeStore";
+import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../stores/documentEditorStore";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
 import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
 import { trackPriorityCollapse } from "../runtime/priorityCollapse";
@@ -284,6 +292,19 @@ export function EditorWorkspace({
   const [formulaColorPopoverStyle, setFormulaColorPopoverStyle] =
     useState<CSSProperties>();
   const formulaSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
+  const workspaceTheme = useEditorStore((state) => state.theme);
+  const documentContent = useDocumentModeStore((state) => state.content === "document");
+  // Document mode (docs/document-editor/DESIGN.md §6.4): the document takes the rows' place in the same workspace —
+  // the bottom bar (its formatting strip shows the document's controls), the formula tools, the tiles, the LaTeX
+  // source (the document's, read-only), quick OCR and the status bar are the formula mode's.
+  const documentMode = documentContent && mode === "desktop" && !keypadMode;
+  const documentState = useDocumentEditorStore((store) => (documentMode ? store.state : null));
+  // the page's zoom: fitted to the window's width (the default) or the one + / - chose
+  const documentZoom = useDocumentEditorStore((store) => store.effectiveZoom);
+  const documentFitWidth = useDocumentEditorStore((store) => store.fitWidth);
+  const setDocumentFitWidth = useDocumentEditorStore((store) => store.setFitWidth);
+  const setDocumentZoom = useDocumentEditorStore((store) => store.setZoom);
+  const documentWords = useMemo(() => documentCounts(documentState), [documentState?.doc]);
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
   >({ color: null, backgroundColor: null });
@@ -441,6 +462,8 @@ export function EditorWorkspace({
       ) {
         return;
       }
+      // the document's own ⌘\ (Markdown input: clear the formatting, as in Typora)
+      if (event.target instanceof Element && event.target.closest(".vtx-document")) return;
 
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -588,14 +611,24 @@ export function EditorWorkspace({
       const left = Math.round(
         Math.max(10, Math.min(rect.left, window.innerWidth - width - 10)),
       );
-      const opensUpward = rect.top + rect.height / 2 > window.innerHeight / 2;
+      // Above the trigger or below it, wherever there is more room, and never
+      // taller than that room (it scrolls inside). Both edges are set: the
+      // stylesheet's top (100% + 7px, for the old in-strip popover) stayed
+      // when only bottom was given, and the popover opened below the window's
+      // bottom edge, out of reach (2026-11-11).
+      const above = rect.top - 7 - 10;
+      const below = window.innerHeight - rect.bottom - 7 - 10;
+      const height = formulaColorPopoverRef.current?.scrollHeight ?? 0;
+      const opensUpward = below < height && above > below;
+      const room = Math.max(120, Math.round(opensUpward ? above : below));
       const next: CSSProperties = opensUpward
-        ? { left, bottom: Math.round(window.innerHeight - rect.top + 7) }
-        : { left, top: Math.round(rect.bottom + 7) };
+        ? { left, top: "auto", bottom: Math.round(window.innerHeight - rect.top + 7), maxHeight: room, overflowY: "auto" }
+        : { left, top: Math.round(rect.bottom + 7), bottom: "auto", maxHeight: room, overflowY: "auto" };
       setFormulaColorPopoverStyle((current) =>
         current?.left === next.left &&
         current?.top === next.top &&
-        current?.bottom === next.bottom
+        current?.bottom === next.bottom &&
+        current?.maxHeight === next.maxHeight
           ? current
           : next,
       );
@@ -1073,6 +1106,11 @@ export function EditorWorkspace({
     return parsed;
   };
 
+  const copySource = () => {
+    if (documentMode) window.dispatchEvent(new Event(DOCUMENT_COPY_MARKDOWN_EVENT));
+    else void onCopy();
+  };
+
   const renderSourceEditor = ({
     showCollapseAction = true,
     showCopyAction = true,
@@ -1081,7 +1119,9 @@ export function EditorWorkspace({
     showCollapseAction?: boolean;
     showCopyAction?: boolean;
     compact?: boolean;
-  } = {}) => (
+  } = {}) => documentMode ? (
+    <DocumentSourceView theme={workspaceTheme} />
+  ) : (
     <LatexSourceEditor
       key={`${editorInstanceKey ?? ""}:${sourceDocumentRevision}`}
       latex={sourceLatex}
@@ -1098,6 +1138,16 @@ export function EditorWorkspace({
   );
 
   const renderVisualEditor = () => {
+    if (documentMode) {
+      return (
+        <section className="editor-surface document-editor-surface">
+          {/* the document library, the document's own buttons and the page; the formula tools stay in the bottom dock */}
+          <DocumentWorkspace editorRef={editorRef} onPasteImage={showOcrActions ? onPasteImage : undefined} />
+          {/* OCR's progress, as over the formula rows */}
+          {ocrOverlay}
+        </section>
+      );
+    }
     const previewLines = sourceDraftFallback?.previewLines;
     if (sourceDraftFallback && !previewLines) {
       return (
@@ -1107,16 +1157,16 @@ export function EditorWorkspace({
           aria-live="polite"
           aria-label={
             isEn
-              ? "Incomplete LaTeX source preview"
-              : "未完成 LaTeX 源码预览"
+              ? "Unclosed LaTeX"
+              : "LaTeX 未闭合"
           }
         >
           <div className="source-draft-fallback-heading">
             <Code2 size={16} />
             <span>
               {isEn
-                ? "The formula wrapper is incomplete. Complete it to resume the formula preview."
-                : "公式环境包裹尚未完成，补全后恢复公式预览。"}
+                ? "Incomplete LaTeX environment"
+                : "LaTeX 环境未闭合"}
             </span>
           </div>
           <pre className="source-draft-fallback-code">
@@ -1178,7 +1228,8 @@ export function EditorWorkspace({
           (isOfficeWorkspace ? " is-office-workspace" : "") +
           (keypadMode ? " is-keypad-mode" : "") +
           (highlightActiveLine ? " has-active-line-highlight" : "") +
-          (sourceFocused ? " is-source-editor-focused" : "")
+          (sourceFocused ? " is-source-editor-focused" : "") +
+          (documentMode ? " is-document-mode" : "")
         }
         style={
           {
@@ -1210,8 +1261,8 @@ export function EditorWorkspace({
               }
               title={
                 isEn
-                  ? "Drag to resize · Double-click to reset"
-                  : "拖动调整宽度 · 双击恢复默认"
+                  ? "Resize"
+                  : "调整宽度"
               }
               data-standard-panel-resizer
               onPointerDown={startStandardPanelResize}
@@ -1233,7 +1284,7 @@ export function EditorWorkspace({
           </>
         )}
 
-        {!keypadMode && editorLayout === "classic" && !sidebarOpen && (
+        {!keypadMode && editorLayout === "classic" && !sidebarOpen && !documentMode && (
           <button
             type="button"
             className="classic-tile-expand-button"
@@ -1258,6 +1309,11 @@ export function EditorWorkspace({
               <PortalOrInline
                 target={!isOfficeWorkspace ? desktopClassicControlsMount : null}
               >
+                {documentMode ? (
+                  <div className="pane-title-group">
+                    <DocumentControls />
+                  </div>
+                ) : (
                 <div className="pane-title-group">
               {isOfficeWorkspace && officeHeaderLeadingControls ? (
                 <div className="office-inline-options">
@@ -1309,13 +1365,13 @@ export function EditorWorkspace({
                         className="icon-button compact formula-formatting-button is-selection-action"
                         aria-label={
                           isEn
-                            ? "Toggle bold for selected content"
-                            : "切换选中内容的粗体状态"
+                            ? "Bold"
+                            : "粗体"
                         }
                         title={
                           isEn
-                            ? "Toggle bold while preserving math italic/upright shape"
-                            : "切换粗体 · 保留原有数学斜体/正体 · 仅作用于选中内容"
+                            ? "Bold"
+                            : "粗体"
                         }
                         data-formula-selection-bold
                         onPointerEnter={rememberFormulaSelection}
@@ -1333,13 +1389,13 @@ export function EditorWorkspace({
                         className="icon-button compact formula-formatting-button is-selection-action"
                         aria-label={
                           isEn
-                            ? "Toggle italic or upright for selected content"
-                            : "切换选中内容的斜体或正体状态"
+                            ? "Italic / upright"
+                            : "斜体 / 正体"
                         }
                         title={
                           isEn
-                            ? "Toggle default math italic and \\mathrm upright"
-                            : "切换默认数学斜体与 \\mathrm 正体 · 仅作用于选中内容"
+                            ? "Italic / upright"
+                            : "斜体 / 正体"
                         }
                         data-formula-selection-italic
                         onPointerEnter={rememberFormulaSelection}
@@ -1366,8 +1422,8 @@ export function EditorWorkspace({
                         aria-label={isEn ? "Selected text color" : "选中内容字体颜色"}
                         title={
                           isEn
-                            ? "Apply a font color to the selection only"
-                            : "字体颜色 · 仅应用于选中内容"
+                            ? "Text color"
+                            : "文字颜色"
                         }
                         aria-pressed={formulaColorMenu === "color"}
                         data-formula-selection-color
@@ -1398,8 +1454,8 @@ export function EditorWorkspace({
                         }
                         title={
                           isEn
-                            ? "Apply a background color to the selection only"
-                            : "字体背景颜色 · 仅应用于选中内容"
+                            ? "Background color"
+                            : "背景颜色"
                         }
                         aria-pressed={formulaColorMenu === "backgroundColor"}
                         data-formula-selection-background
@@ -1427,8 +1483,8 @@ export function EditorWorkspace({
                         }
                         title={
                           isEn
-                            ? "Persistent bold · affects newly entered glyphs only"
-                            : "持久化粗体 · 仅作用于之后新输入的字符"
+                            ? "Persistent bold"
+                            : "持续粗体"
                         }
                         aria-pressed={persistentFormulaBold}
                         data-formula-persistent-bold
@@ -1448,21 +1504,21 @@ export function EditorWorkspace({
                         }
                         aria-label={
                           isEn
-                            ? `Persistent input shape: ${persistentFormulaShape}`
-                            : `输入字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "持久斜体" : "持久正体"}`
+                            ? `Letter shape: ${persistentFormulaShape}`
+                            : `字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "斜体" : "正体"}`
                         }
                         title={
                           isEn
                             ? persistentFormulaShape === "auto"
-                              ? "Automatic math shape · click for persistent italic"
+                              ? "Letter shape: automatic"
                               : persistentFormulaShape === "italic"
-                                ? "Persistent italic · click for persistent upright"
-                                : "Persistent upright · click to restore automatic math shape"
+                                ? "Letter shape: italic"
+                                : "Letter shape: upright"
                             : persistentFormulaShape === "auto"
-                              ? "自动数学字形 · 点击启用持久斜体"
+                              ? "字形：自动"
                               : persistentFormulaShape === "italic"
-                                ? "持久斜体 · 点击切换为持久正体"
-                                : "持久正体 · 点击恢复自动数学字形"
+                                ? "字形：斜体"
+                                : "字形：正体"
                         }
                         aria-pressed={persistentFormulaShape !== "auto"}
                         data-formula-persistent-italic
@@ -1503,8 +1559,8 @@ export function EditorWorkspace({
                         }
                         title={
                           isEn
-                            ? "Persistent font color · uses the current font color and affects new glyphs only"
-                            : "持久化字体颜色 · 使用当前字体颜色，仅作用于之后新输入的字符"
+                            ? "Persistent text color"
+                            : "持续文字颜色"
                         }
                         aria-pressed={persistentFormulaTextColorEnabled}
                         data-formula-persistent-color
@@ -1538,8 +1594,8 @@ export function EditorWorkspace({
                         }
                         title={
                           isEn
-                            ? "Persistent background color · uses the current background color and affects new glyphs only"
-                            : "持久化背景颜色 · 使用当前背景颜色，仅作用于之后新输入的字符"
+                            ? "Persistent background color"
+                            : "持续背景颜色"
                         }
                         aria-pressed={persistentFormulaBackgroundColorEnabled}
                         data-formula-persistent-background
@@ -1661,13 +1717,13 @@ export function EditorWorkspace({
                             <section className="formula-custom-colors-panel">
                               <div className="formula-custom-colors-heading">
                                 <span>{isEn ? "Custom" : "自定义颜色"}</span>
-                                <small>
+                                <span className="setting-value">
                                   {(formulaColorMenu === "color"
                                     ? customFormulaTextColors
                                     : customFormulaBackgroundColors
                                   ).length}
                                   /{maximumCustomFormulaColors}
-                                </small>
+                                </span>
                               </div>
                               {(formulaColorMenu === "color"
                                 ? customFormulaTextColors
@@ -1720,13 +1776,7 @@ export function EditorWorkspace({
                                     </div>
                                   ))}
                                 </div>
-                              ) : (
-                                <span className="formula-custom-colors-empty">
-                                  {isEn
-                                    ? "Pick + to save a color, then click its swatch to apply."
-                                    : "点击 + 保存颜色，再点击色块应用。"}
-                                </span>
-                              )}
+                              ) : null}
                             </section>
                           </div>
                         </div>,
@@ -1737,6 +1787,7 @@ export function EditorWorkspace({
                 </PortalOrInline>
               ) : null}
                 </div>
+                )}
               </PortalOrInline>
               <PortalOrInline
                 target={
@@ -1752,13 +1803,13 @@ export function EditorWorkspace({
                 </div>
               ) : null}
             <div className="canvas-tool-group">
-              {showFileActions && onOpenExport && (
+              {showFileActions && onOpenExport && !documentMode && (
                 <button
                   type="button"
                   className="export-trigger-button workspace-export-trigger"
                   onClick={onOpenExport}
                   aria-label={isEn ? "Export" : "导出"}
-                  title={isEn ? "Export Markdown, SVG or PNG" : "导出 Markdown、SVG 或 PNG"}
+                  title={isEn ? "Export" : "导出"}
                 >
                   <FileDown size={16} />
                   <span>{isEn ? "Export" : "导出"}</span>
@@ -1821,7 +1872,6 @@ export function EditorWorkspace({
                           data-quick-ocr-mode-option="immediate"
                         >
                           <strong>{isEn ? "Immediate selection (default)" : "立即框选（默认）"}</strong>
-                          <span>{isEn ? "Start the macOS region selector immediately" : "立即进入 macOS 框选截图"}</span>
                         </button>
                         <button
                           type="button"
@@ -1834,8 +1884,7 @@ export function EditorWorkspace({
                           aria-checked={quickOcrCaptureMode === "system-screenshot"}
                           data-quick-ocr-mode-option="system-screenshot"
                         >
-                          <strong>{isEn ? "Wait for system screenshot" : "等待系统截图"}</strong>
-                          <span>{isEn ? "Switch pages first, then use ⌘⇧3 / 4 / 5" : "先切换页面，再使用 ⌘⇧3 / 4 / 5"}</span>
+                          <strong>{isEn ? "Wait for system screenshot (⌘⇧3 / 4 / 5)" : "等待系统截图（⌘⇧3 / 4 / 5）"}</strong>
                         </button>
                       </div>
                     )}
@@ -1845,8 +1894,8 @@ export function EditorWorkspace({
                       className={`silent-ocr-toggle${silentOcrEnabled ? " is-active" : ""}`}
                       title={
                         isEn
-                          ? `Press ${silentOcrShortcut} anywhere to capture, recognize, and copy LaTeX in the background`
-                          : `开启后可在任意应用中按 ${silentOcrShortcut} 框选截图，后台识别并按当前源码格式复制 LaTeX`
+                          ? `Background OCR (${silentOcrShortcut})`
+                          : `后台识别（${silentOcrShortcut}）`
                       }
                     >
                       <input
@@ -1870,8 +1919,8 @@ export function EditorWorkspace({
                   className="canvas-ocr-model"
                   title={
                     isEn
-                      ? "OCR recognizer used for pasted images and quick OCR"
-                      : "选择粘贴图片和快捷 OCR 使用的本地模型或 API"
+                      ? "OCR recognizer"
+                      : "OCR 识别器"
                   }
                 >
                   <ScanLine size={14} />
@@ -1908,8 +1957,16 @@ export function EditorWorkspace({
                 <button
                   type="button"
                   className="icon-button compact"
-                  onClick={() => setZoom(zoom - EDITOR_ZOOM_STEP)}
-                  disabled={zoom <= MIN_EDITOR_ZOOM + 0.0001}
+                  onClick={() =>
+                    documentMode
+                      ? setDocumentZoom(stepDocumentZoom(documentZoom, -1))
+                      : setZoom(zoom - EDITOR_ZOOM_STEP)
+                  }
+                  disabled={
+                    documentMode
+                      ? documentZoom <= DOCUMENT_ZOOMS[0]
+                      : zoom <= MIN_EDITOR_ZOOM + 0.0001
+                  }
                   aria-label={isEn ? "Zoom out" : "缩小公式"}
                   title={
                     zoom <= MIN_EDITOR_ZOOM + 0.0001
@@ -1922,13 +1979,33 @@ export function EditorWorkspace({
                   <Minus size={14} />
                 </button>
                 <span aria-live="polite" aria-atomic="true">
-                  {Math.round(zoom * 100)}%
+                  {Math.round((documentMode ? documentZoom : zoom) * 100)}%
                 </span>
+                {documentMode && (
+                  <button
+                    type="button"
+                    className={"icon-button compact document-fit-width" + (documentFitWidth ? " is-active" : "")}
+                    aria-pressed={documentFitWidth}
+                    onClick={() => setDocumentFitWidth(!documentFitWidth)}
+                    aria-label={isEn ? "Fit width" : "适应宽度"}
+                    title={isEn ? "Fit width" : "适应宽度"}
+                  >
+                    <MoveHorizontal size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="icon-button compact"
-                  onClick={() => setZoom(zoom + EDITOR_ZOOM_STEP)}
-                  disabled={zoom >= MAX_EDITOR_ZOOM - 0.0001}
+                  onClick={() =>
+                    documentMode
+                      ? setDocumentZoom(stepDocumentZoom(documentZoom, 1))
+                      : setZoom(zoom + EDITOR_ZOOM_STEP)
+                  }
+                  disabled={
+                    documentMode
+                      ? documentZoom >= DOCUMENT_ZOOMS[DOCUMENT_ZOOMS.length - 1]
+                      : zoom >= MAX_EDITOR_ZOOM - 0.0001
+                  }
                   aria-label={isEn ? "Zoom in" : "放大公式"}
                   title={
                     zoom >= MAX_EDITOR_ZOOM - 0.0001
@@ -1941,6 +2018,19 @@ export function EditorWorkspace({
                   <Plus size={14} />
                 </button>
               </div>}
+              {/* Document mode: the collapsed tiles' button sits in the top bar, not over the page. */}
+              {documentMode && !keypadMode && editorLayout === "classic" && !sidebarOpen && (
+                <button
+                  type="button"
+                  className="icon-button document-tile-expand"
+                  data-formula-tile-expand
+                  aria-label={isEn ? "Expand formula tiles" : "展开公式磁贴"}
+                  title={isEn ? "Expand formula tiles" : "展开公式磁贴"}
+                  onClick={() => onSidebarOpenChange(true)}
+                >
+                  <PanelRightOpen size={17} />
+                </button>
+              )}
             </div>
             {isOfficeWorkspace && officeHeaderTrailingActions ? (
               <div className="office-inline-actions">
@@ -1991,8 +2081,8 @@ export function EditorWorkspace({
                   }
                   title={
                     isEn
-                      ? "Drag to resize · Double-click to reset"
-                      : "拖动调整高度 · 双击恢复默认"
+                      ? "Resize"
+                      : "调整高度"
                   }
                   onPointerDown={(event) => startClassicResize("dock", event)}
                   onDoubleClick={() => resetClassicPanelSize("dock")}
@@ -2029,7 +2119,9 @@ export function EditorWorkspace({
                   (sourceOpen ? " is-source-panel" : " is-tools-panel")
                 }
                 aria-label={
-                  isEn ? "Formula tools and LaTeX source" : "公式工具与 LaTeX 源码"
+                  documentMode
+                    ? isEn ? "Formula tools and source" : "公式工具与源码"
+                    : isEn ? "Formula tools and LaTeX source" : "公式工具与 LaTeX 源码"
                 }
               >
                 <nav
@@ -2095,14 +2187,20 @@ export function EditorWorkspace({
                       }}
                       aria-keyshortcuts="Meta+Backslash"
                       title={
-                        isEn
-                          ? "LaTeX source (⌘\\)"
-                          : "LaTeX 源码（⌘\\）"
+                        documentMode
+                          ? isEn
+                            ? "Source (⌘\\)"
+                            : "源码（⌘\\）"
+                          : isEn
+                            ? "LaTeX source (⌘\\)"
+                            : "LaTeX 源码（⌘\\）"
                       }
                     >
                       <Code2 size={16} />
                       <span className="classic-bottom-tab-label">
-                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                        {documentMode
+                          ? isEn ? "Source" : "源码"
+                          : isEn ? "LaTeX source" : "LaTeX 源码"}
                       </span>
                     </button>
                   </div>
@@ -2111,9 +2209,9 @@ export function EditorWorkspace({
                       type="button"
                       className="icon-button compact classic-bottom-copy"
                       data-classic-bottom-copy
-                      onClick={() => void onCopy()}
-                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      onClick={copySource}
+                      aria-label={documentMode ? (isEn ? "Copy Markdown" : "复制 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={documentMode ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
                     >
                       <Copy size={14} />
                     </button>
@@ -2189,7 +2287,9 @@ export function EditorWorkspace({
               <section
                 className={"standard-source-dock" + (sourceOpen ? " is-open" : "")}
                 aria-label={
-                  isEn ? "Formatting and LaTeX source" : "公式格式与 LaTeX 源码"
+                  documentMode
+                    ? isEn ? "Formatting and source" : "公式格式与源码"
+                    : isEn ? "Formatting and LaTeX source" : "公式格式与 LaTeX 源码"
                 }
               >
                 <nav
@@ -2220,19 +2320,29 @@ export function EditorWorkspace({
                       aria-expanded={sourceOpen}
                       aria-keyshortcuts="Meta+Backslash"
                       title={
-                        sourceOpen
-                          ? isEn
-                            ? "Hide LaTeX source (⌘\\)"
-                            : "收起 LaTeX 源码（⌘\\）"
-                          : isEn
-                            ? "Show LaTeX source (⌘\\)"
-                            : "展开 LaTeX 源码（⌘\\）"
+                        documentMode
+                          ? sourceOpen
+                            ? isEn
+                              ? "Hide the source (⌘\\)"
+                              : "收起源码（⌘\\）"
+                            : isEn
+                              ? "Show the source (⌘\\)"
+                              : "展开源码（⌘\\）"
+                          : sourceOpen
+                            ? isEn
+                              ? "Hide LaTeX source (⌘\\)"
+                              : "收起 LaTeX 源码（⌘\\）"
+                            : isEn
+                              ? "Show LaTeX source (⌘\\)"
+                              : "展开 LaTeX 源码（⌘\\）"
                       }
                       onClick={() => setSourceOpen(!sourceOpen)}
                     >
                       <Code2 size={16} />
                       <span className="classic-bottom-tab-label">
-                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                        {documentMode
+                          ? isEn ? "Source" : "源码"
+                          : isEn ? "LaTeX source" : "LaTeX 源码"}
                       </span>
                     </button>
                   </div>
@@ -2241,9 +2351,9 @@ export function EditorWorkspace({
                       type="button"
                       className="icon-button compact classic-bottom-copy"
                       data-standard-source-copy
-                      onClick={() => void onCopy()}
-                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      onClick={copySource}
+                      aria-label={documentMode ? (isEn ? "Copy Markdown" : "复制 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={documentMode ? (isEn ? "Copy the document as Markdown" : "复制文档的 Markdown") : isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
                     >
                       <Copy size={14} />
                     </button>
@@ -2253,13 +2363,17 @@ export function EditorWorkspace({
                       data-standard-source-collapse
                       aria-expanded={sourceOpen}
                       aria-label={
-                        sourceOpen
-                          ? isEn
-                            ? "Hide LaTeX source"
-                            : "收起 LaTeX 源码"
-                          : isEn
-                            ? "Show LaTeX source"
-                            : "展开 LaTeX 源码"
+                        documentMode
+                          ? sourceOpen
+                            ? isEn ? "Hide the source" : "收起源码"
+                            : isEn ? "Show the source" : "展开源码"
+                          : sourceOpen
+                            ? isEn
+                              ? "Hide LaTeX source"
+                              : "收起 LaTeX 源码"
+                            : isEn
+                              ? "Show LaTeX source"
+                              : "展开 LaTeX 源码"
                       }
                       onClick={() => setSourceOpen(!sourceOpen)}
                     >
@@ -2298,8 +2412,8 @@ export function EditorWorkspace({
               aria-label={isEn ? "Resize formula tiles" : "调整公式磁贴区宽度"}
               title={
                 isEn
-                  ? "Drag to resize · Double-click to reset"
-                  : "拖动调整宽度 · 双击恢复默认"
+                  ? "Resize"
+                  : "调整宽度"
               }
               onPointerDown={(event) => startClassicResize("tiles", event)}
               onDoubleClick={() => resetClassicPanelSize("tiles")}
@@ -2343,14 +2457,25 @@ export function EditorWorkspace({
           <span className="status-live-dot" />
           {isEn ? "Ready" : "就绪"}
         </div>
-        <div>
-          <span>
-            {lines.length} {isEn ? "lines" : "行"}
-          </span>
-          <span>
-            · {latex.length} {isEn ? "characters" : "字符"}
-          </span>
-        </div>
+        {documentMode ? (
+          <div>
+            <span>
+              {documentWords.words} {isEn ? "words" : "字"}
+            </span>
+            <span>
+              · {documentWords.formulas} {isEn ? "formulas" : "个公式"}
+            </span>
+          </div>
+        ) : (
+          <div>
+            <span>
+              {lines.length} {isEn ? "lines" : "行"}
+            </span>
+            <span>
+              · {latex.length} {isEn ? "characters" : "字符"}
+            </span>
+          </div>
+        )}
       </footer>
     </>
   );

@@ -146,6 +146,9 @@ pub struct VisualTeXFormulaMetadata {
     pub render_width_px: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render_height_px: Option<f64>,
+    /// The size VisualTeX for Windows drew its render size at (the Mac's render size is at its 14 pt reference).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_font_size_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -172,6 +175,9 @@ pub struct OfficeFormulaSession {
     pub id: String,
     pub mode: OfficeSessionMode,
     pub host: OfficeHost,
+    /// "wps" when the WPS add-in opened the Session (office::wps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
     #[serde(default)]
@@ -214,6 +220,8 @@ pub struct OfficeFormulaSession {
 pub struct CreateOfficeSessionInput {
     pub mode: OfficeSessionMode,
     pub host: OfficeHost,
+    #[serde(default)]
+    pub client: Option<String>,
     #[serde(default)]
     pub operation: Option<String>,
     #[serde(default)]
@@ -583,6 +591,7 @@ impl SessionStore {
             id,
             mode: input.mode,
             host: input.host,
+            client: input.client,
             operation: input.operation,
             native_equation: input.native_equation,
             formula_id,
@@ -882,6 +891,7 @@ mod tests {
         CreateOfficeSessionInput {
             mode: OfficeSessionMode::Create,
             host: OfficeHost::Word,
+            client: None,
             operation: None,
             native_equation: false,
             formula_id: None,
@@ -1059,6 +1069,7 @@ mod tests {
             numbered: false,
             render_width_px: None,
             render_height_px: None,
+            render_font_size_pt: None,
             font_size_pt: None,
             formula_letter_font: None,
             formula_chinese_font: None,

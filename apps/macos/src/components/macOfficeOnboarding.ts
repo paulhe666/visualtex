@@ -87,8 +87,8 @@ export function macOfficeFolderAccessDenied(reason: unknown): boolean {
  */
 export function macOfficeFolderAccessDeniedText(isEn: boolean): string {
   return isEn
-    ? "macOS blocked VisualTeX from the folder where Office keeps its add-ins. To let VisualTeX install them, turn on Full Disk Access for VisualTeX:"
-    : "macOS 阻止了 VisualTeX 访问 Office 存放插件的文件夹。要让 VisualTeX 安装插件，请为 VisualTeX 打开「完全磁盘访问权限」：";
+    ? "macOS blocked access to the Office add-in folder. Turn on Full Disk Access for VisualTeX:"
+    : "macOS 已阻止访问 Office 插件文件夹。请为 VisualTeX 开启「完全磁盘访问权限」：";
 }
 
 export function macOfficeTextIsFolderAccessDenied(text: string): boolean {
@@ -110,27 +110,27 @@ export function macOfficeFullDiskAccessSteps(
   const steps = isEn
     ? [
         filesAndFolders
-          ? "Click Open Settings below: System Settings > Privacy & Security > Files & Folders."
-          : "Click Open Settings below: System Settings > Privacy & Security > Full Disk Access.",
+          ? "Open Settings: System Settings > Privacy & Security > Files & Folders."
+          : "Open Settings: System Settings > Privacy & Security > Full Disk Access.",
         ...(updating
-          ? ["If an earlier VisualTeX is listed there, remove it first (select it, then click −): its permission does not carry over to this version."]
+          ? ["Remove any earlier VisualTeX entry (select it, then click −)."]
           : []),
         filesAndFolders
-          ? "Turn on Full Disk Access for VisualTeX. If VisualTeX is not listed, click +, then choose VisualTeX in Applications."
-          : "Turn on VisualTeX. If it is not listed, click +, then choose VisualTeX in Applications.",
-        "Choose Quit & Reopen when System Settings offers it, or quit and reopen VisualTeX. VisualTeX then installs the add-ins by itself.",
+          ? "Turn on Full Disk Access for VisualTeX. If it is not listed, click + and choose VisualTeX in Applications."
+          : "Turn on VisualTeX. If it is not listed, click + and choose VisualTeX in Applications.",
+        "Choose Quit & Reopen, or restart VisualTeX. The add-ins are then installed automatically.",
       ]
     : [
         filesAndFolders
-          ? "点下方「打开设置」：系统设置 > 隐私与安全性 > 文件与文件夹。"
-          : "点下方「打开设置」：系统设置 > 隐私与安全性 > 完全磁盘访问权限。",
+          ? "打开设置：系统设置 > 隐私与安全性 > 文件与文件夹。"
+          : "打开设置：系统设置 > 隐私与安全性 > 完全磁盘访问权限。",
         ...(updating
-          ? ["如果列表里已有旧版 VisualTeX，请先删除它（选中后点 −）：旧版的权限不适用于当前版本。"]
+          ? ["移除列表中的旧版 VisualTeX（选中后点击 −）。"]
           : []),
         filesAndFolders
-          ? "为 VisualTeX 打开「完全磁盘访问权限」。如果列表里没有 VisualTeX，点 +，然后在“应用程序”中选择 VisualTeX。"
-          : "打开 VisualTeX 的开关。如果列表里没有它，点 +，然后在“应用程序”中选择 VisualTeX。",
-        "系统设置提示时选择「退出并重新打开」，或自行退出并重新打开 VisualTeX。之后 VisualTeX 会自动安装插件。",
+          ? "为 VisualTeX 开启「完全磁盘访问权限」。如列表中没有 VisualTeX，点击 + 并在“应用程序”中选择。"
+          : "开启 VisualTeX。如列表中没有 VisualTeX，点击 + 并在“应用程序”中选择。",
+        "选择「退出并重新打开」，或重新启动 VisualTeX。插件随后自动安装。",
       ];
   return steps;
 }
@@ -145,15 +145,15 @@ export function macOfficeAutoInstallErrorText(reason: unknown, isEn: boolean): s
   if (macOfficeFolderAccessDenied(raw)) return macOfficeFolderAccessDeniedText(isEn);
   if (/add-in operation timed out/i.test(raw)) {
     return isEn
-      ? "VisualTeX could not install its Office add-ins automatically: macOS did not let it change the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then repair."
-      : "VisualTeX 未能自动安装 Office 插件：macOS 未及时允许修改 Office 文件夹。如果 macOS 询问「VisualTeX 想访问其他 App 的数据」，请点「允许」，然后修复。";
+      ? "Office add-in installation failed: macOS did not grant access to the Office folders in time. If macOS asks for access to data from other apps, click Allow, then repair."
+      : "Office 插件安装失败：macOS 未及时授予 Office 文件夹访问权限。如 macOS 请求访问其他 App 的数据，点击「允许」后修复。";
   }
   if (/Operation not permitted|Permission denied|EPERM/i.test(raw)) {
     return isEn
-      ? "VisualTeX could not install its Office add-ins automatically: macOS denied access to an Office folder. Quit Word and PowerPoint, then try again."
-      : "VisualTeX 未能自动安装 Office 插件：macOS 拒绝访问 Office 文件夹。请退出 Word 和 PowerPoint 后重试。";
+      ? "Office add-in installation failed: macOS denied access to an Office folder. Quit Word and PowerPoint, then try again."
+      : "Office 插件安装失败：macOS 拒绝访问 Office 文件夹。请退出 Word 和 PowerPoint 后重试。";
   }
   return isEn
-    ? `VisualTeX could not install its Office add-ins automatically: ${raw || "unknown error"}`
-    : `VisualTeX 未能自动安装 Office 插件：${raw || "未知错误"}`;
+    ? `Office add-in installation failed: ${raw || "unknown error"}`
+    : `Office 插件安装失败：${raw || "未知错误"}`;
 }

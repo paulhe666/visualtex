@@ -29,8 +29,8 @@ const OFFICE_CSP: &str = "default-src 'none'; connect-src 'self'; object-src 'no
 static POWERPOINT_COMMIT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone)]
-struct ServerContext {
-    companion: OfficeCompanionState,
+pub(crate) struct ServerContext {
+    pub(crate) companion: OfficeCompanionState,
 }
 
 #[derive(Serialize)]
@@ -552,6 +552,8 @@ pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
             .as_ref()
             .map(|value| value.height)
             .filter(|value| value.is_finite() && *value > 0.0),
+        // (the Mac draws at its 14 pt reference size: no Windows render font size)
+        render_font_size_pt: None,
         font_size_pt: original.and_then(|value| value.font_size_pt),
         formula_letter_font: Some(session.formula_letter_font.clone()),
         formula_chinese_font: Some(session.formula_chinese_font.clone()),
@@ -1014,6 +1016,13 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
 
     Router::new()
         .route("/health", get(health))
+        // AI agents (docs/office-mcp/MACOS.md): its own bearer token, not the add-ins' install token
+        .route(
+            "/mcp",
+            post(crate::office::automation::mcp::post)
+                .get(crate::office::automation::mcp::get)
+                .delete(crate::office::automation::mcp::delete),
+        )
         .nest("/api/v1", api)
         .fallback(not_found)
         .layer(RequestBodyLimitLayer::new(MAX_OFFICE_REQUEST_BYTES))

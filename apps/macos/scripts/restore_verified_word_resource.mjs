@@ -28,12 +28,19 @@ for (const [path, label] of [
 }
 
 copyFileSync(verifiedInstalledWord, resourceWord);
+// The bundled math fonts keep their pins (office/macos-offline/fonts).
+const previousFiles = existsSync(manifestPath)
+  ? JSON.parse(readFileSync(manifestPath, "utf8")).files ?? {}
+  : {};
 const manifest = {
   schemaVersion: 1,
   pluginVersion: packageVersion,
   files: {
     "VisualTeX.dotm": { sha256: sha256(resourceWord) },
     "VisualTeX.ppam": { sha256: sha256(resourcePowerPoint) },
+    ...Object.fromEntries(
+      Object.entries(previousFiles).filter(([name]) => name.startsWith("fonts/")),
+    ),
   },
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

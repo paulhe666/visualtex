@@ -1,2 +1,5 @@
 # VBA class modules must stay CRLF so Word for Mac imports them as classes.
 office/macos-offline/**/*.cls text eol=crlf
+# The bundled math fonts and their notices are pinned by SHA-256 in
+# resources/addins.json: never convert their line endings.
+office/macos-offline/fonts/** -text
