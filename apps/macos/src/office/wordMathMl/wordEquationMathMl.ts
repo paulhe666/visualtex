@@ -1,4 +1,4 @@
-import { formatLatexLines } from "../../clipboard/LatexCopyService";
+import { formatLatexLines } from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { stripVisualTexAlignmentMarkers } from "../../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 import {

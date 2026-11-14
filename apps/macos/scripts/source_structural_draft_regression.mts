@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 
 import assert from "node:assert/strict";
-import { parseLatexSourceDraft, parseUniversalLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { parseLatexSourceDraft, parseUniversalLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import { convertVisualTexLatexToMarkup } from "../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility.ts";
 import { compatibilityRequiredArgumentCounts } from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { latexCompletions } from "codemirror-lang-latex";

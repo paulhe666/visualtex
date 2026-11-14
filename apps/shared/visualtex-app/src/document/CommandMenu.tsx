@@ -12,11 +12,11 @@ import {
   runCommandEntry,
   type CommandEntry,
   type CommandPreview,
-} from "../../../shared/visualtex-document/src/index.ts";
+} from "../../../visualtex-document/src/index.ts";
 import { cachedPreviewMarkup } from "../components/MathPreview";
-import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { getFormulaFontRevision } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { getCustomSymbolRevision } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
+import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
+import { getFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
+import { getCustomSymbolRevision } from "../math/customSymbolRegistry";
 
 type Lang = "en" | "zh";
 

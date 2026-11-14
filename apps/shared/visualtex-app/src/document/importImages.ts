@@ -1,8 +1,8 @@
 // The pictures a Markdown or LaTeX file names, found before it is read (images.ts resolves them synchronously while
 // the text is read): from the web, from the folder the file was opened from, from its archive. Formats the document
 // does not keep (GIF, WebP, SVG…) are drawn into PNG.
-import { registerImageBytes, registerImageFile } from "../../../shared/visualtex-document/src/index.ts";
-import { fetchImage, readImageFile } from "../../../shared/visualtex-app/src/document/documentLibraryApi";
+import { registerImageBytes, registerImageFile } from "../../../visualtex-document/src/index.ts";
+import { fetchImage, readImageFile } from "./documentLibraryApi";
 
 const MIME: Record<string, string> = {
   png: "image/png",

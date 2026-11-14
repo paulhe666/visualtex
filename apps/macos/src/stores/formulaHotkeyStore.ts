@@ -9,7 +9,7 @@ import {
   type FormulaHotkeyChord,
   type FormulaHotkeyTarget,
   type FormulaHotkeyTargetKind,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";

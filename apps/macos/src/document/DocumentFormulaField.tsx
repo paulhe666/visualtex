@@ -16,7 +16,7 @@ import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { topLevelStop } from "../editor/rowPointer";
+import { topLevelStop } from "../../../shared/visualtex-app/src/editor/rowPointer";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import {
   collapseMathLiveSelectionToEnd,
@@ -27,7 +27,7 @@ import {
 } from "../editor/mathLiveKernelCommands";
 import { useEditorStore } from "../stores/editorStore";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../shortcuts/formulaHotkeys";
+import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../../../shared/visualtex-app/src/shortcuts/greekLetterHotkeys";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula } from "./formulaInsert";

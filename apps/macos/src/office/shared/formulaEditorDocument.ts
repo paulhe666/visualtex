@@ -2,7 +2,7 @@ import {
   formatLatexLines,
   isLatexCodeFormat,
   parseLatexSource,
-} from "../../clipboard/LatexCopyService";
+} from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { unwrapSingleLatexDisplayMath } from "../../../../shared/visualtex-app/src/math/latexEnvironment";
 import { stripMathSourceComments } from "../../../../shared/visualtex-app/src/math/mathModeSource";

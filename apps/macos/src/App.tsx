@@ -17,7 +17,7 @@ import { useCustomSymbolDesignerStore } from "../../shared/visualtex-app/src/sto
 
 // The custom symbol designer, loaded the first time it is opened.
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
-  const module = await import("./components/CustomSymbolDesignerDialog");
+  const module = await import("../../shared/visualtex-app/src/components/CustomSymbolDesignerDialog");
   return { default: module.CustomSymbolDesignerDialog };
 });
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -87,7 +87,7 @@ import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
 } from "../../shared/visualtex-app/src/history/historyTypes";
-import { copyFormulaLinesUniversal } from "./clipboard/LatexCopyService";
+import { copyFormulaLinesUniversal } from "../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import type {
   FormulaDocument,

@@ -10,7 +10,7 @@ import {
   primaryVariantSourceWrapperCommands,
   sourceWrapperCanonicalTargets,
   sourceWrapperKinds,
-} from "../src/editor/sourceWrapperRegistry.ts";
+} from "../../shared/visualtex-app/src/editor/sourceWrapperRegistry.ts";
 
 for (const command of compatibilityDirectPlaceholderWrappers) {
   assert.ok(

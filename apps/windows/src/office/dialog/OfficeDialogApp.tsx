@@ -16,7 +16,7 @@ import {
   conversionText,
   describeConversionFailure,
   inConversionStage,
-} from "../shared/conversionErrors";
+} from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
 import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
@@ -52,7 +52,7 @@ import {
 import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,
-} from "../../clipboard/LatexCopyService";
+} from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import type {
   InputBehaviorSettingKey,
   LatexCodeFormat,

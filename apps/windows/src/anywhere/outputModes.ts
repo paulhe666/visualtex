@@ -13,7 +13,7 @@
  * The mode is remembered per application (a chat keeps Image, an AI chat
  * keeps Source). The export path (MathJax) loads when a mode needs it.
  */
-import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
+import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import { useEditorStore } from "../stores/editorStore";
 import type { UnicodeMath } from "../../../shared/visualtex-app/src/anywhere/unicodeMath";

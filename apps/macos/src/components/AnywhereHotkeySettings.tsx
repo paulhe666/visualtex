@@ -15,7 +15,7 @@ import {
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 
 /**
  * Settings > Keyboard shortcuts > Formula input method (VisualTeX Anywhere):

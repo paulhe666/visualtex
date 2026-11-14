@@ -41,7 +41,7 @@ import {
   MIN_LATEX_SOURCE_FONT_SIZE,
   useEditorStore,
 } from "../stores/editorStore";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
 import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 import { KeyboardShortcutsPanel } from "./FormulaHotkeyManagerDialog";

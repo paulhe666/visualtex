@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Keyboard, Pencil, RotateCcw, Rows3, Trash2 } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
@@ -12,7 +12,7 @@ import {
   formulaHotkeyTargetKindLabel,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";

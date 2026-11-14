@@ -1,5 +1,7 @@
-import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import { commandRegistry } from "../autocomplete/commandRegistry";
+import type { LatexCommand } from "../types/command";
+import { APP_PLATFORM } from "@platform/appInfo";
+import { primaryModifierOnly } from "../runtime/platformConventions";
 
 export type FormulaHotkeyTargetKind =
   | "command"
@@ -60,18 +62,21 @@ function defaultHotkeyCommand(
   };
 }
 
-function commandChord(code: string, shiftKey = false): FormulaHotkeyChord {
+/** The app's own modifier with a key: Ctrl on Windows, ⌘ on macOS. */
+function primaryChord(code: string, shiftKey = false): FormulaHotkeyChord {
+  const macos = APP_PLATFORM === "macos";
   return {
     code,
     key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
-    ctrlKey: false,
+    ctrlKey: !macos,
     altKey: false,
     shiftKey,
-    metaKey: true,
+    metaKey: macos,
   };
 }
 
-function optionShiftChord(code: string): FormulaHotkeyChord {
+/** Alt+Shift (Option+Shift on macOS) with a key. */
+function altShiftChord(code: string): FormulaHotkeyChord {
   return {
     code,
     key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
@@ -122,21 +127,22 @@ const defaultFormulaHotkeyDefinitions: Array<{
   command: LatexCommand;
   chord: FormulaHotkeyChord;
 }> = [
-  { command: commandById("sqrt"), chord: commandChord("KeyR") },
-  { command: commandById("frac"), chord: commandChord("KeyF") },
+  { command: commandById("sqrt"), chord: primaryChord("KeyR") },
+  { command: commandById("frac"), chord: primaryChord("KeyF") },
   // Command+H is the macOS system shortcut for hiding the active app, so the
-  // matching superscript shortcut is intentionally not installed by default.
-  { command: commandById("scripts"), chord: commandChord("KeyJ") },
-  { command: commandById("subscript"), chord: commandChord("KeyL") },
-  { command: commandById("degree"), chord: commandChord("KeyD") },
-  { command: partialSymbolCommand, chord: commandChord("KeyP", true) },
+  // matching superscript shortcut is intentionally not installed by default
+  // (on either system, so the defaults stay the same).
+  { command: commandById("scripts"), chord: primaryChord("KeyJ") },
+  { command: commandById("subscript"), chord: primaryChord("KeyL") },
+  { command: commandById("degree"), chord: primaryChord("KeyD") },
+  { command: partialSymbolCommand, chord: primaryChord("KeyP", true) },
   {
     command: boundedIntegralTemplateCommand,
-    chord: commandChord("KeyI", true),
+    chord: primaryChord("KeyI", true),
   },
-  { command: commandById("sum"), chord: commandChord("KeyS", true) },
-  { command: underlinedXCommand, chord: optionShiftChord("KeyX") },
-  { command: underlinedYCommand, chord: optionShiftChord("KeyY") },
+  { command: commandById("sum"), chord: primaryChord("KeyS", true) },
+  { command: underlinedXCommand, chord: altShiftChord("KeyX") },
+  { command: underlinedYCommand, chord: altShiftChord("KeyY") },
 ];
 
 export function createDefaultFormulaHotkeyBindings(): FormulaHotkeyBinding[] {
@@ -401,16 +407,12 @@ export function protectedFormulaHotkeyAction(
   if (key === "n") return labels.new;
   if (key === "o") return labels.open;
   if (!chord.shiftKey && key === "s") return labels.save;
-  if (
-    chord.metaKey &&
-    !chord.ctrlKey &&
-    !chord.shiftKey &&
-    key === "g"
-  ) {
+  if (primaryModifierOnly(chord) && !chord.altKey && !chord.shiftKey && key === "g") {
     return labels.greekMode;
   }
   if (key === ",") return labels.settings;
-  if (key === "k" && chord.shiftKey) return labels.keypadMode;
+  // macOS: ⌘⇧K toggles keypad mode
+  if (APP_PLATFORM === "macos" && key === "k" && chord.shiftKey) return labels.keypadMode;
   if (key === "0") return labels.resetZoom;
   if (key === "=" || key === "+") return labels.zoomIn;
   if (key === "-") return labels.zoomOut;

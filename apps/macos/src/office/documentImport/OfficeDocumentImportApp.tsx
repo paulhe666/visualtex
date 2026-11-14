@@ -21,7 +21,7 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import { MathPreview } from "../../components/MathPreview";
+import { MathPreview } from "../../../../shared/visualtex-app/src/components/MathPreview";
 import { onCurrentTauriWindowCloseRequested } from "../shared/tauriTransport";
 import {
   createFormulaMetadata,
@@ -34,7 +34,7 @@ import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
 import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { useEditorStore } from "../../stores/editorStore";
 import { documentImportErrorMessage } from "./documentImportErrors";
-import { describeConversionFailure } from "../shared/conversionErrors";
+import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import {
   cancelMacosDocumentImport,
   closeMacosDocumentImportWindow,

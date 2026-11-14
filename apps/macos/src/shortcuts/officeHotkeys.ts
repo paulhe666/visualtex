@@ -1,4 +1,4 @@
-import type { FormulaHotkeyChord } from "./formulaHotkeys";
+import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 
 export type OfficeHotkeyActionId =
   | "word-image-inline"

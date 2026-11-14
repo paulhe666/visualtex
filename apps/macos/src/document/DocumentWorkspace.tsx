@@ -47,7 +47,7 @@ import {
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
-import { imagePathKey, loadImportImages } from "./importImages";
+import { imagePathKey, loadImportImages } from "../../../shared/visualtex-app/src/document/importImages";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,

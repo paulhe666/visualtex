@@ -6,7 +6,7 @@ import {
   formulaHotkeyChordId,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   defaultFormulaRowHotkeyChord,
   formulaRowHotkeyAction,

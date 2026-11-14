@@ -1,10 +1,10 @@
 import { memo, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { convertVisualTexLatexToMarkup } from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
-import { inspectMathLiveSourceSafety } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
-import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
+import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
-import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { createLayoutOscillationGuard } from "../../../shared/visualtex-app/src/runtime/layoutOscillationGuard";
+import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
   latex: string;

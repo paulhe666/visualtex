@@ -50,7 +50,7 @@ import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
-import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
+import { formatLatexSourceForEditor } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
 import {
   DEFAULT_CLASSIC_DOCK_HEIGHT,
   DEFAULT_CLASSIC_TILE_WIDTH,
@@ -68,7 +68,7 @@ import { onButtonShortcut } from "../shortcuts/buttonShortcuts";
 import {
   formatFormulaLinesUniversal,
   parseUniversalLatexSourceDraft,
-} from "../clipboard/LatexCopyService";
+} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
 import { useHistorySnapshot } from "../history/HistoryManager";

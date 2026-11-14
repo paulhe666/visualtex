@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, X } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { useEditorStore } from "../stores/editorStore";
 import {
   SPACING_DEFINITIONS,

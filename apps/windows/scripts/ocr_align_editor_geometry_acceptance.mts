@@ -11,7 +11,7 @@ import {
   formatLatexLines,
   parseLatexSource,
   parseLatexSourceDraft,
-} from "../src/clipboard/LatexCopyService.ts";
+} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 const portOffset = process.pid % 800;

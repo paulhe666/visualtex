@@ -1,7 +1,7 @@
 import {
   compatibilitySourceWrapperKinds,
   compatibilityWrapperCanonicalTargets,
-} from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands";
+} from "../autocomplete/compatibilityCommands";
 
 export type VisualTexSourceWrapperKind = "variant" | "accent";
 

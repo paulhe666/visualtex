@@ -13,7 +13,7 @@ import {
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { SILENT_OCR_STORAGE_KEY } from "../ocr/quickOcr";
 import { readLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 

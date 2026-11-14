@@ -1,4 +1,4 @@
-import type { DocumentCheckpoint } from "../../../shared/visualtex-app/src/history/historyTypes";
+import type { DocumentCheckpoint } from "./historyTypes";
 
 const DATABASE_NAME = "visualtex-history";
 const DATABASE_VERSION = 1;

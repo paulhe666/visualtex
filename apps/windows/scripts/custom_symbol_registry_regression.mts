@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { searchCommands } from "../../shared/visualtex-app/src/autocomplete/CommandSearchEngine.ts";
-import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import {
   CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
   CUSTOM_SYMBOL_STORAGE_INDEX_KEY,

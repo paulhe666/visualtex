@@ -23,7 +23,7 @@ import {
   normalizeEditorLayout,
   useEditorStore,
 } from "../../stores/editorStore";
-import { VisualTexErrorBoundary } from "../../runtime/VisualTexErrorBoundary";
+import { VisualTexErrorBoundary } from "../../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
 
 configureOcrTransport(officeOcrTransport);
 installFloatingLayerAutoAvoidance();

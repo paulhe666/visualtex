@@ -16,7 +16,7 @@ import {
   setFootnoteText,
   type FormulaHost,
   type MathCommandProvider,
-} from "../../../shared/visualtex-document/src/index.ts";
+} from "../../../visualtex-document/src/index.ts";
 import { CommandMenu } from "./CommandMenu";
 
 type Lang = "en" | "zh";

@@ -35,6 +35,8 @@
       "mathjax-full/*": ["./node_modules/mathjax-full/*"],
       "mermaid": ["./node_modules/mermaid"],
       "fflate": ["./node_modules/fflate"],
+      "@codemirror/*": ["./node_modules/@codemirror/*"],
+      "codemirror-lang-latex": ["./node_modules/codemirror-lang-latex"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }

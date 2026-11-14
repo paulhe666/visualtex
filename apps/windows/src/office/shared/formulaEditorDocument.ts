@@ -2,7 +2,7 @@ import {
   formatLatexLines,
   isLatexCodeFormat,
   parseLatexSource,
-} from "../../clipboard/LatexCopyService";
+} from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 

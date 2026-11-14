@@ -5,7 +5,7 @@ import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../shared/visualtex-
 import { VISUALTEX_CORE_LATEX_ALIASES } from "../../shared/visualtex-app/src/math/coreLatexAliases";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility";
 import { VISUALTEX_MATHML_MACROS, VISUALTEX_SVG_MACROS, normalizePackageLatexCommands } from "../../shared/visualtex-app/src/math/latexCompatibility";
-import { formatLatex, parseLatexSourceDraft } from "../src/clipboard/LatexCopyService";
+import { formatLatex, parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { TeX } from "mathjax-full/js/input/tex.js";

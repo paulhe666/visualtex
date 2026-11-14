@@ -6,7 +6,7 @@ import type {
   FormulaChineseFont,
   FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { inConversionStage } from "./conversionErrors";
+import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { useEditorStore } from "../../stores/editorStore";
 import {
   latexLinesToOmmlArtifacts,

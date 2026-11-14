@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 
 import assert from "node:assert/strict";
-import { formatLatexLines, parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { formatLatexLines, parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import type { LatexCodeFormat } from "../../shared/visualtex-app/src/types/formula.ts";
 import { convertVisualTexLatexToMarkup } from "../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility.ts";
 import { compatibilityRequiredArgumentCounts } from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";

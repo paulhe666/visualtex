@@ -31,4 +31,11 @@ export const sharedPackageDedupe = [
   "mathjax-full",
   "mermaid",
   "fflate",
+  // the LaTeX source editor
+  "@codemirror/autocomplete",
+  "@codemirror/commands",
+  "@codemirror/language",
+  "@codemirror/state",
+  "@codemirror/view",
+  "codemirror-lang-latex",
 ];

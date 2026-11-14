@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import {
   ArrowLeft,
   ArrowRight,

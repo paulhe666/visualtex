@@ -31,10 +31,10 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
+import type { LatexSourceDraftResult } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
-import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
+import { visualTeXLatexEditingExtensions } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
 import {
   latexSourceCompletion,
   latexSourceCompletionTheme,

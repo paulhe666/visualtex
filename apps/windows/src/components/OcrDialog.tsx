@@ -32,7 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import {
   beginOcrInstallGuard,
   endOcrInstallGuard,
@@ -2027,7 +2027,8 @@ export function OcrDialog({
 
               </>
             )}
-
+
+
           </div>
 
           <div className="ocr-output-column">

@@ -17,7 +17,7 @@ import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
 import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
 import { useEditorStore } from "../../stores/editorStore";
 import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { describeConversionFailure } from "../shared/conversionErrors";
+import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 
 const WORD_LATEX_REDRAW_RENDER_CONCURRENCY = 4;
 

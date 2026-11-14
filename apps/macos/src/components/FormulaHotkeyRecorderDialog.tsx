@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { AlertTriangle, Check, Keyboard, X } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,
@@ -12,7 +12,7 @@ import {
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
   type FormulaHotkeyTarget,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";

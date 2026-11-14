@@ -32,7 +32,7 @@ import {
   categoryLabelsEn,
   commandRegistry,
 } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { MathPreview } from "../components/MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
 import {
   defaultCommonFormulaTileIds,
@@ -44,7 +44,7 @@ import {
   deleteCustomSymbol,
   readCustomSymbolLibrary,
 } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
-import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { useCustomSymbolRevision } from "../../../shared/visualtex-app/src/math/customSymbolReact";
 import {
   createFormulaHotkeyTarget,
   formatFormulaHotkeyChord,
@@ -52,7 +52,7 @@ import {
   formulaHotkeyTargetIdForTile,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
 import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../../../shared/visualtex-app/src/runtime/layoutOscillationGuard";
@@ -66,9 +66,9 @@ import {
   type BuiltInGroupId,
   type ToolbarGroup,
   type ToolbarItem,
-} from "./toolbarLayout";
+} from "../../../shared/visualtex-app/src/toolbar/toolbarLayout";
 import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "../../../shared/visualtex-app/src/toolbar/toolbarDrag";
-import { ToolbarItemPickerDialog } from "./ToolbarItemPickerDialog";
+import { ToolbarItemPickerDialog } from "../../../shared/visualtex-app/src/toolbar/ToolbarItemPickerDialog";
 
 
 type MatrixDelimiter =

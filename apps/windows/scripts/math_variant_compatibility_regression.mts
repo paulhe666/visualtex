@@ -10,7 +10,7 @@ import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/com
 import {
   formatLatex,
   parseLatexSourceDraft,
-} from "../src/clipboard/LatexCopyService.ts";
+} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import { normalizePackageLatexCommands } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility.ts";
 

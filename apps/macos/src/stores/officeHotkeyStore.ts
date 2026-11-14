@@ -5,7 +5,7 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   isOfficeHotkeyActionId,
   OFFICE_HOTKEY_STORAGE_KEY,

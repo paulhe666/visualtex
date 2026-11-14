@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   canonicalSourceWrapperCommand,
   sourceWrapperKinds,
-} from "../src/editor/sourceWrapperRegistry.ts";
+} from "../../shared/visualtex-app/src/editor/sourceWrapperRegistry.ts";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,

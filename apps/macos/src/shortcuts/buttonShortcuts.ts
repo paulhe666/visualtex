@@ -4,7 +4,7 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "./formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 
 // Button shortcuts (Settings > Keyboard shortcuts): the user may give the
 // common buttons of the main window and of the Office editor window a key

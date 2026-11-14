@@ -176,7 +176,7 @@ z+q+r&s=4
     const ocrSetup = await evaluate(`(async () => {
       const ocr = await import('/src/ocr/ocrService.ts');
       const storeModule = await import('/src/stores/editorStore.ts');
-      const clipboard = await import('/src/clipboard/LatexCopyService.ts');
+      const clipboard = await import(${JSON.stringify(sharedSourceUrl("clipboard/LatexCopyService.ts"))});
       const markerModule = await import('${sharedSourceUrl("editor/alignmentMarkers.ts")}');
       const raw = ${JSON.stringify(rawOcrAlign)};
       const rows = ocr.normalizeOcrFormulaText(raw);
@@ -248,7 +248,7 @@ z+q+r&s=4
 
     const serialized = await evaluate(`(async () => {
       const storeModule = await import('/src/stores/editorStore.ts');
-      const clipboard = await import('/src/clipboard/LatexCopyService.ts');
+      const clipboard = await import(${JSON.stringify(sharedSourceUrl("clipboard/LatexCopyService.ts"))});
       const markerModule = await import('${sharedSourceUrl("editor/alignmentMarkers.ts")}');
       const state = storeModule.useEditorStore.getState();
       const lines = state.lines.map((line) => line.latex);

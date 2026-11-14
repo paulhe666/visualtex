@@ -17,7 +17,7 @@ import {
   formulaHotkeyHasModifier,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   confirmEscapeChordProblem,
   DEFAULT_CONFIRM_ESCAPE_CHORD,

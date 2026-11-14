@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   CONFIRM_ESCAPE_KEY_STORAGE_KEY,
   confirmEscapeChordProblem,

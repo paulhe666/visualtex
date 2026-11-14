@@ -4,7 +4,7 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "./formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { officeHotkeySupportsCode } from "./officeHotkeys";
 
 // VisualTeX Anywhere's shortcuts (Settings > Keyboard shortcuts): the

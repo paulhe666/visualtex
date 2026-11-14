@@ -1,4 +1,4 @@
-import { UnfilledPlaceholderError } from "../../../../shared/visualtex-app/src/math/latexCompatibility";
+import { UnfilledPlaceholderError } from "../../math/latexCompatibility";
 
 // The reason a formula could not be converted or redrawn, as the Office
 // add-ins show it: one specific sentence per cause, in the user's language.

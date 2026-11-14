@@ -30,7 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,

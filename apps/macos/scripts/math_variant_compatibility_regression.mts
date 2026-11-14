@@ -7,7 +7,7 @@ import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/com
 import {
   formatLatex,
   parseLatexSourceDraft,
-} from "../src/clipboard/LatexCopyService.ts";
+} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import { convertVisualTexLatexToMarkup } from "../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility.ts";
 import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 

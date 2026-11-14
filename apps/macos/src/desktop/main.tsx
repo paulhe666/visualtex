@@ -16,7 +16,7 @@ import { OfficeDocumentImportApp } from "../office/documentImport/OfficeDocument
 import { WordLatexRedrawApp } from "../office/redraw/WordLatexRedrawApp";
 import { DesktopApp } from "./DesktopApp";
 import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
-import { VisualTexErrorBoundary } from "../runtime/VisualTexErrorBoundary";
+import { VisualTexErrorBoundary } from "../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
 import { QuickOcrHud } from "../ocr/QuickOcrHud";
 
 configureOcrTransport(desktopOcrTransport);

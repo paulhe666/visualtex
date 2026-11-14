@@ -14,8 +14,8 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { latexLanguage } from "codemirror-lang-latex";
-import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import type { CommandCategory } from "../../../shared/visualtex-app/src/types/command";
+import { commandRegistry } from "../autocomplete/commandRegistry";
+import type { CommandCategory } from "../types/command";
 
 export const LATEX_SOURCE_INDENT = "  ";
 

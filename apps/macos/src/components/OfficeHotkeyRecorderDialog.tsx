@@ -16,7 +16,7 @@ import {
   formulaHotkeyTargetLabel,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   officeHotkeyActionLabel,
   officeHotkeyAction,

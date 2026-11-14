@@ -9,7 +9,7 @@ import {
   Rows3,
   Trash2,
 } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { OfficeHotkeyRecorderDialog } from "./OfficeHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
@@ -21,7 +21,7 @@ import {
   formulaHotkeyTargetKindLabel,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";

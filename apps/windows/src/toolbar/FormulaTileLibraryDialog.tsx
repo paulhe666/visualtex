@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Search, X } from "lucide-react";
-import { MathPreview } from "../components/MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import {
   formulaTileLevelLabels,
   formulaTileLibrary,

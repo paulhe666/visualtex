@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
-import { formulaHotkeyChordId } from "../shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+import { formulaHotkeyChordId } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   ANYWHERE_HOTKEY_STORAGE_KEY,
   anywhereHotkeyDefinition,

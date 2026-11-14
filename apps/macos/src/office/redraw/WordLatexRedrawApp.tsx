@@ -24,7 +24,7 @@ import {
 } from "./wordLatexRedrawRenderer";
 import { mathMlToLatex } from "./mathMlToLatex";
 import { useEditorStore } from "../../stores/editorStore";
-import { OfficeConversionError, describeConversionFailure } from "../shared/conversionErrors";
+import { OfficeConversionError, describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 
 // The window follows the app's language (the Office add-in itself stays English: VBA MsgBox).
 const isEnglish = () => useEditorStore.getState().language === "en";

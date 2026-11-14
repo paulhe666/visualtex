@@ -5,7 +5,7 @@ import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { DesktopApp } from "./DesktopApp";
 import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
-import { VisualTexErrorBoundary } from "../runtime/VisualTexErrorBoundary";
+import { VisualTexErrorBoundary } from "../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
 
 configureOcrTransport(desktopOcrTransport);
 applyDocumentTheme(readSynchronizedTheme());

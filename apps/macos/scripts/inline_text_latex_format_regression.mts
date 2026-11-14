@@ -3,7 +3,7 @@ import {
   formatLatex,
   getLatexCodeFormatDefinition,
   parseLatexSourceDraft,
-} from "../src/clipboard/LatexCopyService.ts";
+} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 
 const formatId = "inline-text-double-dollar" as const;
 const definition = getLatexCodeFormatDefinition(formatId);

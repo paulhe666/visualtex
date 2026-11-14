@@ -15,9 +15,9 @@ import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../shortcuts/confirmEscapeKey
 import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,
-} from "../../clipboard/LatexCopyService";
+} from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
-import { normalizeLatexFormatProfile } from "../../clipboard/latexFormatProfile";
+import { normalizeLatexFormatProfile } from "../../../../shared/visualtex-app/src/clipboard/latexFormatProfile";
 import {
   applyDocumentTheme,
   normalizeSynchronizedTheme,
@@ -86,7 +86,7 @@ import {
   quickOcrCaptureToFile,
 } from "../../ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
-import { inConversionStage } from "../shared/conversionErrors";
+import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
 import {
   normalizeFormulaSpacingPreferences,

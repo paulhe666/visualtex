@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Clock3, Trash2, X } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { useEditorStore } from "../stores/editorStore";
 import type { FormulaHistoryItem } from "../../../shared/visualtex-app/src/types/formula";
 

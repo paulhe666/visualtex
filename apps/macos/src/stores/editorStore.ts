@@ -18,12 +18,12 @@ import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history
 import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
-} from "../clipboard/LatexCopyService";
+} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import {
   DEFAULT_LATEX_FORMAT_PROFILE,
   legacyCodeFormatToProfile,
   normalizeLatexFormatProfile,
-} from "../clipboard/latexFormatProfile";
+} from "../../../shared/visualtex-app/src/clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
 import { normalizeMultilineLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
@@ -73,7 +73,7 @@ import {
   type ButtonShortcutId,
   type ButtonShortcutSettings,
 } from "../shortcuts/buttonShortcuts";
-import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;

@@ -22,12 +22,12 @@ import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history
 import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
-} from "../clipboard/LatexCopyService";
+} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import {
   DEFAULT_LATEX_FORMAT_PROFILE,
   legacyCodeFormatToProfile,
   normalizeLatexFormatProfile,
-} from "../clipboard/latexFormatProfile";
+} from "../../../shared/visualtex-app/src/clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
 import { normalizeMultilineLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
@@ -73,7 +73,7 @@ import {
   type ButtonShortcutId,
   type ButtonShortcutSettings,
 } from "../shortcuts/buttonShortcuts";
-import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   DEFAULT_POWERPOINT_FORMULA_SHORTCUTS,
   DEFAULT_WORD_FORMULA_SHORTCUTS,

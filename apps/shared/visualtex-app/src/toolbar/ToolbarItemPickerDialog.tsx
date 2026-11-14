@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Search, X } from "lucide-react";
 import { MathPreview } from "../components/MathPreview";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
-import { categoryLabels, categoryLabelsEn, commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
-import { formulaTileLevelLabels, formulaTileLibrary, formulaTileSubjects } from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
+import type { LatexCommand } from "../types/command";
+import { categoryLabels, categoryLabelsEn, commandRegistry } from "../autocomplete/commandRegistry";
+import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
+import { formulaTileLevelLabels, formulaTileLibrary, formulaTileSubjects } from "./formulaTileLibrary";
 import { BUILT_IN_GROUP_IDS, defaultGroupItems, hiddenToolbarCommandIds, type ToolbarItem } from "./toolbarLayout";
 
 interface Props {

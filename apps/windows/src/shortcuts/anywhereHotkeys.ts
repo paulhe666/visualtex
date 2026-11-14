@@ -4,7 +4,7 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "./formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 
 // VisualTeX Anywhere's shortcuts (Settings > Keyboard shortcuts): the
 // system-wide ones that open and close a formula in any application (as an

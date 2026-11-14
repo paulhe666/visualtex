@@ -14,7 +14,7 @@ import {
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
   formulaHotkeyTargetLabel,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { FORMULA_ROW_HOTKEY_ACTIONS } from "../shortcuts/formulaRowHotkeys";
 
 /**

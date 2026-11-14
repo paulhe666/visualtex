@@ -22,9 +22,9 @@ import { ClipboardCopy } from "lucide-react";
 import {
   formatFormulaLinesUniversal,
   formatFormulaSelectionUniversal,
-} from "../clipboard/LatexCopyService";
+} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
+import { formatLatexSourceForEditor } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
 import type {
   CommandSource,
   LatexCommand,
@@ -65,7 +65,7 @@ import {
   formatFormulaHotkeyChord,
   matchFormulaHotkey,
   resolveFormulaHotkeyCommand,
-} from "../shortcuts/formulaHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import {
   matchFormulaRowHotkey,
   type FormulaRowHotkeyActionId,
@@ -96,7 +96,7 @@ import {
   installCustomSymbolShadowStyle,
   refreshCustomSymbolMathfield,
 } from "../../../shared/visualtex-app/src/math/customSymbolRendering";
-import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { useCustomSymbolRevision } from "../../../shared/visualtex-app/src/math/customSymbolReact";
 import { installMathLiveOptionMutationGuard } from "../../../shared/visualtex-app/src/editor/mathLiveOptionCompatibility";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../../shared/visualtex-app/src/math/mathLiveCompatibilityMacros";
 import {
@@ -135,7 +135,7 @@ import {
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
 } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { rowIndexAt, stopAtPoint, topLevelStop } from "./rowPointer";
+import { rowIndexAt, stopAtPoint, topLevelStop } from "../../../shared/visualtex-app/src/editor/rowPointer";
 import type { SelectionDragHost } from "../../../shared/visualtex-core/src/index.ts";
 
 export interface MathEditorInsertionTarget {

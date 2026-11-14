@@ -7,7 +7,7 @@
 // top-level items: an end inside a structure takes the whole structure (the
 // first row from before it, the last row up to after it).
 import type { MathfieldElement } from "mathlive";
-import { editingModelOf, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
+import { editingModelOf, visualTexEditingCore } from "./visualTexLayoutRuntime";
 
 /**
  * AxMath's row rule: the index of the first row whose bottom is at or below

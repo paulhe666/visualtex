@@ -6,7 +6,7 @@ import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-a
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import { physicsToolbarCommands } from "../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
 import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
-import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
 
 const forbidden = new Set([

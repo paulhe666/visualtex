@@ -1,9 +1,14 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { errorMessage } from "../../../shared/visualtex-app/src/runtime/errorMessage";
-import { prepareEditorCrashSafeRestart } from "../../../shared/visualtex-app/src/runtime/editorCrashRecovery";
+import { errorMessage } from "./errorMessage";
+import { prepareEditorCrashSafeRestart } from "./editorCrashRecovery";
 
 interface Props {
   children: ReactNode;
+  title?: ReactNode;
+  description?: ReactNode;
+  reloadLabel?: ReactNode;
+  logContext?: string;
+  enableSafeRestart?: boolean;
 }
 
 interface State {
@@ -18,7 +23,11 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("VisualTeX main window crashed", error, info);
+    console.error(
+      this.props.logContext ?? "VisualTeX main window crashed",
+      error,
+      info,
+    );
   }
 
   render() {
@@ -41,9 +50,12 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}
       >
-        <strong style={{ fontSize: 18 }}>VisualTeX 界面加载失败</strong>
+        <strong style={{ fontSize: 18 }}>
+          {this.props.title ?? "VisualTeX 界面加载失败"}
+        </strong>
         <p style={{ margin: 0, maxWidth: 760, color: "#4b5563" }}>
-          界面加载失败。
+          {this.props.description ??
+            "界面加载失败。"}
         </p>
         <pre
           style={{
@@ -80,33 +92,38 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
               cursor: "pointer",
             }}
           >
-            重新加载
+            {this.props.reloadLabel ?? "重新加载"}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                prepareEditorCrashSafeRestart();
-                window.location.reload();
-              } catch (reason) {
-                console.error("VisualTeX safe restart preparation failed", reason);
-                window.alert(
-                  `无法准备安全启动，原有数据未被清除。${reason instanceof Error ? reason.message : String(reason)}`,
-                );
-              }
-            }}
-            style={{
-              padding: "8px 14px",
-              border: "1px solid #9f1239",
-              borderRadius: 7,
-              background: "white",
-              color: "#9f1239",
-              font: "600 13px -apple-system, BlinkMacSystemFont, sans-serif",
-              cursor: "pointer",
-            }}
-          >
-            安全启动（保留设置）
-          </button>
+          {this.props.enableSafeRestart !== false ? (
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  prepareEditorCrashSafeRestart();
+                  window.location.reload();
+                } catch (reason) {
+                  console.error(
+                    "VisualTeX safe restart preparation failed",
+                    reason,
+                  );
+                  window.alert(
+                    `无法准备安全启动，原有数据未被清除。${reason instanceof Error ? reason.message : String(reason)}`,
+                  );
+                }
+              }}
+              style={{
+                padding: "8px 14px",
+                border: "1px solid #9f1239",
+                borderRadius: 7,
+                background: "white",
+                color: "#9f1239",
+                font: "600 13px -apple-system, BlinkMacSystemFont, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              安全启动（保留设置）
+            </button>
+          ) : null}
         </div>
       </main>
     );

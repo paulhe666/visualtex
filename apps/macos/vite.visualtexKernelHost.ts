@@ -5,7 +5,7 @@ import type { Plugin } from "vite";
 import { commandRegistry } from "../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { latestSharedCommands } from "../shared/visualtex-app/src/autocomplete/latestSharedCommands";
 import { COMMAND_FREQUENCY } from "../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
-import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "./src/editor/sourceWrapperRegistry";
+import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "../shared/visualtex-app/src/editor/sourceWrapperRegistry";
 import { nativeSuggestionPreviewTable } from "../shared/visualtex-app/src/editor/nativeSuggestionPreviews";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../shared/visualtex-app/src/math/coreLatexAliases";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../shared/visualtex-app/src/math/physicsKernelMacros";
