@@ -52,6 +52,15 @@ function nestedErrorMessage(reason: unknown, seen: Set<object>): string {
     if (message) return message;
   }
 
+  // structured errors without a message: "code: arg, arg" (or the id)
+  const code = typeof record.code === "string" ? record.code.trim() : "";
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const args = Array.isArray(record.args)
+    ? record.args.filter((value): value is string => typeof value === "string" && value.trim() !== "").map((value) => value.trim())
+    : [];
+  const structured = [code || id, args.join(", ")].filter(Boolean).join(": ");
+  if (structured) return structured;
+
   try {
     const encoded = JSON.stringify(reason, (_key, value) =>
       typeof value === "bigint" ? value.toString() : value,
@@ -63,7 +72,9 @@ function nestedErrorMessage(reason: unknown, seen: Set<object>): string {
   return "";
 }
 
-export function errorMessage(reason: unknown, fallback: string): string {
+/** A readable message for anything thrown or rejected: an Error, a string (also JSON text), an object
+ *  with a message-like field, or a structured {code, args} error; else the fallback. */
+export function errorMessage(reason: unknown, fallback = "发生未知错误。"): string {
   return nestedErrorMessage(reason, new Set<object>()) || fallback;
 }
 

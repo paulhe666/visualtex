@@ -17,7 +17,7 @@ import {
   tryRenderOfficeFormulaDraftArtifacts,
 } from "../src/office/shared/formulaRenderArtifacts.ts";
 import { latexToSvg } from "../src/export/latexToSvg.ts";
-import { errorMessage } from "../src/runtime/errorMessage.ts";
+import { errorMessage } from "../../shared/visualtex-app/src/runtime/errorMessage.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 import {
   registerCustomSymbol,

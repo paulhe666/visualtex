@@ -10,7 +10,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { readErrorMessage } from "../../errors/readErrorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import { latexToSvg } from "../../export/latexToSvg";
 import {
   applyDocumentTheme,
@@ -72,7 +72,7 @@ function FormulaPreview({ latex, display, isEn }: { latex: string; display: bool
       if (!cancelled) {
         setRendered({
           svg: "",
-          error: readErrorMessage(error, isEn ? "Formula preview failed." : "公式预览失败。"),
+          error: errorMessage(error, isEn ? "Formula preview failed." : "公式预览失败。"),
         });
       }
     });
@@ -295,7 +295,7 @@ export function DocumentImportApp() {
       } catch (error) {
         if (disposed) return;
         setLoadError(
-          readErrorMessage(
+          errorMessage(
             error,
             resolvedLanguage === "en"
               ? "Unable to read the bulk-import session."
@@ -316,7 +316,7 @@ export function DocumentImportApp() {
     } catch (error) {
       return {
         parsed: null,
-        error: readErrorMessage(error, isEn ? "Unable to parse the current document." : "无法解析当前文档。"),
+        error: errorMessage(error, isEn ? "Unable to parse the current document." : "无法解析当前文档。"),
       };
     }
   }, [format, isEn, language, source]);
@@ -378,7 +378,7 @@ export function DocumentImportApp() {
       await closeOfficeSessionWindow(sessionId).catch(() => undefined);
     } catch (error) {
       setLoadError(
-        readErrorMessage(error, isEn ? "Unable to submit the document to Word." : "无法把文档提交给 Word。"),
+        errorMessage(error, isEn ? "Unable to submit the document to Word." : "无法把文档提交给 Word。"),
       );
       setBusy(false);
     }
@@ -400,7 +400,7 @@ export function DocumentImportApp() {
       });
     } catch (error) {
       setLoadError(
-        readErrorMessage(error, isEn ? "Unable to read the selected file." : "无法读取所选文件。"),
+        errorMessage(error, isEn ? "Unable to read the selected file." : "无法读取所选文件。"),
       );
     } finally {
       setFileBusy(false);

@@ -8,7 +8,7 @@ import {
   type OfficeHost,
   type UpdateOfficeSessionInput,
 } from "../api/sessionClient";
-import { errorMessage } from "../../runtime/errorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import { invokeTauri } from "../shared/tauriTransport";
 import {
   clearsOfficeEditorActivation,

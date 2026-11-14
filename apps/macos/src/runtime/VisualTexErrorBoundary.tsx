@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { errorMessage } from "./errorMessage";
+import { errorMessage } from "../../../shared/visualtex-app/src/runtime/errorMessage";
 import { prepareEditorCrashSafeRestart } from "../../../shared/visualtex-app/src/runtime/editorCrashRecovery";
 
 interface Props {

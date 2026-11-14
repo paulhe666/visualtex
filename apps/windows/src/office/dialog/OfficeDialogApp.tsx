@@ -61,7 +61,7 @@ import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
-import { readErrorMessage } from "../../errors/readErrorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import {
   normalizeFormulaLetterFont,
   type FormulaChineseFont,
@@ -1230,7 +1230,7 @@ export function OfficeDialogApp() {
         });
       } catch (reason) {
         if (!isActive()) return;
-        const detail = readErrorMessage(
+        const detail = errorMessage(
           reason,
           isEn ? "Formula format conversion failed" : "公式格式转换失败",
         );
@@ -1387,7 +1387,7 @@ export function OfficeDialogApp() {
                 error: null,
               });
             } catch (reason) {
-              const detail = readErrorMessage(reason, "Formula format conversion failed");
+              const detail = errorMessage(reason, "Formula format conversion failed");
               const sourceFormula = queuedSession
                 ? joinFormulaLines(queuedSession.lines).trim()
                 : "";
@@ -1498,7 +1498,7 @@ export function OfficeDialogApp() {
         })
         .catch((reason) => {
           setToast(
-            readErrorMessage(
+            errorMessage(
               reason,
               isEn ? "Unable to save the Office formula" : "无法保存 Office 公式",
             ),
@@ -1531,7 +1531,7 @@ export function OfficeDialogApp() {
     void save(draftUpdate).catch((reason) => {
       if (runId !== exportRunIdRef.current) return;
       setToast(
-        readErrorMessage(
+        errorMessage(
           reason,
           isEn ? "Unable to save the Office formula" : "无法保存 Office 公式",
         ),
@@ -1577,7 +1577,7 @@ export function OfficeDialogApp() {
           return;
         }
         setToast(
-          readErrorMessage(
+          errorMessage(
             reason,
             isEn ? "Unable to export the Office formula" : "无法导出 Office 公式",
           ),
@@ -2215,7 +2215,7 @@ export function OfficeDialogApp() {
     } catch (error) {
       if (!isActive()) return;
       finalizingRef.current = false;
-      setToast(readErrorMessage(
+      setToast(errorMessage(
         error,
         isEn ? "Unable to insert the Office formula" : "无法插入 Office 公式",
       ));
@@ -2276,7 +2276,7 @@ export function OfficeDialogApp() {
       (session.mode === "create" && !latex.trim())
     ) {
       void handleCancel().catch((reason) => {
-        setToast(readErrorMessage(
+        setToast(errorMessage(
           reason,
           isEn ? "Unable to close the Office editor" : "无法关闭 Office 编辑器",
         ));
@@ -2330,7 +2330,7 @@ export function OfficeDialogApp() {
             },
           )
             .then(() => setToast(isEn ? "Copied as image" : "已复制为图片"))
-            .catch((error) => setToast(readErrorMessage(error, isEn ? "Copy as image failed" : "复制图片失败")));
+            .catch((error) => setToast(errorMessage(error, isEn ? "Copy as image failed" : "复制图片失败")));
           break;
         case "office-cancel":
           void handleCancel();

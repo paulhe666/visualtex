@@ -34,7 +34,7 @@ import {
   normalizeFormulaLetterFont,
   readPersistedFormulaFontPreferences,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { errorMessage } from "../../runtime/errorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import {
   readLocalStorage,
   writeLocalStorage,

@@ -1,4 +1,4 @@
-import { readResponseErrorMessage } from "../../errors/readErrorMessage";
+import { responseErrorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import { useEditorStore } from "../../stores/editorStore";
 import type { FormulaDocument } from "../../../../shared/visualtex-app/src/types/formula";
 import type {
@@ -177,7 +177,7 @@ async function requestJson<T>(
       signal: init.signal ?? timeoutController.signal,
     });
     if (!response.ok) {
-      const detail = await readResponseErrorMessage(
+      const detail = await responseErrorMessage(
         response,
         "VisualTeX companion request failed.",
       );

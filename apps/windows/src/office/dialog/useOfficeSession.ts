@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readErrorMessage } from "../../errors/readErrorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import {
   getOfficeSession,
   updateOfficeSession,
@@ -80,7 +80,7 @@ export function useOfficeSession() {
       return next;
     } catch (reason) {
       if (activeOwnerRef.current !== owner || loadRunId !== loadRunIdRef.current) return null;
-      setError(readErrorMessage(reason, "Unable to load Office session."));
+      setError(errorMessage(reason, "Unable to load Office session."));
       return null;
     } finally {
       if (activeOwnerRef.current === owner && loadRunId === loadRunIdRef.current) setLoading(false);

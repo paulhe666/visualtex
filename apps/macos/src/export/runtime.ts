@@ -38,7 +38,7 @@ import type {
   SvgExportOptions,
   SvgExportResult,
 } from "./exportTypes";
-import { errorMessage } from "../runtime/errorMessage.ts";
+import { errorMessage } from "../../../shared/visualtex-app/src/runtime/errorMessage.ts";
 import { splitFormulaEquationTag } from "../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,

@@ -19,7 +19,7 @@ import {
   expandCustomSymbolsForMathMl,
   expandCustomSymbolsForSvg,
 } from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
-import { readErrorMessage } from "../errors/readErrorMessage.ts";
+import { errorMessage } from "../../../shared/visualtex-app/src/runtime/errorMessage.ts";
 import { splitFormulaEquationTag } from "../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 import {
   assertNoUnfilledStructuralPlaceholders,
@@ -64,7 +64,7 @@ function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
     packages: [...AllPackages.filter((name) => name !== "noundefined" && name !== "noerrors"), EXPLICIT_MATH_FONT_PACKAGE],
     macros,
     formatError: (_jax: unknown, error: unknown) => {
-      const message = readErrorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
+      const message = errorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
       if (error instanceof Error && error.message.trim() === message) throw error;
       throw new Error(message, { cause: error });
     },

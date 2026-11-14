@@ -22,7 +22,7 @@ import {
   assertResolvedPresentationMathMl,
   VISUALTEX_MATHML_MACROS,
 } from "../../math/latexCompatibility.ts";
-import { errorMessage } from "../../runtime/errorMessage";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import { expandCustomSymbolsForMathMl } from "../../../../shared/visualtex-app/src/math/customSymbolRendering";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,

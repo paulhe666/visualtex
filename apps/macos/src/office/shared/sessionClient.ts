@@ -1,4 +1,4 @@
-import { responseErrorMessage } from "../../runtime/errorMessage.ts";
+import { responseErrorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage.ts";
 import type {
   InlineImageMathStyle,
   VisualTeXFormulaMetadata,
