@@ -7,7 +7,7 @@ import type {
   OfficeThemeStatus,
   PreparedPowerPointCommit,
 } from "./sessionClient";
-import { isVisualTeXFormulaMetadata } from "./formulaMetadata";
+import { isVisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 const SESSION_MODES = ["create", "edit"] as const;

@@ -1,11 +1,19 @@
 import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
+import { APP_PLATFORM } from "@platform/appInfo";
 import {
   FORMULA_CHINESE_FONT_OPTIONS,
   LEGACY_FORMULA_LETTER_FONTS,
+  normalizeFormulaChineseFont,
+  normalizeFormulaLetterFont,
   type FormulaChineseFont,
-  type FormulaLetterFont,
   type LegacyFormulaLetterFont,
-} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+} from "../../editor/formulaFontPreferences";
+
+// The formula metadata both apps store with an Office formula. Either app reads what both write; each still
+// writes its own fields (the Windows add-ins: OLE extent, baseline, render size, OMML fingerprint; the macOS
+// add-ins: reference size, inline image math style, ink centre), as createFormulaMetadata shows.
+
+export type InlineImageMathStyle = "text" | "display";
 
 export interface VisualTeXFormulaMetadata {
   schema: "visualtex-formula";
@@ -16,6 +24,13 @@ export interface VisualTeXFormulaMetadata {
   lines: Array<{ id: string; latex: string }>;
   codeFormat: string;
   displayMode: "inline" | "block";
+  /**
+   * macOS: mathematical layout used by Word inline image formulas. This is separate
+   * from displayMode: the picture can remain inline while MathJax renders it
+   * with display-style operators/fractions. Missing means the historical text
+   * style so old documents keep their appearance.
+   */
+  inlineImageMathStyle?: InlineImageMathStyle;
   /** Whether a Word display formula participates in document equation numbering. */
   numbered?: boolean;
   /** A visual equation tag rendered with the formula but excluded from MathLive editing. */
@@ -26,7 +41,7 @@ export interface VisualTeXFormulaMetadata {
   renderHeightPx?: number;
   /** Mathematical baseline in natural render pixels. */
   baseline?: number;
-  /** Semantic Office math size in points. */
+  /** Office math size in points (on macOS: the size that scales Word images and PowerPoint SVG formulas). */
   fontSizePt?: number;
   /** Point size used to create the current cached SVG/EMF/PNG preview. */
   renderFontSizePt?: number;
@@ -44,6 +59,13 @@ export interface VisualTeXFormulaMetadata {
   wordInlinePreviewShiftPx?: number;
   /** Legacy 64-hex XML digest, or omml2:<64-hex> canonical-content digest. */
   nativeOmmlFingerprint?: string;
+  /** macOS: vector/image dimensions at VisualTeX's 14 pt reference size. */
+  referenceWidthPt?: number;
+  referenceHeightPt?: number;
+  /** macOS: Word inline baseline at the 14 pt reference size; omitted for PowerPoint. */
+  referenceBaselinePt?: number;
+  /** macOS: painted PNG ink center measured from the image top, normalized to [0, 1]. */
+  imageInkCenterYRatio?: number;
   createdWithVersion: string;
   updatedWithVersion: string;
   createdAt: string;
@@ -55,7 +77,10 @@ export interface CreateFormulaMetadataInput {
   title: string;
   lines: VisualTeXFormulaMetadata["lines"];
   codeFormat: string;
+  /** Canonical serialized source for formats whose editable lines omit wrappers. */
+  sourceLatex?: string;
   displayMode?: "inline" | "block";
+  inlineImageMathStyle?: InlineImageMathStyle;
   numbered?: boolean;
   equationTag?: string;
   renderWidthPx?: number;
@@ -70,6 +95,10 @@ export interface CreateFormulaMetadataInput {
   wordInlineOlePositionPt?: number;
   wordInlineSourceBottomWhitespacePt?: number;
   wordInlinePreviewShiftPx?: number;
+  referenceWidthPt?: number;
+  referenceHeightPt?: number;
+  referenceBaselinePt?: number;
+  imageInkCenterYRatio?: number;
   appVersion?: string;
   original?: VisualTeXFormulaMetadata | null;
 }
@@ -143,6 +172,9 @@ export function isVisualTeXFormulaMetadata(
     ) &&
     typeof candidate.codeFormat === "string" &&
     (candidate.displayMode === "inline" || candidate.displayMode === "block") &&
+    (candidate.inlineImageMathStyle === undefined ||
+      candidate.inlineImageMathStyle === "text" ||
+      candidate.inlineImageMathStyle === "display") &&
     (candidate.numbered === undefined || typeof candidate.numbered === "boolean") &&
     (candidate.equationTag === undefined ||
       (typeof candidate.equationTag === "string" &&
@@ -162,11 +194,11 @@ export function isVisualTeXFormulaMetadata(
         candidate.baseline >= 0 &&
         (candidate.renderHeightPx === undefined ||
           candidate.baseline <= candidate.renderHeightPx))) &&
+    // Windows writes 5-200 pt, macOS any positive size
     (candidate.fontSizePt === undefined ||
       (typeof candidate.fontSizePt === "number" &&
         Number.isFinite(candidate.fontSizePt) &&
-        candidate.fontSizePt >= 5 &&
-        candidate.fontSizePt <= 200)) &&
+        candidate.fontSizePt > 0)) &&
     (candidate.renderFontSizePt === undefined ||
       (typeof candidate.renderFontSizePt === "number" &&
         Number.isFinite(candidate.renderFontSizePt) &&
@@ -209,6 +241,24 @@ export function isVisualTeXFormulaMetadata(
     (candidate.nativeOmmlFingerprint === undefined ||
       (typeof candidate.nativeOmmlFingerprint === "string" &&
         /^(?:omml2:)?[0-9a-f]{64}$/i.test(candidate.nativeOmmlFingerprint))) &&
+    (candidate.referenceWidthPt === undefined ||
+      (typeof candidate.referenceWidthPt === "number" &&
+        Number.isFinite(candidate.referenceWidthPt) &&
+        candidate.referenceWidthPt > 0)) &&
+    (candidate.referenceHeightPt === undefined ||
+      (typeof candidate.referenceHeightPt === "number" &&
+        Number.isFinite(candidate.referenceHeightPt) &&
+        candidate.referenceHeightPt > 0)) &&
+    (candidate.referenceBaselinePt === undefined ||
+      (typeof candidate.referenceBaselinePt === "number" &&
+        Number.isFinite(candidate.referenceBaselinePt) &&
+        candidate.referenceBaselinePt <= 0 &&
+        candidate.referenceBaselinePt >= -256)) &&
+    (candidate.imageInkCenterYRatio === undefined ||
+      (typeof candidate.imageInkCenterYRatio === "number" &&
+        Number.isFinite(candidate.imageInkCenterYRatio) &&
+        candidate.imageInkCenterYRatio >= 0 &&
+        candidate.imageInkCenterYRatio <= 1)) &&
     typeof candidate.createdWithVersion === "string" &&
     typeof candidate.updatedWithVersion === "string" &&
     typeof candidate.createdAt === "string" &&
@@ -216,7 +266,7 @@ export function isVisualTeXFormulaMetadata(
   );
 }
 
-export function createFormulaMetadata({
+function createWindowsFormulaMetadata({
   formulaId,
   title,
   lines,
@@ -345,6 +395,113 @@ export function createFormulaMetadata({
     createdAt: original?.createdAt ?? now,
     updatedAt: now,
   };
+}
+
+function createMacFormulaMetadata({
+  formulaId,
+  title,
+  lines,
+  codeFormat,
+  sourceLatex,
+  displayMode = "block",
+  inlineImageMathStyle,
+  numbered = false,
+  renderWidthPx,
+  renderHeightPx,
+  fontSizePt,
+  formulaLetterFont,
+  formulaChineseFont,
+  referenceWidthPt,
+  referenceHeightPt,
+  referenceBaselinePt,
+  imageInkCenterYRatio,
+  appVersion = CURRENT_VISUALTEX_VERSION,
+  original = null,
+}: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
+  if (!validFormulaId(formulaId)) {
+    throw new Error("VisualTeX formulaId must be a UUID v4.");
+  }
+  if (!lines.length) {
+    throw new Error("VisualTeX formula metadata requires at least one line.");
+  }
+  const now = new Date().toISOString();
+  const resolvedRenderWidth =
+    renderWidthPx && Number.isFinite(renderWidthPx) && renderWidthPx > 0
+      ? renderWidthPx
+      : original?.renderWidthPx;
+  const resolvedRenderHeight =
+    renderHeightPx && Number.isFinite(renderHeightPx) && renderHeightPx > 0
+      ? renderHeightPx
+      : original?.renderHeightPx;
+  const resolvedFontSize =
+    fontSizePt && Number.isFinite(fontSizePt) && fontSizePt > 0
+      ? fontSizePt
+      : original?.fontSizePt;
+  const resolvedFormulaLetterFont = normalizeFormulaLetterFont(
+    formulaLetterFont ?? original?.formulaLetterFont,
+  );
+  const resolvedFormulaChineseFont = normalizeFormulaChineseFont(
+    formulaChineseFont ?? original?.formulaChineseFont,
+  );
+  const resolvedReferenceWidth =
+    referenceWidthPt && Number.isFinite(referenceWidthPt) && referenceWidthPt > 0
+      ? referenceWidthPt
+      : original?.referenceWidthPt;
+  const resolvedReferenceHeight =
+    referenceHeightPt && Number.isFinite(referenceHeightPt) && referenceHeightPt > 0
+      ? referenceHeightPt
+      : original?.referenceHeightPt;
+  const resolvedReferenceBaseline =
+    referenceBaselinePt !== undefined &&
+    Number.isFinite(referenceBaselinePt) &&
+    referenceBaselinePt <= 0 &&
+    referenceBaselinePt >= -256
+      ? referenceBaselinePt
+      : original?.referenceBaselinePt;
+  const resolvedImageInkCenterYRatio =
+    imageInkCenterYRatio !== undefined &&
+    Number.isFinite(imageInkCenterYRatio) &&
+    imageInkCenterYRatio >= 0 &&
+    imageInkCenterYRatio <= 1
+      ? imageInkCenterYRatio
+      : original?.imageInkCenterYRatio;
+  const resolvedLatex = sourceLatex?.replace(/\r\n?/g, "\n").trim() ||
+    lines.map((line) => line.latex).join("\n");
+  return {
+    schema: VISUALTEX_FORMULA_SCHEMA,
+    schemaVersion: VISUALTEX_FORMULA_SCHEMA_VERSION,
+    formulaId,
+    title,
+    latex: resolvedLatex,
+    lines: lines.map((line) => ({ ...line })),
+    codeFormat,
+    displayMode,
+    inlineImageMathStyle:
+      inlineImageMathStyle ?? original?.inlineImageMathStyle ?? "text",
+    numbered,
+    ...(resolvedRenderWidth ? { renderWidthPx: resolvedRenderWidth } : {}),
+    ...(resolvedRenderHeight ? { renderHeightPx: resolvedRenderHeight } : {}),
+    ...(resolvedFontSize ? { fontSizePt: resolvedFontSize } : {}),
+    formulaLetterFont: resolvedFormulaLetterFont,
+    formulaChineseFont: resolvedFormulaChineseFont,
+    ...(resolvedReferenceWidth ? { referenceWidthPt: resolvedReferenceWidth } : {}),
+    ...(resolvedReferenceHeight ? { referenceHeightPt: resolvedReferenceHeight } : {}),
+    ...(resolvedReferenceBaseline !== undefined
+      ? { referenceBaselinePt: resolvedReferenceBaseline }
+      : {}),
+    ...(resolvedImageInkCenterYRatio !== undefined
+      ? { imageInkCenterYRatio: resolvedImageInkCenterYRatio }
+      : {}),
+    createdWithVersion: original?.createdWithVersion ?? appVersion,
+    updatedWithVersion: appVersion,
+    createdAt: original?.createdAt ?? now,
+    updatedAt: now,
+  };
+}
+
+/** New metadata for a formula, as this app's Office add-ins expect it. */
+export function createFormulaMetadata(input: CreateFormulaMetadataInput): VisualTeXFormulaMetadata {
+  return APP_PLATFORM === "macos" ? createMacFormulaMetadata(input) : createWindowsFormulaMetadata(input);
 }
 
 export function encodeFormulaMetadata(metadata: VisualTeXFormulaMetadata) {

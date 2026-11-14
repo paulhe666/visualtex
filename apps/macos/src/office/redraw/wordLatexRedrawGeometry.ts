@@ -1,4 +1,4 @@
-import type { VisualTeXFormulaMetadata } from "../shared/formulaMetadata";
+import type { VisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 
 const WORD_IMAGE_VISUAL_SCALE = 1.1;
 

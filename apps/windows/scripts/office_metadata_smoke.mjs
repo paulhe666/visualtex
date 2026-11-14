@@ -7,7 +7,7 @@ import {
   formulaMetadataToXml,
   isVisualTeXFormulaMetadata,
   VISUALTEX_FORMULA_XML_NAMESPACE,
-} from "../src/office/shared/formulaMetadata.ts";
+} from "../../shared/visualtex-app/src/office/shared/formulaMetadata.ts";
 
 const formulaId = crypto.randomUUID();
 const lines = [

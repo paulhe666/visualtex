@@ -11,7 +11,7 @@ import {
   encodeFormulaMetadata,
   formulaMetadataFromXml,
   formulaMetadataToXml,
-} from "../src/office/shared/formulaMetadata.ts";
+} from "../../shared/visualtex-app/src/office/shared/formulaMetadata.ts";
 import {
   renderOfficeFormulaArtifacts,
   tryRenderOfficeFormulaDraftArtifacts,

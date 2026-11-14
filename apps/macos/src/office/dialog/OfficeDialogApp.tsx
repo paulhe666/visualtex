@@ -45,7 +45,7 @@ import {
   onCurrentTauriWindowCloseRequested,
 } from "../shared/tauriTransport";
 import { normalizeFormulaEditorDocument } from "../shared/formulaEditorDocument";
-import type { InlineImageMathStyle } from "../shared/formulaMetadata";
+import type { InlineImageMathStyle } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,

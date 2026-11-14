@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { DOMParser } from "@xmldom/xmldom";
 import { zipSync, unzipSync, strToU8 } from "fflate";
 import { renderOfficeFormulaArtifacts } from "../src/office/shared/formulaRenderArtifacts";
-import { createFormulaMetadata, encodeFormulaMetadata } from "../src/office/shared/formulaMetadata";
+import { createFormulaMetadata, encodeFormulaMetadata } from "../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import { wordImageReferenceGeometry } from "../src/office/shared/wordImageGeometry";
 globalThis.DOMParser ??= DOMParser as any;
 const domProbe = new DOMParser().parseFromString("<root/>", "application/xml");

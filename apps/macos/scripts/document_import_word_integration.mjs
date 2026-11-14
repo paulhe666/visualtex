@@ -19,7 +19,7 @@ import {
   createFormulaMetadata,
   decodeFormulaMetadata,
   encodeFormulaMetadata,
-} from "../src/office/shared/formulaMetadata.ts";
+} from "../../shared/visualtex-app/src/office/shared/formulaMetadata.ts";
 import {
   normalizeFormulaEditorDocument,
   serializeFormulaEditorDocument,

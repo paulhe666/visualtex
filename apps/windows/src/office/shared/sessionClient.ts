@@ -6,7 +6,7 @@ import type {
   FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import type { CustomThemeState } from "../../../../shared/visualtex-app/src/themeCustomization";
-import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
+import type { VisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import {
   decodeOfficeBatchConversion,
   decodeOfficeFormulaSession,

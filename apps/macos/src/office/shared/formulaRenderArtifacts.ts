@@ -18,7 +18,7 @@ import {
   serializeFormulaEditorDocument,
   type FormulaEditorLine,
 } from "./formulaEditorDocument";
-import type { InlineImageMathStyle } from "./formulaMetadata";
+import type { InlineImageMathStyle } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 
 export const OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT = 14;
 

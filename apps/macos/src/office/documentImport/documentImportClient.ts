@@ -1,4 +1,4 @@
-import type { VisualTeXFormulaMetadata } from "../shared/formulaMetadata";
+import type { VisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import { invokeTauri } from "../shared/tauriTransport";
 import {
   decodeMacosDocumentImportProgress,

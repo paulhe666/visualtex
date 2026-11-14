@@ -4,7 +4,7 @@ import type {
   OfficeFormulaSession,
   PreparedPowerPointCommit,
 } from "./sessionClient";
-import { isVisualTeXFormulaMetadata } from "./formulaMetadata";
+import { isVisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 
 const SESSION_MODES = ["create", "edit"] as const;
 const OFFICE_HOSTS = ["word", "powerpoint"] as const;

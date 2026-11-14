@@ -2,7 +2,7 @@ import { responseErrorMessage } from "../../runtime/errorMessage.ts";
 import type {
   InlineImageMathStyle,
   VisualTeXFormulaMetadata,
-} from "./formulaMetadata";
+} from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import type {
   FormulaChineseFont,
   FormulaLetterFont,

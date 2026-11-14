@@ -7,7 +7,7 @@ import {
 import {
   createFormulaMetadata,
   type VisualTeXFormulaMetadata,
-} from "../shared/formulaMetadata";
+} from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
 import { wordEquationMathMl } from "../wordMathMl/wordEquationMathMl";
 import type {
@@ -16,6 +16,7 @@ import type {
 import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
 import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
 import { useEditorStore } from "../../stores/editorStore";
+import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { describeConversionFailure } from "../shared/conversionErrors";
 
 const WORD_LATEX_REDRAW_RENDER_CONCURRENCY = 4;
@@ -59,8 +60,10 @@ async function renderTemplate(
   const canonicalLatex = serializeFormulaEditorDocument(editorDocument);
 
   const editorPreferences = useEditorStore.getState();
-  const formulaLetterFont =
-    span.metadata?.formulaLetterFont ?? editorPreferences.formulaLetterFont;
+  // formulas saved by Windows or older versions may name letter fonts no longer offered
+  const formulaLetterFont = normalizeFormulaLetterFont(
+    span.metadata?.formulaLetterFont ?? editorPreferences.formulaLetterFont,
+  );
   const formulaChineseFont =
     span.metadata?.formulaChineseFont ?? editorPreferences.formulaChineseFont;
 

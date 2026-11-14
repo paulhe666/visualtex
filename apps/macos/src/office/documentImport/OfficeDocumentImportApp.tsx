@@ -26,7 +26,7 @@ import { onCurrentTauriWindowCloseRequested } from "../shared/tauriTransport";
 import {
   createFormulaMetadata,
   type VisualTeXFormulaMetadata,
-} from "../shared/formulaMetadata";
+} from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import {
   normalizeFormulaEditorDocument,
 } from "../shared/formulaEditorDocument";

@@ -8,7 +8,7 @@ import {
   createFormulaMetadata,
   decodeFormulaMetadata,
   encodeFormulaMetadata,
-} from "../src/office/shared/formulaMetadata.ts";
+} from "../../shared/visualtex-app/src/office/shared/formulaMetadata.ts";
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";

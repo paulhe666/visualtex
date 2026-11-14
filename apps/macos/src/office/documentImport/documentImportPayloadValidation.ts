@@ -1,4 +1,4 @@
-import { isVisualTeXFormulaMetadata } from "../shared/formulaMetadata";
+import { isVisualTeXFormulaMetadata } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import type {
   MacosDocumentImportProgress,
   MacosDocumentImportRequest,
