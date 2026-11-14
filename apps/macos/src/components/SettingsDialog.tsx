@@ -59,7 +59,7 @@ import {
   type FormulaFaceRole,
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
-import { PREFERRED_LATIN, systemFontFamilies } from "../document/systemFonts";
+import { PREFERRED_LATIN, systemFontFamilies } from "../../../shared/visualtex-app/src/document/systemFonts";
 
 const FORMULA_FACE_LABELS: Record<FormulaFaceRole, { zh: string; en: string }> = {
   letter: { zh: "字母字体", en: "Letters" },

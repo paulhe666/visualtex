@@ -1,5 +1,5 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { useDocumentModeStore } from "./stores/documentModeStore";
+import { useDocumentModeStore } from "../../shared/visualtex-app/src/stores/documentModeStore";
 import { DocumentHistoryButtons } from "./document/DocumentControls";
 import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 import {
@@ -12,7 +12,7 @@ import {
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
 } from "../../shared/visualtex-app/src/document/documentEvents";
-import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
+import { useCustomSymbolDesignerStore } from "../../shared/visualtex-app/src/stores/customSymbolDesignerStore";
 
 // The custom symbol designer, loaded the first time it is opened.
 const LazyCustomSymbolDesignerDialog = lazy(async () => {

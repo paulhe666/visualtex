@@ -16,7 +16,7 @@ import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
-import { EXPLICIT_MATH_FONT_PACKAGE } from "../src/export/explicit-math-font.ts";
+import { EXPLICIT_MATH_FONT_PACKAGE } from "../../shared/visualtex-app/src/export/explicit-math-font.ts";
 import { VISUALTEX_HANDWRITTEN_MATHML_MACROS } from "../src/math/latexCompatibility.ts";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";

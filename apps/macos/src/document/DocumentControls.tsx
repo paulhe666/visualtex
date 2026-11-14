@@ -70,9 +70,9 @@ import {
   type HeadingNumbering,
   type PaperName,
 } from "../../../shared/visualtex-document/src/index.ts";
-import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "./systemFonts";
+import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "../../../shared/visualtex-app/src/document/systemFonts";
 import { CitationPicker } from "../../../shared/visualtex-app/src/document/CitationPicker";
-import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
 import { useEditorStore } from "../stores/editorStore";
 import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { ColorMenuButton } from "../../../shared/visualtex-app/src/document/ColorPalette";

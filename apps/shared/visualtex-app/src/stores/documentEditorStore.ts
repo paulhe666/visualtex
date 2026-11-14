@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { createSafeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { createSafeStorage } from "../runtime/safeStorage";
 
 const storage = createSafeStorage();
 const ZOOM_KEY = "visualtex.document.zoom.v1";

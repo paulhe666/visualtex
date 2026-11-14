@@ -23,4 +23,9 @@ export const sharedPackageDedupe = [
   "@lezer/markdown",
   "@lezer/common",
   "@lezer/highlight",
+  // apps/shared/visualtex-app: stores, Tauri calls, MathJax-based export, diagrams
+  "zustand",
+  "@tauri-apps/api",
+  "mathjax-full",
+  "mermaid",
 ];

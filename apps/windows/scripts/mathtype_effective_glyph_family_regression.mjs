@@ -3,7 +3,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {resolve, join} from 'node:path';
 import {latexToMathMl, latexToSvg} from '../src/export/runtime.ts';
 import {TeXFont} from 'mathjax-full/js/output/svg/fonts/tex.js';
-import {materializeEffectiveOperatorVariants} from '../src/export/effectiveMathMlGlyphVariants.ts';
+import {materializeEffectiveOperatorVariants} from '../../shared/visualtex-app/src/export/effectiveMathMlGlyphVariants.ts';
 
 const root = resolve(process.argv[2] ?? (()=>{throw new Error('An owned output path is required.');})());
 await mkdir(root,{recursive:true});

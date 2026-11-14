@@ -57,7 +57,7 @@ import { useEditorStore } from "../stores/editorStore";
 import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useCustomSymbolDesignerStore } from "../stores/customSymbolDesignerStore";
+import { useCustomSymbolDesignerStore } from "../../../shared/visualtex-app/src/stores/customSymbolDesignerStore";
 import {
   BUILT_IN_GROUP_IDS,
   groupItems,

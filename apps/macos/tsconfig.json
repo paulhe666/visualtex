@@ -26,6 +26,11 @@
       "prosemirror-*": ["./node_modules/prosemirror-*"],
       "@lezer/*": ["./node_modules/@lezer/*"],
       "markdown-it": ["./node_modules/@types/markdown-it"],
+      "zustand": ["./node_modules/zustand"],
+      "zustand/*": ["./node_modules/zustand/*"],
+      "@tauri-apps/api/*": ["./node_modules/@tauri-apps/api/*"],
+      "mathjax-full/*": ["./node_modules/mathjax-full/*"],
+      "mermaid": ["./node_modules/mermaid"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TeX } from 'mathjax-full/js/input/tex.js';
 import { AllPackages } from 'mathjax-full/js/input/tex/AllPackages.js';
-import { EXPLICIT_MATH_FONT_PACKAGE } from '../src/export/explicit-math-font.ts';
+import { EXPLICIT_MATH_FONT_PACKAGE } from '../../shared/visualtex-app/src/export/explicit-math-font.ts';
 import { CharacterMap, DelimiterMap } from 'mathjax-full/js/input/tex/SymbolMap.js';
 import { latexToMathMl } from '../src/export/runtime';
 import { VISUALTEX_MATHML_MACROS, VISUALTEX_SVG_MACROS } from '../src/math/latexCompatibility';
