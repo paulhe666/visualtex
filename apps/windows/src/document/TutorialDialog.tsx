@@ -3,7 +3,7 @@
 // into a blob first: a media element asks for byte ranges, which the app's asset protocol does not answer everywhere.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, GraduationCap, X } from "lucide-react";
-import { TUTORIAL_GROUPS, type Tutorial } from "./tutorials";
+import { TUTORIAL_GROUPS, type Tutorial } from "@platform/tutorials";
 
 const blobs = new Map<string, Promise<string>>();
 
