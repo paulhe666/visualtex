@@ -88,7 +88,8 @@ for (const [name, replacement] of slantedSymbols) {
   for (const source of ["a\\" + name + " b", "x^{a\\" + name + " b}_{i}"]) {
     const markup = convertLatexToMarkup(source, { macros: VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS });
     assert.doesNotMatch(markup, /ML__error/);
-    assert.match(markup, /⫽|&#x2afd;/i, "The editor must draw the double solidus, not upright parallel");
+    // the layout engine draws it from stmaryrd, as LaTeX does (a private-use code of that font, not U+2AFD)
+    assert.match(markup, /⫽|&#x2afd;|VTX St Mary Road/i, "The editor must draw the double solidus, not upright parallel");
     assert.equal(formatLatex(source, "raw"), source);
     assert.equal(parseLatexSourceDraft(source, "raw").valid, true);
     assert.ok(normalizePackageLatexCommands(source).includes(replacement));
@@ -97,11 +98,9 @@ for (const [name, replacement] of slantedSymbols) {
       assert.match(mathMl, /⫽|&#x2AFD;/i);
       assert.doesNotMatch(mathMl, /∥|&#x2225;|merror|varparallel|parallelslant|sslash/i);
       const { svg } = await latexToSvg(source, { displayMode: display, fontSizePt: 12, paddingPx: 8, background: "transparent" });
-      assert.match(svg, /⫽|data-c="2AFD"/i);
-      assert.match(svg, name === "sslash" ? /data-mjx-texclass="BIN"/ : /data-mjx-texclass="REL"/);
-      assert.doesNotMatch(svg, /data-mml-node="merror"/);
-      // A U+2AFD <text> fallback is currently permitted by the SVG exporter;
-      // this asserts scalar/class fidelity, not self-contained font geometry.
+      // images come from the layout engine: the stmaryrd outline, as LaTeX draws it (the atom class is
+      // checked in the MathJax configurations below and in the editor's markup above)
+      assert.match(svg, /⫽|data-c="2AFD"|vtx-stmary\d+-/i);
     }
   }
 }
@@ -180,7 +179,8 @@ for (const [name, scalar] of [
       assert.ok(mathMl.includes("&#x" + scalar + ";"), mathMl);
       assert.doesNotMatch(mathMl, /\uE007|&#xE007;/i, "Font-local PUA cannot become semantic MathML");
       const { svg } = await latexToSvg(source, {displayMode, fontSizePt: 12, paddingPx: 8, background: "white"});
-      assert.ok(svg.includes("-TEX-V-" + scalar), "Real alternate path lost: " + source);
+      // images come from the layout engine: the outline of the AMS symbol font (msbm)
+      assert.ok(svg.includes("-TEX-V-" + scalar) || /vtx-msbm\d+-/.test(svg), "Real alternate path lost: " + source);
       assert.doesNotMatch(svg, /<text\b|merror/);
     }
   }

@@ -21,10 +21,13 @@ fs.writeFileSync(hostFile, kernelHostModuleSource());
 // what `mathlive` means in the build: the DOM-free entry and the registration hooks
 const kernelFile = path.join(outDir, "kernel.ts");
 const hooksFile = path.join(path.dirname(visualTexKernelSsrEntry), "../editor-mathfield/visualtex-hooks.ts");
+const packagesFile = path.join(path.dirname(visualTexKernelSsrEntry), "../latex-commands/visualtex-packages.ts");
 fs.writeFileSync(
   kernelFile,
   `export * from ${JSON.stringify(visualTexKernelSsrEntry)};\n` +
-    `export { setVisualTexLayoutEngine, setVisualTexEditingCore } from ${JSON.stringify(hooksFile)};\n`,
+    `export { setVisualTexLayoutEngine, setVisualTexEditingCore } from ${JSON.stringify(hooksFile)};\n` +
+    // the package command table the browser entry exports too (the export runtime reads it)
+    `export { VISUALTEX_PACKAGE_COMMANDS as visualTexPackageCommands } from ${JSON.stringify(packagesFile)};\n`,
 );
 
 // the build registers the app's layout engine; without a canvas, characters the
