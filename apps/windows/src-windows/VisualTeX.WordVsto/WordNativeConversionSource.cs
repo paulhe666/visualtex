@@ -11,6 +11,11 @@ internal sealed class WordNativeConversionSource : IDisposable
 {
     private readonly WordFormulaHostDescriptor _host;
     private OMath? _math;
+    // WPS does not move OMath.Range with edits before it: after an earlier
+    // formula of the batch is replaced, it can report a span over several
+    // paragraphs. A document Range does move; it is narrowed back to its one
+    // equation when the OMath's own range is not exactly one equation.
+    private Range? _tracked;
     private InlineShape? _shape;
     private Range? _number;
     private Range? _container;
@@ -113,6 +118,7 @@ internal sealed class WordNativeConversionSource : IDisposable
             {
                 maths = exact!.OMaths;
                 _math = maths[1];
+                _tracked = exact.Duplicate;
             }
             else if (_shape is null)
             {
@@ -144,7 +150,7 @@ internal sealed class WordNativeConversionSource : IDisposable
         Range? exact = null;
         try
         {
-            exact = _math is not null ? _math.Range : _shape!.Range;
+            exact = _math is not null ? ExactOMathRange() : _shape!.Range;
             Set(_host.Range, exact);
             if (_host.Numbering.ContainerRange is not null)
                 Set(_host.Numbering.ContainerRange, _containerIsHost ? exact : _container!);
@@ -152,6 +158,42 @@ internal sealed class WordNativeConversionSource : IDisposable
                 Set(_host.Numbering.NumberRange, _number!);
         }
         finally { Release(exact); }
+    }
+
+    private Range ExactOMathRange()
+    {
+        var own = _math!.Range;
+        if (IsOneEquation(own) || _tracked is null) return own;
+        OMaths? maths = null;
+        OMath? math = null;
+        try
+        {
+            maths = _tracked.OMaths;
+            if (maths.Count != 1) return own;
+            math = maths[1];
+            var tracked = math.Range;
+            WordDoubleClickHook.TraceMessage(
+                $"native-source-omath-moved own={own.Start}:{own.End} tracked={tracked.Start}:{tracked.End}");
+            Release(own);
+            return tracked;
+        }
+        finally { Release(math); Release(maths); }
+    }
+
+    private static bool IsOneEquation(Range range)
+    {
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? exact = null;
+        try
+        {
+            maths = range.OMaths;
+            if (maths.Count != 1) return false;
+            math = maths[1];
+            exact = math.Range;
+            return exact.Start == range.Start && exact.End == range.End;
+        }
+        finally { Release(exact); Release(math); Release(maths); }
     }
 
     private static void Set(WordFormulaRangeAddress address, Range range)
@@ -167,11 +209,12 @@ internal sealed class WordNativeConversionSource : IDisposable
         var container = _container; _container = null;
         var number = _number; _number = null;
         var math = _math; _math = null;
+        var tracked = _tracked; _tracked = null;
         var shape = _shape; _shape = null;
         try { body?.Dispose(); }
         finally
         {
-            Release(container); Release(number); Release(math); Release(shape);
+            Release(container); Release(number); Release(math); Release(tracked); Release(shape);
         }
     }
 

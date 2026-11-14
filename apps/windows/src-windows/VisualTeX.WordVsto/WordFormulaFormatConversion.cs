@@ -105,6 +105,8 @@ internal sealed class WordFormulaFormatConversionResult
     // these stay 0/empty; acceptance suites still assert on them.
     internal int FailedFormulaCount { get; set; }
     internal List<string> Failures { get; set; } = new();
+    // Main-story length change of each converted formula, at its original end.
+    internal WordCoordinateShifts CoordinateShifts { get; } = new();
 }
 
 /// <summary>

@@ -587,7 +587,7 @@ internal static class WordOmmlHostWriter
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range;
             if (paragraphRange.End - paragraphRange.Start != 1) return null;
-            return WordOmmlInsertionXml.ParagraphMarkRunProperties(
+            return WordOmmlInsertionXml.ParagraphProperties(
                 paragraphRange.WordOpenXML);
         }
         finally
@@ -1263,6 +1263,9 @@ internal static class WordOmmlHostWriter
         }
     }
 
+    private static string DescribeText(string? text) =>
+        string.Join(",", (text ?? string.Empty).Take(24).Select(c => ((int)c).ToString("X4")));
+
     private static WordFormulaHostDescriptor DescribeInsertedOmml(
         Range inserted,
         bool requestedNumbered)
@@ -1282,8 +1285,14 @@ internal static class WordOmmlHostWriter
                 || exact.Start != inserted.Start
                 || exact.End != inserted.End
                 || exact.StoryType != inserted.StoryType)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"omml-insertion-range-mismatch inserted={inserted.Start}:{inserted.End} exact={exact.Start}:{exact.End} "
+                    + $"type={(int)math.Type} story={(int)inserted.StoryType}/{(int)exact.StoryType} "
+                    + $"insertedText={DescribeText(inserted.Text)} exactText={DescribeText(exact.Text)}");
                 throw new InvalidDataException(
                     "Word returned an invalid or ambiguous OMML insertion range.");
+            }
 
             var address =
                 new WordFormulaRangeAddress

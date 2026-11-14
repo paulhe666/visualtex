@@ -47,6 +47,7 @@ internal static class WpsXmlInsertion
 
     internal static void Insert(Range range, string flatOpc)
     {
+        using var guard = TableBoundaryGuard.Open(range);
         if (!OfficeHostEnvironment.IsWps)
         {
             range.InsertXML(flatOpc);
@@ -57,12 +58,134 @@ internal static class WpsXmlInsertion
 
     internal static void Replace(Range range, string flatOpc)
     {
+        using var guard = TableBoundaryGuard.Open(range);
         if (!OfficeHostEnvironment.IsWps)
         {
             range.InsertXML(flatOpc);
             return;
         }
         InsertInWps(range, flatOpc, deleteFirst: true);
+    }
+
+    /// <summary>
+    /// Word and WPS adopt an imported package paragraph into the FOLLOWING table when the
+    /// target is the last body paragraph before that table: a formula converted just above
+    /// a table ended up in the table's first cell. While the import runs, an empty paragraph
+    /// separates the target from the table; it is removed again right after, so callers see
+    /// the same structure as for any other paragraph.
+    /// </summary>
+    private sealed class TableBoundaryGuard : IDisposable
+    {
+        // The table's first character; the import happens before it, so this range only
+        // moves. The separator is the empty paragraph that ends where the table starts.
+        private Range? table;
+
+        private TableBoundaryGuard(Range table) => this.table = table;
+
+        internal static TableBoundaryGuard? Open(Range range)
+        {
+            Paragraphs? paragraphs = null;
+            Paragraph? paragraph = null;
+            Range? owner = null;
+            Range? next = null;
+            Range? split = null;
+            try
+            {
+                var start = range.Start;
+                var end = range.End;
+                owner = range.Duplicate;
+                owner.SetRange(Math.Max(start, end - 1), Math.Max(start, end - 1));
+                paragraphs = owner.Paragraphs;
+                if (paragraphs.Count < 1) return null;
+                paragraph = paragraphs[1];
+                Release(owner);
+                owner = paragraph.Range;
+                if (owner.End >= StoryEnd(owner) || InTable(owner, owner.Start)) return null;
+                if (!InTable(owner, owner.End)) return null;
+                // A paragraph mark inserted before the target's own mark: the target keeps
+                // its content and formatting, the original mark becomes the separator.
+                var at = owner.End - 1;
+                var table = range.Duplicate;
+                table.SetRange(owner.End, owner.End + 1);
+                split = range.Duplicate;
+                split.SetRange(at, at);
+                split.InsertAfter("\r");
+                range.SetRange(start, end);
+                WordDoubleClickHook.TraceMessage($"xml-insert-table-boundary guard at={at}");
+                return new TableBoundaryGuard(table);
+            }
+            catch (COMException) { return null; }
+            finally
+            {
+                Release(split);
+                Release(next);
+                Release(owner);
+                Release(paragraph);
+                Release(paragraphs);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (table is null) return;
+            Range? mark = null;
+            Paragraphs? paragraphs = null;
+            Paragraph? paragraph = null;
+            Range? separator = null;
+            try
+            {
+                var tableStart = table.Start;
+                if (tableStart < 2) return;
+                mark = table.Duplicate;
+                mark.SetRange(tableStart - 1, tableStart);
+                paragraphs = mark.Paragraphs;
+                if (paragraphs.Count < 1) return;
+                paragraph = paragraphs[1];
+                separator = paragraph.Range;
+                if (string.Equals(separator.Text, "\r", StringComparison.Ordinal)
+                    && separator.End == tableStart
+                    && separator.Start > 0
+                    && !InTable(separator, separator.Start - 1))
+                {
+                    var before = StoryEnd(separator);
+                    separator.Delete();
+                    WordDoubleClickHook.TraceMessage(
+                        $"xml-insert-table-boundary removed={StoryEnd(table) < before}");
+                }
+                else
+                {
+                    WordDoubleClickHook.TraceMessage(
+                        $"xml-insert-table-boundary kept separator={separator.Start}:{separator.End} table={tableStart}");
+                }
+            }
+            catch (COMException error)
+            {
+                WordDoubleClickHook.TraceMessage($"xml-insert-table-boundary remove-failed {error.Message}");
+            }
+            finally
+            {
+                Release(separator);
+                Release(paragraph);
+                Release(paragraphs);
+                Release(mark);
+                Release(table);
+                table = null;
+            }
+        }
+
+        private static bool InTable(Range anchor, int position)
+        {
+            Range? probe = null;
+            try
+            {
+                // One real character: a collapsed range on a table boundary is reported
+                // with the affinity of either neighbour.
+                probe = anchor.Duplicate;
+                probe.SetRange(position, position + 1);
+                return probe.get_Information(WdInformation.wdWithInTable) is true;
+            }
+            finally { Release(probe); }
+        }
     }
 
     private static void InsertInWps(Range range, string flatOpc, bool deleteFirst)
@@ -169,6 +292,12 @@ internal static class WpsXmlInsertion
     }
 
     private static int StoryEnd(Range range) => range.StoryLength;
+
+    private static void Release(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value))
+            Marshal.ReleaseComObject(value);
+    }
 
     internal static bool EndsWithParagraphMark(Range range)
     {
@@ -371,12 +500,19 @@ internal static class WpsXmlInsertion
         return changed;
     }
 
+    // The explicit EMBED wrapper of a WPS export is removed around the object, and
+    // also around a native equation that took the object's place (an OLE converted
+    // to OMML): left there, WPS imports a display equation after a manual line
+    // break inside a field that no longer has an object.
     private static bool RemoveExplicitEmbedFields(XDocument document)
     {
         var changed = false;
-        foreach (var objectRun in document.Descendants(W + "r")
-                     .Where(run => run.Element(W + "object") is not null)
-                     .ToList())
+        var contents = document.Descendants(W + "r")
+            .Where(run => run.Element(W + "object") is not null)
+            .Concat(document.Descendants(M + "oMath").Concat(document.Descendants(M + "oMathPara"))
+                .Where(math => math.Parent is not null && math.Parent.Name.Namespace == W))
+            .ToList();
+        foreach (var objectRun in contents)
         {
             var separate = PreviousRun(objectRun);
             var instruction = separate is null ? null : PreviousRun(separate);

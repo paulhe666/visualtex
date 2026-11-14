@@ -567,6 +567,9 @@ public sealed partial class ThisAddIn
                     EndFormulaFormatMutation();
                 }
             }
+            // The selection captured above must cover the same text after the
+            // converted formulas changed length.
+            if (originalViewState is not null) originalViewState.Shifts = result.CoordinateShifts;
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
 

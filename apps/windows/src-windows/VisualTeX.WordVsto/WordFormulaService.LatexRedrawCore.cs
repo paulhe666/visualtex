@@ -1363,6 +1363,11 @@ internal sealed partial class WordFormulaService
                         displayTabStops.Value.Right;
                 }
 
+                // The LaTeX source line is the user's paragraph; the display
+                // writer's own layout must not replace it (WordParagraphSnapshot).
+                var sourceParagraph = display
+                    ? WordParagraphSnapshot.TryCapture(insertion)
+                    : null;
                 var inserted =
                     WordFormulaHostMutationKernel
                         .InsertInActiveTransaction(
@@ -1370,6 +1375,16 @@ internal sealed partial class WordFormulaService
                             document,
                             insertion,
                             request);
+                if (sourceParagraph is not null)
+                {
+                    Range? written = null;
+                    try
+                    {
+                        written = WordFormulaHostSemanticReader.CreateRange(document, inserted.Range);
+                        sourceParagraph.Restore(written);
+                    }
+                    finally { Release(written); }
+                }
                 formulaId =
                     inserted.FormulaId
                     ?? formula.Session.FormulaId;
@@ -1390,6 +1405,9 @@ internal sealed partial class WordFormulaService
                         RangeReference(insertion);
                     var native =
                         formula.MathTypeNativePreview;
+                    var sourceParagraph = display
+                        ? WordParagraphSnapshot.TryCapture(insertion)
+                        : null;
                     _ = InsertMathTypeOle(
                         session,
                         mathMl,
@@ -1429,7 +1447,13 @@ internal sealed partial class WordFormulaService
                         preparedStandaloneSemanticSignature:
                             formula.MathTypeStandaloneSemanticSignature,
                         preparedBatchMathTypeSection:
-                            preparedMathTypeSection);
+                            preparedMathTypeSection,
+                        sourceParagraph:
+                            sourceParagraph);
+                    RestoreSourceParagraphAtMathType(
+                        document,
+                        session.FormulaId,
+                        sourceParagraph);
                     formulaId = session.FormulaId;
                     preparedMathTypeNativeStyles = display;
                 }

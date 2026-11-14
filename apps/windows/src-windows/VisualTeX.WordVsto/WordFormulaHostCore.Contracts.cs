@@ -110,6 +110,11 @@ internal sealed class WordFormulaHostWriteRequest
     // WordOpenXML preparation must finish before the enclosing native UndoRecord.
     internal string? PreparedOmml { get; set; }
     internal WordOleToOmmlReplacement.Prepared? PreparedOleReplacement { get; set; }
+    // The source paragraph's own properties (style, list numbering, indentation,
+    // spacing), read before the transaction. A native equation imported into the
+    // paragraph the source leaves empty takes the import package's paragraph
+    // properties in Word and WPS; without these it becomes a Normal paragraph.
+    internal string? PreparedParagraphProperties { get; set; }
 }
 
 internal sealed class WordFormulaHostWriteResult

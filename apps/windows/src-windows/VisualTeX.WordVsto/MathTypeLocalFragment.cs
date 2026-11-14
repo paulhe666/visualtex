@@ -109,7 +109,13 @@ internal static class MathTypeLocalFragment
             throw new InvalidDataException("The selected OLE does not occupy one exact Word object run.");
         // OLE preview baseline/size belongs to the removed object, not to native
         // mathematics. The prepared OMML carries its own glyph formatting.
-        run.ReplaceWith(new XElement(equation));
+        var inserted = new XElement(equation);
+        run.ReplaceWith(inserted);
+        // WPS exports an OLE object as the result of its EMBED field. That field
+        // belongs to the removed object: left around the equation, WPS imports
+        // a display equation after a manual line break and the written equation
+        // no longer matches its own range.
+        RemoveEnclosingEmbedField(inserted);
         if (!string.IsNullOrEmpty(retiredIdentityBookmark))
         {
             var identities = body.Descendants(W + "bookmarkStart").Where(e =>
@@ -196,6 +202,40 @@ internal static class MathTypeLocalFragment
             style.Value = string.Join(";", declarations);
         }
         return objects.Length;
+    }
+
+    // Removes the field runs around `content` when they form exactly one EMBED
+    // field whose result is `content`: begin, instruction run(s), separate before
+    // it and end after it (bookmarks may sit between). Anything else is left.
+    internal static bool RemoveEnclosingEmbedField(XElement content)
+    {
+        static bool IsMarker(XElement element) =>
+            element.Name == W + "bookmarkStart" || element.Name == W + "bookmarkEnd" || element.Name == W + "proofErr";
+        static XElement? Single(XElement run) =>
+            run.Name != W + "r" ? null
+                : run.Elements().Where(e => e.Name != W + "rPr").ToArray() is { Length: 1 } items ? items[0] : null;
+        static bool IsFieldChar(XElement run, string kind) =>
+            Single(run) is { } item && item.Name == W + "fldChar"
+            && (string?)item.Attribute(W + "fldCharType") == kind;
+
+        var before = content.ElementsBeforeSelf().Reverse().Where(e => !IsMarker(e)).ToList();
+        var after = content.ElementsAfterSelf().Where(e => !IsMarker(e)).ToList();
+        if (before.Count < 3 || after.Count < 1 || !IsFieldChar(before[0], "separate") || !IsFieldChar(after[0], "end"))
+            return false;
+        var instruction = new List<XElement>();
+        var index = 1;
+        while (index < before.Count && Single(before[index]) is { } item && item.Name == W + "instrText")
+            instruction.Add(before[index++]);
+        if (instruction.Count == 0 || index >= before.Count || !IsFieldChar(before[index], "begin"))
+            return false;
+        var code = string.Concat(instruction.AsEnumerable().Reverse().Select(run => Single(run)!.Value)).Trim();
+        if (!code.StartsWith("EMBED ", StringComparison.OrdinalIgnoreCase))
+            return false;
+        before[0].Remove();
+        foreach (var run in instruction) run.Remove();
+        before[index].Remove();
+        after[0].Remove();
+        return true;
     }
 
     internal static string[] BookmarkNames(string ownerXml) =>

@@ -7879,13 +7879,12 @@ internal static partial class WordOmmlConverter
                 new XElement(
                     word + "p",
                     // Where Word keeps this package's paragraph mark (an import
-                    // into an empty paragraph), it keeps the target mark's own
-                    // character formatting as well.
+                    // into an empty paragraph), it keeps the package's paragraph
+                    // properties: they are the target paragraph's own (style,
+                    // list numbering, indentation, spacing, mark formatting).
                     paragraphMarkRunProperties is null
                         ? null
-                        : new XElement(
-                            word + "pPr",
-                            XElement.Parse(paragraphMarkRunProperties)),
+                        : XElement.Parse(paragraphMarkRunProperties),
                     new XElement(
                         word + "bookmarkStart",
                         new XAttribute(word + "id", entry.BookmarkId),

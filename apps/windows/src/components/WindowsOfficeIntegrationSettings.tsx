@@ -657,6 +657,39 @@ export function WindowsOfficeIntegrationSettings() {
                       : "已关闭"}
                 </button>
               </div>
+              <details className="office-wps-help">
+                <summary>
+                  {isEn ? "VisualTeX tab not showing in WPS?" : "WPS 中看不到 VisualTeX 选项卡？"}
+                </summary>
+                <p>
+                  {isEn
+                    ? "WPS can turn off add-ins it thinks slow down its startup. Turn VisualTeX back on:"
+                    : "WPS 会停用它认为拖慢启动速度的加载项。按以下步骤重新启用 VisualTeX："}
+                </p>
+                <ol>
+                  <li>
+                    {isEn
+                      ? "In WPS Writer or WPS Presentation, open any document."
+                      : "在 WPS 文字或 WPS 演示中打开任意文档。"}
+                  </li>
+                  <li>
+                    {isEn ? "Choose Tools > COM Add-ins." : "点击“工具”选项卡中的“COM 加载项”。"}
+                  </li>
+                  <li>
+                    {isEn
+                      ? "Click the link in the notice about disabled third-party add-ins."
+                      : "点击提示“此电脑已禁用可能拖慢启动速度的第三方加载项”中的链接。"}
+                  </li>
+                  <li>
+                    {isEn ? "Turn VisualTeX on." : "找到 VisualTeX，将其启用。"}
+                  </li>
+                  <li>
+                    {isEn
+                      ? "Close WPS and open it again."
+                      : "关闭 WPS 后重新打开。"}
+                  </li>
+                </ol>
+              </details>
             </>
           )}
           {wpsIssue && (

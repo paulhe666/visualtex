@@ -163,6 +163,9 @@ internal sealed partial class WordFormulaService
 
         var preparedWrites = new Dictionary<string, WordFormulaHostWriteRequest>(StringComparer.Ordinal);
         var resolvedSources = new Dictionary<string, WordFormulaHostDescriptor>(StringComparer.Ordinal);
+        // Main-story source ends before any write; forward batches refresh the
+        // descriptors to live positions, the selection map needs the originals.
+        var originalSourceEnds = new Dictionary<string, int>(StringComparer.Ordinal);
         var nativeSources = new Dictionary<string, WordNativeConversionSource>(StringComparer.Ordinal);
         var nativeNumberReferences = new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
         WordEquationReferenceFields.NativeOmmlReferenceIndex? nativeReferenceIndex = null;
@@ -356,6 +359,8 @@ internal sealed partial class WordFormulaService
                             nativeSources.Add(target.Id, new WordNativeConversionSource(document, source));
                     }
                     resolvedSources.Add(target.Id, source);
+                    if (source.Range.StoryType == WdStoryType.wdMainTextStory)
+                        originalSourceEnds[target.Id] = source.Range.End;
                     if (sourceKind == WordFormulaHostKind.Omml
                         && targetKind == WordFormulaHostKind.VisualTeX
                         && target.Numbered)
@@ -415,6 +420,11 @@ internal sealed partial class WordFormulaService
                             }
                             finally { Release(exact); }
                         }
+                        // A display source leaves its paragraph empty for the new
+                        // equation; keep that paragraph's style and numbering.
+                        if (source.Display && request.PreparedOleReplacement is null)
+                            request.PreparedParagraphProperties = ReadSourceParagraphProperties(
+                                document, source, withoutDisplayLayout: sourceKind == WordFormulaHostKind.VisualTeX);
                     }
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
@@ -474,6 +484,7 @@ internal sealed partial class WordFormulaService
                         try
                         {
                             ReportOperationProgress(WriteTargetsStage, result.FormulaCount, plan.Targets.Count);
+                            var storyEndBefore = ReadMainStoryEnd(document);
                             var preparedFormula =
                                 prepared[target.Id];
                             var source = resolvedSources[target.Id];
@@ -552,6 +563,13 @@ internal sealed partial class WordFormulaService
                                     preparedFormula.Session,
                                     plan,
                                     target);
+                                var targetDisplay = string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.OrdinalIgnoreCase);
+                                var sourceParagraph = targetDisplay
+                                    ? CaptureSourceParagraph(document, source)
+                                    : null;
 
                                 _ =
                                     WordFormulaHostMutationKernel
@@ -589,10 +607,9 @@ internal sealed partial class WordFormulaService
                                                             preparedFormula
                                                                 .MathTypeNativePreviewAttempted,
                                                         preserveExistingDisplayParagraphBoundary:
-                                                            string.Equals(
-                                                                target.DisplayMode,
-                                                                "block",
-                                                                StringComparison.OrdinalIgnoreCase),
+                                                            targetDisplay,
+                                                        sourceParagraph:
+                                                            sourceParagraph,
                                                         preserveCapturedInsertion:
                                                             true,
                                                         boundedBatchMutation:
@@ -617,6 +634,10 @@ internal sealed partial class WordFormulaService
                                                 sourceKind ==
                                                 WordFormulaHostKind.Omml,
                                             preparedSource: sourceOwner);
+                                RestoreSourceParagraphAtMathType(
+                                    document,
+                                    preparedFormula.Session.FormulaId,
+                                    sourceParagraph);
                             }
                             else
                             {
@@ -628,6 +649,8 @@ internal sealed partial class WordFormulaService
                             // retaining deleted OLE owners until batch finalization
                             // unnecessarily extends their COM/storage lifetime.
                             sourceOwner?.Dispose();
+                            if (originalSourceEnds.TryGetValue(target.Id, out var originalEnd))
+                                result.CoordinateShifts.Add(originalEnd, ReadMainStoryEnd(document) - storyEndBefore);
                             result.FormulaCount++;
                             ReportOperationProgress(WriteTargetsStage, result.FormulaCount, plan.Targets.Count);
                         }
@@ -963,6 +986,85 @@ internal sealed partial class WordFormulaService
                 numberedIntent || string.Equals(host.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)),
             Metadata = metadata,
         };
+    }
+
+    // The source paragraph's properties for the native equation that replaces
+    // it. Read before the conversion transaction (WordOpenXML can close Word's
+    // custom undo record). A VisualTeX display paragraph's own layout (centre and
+    // right tab stops, justification) is not the user's and is left out.
+    private static string? ReadSourceParagraphProperties(Document document, WordFormulaHostDescriptor source, bool withoutDisplayLayout)
+    {
+        Range? range = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            range = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
+            paragraphs = range.Paragraphs;
+            if (paragraphs.Count != 1) return null;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            var properties = WordOmmlInsertionXml.ParagraphProperties(paragraphRange.WordOpenXML);
+            return withoutDisplayLayout ? WordOmmlInsertionXml.WithoutDisplayLayout(properties) : properties;
+        }
+        catch (COMException) { return null; }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(range);
+        }
+    }
+
+    // The user's paragraph around a source formula, read before the source
+    // is deleted; the target writer puts back what it changed (see
+    // WordParagraphSnapshot).
+    internal static WordParagraphSnapshot? CaptureSourceParagraph(Document document, WordFormulaHostDescriptor source)
+    {
+        Range? range = null;
+        try
+        {
+            range = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
+            return WordParagraphSnapshot.TryCapture(range);
+        }
+        catch (COMException) { return null; }
+        catch (InvalidDataException) { return null; }
+        finally { Release(range); }
+    }
+
+    // MathType's insertion can still repair its paragraph boundary after the
+    // display layout (a placeholder before a table, a split InsertXML
+    // paragraph); the surviving paragraph mark is checked once more here.
+    internal static void RestoreSourceParagraphAtMathType(
+        Document document,
+        string? formulaId,
+        WordParagraphSnapshot? sourceParagraph)
+    {
+        if (sourceParagraph is null || !Guid.TryParse(formulaId, out _)) return;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? range = null;
+        try
+        {
+            var name = WordFormulaIdentityStore.MathTypeBookmarkName(formulaId!);
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(name)) return;
+            object key = name;
+            bookmark = bookmarks[ref key];
+            range = bookmark.Range;
+            // A default-style paragraph became MTDisplayEquation on purpose;
+            // only its own indents are the user's there.
+            sourceParagraph.Restore(range, keepStyle: !sourceParagraph.UsesDefaultStyle);
+        }
+        catch (COMException) { }
+        finally
+        {
+            Release(range);
+            Release(bookmark);
+            Release(bookmarks);
+        }
     }
 
     private static bool IsInListParagraph(Document document, int start, int end)

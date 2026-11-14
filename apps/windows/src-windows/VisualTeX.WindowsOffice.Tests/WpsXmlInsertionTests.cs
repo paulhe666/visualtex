@@ -91,6 +91,29 @@ public sealed class WpsXmlInsertionTests
     }
 
     [Fact]
+    public void ExplicitEmbedFieldAroundAnEquationThatReplacedTheObjectIsRemoved()
+    {
+        // An OLE converted to OMML: the equation sits where WPS exported the
+        // object, still inside that object's EMBED field.
+        var flatOpc = Package(
+            "<w:p>"
+            + "<w:bookmarkStart w:id=\"0\" w:name=\"locator\"/>"
+            + "<w:r><w:fldChar w:fldCharType=\"begin\"/></w:r>"
+            + "<w:r><w:instrText xml:space=\"preserve\"> EMBED Equation.DSMT4 </w:instrText></w:r>"
+            + "<w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>"
+            + "<m:oMath><m:r><m:t>a</m:t></m:r></m:oMath>"
+            + "<w:r><w:fldChar w:fldCharType=\"end\"/></w:r>"
+            + "<w:bookmarkEnd w:id=\"0\"/>"
+            + "</w:p>");
+
+        var paragraph = LastParagraph(WpsXmlInsertion.PrepareForWps(flatOpc, importParagraphEnd: true).Xml);
+
+        Assert.Empty(paragraph.Descendants(W + "fldChar"));
+        Assert.Empty(paragraph.Descendants(W + "instrText"));
+        Assert.Single(paragraph.Elements(M + "oMath"));
+    }
+
+    [Fact]
     public void InlineSentinelFollowsTheLastEquationOfTheLastParagraph()
     {
         var flatOpc = Package(

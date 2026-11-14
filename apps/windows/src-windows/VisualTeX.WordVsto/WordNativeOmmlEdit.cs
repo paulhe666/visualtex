@@ -132,7 +132,7 @@ internal sealed class WordNativeOmmlEdit : IDisposable
                 refreshNumberInsideApply: request.Numbered && !allowNumberAttachment,
                 recovery);
             recovery = null;
-            plan._markRunProperties = WordOmmlInsertionXml.ParagraphMarkRunProperties(plan._recovery!.ParagraphXml);
+            plan._markRunProperties = WordOmmlInsertionXml.ParagraphProperties(plan._recovery!.ParagraphXml);
 
             // A clipped equation export can omit existing bookmarks at its outer
             // seam. Number bookmarks also need explicit ownership: under Track

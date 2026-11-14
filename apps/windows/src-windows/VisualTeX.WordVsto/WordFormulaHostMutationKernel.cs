@@ -235,7 +235,15 @@ internal static class WordFormulaHostMutationKernel
                 + target.Kind);
         ValidateTargetRequest(target);
         RequireActiveTransaction(application);
-        return ReplaceInsideTransaction(
+        // A display writer lays out a new paragraph its own way (centred,
+        // no indent or spacing). Converting keeps the user's paragraph: put
+        // back everything but the alignment and tabs the target needs.
+        var sourceParagraph =
+            source.Display
+            || string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                ? WordFormulaService.CaptureSourceParagraph(document, source)
+                : null;
+        var result = ReplaceInsideTransaction(
             application,
             document,
             source,
@@ -244,6 +252,18 @@ internal static class WordFormulaHostMutationKernel
             allowDirectCanonicalOmmlRemoval,
             deferTargetNumberFinalization,
             preparedSource);
+        if (sourceParagraph is not null)
+        {
+            Range? written = null;
+            try
+            {
+                written = WordFormulaHostSemanticReader.CreateRange(document, result.Range);
+                using (WordOperationMetrics.Measure("FormatConversion.RestoreParagraph"))
+                    sourceParagraph.Restore(written);
+            }
+            finally { Release(written); }
+        }
+        return result;
     }
 
     internal static WordFormulaHostDescriptor AdoptUnownedOmmlForMutation(
@@ -286,7 +306,7 @@ internal static class WordFormulaHostMutationKernel
             evidence = location.EvidenceRange;
             recovery = MathTypeLocalEditScope.Capture(document, evidence);
             location.CaptureBoundaryBookmarks(document, recovery.ParagraphXml);
-            var markRunProperties = WordOmmlInsertionXml.ParagraphMarkRunProperties(recovery.ParagraphXml);
+            var markRunProperties = WordOmmlInsertionXml.ParagraphProperties(recovery.ParagraphXml);
             var omml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
             if (string.Equals(request.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase))
             {
@@ -935,7 +955,8 @@ internal static class WordFormulaHostMutationKernel
                 && target.PreparedOmml is not null
                 && target.PreparedOleReplacement is null
                     ? WordOmmlHostWriter.InsertPreparedNative(
-                        document, insertion, target, target.PreparedOmml)
+                        document, insertion, target, target.PreparedOmml,
+                        paragraphMarkRunProperties: target.PreparedParagraphProperties)
                     : InsertHost(application, document, insertion, target,
                         removeOmmlBoundaryGuard: freshSource.Kind == WordFormulaHostKind.Omml
                             && target.Kind == WordFormulaHostKind.VisualTeX);

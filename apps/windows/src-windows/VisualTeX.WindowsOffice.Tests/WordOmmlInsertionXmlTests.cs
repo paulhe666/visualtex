@@ -94,6 +94,23 @@ public sealed class WordOmmlInsertionXmlTests
     }
 
     [Fact]
+    public void ParagraphPropertiesKeepStyleNumberingAndLayoutButNoRevisionsOrSection()
+    {
+        var export =
+            $"<pkg:package xmlns:pkg=\"http://schemas.microsoft.com/office/2006/xmlPackage\"><pkg:part pkg:name=\"/word/document.xml\"><pkg:xmlData>"
+            + $"<w:document xmlns:w=\"{W}\"><w:body><w:p><w:pPr>"
+            + "<w:pStyle w:val=\"4\"/><w:numPr><w:ilvl w:val=\"3\"/><w:numId w:val=\"1\"/></w:numPr>"
+            + "<w:spacing w:before=\"120\"/><w:ind w:left=\"420\"/>"
+            + "<w:rPr><w:ins w:id=\"1\" w:author=\"a\"/><w:b/></w:rPr>"
+            + "<w:sectPr/><w:pPrChange w:id=\"2\" w:author=\"a\"><w:pPr/></w:pPrChange>"
+            + "</w:pPr></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>";
+        var properties = XElement.Parse(WordOmmlInsertionXml.ParagraphProperties(export)!);
+        Assert.Equal(W + "pPr", properties.Name);
+        Assert.Equal(new[] { "pStyle", "numPr", "spacing", "ind", "rPr" }, properties.Elements().Select(e => e.Name.LocalName));
+        Assert.Equal(new[] { "b" }, properties.Element(W + "rPr")!.Elements().Select(e => e.Name.LocalName));
+    }
+
+    [Fact]
     public void OtherContentOfTheMarkerRunIsKeptOnItsSide()
     {
         const string marker = "VTXmarker";

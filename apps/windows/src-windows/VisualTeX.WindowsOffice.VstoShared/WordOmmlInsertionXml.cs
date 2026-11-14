@@ -14,10 +14,14 @@ internal static class WordOmmlInsertionXml
     private static readonly XNamespace Word =
         "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
-    // The character formatting of the last paragraph mark in a WordOpenXML
-    // export (a paragraph's own export ends with that paragraph), without
-    // revision marks; null when the mark has none.
-    internal static string? ParagraphMarkRunProperties(string? wordOpenXml)
+    // The paragraph properties of the last paragraph in a WordOpenXML export (a
+    // paragraph's own export ends with that paragraph): style, list numbering,
+    // indentation, spacing and the mark's character formatting. When an equation
+    // is imported into an empty paragraph Word keeps the package's paragraph
+    // properties, so they must be the target paragraph's own, or its style and
+    // numbering are lost. Revision marks and a section break are not carried.
+    // Null when the paragraph has none.
+    internal static string? ParagraphProperties(string? wordOpenXml)
     {
         if (string.IsNullOrWhiteSpace(wordOpenXml)) return null;
         var body = XDocument.Parse(wordOpenXml!, LoadOptions.PreserveWhitespace)
@@ -26,18 +30,31 @@ internal static class WordOmmlInsertionXml
         var properties = body?
             .Elements(Word + "p")
             .LastOrDefault()?
-            .Element(Word + "pPr")?
-            .Element(Word + "rPr");
+            .Element(Word + "pPr");
         if (properties is null) return null;
         var copy = new XElement(properties);
-        copy.Elements()
+        copy.Elements(Word + "pPrChange").Remove();
+        copy.Elements(Word + "sectPr").Remove();
+        copy.Element(Word + "rPr")?.Elements()
             .Where(element => element.Name == Word + "ins"
                 || element.Name == Word + "del"
                 || element.Name == Word + "moveFrom"
                 || element.Name == Word + "moveTo"
                 || element.Name == Word + "rPrChange")
             .Remove();
+        if (copy.Element(Word + "rPr") is { HasElements: false } emptyRunProperties) emptyRunProperties.Remove();
         return copy.HasElements ? copy.ToString(SaveOptions.DisableFormatting) : null;
+    }
+
+    // Paragraph properties without a display host's own layout: tab stops and
+    // justification belong to the VisualTeX display layout, not to the paragraph.
+    internal static string? WithoutDisplayLayout(string? paragraphProperties)
+    {
+        if (string.IsNullOrWhiteSpace(paragraphProperties)) return null;
+        var properties = XElement.Parse(paragraphProperties!, LoadOptions.PreserveWhitespace);
+        properties.Elements(Word + "tabs").Remove();
+        properties.Elements(Word + "jc").Remove();
+        return properties.HasElements ? properties.ToString(SaveOptions.DisableFormatting) : null;
     }
 
     internal static void ReplaceOrdinaryMarkerRun(

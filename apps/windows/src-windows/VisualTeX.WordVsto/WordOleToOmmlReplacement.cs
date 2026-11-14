@@ -94,6 +94,16 @@ internal static class WordOleToOmmlReplacement
                     throw new InvalidOperationException("Word lost the exact OLE replacement boundary.");
                 locator = bookmarks[_owner.LocatorName];
                 component = locator.Range;
+                if (Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH") is { Length: > 0 } tracePath)
+                {
+                    try
+                    {
+                        File.WriteAllText(tracePath + ".ole-omml-fragment-" + DateTime.Now.Ticks + ".xml", _fragment);
+                        WordDoubleClickHook.TraceMessage(
+                            $"exact-ole-imported locator={component.Start}:{component.End} text={string.Join(",", (component.Text ?? string.Empty).Take(24).Select(c => ((int)c).ToString("X4")))}");
+                    }
+                    catch (Exception error) { WordDoubleClickHook.TraceMessage($"exact-ole-trace-failed {error.Message}"); }
+                }
                 maths = component.OMaths;
                 if (maths.Count != 1)
                     throw new InvalidOperationException("The OLE replacement did not materialize exactly one native OMath.");

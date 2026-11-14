@@ -38,6 +38,9 @@ internal sealed partial class WordFormulaService
         internal int SelectionEnd { get; set; }
         internal int? VerticalPercentScrolled { get; set; }
         internal int? HorizontalPercentScrolled { get; set; }
+        // Length changes of a completed batch since the capture. The restored
+        // selection follows them, so it covers the same text afterwards.
+        internal WordCoordinateShifts? Shifts { get; set; }
     }
 
     private sealed class LatexRedrawSourceContext
@@ -1858,7 +1861,8 @@ internal sealed partial class WordFormulaService
         MathTypeMtefCodec.RewriteResult? preparedStandaloneGenerated = null,
         byte[]? preparedStandaloneCompoundFile = null,
         string? preparedStandaloneSemanticSignature = null,
-        Range? preparedBatchMathTypeSection = null)
+        Range? preparedBatchMathTypeSection = null,
+        WordParagraphSnapshot? sourceParagraph = null)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
@@ -2635,7 +2639,8 @@ internal sealed partial class WordFormulaService
                             bodyFormatting: bodyFormatting,
                             nativeStylesAlreadyPrepared: mathTypeNativeStylesPrepared,
                             preservedDisplayParagraphLayout: preservedDisplayParagraphLayout,
-                            knownDisplayColumnWidth: knownDisplayColumnWidth);
+                            knownDisplayColumnWidth: knownDisplayColumnWidth,
+                            sourceParagraph: sourceParagraph);
                     }
                     else
                     {
@@ -2649,7 +2654,8 @@ internal sealed partial class WordFormulaService
                             bodyFormatting: bodyFormatting,
                             nativeStylesAlreadyPrepared: mathTypeNativeStylesPrepared,
                             preservedDisplayParagraphLayout: preservedDisplayParagraphLayout,
-                            knownDisplayColumnWidth: knownDisplayColumnWidth);
+                            knownDisplayColumnWidth: knownDisplayColumnWidth,
+                            sourceParagraph: sourceParagraph);
                     }
                 }
                 TraceInsertPerf("configure-display-numbering");
@@ -8379,8 +8385,10 @@ internal sealed partial class WordFormulaService
             else
             {
                 content = document.Content;
-                var start = Math.Max(content.Start, Math.Min(state.SelectionStart, content.End));
-                var end = Math.Max(start, Math.Min(state.SelectionEnd, content.End));
+                var capturedStart = state.Shifts?.Map(state.SelectionStart) ?? state.SelectionStart;
+                var capturedEnd = state.Shifts?.Map(state.SelectionEnd) ?? state.SelectionEnd;
+                var start = Math.Max(content.Start, Math.Min(capturedStart, content.End));
+                var end = Math.Max(start, Math.Min(capturedEnd, content.End));
                 object startValue = start;
                 object endValue = end;
                 fallback = document.Range(ref startValue, ref endValue);
@@ -10378,7 +10386,8 @@ internal sealed partial class WordFormulaService
         WordCharacterFormatting? bodyFormatting = null,
         bool nativeStylesAlreadyPrepared = false,
         MathTypeDisplayParagraphLayout? preservedDisplayParagraphLayout = null,
-        float? knownDisplayColumnWidth = null)
+        float? knownDisplayColumnWidth = null,
+        WordParagraphSnapshot? sourceParagraph = null)
     {
         Range? shapeRange = null;
         try
@@ -10393,7 +10402,8 @@ internal sealed partial class WordFormulaService
                 bodyFormatting,
                 nativeStylesAlreadyPrepared,
                 preservedDisplayParagraphLayout,
-                knownDisplayColumnWidth);
+                knownDisplayColumnWidth,
+                sourceParagraph);
         }
         finally { Release(shapeRange); }
     }
@@ -10407,7 +10417,8 @@ internal sealed partial class WordFormulaService
         WordCharacterFormatting? bodyFormatting = null,
         bool nativeStylesAlreadyPrepared = false,
         MathTypeDisplayParagraphLayout? preservedDisplayParagraphLayout = null,
-        float? knownDisplayColumnWidth = null)
+        float? knownDisplayColumnWidth = null,
+        WordParagraphSnapshot? sourceParagraph = null)
     {
         Range? shapeRange = null;
         Paragraphs? paragraphs = null;
@@ -10436,16 +10447,25 @@ internal sealed partial class WordFormulaService
                            "MathType.Display.EnsureNativeStyles"))
                     EnsureMathTypeNativeStyles(document, bodyFormatting);
             }
+            // A converted formula stays in the user's paragraph. Only a body
+            // paragraph in the default style becomes MathType's native
+            // MTDisplayEquation; a heading, list or custom style is kept and
+            // MathType adds just its center/right tab stops.
+            var keepUserParagraph = sourceParagraph is not null
+                && !sourceParagraph.UsesDefaultStyle;
             object displayStyle = "MTDisplayEquation";
             // Clear direct formatting inherited from the source/blank paragraph
             // first, then apply MathType's native paragraph style. Paragraph.Reset
             // can itself restore Normal, so applying MTDisplayEquation before Reset
             // silently lost the native style in real Word.
-            using (WordOperationMetrics.Measure(
-                       "MathType.Display.ResetAndApplyStyle"))
+            if (!keepUserParagraph)
             {
-                paragraph.Reset();
-                paragraphRange.set_Style(ref displayStyle);
+                using (WordOperationMetrics.Measure(
+                           "MathType.Display.ResetAndApplyStyle"))
+                {
+                    paragraph.Reset();
+                    paragraphRange.set_Style(ref displayStyle);
+                }
             }
             using (WordOperationMetrics.Measure(
                        "MathType.Display.NormalizeParagraph"))
@@ -10455,7 +10475,9 @@ internal sealed partial class WordFormulaService
                     paragraph,
                     paragraphRange,
                     preservedDisplayParagraphLayout,
-                    knownDisplayColumnWidth);
+                    knownDisplayColumnWidth,
+                    sourceParagraph,
+                    keepUserParagraph);
             }
             format = paragraph.Format;
             tabs = format.TabStops;
@@ -10475,10 +10497,13 @@ internal sealed partial class WordFormulaService
                     throw new InvalidOperationException(
                         "MTDisplayEquation does not contain MathType's center/right tab stops.");
             }
-            using (WordOperationMetrics.Measure(
-                       "MathType.Display.RemoveListNumbering"))
+            if (!keepUserParagraph)
             {
-                try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
+                using (WordOperationMetrics.Measure(
+                           "MathType.Display.RemoveListNumbering"))
+                {
+                    try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
+                }
             }
 
             // Do not infer the OLE boundary from Paragraph.Range.Text. When Word's
@@ -11789,7 +11814,9 @@ internal sealed partial class WordFormulaService
         Paragraph paragraph,
         Range paragraphRange,
         MathTypeDisplayParagraphLayout? preservedLayout = null,
-        float? knownColumnWidth = null)
+        float? knownColumnWidth = null,
+        WordParagraphSnapshot? sourceParagraph = null,
+        bool keepUserParagraph = false)
     {
         ParagraphFormat? format = null;
         TabStops? tabs = null;
@@ -11797,7 +11824,15 @@ internal sealed partial class WordFormulaService
         try
         {
             format = paragraph.Format;
-            if (preservedLayout is null)
+            if (preservedLayout is null && keepUserParagraph)
+            {
+                // The user's style owns indents and spacing; MathType's tab
+                // scaffold needs only a non-centered paragraph.
+                sourceParagraph!.Restore(paragraphRange);
+                if (format.Alignment != WdParagraphAlignment.wdAlignParagraphJustify)
+                    format.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
+            }
+            else if (preservedLayout is null)
             {
                 format.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
                 format.LeftIndent = 0;
@@ -11806,6 +11841,9 @@ internal sealed partial class WordFormulaService
                 format.SpaceBefore = 0;
                 format.SpaceAfter = 0;
                 format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                // MTDisplayEquation owns spacing and the first line; the
+                // user's own left/right indent of the paragraph stays.
+                sourceParagraph?.Restore(paragraphRange, keepStyle: false);
             }
             else
             {
