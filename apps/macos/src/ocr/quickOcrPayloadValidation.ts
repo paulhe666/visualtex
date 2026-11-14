@@ -36,3 +36,10 @@ export function decodeQuickOcrCapture(
     extension: extension.toLowerCase(),
   };
 }
+
+export function decodeSilentOcrShortcut(value: unknown): string {
+  if (typeof value !== "string" || value.length > 128) {
+    throw new Error("VisualTeX silent OCR returned an invalid shortcut.");
+  }
+  return value;
+}
