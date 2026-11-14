@@ -23,6 +23,7 @@ mod ocr_provider;
 #[cfg(windows)]
 mod ocr_models;
 mod ocr_storage;
+#[path = "../../../shared/visualtex-backend/src/ocr_offline.rs"]
 mod ocr_offline;
 #[cfg(windows)]
 mod ocr_python_bundle;
@@ -37,6 +38,7 @@ pub fn system_font_asset_acceptance_json(
         .map_err(|error| format!("VisualTeX could not serialize the system font asset: {error}"))
 }
 mod document_export;
+#[path = "../../../shared/visualtex-backend/src/document_library.rs"]
 mod document_library;
 mod office;
 #[cfg(windows)]

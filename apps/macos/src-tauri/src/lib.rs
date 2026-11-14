@@ -14,7 +14,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod document_export;
+#[path = "../../../shared/visualtex-backend/src/document_library.rs"]
 mod document_library;
+#[path = "../../../shared/visualtex-backend/src/ocr_offline.rs"]
 mod ocr_offline;
 mod ocr_provider;
 mod anywhere;

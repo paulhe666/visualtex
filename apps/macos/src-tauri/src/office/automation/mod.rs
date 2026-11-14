@@ -1,10 +1,12 @@
 //! Agent access to Word and PowerPoint for Mac (docs/office-mcp/MACOS.md): the MCP endpoint agents
 //! call (`/mcp` on the companion), the stdio relay their clients start (`visualtex --mcp-stdio`), and
 //! the add-in macro each operation runs in.
+#[path = "../../../../../shared/visualtex-backend/src/office/automation/audit.rs"]
 pub mod audit;
 pub mod hosts;
 pub mod mcp;
 pub mod render;
+#[path = "../../../../../shared/visualtex-backend/src/office/automation/settings.rs"]
 pub mod settings;
 pub mod stdio;
 pub mod writes;
