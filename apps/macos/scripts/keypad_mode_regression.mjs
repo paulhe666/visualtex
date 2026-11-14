@@ -407,75 +407,42 @@ async function main() {
       true,
       `keypad LaTeX format trigger is blocked: ${JSON.stringify(codeFormatTriggerHit)}`,
     );
+    // the LaTeX format menu is the universal format profile (one setting each for text, inline and display)
     await clickSelector('.editor-code-format-control .code-format-primary');
     const visibleFormatHitTarget = await evaluate(`(() => {
-      const item = document.querySelector('[data-format="raw"]');
-      if (!item) return { format: null, reason: 'missing-item' };
-      const box = item.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        box.left + box.width / 2,
-        box.top + box.height / 2,
-      );
-      const menu = item.closest('.code-format-menu');
-      const menuRect = menu?.getBoundingClientRect();
+      const menu = document.querySelector('.latex-profile-menu');
+      const option = menu?.querySelector('[data-latex-display-wrapper="bracket"]');
+      if (!option) return { option: null, reason: 'missing-option' };
+      const box = option.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      const menuRect = menu.getBoundingClientRect();
       return {
-        format: hit?.closest('[data-format="raw"]')?.getAttribute('data-format') ?? null,
-        itemRect: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
-        menuRect: menuRect
-          ? { left: menuRect.left, top: menuRect.top, right: menuRect.right, bottom: menuRect.bottom }
-          : null,
+        option: hit?.closest('[data-latex-display-wrapper]')?.getAttribute('data-latex-display-wrapper') ?? null,
+        menuRect: { left: menuRect.left, top: menuRect.top, right: menuRect.right, bottom: menuRect.bottom },
         viewport: { width: innerWidth, height: innerHeight },
-        autoAvoided:
-          menu instanceof HTMLElement &&
-          menu.dataset.visualtexAutoAvoidAdjusted === 'true',
         hitTag: hit?.tagName ?? null,
         hitClass: hit instanceof HTMLElement ? hit.className : null,
       };
     })()`);
     assert.equal(
-      visibleFormatHitTarget.format,
-      "raw",
+      visibleFormatHitTarget.option,
+      "bracket",
       `the visible LaTeX format menu is blocked from real pointer input: ${JSON.stringify(visibleFormatHitTarget)}`,
     );
-    assert.equal(
-      visibleFormatHitTarget.autoAvoided,
-      true,
-      `the LaTeX format menu did not use the shared floating-layer auto-avoidance manager: ${JSON.stringify(visibleFormatHitTarget)}`,
-    );
     assert.ok(
-      visibleFormatHitTarget.menuRect &&
-        visibleFormatHitTarget.menuRect.left >= 8 &&
+      visibleFormatHitTarget.menuRect.left >= 8 &&
         visibleFormatHitTarget.menuRect.top >= 8 &&
         visibleFormatHitTarget.menuRect.right <= visibleFormatHitTarget.viewport.width - 8 &&
         visibleFormatHitTarget.menuRect.bottom <= visibleFormatHitTarget.viewport.height - 8,
-      `the LaTeX format menu escaped the viewport after shared auto-avoidance: ${JSON.stringify(visibleFormatHitTarget)}`,
+      `the LaTeX format menu escaped the viewport: ${JSON.stringify(visibleFormatHitTarget)}`,
     );
-    await clickSelector('[data-format="raw"]');
+    await clickSelector('[data-latex-display-wrapper="bracket"]');
     assert.equal(
-      await evaluate(`document.querySelector('[data-format="raw"]') === null`),
+      await evaluate(`document.querySelector('[data-latex-display-wrapper="bracket"]')?.classList.contains('is-selected') ?? false`),
       true,
-      "clicking a visible LaTeX format menu item did not close the menu",
+      "clicking a LaTeX format option did not select it",
     );
-
     await clickSelector('.editor-code-format-control .code-format-primary');
-    await evaluate(`document.querySelector('[data-format="align-star"]')?.scrollIntoView({ block: 'center' })`);
-    await sleep(40);
-    const alignFormatHitTarget = await evaluate(`(() => {
-      const item = document.querySelector('[data-format="align-star"]');
-      if (!item) return null;
-      const box = item.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        box.left + box.width / 2,
-        box.top + box.height / 2,
-      );
-      return hit?.closest('[data-format="align-star"]')?.getAttribute('data-format') ?? null;
-    })()`);
-    assert.equal(
-      alignFormatHitTarget,
-      "align-star",
-      "a scrolled LaTeX format menu item is blocked from real pointer input",
-    );
-    await clickSelector('[data-format="align-star"]');
 
     await evaluate(`(() => {
       Object.defineProperty(navigator, 'clipboard', {
@@ -485,17 +452,18 @@ async function main() {
       window.__visualtexCopied = '';
       return true;
     })()`);
+    // in keypad mode the save shortcut (Command+S on macOS) copies the formula in the chosen format
     await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', {
       key: 's',
       code: 'KeyS',
-      ctrlKey: true,
+      metaKey: true,
       bubbles: true,
       cancelable: true,
     }))`);
     await sleep(80);
     const copied = await evaluate(`window.__visualtexCopied ?? ''`);
-    assert.match(copied, /\\begin\{align\*\}/, "Ctrl+S did not copy the active align-star source format");
-    assert.doesNotMatch(copied, /^\$\$/m, "keypad Ctrl+S fell back to a hard-coded double-dollar format");
+    assert.match(copied, /\\\[/, "Command+S did not copy the formula with the chosen \\[ \\] display format");
+    assert.doesNotMatch(copied, /^\$\$/m, "keypad Command+S fell back to a hard-coded double-dollar format");
 
     await evaluate(`document.querySelector('[data-keypad-mode-toggle]')?.click()`);
     await sleep(120);

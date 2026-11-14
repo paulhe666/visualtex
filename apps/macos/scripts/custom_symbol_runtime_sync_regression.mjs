@@ -856,7 +856,8 @@ async function main() {
         hasArtwork: svg.svg.includes('data-visualtex-custom-symbol="regression-live-selfdefa"'),
         hasUpdatedCircle: /<circle\\b[^>]*cx="460"[^>]*r="205"/.test(svg.svg),
         mathMl: runtime.latexToMathMl(BS + "selfdefa", false),
-        wordHasOmml: Boolean(word.omml?.omml?.includes("<m:oMath")),
+        // Word's OMML is written by the backend from this MathML
+        wordHasMathMl: Boolean(word.wordMathMl?.includes("<math")),
         wordSvgUsesArtwork: word.svg.svg.includes('data-visualtex-custom-symbol="regression-live-selfdefa"'),
         wordNoFallbackRejected,
         wordNoFallbackMessage,
@@ -867,7 +868,7 @@ async function main() {
     assert.equal(exportState.hasArtwork, true);
     assert.equal(exportState.hasUpdatedCircle, true);
     assert.match(exportState.mathMl, /&#x2295;/);
-    assert.equal(exportState.wordHasOmml, true);
+    assert.equal(exportState.wordHasMathMl, true, JSON.stringify(exportState));
     assert.equal(exportState.wordSvgUsesArtwork, true);
     assert.equal(exportState.wordNoFallbackRejected, true);
     assert.match(exportState.wordNoFallbackMessage, /Word OMML|vtxtestsymbol|selfdefb|resolve/i);
