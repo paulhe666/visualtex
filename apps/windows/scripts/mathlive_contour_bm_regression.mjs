@@ -570,7 +570,8 @@ async function main() {
       })()`,
       "refocused current field for bm suggestion",
     );
-    await typeText(String.raw`\b`);
+    // candidates are ranked by corpus frequency: \bm is not among the first at \b
+    await typeText(String.raw`\bm`);
 
     const bmState = await waitForEvaluation(
       `(() => {
