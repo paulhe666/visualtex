@@ -5922,7 +5922,7 @@ async function main() {
         const stored = JSON.parse(localStorage.getItem("visualtex-custom-formula-tiles") || "{}");
         const notice = document.querySelector("[data-tile-save-notice]")?.textContent ?? "";
         return {
-          ready: /已经是磁贴|already a tile/.test(notice) && stored.tiles?.length === 1,
+          ready: /磁贴已存在|Already a tile/.test(notice) && stored.tiles?.length === 1,
           notice,
           tiles: stored.tiles?.length,
         };
