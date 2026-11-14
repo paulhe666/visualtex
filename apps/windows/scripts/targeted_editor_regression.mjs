@@ -5996,7 +5996,6 @@ async function main() {
           {
             commonTilesState,
             insertedTileState,
-            customSymbolDesignerVisualState,
             customTileState,
             customTileContextState,
             deletedCustomTileState,

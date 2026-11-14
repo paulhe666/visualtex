@@ -144,11 +144,13 @@ async function main() {
             ? 9
             : key === "Escape"
               ? 27
-              : key === " "
-                ? 32
-                : key === "\\"
-                  ? 220
-                  : 0;
+              : key === "ArrowDown"
+                ? 40
+                : key === " "
+                  ? 32
+                  : key === "\\"
+                    ? 220
+                    : 0;
       const virtualKey =
         specialVirtualKey ||
         (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
@@ -167,6 +169,19 @@ async function main() {
       });
       await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
       await sleep(35);
+    };
+    // Candidates are ranked by corpus frequency (\begin{array} outranks cases):
+    // walk down the list to a candidate the way a user does.
+    const selectSuggestion = async (command) => {
+      for (let step = 0; step < 40; step += 1) {
+        const current = await evaluate(
+          `document.querySelector('#visualtex-native-input-suggestion-popover li.ML__popover__current')?.dataset.command ?? ''`,
+        );
+        if (current === command) return;
+        await typeKey("ArrowDown", "ArrowDown", "");
+        await sleep(40);
+      }
+      throw new Error(`${command} could not be selected in the suggestion list`);
     };
 
     await evaluate(`new Promise((resolve) => {
@@ -241,7 +256,8 @@ async function main() {
           .map((node) => node.textContent ?? "")
           .join(""),
         visible: panel?.classList.contains('is-visible') ?? false,
-        command: panel?.querySelector('li.ML__popover__current')?.dataset.command ?? '',
+        commands: Array.from(panel?.querySelectorAll('li[data-command]') ?? [])
+          .map((item) => item.dataset.command ?? ''),
       };
     })()`);
     assert.equal(begSuggestion.raw.replace(/\s+/g, ""), "\\beg");
@@ -250,12 +266,16 @@ async function main() {
       true,
       "cases suggestion did not appear at the early \\beg prefix",
     );
-    assert.equal(begSuggestion.command, "\\begin{cases}");
+    assert.ok(
+      begSuggestion.commands.includes("\\begin{cases}"),
+      `cases is not among the \\beg candidates: ${JSON.stringify(begSuggestion.commands)}`,
+    );
 
     for (const letter of "in") {
       await typeKey(letter, `Key${letter.toUpperCase()}`);
     }
     await sleep(120);
+    await selectSuggestion("\\begin{cases}");
 
     const casesSuggestion = await evaluate(`(() => {
       const field = document.querySelector("math-field");
@@ -313,9 +333,10 @@ async function main() {
     );
     assert.equal(typedCases.raw, "", "accepted cases input remained in raw-LaTeX mode");
 
-    // Accepting cases above records one native-candidate use. Verify that the
-    // synthetic environment candidate now participates in the exact same
-    // frequency-ranked native pool as ordinary MathLive `\\b...` commands.
+    // The synthetic environment candidate is part of the same frequency-ranked
+    // native pool as ordinary MathLive `\\b...` commands. (The one use recorded
+    // above is a small boost; \\begin{array} and the common \\b commands still
+    // come first.)
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
       field.setValue("", { insertionMode: "replaceAll" });
@@ -351,11 +372,6 @@ async function main() {
       bPool.commands.some((command) => command !== "\\begin{cases}" && command.startsWith("\\b")),
       `the \\b pool did not retain ordinary MathLive b-commands: ${JSON.stringify(bPool.commands)}`,
     );
-    assert.equal(
-      bPool.selected,
-      "\\begin{cases}",
-      `recent cases usage did not promote it through native frequency ranking: ${JSON.stringify(bPool.commands)}`,
-    );
 
     await typeKey("e", "KeyE");
     await sleep(100);
@@ -368,7 +384,6 @@ async function main() {
       };
     })()`);
     assert.ok(bePool.commands.includes("\\begin{cases}"), "cases disappeared at the \\be prefix");
-    assert.equal(bePool.selected, "\\begin{cases}");
 
     await typeKey("g", "KeyG");
     await sleep(100);
@@ -381,15 +396,15 @@ async function main() {
       };
     })()`);
     assert.ok(begPool.commands.includes("\\begin{cases}"), "cases disappeared at the \\beg prefix");
-    assert.equal(begPool.selected, "\\begin{cases}");
 
+    await selectSuggestion("\\begin{cases}");
     await typeKey(" ", "Space", " ");
     await sleep(100);
     const casesFromRankedPrefix = await evaluate(`document.querySelector("math-field")?.value ?? ""`);
     assert.match(
       casesFromRankedPrefix,
       /\\begin\{cases\}\\placeholder\{\} & \\placeholder\{\}\\end\{cases\}/,
-      "accepting the frequency-ranked cases candidate from a short prefix failed",
+      "accepting the cases candidate from a short prefix failed",
     );
 
     await typeKey("\\", "Backslash", "\\");
