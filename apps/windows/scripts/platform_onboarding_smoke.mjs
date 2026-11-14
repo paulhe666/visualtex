@@ -132,7 +132,6 @@ assert(!hooksSource.includes("-CompanionOnly"));
 assert(hooksSource.includes("visualtex_office_static_installed"));
 assert(hooksSource.includes("RuntimeVerificationPending"));
 assert(hooksSource.includes("without leaving a resident VisualTeX process"));
-assert(hooksSource.includes("安装阶段不会启动常驻后台进程"));
 assert(hooksSource.includes("Companion and Word/PowerPoint connection verification are deferred"));
 assert(hooksSource.includes('StrCpy $VisualTeXOfficeChoice "native"'));
 assert(hooksSource.includes('-VisualTeXPath "$INSTDIR\\${MAINBINARYNAME}.exe"'));

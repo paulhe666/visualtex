@@ -93,7 +93,7 @@ const steps27 = macOfficeFullDiskAccessSteps(true, 27, false).join(" ");
 assert.match(steps27, /Files & Folders/, "macOS 27 keeps Full Disk Access under Files & Folders");
 assert.doesNotMatch(steps27, /earlier VisualTeX/, "a new user has no old entry to remove");
 assert.match(macOfficeFullDiskAccessSteps(true, 26, false).join(" "), /> Full Disk Access\./, "earlier macOS has its own Full Disk Access list");
-assert.match(macOfficeFullDiskAccessSteps(true, 27, true).join(" "), /remove it first/, "an updating user removes the earlier entry first");
-assert.match(macOfficeFullDiskAccessSteps(false, 27, true).join(" "), /先删除/, "the Chinese steps include the removal too");
+assert.match(macOfficeFullDiskAccessSteps(true, 27, true).join(" "), /Remove any earlier VisualTeX entry/, "an updating user removes the earlier entry first");
+assert.match(macOfficeFullDiskAccessSteps(false, 27, true).join(" "), /移除列表中的旧版 VisualTeX/, "the Chinese steps include the removal too");
 
 console.log("macOS Office onboarding decisions passed.");
