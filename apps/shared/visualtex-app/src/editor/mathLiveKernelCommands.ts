@@ -1,5 +1,6 @@
 import type { MathfieldElement, Selection, Selector } from "mathlive";
-import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
+import type { CommandUsage } from "../types/command";
+import { APP_PLATFORM } from "@platform/appInfo";
 
 export interface MathLivePersistentTypingStyle {
   bold: boolean;
@@ -354,7 +355,10 @@ function syncStableNativeInputPopover() {
   stable.setAttribute("aria-hidden", "false");
 }
 
+// Windows shows a stable copy of the kernel's candidate list (its pages numbered, keys bridged to the
+// kernel); macOS shows the kernel's own list.
 function scheduleStableNativeInputPopoverSync() {
+  if (APP_PLATFORM !== "windows") return;
   if (typeof window === "undefined" || typeof document === "undefined") return;
   ensureNativeInputPopoverObservers();
   window.cancelAnimationFrame(stableNativeInputPopoverFrame);
@@ -388,6 +392,8 @@ export function toggleMathLiveSelectionStyle(
   return field.executeCommand("visualTexToggleSelectionStyle" as Selector, kind, selection);
 }
 
+// A selection that covers only the ^/_ attachment of c^2 paints a glyph-less
+// container; move that paint onto the script content (c^{\textcolor{..}{2}}).
 export function paintMathLiveDetachedScripts(
   field: MathfieldElement,
   selection: Selection,

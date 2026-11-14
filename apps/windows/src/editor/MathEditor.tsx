@@ -109,7 +109,7 @@ import {
   setMathLivePersistentTypingStyle,
   toggleMathLiveSelectionStyle,
   type MathLivePersistentTypingStyle,
-} from "./mathLiveKernelCommands";
+} from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";
 import { isSafeFormulaStyleColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../../../shared/visualtex-app/src/export/pngClipboard";
 import {

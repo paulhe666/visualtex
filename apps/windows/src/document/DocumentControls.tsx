@@ -76,7 +76,7 @@ import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores
 import { useEditorStore } from "../stores/editorStore";
 import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { ColorMenuButton } from "../../../shared/visualtex-app/src/document/ColorPalette";
-import { setMathLivePersistentTypingStyle, type MathLivePersistentTypingStyle } from "../editor/mathLiveKernelCommands";
+import { setMathLivePersistentTypingStyle, type MathLivePersistentTypingStyle } from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";
 import { portableFormulaLatex } from "./DocumentEditor";
 
 type Lang = "en" | "zh";
