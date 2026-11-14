@@ -275,11 +275,14 @@ async function main() {
             fieldLeft: fieldBounds.left,
             markerLefts: markers.map((marker) => marker.getBoundingClientRect().left),
             visualAnchorLefts: markers.map(visualAnchorLeft),
-            markerMarginLefts: markers.map(
-              (marker) => Number.parseFloat(getComputedStyle(marker).marginLeft || '0') || 0,
+            // the space the editor gives each marker (the layout engine moves the material after it by this)
+            markerSpaceLefts: markers.map(
+              (_marker, index) =>
+                Number.parseFloat(field.style.getPropertyValue('--visualtex-align-marker-' + index + '-left') || '0') || 0,
             ),
-            markerMarginRights: markers.map(
-              (marker) => Number.parseFloat(getComputedStyle(marker).marginRight || '0') || 0,
+            markerSpaceRights: markers.map(
+              (_marker, index) =>
+                Number.parseFloat(field.style.getPropertyValue('--visualtex-align-marker-' + index + '-right') || '0') || 0,
             ),
             marginLeft: Number.parseFloat(field.style.marginLeft || '0') || 0,
             hostAligned: host?.classList.contains('has-explicit-align-marker') ?? false,
@@ -323,8 +326,8 @@ async function main() {
     assert.ok(
       state.entries.some(
         (entry: any) =>
-          (entry.markerMarginLefts[1] ?? 0) > 0 ||
-          (entry.markerMarginRights[1] ?? 0) > 0,
+          (entry.markerSpaceLefts[1] ?? 0) > 0 ||
+          (entry.markerSpaceRights[1] ?? 0) > 0,
       ),
       `Acceptance did not exercise multi-pair marker spacing: ${JSON.stringify(state.entries)}`,
     );

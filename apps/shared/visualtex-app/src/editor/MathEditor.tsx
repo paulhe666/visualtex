@@ -744,7 +744,6 @@ function captureFieldSnapshot(field: MathfieldElement) {
 
 const visualTexPlaceholderStyleId = "visualtex-structural-placeholder-style";
 const visualTexFormulaFontStyleId = "visualtex-formula-font-style";
-const visualTexAlignmentMarkerStyleId = "visualtex-alignment-marker-style";
 const visualTexFormulaUprightFontProperty =
   "--visualtex-formula-upright-font-family";
 const visualTexFormulaItalicFontProperty =
@@ -2844,34 +2843,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         columnWidths.reduce((total, width) => total + width, 0) +
         pairGap * pairGapCount;
 
+      // The layout engine moves everything after marker N (and the marker itself) by the space the CSS variables
+      // --visualtex-align-marker-N-left/right give the markers up to it (tex-layout alignShift); margins on the
+      // marker elements would move the markers a second time.
       for (const entry of marked) {
-        const shadowRoot = entry.field.shadowRoot;
-        if (shadowRoot) {
-          let alignmentStyle = shadowRoot.getElementById(
-            visualTexAlignmentMarkerStyleId,
-          ) as HTMLStyleElement | null;
-          if (!alignmentStyle) {
-            alignmentStyle = document.createElement("style");
-            alignmentStyle.id = visualTexAlignmentMarkerStyleId;
-            shadowRoot.append(alignmentStyle);
-          }
-          // MathLive may rebuild its rendered atom tree after the math-field is
-          // laid out. Keep compensation in field-owned CSS variables and a
-          // stable shadow-root stylesheet instead of mutating transient marker
-          // nodes directly. Top-level alignment markers are siblings, so the
-          // Selectors-4 `of <selector>` form addresses the Nth marker rather
-          // than the Nth arbitrary MathLive atom.
-          alignmentStyle.textContent = Array.from(
-            { length: maxMarkerCount },
-            (_, markerIndex) => `
-              .${VISUALTEX_ALIGNMENT_MARKER_CLASS}:nth-child(${markerIndex + 1} of .${VISUALTEX_ALIGNMENT_MARKER_CLASS}) {
-                margin-left: var(--visualtex-align-marker-${markerIndex}-left, 0px) !important;
-                margin-right: var(--visualtex-align-marker-${markerIndex}-right, 0px) !important;
-              }
-            `,
-          ).join("\n");
-        }
-
         const hostWidth = entry.host.getBoundingClientRect().width;
         const groupStart =
           formulaAlignment === "left"
