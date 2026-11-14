@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../../../shared/visualtex-app/src/editor/MathEditor";
+import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
+import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
 import {
   editingModelOf,
   redrawOpenFormulas,
   setFormulaCaretBand,
   setFormulaLineLayout,
   visualTexEditingCore,
-} from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { useDocumentSession, useHistoryManager } from "../../../shared/visualtex-app/src/history/EditorSession";
-import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";
-import { useAnywhereHotkeyStore } from "../../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
+} from "../editor/visualTexLayoutRuntime";
+import { useDocumentSession, useHistoryManager } from "../history/EditorSession";
+import type { DocumentSnapshot } from "../history/historyTypes";
+import { useEditorStore } from "../stores/editorStore";
+import { applyDocumentTheme } from "../themeSync";
+import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import {
   ANYWHERE_HOTKEY_ACTIONS,
   anywhereHotkeyLabel,
   isAnywhereHotkeyAction,
   matchAnywhereHotkey,
   type AnywhereHotkeyAction,
-} from "../../../shared/visualtex-app/src/shortcuts/anywhereHotkeys";
+} from "../shortcuts/anywhereHotkeys";
 import {
   formulaMarkdown,
   formulaPng,
@@ -32,7 +32,7 @@ import {
   rememberOutputMode,
   warmOutputMode,
   type AnywhereOutputMode,
-} from "../../../shared/visualtex-app/src/anywhere/outputModes";
+} from "./outputModes";
 import {
   ANYWHERE_ACTIVATE_EVENT,
   ANYWHERE_COMPOSE_EVENT,
@@ -63,7 +63,10 @@ import {
   type AnywhereActivation,
   type AnywhereKey,
   type AnywhereLayout,
-} from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
+} from "./anywhereBridge";
+import { primaryModifierOnly } from "../runtime/platformConventions";
+// the notes and the shortcut hand-over of each system
+import { anywhereWindow } from "@platform/anywhereWindow";
 
 /** MathEditor's formula font size at zoom 1 (BASE_FORMULA_FONT_SIZE). */
 const EDITOR_BASE_FONT_PX = 54;
@@ -80,11 +83,6 @@ const COPIED_NOTICE_MS = 1800;
 const MODE_TAG_MS = 1600;
 /** The output mode's preview, cut to this many characters. */
 const MODE_PREVIEW_CHARS = 48;
-
-const NOTICE = {
-  accessibility: "输入法未连接",
-  copied: "已复制",
-} as const;
 
 type CoreMathfield = Parameters<typeof visualTexEditingCore.caretRect>[0];
 
@@ -188,6 +186,14 @@ function formulaBox() {
  * the field put the line's first piece to where the line's formula ends (the last line: to where
  * the held space ends, when the field tells). `line`: the field's line height and descent.
  */
+/** How long the last line's cover keeps a width the formula lost (a deleted character): the field
+ *  takes the narrower space a moment after the formula is drawn narrower (scheduleInline), and its
+ *  underline and caret stood past the formula meanwhile. */
+const SHRINK_COVER_MS = 200;
+/** Spare room in the in-line panel, right of and below the formula and its covers: they grow into it
+ *  in the frame the formula grows, without waiting for the window to be made larger. */
+const PANEL_SLACK = 96;
+
 function placeCovers(
   layer: HTMLElement | null,
   background: string | null,
@@ -195,16 +201,26 @@ function placeCovers(
   places: [number, number][],
   start: [number, number] | null,
   end: [number, number] | null,
-): { right: number; bottom: number } | null {
+  keep: { y: number; right: number } | null,
+  caretLine: [number, number] | null,
+): { right: number; bottom: number; last: { y: number; right: number } | null } | null {
   if (!layer) return null;
   const box = formulaBox();
   const lines = formulaLines();
   const covers: { left: number; right: number; top: number; bottom: number }[] = [];
-  if (box && lines && background && line && places.length) {
+  let lastLine: { y: number; right: number } | null = null;
+  if (box && background && line && !places.length) {
+    // the field holds a space before it has told where: the formula's line from the anchor, at
+    // least a filler's width (its underline and caret are there)
+    const baseline = box.baseline;
+    const right = box.left + Math.max(box.width, line.height * 0.75) + 3;
+    covers.push({ left: box.left - 3, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
+  } else if (box && lines && background && line && places.length) {
     const px = box.fontPx / SP_PER_EM;
     const byLine = new Map<number, { left: number; right: number }>();
-    lines.pieces.forEach((piece, index) => {
-      if (!places[index]) return;
+    // (a piece the field has no place for is drawn after the one before it: held with that one, its
+    // last piece while narrower than a filler, or not held yet)
+    lines.pieces.forEach((piece) => {
       const y = Math.round(piece.y * px * 4) / 4;
       const left = box.left + piece.x * px;
       const right = left + piece.width * px;
@@ -218,22 +234,51 @@ function placeCovers(
     ys.forEach((y, index) => {
       const span = byLine.get(y)!;
       // the first line from the anchor (the selected hair space before the formula)
-      const left = index === 0 ? Math.min(span.left, box.left + (start?.[0] ?? -3)) - 1 : span.left - 1;
+      // (not past it: the letter before the formula ends there, and lost its last pixel under the cover)
+      const left = index === 0 ? Math.min(span.left, box.left + (start?.[0] ?? -3)) - 0.25 : span.left - 1;
       // a line the field broke after holds its last piece to about a space past the formula; the
       // last line's held space ends where the field says (else a little past the formula)
       const last = index === ys.length - 1;
-      let right = span.right + (last ? 1 : Math.max(4, line.height * 0.6));
-      // (the field's caret may stand at its end: two pixels more)
+      // (the field's caret, a point or two wide, stands at the held space's end: never past the
+      // formula's on its last line, FormulaSpace)
+      let right = span.right + (last ? 3 : Math.max(4, line.height * 0.6));
       if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
+      if (last) {
+        lastLine = { y, right: right - box.left };
+        // a width just lost stays covered until the field has taken the narrower space
+        if (keep && Math.abs(keep.y - y) < 0.5) right = Math.max(right, box.left + keep.right);
+      }
       const baseline = box.baseline + y;
-      covers.push({ left, right, top: baseline - (line.height - line.descent), bottom: baseline + line.descent + 1 });
+      // (a field's caret is drawn a pixel taller than its line: Chrome)
+      covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
+      // The field's own caret stands where the held space ends, under the formula, and may be a few
+      // points taller than its line (WeChat's showed above the cover as a green dash, 2026-11-11):
+      // a cover of its own, a caret wide, taller than the line's.
+      if (last && end && Math.abs(end[1] - y) < 2) {
+        const at = box.left + end[0];
+        const over = Math.max(3, line.height * 0.2);
+        let top = baseline - (line.height - line.descent) - over;
+        let bottom = baseline + line.descent + over * 0.7;
+        // (as tall as the field has the space's last character: its caret is; WebKit sets the blanks
+        // in a taller font than the text, and its caret showed above the cover as a dot)
+        if (caretLine) {
+            const low = baseline + line.descent + caretLine[0];
+            top = Math.min(top, low - caretLine[1] - 2);
+            bottom = Math.max(bottom, low + 1.5);
+        }
+        covers.push({ left: at - 2, right: at + 3, top, bottom });
+      }
     });
   }
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();
   while (layer.children.length < covers.length) layer.appendChild(document.createElement("div"));
   // the panel holds the covers too (one may reach past the formula, to the end of the held space)
   const extent = covers.length
-    ? { right: Math.max(...covers.map((cover) => cover.right)), bottom: Math.max(...covers.map((cover) => cover.bottom)) }
+    ? {
+        right: Math.max(...covers.map((cover) => cover.right)),
+        bottom: Math.max(...covers.map((cover) => cover.bottom)),
+        last: lastLine,
+      }
     : null;
   covers.forEach((cover, index) => {
     const element = layer.children[index] as HTMLElement;
@@ -426,9 +471,7 @@ function formulaShortcut(key: { code: string; ctrl?: boolean; alt?: boolean; shi
   return matchAnywhereHotkey(useAnywhereHotkeyStore.getState().bindings, key);
 }
 
-/** Gives Windows the shortcuts that act while a formula is open: it hands
- *  them to this page whatever the host application does with modifier
- *  chords (Chrome keeps them from the input method). */
+/** Hands the native side the shortcuts that act while a formula is open (anywhereWindow.sharesFormulaShortcuts). */
 function shareFormulaShortcuts() {
   const bindings = useAnywhereHotkeyStore.getState().bindings;
   const shortcuts = ANYWHERE_HOTKEY_ACTIONS.filter((action) => !action.global).flatMap((action) => {
@@ -598,7 +641,7 @@ function sameLayout(a: AnywhereLayout | null, b: AnywhereLayout) {
 export function AnywhereApp() {
   const editorRef = useRef<MathEditorHandle>(null);
   const historyManager = useHistoryManager();
-  // Undo and redo (Ctrl+Z, Ctrl+Y) replay the formula's history in this window's editor, as in the main window.
+  // Undo and redo replay the formula's history in this window's editor, as in the main window.
   useDocumentSession(editorRef);
   const stripRef = useRef<HTMLDivElement>(null);
   const lines = useEditorStore((state) => state.lines);
@@ -635,6 +678,15 @@ export function AnywhereApp() {
   const piecePlacesRef = useRef<[number, number][]>([]);
   const pieceStartRef = useRef<[number, number] | null>(null);
   const pieceEndRef = useRef<[number, number] | null>(null);
+  const pieceCaretRef = useRef<[number, number] | null>(null);
+  /** The last line's cover widths of the last moments (placeCovers keeps the widest of them for
+   *  SHRINK_COVER_MS), the timer that lets it shrink after, and the frame the field is told in
+   *  (scheduleInline). */
+  const coverWidthsRef = useRef<{ at: number; y: number; right: number }[]>([]);
+  const shrinkTimerRef = useRef<number | null>(null);
+  const inlineFrameRef = useRef<number | null>(null);
+  /** The panel's last layout report (its window is set to the new size when it has been answered). */
+  const layoutReportRef = useRef<Promise<unknown> | null>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const lastModeRef = useRef<boolean | null>(null);
   const composingRef = useRef(false);
@@ -693,7 +745,7 @@ export function AnywhereApp() {
     async (image: File, target: MathEditorInsertionTarget, generation: number) => {
       ocrStatus("正在识别公式…");
       const { fileToOcrRequest, recognizeFormulaImage, normalizeOcrFormulaLines, DEFAULT_OCR_MODEL, OCR_MODELS } =
-        await import("../../../shared/visualtex-app/src/ocr/ocrService");
+        await import("../ocr/ocrService");
       let model = DEFAULT_OCR_MODEL;
       try {
         const stored = window.localStorage.getItem("visualtex.ocr.model");
@@ -742,7 +794,7 @@ export function AnywhereApp() {
   const runOcr = useCallback(
     () =>
       withOcr(async (target, generation) => {
-        ocrStatus("框选公式（Esc 取消）");
+        ocrStatus("框选公式区域（Esc 取消）");
         const data = await captureAnywhereScreenshot();
         if (!data || generationRef.current !== generation) {
           ocrStatus(null);
@@ -754,8 +806,9 @@ export function AnywhereApp() {
     [withOcr, ocrStatus, recognizeIntoFormula],
   );
 
-  /** Ctrl+V with the input method: an image on the clipboard is recognized
-   *  into the formula, text goes in as the main window pastes it. */
+  /** The paste shortcut (Ctrl+V, ⌘V on macOS) with the input method: an image
+   *  on the clipboard is recognized into the formula, text goes in as the main
+   *  window pastes it. */
   const pasteIntoFormula = useCallback(async () => {
     const generation = generationRef.current;
     if (!generation) return;
@@ -820,7 +873,7 @@ export function AnywhereApp() {
     freshDocument(mode);
     historyManager.clear();
     if (leftover) editorRef.current?.refreshLayout();
-  }, []);
+  }, [historyManager]);
 
   /** The input method keeps the formula's text (for a field that ends the
    *  composition itself) and its caret (pinyin candidates go under it). */
@@ -847,6 +900,33 @@ export function AnywhereApp() {
     }
   }, []);
 
+  // The field is told the formula's new widths once the panel has drawn the formula and its cover as
+  // they are now (two frames on): told at once, the field drew its wider space a frame before the
+  // panel drew the formula, and its underline and caret showed past the formula at every key
+  // (2026-11-10). Its space is never wider than the formula (FormulaSpace), so it grows under the
+  // cover drawn already.
+  // (A window made larger for them is set first: its layout report answered and a frame on.)
+  const scheduleInline = useCallback(() => {
+    if (inlineFrameRef.current !== null) return;
+    const report = () => {
+      inlineFrameRef.current = null;
+      reportInline();
+    };
+    inlineFrameRef.current = window.requestAnimationFrame(() => {
+      inlineFrameRef.current = window.requestAnimationFrame(() => {
+        const layout = layoutReportRef.current;
+        if (!layout) {
+          report();
+          return;
+        }
+        inlineFrameRef.current = -1;
+        void layout.finally(() => {
+          inlineFrameRef.current = window.requestAnimationFrame(report);
+        });
+      });
+    });
+  }, [reportInline]);
+
   const measure = useCallback(() => {
     const generation = generationRef.current;
     const strip = stripRef.current;
@@ -869,6 +949,11 @@ export function AnywhereApp() {
     // holds for it, on the line's baseline; on the caret line (pasting) the
     // strip's middle sits on the line.
     const box = inputMethodRef.current ? formulaBox() : null;
+    const now = performance.now();
+    const widths = coverWidthsRef.current.filter((width) => now - width.at < SHRINK_COVER_MS);
+    const lastY = widths.length ? widths[widths.length - 1].y : null;
+    const kept = widths.filter((width) => width.y === lastY);
+    const keep = kept.length ? { y: lastY as number, right: Math.max(...kept.map((width) => width.right)) } : null;
     const covers = placeCovers(
       coverRef.current,
       inputMethodRef.current ? fieldBackgroundRef.current : null,
@@ -876,7 +961,20 @@ export function AnywhereApp() {
       piecePlacesRef.current,
       pieceStartRef.current,
       pieceEndRef.current,
+      keep,
+      pieceCaretRef.current,
     );
+    if (covers?.last) {
+      widths.push({ at: now, ...covers.last });
+      // narrower than a width kept: drawn again once that is no longer kept
+      if (keep && keep.y === covers.last.y && keep.right > covers.last.right + 0.5 && shrinkTimerRef.current === null) {
+        shrinkTimerRef.current = window.setTimeout(() => {
+          shrinkTimerRef.current = null;
+          measureRef.current();
+        }, SHRINK_COVER_MS + 20);
+      }
+    }
+    coverWidthsRef.current = widths;
     const layout: AnywhereLayout = {
       width: Math.ceil(
         Math.max(
@@ -895,17 +993,31 @@ export function AnywhereApp() {
       anchorX: box ? box.left : formulaStartRef.current ?? rect.left + 1,
       anchorY: box ? box.baseline : rect.top + rect.height / 2,
     };
-    if (inputMethodRef.current) reportInline();
+    if (inputMethodRef.current) scheduleInline();
     if (covers) {
       layout.width = Math.max(layout.width, Math.ceil(covers.right + 1));
       layout.height = Math.max(layout.height, Math.ceil(covers.bottom + 1));
     }
+    if (inputMethodRef.current) {
+      // the window a little larger than the formula, and made smaller only when much larger: the
+      // formula and its cover grow into the spare room in the frame they grow
+      const previous = lastLayoutRef.current;
+      const slackY = Math.max(12, fieldLineRef.current?.height ?? 0);
+      if (previous && layout.width <= previous.width && previous.width - layout.width < PANEL_SLACK * 2) layout.width = previous.width;
+      else layout.width += PANEL_SLACK;
+      if (previous && layout.height <= previous.height && previous.height - layout.height < slackY * 2) layout.height = previous.height;
+      else layout.height += slackY;
+    }
     if (sameLayout(lastLayoutRef.current, layout)) return;
     lastLayoutRef.current = layout;
-    void reportAnywhereLayout(generation, layout).catch((error) =>
+    const report = reportAnywhereLayout(generation, layout).catch((error) =>
       console.error("Unable to place VisualTeX Anywhere", error),
     );
-  }, [reportInline]);
+    layoutReportRef.current = report;
+    void report.finally(() => {
+      if (layoutReportRef.current === report) layoutReportRef.current = null;
+    });
+  }, [scheduleInline]);
 
   const measureRef = useRef(measure);
   measureRef.current = measure;
@@ -950,6 +1062,8 @@ export function AnywhereApp() {
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
+      pieceCaretRef.current = null;
+      coverWidthsRef.current = [];
       inputMethodRef.current = Boolean(activation.inputMethod);
       setInputMethod(Boolean(activation.inputMethod));
       // set on several lines only in the field's line (input method)
@@ -978,7 +1092,7 @@ export function AnywhereApp() {
       } catch (error) {
         console.error("Unable to read VisualTeX settings", error);
       }
-      shareFormulaShortcuts();
+      if (anywhereWindow.sharesFormulaShortcuts) shareFormulaShortcuts();
       if (kept) {
         // The display shortcut makes the kept formula's row a display row.
         useEditorStore.getState().replaceDocumentState(
@@ -995,7 +1109,7 @@ export function AnywhereApp() {
       fieldInkRef.current = activation.inputMethod ? opaqueHex(activation.textColor) : null;
       fieldBackgroundRef.current = activation.inputMethod ? opaqueHex(activation.backgroundColor) : null;
       setTextColor(activation.inputMethod ? cssColor(activation.textColor) ?? systemTextColor() : null);
-      setNotice(activation.accessibilityTrusted ? null : NOTICE.accessibility);
+      setNotice(anywhereWindow.activationNotice(activation));
       appNameRef.current = activation.appName;
       const mode = rememberedOutputMode(activation.appName);
       outputModeRef.current = mode;
@@ -1058,7 +1172,7 @@ export function AnywhereApp() {
       if (outcome === "inserted") {
         startNewFormula();
       } else if (outcome === "copied") {
-        setNotice(NOTICE.copied);
+        setNotice(anywhereWindow.copiedNotice);
         window.setTimeout(() => {
           if (generationRef.current === generation) cancel();
         }, COPIED_NOTICE_MS);
@@ -1085,7 +1199,7 @@ export function AnywhereApp() {
       }),
       listenAnywhere(ANYWHERE_KEY_EVENT, isAnywhereKey, (key) => {
         if (key.generation !== generationRef.current || !inputMethodRef.current) return;
-        if (key.ctrl && key.code === "KeyV" && !key.meta && !key.alt) {
+        if (primaryModifierOnly({ ctrlKey: key.ctrl, metaKey: key.meta }) && key.code === "KeyV" && !key.alt) {
           void pasteIntoFormula();
           return;
         }
@@ -1114,6 +1228,7 @@ export function AnywhereApp() {
         pieceStartRef.current = pieces.start ?? null;
         // an estimated end is no place to cover to (it may lie past the held space, over the field's text)
         pieceEndRef.current = pieces.endEstimated ? null : pieces.end ?? null;
+        pieceCaretRef.current = pieces.caretLine ?? null;
         if (same) {
           measureRef.current();
           return;
@@ -1238,14 +1353,14 @@ export function AnywhereApp() {
   useEffect(() => {
     if (!session || !inputMethod) return;
     reportInline();
-    const follow = () => window.requestAnimationFrame(() => reportInline());
+    const follow = () => scheduleInline();
     document.addEventListener("selection-change", follow, true);
     document.addEventListener("mode-change", follow, true);
     return () => {
       document.removeEventListener("selection-change", follow, true);
       document.removeEventListener("mode-change", follow, true);
     };
-  }, [session, inputMethod, lines, zoom, reportInline]);
+  }, [session, inputMethod, lines, zoom, reportInline, scheduleInline]);
 
   // The panel became key: the keyboard goes to the formula.
   useEffect(() => {
