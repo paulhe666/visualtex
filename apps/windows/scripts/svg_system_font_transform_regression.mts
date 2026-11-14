@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 
-const result = latexToSvg(
+const result = await latexToSvg(
   String.raw`\arccos x+\operatorname{rank}(A)+\arctan y`,
   {
     displayMode: false,
     formulaLetterFont: "times",
     paddingPx: 2,
     background: "transparent",
+    // the MathJax drawing (MathType objects); the engine draws its own glyph outlines
+    renderer: "mathjax",
   },
 );
 
