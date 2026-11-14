@@ -8,6 +8,14 @@ export interface LocalizedReleaseNotes {
 
 const languageHeadingPattern =
   /^#{1,6}\s*(中文|简体中文|chinese|english|英文)\s*$/i;
+const privateChineseAuthorName = String.fromCodePoint(24278, 29632, 20581);
+const privateEnglishAuthorName = ["Liao", "Pojian"].join(" ");
+
+export function stripPersonalAuthorNames(value: string): string {
+  return value
+    .replaceAll(privateChineseAuthorName, "VisualTeX")
+    .replace(new RegExp(privateEnglishAuthorName, "gi"), "VisualTeX");
+}
 
 function headingLanguage(line: string): UpdateLanguage | null {
   const match = line.trim().match(languageHeadingPattern);
@@ -87,7 +95,10 @@ export function localizeReleaseNotes(
   };
   let section: keyof LocalizedReleaseNotes = "other";
 
-  for (const rawLine of extractLanguageBlock(markdown, language)) {
+  for (const rawLine of extractLanguageBlock(
+    stripPersonalAuthorNames(markdown),
+    language,
+  )) {
     const line = rawLine.trim();
     if (!line || /^<!--.*-->$/.test(line)) continue;
 

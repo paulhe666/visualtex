@@ -1,5 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import packageInfo from "../../package.json";
+import { APP_VERSION } from "@platform/appInfo";
 import { stripPersonalAuthorNames } from "./releaseNotes";
 
 const LATEST_RELEASE_API =
@@ -8,7 +8,7 @@ const VISUALTEX_GITHUB_HOST = "github.com";
 const VISUALTEX_GITHUB_PATH = "/paulhe666/visualtex";
 
 export const PROJECT_URL = "https://github.com/paulhe666/visualtex";
-export const CURRENT_VERSION = packageInfo.version;
+export const CURRENT_VERSION = APP_VERSION;
 
 export interface UpdateCheckResult {
   currentVersion: string;

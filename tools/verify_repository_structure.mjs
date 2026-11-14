@@ -125,12 +125,23 @@ function relativeTargets(relativePath) {
   }
   return targets;
 }
+const platformImportPattern = /(?:from\s*|import\s*\(\s*|import\s+)["']@platform\/([^"']+)["']/g;
 function checkTrackedPath(relativePath) {
-  // Shared code never reaches into an application.
+  // Shared code never reaches into an application; what it needs from one comes from "@platform/<module>",
+  // which both applications provide in src/platform.
   if (relativePath.startsWith("apps/shared/")) {
     if (!/\.(?:ts|tsx|mts|mjs|rs)$/.test(relativePath)) return;
     for (const [specifier, target] of relativeTargets(relativePath)) {
       if (/^apps\/(?:macos|windows)\//.test(target)) failures.push(`${relativePath} imports an application: ${specifier}`);
+    }
+    const content = readFileSync(resolve(root, relativePath), "utf8");
+    for (const [, module] of content.matchAll(platformImportPattern)) {
+      for (const app of ["windows", "macos"]) {
+        const base = resolve(root, `apps/${app}/src/platform/${module.replace(/\.tsx?$/, "")}`);
+        if (![".ts", ".tsx"].some((extension) => existsSync(base + extension))) {
+          failures.push(`${relativePath} needs @platform/${module}, which apps/${app}/src/platform does not provide`);
+        }
+      }
     }
     return;
   }

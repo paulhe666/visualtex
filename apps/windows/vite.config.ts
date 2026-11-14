@@ -17,6 +17,11 @@ export default defineConfig({
     // own copies of these packages.
     dedupe: sharedPackageDedupe,
     alias: [
+      // what shared code asks of this app (src/platform, imported as "@platform/<module>")
+      {
+        find: /^@platform\//,
+        replacement: fileURLToPath(new URL("./src/platform/", import.meta.url)),
+      },
       // the editing kernel (apps/shared/visualtex-core/src/kernel)
       {
         find: /^mathlive$/,

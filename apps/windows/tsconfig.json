@@ -24,6 +24,7 @@
       "prosemirror-*": ["./node_modules/prosemirror-*"],
       "markdown-it": ["./node_modules/@types/markdown-it"],
       "@lezer/*": ["./node_modules/@lezer/*"],
+      "@platform/*": ["./src/platform/*"],
       "zustand": ["./node_modules/zustand"],
       "zustand/*": ["./node_modules/zustand/*"],
       "@tauri-apps/api/*": ["./node_modules/@tauri-apps/api/*"],
