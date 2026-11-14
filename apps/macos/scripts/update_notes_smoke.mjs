@@ -70,8 +70,8 @@ assert.equal(
 const updateDialogSource = await readFile("src/components/UpdateDialog.tsx", "utf8");
 const releaseWelcomeSource = await readFile("src/update/releaseWelcome.ts", "utf8");
 const updateDialogStyles = await readFile("src/styles.css", "utf8");
-const windowsQqSource = await readFile("../windows/src/assets/visualtexQqGroup.ts", "utf8");
-assert(updateDialogSource.includes("../../../windows/src/assets/visualtexQqGroup"));
+const qqGroupSource = await readFile("../shared/visualtex-app/src/assets/visualtexQqGroup.ts", "utf8");
+assert(updateDialogSource.includes("../../../shared/visualtex-app/src/assets/visualtexQqGroup"));
 assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_NUMBER"));
 assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
 assert(updateDialogSource.includes("docs/images/wechat-pay.jpg"));
@@ -109,8 +109,8 @@ assert(
     .includes(privateEnglishName.toLocaleLowerCase()),
 );
 assert(!updateDialogSource.includes("Join the VisualTeX QQ community"));
-assert(windowsQqSource.includes('VISUALTEX_QQ_GROUP_NUMBER = "1045801770"'));
-assert(windowsQqSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
-assert(windowsQqSource.includes("data:image/png;base64"));
+assert(qqGroupSource.includes('VISUALTEX_QQ_GROUP_NUMBER = "1045801770"'));
+assert(qqGroupSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
+assert(qqGroupSource.includes("data:image/png;base64"));
 
 console.log("Localized update notes and QQ community card smoke test passed");

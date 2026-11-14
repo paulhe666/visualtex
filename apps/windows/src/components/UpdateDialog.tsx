@@ -16,7 +16,7 @@ import {
 import {
   VISUALTEX_QQ_GROUP_NUMBER,
   VISUALTEX_QQ_GROUP_QR_DATA_URL,
-} from "../assets/visualtexQqGroup";
+} from "../../../shared/visualtex-app/src/assets/visualtexQqGroup";
 import type { Language } from "../stores/editorStore";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";

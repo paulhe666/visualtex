@@ -22,7 +22,7 @@ import alipayImageUrl from "../../../../docs/images/alipay.jpg";
 import {
   VISUALTEX_QQ_GROUP_NUMBER,
   VISUALTEX_QQ_GROUP_QR_DATA_URL,
-} from "../../../windows/src/assets/visualtexQqGroup";
+} from "../../../shared/visualtex-app/src/assets/visualtexQqGroup";
 
 const QQ_GROUP_NUMBER = VISUALTEX_QQ_GROUP_NUMBER;
 const QQ_GROUP_IMAGE_URL = VISUALTEX_QQ_GROUP_QR_DATA_URL;
