@@ -6,7 +6,9 @@ import {
   type ReactNode,
 } from "react";
 import { BookOpenText, X } from "lucide-react";
-import manualMarkdown from "../../docs/help/VisualTeX_帮助手册.md?raw";
+import { HELP_MANUAL_MARKDOWN } from "@platform/helpManual";
+import { APP_VERSION } from "@platform/appInfo";
+import { onPlatform } from "../runtime/platformConventions";
 
 interface Props {
   open: boolean;
@@ -256,7 +258,7 @@ function ManualBlock({ block }: { block: MarkdownBlock }) {
 export function HelpManualDialog({ open, language, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const blocks = useMemo(() => parseManual(manualMarkdown), []);
+  const blocks = useMemo(() => parseManual(HELP_MANUAL_MARKDOWN), []);
   const toc = useMemo<TocEntry[]>(
     () =>
       blocks
@@ -308,7 +310,7 @@ export function HelpManualDialog({ open, language, onClose }: Props) {
             <BookOpenText size={18} />
             <span>
               <strong>{isEn ? "Help Manual" : "帮助手册"}</strong>
-              <small>VisualTeX 1.3.0 · macOS</small>
+              <small>VisualTeX {APP_VERSION} · {onPlatform("Windows", "macOS")}</small>
             </span>
           </div>
           <button

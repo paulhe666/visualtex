@@ -59,7 +59,7 @@ import { FormulaToolbar } from "../../shared/visualtex-app/src/toolbar/FormulaTo
 import { LatexSourceEditor } from "../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
 import { SettingsDialog } from "../../shared/visualtex-app/src/components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
-import { HelpDialog } from "./components/HelpDialog";
+import { HelpManualDialog } from "../../shared/visualtex-app/src/components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "../../shared/visualtex-app/src/components/ExportDialog";
 import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
@@ -2016,7 +2016,7 @@ function App() {
         onClose={() => setExportOpen(false)}
         onNotify={setToast}
       />
-      <HelpDialog
+      <HelpManualDialog
         open={helpOpen}
         language={language}
         onClose={() => setHelpOpen(false)}

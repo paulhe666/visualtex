@@ -52,7 +52,7 @@ import {
 } from "../../shared/visualtex-app/src/editor/MathEditor";
 import { SettingsDialog } from "../../shared/visualtex-app/src/components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
-import { HelpManualDialog } from "./components/HelpManualDialog";
+import { HelpManualDialog } from "../../shared/visualtex-app/src/components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "../../shared/visualtex-app/src/components/ExportDialog";
 import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
