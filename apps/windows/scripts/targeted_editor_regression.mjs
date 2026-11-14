@@ -2900,8 +2900,9 @@ async function main() {
       await setFormattingValue('abc');
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldApplied = await readFormattingValue();
-      if (boldApplied !== String.raw`\mathbfit{abc}`) {
-        throw new Error(`Bold toggle must preserve default math italic as \\mathbfit; received ${boldApplied}`);
+      // bold keeps the letters' own (default italic) slant: symbol-wide \bm (editing core, 2026-11-01)
+      if (boldApplied !== String.raw`\bm{abc}`) {
+        throw new Error(`Bold toggle must keep default math italic as \\bm; received ${boldApplied}`);
       }
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldRemoved = await readFormattingValue();

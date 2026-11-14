@@ -9597,9 +9597,10 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
       await setFormattingValue('abc');
       const boldTrace = await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldApplied = await readFormattingValue();
-      if (boldApplied !== String.raw`\mathbfit{abc}`) {
+      // bold keeps the letters' own (default italic) slant: symbol-wide \bm (editing core, 2026-11-01)
+      if (boldApplied !== String.raw`\bm{abc}`) {
         throw new Error(
-          `Bold toggle must preserve default math italic as \\mathbfit; received ${boldApplied}; trace=${JSON.stringify(boldTrace)}`,
+          `Bold toggle must keep default math italic as \\bm; received ${boldApplied}; trace=${JSON.stringify(boldTrace)}`,
         );
       }
       const boldVisualStyle = await evaluate(`(() => {
