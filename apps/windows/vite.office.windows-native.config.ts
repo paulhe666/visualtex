@@ -6,8 +6,8 @@ import {
   visualTexKernelEntry,
   visualTexKernelHost,
   visualTexKernelSsrEntry,
-} from "./vite.visualtexKernelHost";
-import { sharedPackageDedupe } from "./vite.sharedPackages";
+} from "../shared/visualtex-app/vite/visualtexKernelHost";
+import { sharedPackageDedupe } from "../shared/visualtex-app/vite/sharedPackages";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 

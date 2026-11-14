@@ -2,7 +2,7 @@
 //   tsx --import ../shared/visualtex-app/testing/node-loader.mjs \
 //     --import ../shared/visualtex-app/testing/kernel-node.mts scripts/<script>.mts
 // builds the kernel's DOM-free part (parsing, validation, markup by the
-// VisualTeX layout engine) with that app's host module (vite.visualtexKernelHost.ts),
+// VisualTeX layout engine) with the kernel's host module (vite/visualtexKernelHost.ts),
 // and makes `mathlive` and `mathlive/ssr` resolve to that build. The browser
 // element is not part of it.
 import { build } from "esbuild";
@@ -10,12 +10,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
+import { kernelHostModuleSource, visualTexKernelSsrEntry } from "../vite/visualtexKernelHost.ts";
 
 // the app the script runs in
 const appDir = process.cwd();
-const { kernelHostModuleSource, visualTexKernelSsrEntry } = (await import(
-  pathToFileURL(path.join(appDir, "vite.visualtexKernelHost.ts")).href
-)) as { kernelHostModuleSource: () => string; visualTexKernelSsrEntry: string };
 const outDir = path.join(appDir, "node_modules/.cache/visualtex-kernel-node");
 fs.mkdirSync(outDir, { recursive: true });
 

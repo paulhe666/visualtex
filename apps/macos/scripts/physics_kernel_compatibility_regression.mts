@@ -7,7 +7,7 @@ import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/
 import { physicsToolbarCommands } from "../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
 import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
 import { parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
-import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
+import { kernelHostModuleSource } from "../../shared/visualtex-app/vite/visualtexKernelHost.ts";
 
 const forbidden = new Set([
   "div", "qty", "Re", "Im", "real", "sin", "cos", "tan", "exp",

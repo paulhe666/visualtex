@@ -162,7 +162,7 @@ export const compatibilityWrapperPreviews = new Map<string, string>(
 );
 
 // The shared editing kernel reads these through the kernel host module
-// (vite.visualtexKernelHost.ts via editor/sourceWrapperRegistry.ts).
+// (vite/visualtexKernelHost.ts via editor/sourceWrapperRegistry.ts).
 export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
   specs
     .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)

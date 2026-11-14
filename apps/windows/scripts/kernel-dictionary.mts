@@ -6,7 +6,7 @@ import { build } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
+import { kernelHostModuleSource } from "../../shared/visualtex-app/vite/visualtexKernelHost.ts";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const outDir = path.join(appDir, "node_modules/.cache/visualtex-kernel-dictionary");

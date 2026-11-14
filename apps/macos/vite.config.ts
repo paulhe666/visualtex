@@ -5,8 +5,8 @@ import {
   visualTexKernelEntry,
   visualTexKernelHost,
   visualTexKernelSsrEntry,
-} from "./vite.visualtexKernelHost";
-import { sharedPackageDedupe } from "./vite.sharedPackages";
+} from "../shared/visualtex-app/vite/visualtexKernelHost";
+import { sharedPackageDedupe } from "../shared/visualtex-app/vite/sharedPackages";
 
 const host = process.env.TAURI_DEV_HOST;
 

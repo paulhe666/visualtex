@@ -23,9 +23,10 @@ tools           仓库结构检查
 
 每个应用各自拥有 `package.json` 与 `package-lock.json`、`Cargo.toml` 与 `Cargo.lock`、Vite/TypeScript/Tauri 配置、
 脚本和测试。`apps/shared` 没有自己的 `node_modules`：应用以相对路径引用共享文件，由应用的 Vite 配置从应用自己的
-`node_modules` 解析依赖（`vite.sharedPackages.ts`）。内核通过构建期模块 `virtual:visualtex-kernel-host`
-（`vite.visualtexKernelHost.ts`）取得各应用的命令表和输入规则。Node 脚本（测试、生成器）用
-`tsx --import ../shared/visualtex-app/testing/node-loader.mjs` 运行，共享代码的依赖和 `@platform/…` 从当前应用解析。
+`node_modules` 解析依赖（`apps/shared/visualtex-app/vite/sharedPackages.ts`）。内核通过构建期模块
+`virtual:visualtex-kernel-host`（`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`）取得共享的命令表和输入规则。
+Node 脚本（测试、生成器）用 `tsx --import ../shared/visualtex-app/testing/node-loader.mjs` 运行，共享代码的依赖和
+`@platform/…` 从当前应用解析；两个应用都运行的测试在 `apps/shared/visualtex-app/tests`。
 
 ### 共享规则
 
@@ -142,10 +143,12 @@ tools           repository checks
 Each application has its own `package.json` and `package-lock.json`, `Cargo.toml` and `Cargo.lock`,
 Vite/TypeScript/Tauri configuration, scripts and tests. `apps/shared` has no `node_modules`: an application imports
 shared files by relative path, and its Vite configuration resolves their packages from the application's own
-`node_modules` (`vite.sharedPackages.ts`). The kernel receives each application's command tables and input rules
-through the build-time module `virtual:visualtex-kernel-host` (`vite.visualtexKernelHost.ts`). Node scripts (tests,
-generators) run with `tsx --import ../shared/visualtex-app/testing/node-loader.mjs`, which resolves the packages and
-`@platform/…` of shared code from the application they run in.
+`node_modules` (`apps/shared/visualtex-app/vite/sharedPackages.ts`). The kernel receives the shared command tables
+and input rules through the build-time module `virtual:visualtex-kernel-host`
+(`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`). Node scripts (tests, generators) run with
+`tsx --import ../shared/visualtex-app/testing/node-loader.mjs`, which resolves the packages and `@platform/…` of
+shared code from the application they run in; the tests both applications run are in
+`apps/shared/visualtex-app/tests`.
 
 ### Sharing rules
 

@@ -2,26 +2,27 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import type { Plugin } from "vite";
-import { commandRegistry } from "../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { latestSharedCommands } from "../shared/visualtex-app/src/autocomplete/latestSharedCommands";
-import { COMMAND_FREQUENCY } from "../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
-import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "../shared/visualtex-app/src/editor/sourceWrapperRegistry";
-import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../shared/visualtex-app/src/math/coreLatexAliases";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../shared/visualtex-app/src/math/physicsKernelMacros";
+import { commandRegistry } from "../src/autocomplete/commandRegistry";
+import { latestSharedCommands } from "../src/autocomplete/latestSharedCommands";
+import { COMMAND_FREQUENCY } from "../src/autocomplete/commandFrequency.generated";
+import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "../src/editor/sourceWrapperRegistry";
+import { nativeSuggestionPreviewTable } from "../src/editor/nativeSuggestionPreviews";
+import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros";
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,
-} from "../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData";
+} from "../src/math/rareIntegralGlyphs.generatedData";
 
 /**
  * The host module of the editing kernel (apps/shared/visualtex-core/src/kernel):
  * `virtual:visualtex-kernel-host` gives the kernel the tables generated from
- * this app's registries and the app's input judgment, so the kernel never
- * copies them by hand.
+ * the registries and the input judgment of apps/shared/visualtex-app, so the
+ * kernel never copies them by hand. Both apps' Vite configurations install it.
  */
 export const kernelHostModuleId = "virtual:visualtex-kernel-host";
 const resolvedKernelHostModuleId = "\0visualtex-kernel-host";
-const inputJudgmentModule = fileURLToPath(new URL("../shared/visualtex-app/src/editor/inputJudgment.ts", import.meta.url)).replace(/\\/g, "/");
+const inputJudgmentModule = fileURLToPath(new URL("../src/editor/inputJudgment.ts", import.meta.url)).replace(/\\/g, "/");
 
 interface RareIntegralGlyphDefinition {
   command: string;
@@ -115,8 +116,8 @@ export function kernelHostModuleSource(): string {
     `export const visualTexRareIntegralSymbols = {\n${rareIntegralSymbols()}\n};`,
     `export const visualTexSourceWrapperKindsData = ${JSON.stringify(Object.fromEntries(sourceWrapperKinds))};`,
     `export const visualTexSourceWrapperCanonicalTargetsData = ${JSON.stringify(Object.fromEntries(sourceWrapperCanonicalTargets))};`,
-    // Windows previews bare commands in the editor (MathEditor), not in the kernel
-    `export const visualTexNativePreviewsData = {};`,
+    // sample formulas for bare kernel commands in the completion list
+    `export const visualTexNativePreviewsData = ${JSON.stringify(nativeSuggestionPreviewTable())};`,
     "",
   ].join("\n");
 }
@@ -136,10 +137,10 @@ export function visualTexKernelHost(): Plugin {
 
 /** The editing kernel's entry, imported by the app as `mathlive`. */
 export const visualTexKernelEntry = fileURLToPath(
-  new URL("../shared/visualtex-core/src/kernel/mathlive.ts", import.meta.url),
+  new URL("../../visualtex-core/src/kernel/mathlive.ts", import.meta.url),
 );
 
 /** The kernel's DOM-free entry (parsing, validation, markup), imported as `mathlive/ssr`. */
 export const visualTexKernelSsrEntry = fileURLToPath(
-  new URL("../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts", import.meta.url),
+  new URL("../../visualtex-core/src/kernel/public/mathlive-ssr.ts", import.meta.url),
 );

@@ -1,5 +1,5 @@
-// Packages that code in apps/shared imports: every build resolves them from this
-// app's node_modules (vite's dedupe), since apps/shared has none of its own.
+// Packages that code in apps/shared imports: every build resolves them from the
+// app's own node_modules (vite's dedupe), since apps/shared has none of its own.
 export const sharedPackageDedupe = [
   "react",
   "react-dom",
