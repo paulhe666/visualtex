@@ -19,7 +19,7 @@ or hidden field stays in the document.
 | Step | Owner | Code |
 |---|---|---|
 | Editor lines → render LaTeX | each editor | Windows `OfficeDialogApp.tsx` `serializeOfficeRenderLatex`; macOS `src/office/wordMathMl/wordEquationMathMl.ts` `wordEquationRenderLatex` (the same rule on the Mac editor's document model) |
-| LaTeX → MathML | shared TypeScript | Windows `src/export/runtime.ts` `latexToMathMl`; macOS runs a byte-identical copy of that file and everything it imports (`apps/macos/src/office/wordMathMl/windows/`, kept in sync and checked by `apps/macos/scripts/sync_word_mathml_mirror.mjs [--check]`) |
+| LaTeX → MathML | shared TypeScript | `apps/shared/visualtex-app/src/export/runtime.ts` `latexToMathMl`, used by both editors |
 | MathML → OMML | C# reference, Rust port | `WordOmmlConverter.TransformMathMlToOmml` ⇄ `src-tauri/src/office/omml_write` |
 | Number host | C# reference, Rust port | `WordOmmlConverter.BuildWordNativeNumberedOmml` ⇄ `omml_write::numbered` |
 | Math font transfer | C# reference, Rust port | `ApplyExplicitTransferMathFont(ExtractSingleOMath(x), document math font)` ⇄ `omml_write::insertion_omml` |

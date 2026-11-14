@@ -5,14 +5,13 @@ import {
   serializeFormulaEditorDocument,
   type FormulaEditorDocument,
 } from "../shared/formulaEditorDocument";
-import { latexToMathMlSync } from "./windows/export/runtime.ts";
+import { latexToMathMl } from "../../../../shared/visualtex-app/src/export/runtime";
 
 // Word equations are written identically on Windows and macOS
 // (docs/equation-format-v2.md). The OMML writer is the Rust port of Windows'
 // C# writer, so its MathML input must be the MathML Windows' Office dialog
-// produces: the same render LaTeX, converted by the same TypeScript
-// (./windows is a byte-identical mirror of apps/windows/src, kept in sync by
-// scripts/sync_word_mathml_mirror.mjs).
+// produces: the same render LaTeX, converted by the same shared TypeScript
+// (export/runtime.ts latexToMathMl).
 
 // Windows OfficeDialogApp: serializeFormulaEditorRenderDocument.
 const structuredRenderFormats = new Set<LatexCodeFormat>([
@@ -54,7 +53,7 @@ export function wordEquationMathMl(
   document: FormulaEditorDocument,
   displayMode: "inline" | "block",
 ) {
-  return latexToMathMlSync(
+  return latexToMathMl(
     wordEquationRenderLatex(document),
     displayMode === "block",
   );

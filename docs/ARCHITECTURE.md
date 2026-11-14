@@ -62,9 +62,8 @@ AppleScript。
 
 两个应用写入相同的公式元数据（LaTeX、公式 ID、显示模式），图片公式和 OMML 公式在另一平台打开时仍保留这些信息；
 格式见 `docs/equation-format-v2.md`。Word 公式在两个平台上应得到相同的结果：Mac 应用的 OMML 写入器是 Windows C#
-写入器的 Rust 移植，它的输入 MathML 来自 Windows LaTeX → MathML 代码的一份副本
-（`apps/macos/src/office/wordMathMl/windows`，由 `apps/macos/scripts/sync_word_mathml_mirror.mjs` 维护）。
-这份副本目前有 14 个文件落后于 `apps/windows/src`，之后由 `apps/shared` 中的共享代码取代。
+写入器的 Rust 移植，它的输入 MathML 来自 Windows Office 编辑器所用的同一份共享 LaTeX → MathML 代码
+（`apps/shared/visualtex-app/src/export/runtime.ts`）。
 
 ### 分支
 
@@ -173,9 +172,8 @@ components.
 Both applications write the same formula metadata (LaTeX, formula ID, display mode), so picture and OMML formulas
 keep it when opened on the other platform; `docs/equation-format-v2.md` describes the format. Word equations are
 meant to come out the same on both platforms: the Mac application's OMML writer is a Rust port of the Windows C#
-writer, and its input MathML comes from a copy of the Windows LaTeX → MathML code
-(`apps/macos/src/office/wordMathMl/windows`, kept by `apps/macos/scripts/sync_word_mathml_mirror.mjs`). That copy is
-currently 14 files behind `apps/windows/src`; it is to be replaced by shared code in `apps/shared`.
+writer, and its input MathML comes from the shared LaTeX → MathML code the Windows Office editor uses
+(`apps/shared/visualtex-app/src/export/runtime.ts`).
 
 ### Branches
 
