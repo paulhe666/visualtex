@@ -775,8 +775,9 @@ async function main() {
       }), 50);
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
-    // 8 options: automatic upright typography joined on 2026-10-15.
-    assert.equal(menu.optionCount, 8);
+    // 6 options: automatic conversion and upright typography, four caret auto-exits
+    // (the two command suggestion panel settings left on 2026-10-17).
+    assert.equal(menu.optionCount, 6);
     await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 
     const loadSingleFormulaLine = async (latex) => {

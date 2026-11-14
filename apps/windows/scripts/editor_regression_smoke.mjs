@@ -517,13 +517,26 @@ async function main() {
 
     await resetEditorDocument([""]);
     await setField("");
+    // The physical Backslash key starts a command even when a Chinese IME
+    // reports it as the ideographic comma (the kernel binds code="Backslash").
     await imeKey("、", "Backslash", 220, "、");
-    const chineseIdeographicCommaValue = await evaluate(
-      `document.querySelector("math-field")?.value ?? ""`,
-    );
-    if (chineseIdeographicCommaValue !== "、") {
+    const chineseBackslashState = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      return {
+        value: field?.value ?? "",
+        mode: field?.mode ?? "",
+        raw: Array.from(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      };
+    })()`);
+    if (
+      chineseBackslashState.mode !== "latex" ||
+      chineseBackslashState.raw !== "\\" ||
+      chineseBackslashState.value.includes("、")
+    ) {
       throw new Error(
-        `Chinese Backslash key should insert only one ideographic comma: ${JSON.stringify(chineseIdeographicCommaValue)}`,
+        `The Backslash key under a Chinese IME should start one command: ${JSON.stringify(chineseBackslashState)}`,
       );
     }
 
@@ -684,18 +697,15 @@ async function main() {
       const navigationStart = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         const command = ${JSON.stringify(operatorCase.command)};
-        let operatorOffset = -1;
-        for (let offset = 0; offset <= field.lastOffset; offset += 1) {
-          const latex = field.getElementInfo(offset)?.latex?.trim() ?? "";
-          if (latex === command || latex.startsWith(command) || latex.includes(command)) {
-            operatorOffset = offset;
-            break;
-          }
+        // the end of the operator's lower limit, from the editing model (the
+        // order of offsets around an operator is the kernel's own business)
+        const model = field._mathfield?.model;
+        const operator = model?.atoms.find((atom) => atom.command === command && atom.subscript?.length);
+        if (!operator) {
+          throw new Error("Structured operator was not found: " + command);
         }
-        if (operatorOffset < 0) {
-          throw new Error("Structured operator offset was not found: " + command);
-        }
-        const lowerOffset = Math.max(0, operatorOffset - 1);
+        const operatorOffset = model.offsetOf(operator);
+        const lowerOffset = model.offsetOf(operator.subscript[operator.subscript.length - 1]);
         field.position = lowerOffset;
         field.focus();
         field.shadowRoot
@@ -1078,18 +1088,18 @@ async function main() {
     await key("Enter", "Enter", 13);
     await sleep(180);
     await setFieldAt(1, "c=d");
+    // One universal LaTeX format (the profile menu) serves the source panel and copying.
     await evaluate(`document.querySelector(".code-format-primary").click()`);
     await sleep(120);
     const formatMenuState = await evaluate(`(() => {
-      const menu = document.querySelector(".code-format-menu");
+      const menu = document.querySelector(".latex-profile-menu");
+      if (!menu) return { open: false };
       const rect = menu.getBoundingClientRect();
-      const firstOption = menu.querySelector("button[data-format]");
+      const firstOption = menu.querySelector(".latex-profile-segments button");
+      const optionRect = firstOption?.getBoundingClientRect();
       return {
-        count: menu.querySelectorAll("button[data-format]").length,
-        visibleTitleCount: menu.querySelectorAll(".code-format-item-title").length,
-        descriptionCount: menu.querySelectorAll(".code-format-description").length,
-        firstOptionText: firstOption?.innerText.trim() ?? "",
-        firstOptionHeight: firstOption?.getBoundingClientRect().height ?? 0,
+        open: true,
+        rows: menu.querySelectorAll(".latex-profile-row").length,
         top: rect.top,
         right: rect.right,
         bottom: rect.bottom,
@@ -1102,27 +1112,18 @@ async function main() {
             Math.min(rect.bottom - 12, rect.top + 24),
           ),
         ),
-        frontmostAtFirstOption: firstOption
+        frontmostAtFirstOption: optionRect
           ? menu.contains(
               document.elementFromPoint(
-                firstOption.getBoundingClientRect().left + 20,
-                firstOption.getBoundingClientRect().top +
-                  firstOption.getBoundingClientRect().height / 2,
+                optionRect.left + optionRect.width / 2,
+                optionRect.top + optionRect.height / 2,
               ),
             )
           : false,
       };
     })()`);
-    if (formatMenuState.count !== 18) {
-      throw new Error(`Expected 18 LaTeX code formats, found ${formatMenuState.count}`);
-    }
-    if (
-      formatMenuState.visibleTitleCount !== 0 ||
-      formatMenuState.descriptionCount !== 0 ||
-      formatMenuState.firstOptionText !== "\\frac{x}{y}" ||
-      formatMenuState.firstOptionHeight > 50
-    ) {
-      throw new Error(`LaTeX code-format options are not compact code-only rows: ${JSON.stringify(formatMenuState)}`);
+    if (!formatMenuState.open || formatMenuState.rows < 3) {
+      throw new Error(`The LaTeX format menu did not open: ${JSON.stringify(formatMenuState)}`);
     }
     if (
       formatMenuState.left < 0 ||
@@ -1130,98 +1131,72 @@ async function main() {
       formatMenuState.right > formatMenuState.viewportWidth + 1 ||
       formatMenuState.bottom > formatMenuState.viewportHeight + 1
     ) {
-      throw new Error(`LaTeX code-format menu is outside the viewport: ${JSON.stringify(formatMenuState)}`);
+      throw new Error(`The LaTeX format menu is outside the viewport: ${JSON.stringify(formatMenuState)}`);
     }
     if (!formatMenuState.frontmostAtHeader || !formatMenuState.frontmostAtFirstOption) {
-      throw new Error(`LaTeX code-format menu is covered by the workspace: ${JSON.stringify(formatMenuState)}`);
+      throw new Error(`The LaTeX format menu is covered by the workspace: ${JSON.stringify(formatMenuState)}`);
     }
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(100);
 
-    const sourceVisibleBeforeFormatChange = await evaluate(
-      `Boolean(document.querySelector(".source-panel"))`,
-    );
-    await evaluate(`document.querySelector('[data-format="align-star"]').click()`);
-    await sleep(260);
-    const sourceVisibleAfterFormatChange = await evaluate(
-      `Boolean(document.querySelector(".source-panel"))`,
-    );
-    if (sourceVisibleAfterFormatChange !== sourceVisibleBeforeFormatChange) {
-      throw new Error("Selecting a LaTeX code format unexpectedly switched the tools/source panel");
-    }
-    if (!sourceVisibleAfterFormatChange) {
+    if (!(await evaluate(`Boolean(document.querySelector(".source-panel"))`))) {
       await evaluate(`document.querySelector('[data-classic-bottom-view="source"]')?.click()`);
       await sleep(140);
     }
-    const alignFormatState = await evaluate(`(() => {
+    const displaySourceState = await evaluate(`(() => {
       const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
-      const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
       return {
         source,
         sourceVisible: Boolean(document.querySelector(".source-panel")),
-        persistedFormat: persisted.state?.latexCodeFormat,
-      };
-    })()`);
-    if (!alignFormatState.sourceVisible) {
-      throw new Error("The source panel could not be opened explicitly after changing the LaTeX code format");
-    }
-    if (
-      !alignFormatState.source.includes("\\begin{align*}") ||
-      !alignFormatState.source.includes("a=b") ||
-      !alignFormatState.source.includes("c=d") ||
-      !alignFormatState.source.includes("\\end{align*}")
-    ) {
-      throw new Error(`align* source was not generated correctly: ${alignFormatState.source}`);
-    }
-    if (alignFormatState.persistedFormat !== "align-star") {
-      throw new Error(`align* selection was not persisted: ${JSON.stringify(alignFormatState)}`);
-    }
-
-    await evaluate(`document.querySelector(".code-format-primary").click()`);
-    await sleep(100);
-    const alignSelectedAfterReopen = await evaluate(
-      `document.querySelector('[data-format="align-star"]')?.getAttribute("aria-checked")`,
-    );
-    if (alignSelectedAfterReopen !== "true") {
-      throw new Error("The current align* format was not marked as selected after reopening the menu");
-    }
-    await evaluate(`document.querySelector('[data-format="equation"]').click()`);
-    await sleep(260);
-    const equationFormatState = await evaluate(`(() => {
-      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
-      return {
-        source,
-        equationCount: (source.match(/\\\\begin\\{equation\\}/g) || []).length,
-        endCount: (source.match(/\\\\end\\{equation\\}/g) || []).length,
-        hasAlign: source.includes("\\\\begin{align"),
+        blocks: (source.match(/\\$\\$/g) || []).length,
       };
     })()`);
     if (
-      equationFormatState.equationCount !== 2 ||
-      equationFormatState.endCount !== 2 ||
-      equationFormatState.hasAlign
+      !displaySourceState.sourceVisible ||
+      displaySourceState.blocks !== 4 ||
+      !displaySourceState.source.includes("a=b") ||
+      !displaySourceState.source.includes("c=d")
     ) {
-      throw new Error(`equation source did not create independent environments: ${JSON.stringify(equationFormatState)}`);
+      throw new Error(`The source panel does not show the rows as $$ blocks: ${JSON.stringify(displaySourceState)}`);
     }
 
-    const editedEquationSource = [
-      "\\begin{equation}",
-      "a=q",
-      "\\end{equation}",
-      "",
-      "\\begin{equation}",
-      "c=d",
-      "\\end{equation}",
-    ].join("\n");
-    const incompleteEquationSource = [
-      "\\begin{equation}",
+    // a profile change rewrites the source of rows that use the default display
+    // wrapper (a row read from a $$ block keeps its own) and keeps the formulas
+    const switchDisplayWrapper = async (wrapper) => {
+      await evaluate(`document.querySelector(".code-format-primary").click()`);
+      await sleep(100);
+      await evaluate(`document.querySelector('[data-latex-display-wrapper="${wrapper}"]')?.click()`);
+      await sleep(320);
+      await evaluate(`document.querySelector(".code-format-primary").click()`);
+      await sleep(100);
+    };
+    await switchDisplayWrapper("bracket");
+    const profileSwitchState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+    }))()`);
+    await switchDisplayWrapper("double-dollar");
+    if (
+      !profileSwitchState.source.includes("\\[") ||
+      !profileSwitchState.source.includes("a=b") ||
+      profileSwitchState.formulas[0] !== "a=b" ||
+      profileSwitchState.formulas[1] !== "c=d"
+    ) {
+      throw new Error(`The format profile did not rewrite the source: ${JSON.stringify(profileSwitchState)}`);
+    }
+
+    const editedSource = ["$$", "a=q", "$$", "", "$$", "c=d", "$$"].join("\n");
+    const incompleteSource = [
+      "$$",
       "a+b+\\frac{a}{b}+\\mathbb{H}+\\p",
-      "\\end{equation}",
+      "$$",
       "",
-      "\\begin{equation}",
+      "$$",
       "c=d",
-      "\\end{equation}",
+      "$$",
     ].join("\n");
     await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
-    await replaceFocusedText(incompleteEquationSource);
+    await replaceFocusedText(incompleteSource);
     const incompleteSourceState = await waitForEvaluation(`(() => {
       const editor = document.querySelector(
         ".multi-line-editor.is-read-only-preview",
@@ -1251,7 +1226,7 @@ async function main() {
     })()`, "incomplete command keeps the valid formula prefix rendered");
 
     await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
-    await replaceFocusedText(editedEquationSource);
+    await replaceFocusedText(editedSource);
     const liveSourceState = await waitForEvaluation(`(() => {
       const formulas = [...document.querySelectorAll("math-field")].map((field) => field.value);
       return {
@@ -1264,12 +1239,7 @@ async function main() {
         fallbackVisible: Boolean(document.querySelector(".source-draft-fallback")),
       };
     })()`, "valid source updates formulas without Apply");
-    const dirtyBeforeFormatSwitch = await evaluate(`(() => ({
-      dirty: Boolean(
-        document.querySelector(
-          ".source-panel .unsaved-chip, .source-panel.has-dirty-actions",
-        ),
-      ),
+    const liveSourceSyncState = await evaluate(`(() => ({
       source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
       formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
       applyButtonVisible: [...document.querySelectorAll(".source-panel button")].some(
@@ -1277,50 +1247,24 @@ async function main() {
       ),
     }))()`);
     if (
-      !dirtyBeforeFormatSwitch.source.includes("a=q") ||
-      dirtyBeforeFormatSwitch.formulas[0] !== "a=q" ||
-      dirtyBeforeFormatSwitch.formulas[1] !== "c=d" ||
-      dirtyBeforeFormatSwitch.applyButtonVisible
+      !liveSourceSyncState.source.includes("a=q") ||
+      liveSourceSyncState.formulas[0] !== "a=q" ||
+      liveSourceSyncState.formulas[1] !== "c=d" ||
+      liveSourceSyncState.applyButtonVisible
     ) {
-      throw new Error(`CodeMirror live edit was not synchronized: ${JSON.stringify(dirtyBeforeFormatSwitch)}`);
+      throw new Error(`CodeMirror live edit was not synchronized: ${JSON.stringify(liveSourceSyncState)}`);
     }
 
-    await evaluate(`document.querySelector(".code-format-primary").click()`);
-    await sleep(100);
-    await evaluate(`document.querySelector('[data-format="align-star"]').click()`);
-    await sleep(420);
-    const dirtyFormatSwitchState = await evaluate(`(() => ({
-      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
-      dirty: Boolean(
-        document.querySelector(
-          ".source-panel .unsaved-chip, .source-panel.has-dirty-actions",
-        ),
-      ),
-      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
-    }))()`);
-    if (
-      dirtyFormatSwitchState.dirty ||
-      !dirtyFormatSwitchState.source.includes("\\begin{align*}") ||
-      !dirtyFormatSwitchState.source.includes("a=q") ||
-      dirtyFormatSwitchState.formulas[0] !== "a=q" ||
-      dirtyFormatSwitchState.formulas[1] !== "c=d"
-    ) {
-      throw new Error(`Unsynced source edits were lost during format switching: ${JSON.stringify(dirtyFormatSwitchState)}`);
-    }
-
-    await evaluate(`document.querySelector(".code-format-primary").click()`);
-    await sleep(100);
-    await evaluate(`document.querySelector('[data-format="raw"]').click()`);
-    await sleep(260);
     await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
-    await replaceFocusedText("a=");
+    await replaceFocusedText(["$$", "a=", "$$"].join("\n"));
+    await key("ArrowUp", "ArrowUp", 38);
     await key("q", "KeyQ", 81);
     const continuousSourceFocusState = await waitForEvaluation(`(() => {
       const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
       const field = document.querySelector("math-field");
       return {
         ready:
-          source.trim() === "a=q" &&
+          source.trim() === "$$\\na=q\\n$$" &&
           field?.value === "a=q" &&
           Boolean(document.querySelector(".source-panel .cm-editor.cm-focused")),
         source,
@@ -1329,27 +1273,21 @@ async function main() {
       };
     })()`, "source focus survives a valid live update");
 
-    const mixedFormula = String.raw`\text{速度}v=x^{\text{中文}}`;
+    // text outside the math (the default profile): the row keeps it as \text
+    const mixedSource = String.raw`速度$v=x^{\text{中文}}$`;
     await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
-    await replaceFocusedText(mixedFormula);
-    await evaluate(`document.querySelector(".code-format-primary").click()`);
-    await sleep(100);
-    await evaluate(`document.querySelector('[data-format="inline-text-double-dollar"]').click()`);
-    await sleep(320);
+    await replaceFocusedText(mixedSource);
     const inlineTextFormatState = await waitForEvaluation(`(() => {
       const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
-      const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
       const value = document.querySelector("math-field")?.value ?? "";
       return {
         ready:
-          source.trim() === "速度$v=x^{\\\\text{中文}}$" &&
-          value === "\\\\text{速度}v=x^{\\\\text{中文}}" &&
-          persisted.state?.latexCodeFormat === "inline-text-double-dollar",
+          source.trim() === ${JSON.stringify(mixedSource)} &&
+          value === "\\\\text{速度}v=x^{\\\\text{中文}}",
         source,
         value,
-        persistedFormat: persisted.state?.latexCodeFormat ?? "",
       };
-    })()`, "inline text-outside-math format selection");
+    })()`, "inline text outside the math");
 
     await evaluate(`(() => {
       localStorage.removeItem("visualtex.onboarding.v3.completed");
@@ -1383,16 +1321,14 @@ async function main() {
       ocrCenterMetrics,
       deletionStates,
       formatMenuState,
-      alignFormatState,
-      alignSelectedAfterReopen,
-      equationFormatState,
+      displaySourceState,
       incompleteSourceState,
       liveSourceState,
-      dirtyBeforeFormatSwitch,
-      dirtyFormatSwitchState,
+      liveSourceSyncState,
+      profileSwitchState,
       continuousSourceFocusState,
       inlineTextFormatState,
-      chineseIdeographicCommaValue,
+      chineseBackslashState,
       arrowUpLineState,
       arrowDownLineState,
       removedOnboardingState,

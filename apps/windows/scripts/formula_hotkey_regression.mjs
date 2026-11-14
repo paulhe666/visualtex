@@ -274,9 +274,13 @@ async function main() {
       assert.equal(after.opened, true, `Context menu did not open for ${selector}: ${JSON.stringify({ target, synthetic, hitBefore, after })}`);
     };
 
+    // the context menu starts with the group actions; the hotkey action is found by its text
+    const hotkeyAction = `[...document.querySelectorAll(".formula-hotkey-context-action")]
+      .find((button) => /设置快捷键|修改快捷键|Set hotkey|Change hotkey/.test(button.textContent ?? ""))`;
+
     const assignCurrentContext = async (code, key, modifiers) => {
       const assigned = await evaluate(`new Promise((resolve) => {
-        const setButton = document.querySelector(".formula-hotkey-context-action");
+        const setButton = ${hotkeyAction};
         if (!setButton) {
           resolve({ ok: false, step: "context-action" });
           return;
@@ -369,7 +373,7 @@ async function main() {
 
     await openContextMenu('.template-button[data-command-id="frac"]');
     const protectedState = await evaluate(`new Promise((resolve) => {
-      document.querySelector(".formula-hotkey-context-action")?.click();
+      ${hotkeyAction}?.click();
       setTimeout(() => {
         document.dispatchEvent(new KeyboardEvent("keydown", {
           bubbles: true,
@@ -391,10 +395,12 @@ async function main() {
     assert.match(protectedState.warning, /保存|Save/);
     await evaluate(`document.querySelector(".formula-hotkey-recorder-dialog .dialog-header .icon-button")?.click()`);
 
+    // the formula hotkeys are listed in Settings > Shortcuts > Editor
     const managerState = await evaluate(`new Promise((resolve) => {
       document.querySelector(".settings-toggle")?.click();
       setTimeout(() => {
-        document.querySelector(".settings-hotkey-button")?.click();
+        document.querySelector('[data-settings-page="shortcuts"]')?.click();
+        setTimeout(() => document.querySelector('[data-shortcut-tab="editor"]')?.click(), 40);
         setTimeout(() => {
           const row = document.querySelector(".formula-hotkey-binding-row");
           const keycap = row?.querySelector(":scope > kbd");
@@ -410,14 +416,12 @@ async function main() {
                 )
               : 999,
           });
-        }, 80);
+        }, 160);
       }, 80);
     })`);
     assert.equal(managerState.rows, 10);
     assert.ok(managerState.hotkey);
     assert.ok(managerState.keycapCenterDelta <= 1, JSON.stringify(managerState));
-    await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
-    await sleep(80);
     await evaluate(`document.querySelector(".settings-dialog .dialog-header .icon-button")?.click()`);
     await sleep(80);
 
@@ -547,9 +551,12 @@ async function main() {
     assert.ok(!expandedCategories.physics.ids.includes("time-ordering"));
     assert.equal(expandedCategories.physics.details.matrixelement.wide, true);
     assert.equal(expandedCategories.physics.details["expectation-operator"].wide, true);
+    // two-argument products take a wide tile too (\outerproduct, as on macOS since 2026-09-25)
+    assert.equal(expandedCategories.physics.details.outerproduct.wide, true);
+    assert.equal(expandedCategories.physics.details.ket.wide, false);
     assert.ok(
       expandedCategories.physics.details.matrixelement.width >
-        expandedCategories.physics.details.outerproduct.width * 1.5,
+        expandedCategories.physics.details.ket.width * 1.5,
       JSON.stringify(expandedCategories.physics.details),
     );
     for (const commandId of ["intplain", "int", "iint", "sum", "series", "prod"]) {
@@ -629,12 +636,13 @@ async function main() {
         sectionBorderWidth: sectionStyle?.borderTopWidth || "",
         listPaddingLeft: Number.parseFloat(listStyle?.paddingLeft || "999"),
         listPaddingRight: Number.parseFloat(listStyle?.paddingRight || "999"),
-        version: library.version,
-        storedTiles: library.tiles?.length || 0,
+        // the seeded string array is migrated in memory and stored as version 3 at the first edit
+        version: Array.isArray(library) ? "array" : library.version,
+        storedTiles: Array.isArray(library) ? library.length : library.tiles?.length || 0,
       };
     })()`);
     assert.equal(customTileLayout.count, 9);
-    assert.equal(customTileLayout.version, 3);
+    assert.ok(["array", 3].includes(customTileLayout.version), JSON.stringify(customTileLayout));
     assert.equal(customTileLayout.storedTiles, 9);
     assert.ok(
       new Set(customTileLayout.widths).size >= 2,
