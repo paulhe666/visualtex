@@ -47,7 +47,7 @@ import { InputBehaviorMenu } from "../../../shared/visualtex-app/src/components/
 import { trackHorizontalOverflow } from "../../../shared/visualtex-app/src/runtime/horizontalOverflowState";
 import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime/priorityCollapse";
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { FormulaToolbar } from "../toolbar/FormulaToolbar";
+import { FormulaToolbar } from "../../../shared/visualtex-app/src/toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
 import {

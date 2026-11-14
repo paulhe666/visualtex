@@ -26,25 +26,25 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import type { LatexCommand } from "../types/command";
 import {
   categoryLabels,
   categoryLabelsEn,
   commandRegistry,
-} from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { FormulaTileLibraryDialog } from "../../../shared/visualtex-app/src/toolbar/FormulaTileLibraryDialog";
+} from "../autocomplete/commandRegistry";
+import { MathPreview } from "../components/MathPreview";
+import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
 import {
   defaultCommonFormulaTileIds,
   formulaTileLibraryById,
-} from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
-import { FormulaHotkeyRecorderDialog } from "../../../shared/visualtex-app/src/components/FormulaHotkeyRecorderDialog";
-import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
+} from "./formulaTileLibrary";
+import { FormulaHotkeyRecorderDialog } from "../components/FormulaHotkeyRecorderDialog";
+import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
 import {
   deleteCustomSymbol,
   readCustomSymbolLibrary,
-} from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
-import { useCustomSymbolRevision } from "../../../shared/visualtex-app/src/math/customSymbolReact";
+} from "../math/customSymbolRegistry";
+import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import {
   createFormulaHotkeyTarget,
   formatFormulaHotkeyChord,
@@ -52,12 +52,12 @@ import {
   formulaHotkeyTargetIdForTile,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { createLayoutOscillationGuard } from "../../../shared/visualtex-app/src/runtime/layoutOscillationGuard";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { useCustomSymbolDesignerStore } from "../../../shared/visualtex-app/src/stores/customSymbolDesignerStore";
+} from "../shortcuts/formulaHotkeys";
+import { useEditorStore } from "../stores/editorStore";
+import { writeLocalStorage } from "../runtime/safeStorage";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useCustomSymbolDesignerStore } from "../stores/customSymbolDesignerStore";
 import {
   BUILT_IN_GROUP_IDS,
   groupItems,
@@ -66,10 +66,9 @@ import {
   type BuiltInGroupId,
   type ToolbarGroup,
   type ToolbarItem,
-} from "../../../shared/visualtex-app/src/toolbar/toolbarLayout";
-import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "../../../shared/visualtex-app/src/toolbar/toolbarDrag";
-import { ToolbarItemPickerDialog } from "../../../shared/visualtex-app/src/toolbar/ToolbarItemPickerDialog";
-
+} from "./toolbarLayout";
+import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "./toolbarDrag";
+import { ToolbarItemPickerDialog } from "./ToolbarItemPickerDialog";
 
 type MatrixDelimiter =
   | "matrix"
@@ -612,6 +611,11 @@ function sameToolbarCategoryList(
 
 /** The matrix size grid: up to 5 rows by 5 columns (a larger matrix grows with Tab and the row/column commands). */
 const MATRIX_GRID_SIZE = 5;
+// Horizontal-dock matrix builder geometry used to wrap the delimiter rail (styles/workspace.css).
+const matrixBuilderVerticalPadding = 8;
+const matrixDelimiterLabelBlockHeight = 15;
+const matrixDelimiterMinButtonHeight = 28;
+const matrixDelimiterGap = 1;
 const matrixGridCells = Array.from({ length: MATRIX_GRID_SIZE * MATRIX_GRID_SIZE }, (_, index) => ({
   row: Math.floor(index / MATRIX_GRID_SIZE) + 1,
   column: (index % MATRIX_GRID_SIZE) + 1,
@@ -881,6 +885,14 @@ export function FormulaToolbar({
   const [matrixDelimiter, setMatrixDelimiter] =
     useState<MatrixDelimiter>("bmatrix");
   const toolbarRef = useRef<HTMLElement>(null);
+  // The category the user picked from a tab, and the scroll offset that pick
+  // produced. Until the strip scrolls away from that offset, the pick wins over
+  // the scroll-position heuristic, which cannot tell the first/last categories
+  // apart from their neighbours on very wide strips.
+  const pickedToolbarCategoryRef = useRef<{
+    category: ToolbarCategory;
+    scrollLeft: number;
+  } | null>(null);
   const [horizontalRowCount, setHorizontalRowCount] = useState(3);
   const [customTileGridWidths, setCustomTileGridWidths] = useState<
     Record<string, number>
@@ -1071,6 +1083,10 @@ export function FormulaToolbar({
       section.offsetLeft + section.offsetWidth - strip.clientWidth,
     );
     strip.scrollLeft = edge === "end" ? sectionEnd : sectionStart;
+    pickedToolbarCategoryRef.current = {
+      category,
+      scrollLeft: strip.scrollLeft,
+    };
     setActiveCategory(category);
     root
       .querySelector<HTMLElement>(`.toolbar-tab[data-category="${category}"]`)
@@ -1114,6 +1130,10 @@ export function FormulaToolbar({
     );
     if (Math.abs(strip.scrollLeft - targetLeft) > 1) {
       strip.scrollTo({ left: targetLeft, top: 0, behavior: "auto" });
+    }
+    const picked = pickedToolbarCategoryRef.current;
+    if (picked?.category === activeCategory) {
+      picked.scrollLeft = strip.scrollLeft;
     }
   }, [activeCategory, activeView, horizontalRowCount, layout]);
 
@@ -1159,6 +1179,13 @@ export function FormulaToolbar({
     };
 
     const resolveCategory = () => {
+      const picked = pickedToolbarCategoryRef.current;
+      if (picked) {
+        if (Math.abs(strip.scrollLeft - picked.scrollLeft) <= 2) {
+          return picked.category;
+        }
+        pickedToolbarCategoryRef.current = null;
+      }
       const viewportWidth = Math.max(1, strip.clientWidth);
       const maxScrollLeft = Math.max(0, strip.scrollWidth - viewportWidth);
       // The first/last category cannot always be aligned with the viewport
@@ -1359,8 +1386,36 @@ export function FormulaToolbar({
           ),
         );
 
+        // The delimiter previews need ~28px of height each. Stacking all six in
+        // one column squeezed them to a few pixels in short docks, so wrap them
+        // into as many columns as the dock height requires.
+        const delimiterHeight = availableHeight -
+          matrixBuilderVerticalPadding -
+          matrixDelimiterLabelBlockHeight;
+        const delimiterRowsThatFit = Math.max(
+          1,
+          Math.min(
+            matrixDelimiterOptions.length,
+            Math.floor(
+              (delimiterHeight + matrixDelimiterGap) /
+                (matrixDelimiterMinButtonHeight + matrixDelimiterGap),
+            ),
+          ),
+        );
+        const delimiterColumns = Math.ceil(
+          matrixDelimiterOptions.length / delimiterRowsThatFit,
+        );
+        const delimiterRows = Math.ceil(
+          matrixDelimiterOptions.length / delimiterColumns,
+        );
+
         root.style.setProperty("--toolbar-row-count", String(nextRowCount));
         root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty(
+          "--matrix-delimiter-columns",
+          String(delimiterColumns),
+        );
+        root.style.setProperty("--matrix-delimiter-rows", String(delimiterRows));
         root.style.setProperty(
           "--matrix-panel-height",
           `${Math.max(56, Math.floor(availableHeight))}px`,

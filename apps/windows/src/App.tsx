@@ -55,7 +55,7 @@ import {
   type MathEditorHandle,
   type MathEditorInsertionTarget,
 } from "../../shared/visualtex-app/src/editor/MathEditor";
-import { FormulaToolbar } from "./toolbar/FormulaToolbar";
+import { FormulaToolbar } from "../../shared/visualtex-app/src/toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
