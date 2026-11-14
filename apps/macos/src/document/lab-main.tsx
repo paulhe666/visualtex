@@ -1,7 +1,7 @@
 // Dev page for the document editor (document-lab.html): the editor alone, no
 // Tauri. Used by the headless tests (window.__docLab).
 import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import "../styles.css";
+import "../../../shared/visualtex-app/src/styles/app.css";
 import { createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { DocumentEditor, type DocumentEditorHandle } from "../../../shared/visualtex-app/src/document/DocumentEditor";

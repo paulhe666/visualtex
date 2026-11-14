@@ -3,12 +3,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 // formulas are laid out by the shared engine; installed before any math field exists
 import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import "../styles.css";
-import "../styles-editor-parity.css";
-import "../styles-windows-shared-latest.css";
-import "../styles-macos-platform-overrides.css";
-import "../../../shared/visualtex-app/src/styles-formula-tiles.css";
-import "../styles-macos-responsive.css";
+import "../../../shared/visualtex-app/src/styles/index.ts";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { OfficeDialogApp } from "./dialog/OfficeDialogApp";

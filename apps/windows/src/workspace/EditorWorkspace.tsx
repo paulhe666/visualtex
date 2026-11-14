@@ -169,6 +169,29 @@ function readStandardPanelWidth(mode: string) {
     : DEFAULT_STANDARD_PANEL_WIDTH;
 }
 
+// Office editor header (font size | tools | undo, cancel, apply). Its groups
+// stretch, so the needed width is the sum of the individual controls.
+const OFFICE_HEADER_COLLAPSE_LEVELS = 5;
+const officeHeaderItems =
+  ".pane-title-group > *, .canvas-tool-group > *, .office-inline-actions";
+
+function officeHeaderFits(header: HTMLElement) {
+  const style = window.getComputedStyle(header);
+  const gap = Number.parseFloat(style.columnGap) || 0;
+  let required =
+    (Number.parseFloat(style.paddingLeft) || 0) +
+    (Number.parseFloat(style.paddingRight) || 0);
+  let count = 0;
+  header.querySelectorAll<HTMLElement>(officeHeaderItems).forEach((item) => {
+    const width = item.getBoundingClientRect().width;
+    if (width <= 0) return;
+    required += width;
+    count += 1;
+  });
+  required += gap * Math.max(0, count - 1);
+  return required <= header.clientWidth + 0.5;
+}
+
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
   "visualtex-custom-formula-background-colors";
@@ -260,6 +283,7 @@ export function EditorWorkspace({
   const [desktopClassicControlsMount, setDesktopClassicControlsMount] =
     useState<HTMLDivElement | null>(null);
   const [bottomBar, setBottomBar] = useState<HTMLElement | null>(null);
+  const [officeHeader, setOfficeHeader] = useState<HTMLElement | null>(null);
   const [standardPanelWidth, setStandardPanelWidth] = useState(() =>
     readStandardPanelWidth(mode),
   );
@@ -593,22 +617,20 @@ export function EditorWorkspace({
   }, [desktopClassicControlsMount, isOfficeWorkspace, officeFormattingMount]);
 
   useEffect(() => {
+    if (!officeHeader) return;
+    return trackPriorityCollapse(officeHeader, {
+      maxLevel: OFFICE_HEADER_COLLAPSE_LEVELS,
+      fits: officeHeaderFits,
+    });
+  }, [officeHeader]);
+
+  useEffect(() => {
     if (!bottomBar) return;
     return trackPriorityCollapse(bottomBar, {
       maxLevel: BOTTOM_BAR_COLLAPSE_LEVELS,
       fits: bottomBarFits,
     });
   }, [bottomBar]);
-
-  // The Office header's leading options scroll sideways when the window is
-  // narrow (styles-windows-responsive.css); fade the clipped edge.
-  useEffect(() => {
-    if (!isOfficeWorkspace) return;
-    const options = workspaceRef.current?.querySelector<HTMLElement>(
-      ".is-office-editor-header .pane-title-group",
-    );
-    return options ? trackHorizontalOverflow(options) : undefined;
-  }, [editorLayout, isOfficeWorkspace]);
 
   useEffect(
     () => () => {
@@ -1268,6 +1290,7 @@ export function EditorWorkspace({
 
         <section className="formula-workspace editor-pane">
           <header
+            ref={isOfficeWorkspace ? setOfficeHeader : undefined}
             className={
               "workspace-heading pane-header editor-pane-header" +
               (isOfficeWorkspace ? " is-office-editor-header" : "")

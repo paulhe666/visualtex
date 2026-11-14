@@ -71,7 +71,7 @@ import {
   resolveMacOfficeAutoInstall,
   resolveMacOfficeOnboarding,
 } from "./components/macOfficeOnboarding";
-import { UpdateDialog } from "./components/UpdateDialog";
+import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
@@ -576,7 +576,7 @@ function App() {
   }, [isEn]);
 
   // The header hides its least important items first, and only when the row
-  // has no room left (levels are listed in styles-macos-responsive.css).
+  // has no room left (levels are listed in styles/responsive.css).
   useEffect(() => {
     if (!appHeader) return;
     return trackPriorityCollapse(appHeader, {

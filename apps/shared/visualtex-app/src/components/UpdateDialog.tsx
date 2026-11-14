@@ -13,22 +13,18 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import type { Language } from "../stores/editorStore";
+import { localizeReleaseNotes } from "../update/releaseNotes";
+import type { UpdateCheckResult } from "../update/updateService";
+import wechatPayImageUrl from "../../../../../docs/images/wechat-pay.jpg";
+import alipayImageUrl from "../../../../../docs/images/alipay.jpg";
 import {
   VISUALTEX_QQ_GROUP_NUMBER,
   VISUALTEX_QQ_GROUP_QR_DATA_URL,
-} from "../../../shared/visualtex-app/src/assets/visualtexQqGroup";
-import type { Language } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { localizeReleaseNotes } from "../../../shared/visualtex-app/src/update/releaseNotes";
-import type { UpdateCheckResult } from "../../../shared/visualtex-app/src/update/updateService";
+} from "../assets/visualtexQqGroup";
 
-const WECHAT_PAY_IMAGE_URL = new URL(
-  "../../../../docs/images/wechat-pay.jpg",
-  import.meta.url,
-).href;
-const ALIPAY_IMAGE_URL = new URL(
-  "../../../../docs/images/alipay.jpg",
-  import.meta.url,
-).href;
+const QQ_GROUP_NUMBER = VISUALTEX_QQ_GROUP_NUMBER;
+const QQ_GROUP_IMAGE_URL = VISUALTEX_QQ_GROUP_QR_DATA_URL;
 
 interface Props {
   open: boolean;
@@ -124,8 +120,8 @@ export function UpdateDialog({
       : "正在检查更新"
     : error
       ? isEn
-        ? "Unable to check"
-        : "暂时无法检查更新"
+        ? "Unable to check for updates"
+        : "无法检查更新"
       : updateAvailable
         ? isEn
           ? "A new version is available"
@@ -163,45 +159,31 @@ export function UpdateDialog({
             </span>
             <div>
               <h2 id="update-dialog-title">{title}</h2>
-              <span>{isEn ? "Application update" : "应用更新"}</span>
             </div>
           </div>
           <button
             type="button"
             className="icon-button"
             onClick={onClose}
-            aria-label={isEn ? "Close update dialog" : "关闭更新弹窗"}
+            aria-label={isEn ? "Close" : "关闭"}
           >
             <X size={18} />
           </button>
         </header>
 
         <div className="update-dialog-content">
-          {checking ? (
-            <p>
-              {isEn
-                ? "Connecting to the VisualTeX release server…"
-                : "正在连接 VisualTeX 发布服务器…"}
-            </p>
-          ) : error ? (
-            <>
-              <p>
-                {isEn
-                  ? "Check your network connection and try again."
-                  : "请检查网络连接后重试。"}
-              </p>
-              <code>{error}</code>
-            </>
+          {checking ? null : error ? (
+            <code>{error}</code>
           ) : result ? (
             <>
               <div className="update-version-row">
                 <span>
-                  <small>{isEn ? "Installed" : "当前版本"}</small>
+                  <span>{isEn ? "Installed" : "当前版本"}</span>
                   <strong>v{result.currentVersion}</strong>
                 </span>
                 <RefreshCw size={16} aria-hidden="true" />
                 <span>
-                  <small>{isEn ? "Latest" : "最新版本"}</small>
+                  <span>{isEn ? "Latest" : "最新版本"}</span>
                   <strong>v{result.latestVersion}</strong>
                 </span>
               </div>
@@ -211,9 +193,9 @@ export function UpdateDialog({
                   <div className="update-release-heading">
                     <strong>{result.releaseName}</strong>
                     {publishedDate && (
-                      <small>
+                      <span>
                         {isEn ? `Published ${publishedDate}` : `发布于 ${publishedDate}`}
-                      </small>
+                      </span>
                     )}
                   </div>
 
@@ -263,6 +245,7 @@ export function UpdateDialog({
                         : "更新说明与安装包：GitHub Releases。"}
                     </p>
                   )}
+
                 </>
               ) : (
                 <p>
@@ -271,82 +254,81 @@ export function UpdateDialog({
                     : "已是最新版本。"}
                 </p>
               )}
+
+              <section className="update-project-card" aria-label={isEn ? "Project information" : "项目信息"}>
+                <div className="update-project-author">
+                  <UserRound size={15} aria-hidden="true" />
+                  <span>
+                    <small>{isEn ? "Author" : "作者"}</small>
+                    <strong>paulhe666</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="update-project-link"
+                  onClick={onOpenProject}
+                  title="https://github.com/paulhe666/visualtex"
+                >
+                  <Github size={15} aria-hidden="true" />
+                  <span>github.com/paulhe666/visualtex</span>
+                </button>
+                <p>
+                  <Star size={14} aria-hidden="true" />
+                  {isEn
+                    ? "If you like the project, please give it a Star!"
+                    : "如果觉得项目不错请点个 Star 噢！"}
+                </p>
+              </section>
+
+              <section
+                className="update-community-card"
+                aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
+              >
+                <div className="update-community-copy">
+                  <span className="update-community-icon" aria-hidden="true">
+                    <UsersRound size={18} />
+                  </span>
+                  <div>
+                    <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
+                    <p className="update-community-disclaimer">
+                      {isEn
+                        ? "Tips via WeChat Pay and Alipay are voluntary and do not affect any feature. QQ group for discussion."
+                        : "微信、支付宝打赏完全自愿，不影响任何功能；QQ 群用于交流。"}
+                    </p>
+                    <span className="update-community-number">
+                      {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
+                    </span>
+                  </div>
+                </div>
+                <div className="update-community-qr-row">
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
+                    <img
+                      src={wechatPayImageUrl}
+                      alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
+                      loading="eager"
+                    />
+                  </figure>
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
+                    <img
+                      src={alipayImageUrl}
+                      alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
+                      loading="eager"
+                    />
+                  </figure>
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
+                    <img
+                      src={QQ_GROUP_IMAGE_URL}
+                      alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${QQ_GROUP_NUMBER} QR code`}
+                      loading="eager"
+                    />
+                  </figure>
+                </div>
+              </section>
             </>
           ) : null}
-
-          <section className="update-project-card" aria-label={isEn ? "Project information" : "项目信息"}>
-            <div className="update-project-author">
-              <UserRound size={15} aria-hidden="true" />
-              <span>
-                <small>{isEn ? "Author" : "作者"}</small>
-                <strong>paulhe666</strong>
-              </span>
-            </div>
-            <button
-              type="button"
-              className="update-project-link"
-              onClick={onOpenProject}
-              title="https://github.com/paulhe666/visualtex"
-            >
-              <Github size={15} aria-hidden="true" />
-              <span>github.com/paulhe666/visualtex</span>
-            </button>
-            <p>
-              <Star size={14} aria-hidden="true" />
-              {isEn
-                ? "If you like the project, please give it a Star!"
-                : "如果觉得项目不错请点个 Star 噢！"}
-            </p>
-          </section>
-
-          <section
-            className="update-community-card"
-            aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
-          >
-            <div className="update-community-copy">
-              <span className="update-community-icon" aria-hidden="true">
-                <UsersRound size={18} />
-              </span>
-              <div>
-                <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
-                <p>
-                  {isEn
-                    ? "Tips via WeChat Pay and Alipay are voluntary and do not affect any feature. QQ group for discussion."
-                    : "微信、支付宝打赏完全自愿，不影响任何功能；QQ 群用于交流。"}
-                </p>
-                <span className="update-community-number">
-                  {isEn ? "QQ group: " : "QQ群号："}
-                  <b>{VISUALTEX_QQ_GROUP_NUMBER}</b>
-                </span>
-              </div>
-            </div>
-            <div className="update-community-qr-row">
-              <figure>
-                <img
-                  src={WECHAT_PAY_IMAGE_URL}
-                  alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
-                  loading="lazy"
-                />
-                <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
-              </figure>
-              <figure>
-                <img
-                  src={ALIPAY_IMAGE_URL}
-                  alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
-                  loading="lazy"
-                />
-                <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
-              </figure>
-              <figure>
-                <img
-                  src={VISUALTEX_QQ_GROUP_QR_DATA_URL}
-                  alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${VISUALTEX_QQ_GROUP_NUMBER} QR code`}
-                  loading="lazy"
-                />
-                <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
-              </figure>
-            </div>
-          </section>
 
           <label className="update-preference-row">
             <input

@@ -1,13 +1,7 @@
 import "../../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "../../styles.css";
-import "../../styles-macos-main.css";
-import "../../styles-editor-parity.css";
-import "../../styles-latest-macos-ui.css";
-import "../../styles-windows-shared-latest.css";
-import "../../../../shared/visualtex-app/src/styles-formula-tiles.css";
-import "../../styles-windows-responsive.css";
+import "../../../../shared/visualtex-app/src/styles/index.ts";
 import "../../../../shared/visualtex-app/src/math/customSymbolRendering";
 import { configureOcrTransport } from "../../ocr/ocrService";
 import { officeOcrTransport } from "../api/ocrHttpTransport";

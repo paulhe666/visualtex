@@ -17,9 +17,11 @@ const formulaHotkeys = await source("../shared/visualtex-app/src/shortcuts/formu
 const formulaHotkeyStore = await source("../shared/visualtex-app/src/stores/formulaHotkeyStore.ts");
 const editorStore = await source("../shared/visualtex-app/src/stores/editorStore.ts");
 const officeDialog = await source("src/office/dialog/OfficeDialogApp.tsx");
-const officeStyles = await source("src/styles-windows-shared-latest.css");
-const sharedStyles = await source("src/styles.css");
-const latestStyles = await source("src/styles-latest-macos-ui.css");
+// the shared stylesheets and Windows' own (src/platform/styles.css)
+const windowsStyles = await source("src/platform/styles.css");
+const officeStyles = (await source("../shared/visualtex-app/src/styles/workspace.css")) + windowsStyles;
+const sharedStyles = await source("../shared/visualtex-app/src/styles/app.css");
+const latestStyles = sharedStyles + windowsStyles;
 const tauriLib = await source("src-tauri/src/lib.rs");
 const appLifecycle = await source("src-tauri/src/app_lifecycle.rs");
 const quickOcrNative = await source("src-tauri/src/windows_quick_ocr.rs");
@@ -199,8 +201,8 @@ assert.ok(officeDialog.includes("preferences.editorPreferences?.settings?.zoom")
 assert.ok(officeDialog.includes("if (!initialSynchronizedZoomAppliedRef.current)"));
 assert.ok(sharedStyles.includes("--z-workspace-header: 80;"));
 assert.ok(sharedStyles.includes("--z-popover: 190;"));
-assert.ok(sharedStyles.includes("--z-modal: 300;"));
-assert.ok(sharedStyles.includes("z-index: var(--suggestion-zindex, 190);"));
+assert.ok(sharedStyles.includes("--z-modal: 2200;"));
+assert.ok(sharedStyles.includes("--suggestion-zindex:"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-header, 80);"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-footer, 50);"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-floating, 60);"));

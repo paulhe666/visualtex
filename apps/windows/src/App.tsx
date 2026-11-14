@@ -62,7 +62,7 @@ import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryP
 import { HelpDialog } from "./components/HelpDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
-import { UpdateDialog } from "./components/UpdateDialog";
+import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
@@ -385,7 +385,7 @@ function App() {
   }, [isEn]);
 
   // The header hides its least important items first, and only when the row
-  // has no room left (levels are listed in styles-macos-responsive.css).
+  // has no room left (levels are listed in styles/responsive.css).
   useEffect(() => {
     if (!appHeader) return;
     return trackPriorityCollapse(appHeader, {

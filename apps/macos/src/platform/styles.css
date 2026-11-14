@@ -1,6 +1,6 @@
-/* macOS-only presentation overrides loaded after the pinned Windows shared CSS.
-   Keep platform session architecture and extreme-narrow resident-window behavior
-   separate from the shared editor rules. */
+/* macOS' own stylesheet, loaded after the shared ones (apps/shared/visualtex-app/src/styles/index.ts): the
+   resident Office editor's header and dock, the classic header portalled into the macOS top toolbar, keypad mode
+   without that toolbar, and the narrowest resident-editor widths. */
 
 /* The resident macOS Office editor keeps Apply/Cancel and session controls in
    the fixed editor header. Do not inherit a Windows-only hidden classic header. */

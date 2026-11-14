@@ -611,7 +611,7 @@ function sameToolbarCategoryList(
 
 const matrixGridSize = 5;
 // Horizontal-dock matrix builder geometry used to wrap the delimiter rail;
-// keep in sync with styles-windows-responsive.css.
+// keep in sync with the matrix builder rules in src/platform/styles.css.
 const matrixBuilderVerticalPadding = 8;
 const matrixDelimiterLabelBlockHeight = 15;
 const matrixDelimiterMinButtonHeight = 28;
