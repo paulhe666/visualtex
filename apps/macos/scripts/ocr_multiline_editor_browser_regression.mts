@@ -197,6 +197,7 @@ async function main() {
           callbacks.delete(eventId);
         },
       };
+      globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
       window.__TAURI_INTERNALS__ = {
         ...(window.__TAURI_INTERNALS__ || {}),
         transformCallback(callback, once = false) {

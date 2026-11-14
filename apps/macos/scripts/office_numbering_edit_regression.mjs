@@ -41,6 +41,7 @@ try {
     };
     localStorage.setItem("visualtex-office-word-create-numbered", "false");
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: (event, id) => { listeners.delete(id); } };
+    globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: "office-editor" }, currentWebview: { label: "office-editor" } },
       transformCallback: callback => { callbacks.set(++serial, callback); return serial; },

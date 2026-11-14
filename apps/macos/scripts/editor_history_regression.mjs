@@ -218,6 +218,7 @@ async function main() {
       await evaluate(`(() => {
         let callbackId = 1;
         const callbacks = new Map();
+        globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
         window.__TAURI_INTERNALS__ = {
           metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
           transformCallback(callback, once = false) {

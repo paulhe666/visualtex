@@ -191,6 +191,7 @@ async function main() {
             callback(null);
           },
         });
+        globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
         window.__TAURI_INTERNALS__ = {
           metadata: {
             currentWindow: { label: "office-native-document-test" },

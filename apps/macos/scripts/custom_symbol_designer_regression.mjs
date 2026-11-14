@@ -27,6 +27,7 @@ async function waitFor(url) {
 
 const stub = `(() => {
   const callbacks = new Map(); let next = 1;
+  globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = next++; callbacks.set(id, cb); return id; },
     unregisterCallback(id) { callbacks.delete(id); },
