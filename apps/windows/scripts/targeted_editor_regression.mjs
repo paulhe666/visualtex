@@ -160,7 +160,13 @@ async function main() {
       const started = Date.now();
       let lastValue;
       while (Date.now() - started < timeoutMs) {
-        lastValue = await evaluate(expression);
+        try {
+          lastValue = await evaluate(expression);
+        } catch (error) {
+          // a reload the scenario just started replaces the document under the evaluation
+          if (!/Inspected target navigated or closed|Execution context was destroyed|Cannot find context|Promise was collected/.test(String(error))) throw error;
+          lastValue = { ready: false, navigating: true };
+        }
         if (lastValue?.ready) return lastValue;
         await sleep(50);
       }
