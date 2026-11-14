@@ -3,7 +3,7 @@ import {
   compatibilityDirectPlaceholderWrappers,
   compatibilitySourceWrapperKinds,
   compatibilityWrapperCommands,
-} from "../src/autocomplete/compatibilityCommands.ts";
+} from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import {
   accentSourceWrapperCommands,

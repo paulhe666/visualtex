@@ -1,7 +1,7 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentModeStore } from "../../shared/visualtex-app/src/stores/documentModeStore";
 import { DocumentHistoryButtons } from "./document/DocumentControls";
-import { useDocumentLibraryStore } from "./document/documentLibraryApi";
+import { useDocumentLibraryStore } from "../../shared/visualtex-app/src/document/documentLibraryApi";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,

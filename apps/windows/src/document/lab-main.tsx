@@ -12,7 +12,7 @@ import { DocumentWorkspace } from "./DocumentWorkspace";
 import type { MathEditorHandle } from "../editor/MathEditor";
 import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { useDocumentLibraryStore } from "./documentLibraryApi";
+import { useDocumentLibraryStore } from "../../../shared/visualtex-app/src/document/documentLibraryApi";
 import { EditorState, NodeSelection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { buildPrintCopy } from "../../../shared/visualtex-app/src/document/printCopy";

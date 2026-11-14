@@ -1,6 +1,6 @@
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
-import { additionalCommands } from "./additionalCommands.ts";
-import { compatibilityCommands } from "./compatibilityCommands.ts";
+import { additionalCommands } from "../../../shared/visualtex-app/src/autocomplete/additionalCommands.ts";
+import { compatibilityCommands } from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands.ts";
 import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 

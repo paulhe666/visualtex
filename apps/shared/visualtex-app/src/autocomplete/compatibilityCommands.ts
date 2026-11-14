@@ -1,5 +1,5 @@
-import { VISUALTEX_CORE_LATEX_ALIASES } from "../../../shared/visualtex-app/src/math/coreLatexAliases";
-import type { CommandCategory, LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../math/coreLatexAliases";
+import type { CommandCategory, LatexCommand } from "../types/command";
 
 interface CompatibilityCommandSpec {
   id: string;
@@ -161,6 +161,8 @@ export const compatibilityWrapperPreviews = new Map<string, string>(
     .map((spec) => [spec.command, spec.previewLatex]),
 );
 
+// The shared editing kernel reads these through the kernel host module
+// (vite.visualtexKernelHost.ts via editor/sourceWrapperRegistry.ts).
 export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
   specs
     .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)

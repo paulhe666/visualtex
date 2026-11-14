@@ -64,7 +64,7 @@ import {
   type AnywhereActivation,
   type AnywhereKey,
   type AnywhereLayout,
-} from "./anywhereBridge";
+} from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
 
 /** MathEditor's formula font size at zoom 1 (BASE_FORMULA_FONT_SIZE). */
 const EDITOR_BASE_FONT_PX = 54;

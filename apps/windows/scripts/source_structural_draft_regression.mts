@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { formatLatexLines, parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import type { LatexCodeFormat } from "../src/types/formula.ts";
 import { convertVisualTexLatexToMarkup } from "../src/editor/mathLiveIntegralCompatibility.ts";
-import { compatibilityRequiredArgumentCounts } from "../src/autocomplete/compatibilityCommands.ts";
+import { compatibilityRequiredArgumentCounts } from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { latexCompletions } from "codemirror-lang-latex";
 import {
   createFormulaLine,

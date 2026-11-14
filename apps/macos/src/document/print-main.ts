@@ -4,7 +4,7 @@ import "../editor/visualTexLayoutRuntime";
 import "../styles.css";
 import "../../../shared/visualtex-app/src/document/document.css";
 import "../../../shared/tex-layout/data/profiles/ntx/fonts/fonts.css";
-import "./print.css";
+import "../../../shared/visualtex-app/src/document/print.css";
 import { isTauri } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 

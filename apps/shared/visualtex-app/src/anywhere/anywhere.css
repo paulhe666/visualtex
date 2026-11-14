@@ -36,7 +36,7 @@ body.anywhere-page #root {
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.18),
     0 3px 12px rgba(0, 0, 0, 0.16);
-  font: 12px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
 }
 
 :root[data-theme="dark"] .anywhere-strip {
@@ -108,6 +108,19 @@ body.anywhere-page #root {
    lines between the columns. Only the page of nine that holds the highlighted
    candidate; the panel grows to the table, so nothing scrolls or is cut.
    (html:root: above the main window's popover rules in styles.css.) */
+/* The main window shows a copy of the kernel's list (mathLiveKernelCommands:
+   #visualtex-native-input-suggestion-popover) and hides the kernel's own; here
+   the kernel's own list is the table (the panel is sized from it), the copy
+   never shows. */
+html:root body.anywhere-page #visualtex-native-input-suggestion-popover {
+  display: none !important;
+}
+
+html:root body.anywhere-page #mathlive-suggestion-popover[data-visualtex-input-popover-source="true"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
 html:root body.anywhere-page #mathlive-suggestion-popover {
   --candidate-head: #62390f;
   --candidate-head-current: #b0661d;
@@ -260,7 +273,7 @@ html:root body.anywhere-page #mathlive-suggestion-popover .visualtex-native-prev
   background: rgba(32, 32, 32, 0.88);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-  font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif;
+  font: 600 11px/16px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -283,7 +296,7 @@ html:root body.anywhere-page #mathlive-suggestion-popover .visualtex-native-prev
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font: 400 12px/16px ui-monospace, "SF Mono", Menlo, monospace;
+  font: 400 12px/16px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   opacity: 0.85;
 }
 

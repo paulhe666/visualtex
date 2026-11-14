@@ -14,11 +14,15 @@ export type AnywhereAnchorSource = "caret" | "field" | "pointer";
 
 export interface AnywhereActivation {
   generation: number;
-  /** The host's line height in CSS pixels; the formula is sized from it. */
+  /** The host's line height in CSS pixels (points on macOS); the formula is sized from it. */
   caretHeight: number;
   anchorSource: AnywhereAnchorSource;
   appName: string;
   accessibilityTrusted: boolean;
+  /** macOS: VisualTeX's input method is installed but not among the input sources */
+  inputMethodMissing?: boolean;
+  /** macOS: the field's application selected the input method without starting it: to be reopened */
+  reopenApp?: string | null;
   /** The previous session hid without a commit or cancel: keep its formula. */
   resume: boolean;
   /**
@@ -31,14 +35,14 @@ export interface AnywhereActivation {
   /** The display shortcut opened the formula: its row is a display row
    * (else a new formula starts inline). */
   display?: boolean;
-  /** The field's font size in CSS pixels, when the field tells it. */
+  /** The field's font size in CSS pixels (points), when the field tells it. */
   fontSize?: number | null;
   /** The field's text colour (#rrggbbaa), when the field tells it (or as
    * read off the screen). */
   textColor?: string | null;
   /** The field font's x-height over its size. */
   xHeight?: number | null;
-  /** The field's line (its caret) in CSS pixels, and how far it reaches below
+  /** The field's line (its caret) in CSS pixels (points), and how far it reaches below
    * the baseline. */
   lineHeight?: number | null;
   lineDescent?: number | null;
@@ -79,7 +83,7 @@ export function isAnywhereCompose(value: unknown): value is AnywhereCompose {
 /**
  * Where the host field put the formula's pieces (it holds each piece's width
  * in its text and wraps them as its own text): each piece's start from the
- * first piece's, in CSS pixels, y down (one place per piece the field has laid
+ * first piece's, in CSS pixels (points), y down (one place per piece the field has laid
  * out, in order).
  */
 export interface AnywherePieces {
@@ -91,6 +95,9 @@ export interface AnywherePieces {
   end?: [number, number] | null;
   /** The end is the input method's estimate (the field did not tell it). */
   endEstimated?: boolean;
+  /** macOS: the field's own caret after the held space: how far its line's bottom is below the last
+   *  line's (points), and its height. */
+  caretLine?: [number, number] | null;
 }
 
 export function isAnywherePieces(value: unknown): value is AnywherePieces {
@@ -128,7 +135,7 @@ export interface AnywhereSuspension {
   keepDraft: boolean;
 }
 
-/** A shortcut of the open formula pressed in the host application (registered
+/** Windows: a shortcut of the open formula pressed in the host application (registered
  * with Windows while a formula is open: some applications keep modifier
  * chords from the input method). */
 export interface AnywhereShortcut {
@@ -145,7 +152,7 @@ export function isAnywhereShortcut(value: unknown): value is AnywhereShortcut {
 /**
  * The panel's size and the point of the strip that sits on the host's caret
  * line (where the formula starts, at its vertical centre), in CSS pixels
- * from the window's top left.
+ * (points) from the window's top left.
  */
 export interface AnywhereLayout {
   width: number;
@@ -207,7 +214,7 @@ export const commitAnywhere = (generation: number, text: string) =>
  *  (base64); null when cancelled. */
 export const captureAnywhereScreenshot = () => invoke<string | null>("anywhere_capture_screenshot");
 
-/** Ctrl+V in the formula: the clipboard's image (for OCR) or text. */
+/** Ctrl+V (⌘V) in the formula: the clipboard's image (for OCR) or text. */
 export type AnywhereClipboard =
   | { kind: "image"; dataBase64: string; extension: string }
   | { kind: "text"; text: string }
@@ -238,7 +245,7 @@ export const reportAnywhereMarked = (
 export const reportAnywhereMode = (generation: number, text: boolean) =>
   invoke<void>("anywhere_mode", { generation, text });
 
-/** The shortcuts that act while a formula is open, for Windows to give them
+/** Windows: the shortcuts that act while a formula is open, for Windows to give them
  * to this page whatever the host application does with modifier chords. */
 export const reportAnywhereFormulaShortcuts = (
   shortcuts: { action: string; chord: { code: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean } }[],

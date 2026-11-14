@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   compatibilityCommandNames,
   compatibilityRequiredArgumentCounts,
-} from "../src/autocomplete/compatibilityCommands.ts";
+} from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import {
   formatLatex,

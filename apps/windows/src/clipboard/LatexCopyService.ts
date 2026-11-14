@@ -11,7 +11,7 @@ import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../math/physicsKernelMacros.ts"
 import {
   compatibilityCommandNames,
   compatibilityRequiredArgumentCounts,
-} from "../autocomplete/compatibilityCommands.ts";
+} from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import {
   restoreLatexAlignmentMarkers,
   stripVisualTexAlignmentMarkers,

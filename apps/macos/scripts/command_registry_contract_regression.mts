@@ -4,7 +4,7 @@ import { commandRegistry } from "../src/autocomplete/commandRegistry";
 import {
   compatibilityCommandNames,
   compatibilityCommands,
-} from "../src/autocomplete/compatibilityCommands";
+} from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands";
 
 const duplicateIds = [...new Set(
   commandRegistry

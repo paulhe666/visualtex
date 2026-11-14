@@ -31,7 +31,7 @@ import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
+import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "../../../shared/visualtex-app/src/document/DocumentLibrary";
 import {
   documentLibrary,
   documentTitle,
@@ -43,7 +43,7 @@ import {
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
-} from "./documentLibraryApi";
+} from "../../../shared/visualtex-app/src/document/documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
@@ -58,7 +58,7 @@ import {
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
 } from "../../../shared/visualtex-app/src/document/documentEvents";
-import { TutorialDialog } from "./TutorialDialog";
+import { TutorialDialog } from "../../../shared/visualtex-app/src/document/TutorialDialog";
 
 // Before the library the one document was kept here; the first start with the library takes it in (once; the key
 // stays for an older version of the app).

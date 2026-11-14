@@ -1,4 +1,4 @@
-import type { CommandCategory, LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import type { CommandCategory, LatexCommand } from "../types/command";
 
 const makeCommand = (
   id: string,
@@ -63,6 +63,8 @@ const complexCommands: LatexCommand[] = [
   makeCommand("underline", "\\underline", "\\underline{\\placeholder{}}", "\\underline{x}", "下划线", "Underline", "structure", 73, ["underline"], ["下划线"]),
   makeCommand("overbrace", "\\overbrace", "\\overbrace{\\placeholder{}}", "\\overbrace{a+\\cdots+a}^{n}", "上花括号", "Overbrace", "structure", 72, ["overbrace"], ["上括注"]),
   makeCommand("underbrace", "\\underbrace", "\\underbrace{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号", "Underbrace", "structure", 72, ["underbrace"], ["下括注"]),
+  makeCommand("overbrace-annotation", "\\overbrace", "\\overbrace{\\placeholder{}}^{\\placeholder{}}", "\\overbrace{a+\\cdots+a}^{n}", "上花括号注释", "Annotated overbrace", "structure", 72, ["overbrace"], ["上括注"]),
+  makeCommand("underbrace-annotation", "\\underbrace", "\\underbrace{\\placeholder{}}_{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号注释", "Annotated underbrace", "structure", 72, ["underbrace"], ["下括注"]),
   makeCommand("cases", "\\begin{cases}", "\\begin{cases}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{cases}", "f(x)=\\begin{cases}x&x>0\\\\0&x\\leq0\\end{cases}", "分段函数", "Cases", "structure", 85, ["cases", "piecewise"], ["分段函数"]),
   makeCommand("boxed", "\\boxed", "\\boxed{\\placeholder{}}", "\\boxed{x}", "方框公式", "Boxed", "structure", 70, ["boxed", "box"], ["方框"]),
   makeCommand("quad-space", "\\quad", "\\quad", "A\\quad B", "一字宽空格", "Quad space", "common", 66, ["quad"], ["空格", "spacing"]),

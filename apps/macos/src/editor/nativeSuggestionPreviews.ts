@@ -1,4 +1,4 @@
-import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
+import { compatibilityCommands } from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands";
 import { EXTENDED_INTEGRAL_COMMANDS } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility";
 
 export type NativeSuggestionPreviewKind =

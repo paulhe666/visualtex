@@ -8,9 +8,9 @@ import "../styles-editor-parity.css";
 import "../styles-windows-shared-latest.css";
 import "../styles-macos-platform-overrides.css";
 import "../styles-macos-responsive.css";
-import "./anywhere.css";
+import "../../../shared/visualtex-app/src/anywhere/anywhere.css";
 import { AnywhereApp } from "./AnywhereApp";
-import { logAnywhere } from "./anywhereBridge";
+import { logAnywhere } from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 

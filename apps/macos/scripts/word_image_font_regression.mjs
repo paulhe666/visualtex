@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { additionalCommands } from "../src/autocomplete/additionalCommands.ts";
+import { additionalCommands } from "../../shared/visualtex-app/src/autocomplete/additionalCommands.ts";
 import { latexToSvg } from "../src/export/runtime.ts";
 import { renderOfficeFormulaArtifacts } from "../src/office/shared/formulaRenderArtifacts.ts";
 

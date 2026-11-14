@@ -10,9 +10,9 @@ import "../styles-windows-shared-latest.css";
 import "../../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "../styles-windows-responsive.css";
 import "../math/customSymbolRendering";
-import "./anywhere.css";
+import "../../../shared/visualtex-app/src/anywhere/anywhere.css";
 import { AnywhereApp } from "./AnywhereApp";
-import { logAnywhere } from "./anywhereBridge";
+import { logAnywhere } from "../../../shared/visualtex-app/src/anywhere/anywhereBridge";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 
