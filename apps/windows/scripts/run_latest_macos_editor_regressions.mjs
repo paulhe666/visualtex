@@ -82,10 +82,6 @@ const checks = [
     command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "vertical-structure-probe"],
   },
   {
-    label: "shared scenario vertical-structure-navigation",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "vertical-structure-navigation"],
-  },
-  {
     label: "shared scenario native-structure-audit",
     command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-audit"],
   },

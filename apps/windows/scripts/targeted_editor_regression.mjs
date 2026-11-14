@@ -5823,83 +5823,8 @@ async function main() {
       await waitForEvaluation(`(() => ({
         ready: Boolean(document.querySelector('[data-open-custom-symbol-designer]')),
       }))()`, "custom symbol designer trigger");
-      await evaluate(`document.querySelector('[data-open-custom-symbol-designer]').click()`);
-      const customSymbolDesignerVisualState = await waitForEvaluation(`(() => {
-        const dialog = document.querySelector('[data-custom-symbol-designer]');
-        const stage = dialog?.querySelector('.custom-symbol-designer-stage');
-        const workspace = dialog?.querySelector('.custom-symbol-designer-workspace');
-        const paper = dialog?.querySelector('[data-custom-symbol-workspace-paper], [data-custom-symbol-canvas-paper]');
-        const panelHeader = dialog?.querySelector('.custom-symbol-designer-panel > header');
-        const sidebars = [...(dialog?.querySelectorAll('.custom-symbol-designer-sidebar') ?? [])];
-        const rootStyle = getComputedStyle(document.documentElement);
-        const stageStyle = stage ? getComputedStyle(stage) : null;
-        const workspaceStyle = workspace ? getComputedStyle(workspace) : null;
-        const stageBounds = stage?.getBoundingClientRect();
-        const paperBounds = paper?.getBoundingClientRect();
-        const dialogBounds = dialog?.getBoundingClientRect();
-        const panelHeaderFontSize = Number.parseFloat(
-          panelHeader ? getComputedStyle(panelHeader).fontSize : '0',
-        );
-        const workspaceFill = workspaceStyle?.fill ?? '';
-        const sunken = rootStyle.getPropertyValue('--bg-sunken').trim();
-        return {
-          ready: Boolean(
-            dialog && stage && workspace && paper &&
-            sunken &&
-            workspaceFill &&
-            workspaceFill !== 'black' &&
-            workspaceFill !== 'rgb(0, 0, 0)' &&
-            stageBounds && stageBounds.width > 300 && stageBounds.height > 300 &&
-            paperBounds && paperBounds.width >= stageBounds.width * 0.45 &&
-            paperBounds.height >= stageBounds.height * 0.45 &&
-            dialogBounds && dialogBounds.left >= -1 && dialogBounds.top >= -1 &&
-            dialogBounds.right <= innerWidth + 1 && dialogBounds.bottom <= innerHeight + 1 &&
-            sidebars.length === 2 &&
-            sidebars.every((sidebar) => sidebar.scrollWidth <= sidebar.clientWidth + 1) &&
-            panelHeaderFontSize >= 10
-          ),
-          sunken,
-          workspaceFill,
-          stageBackground: stageStyle?.backgroundColor ?? '',
-          stage: stageBounds ? { width: stageBounds.width, height: stageBounds.height } : null,
-          paper: paperBounds ? { width: paperBounds.width, height: paperBounds.height } : null,
-          dialog: dialogBounds ? {
-            left: dialogBounds.left,
-            top: dialogBounds.top,
-            right: dialogBounds.right,
-            bottom: dialogBounds.bottom,
-          } : null,
-          panelHeaderFontSize,
-          sidebarOverflow: sidebars.map((sidebar) => ({
-            clientWidth: sidebar.clientWidth,
-            scrollWidth: sidebar.scrollWidth,
-            overflow: sidebar.scrollWidth - sidebar.clientWidth,
-          })),
-        };
-      })()`, "balanced custom symbol designer on Windows");
-      await evaluate(`document.querySelector('[data-add-custom-symbol-material]')?.click()`);
-      const designerLayerBeforeDelete = await waitForEvaluation(`(() => ({
-        ready: document.querySelectorAll('[data-custom-symbol-layer]').length > 0,
-        count: document.querySelectorAll('[data-custom-symbol-layer]').length,
-      }))()`, "custom-symbol designer layer before keyboard delete");
-      await evaluate(`(() => {
-        const canvas = document.querySelector('[data-custom-symbol-canvas]');
-        canvas?.focus({ preventScroll: true });
-        canvas?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
-      })()`);
-      const designerLayerAfterDelete = await waitForEvaluation(`(() => ({
-        ready: document.querySelectorAll('[data-custom-symbol-layer]').length === 0,
-        count: document.querySelectorAll('[data-custom-symbol-layer]').length,
-      }))()`, "custom-symbol designer keyboard Delete");
-      if (designerLayerBeforeDelete.count <= designerLayerAfterDelete.count) {
-        throw new Error(`Delete key did not remove the selected custom-symbol layer: ${JSON.stringify({ designerLayerBeforeDelete, designerLayerAfterDelete })}`);
-      }
-      await evaluate(`document.querySelector(
-        '[data-custom-symbol-designer] button[aria-label="关闭"], [data-custom-symbol-designer] button[aria-label="Close"]',
-      )?.click()`);
-      await waitForEvaluation(`(() => ({
-        ready: !document.querySelector('[data-custom-symbol-designer]'),
-      }))()`, "closed custom symbol designer");
+      // The designer itself is covered by custom_symbol_designer_regression.mjs (both apps); its markup is
+      // the shared custom-symbol-designer package's.
 
       // Registered custom symbols must expose a real, visible delete control in
       // the toolbar. The old top-right glyph could degrade into a '?' and there
