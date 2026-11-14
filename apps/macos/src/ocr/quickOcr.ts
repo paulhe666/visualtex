@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LatexCodeFormat } from "../types/formula";
 import type { OcrModelName } from "./ocrService";
-import { decodeQuickOcrCapture } from "./quickOcrPayloadValidation";
+import { decodeQuickOcrCapture } from "../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "⌘⇧O";

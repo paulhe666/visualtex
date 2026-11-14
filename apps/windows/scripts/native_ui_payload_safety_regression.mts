@@ -6,7 +6,7 @@ import {
 import {
   decodeQuickOcrCapture,
   decodeSilentOcrShortcut,
-} from "../src/ocr/quickOcrPayloadValidation.ts";
+} from "../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation.ts";
 
 const probes = [
   {

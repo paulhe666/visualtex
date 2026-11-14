@@ -5,7 +5,7 @@ import type { OcrModelName } from "./ocrService";
 import {
   decodeQuickOcrCapture,
   decodeSilentOcrShortcut,
-} from "./quickOcrPayloadValidation";
+} from "../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
 
 export const SILENT_OCR_STORAGE_KEY = "visualtex.silent-ocr.enabled";
 export const SILENT_OCR_SHORTCUT = "Ctrl+Alt+O";

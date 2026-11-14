@@ -1,5 +1,5 @@
 import type { QuickOcrCapture } from "../../ocr/quickOcr";
-import { decodeQuickOcrCapture } from "../../ocr/quickOcrPayloadValidation";
+import { decodeQuickOcrCapture } from "../../../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation";
 import { formatOcrError, type OcrTransport } from "../../ocr/ocrService";
 
 export interface TransportEvent<T> {
