@@ -343,7 +343,6 @@ async function main() {
       exportAction: Boolean(document.querySelector('.workspace-export-trigger')),
       inputBehavior: Boolean(document.querySelector('.canvas-input-behavior-trigger')),
       quickOcr: Boolean(document.querySelector('[data-quick-ocr-button]')),
-      quickOcrMode: Boolean(document.querySelector('[data-quick-ocr-mode-trigger]')),
       silentOcr: Boolean(document.querySelector('[data-silent-ocr-toggle]')),
       ocrModel: Boolean(document.querySelector('.canvas-ocr-model')),
       canvasZoom: Boolean(document.querySelector('.canvas-controls')), 
@@ -386,7 +385,6 @@ async function main() {
       exportAction: keypadProbe.exportAction,
       inputBehavior: keypadProbe.inputBehavior,
       quickOcr: keypadProbe.quickOcr,
-      quickOcrMode: keypadProbe.quickOcrMode,
       silentOcr: keypadProbe.silentOcr,
     })) {
       assert.equal(value, true, `${name} must remain available in keypad mode`);

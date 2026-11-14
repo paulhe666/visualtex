@@ -143,7 +143,7 @@ export async function withBrowserTest(run) {
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error(`Browser command timed out: ${method}`));
-      }, 15000);
+      }, 60000); // the app's first load in a fresh Vite dev server takes ~20 s on a slow machine
       pending.set(id, { resolve, reject, timer });
       socket.send(JSON.stringify({ id, method, params }));
     });
@@ -155,6 +155,13 @@ export async function withBrowserTest(run) {
       return result.result.value;
     };
     await send("Page.enable");
+    // The target lists the blank page's URL before the page commits; until then the document is about:blank and
+    // a test's first import of a /src or /@fs module cannot resolve.
+    const committedBy = Date.now() + 15000;
+    while (!String(await evaluate("location.href")).startsWith(baseUrl)) {
+      if (Date.now() > committedBy) throw new Error("Browser test page did not load within 15 seconds");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await run({ baseUrl, send, evaluate });
   } finally {
     for (const call of pending.values()) clearTimeout(call.timer);

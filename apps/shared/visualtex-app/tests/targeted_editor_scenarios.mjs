@@ -11790,9 +11790,10 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
 
     await evaluate(`document.querySelector('button[data-category="matrix"]').click()`);
     const gridState = await waitForEvaluation(`(() => ({
-      ready: document.querySelectorAll(".matrix-size-cell").length === 100,
+      // the 5×5 picker of the shared toolbar (Windows since 2026-10-14)
+      ready: document.querySelectorAll(".matrix-size-cell").length === 25,
       cellCount: document.querySelectorAll(".matrix-size-cell").length,
-    }))()`, "10 by 10 matrix grid");
+    }))()`, "5 by 5 matrix grid");
 
     await evaluate(`(() => {
       const cell = document.querySelector('.matrix-size-cell[data-matrix-rows="3"][data-matrix-columns="4"]');
