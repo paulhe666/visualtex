@@ -40,8 +40,6 @@ const cases = [
   ["physics-matrix-quantities", String.raw`\mqty{a&b\\c&d}+\pmqty{1&0\\0&1}+\vmqty{x&y\\z&w}`],
   ["siunitx-options-ranges", String.raw`\SI[round-mode=places]{3.14}{\kilo\meter\per\second}+\qty[round-mode=figures]{5}{\tesla}+\qtyrange{1}{10}{\milli\second}+\ang{30}`],
 ];
-// The editor has no bbm fonts, so its layout engine cannot draw \mathbbm (MathJax can).
-const engineUnsupported = new Set(["bbm-package"]);
 
 function assertNoUnknownMathCommand(mathMl, context) {
   assert.doesNotMatch(
@@ -91,8 +89,11 @@ const svgOptions = (name) => ({
 
 for (const [name, latex] of cases) {
   // the image the editor's layout engine draws (the default)
-  if (!engineUnsupported.has(name)) {
-    assertSelfContainedSvg(await latexToSvg(latex, svgOptions(name)), name);
+  const engine = await latexToSvg(latex, svgOptions(name));
+  assertSelfContainedSvg(engine, name);
+  if (name === "bbm-package") {
+    // bbm's double-struck 1 comes from the outline alphabet (msbm10 has no digits)
+    assert.match(engine.svg, /<path transform="[^"]*" d="M/, "\\mathbbm{1} is drawn as an outline");
   }
 
   // MathJax's drawing (MathType OLE objects read their alignment from its table structure)

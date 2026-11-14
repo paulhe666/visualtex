@@ -10,10 +10,11 @@ import fonts from "../../../tex-layout/data/fonts.json";
 import "../../../tex-layout/data/fonts/fonts.css";
 import profile from "../../../tex-layout/data/profile.json";
 import type NtxData from "./ntxProfileData";
-import type { PathGlyphSet } from "../../../tex-layout/src/path-font.ts";
+import type { PathAlphabetSet, PathGlyphSet } from "../../../tex-layout/src/path-font.ts";
 import type { NativeMeasure } from "../../../tex-layout/src/native-font.ts";
 import { gunzipSync, strFromU8 } from "fflate";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../math/rareIntegralGlyphs.generatedData";
+import { DOUBLE_STRUCK_GLYPHS_GZIP_BASE64 } from "../math/doubleStruckGlyphs.generatedData";
 import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
 
 /** A custom operator's italic correction, by the class of its box (editor and export classes). */
@@ -283,6 +284,18 @@ function rareIntegralGlyphs(): PathGlyphSet | undefined {
   }
 }
 
+// bbm.sty's \mathbbm: the double-struck alphabet (digits and lowercase too, which msbm lacks) from STIX Two Math.
+function doubleStruckAlphabet(): PathAlphabetSet | undefined {
+  try {
+    const bytes = Uint8Array.from(atob(DOUBLE_STRUCK_GLYPHS_GZIP_BASE64), (c) => c.charCodeAt(0));
+    const payload = JSON.parse(strFromU8(gunzipSync(bytes))) as Omit<PathAlphabetSet, "name">;
+    return { name: "stix-two-math-double-struck", unitsPerEm: payload.unitsPerEm, glyphs: payload.glyphs };
+  } catch (error) {
+    console.error("VisualTeX: double-struck outlines unavailable", error);
+    return undefined;
+  }
+}
+
 function profileData(p: Profile): LayoutData {
   if (p === "cm") return { tfm, meanings, templates, onearg, textFonts, fonts, profile } as unknown as LayoutData;
   // the fonts newtx shares with Computer Modern (rsfs, ...) come from the main data
@@ -308,14 +321,17 @@ type Engine = ReturnType<typeof createVisualTexLayout>;
 export function createAppLayoutEngine(measure: NativeMeasure = measureNative): Engine {
   const engines = new Map<Profile, Engine>();
   let paths: PathGlyphSet | undefined | null = null;
+  let doubleStruck: PathAlphabetSet | undefined | null = null;
   const engineFor = (p: Profile): Engine => {
     let e = engines.get(p);
     if (!e) {
       if (paths === null) paths = rareIntegralGlyphs();
+      if (doubleStruck === null) doubleStruck = doubleStruckAlphabet();
       e = createVisualTexLayout(profileData(p), {
         measureNative: measure,
         fallbackFamily: currentChineseFamily,
         pathGlyphs: paths,
+        alphabetGlyphs: doubleStruck ? { bbm: doubleStruck } : undefined,
         caretState: visualTexEditingCore.caretState,
         letterFamilies: currentLetterFamilies,
         faceFamilies: currentFaceFamilies,

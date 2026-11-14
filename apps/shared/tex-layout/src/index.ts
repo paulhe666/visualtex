@@ -15,7 +15,7 @@ import { shipOut, type ShipResult } from "./shipout.ts";
 import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
 import type { TeXFont, TfmData } from "./tfm.ts";
 import { NativeFont, type NativeMeasure } from "./native-font.ts";
-import { PathFont, type PathGlyphSet } from "./path-font.ts";
+import { PathFont, type PathGlyphSet, PathAlphabet, type PathAlphabetSet } from "./path-font.ts";
 import type { Spacing } from "./spacing.ts";
 import { formulaSvgBody, type GlyphTable, type SvgFormula, type SvgOverlay } from "./svg.ts";
 
@@ -192,6 +192,8 @@ export interface LayoutOptions {
   fallbackFamily?: string | (() => string);
   /** large operators drawn from outlines (rare integrals), see PathFont */
   pathGlyphs?: PathGlyphSet;
+  /** alphabets drawn from outlines: bbm.sty's \mathbbm (double-struck letters and digits) */
+  alphabetGlyphs?: { bbm?: PathAlphabetSet };
   /** where the editor shows the caret: the editing core's rule (apps/shared/visualtex-core) */
   caretState?: (mathfield: any) => CaretState;
   /**
@@ -269,6 +271,10 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     adapter.fams.set(FAM.paths, sizes as [PathFont, PathFont, PathFont]);
     // LaTeX's own definitions (amsmath, esint) take precedence
     adapter.pathOps = new Map([...sizes[0].codes].filter(([cmd]) => !data.templates[cmd]));
+  }
+  if (options.alphabetGlyphs?.bbm) {
+    const set = options.alphabetGlyphs.bbm;
+    adapter.fams.set(FAM.bbm, [10, 7, 5].map((pt) => new PathAlphabet(set, pt * 65536)) as [PathAlphabet, PathAlphabet, PathAlphabet]);
   }
   // stmaryrd and upgreek fonts, where the profile's data has them (Computer Modern)
   for (const [fam, names] of PACKAGE_FAMILIES) {

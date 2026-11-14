@@ -632,6 +632,9 @@ const PACKAGE_COMMANDS: Record<string, PackageCommand> = {
   Braket: bigBraket,
   Set: bigSet,
   set: smallSet,
+  // bbm.sty: \mathbbm{...} (bbm's own double-struck letters and digits; the layout engine draws them from an
+  // outline alphabet, other renderers show the expansion's \mathbb)
+  mathbbm: (c, a) => `\\mathbb{${a.slot(a.m(c))}}`,
 };
 
 /** The commands read here (the app leaves them to the kernel). */

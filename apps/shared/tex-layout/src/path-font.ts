@@ -93,6 +93,63 @@ export class PathFont extends TeXFont {
   }
 }
 
-export function isPathFont(f: TeXFont): f is PathFont {
+/** An alphabet drawn from outline data: each glyph stands for a character code (ASCII), y up, font units. */
+export interface PathAlphabetSet {
+  name: string;
+  unitsPerEm: number;
+  glyphs: { char: string; path: string; advanceWidth: number; height: number; depth: number }[];
+}
+
+/**
+ * Letters and digits drawn from outlines in a math alphabet the TeX fonts lack (bbm.sty's \mathbbm, from the
+ * STIX Two Math double-struck alphabet): a font whose character codes are the characters' own, so a math
+ * alphabet family takes it like any TeX font (letters and digits have the variable family class).
+ */
+export class PathAlphabet extends TeXFont {
+  readonly paths = true;
+  readonly unitsPerEm: number;
+  /** outline of each character code */
+  readonly outlines: string[] = [];
+  private readonly infos: CharInfo[] = [];
+  private readonly w: number[] = [];
+  private readonly h: number[] = [];
+  private readonly d: number[] = [];
+
+  constructor(set: PathAlphabetSet, size: number) {
+    super({ ...EMPTY_TFM, name: "paths:" + set.name }, size);
+    this.unitsPerEm = set.unitsPerEm;
+    const scaled = (v: number) => Math.round((v / set.unitsPerEm) * size);
+    for (const g of set.glyphs) {
+      const code = g.char.charCodeAt(0);
+      this.outlines[code] = g.path;
+      this.w[code] = scaled(g.advanceWidth);
+      this.h[code] = scaled(g.height);
+      this.d[code] = scaled(g.depth);
+      this.infos[code] = { exists: true, wi: code, hi: code, di: code, ii: code, tag: 0, rem: 0 };
+    }
+  }
+
+  override charInfo(c: number): CharInfo {
+    return this.infos[c] ?? NULL_CHARACTER;
+  }
+
+  override charWidth(i: CharInfo): number {
+    return this.w[i.wi];
+  }
+
+  override charHeight(i: CharInfo): number {
+    return this.h[i.hi];
+  }
+
+  override charDepth(i: CharInfo): number {
+    return this.d[i.di];
+  }
+
+  override charItalic(): number {
+    return 0;
+  }
+}
+
+export function isPathFont(f: TeXFont): f is PathFont | PathAlphabet {
   return (f as PathFont).paths === true;
 }

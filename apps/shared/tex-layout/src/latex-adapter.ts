@@ -216,6 +216,8 @@ export const FAM = {
   stmry: 33,
   /** upgreek's upright Greek (its default Euler option: U/eur, eurm10, 7, 5), when the data has it */
   eur: 34,
+  /** bbm.sty's \mathbbm: a double-struck alphabet drawn from outlines (PathAlphabet), when the app gives one */
+  bbm: 35,
 } as const;
 
 /** Fonts of packages the reference preamble loads, set up as families when the profile's data has them. */
@@ -302,6 +304,8 @@ interface Ctx {
   display: boolean;
   /** inside bm's \boldmath box: characters with no bold family stay as they are (no poor man's bold) */
   boldmath?: boolean;
+  /** inside bbm.sty's \mathbbm: its \mathbb is the outline alphabet (FAM.bbm) */
+  bbm?: boolean;
 }
 
 const BASE_CTX: Ctx = { fam: -1, bold: false, operator: false, display: false };
@@ -1026,6 +1030,7 @@ export class LatexAdapter {
     // specials inside that group (they occupy no space).
     let inner: Ctx = ctx;
     if (alphabet === "\\mathbfit") inner = { ...inner, fam: this.role.bm };
+    else if (alphabet === "\\mathbb" && ctx.bbm) inner = { ...inner, fam: FAM.bbm };
     else if (alphabet) inner = { ...inner, fam: ALPHABET_ROLE[alphabet] ? this.role[ALPHABET_ROLE[alphabet]] ?? -1 : -1 };
     if (bold === "\\mathbf") inner = { ...inner, fam: this.role.bf };
     else if (bold === "\\bm") inner = { ...inner, bold: true };
@@ -1436,6 +1441,8 @@ export class LatexAdapter {
       const arr = this.findAtom(a.branch("body"), (x) => x.type === "array");
       if (arr) return [this.subarray(arr, ctx, "c")];
     }
+    // bbm.sty's \mathbbm (its expansion is \mathbb{#1}): letters and digits in the outline alphabet, when there is one
+    if (cmd === "\\mathbbm" && this.fams.has(FAM.bbm)) return this.list(a.branch("body"), { ...ctx, bbm: true });
     // a package command read with its arguments (physics' \cos[2](x), ...) is its expansion
     const tpl = a.argumentTemplate === undefined ? this.template(cmd, a) : null;
     if (tpl) return tpl;
