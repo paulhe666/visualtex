@@ -12,7 +12,7 @@ apps/shared     两个应用原样共用的代码
   tex-layout              TeX 排版引擎、字体与度量
   visualtex-document      文档编辑器（Markdown 行、公式、表格、引用）
   custom-symbol-designer  自定义符号设计器
-  visualtex-app           两个应用共用的前端代码（逐步迁入，见“共享规则”）
+  visualtex-app           两个应用共用的前端代码：主窗口、设置、文档模式、OCR、VisualTeX Anywhere、导出、样式表
 apps/windows    Windows 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、C# Office 加载项（src-windows：
                 VSTO、OLE 服务器、MathType，WPS 通过 COM 使用同一套加载项）、输入法（input-method）、OCR
 apps/macos      macOS 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、Office 加载项（office/macos-offline：
@@ -24,18 +24,34 @@ tools           仓库结构检查
 每个应用各自拥有 `package.json` 与 `package-lock.json`、`Cargo.toml` 与 `Cargo.lock`、Vite/TypeScript/Tauri 配置、
 脚本和测试。`apps/shared` 没有自己的 `node_modules`：应用以相对路径引用共享文件，由应用的 Vite 配置从应用自己的
 `node_modules` 解析依赖（`vite.sharedPackages.ts`）。内核通过构建期模块 `virtual:visualtex-kernel-host`
-（`vite.visualtexKernelHost.ts`）取得各应用的命令表和输入规则。
+（`vite.visualtexKernelHost.ts`）取得各应用的命令表和输入规则。Node 脚本（测试、生成器）用
+`tsx --import ../shared/visualtex-app/testing/node-loader.mjs` 运行，共享代码的依赖和 `@platform/…` 从当前应用解析。
 
 ### 共享规则
 
 1. `apps/shared` 不引用 `apps/windows` 或 `apps/macos`。（`npm run test:repository` 检查）
 2. 一个应用不引用另一个应用。（同上）
 3. 两个应用都需要、且内容相同的文件放在 `apps/shared`，不在两个应用里各放一份。因平台不同而不同的文件留在各自的应用里。
-4. 共享代码里的平台差异是一个模块：每个应用提供导出相同的版本（作为参数传入，或像 `virtual:visualtex-kernel-host`
-   那样由宿主模块提供）；不在共享代码里写平台判断，也不保留改过的副本。
+4. 共享代码里的平台差异是一个模块：每个应用在 `src/platform/<模块>` 提供导出相同的版本，共享代码以
+   `@platform/<模块>` 引用（见下表）；内核的差异由 `virtual:visualtex-kernel-host` 提供。两个系统叫法不同的约定
+   （快捷键写法 Ctrl+B / ⌘B、主修饰键）用 `runtime/platformConventions.ts` 的 `onPlatform`、`primaryModifierOnly`。
+   不保留改过的副本。
 5. 不提交构建产物、日志、截图或测试文档；有名字的测试素材目录除外。
 
-`apps/windows/src` 与 `apps/macos/src` 里仍有许多相同或几乎相同的文件。它们逐个迁入 `apps/shared`，每次迁移都在两个平台上验证。
+留在应用里的是两个平台做法不同的部分：入口和它们的 HTML 页面、Office 编辑窗口与文档导入（后端协议不同）、
+各自的 Office 集成设置、快捷 OCR 与静默 OCR 窗口、macOS 的 Office 快捷键，以及 `src/platform`。
+
+| `src/platform` 模块 | 内容 |
+|---|---|
+| `appInfo` | `APP_PLATFORM`、版本与名称 |
+| `styles.css` | 只有这个应用有的组件和窗口的样式，在共享样式表之后加载 |
+| `AppOfficeIntegration` | 主窗口在 Office 集成中的部分（macOS：加载项安装、PowerPoint 注册、Office 快捷键、为 AI 智能体绘制公式；Windows：把编辑器偏好、布局和 PowerPoint 字号交给加载项） |
+| `OfficeIntegrationSettings`、`OfficeShortcutsTab`、`officeHotkeyOwner`、`wordPreferences` | 设置里的 Office 部分 |
+| `quickOcr` | 快捷 OCR 的截图方式与文字、静默 OCR 快捷键 |
+| `ocrBackend` | OCR 后端提供什么（安装恢复、存储位置、模型下载、预热命令） |
+| `anywhereKeyRules`、`anywhereWindow` | VisualTeX Anywhere 的快捷键规则、提示与快捷键转交 |
+| `exportFile` | 写出导出文件 |
+| `tutorials`、`helpManual` | 教程视频、帮助手册 |
 
 ### 在两台机器上工作
 
@@ -112,7 +128,8 @@ apps/shared     code both applications run unchanged
   tex-layout              TeX layout engine, fonts and metrics
   visualtex-document      document editor (Markdown lines, formulas, tables, references)
   custom-symbol-designer  custom symbol designer
-  visualtex-app           frontend code common to both applications (filled step by step, see "Sharing rules")
+  visualtex-app           frontend code common to both applications: the main window, settings, document mode, OCR,
+                          VisualTeX Anywhere, export, the stylesheets
 apps/windows    Windows application: editor shell (src), Tauri backend (src-tauri), Office add-ins in C# (src-windows:
                 VSTO, OLE server, MathType; WPS uses the same add-ins through COM), input method (input-method), OCR
 apps/macos      macOS application: editor shell (src), Tauri backend (src-tauri), Office add-ins (office/macos-offline:
@@ -126,7 +143,9 @@ Each application has its own `package.json` and `package-lock.json`, `Cargo.toml
 Vite/TypeScript/Tauri configuration, scripts and tests. `apps/shared` has no `node_modules`: an application imports
 shared files by relative path, and its Vite configuration resolves their packages from the application's own
 `node_modules` (`vite.sharedPackages.ts`). The kernel receives each application's command tables and input rules
-through the build-time module `virtual:visualtex-kernel-host` (`vite.visualtexKernelHost.ts`).
+through the build-time module `virtual:visualtex-kernel-host` (`vite.visualtexKernelHost.ts`). Node scripts (tests,
+generators) run with `tsx --import ../shared/visualtex-app/testing/node-loader.mjs`, which resolves the packages and
+`@platform/…` of shared code from the application they run in.
 
 ### Sharing rules
 
@@ -134,13 +153,28 @@ through the build-time module `virtual:visualtex-kernel-host` (`vite.visualtexKe
 2. An application never imports from the other application. (checked as well)
 3. A file both applications need with the same content belongs in `apps/shared`, not in both applications. A file
    that differs because the platforms differ stays in its application.
-4. A platform difference inside shared code is a module each application supplies with the same exports (passed in
-   as a parameter, or through a host module like `virtual:visualtex-kernel-host`); never a platform check inside
-   shared code and never an edited copy.
+4. A platform difference inside shared code is a module each application supplies with the same exports in
+   `src/platform/<module>`, imported by shared code as `@platform/<module>` (table below); the kernel's differences
+   come through `virtual:visualtex-kernel-host`. Conventions the systems name differently (shortcut labels Ctrl+B /
+   ⌘B, the primary modifier key) go through `onPlatform` and `primaryModifierOnly` in
+   `runtime/platformConventions.ts`. Never an edited copy.
 5. No build output, logs, screenshots or test documents are committed, except in a named fixtures folder.
 
-`apps/windows/src` and `apps/macos/src` still hold many files that are identical or nearly so. They move to
-`apps/shared` one at a time, each move checked on both platforms.
+What stays in the applications is what the platforms do differently: the entry points and their HTML pages, the
+Office editor window and document import (their backends differ), each Office integration's settings, the quick and
+silent OCR windows, the Office hotkeys of macOS, and `src/platform`.
+
+| `src/platform` module | What it holds |
+|---|---|
+| `appInfo` | `APP_PLATFORM`, version and name |
+| `styles.css` | styles of the components and windows only this application has, loaded after the shared stylesheets |
+| `AppOfficeIntegration` | the main window's part in the Office integration (macOS: add-in installation, PowerPoint registration, Office hotkeys, formulas drawn for AI agents; Windows: the editor preferences, layout and PowerPoint size handed to the add-ins) |
+| `OfficeIntegrationSettings`, `OfficeShortcutsTab`, `officeHotkeyOwner`, `wordPreferences` | the Office parts of Settings |
+| `quickOcr` | quick OCR's capture modes and their texts, the silent OCR shortcut |
+| `ocrBackend` | what the OCR backend offers (install recovery, storage folder, model downloads, the warm-up command) |
+| `anywhereKeyRules`, `anywhereWindow` | VisualTeX Anywhere's shortcut rules, notes and shortcut hand-over |
+| `exportFile` | writing an export file |
+| `tutorials`, `helpManual` | the tutorial videos, the help manual |
 
 ### Working on both machines
 
