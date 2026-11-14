@@ -726,7 +726,27 @@ async function main() {
       const done = () => document.querySelector(".cm-content") ? resolve(true) : setTimeout(done, 30);
       done();
     })`);
-    await evaluate(`document.querySelector(".cm-content").focus()`);
+    // The source panel shows the document in the universal format (a display
+    // row is a $$ block); put the caret in front of the formula itself.
+    const initialSource = await evaluate(`document.querySelector(".cm-content").innerText`);
+    if (!initialSource.includes("a=b")) {
+      throw new Error(`The source panel does not show the formula: ${JSON.stringify(initialSource)}`);
+    }
+    await evaluate(`(() => {
+      const content = document.querySelector(".cm-content");
+      content.focus();
+      const line = [...content.querySelectorAll(".cm-line")].find((node) => node.textContent.includes("a=b"));
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      let text = walker.nextNode();
+      while (text && !text.data.includes("a")) text = walker.nextNode();
+      const range = document.createRange();
+      range.setStart(text, text.data.indexOf("a"));
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    })()`);
+    await sleep(80);
     await client.send("Input.insertText", { text: "c" });
     await sleep(150);
     assertDeepEqual(
@@ -738,7 +758,7 @@ async function main() {
     await sleep(150);
     assertEqual(
       await evaluate(`document.querySelector(".cm-content").innerText`),
-      "a=b",
+      initialSource,
       "CodeMirror should keep its own draft undo",
     );
     assertDeepEqual(
@@ -761,7 +781,7 @@ async function main() {
       selection.removeAllRanges();
       selection.addRange(range);
     })()`);
-    await client.send("Input.insertText", { text: "x=y\nz=w" });
+    await client.send("Input.insertText", { text: "$$\nx=y\n$$\n\n$$\nz=w\n$$" });
     await sleep(180);
     assertDeepEqual(
       await values(),
@@ -791,7 +811,7 @@ async function main() {
     assertDeepEqual(await values(), ["a=b"], "global undo should restore pre-source document");
     assertEqual(
       await evaluate(`document.querySelector(".cm-content").innerText`),
-      "a=b",
+      initialSource,
       "source panel should follow global undo",
     );
     await redo();

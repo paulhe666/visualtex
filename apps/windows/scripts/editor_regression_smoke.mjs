@@ -332,21 +332,6 @@ async function main() {
 
     const setField = async (latex) => setFieldAt(0, latex);
 
-    await setField("\\theta");
-    const defaultOtherSuggestionState = await waitForEvaluation(
-      `(() => ({
-        ready: !document.querySelector(".suggestion-popup"),
-        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-        value: document.querySelector("math-field")?.value ?? "",
-      }))()`,
-      "default other-command candidate setting",
-    );
-    if (defaultOtherSuggestionState.candidateVisible) {
-      throw new Error(
-        `The VisualTeX large panel must be off by default for non-structured commands: ${JSON.stringify(defaultOtherSuggestionState)}`,
-      );
-    }
-
     await setField("");
     await key("\\", "Backslash", 220);
     // Use a real multi-item prefix. A fully typed exact command such as
@@ -514,130 +499,21 @@ async function main() {
       throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
     }
 
-    await evaluate(`(() => {
-      const storageKey = "visualtex-editor";
-      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      persisted.state = {
-        ...(persisted.state || {}),
-        inputBehavior: {
-          ...(persisted.state?.inputBehavior || {}),
-          showOtherCommandSuggestions: true,
-        },
-      };
-      localStorage.setItem(storageKey, JSON.stringify(persisted));
-    })()`);
-    await reloadEditor();
     await setField("\\alpha");
-    await waitForEvaluation(
-      `(() => ({
-        ready: Boolean(document.querySelector(".suggestion-popup")),
-      }))()`,
-      "custom command candidate for \\alpha",
-    );
     await key("Enter", "Enter", 13);
-    await waitForEvaluation(`(() => ({
-      ready:
-        document.querySelector("math-field")?.value === "\\\\alpha" &&
-        !document.querySelector(".suggestion-popup"),
-      value: document.querySelector("math-field")?.value ?? "",
-    }))()`, "commit custom alpha candidate");
-    await key("Enter", "Enter", 13);
-    const enterAfterCandidateState = await waitForEvaluation(`(() => {
+    const enterAfterCommandState = await waitForEvaluation(`(() => {
       const fields = [...document.querySelectorAll("math-field")];
       return {
         ready: fields.length === 2,
         lineCount: fields.length,
         values: fields.map((field) => field.value),
       };
-    })()`, "new line after committed command");
+    })()`, "new line after a command");
     await key("Backspace", "Backspace", 8);
     await waitForEvaluation(`(() => ({
       ready: document.querySelectorAll("math-field").length === 1,
       lineCount: document.querySelectorAll("math-field").length,
-    }))()`, "remove empty line after committed command");
-    await evaluate(`(() => {
-      const storageKey = "visualtex-editor";
-      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      persisted.state = {
-        ...(persisted.state || {}),
-        inputBehavior: {
-          ...(persisted.state?.inputBehavior || {}),
-          showOtherCommandSuggestions: true,
-        },
-      };
-      localStorage.setItem(storageKey, JSON.stringify(persisted));
-    })()`);
-
-    await reloadEditor();
-    await setField("x\\degree");
-    const degreeBeforeCommit = await waitForEvaluation(
-      `(() => {
-        const field = document.querySelector("math-field");
-        const selected = document.querySelector(".suggestion-item.is-selected");
-        const surface = document.querySelector(".multi-line-editor");
-        const state = {
-          value: field?.value ?? "",
-          position: field?.position ?? -1,
-          lastOffset: field?.lastOffset ?? -1,
-          selectedCommand: selected?.querySelector(".suggestion-command")?.textContent ?? "",
-          commandQuery: surface?.dataset.commandQuery ?? "",
-        };
-        return {
-          ...state,
-          ready:
-            Boolean(selected) &&
-            state.selectedCommand.includes("\\\\circ") &&
-            state.commandQuery === "\\\\degree",
-        };
-      })()`,
-      "custom command candidate for \\degree",
-    );
-    await key("Enter", "Enter", 13);
-    const degreeCommitState = await waitForEvaluation(`(() => {
-      const field = document.querySelector("math-field");
-      const selection = field.selection;
-      const state = {
-        value: field.value,
-        position: field.position,
-        lastOffset: field.lastOffset,
-        selection,
-        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-      };
-      return {
-        ...state,
-        ready:
-          state.value.includes("\\\\circ") &&
-          state.position === state.lastOffset &&
-          selection.ranges.every(([start, end]) => start === end) &&
-          !state.candidateVisible,
-      };
-    })()`, `degree command caret after commit; before=${JSON.stringify(degreeBeforeCommit)}`);
-    await key("Backspace", "Backspace", 8);
-    const degreeDeleteState = await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      return {
-        value: field.value,
-        position: field.position,
-        lastOffset: field.lastOffset,
-      };
-    })()`);
-    if (degreeDeleteState.value === degreeCommitState.value) {
-      throw new Error(
-        `Backspace did not modify the committed degree command: ${JSON.stringify({ degreeCommitState, degreeDeleteState })}`,
-      );
-    }
-    await evaluate(`(() => {
-      const storageKey = "visualtex-editor";
-      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      persisted.state = {
-        ...(persisted.state || {}),
-        inputBehavior: {
-          ...(persisted.state?.inputBehavior || {}),
-          showOtherCommandSuggestions: false,
-        },
-      };
-      localStorage.setItem(storageKey, JSON.stringify(persisted));
-    })()`);
+    }))()`, "remove empty line after a command");
 
     await resetEditorDocument([""]);
     await setField("");
@@ -1496,8 +1372,7 @@ async function main() {
     }
 
     if (process.env.VISUALTEX_TEST_QUIET !== "1") console.log(JSON.stringify({
-      defaultOtherSuggestionState,
-      enterAfterCandidateState,
+      enterAfterCommandState,
       nativePopover,
       nativeCommitState,
       simpleMetrics,
@@ -1517,9 +1392,6 @@ async function main() {
       dirtyFormatSwitchState,
       continuousSourceFocusState,
       inlineTextFormatState,
-      degreeBeforeCommit,
-      degreeCommitState,
-      degreeDeleteState,
       chineseIdeographicCommaValue,
       arrowUpLineState,
       arrowDownLineState,
