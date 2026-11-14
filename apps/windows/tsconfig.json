@@ -28,6 +28,8 @@
       "zustand": ["./node_modules/zustand"],
       "zustand/*": ["./node_modules/zustand/*"],
       "@tauri-apps/api/*": ["./node_modules/@tauri-apps/api/*"],
+      "@tauri-apps/plugin-dialog": ["./node_modules/@tauri-apps/plugin-dialog"],
+      "@tauri-apps/plugin-opener": ["./node_modules/@tauri-apps/plugin-opener"],
       "mathjax-full/*": ["./node_modules/mathjax-full/*"],
       "mermaid": ["./node_modules/mermaid"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],

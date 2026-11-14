@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   localizeReleaseNotes,
   stripPersonalAuthorNames,
-} from "../src/update/releaseNotes.ts";
+} from "../../shared/visualtex-app/src/update/releaseNotes.ts";
 
 const bilingualNotes = `
 ## 中文

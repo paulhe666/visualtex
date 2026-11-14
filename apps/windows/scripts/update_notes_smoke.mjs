@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { localizeReleaseNotes } from "../src/update/releaseNotes.ts";
+import { localizeReleaseNotes } from "../../shared/visualtex-app/src/update/releaseNotes.ts";
 
 const bilingualNotes = `
 ## 中文

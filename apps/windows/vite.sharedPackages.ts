@@ -26,6 +26,8 @@ export const sharedPackageDedupe = [
   // apps/shared/visualtex-app: stores, Tauri calls, MathJax-based export, diagrams
   "zustand",
   "@tauri-apps/api",
+  "@tauri-apps/plugin-dialog",
+  "@tauri-apps/plugin-opener",
   "mathjax-full",
   "mermaid",
 ];

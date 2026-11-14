@@ -18,8 +18,8 @@ import {
   VISUALTEX_QQ_GROUP_QR_DATA_URL,
 } from "../../../shared/visualtex-app/src/assets/visualtexQqGroup";
 import type { Language } from "../stores/editorStore";
-import { localizeReleaseNotes } from "../update/releaseNotes";
-import type { UpdateCheckResult } from "../update/updateService";
+import { localizeReleaseNotes } from "../../../shared/visualtex-app/src/update/releaseNotes";
+import type { UpdateCheckResult } from "../../../shared/visualtex-app/src/update/updateService";
 
 const WECHAT_PAY_IMAGE_URL = new URL(
   "../../../../docs/images/wechat-pay.jpg",

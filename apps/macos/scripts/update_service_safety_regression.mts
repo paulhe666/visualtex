@@ -3,7 +3,7 @@ import {
   isNewerVersion,
   normalizeVisualTexGitHubUrl,
   parseStableGitHubRelease,
-} from "../src/update/updateService.ts";
+} from "../../shared/visualtex-app/src/update/updateService.ts";
 
 const valid = parseStableGitHubRelease({
   tag_name: "v1.2.6",

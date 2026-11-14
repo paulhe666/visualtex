@@ -1,5 +1,5 @@
-import type { UpdateCheckResult } from "./updateService";
-import { CURRENT_VERSION } from "./updateService";
+import type { UpdateCheckResult } from "../../../shared/visualtex-app/src/update/updateService";
+import { CURRENT_VERSION } from "../../../shared/visualtex-app/src/update/updateService";
 
 export const RELEASE_WELCOME_VERSION = "1.2.7";
 export const RELEASE_WELCOME_STORAGE_KEY =

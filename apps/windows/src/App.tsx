@@ -126,7 +126,7 @@ import {
   openReleasePage,
   PROJECT_URL,
   type UpdateCheckResult,
-} from "./update/updateService";
+} from "../../shared/visualtex-app/src/update/updateService";
 import { readLocalStorage, writeLocalStorage } from "../../shared/visualtex-app/src/runtime/safeStorage";
 import { childrenFitRow, trackPriorityCollapse } from "../../shared/visualtex-app/src/runtime/priorityCollapse";
 import {
