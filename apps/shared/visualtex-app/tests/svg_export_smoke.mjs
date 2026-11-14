@@ -3,10 +3,10 @@ import {
   latexToMathMl,
   latexToSvg,
   svgToBase64,
-} from "../../shared/visualtex-app/src/export/runtime.ts";
-import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
-import { EXTENDED_INTEGRAL_SYMBOLS } from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
-import { isIncompleteLatexDraft } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
+} from "../src/export/runtime.ts";
+import { normalizeChineseLatex } from "../src/editor/normalizeChineseLatex.ts";
+import { EXTENDED_INTEGRAL_SYMBOLS } from "../src/math/extendedIntegralCompatibility.ts";
+import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 
 const matrixRows = Array.from({ length: 10 }, (_, row) =>
   Array.from({ length: 10 }, (_, column) => `a_{${row + 1}${column + 1}}`).join("&"),
@@ -40,6 +40,8 @@ const cases = [
   ["physics-matrix-quantities", String.raw`\mqty{a&b\\c&d}+\pmqty{1&0\\0&1}+\vmqty{x&y\\z&w}`],
   ["siunitx-options-ranges", String.raw`\SI[round-mode=places]{3.14}{\kilo\meter\per\second}+\qty[round-mode=figures]{5}{\tesla}+\qtyrange{1}{10}{\milli\second}+\ang{30}`],
 ];
+// The editor has no bbm fonts, so its layout engine cannot draw \mathbbm (MathJax can).
+const engineUnsupported = new Set(["bbm-package"]);
 
 function assertNoUnknownMathCommand(mathMl, context) {
   assert.doesNotMatch(
@@ -49,64 +51,56 @@ function assertNoUnknownMathCommand(mathMl, context) {
   );
 }
 
-const extendedIntegralCases = Object.entries(EXTENDED_INTEGRAL_SYMBOLS).map(
-  ([command, replacement]) => [command, replacement],
-);
-
-function assertExtendedIntegralMathMl(mathMl, command, replacement) {
-  if (replacement.startsWith("\\")) {
-    assert.ok(
-      (mathMl.match(/&#x222B;/gi) ?? []).length >= 2,
-      `${command} composite MathML keeps both integral operators`,
-    );
-    assert.match(mathMl, /&#x22EF;/i, `${command} composite MathML keeps its dots`);
-    return;
-  }
-
-  const expectedCounts = new Map();
-  for (const character of Array.from(replacement)) {
-    const codePoint = character.codePointAt(0).toString(16).toUpperCase();
-    expectedCounts.set(codePoint, (expectedCounts.get(codePoint) ?? 0) + 1);
-  }
-  for (const [codePoint, count] of expectedCounts) {
-    const actual = (mathMl.match(new RegExp(`&#x${codePoint};`, "gi")) ?? []).length;
-    assert.ok(actual >= count, `${command} MathML symbol U+${codePoint}`);
-  }
-}
-
-for (const [name, latex] of cases) {
-  const result = await latexToSvg(latex, {
-    displayMode: true,
-    fontSizePt: 14,
-    paddingPx: 10,
-    background: name === "root" ? "white" : "transparent",
-  });
+function assertSelfContainedSvg(result, name, label = name) {
   assert.match(result.svg, /^<svg\b/);
   const rootOpening = result.svg.match(/^<svg\b[^>]*>/)?.[0] ?? "";
-  assert.match(rootOpening, /\bviewBox=/, `${name} root viewBox`);
-  assert.ok(result.width > 0, `${name} width`);
-  assert.ok(result.height > 0, `${name} height`);
-  assert.ok((result.baseline ?? -1) >= 0, `${name} baseline`);
-  assert.ok(!/<foreignObject\b/i.test(result.svg), `${name} foreignObject`);
-  assert.ok(!/<link\b|@import\b/i.test(result.svg), `${name} external CSS`);
+  assert.match(rootOpening, /\bviewBox=/, `${label} root viewBox`);
+  assert.ok(result.width > 0, `${label} width`);
+  assert.ok(result.height > 0, `${label} height`);
+  assert.ok((result.baseline ?? -1) >= 0, `${label} baseline`);
+  assert.ok(!/<foreignObject\b/i.test(result.svg), `${label} foreignObject`);
+  assert.ok(!/<link\b|@import\b/i.test(result.svg), `${label} external CSS`);
   assert.ok(
     !/\b(?:href|xlink:href)=["'](?!#|data:)[^"']+/i.test(result.svg),
-    `${name} external href`,
+    `${label} external href`,
   );
-  assert.ok(!/url\(\s*["']?https?:/i.test(result.svg), `${name} remote CSS URL`);
+  assert.ok(!/url\(\s*["']?https?:/i.test(result.svg), `${label} remote CSS URL`);
   if (name !== "root") {
     assert.match(
       result.svg,
       /<rect\b[^>]*fill-opacity="0\.001"/,
-      `${name} transparent PowerPoint hit target`,
+      `${label} transparent PowerPoint hit target`,
     );
   }
   if (name === "tagged-equation") {
-    assert.ok(result.width > 250, "tagged equation keeps its full intrinsic width");
+    assert.ok(result.width > 250, `${label} keeps its full intrinsic width`);
   }
-  // MathJax's SVG nests the tag's table and label in viewports of their own; the layout engine draws them in one
-  if (name === "tagged-equation" && result.svg.includes("data-mml-node")) {
-    const nestedViewports = [...result.svg.matchAll(
+  assert.equal(result.base64, svgToBase64(result.svg));
+  const decoded = new TextDecoder().decode(
+    Uint8Array.from(atob(result.base64), (character) => character.charCodeAt(0)),
+  );
+  assert.equal(decoded, result.svg, `${label} UTF-8 base64 round trip`);
+}
+
+const svgOptions = (name) => ({
+  displayMode: true,
+  fontSizePt: 14,
+  paddingPx: 10,
+  background: name === "root" ? "white" : "transparent",
+});
+
+for (const [name, latex] of cases) {
+  // the image the editor's layout engine draws (the default)
+  if (!engineUnsupported.has(name)) {
+    assertSelfContainedSvg(await latexToSvg(latex, svgOptions(name)), name);
+  }
+
+  // MathJax's drawing (MathType OLE objects read their alignment from its table structure)
+  const mathJax = await latexToSvg(latex, { ...svgOptions(name), renderer: "mathjax" });
+  assertSelfContainedSvg(mathJax, name, `${name} (MathJax)`);
+  if (name === "tagged-equation") {
+    // MathJax's SVG nests the tag's table and label in viewports of their own
+    const nestedViewports = [...mathJax.svg.matchAll(
       /<svg\b[^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*>/g,
     )].map((match) => match[0]);
     assert.equal(nestedViewports.length, 2, "tagged equation table and label viewports");
@@ -117,6 +111,7 @@ for (const [name, latex] of cases) {
       assert.match(viewport, /\boverflow=["']visible["']/);
     }
   }
+
   const mathMl = latexToMathMl(latex, true);
   assert.match(mathMl, /^<math\b/);
   assert.match(mathMl, /xmlns="http:\/\/www\.w3\.org\/1998\/Math\/MathML"/);
@@ -130,13 +125,9 @@ for (const [name, latex] of cases) {
     assert.match(mathMl, /mathvariant="bold-italic"/);
     assert.doesNotMatch(mathMl, /\\bm(?:<|\s)/);
   }
-  assert.equal(result.base64, svgToBase64(result.svg));
-  const decoded = new TextDecoder().decode(
-    Uint8Array.from(atob(result.base64), (character) => character.charCodeAt(0)),
-  );
-  assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
+// MathJax drawing: function names in Times keep MathJax's per-glyph placement
 const timesFunctionRuns = [
   ["lim", String.raw`\lim_{x\to0}`],
   ["sin", String.raw`\sin x`],
@@ -148,13 +139,14 @@ const timesFunctionRuns = [
 ];
 for (const displayMode of [false, true]) {
   for (const [name, latex] of timesFunctionRuns) {
-    const svg = latexToSvg(latex, {
+    const { svg } = await latexToSvg(latex, {
       displayMode,
       fontSizePt: 12,
       paddingPx: 0,
       background: "transparent",
       formulaLetterFont: "times",
-    }).svg;
+      renderer: "mathjax",
+    });
     const groups = svg.match(/<g\b[^>]*data-mml-node=["'](?:mi|mo)["'][^>]*>[\s\S]*?<\/g>/gi) ?? [];
     const functionGroup = groups.find((group) => {
       const characters = [...group.matchAll(/<text\b[^>]*>([^<]*)<\/text>/gi)]
@@ -194,12 +186,13 @@ for (const [name, latex] of accentCommands) {
   const mathMl = latexToMathMl(latex, false);
   assert.match(mathMl, /<mover(?:\s|>)/, `${name} remains a MathML over-accent`);
   assertNoUnknownMathCommand(mathMl, `${name} accent`);
-  const svg = latexToSvg(latex, {
+  const { svg } = await latexToSvg(latex, {
     displayMode: false,
     fontSizePt: 14,
     paddingPx: 8,
     background: "transparent",
-  }).svg;
+    renderer: "mathjax",
+  });
   assert.match(svg, /data-mml-node="mover"/, `${name} remains an SVG over-accent`);
 }
 assert.doesNotMatch(
@@ -226,53 +219,86 @@ const siunitxSquare = latexToMathMl(
 assert.match(siunitxSquare, /<msup>/, "siunitx \\square still means a squared unit");
 assertNoUnknownMathCommand(siunitxSquare, "siunitx square unit");
 
-for (const [command, character] of extendedIntegralCases) {
+const extendedIntegralCases = Object.entries(EXTENDED_INTEGRAL_SYMBOLS);
+
+function assertExtendedIntegralMathMl(mathMl, command, replacement) {
+  if (replacement.startsWith("\\")) {
+    assert.ok(
+      (mathMl.match(/&#x222B;/gi) ?? []).length >= 2,
+      `${command} composite MathML keeps both integral operators`,
+    );
+    assert.match(mathMl, /&#x22EF;/i, `${command} composite MathML keeps its dots`);
+    assert.doesNotMatch(
+      mathMl,
+      /&#x5C;/i,
+      `${command} semantic fallback must not leak a literal backslash`,
+    );
+    return;
+  }
+
+  const expectedCounts = new Map();
+  for (const character of Array.from(replacement)) {
+    const codePoint = character.codePointAt(0).toString(16).toUpperCase();
+    expectedCounts.set(codePoint, (expectedCounts.get(codePoint) ?? 0) + 1);
+  }
+  for (const [codePoint, count] of expectedCounts) {
+    const actual = (mathMl.match(new RegExp(`&#x${codePoint};`, "gi")) ?? []).length;
+    assert.ok(actual >= count, `${command} MathML symbol U+${codePoint}`);
+  }
+}
+
+// the editor engine draws the operator from esint10/cmex10, or as a STIX Two
+// Math outline (rare integrals), never as text
+const ENGINE_INTEGRAL_GLYPH = /<path transform="[^"]*" d="|id="vtx-(?:esint10|cmex10)-\d+"/;
+// MathJax's drawing gets VisualTeX's own vector operator
+const MATHJAX_INTEGRAL_GLYPH = /data-visualtex-integral="[A-Za-z]+"/;
+const integralOptions = {
+  displayMode: true,
+  fontSizePt: 14,
+  paddingPx: 0,
+  background: "transparent",
+};
+
+for (const [command, replacement] of extendedIntegralCases) {
   const latex = `\\${command}_{\\Sigma} a\\,\\mathrm{d}S`;
   const mathMl = latexToMathMl(latex, true);
-  const svgResult = latexToSvg(latex, {
-    displayMode: true,
-    fontSizePt: 14,
-    paddingPx: 0,
-    background: "transparent",
-  });
-  const svg = svgResult.svg;
-
-  assertExtendedIntegralMathMl(mathMl, command, character);
+  assertExtendedIntegralMathMl(mathMl, command, replacement);
   assert.match(mathMl, /<msub>/, `${command} keeps its lower limit`);
   assertNoUnknownMathCommand(mathMl, command);
   assert.doesNotMatch(mathMl, new RegExp(`\\\\${command}(?:<|$)`), `${command} is not literal text`);
-  assert.doesNotMatch(svg, /mathcolor|fill="red"|#FF0000/i, `${command} SVG has no error glyph`);
-  assert.doesNotMatch(svg, new RegExp(`\\\\${command}`), `${command} SVG has no literal command`);
-  assert.match(
-    svg,
-    /data-visualtex-integral="[A-Za-z]+"/,
-    `${command} OLE SVG uses a VisualTeX vector glyph`,
-  );
-  assert.doesNotMatch(
-    svg,
-    new RegExp(`<text[^>]*>${character}</text>`),
-    `${command} OLE SVG must not fall back to a small system-font character`,
-  );
-  assert.ok(svgResult.height > 30, `${command} display operator keeps large-integral height`);
 
-  if (!character.startsWith("\\")) {
-    const normalizedUnicode = normalizeChineseLatex(`${character}_{S}F`);
+  for (const [renderer, glyph] of [["engine", ENGINE_INTEGRAL_GLYPH], ["mathjax", MATHJAX_INTEGRAL_GLYPH]]) {
+    const svgResult = await latexToSvg(latex, { ...integralOptions, renderer });
+    const svg = svgResult.svg;
+    const context = `${command} (${renderer})`;
+    assert.doesNotMatch(svg, /mathcolor|fill="red"|#FF0000/i, `${context} SVG has no error glyph`);
+    assert.doesNotMatch(svg, new RegExp(`\\\\${command}`), `${context} SVG has no literal command`);
+    assert.match(svg, glyph, `${context} SVG draws the operator as a vector glyph`);
+    if (!replacement.startsWith("\\")) {
+      assert.doesNotMatch(
+        svg,
+        new RegExp(`<text[^>]*>${replacement}</text>`),
+        `${context} SVG must not fall back to a small system-font character`,
+      );
+    }
+    assert.ok(svgResult.height > 30, `${context} display operator keeps large-integral height`);
+  }
+
+  if (!replacement.startsWith("\\")) {
+    const normalizedUnicode = normalizeChineseLatex(`${replacement}_{S}F`);
     assert.match(
       normalizedUnicode,
       /^(?:\\[A-Za-z]+\s*)+_\{S\}F$/,
       `${command} Unicode serialization is restored to canonical LaTeX`,
     );
-    const reopenedSvg = latexToSvg(normalizedUnicode, {
-      displayMode: true,
-      fontSizePt: 14,
-      paddingPx: 0,
-      background: "transparent",
-    }).svg;
-    assert.match(
-      reopenedSvg,
-      /data-visualtex-integral="[A-Za-z]+"/,
-      `${command} remains resolved after Unicode save/reopen normalization`,
-    );
+    for (const [renderer, glyph] of [["engine", ENGINE_INTEGRAL_GLYPH], ["mathjax", MATHJAX_INTEGRAL_GLYPH]]) {
+      const reopened = await latexToSvg(normalizedUnicode, { ...integralOptions, renderer });
+      assert.match(
+        reopened.svg,
+        glyph,
+        `${command} (${renderer}) remains resolved after Unicode save/reopen normalization`,
+      );
+    }
   }
 }
 
@@ -325,8 +351,8 @@ assert.equal(
   "a valid trailing command must not hide an earlier unknown command",
 );
 
-assert.throws(
-  () => latexToSvg(String.raw`x+\placeholder{}`),
+await assert.rejects(
+  async () => latexToSvg(String.raw`x+\placeholder{}`),
   /empty VisualTeX placeholders/,
 );
 assert.throws(
@@ -338,8 +364,8 @@ assert.throws(
   /did not resolve LaTeX command/,
 );
 
-assert.throws(
-  () =>
+await assert.rejects(
+  async () =>
     latexToSvg("", {
       displayMode: true,
       fontSizePt: 12,
