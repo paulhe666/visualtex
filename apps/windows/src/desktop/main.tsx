@@ -1,3 +1,6 @@
+// formulas are laid out by the shared engine; installed before any math field exists
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
+import "../../../shared/visualtex-app/src/styles/index.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../ocr/windowsQuickOcrRuntime";
