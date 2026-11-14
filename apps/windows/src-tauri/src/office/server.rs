@@ -3880,7 +3880,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             reply["result"]["tools"].as_array().unwrap().len(),
-            7 + crate::office::automation::mcp::WRITE_TOOLS.len()
+            8 + crate::office::automation::mcp::WRITE_TOOLS.len()
         );
 
         let call = serde_json::json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
