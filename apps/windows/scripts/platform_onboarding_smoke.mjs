@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { detectDesktopPlatformFrom } from "../src/platform.ts";
 import {
   VISUALTEX_QQ_GROUP_NUMBER,
   VISUALTEX_QQ_GROUP_QR_DATA_URL,
 } from "../../shared/visualtex-app/src/assets/visualtexQqGroup.ts";
 
-assert.equal(detectDesktopPlatformFrom("Win32", "Mozilla/5.0 (Windows NT 10.0)"), "windows");
 assert.equal(VISUALTEX_QQ_GROUP_NUMBER, "1045801770");
 assert(VISUALTEX_QQ_GROUP_QR_DATA_URL.startsWith("data:image/png;base64,"));
 assert(Buffer.from(VISUALTEX_QQ_GROUP_QR_DATA_URL.split(",")[1], "base64").length > 10_000);

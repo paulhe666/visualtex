@@ -55,8 +55,8 @@ Word 可插入图片公式或原生公式（OMML）；PowerPoint 使用本地图
 #### Windows
 
 Windows 使用 VSTO Ribbon、Office 事件和 ATL COM LocalServer。专业模式保存真实的 `VisualTeX.Formula.1` OLE 对象，
-同时保留 OMML 与跨平台图片模式；WPS 文字与 WPS 演示通过 COM 使用同一套 C# 加载项。仅 `office/windows/ole/`
-保留当前仍支持的 Office.js 兼容/清理路径，其静态资源在构建时生成而不提交。不包含 DOTM、PPAM 或 AppleScript。
+同时保留 OMML 与跨平台图片模式；WPS 文字与 WPS 演示通过 COM 使用同一套 C# 加载项。不包含 Office.js、DOTM、PPAM 或
+AppleScript。
 
 ### 跨平台文档
 
@@ -164,9 +164,8 @@ picture/vector workflow. The application contains no Office.js and no Windows CO
 
 Windows uses VSTO Ribbons, Office events and an ATL COM LocalServer. Professional mode stores real
 `VisualTeX.Formula.1` OLE objects while keeping OMML and the cross-platform picture mode; WPS Writer and WPS
-Presentation use the same C# add-ins through COM. Only `office/windows/ole/` keeps the still supported Office.js
-compatibility/cleanup route, with generated assets excluded from Git. The application contains no DOTM, PPAM or
-AppleScript components.
+Presentation use the same C# add-ins through COM. The application contains no Office.js, DOTM, PPAM or AppleScript
+components.
 
 ### Documents across platforms
 

@@ -29,11 +29,5 @@
     }
   },
   "include": ["src", "../shared/visualtex-core/src/kernel/*.d.ts"],
-  "exclude": [
-    "src/office/adapters/**",
-    "src/office/bridge/**",
-    "src/office/metadata/wordMetadata.ts",
-    "src/office/windows-ole/**"
-  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

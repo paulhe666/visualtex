@@ -1,11 +1,5 @@
 import assert from "node:assert/strict";
 import {
-  decodePowerPointObjectReference,
-  encodePowerPointObjectReference,
-  formulaIdFromPowerPointShapeName,
-  powerpointShapeName,
-} from "../src/office/metadata/powerpointMetadata.ts";
-import {
   createFormulaMetadata,
   decodeFormulaMetadata,
   encodeFormulaMetadata,
@@ -13,7 +7,7 @@ import {
   formulaMetadataToXml,
   isVisualTeXFormulaMetadata,
   VISUALTEX_FORMULA_XML_NAMESPACE,
-} from "../src/office/metadata/formulaMetadata.ts";
+} from "../src/office/shared/formulaMetadata.ts";
 
 const formulaId = crypto.randomUUID();
 const lines = [
@@ -82,22 +76,5 @@ assert.equal(
   isVisualTeXFormulaMetadata({ ...metadata, baseline: metadata.renderHeightPx + 1 }),
   false,
 );
-
-const shapeName = powerpointShapeName(formulaId);
-assert.equal(shapeName, `VisualTeX_${formulaId}`);
-assert.equal(formulaIdFromPowerPointShapeName(shapeName), formulaId);
-assert.equal(formulaIdFromPowerPointShapeName("Ordinary Picture"), null);
-
-const objectReference = {
-  slideId: "slide/id:包含空格",
-  shapeId: "shape/id:αβ",
-};
-const encodedReference = encodePowerPointObjectReference(objectReference);
-assert.match(encodedReference, /^visualtex-ppt:v1:[A-Za-z0-9_-]+$/);
-assert.deepEqual(
-  decodePowerPointObjectReference(encodedReference),
-  objectReference,
-);
-assert.equal(decodePowerPointObjectReference(`${encodedReference}!!`), null);
 
 console.log("Office formula metadata smoke test passed");
