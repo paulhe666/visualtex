@@ -65,7 +65,7 @@ import { CitationPicker } from "../../../shared/visualtex-app/src/document/Citat
 import { MarginGuides } from "../../../shared/visualtex-app/src/document/MarginGuides";
 import { createPortal } from "react-dom";
 import { documentMathCommands } from "./documentMathCommands";
-import { codeHighlighter } from "./codeHighlighter";
+import { codeHighlighter } from "../../../shared/visualtex-app/src/document/codeHighlighter";
 import { drawDiagram } from "../../../shared/visualtex-app/src/document/diagrams";
 import "../../../shared/visualtex-app/src/document/document.css";
 

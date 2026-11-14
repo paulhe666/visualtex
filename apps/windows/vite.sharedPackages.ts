@@ -38,4 +38,6 @@ export const sharedPackageDedupe = [
   "@codemirror/state",
   "@codemirror/view",
   "codemirror-lang-latex",
+  // code blocks in documents
+  "shiki",
 ];

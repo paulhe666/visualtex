@@ -35,6 +35,9 @@
       "fflate": ["./node_modules/fflate"],
       "@codemirror/*": ["./node_modules/@codemirror/*"],
       "codemirror-lang-latex": ["./node_modules/codemirror-lang-latex"],
+      "shiki/core": ["./node_modules/shiki/dist/core.d.mts"],
+      "shiki/engine/javascript": ["./node_modules/shiki/dist/engine-javascript.d.mts"],
+      "shiki/*": ["./node_modules/shiki/dist/*"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }

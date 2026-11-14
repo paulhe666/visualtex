@@ -2,7 +2,7 @@
 // (docs/document-editor/DESIGN.md §6.5). Shiki and each grammar load on first use, each in its own chunk; until a
 // grammar is in, its blocks show plain text, then the document draws them again (onReady).
 import type { HighlighterCore, LanguageRegistration } from "shiki/core";
-import type { CodeHighlighter, CodeToken } from "../../../shared/visualtex-document/src/index.ts";
+import type { CodeHighlighter, CodeToken } from "../../../visualtex-document/src/index.ts";
 
 type Grammar = () => Promise<{ default: LanguageRegistration[] }>;
 
