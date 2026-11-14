@@ -12,7 +12,7 @@ const riskySessionKeys = [
 ] as const;
 
 /**
- * Prepare a crash-safe restart without wiping the user's WebView profile.
+ * Prepare a crash-safe restart without wiping the user's web view profile.
  *
  * The editor persistence envelope mixes long-lived preferences with the last
  * open formula document. Before removing only the document-like fields, keep

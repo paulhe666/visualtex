@@ -60,9 +60,9 @@ export const useAnywhereHotkeyStore = create<AnywhereHotkeyState>()(
   ),
 );
 
-/** Registers a system-wide shortcut with Windows (VisualTeX keeps it for
- *  the next start), or removes the display one (null); throws Windows'
- *  refusal (a shortcut another program holds). */
+/** Registers a system-wide shortcut with the operating system (it stays
+ *  registered for the next start), or removes the display one (null); throws
+ *  the system's refusal (a shortcut another program holds). */
 export async function configureAnywhereGlobalHotkey(
   action: AnywhereHotkeyAction,
   chord: FormulaHotkeyChord | null,

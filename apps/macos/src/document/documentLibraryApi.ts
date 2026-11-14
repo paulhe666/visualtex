@@ -321,7 +321,7 @@ export async function saveBinaryFile(name: string, bytes: Uint8Array, extension:
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const dataBase64 = btoa(binary);
     const windows = /Windows/i.test(navigator.userAgent);
-    await invoke("write_export_file", windows ? { request: { path, text: "", dataBase64 } } : { path, dataBase64 });
+    await invoke("write_export_file", windows ? { request: { path, base64: dataBase64 } } : { path, dataBase64 });
     return true;
   }
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
@@ -356,7 +356,9 @@ export async function saveTextFile(name: string, text: string, extension: string
     });
     if (!chosen) return false;
     const path = chosen.toLowerCase().endsWith(`.${extension}`) ? chosen : `${chosen}.${extension}`;
-    await invoke("write_export_file", { path, dataBase64: toBase64(text) });
+    // the two apps' export command: Windows takes the text, macOS base64
+    const windows = /Windows/i.test(navigator.userAgent);
+    await invoke("write_export_file", windows ? { request: { path, text } } : { path, dataBase64: toBase64(text) });
     return true;
   }
   const url = URL.createObjectURL(new Blob([text], { type }));

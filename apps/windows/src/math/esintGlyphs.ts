@@ -64,6 +64,8 @@ export const ESINT_INTEGRAL_GLYPH_UNITS_PER_EM =
 
 const ESINT_COMPATIBILITY_ALIASES: Readonly<Record<string, readonly string[]>> =
   Object.freeze({
+    // MathLive and UnicodeMath use \\intclockwise for the same clockwise
+    // contour operator that esint names \\ointclockwise.
     ointclockwise: ["intclockwise"],
   });
 

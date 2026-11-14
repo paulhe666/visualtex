@@ -314,6 +314,10 @@ function MathPreviewComponent({
           availableWidth / naturalWidth,
           availableHeight / naturalHeight,
         );
+        // Non-fluid previews are strict contain boxes: never impose a visual
+        // minimum that could make a tall integral, sum, or matrix overflow.
+        // The caller may cap upscaling (the formula toolbar uses 1) while
+        // oversized content is always allowed to shrink as far as required.
         scale = Math.max(
           Number.EPSILON,
           Math.min(maximumFitScale, containedScale),
