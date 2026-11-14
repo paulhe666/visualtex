@@ -1,6 +1,6 @@
 // The editing kernel's command dictionary (LATEX_COMMANDS, MATH_SYMBOLS,
 // ENVIRONMENTS and its macro tables) for Node scripts, bundled with this app's
-// host module the way scripts/kernel-node.mts bundles the kernel.
+// host module the way ../shared/visualtex-app/testing/kernel-node.mts bundles the kernel.
 //   import { kernelDictionary } from "./kernel-dictionary.mts";
 import { build } from "esbuild";
 import fs from "node:fs";

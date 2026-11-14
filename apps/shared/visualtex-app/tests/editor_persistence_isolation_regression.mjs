@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   createEditorPersistenceStorage,
   isOfficeEditorPersistenceScope,
-} from "../../shared/visualtex-app/src/runtime/editorPersistenceStorage.ts";
+} from "../src/runtime/editorPersistenceStorage.ts";
 
 // All storage is a private Map in this process, not browser/user storage.
 const key = "visualtex-editor";
@@ -146,4 +146,4 @@ completed.push("native-dialog, resident Office and Anywhere URLs are isolated, o
 }
 completed.push("caret moves and Office typing skip document serialization; real edits persist immediately");
 console.log(JSON.stringify({ passed: completed.length, cases: completed }, null, 2));
-console.log("macOS editor persistence isolation regression passed");
+console.log("Editor persistence isolation regression passed");

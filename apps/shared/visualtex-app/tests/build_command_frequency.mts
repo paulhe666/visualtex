@@ -11,7 +11,7 @@
  * Corpus: im2latex-100k (formulas from arXiv papers, one per line),
  * https://zenodo.org/record/56198/files/im2latex_formulas.lst
  *
- *   npx tsx scripts/build_command_frequency.mts --corpus=path/to/im2latex_formulas.lst
+ *   npx tsx ../shared/visualtex-app/tests/build_command_frequency.mts --corpus=path/to/im2latex_formulas.lst
  */
 import { readFileSync, writeFileSync } from "node:fs";
 

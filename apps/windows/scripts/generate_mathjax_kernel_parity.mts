@@ -6,7 +6,7 @@
 //   - macros (texvc, amsmath, braket, VisualTeX aliases): their definition.
 // Commands with arguments and their own layout (\overarc, ...) are written by
 // hand in latexCompatibility.ts, which takes precedence over this table.
-//   tsx --import ./scripts/kernel-node.mts scripts/generate_mathjax_kernel_parity.mts [--check]
+//   tsx --import ../shared/visualtex-app/testing/kernel-node.mts scripts/generate_mathjax_kernel_parity.mts [--check]
 import fs from "node:fs";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { TeX } from "mathjax-full/js/input/tex.js";

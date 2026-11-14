@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { customSymbolCommands } from "../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry.ts";
-import { parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
+import { customSymbolCommands } from "../src/autocomplete/runtimeCommandRegistry.ts";
+import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import {
   CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
   CUSTOM_SYMBOL_STORAGE_INDEX_KEY,
@@ -10,10 +10,10 @@ import {
   registerCustomSymbol,
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
-} from "../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
-import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
+} from "../src/math/customSymbolRegistry.ts";
+import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
-import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
+import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 
 const storage = memoryStorage();
 Object.assign(safeStorage, createSafeStorage(() => storage));

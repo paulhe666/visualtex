@@ -22,8 +22,8 @@ const checks = [
       "--import",
       "tsx",
       "--import",
-      "./scripts/kernel-node.mts",
-      "scripts/core_latex_command_compatibility_regression.mts",
+      "../shared/visualtex-app/testing/kernel-node.mts",
+      "../shared/visualtex-app/tests/core_latex_command_compatibility_regression.mts",
     ],
   },
   {
@@ -44,7 +44,7 @@ const checks = [
       "--import",
       "tsx",
       "--import",
-      "./scripts/kernel-node.mts",
+      "../shared/visualtex-app/testing/kernel-node.mts",
       "scripts/physics_kernel_compatibility_regression.mts",
     ],
   },
@@ -54,7 +54,13 @@ const checks = [
   },
   {
     label: "Office editor persistence isolation",
-    command: ["scripts/editor_persistence_isolation_regression.mjs"],
+    command: [
+      "--import",
+      "../shared/visualtex-app/testing/node-loader.mjs",
+      "--import",
+      "tsx",
+      "../shared/visualtex-app/tests/editor_persistence_isolation_regression.mjs",
+    ],
   },
   {
     label: "current Windows formula tiles",

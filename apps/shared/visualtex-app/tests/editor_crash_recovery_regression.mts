@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import {
   prepareEditorCrashSafeRestart,
   VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY,
-} from "../../shared/visualtex-app/src/runtime/editorCrashRecovery.ts";
-import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
+} from "../src/runtime/editorCrashRecovery.ts";
+import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
 
 const storage = memoryStorage();

@@ -1,4 +1,4 @@
-// Node module hooks for scripts/kernel-node.mts: `mathlive` and `mathlive/ssr`
+// Node module hooks for kernel-node.mts: `mathlive` and `mathlive/ssr`
 // resolve to the editing kernel's Node build.
 let kernelUrl;
 

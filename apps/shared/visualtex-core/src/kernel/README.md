@@ -17,7 +17,7 @@ by the layout engine (`apps/shared/tex-layout`).
   (declared in `visualtex-kernel-host.d.ts`, provided by the app's Vite plugin).
 - DOM-free entry: `public/mathlive-ssr.ts` (parsing, validation, markup by the
   registered layout engine), imported as `mathlive/ssr`. Node scripts reach it
-  through the app's `scripts/kernel-node.mts`.
+  through `apps/shared/visualtex-app/testing/kernel-node.mts` (with the app's host module).
 - Stylesheets are plain CSS in `css/`, imported as text.
 - `tsconfig.json` keeps MathLive's class-field semantics (`useDefineForClassFields:
   false`); Vite compiles these files with it. The source is strict-clean: apps

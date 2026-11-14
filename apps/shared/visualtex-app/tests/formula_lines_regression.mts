@@ -1,11 +1,11 @@
 // A formula set on several lines (shared/tex-layout lines.ts: VisualTeX Anywhere wraps a formula as
-// the host field wraps its text), on synthetic boxes. Run: node --test scripts/formula_lines_regression.mts
+// the host field wraps its text), on synthetic boxes. Run: node --test ../shared/visualtex-app/tests/formula_lines_regression.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 // apps/shared/tex-layout, from apps/<platform>/scripts
-const root = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "shared", "tex-layout", "src")).href;
+const root = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "tex-layout", "src")).href;
 const { formulaPieces, placePieces, fillLines } = await import(`${root}/lines.ts`);
 const { GLUE_NODE, KERN_NODE, PENALTY_NODE, HLIST_NODE, MATH_NODE } = await import(`${root}/nodes.ts`);
 const EM = 655360;

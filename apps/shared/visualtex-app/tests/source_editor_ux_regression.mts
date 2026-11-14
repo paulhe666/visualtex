@@ -7,7 +7,7 @@ import { latex as latexLanguageSupport } from "codemirror-lang-latex";
 import {
   formatLatexSourceForEditor,
   visualTeXLatexEditingExtensions,
-} from "../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport.ts";
+} from "../src/source-editor/latexSourceEditorSupport.ts";
 
 const unindented = [
   String.raw`\begin{align}`,
