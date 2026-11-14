@@ -6,6 +6,7 @@ import type { Node } from "prosemirror-model";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { safeStorage } from "../runtime/safeStorage";
+import { writeExportFile } from "@platform/exportFile";
 import { renderedText } from "../../../visualtex-document/src/index.ts";
 
 export interface LibraryDocument {
@@ -300,13 +301,6 @@ export const useDocumentLibraryStore = create<DocumentLibraryState>()(
   ),
 );
 
-function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
-
 /**
  * A binary file (an export .zip) to the disk: in the app through the system's save dialog (false when cancelled);
  * in a browser as a download.
@@ -319,9 +313,7 @@ export async function saveBinaryFile(name: string, bytes: Uint8Array, extension:
     const path = chosen.toLowerCase().endsWith(`.${extension}`) ? chosen : `${chosen}.${extension}`;
     let binary = "";
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    const dataBase64 = btoa(binary);
-    const windows = /Windows/i.test(navigator.userAgent);
-    await invoke("write_export_file", windows ? { request: { path, base64: dataBase64 } } : { path, dataBase64 });
+    await writeExportFile(path, { base64: btoa(binary) });
     return true;
   }
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
@@ -356,9 +348,7 @@ export async function saveTextFile(name: string, text: string, extension: string
     });
     if (!chosen) return false;
     const path = chosen.toLowerCase().endsWith(`.${extension}`) ? chosen : `${chosen}.${extension}`;
-    // the two apps' export command: Windows takes the text, macOS base64
-    const windows = /Windows/i.test(navigator.userAgent);
-    await invoke("write_export_file", windows ? { request: { path, text } } : { path, dataBase64: toBase64(text) });
+    await writeExportFile(path, { text });
     return true;
   }
   const url = URL.createObjectURL(new Blob([text], { type }));

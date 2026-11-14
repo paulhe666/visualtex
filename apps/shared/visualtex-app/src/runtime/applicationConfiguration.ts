@@ -1,16 +1,24 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { publishSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
-import { OCR_MODELS } from "../ocr/ocrService";
+import { useEditorStore } from "../stores/editorStore";
+import { safeStorage } from "./safeStorage";
+import { publishSynchronizedTheme } from "../themeSync";
+import { OCR_MODELS } from "../ocr/ocrModels";
 import { normalizeQuickOcrCaptureMode } from "@platform/quickOcr";
-import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
-import type { FormulaDocument, FormulaHistoryItem } from "../../../shared/visualtex-app/src/types/formula";
+import {
+  normalizeWordPreferences,
+  type VisualTexConfigurationWordPreferences,
+} from "./wordPreferences";
+// Word's numbering defaults: the Windows add-in keeps them in the app; on macOS the DOTM owns them
+import { applyWordPreferences, readWordPreferences } from "@platform/wordPreferences";
+
+export type { VisualTexConfigurationWordPreferences } from "./wordPreferences";
+import type { CommandUsage } from "../types/command";
+import type { FormulaDocument, FormulaHistoryItem } from "../types/formula";
 import {
   CUSTOM_SYMBOL_STORAGE_KEY,
   readCustomSymbolLibrary,
   replaceCustomSymbolLibrary,
-} from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
+} from "../math/customSymbolRegistry";
 
 export const VISUALTEX_CONFIGURATION_SCHEMA = "visualtex-user-configuration";
 export const VISUALTEX_CONFIGURATION_VERSION = 1;
@@ -32,10 +40,6 @@ export interface VisualTexConfigurationPersonalization {
   history?: FormulaHistoryItem[];
 }
 
-export interface VisualTexConfigurationWordPreferences {
-  defaultDisplayEquationNumbered?: boolean;
-  defaultEquationNumberFormat?: string;
-}
 
 export interface VisualTexUserConfiguration {
   schema: typeof VISUALTEX_CONFIGURATION_SCHEMA;
@@ -57,6 +61,7 @@ const configurationStorageKeys = [
   "visualtex-common-formula-tile-ids-v1",
   "visualtex-formula-hotkeys-v1",
   "visualtex-confirm-escape-key",
+  "visualtex-office-hotkeys-v1",
   "visualtex-anywhere-hotkeys-v1",
   "visualtex-formula-row-hotkeys-v1",
   "visualtex-custom-formula-text-colors",
@@ -96,6 +101,7 @@ const jsonConfigurationStorageKeys = new Set<string>([
   "visualtex-common-formula-tile-ids-v1",
   "visualtex-formula-hotkeys-v1",
   "visualtex-confirm-escape-key",
+  "visualtex-office-hotkeys-v1",
   "visualtex-anywhere-hotkeys-v1",
   "visualtex-formula-row-hotkeys-v1",
   "visualtex-custom-formula-text-colors",
@@ -122,6 +128,8 @@ const editorSettingKeys = [
   "formulaToolButtonPadding",
   "formulaRowVerticalInset",
   "latexSourceFontSize",
+  // the name macOS used before the shared code: still read from older configuration files
+  "sourceEditorFontSize",
   "pngExportBackground",
   "formulaLetterFont",
   "formulaChineseFont",
@@ -149,13 +157,6 @@ const maximumUsageCommands = 10_000;
 const maximumUsageMapEntries = 256;
 const maximumHistoryItems = 30;
 const maximumHistoryLatexLength = 1_000_000;
-const validWordNumberFormats = new Set([
-  "continuous",
-  "heading1-dot",
-  "heading1-dash",
-  "heading2-dot",
-  "heading2-dash",
-]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -282,20 +283,6 @@ function normalizePersonalization(value: unknown): VisualTexConfigurationPersona
   return { usage, history };
 }
 
-function normalizeWordPreferences(value: unknown): VisualTexConfigurationWordPreferences | undefined {
-  if (!isRecord(value)) return undefined;
-  const result: VisualTexConfigurationWordPreferences = {};
-  if (typeof value.defaultDisplayEquationNumbered === "boolean") {
-    result.defaultDisplayEquationNumbered = value.defaultDisplayEquationNumbered;
-  }
-  if (
-    typeof value.defaultEquationNumberFormat === "string" &&
-    validWordNumberFormats.has(value.defaultEquationNumberFormat)
-  ) {
-    result.defaultEquationNumberFormat = value.defaultEquationNumberFormat;
-  }
-  return Object.keys(result).length ? result : undefined;
-}
 
 function normalizeStorage(value: unknown) {
   const result: Record<string, string> = {};
@@ -383,44 +370,6 @@ async function readWindowConfiguration(): Promise<VisualTexConfigurationWindowSt
     );
   } catch {
     return undefined;
-  }
-}
-
-async function readWordPreferences(): Promise<VisualTexConfigurationWordPreferences | undefined> {
-  if (!isTauri()) return undefined;
-  try {
-    return normalizeWordPreferences(
-      await invoke<VisualTexConfigurationWordPreferences>(
-        "get_word_numbering_user_configuration",
-      ),
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-async function applyWordPreferences(
-  word: VisualTexConfigurationWordPreferences | undefined,
-) {
-  if (!word || !isTauri()) return;
-  const current = await readWordPreferences();
-  const merged: VisualTexConfigurationWordPreferences = {
-    defaultDisplayEquationNumbered:
-      word.defaultDisplayEquationNumbered ??
-      current?.defaultDisplayEquationNumbered ??
-      false,
-    defaultEquationNumberFormat:
-      word.defaultEquationNumberFormat ??
-      current?.defaultEquationNumberFormat ??
-      "continuous",
-  };
-  try {
-    await invoke("apply_word_numbering_user_configuration", {
-      configuration: merged,
-    });
-  } catch {
-    // Older runtimes do not know this command. Cross-version imports should
-    // still restore every preference that the running version understands.
   }
 }
 

@@ -69,12 +69,15 @@ Object.defineProperty(globalThis, "BroadcastChannel", {
 });
 
 const settingsDialogSource = readFileSync(
-  new URL("../src/components/SettingsDialog.tsx", import.meta.url),
+  new URL("../../shared/visualtex-app/src/components/SettingsDialog.tsx", import.meta.url),
   "utf8",
 );
+// the export command's request shape is the platform's (src/platform/exportFile.ts)
+assert.match(settingsDialogSource, /writeExportFile\(path,/, "configuration export goes through writeExportFile");
+const exportFileSource = readFileSync(new URL("../src/platform/exportFile.ts", import.meta.url), "utf8");
 assert.match(
-  settingsDialogSource,
-  /invoke\("write_export_file",\s*\{\s*request:\s*\{\s*path,\s*base64:/s,
+  exportFileSource,
+  /invoke\("write_export_file",\s*\{\s*request:\s*\{\s*path,/s,
   "configuration export must use the current nested write_export_file request contract",
 );
 assert.doesNotMatch(
@@ -113,7 +116,7 @@ const {
   applyVisualTexConfiguration,
   buildVisualTexConfiguration,
   parseVisualTexConfiguration,
-} = await import("../src/runtime/applicationConfiguration.ts");
+} = await import("../../shared/visualtex-app/src/runtime/applicationConfiguration.ts");
 const { useEditorStore } = await import("../../shared/visualtex-app/src/stores/editorStore.ts");
 const { safeStorage } = await import("../../shared/visualtex-app/src/runtime/safeStorage.ts");
 

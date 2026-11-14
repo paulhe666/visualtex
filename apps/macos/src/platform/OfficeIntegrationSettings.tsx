@@ -1,6 +1,6 @@
-import { MacOfficeIntegrationSettings } from "./MacOfficeIntegrationSettings";
-import { MacWpsIntegrationSettings } from "./MacWpsIntegrationSettings";
-import { MacOfficeMcpSettings } from "./MacOfficeMcpSettings";
+import { MacOfficeIntegrationSettings } from "../components/MacOfficeIntegrationSettings";
+import { MacWpsIntegrationSettings } from "../components/MacWpsIntegrationSettings";
+import { MacOfficeMcpSettings } from "../components/MacOfficeMcpSettings";
 
 /** Settings → Office: the add-ins (Word and PowerPoint, WPS). */
 export function OfficeIntegrationSettings() {

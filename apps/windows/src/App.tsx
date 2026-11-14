@@ -57,11 +57,11 @@ import {
 } from "../../shared/visualtex-app/src/editor/MathEditor";
 import { FormulaToolbar } from "../../shared/visualtex-app/src/toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog } from "../../shared/visualtex-app/src/components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
 import { HelpDialog } from "./components/HelpDialog";
 import { OcrDialog } from "./components/OcrDialog";
-import { ExportDialog } from "./components/ExportDialog";
+import { ExportDialog } from "../../shared/visualtex-app/src/components/ExportDialog";
 import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
 import { EditorWorkspace } from "../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import {

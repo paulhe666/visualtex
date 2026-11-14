@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
+import { writeExportFile } from "@platform/exportFile";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   ClipboardCopy,
@@ -10,15 +11,14 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import { buildMarkdownDocument } from "../../../shared/visualtex-app/src/export/markdownExport";
-import { latexToSvg } from "../../../shared/visualtex-app/src/export/runtime";
+import { buildMarkdownDocument } from "../export/markdownExport";
+import { latexToSvg } from "../export/runtime";
 import {
   copyFormulaDocumentPngToClipboard,
   renderFormulaDocumentPng,
-} from "../../../shared/visualtex-app/src/export/pngClipboard";
-import { isTauriEnvironment } from "../ocr/ocrService";
-import { formulaExportErrorMessage } from "../../../shared/visualtex-app/src/math/latexCompatibility";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
+} from "../export/pngClipboard";
+import { formulaExportErrorMessage } from "../math/latexCompatibility";
+import { useEditorStore } from "../stores/editorStore";
 
 export type ExportFormat = "markdown" | "svg" | "png";
 
@@ -36,8 +36,6 @@ interface ExportFormatDefinition {
   mime: string;
   labelZh: string;
   labelEn: string;
-  descriptionZh: string;
-  descriptionEn: string;
 }
 
 const EXPORT_FORMATS: Record<ExportFormat, ExportFormatDefinition> = {
@@ -46,24 +44,18 @@ const EXPORT_FORMATS: Record<ExportFormat, ExportFormatDefinition> = {
     mime: "text/markdown;charset=utf-8",
     labelZh: "Markdown",
     labelEn: "Markdown",
-    descriptionZh: "每行一个行间 LaTeX 公式",
-    descriptionEn: "One display LaTeX block per line",
   },
   svg: {
     extension: "svg",
     mime: "image/svg+xml;charset=utf-8",
     labelZh: "SVG",
     labelEn: "SVG",
-    descriptionZh: "矢量图",
-    descriptionEn: "Vector image",
   },
   png: {
     extension: "png",
     mime: "image/png",
     labelZh: "PNG",
     labelEn: "PNG",
-    descriptionZh: "透明背景高分辨率位图",
-    descriptionEn: "High-resolution bitmap with a transparent background",
   },
 };
 
@@ -84,6 +76,16 @@ function withExtension(path: string, extension: string) {
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex <= 0) return `${trimmed}.${extension}`;
   return `${trimmed.slice(0, trimmed.length - name.length)}${name.slice(0, dotIndex)}.${extension}`;
+}
+
+function encodeUtf8Base64(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function downloadInBrowser(content: string | Blob, filename: string, mime: string) {
@@ -115,6 +117,7 @@ export function ExportDialog({
   );
   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
+  const nativeTauri = isTauri();
   const definition = EXPORT_FORMATS[format];
   const suggestedFilename = `${safeFilename(title)}.${definition.extension}`;
   const nonEmptyFormulas = useMemo(
@@ -138,7 +141,7 @@ export function ExportDialog({
 
   const choosePath = async () => {
     setError("");
-    if (!isTauriEnvironment()) return path;
+    if (!nativeTauri) return path;
     try {
       const selected = await save({
         title: isEn ? "Choose export path" : "选择导出路径",
@@ -172,20 +175,20 @@ export function ExportDialog({
     setError("");
     try {
       let targetPath = path.trim();
-      if (isTauriEnvironment() && !targetPath) {
+      if (nativeTauri && !targetPath) {
         targetPath = (await choosePath()) ?? "";
         if (!targetPath) return;
       }
       targetPath = withExtension(targetPath, definition.extension);
       if (targetPath && targetPath !== path) setPath(targetPath);
 
-      let text: string | undefined;
-      let base64: string | undefined;
+      let dataBase64: string;
       let browserPayload: string | Blob;
 
       if (format === "markdown") {
-        text = buildMarkdownDocument(title, nonEmptyFormulas);
-        browserPayload = text;
+        const markdown = buildMarkdownDocument(title, nonEmptyFormulas);
+        dataBase64 = encodeUtf8Base64(markdown);
+        browserPayload = markdown;
       } else if (format === "svg") {
         const svg = await latexToSvg(nonEmptyFormulas.join("\n"), {
           displayMode: true,
@@ -195,27 +198,21 @@ export function ExportDialog({
           formulaLetterFont,
           formulaChineseFont,
         });
-        text = svg.svg;
-        browserPayload = text;
+        dataBase64 = svg.base64;
+        browserPayload = svg.svg;
       } else {
         const png = await renderFormulaDocumentPng(nonEmptyFormulas, {
           background: pngExportBackground,
           formulaLetterFont,
           formulaChineseFont,
         });
-        base64 = png.base64;
+        dataBase64 = png.base64;
         browserPayload = png.blob;
       }
 
-      if (isTauriEnvironment()) {
+      if (nativeTauri) {
         if (!targetPath) throw new Error("Export path is empty");
-        await invoke("write_export_file", {
-          request: {
-            path: targetPath,
-            text,
-            base64,
-          },
-        });
+        await writeExportFile(targetPath, { base64: dataBase64 });
       } else {
         downloadInBrowser(
           browserPayload,
@@ -226,8 +223,8 @@ export function ExportDialog({
 
       onNotify(
         isEn
-          ? `${definition.labelEn} exported successfully`
-          : `${definition.labelZh} 已成功导出`,
+          ? `${definition.labelEn} exported`
+          : `已导出 ${definition.labelZh}`,
       );
       onClose();
     } catch (cause) {
@@ -305,7 +302,6 @@ export function ExportDialog({
                 <Icon size={22} />
                 <span>
                   <strong>{isEn ? item.labelEn : item.labelZh}</strong>
-                  <small>{isEn ? item.descriptionEn : item.descriptionZh}</small>
                 </span>
               </button>
             );
@@ -351,7 +347,7 @@ export function ExportDialog({
               type="button"
               className="secondary-button export-browse-button"
               onClick={() => void choosePath()}
-              disabled={busy || !isTauriEnvironment()}
+              disabled={busy || !nativeTauri}
             >
               <FolderOpen size={15} />
               {isEn ? "Browse" : "浏览"}

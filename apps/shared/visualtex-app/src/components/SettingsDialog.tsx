@@ -5,7 +5,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
 } from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   BrainCircuit,
@@ -40,12 +40,12 @@ import {
   MIN_FORMULA_TOOL_BUTTON_SIZE,
   MIN_LATEX_SOURCE_FONT_SIZE,
   useEditorStore,
-} from "../../../shared/visualtex-app/src/stores/editorStore";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { FormulaSpacingSettings } from "../../../shared/visualtex-app/src/components/FormulaSpacingSettings";
-import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
-import { KeyboardShortcutsPanel } from "../../../shared/visualtex-app/src/components/FormulaHotkeyManagerDialog";
-import { pngExportBackgroundPickerValue } from "../../../shared/visualtex-app/src/export/pngBackground";
+} from "../stores/editorStore";
+import { MathPreview } from "./MathPreview";
+import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
+import { AgentSettings, OfficeIntegrationSettings } from "@platform/OfficeIntegrationSettings";
+import { KeyboardShortcutsPanel } from "./FormulaHotkeyManagerDialog";
+import { pngExportBackgroundPickerValue } from "../export/pngBackground";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -58,8 +58,8 @@ import {
   type FormulaChineseFont,
   type FormulaFaceRole,
   type FormulaLetterFont,
-} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { PREFERRED_LATIN, systemFontFamilies } from "../../../shared/visualtex-app/src/document/systemFonts";
+} from "../editor/formulaFontPreferences";
+import { PREFERRED_LATIN, systemFontFamilies } from "../document/systemFonts";
 
 const FORMULA_FACE_LABELS: Record<FormulaFaceRole, { zh: string; en: string }> = {
   letter: { zh: "字母字体", en: "Letters" },
@@ -79,7 +79,9 @@ import {
   THEME_DEFINITIONS,
   type CustomThemeState,
   type ThemePaletteColors,
-} from "../../../shared/visualtex-app/src/themeCustomization";
+} from "../themeCustomization";
+import { publishSynchronizedTheme } from "../themeSync";
+import { writeExportFile } from "@platform/exportFile";
 
 const THEME_CORE_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
   ["accent", "Accent", "强调色"],
@@ -147,16 +149,6 @@ interface Props {
   onCheckForUpdates: () => void;
   /** The page shown when the dialog opens (default: the last one). */
   initialPage?: SettingsPage;
-}
-
-function encodeUtf8Base64(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
 }
 
 function configurationFilename() {
@@ -317,6 +309,11 @@ export function SettingsDialog({
     (state) => state.setCheckUpdatesOnStartup,
   );
   const isEn = language === "en";
+  // a theme picked here reaches the other windows (Office editor, Anywhere) at once
+  const selectTheme = (nextTheme: Parameters<typeof setTheme>[0]) => {
+    setTheme(nextTheme);
+    publishSynchronizedTheme(nextTheme);
+  };
   const formulaLetterFamilies = formulaLetterFontFamilies(formulaLetterFont);
   const formulaChineseFamily = formulaChineseFontFamily(formulaChineseFont);
 
@@ -381,7 +378,7 @@ export function SettingsDialog({
     setCustomTheme((current) => {
       const next = update(current);
       publishCustomTheme(next);
-      setTheme("custom");
+      selectTheme("custom");
       return next;
     });
   };
@@ -401,7 +398,7 @@ export function SettingsDialog({
     const next = createDefaultCustomTheme();
     setCustomTheme(next);
     publishCustomTheme(next);
-    setTheme("custom");
+    selectTheme("custom");
   };
 
   const renderThemeColorFields = (
@@ -470,10 +467,7 @@ export function SettingsDialog({
         const path = selectedPath.toLowerCase().endsWith(`.${VISUALTEX_CONFIGURATION_EXTENSION}`)
           ? selectedPath
           : `${selectedPath}.${VISUALTEX_CONFIGURATION_EXTENSION}`;
-        await invoke("write_export_file", {
-          path,
-          dataBase64: encodeUtf8Base64(contents),
-        });
+        await writeExportFile(path, { text: contents });
       } else {
         downloadConfigurationInBrowser(contents, filename);
       }
@@ -759,7 +753,7 @@ export function SettingsDialog({
                           className={theme === definition.id ? "is-active" : ""}
                           aria-pressed={theme === definition.id}
                           data-theme-choice={definition.id}
-                          onClick={() => setTheme(definition.id)}
+                          onClick={() => selectTheme(definition.id)}
                         >
                           <span className="theme-choice-swatch" aria-hidden="true">
                             {swatches.map((color) => (

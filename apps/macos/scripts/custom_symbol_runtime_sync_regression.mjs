@@ -269,7 +269,7 @@ async function main() {
       const editorStore = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
       const exportRuntime = await import(${JSON.stringify(sharedSourceUrl("export/runtime.ts"))});
       const officeRender = await import("/src/office/shared/formulaRenderArtifacts.ts");
-      const applicationConfiguration = await import("/src/runtime/applicationConfiguration.ts");
+      const applicationConfiguration = await import(${JSON.stringify(sharedSourceUrl("runtime/applicationConfiguration.ts"))});
       window.__visualtexCustomSymbolRegistration = registration;
       window.__visualtexCustomSymbolRegistry = registry;
       window.__visualtexEditorStore = editorStore;

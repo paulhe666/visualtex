@@ -1,5 +1,5 @@
-import { OfficeMcpSettings } from "./OfficeMcpSettings";
-import { WindowsOfficeIntegrationSettings } from "./WindowsOfficeIntegrationSettings";
+import { OfficeMcpSettings } from "../components/OfficeMcpSettings";
+import { WindowsOfficeIntegrationSettings } from "../components/WindowsOfficeIntegrationSettings";
 
 /** Settings → Office: the add-ins (Word, PowerPoint, WPS). */
 export function OfficeIntegrationSettings() {
