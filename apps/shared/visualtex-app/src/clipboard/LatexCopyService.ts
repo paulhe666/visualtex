@@ -1897,6 +1897,14 @@ function parseUniversalSourceRows(
     });
   }
 
+  // The panel writes every display row that follows the profile with the profile's own wrapper, so a block written
+  // that way follows the profile again ("default"); only a different wrapper is the row's own choice. Otherwise an
+  // edit anywhere in the source would pin every display row to the wrapper it happened to be shown with.
+  const profileDisplayStyle = resolveFormulaDisplayStyle(undefined, profile);
+  for (const row of rows) {
+    if (row.mode === "display" && row.displayStyle === profileDisplayStyle) row.displayStyle = "default";
+  }
+
   return rows.length ? rows : null;
 }
 

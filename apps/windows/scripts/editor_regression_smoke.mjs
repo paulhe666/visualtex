@@ -1255,6 +1255,22 @@ async function main() {
       throw new Error(`CodeMirror live edit was not synchronized: ${JSON.stringify(liveSourceSyncState)}`);
     }
 
+    // rows read back from $$ blocks (the profile's own wrapper) still follow the profile after the edit
+    await switchDisplayWrapper("bracket");
+    const editedProfileSwitchState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+    }))()`);
+    await switchDisplayWrapper("double-dollar");
+    if (
+      (editedProfileSwitchState.source.match(/\\\[/g) || []).length !== 2 ||
+      editedProfileSwitchState.source.includes("$$") ||
+      editedProfileSwitchState.formulas[0] !== "a=q" ||
+      editedProfileSwitchState.formulas[1] !== "c=d"
+    ) {
+      throw new Error(`Rows edited in the source stopped following the format profile: ${JSON.stringify(editedProfileSwitchState)}`);
+    }
+
     await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
     await replaceFocusedText(["$$", "a=", "$$"].join("\n"));
     await key("ArrowUp", "ArrowUp", 38);
@@ -1326,6 +1342,7 @@ async function main() {
       liveSourceState,
       liveSourceSyncState,
       profileSwitchState,
+      editedProfileSwitchState,
       continuousSourceFocusState,
       inlineTextFormatState,
       chineseBackslashState,

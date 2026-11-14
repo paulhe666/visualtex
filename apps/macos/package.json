@@ -25,6 +25,7 @@
     "test:align-cases": "npm run build:desktop && node scripts/align_cases_regression.mjs",
     "test:core-latex-compatibility": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/core_latex_command_compatibility_regression.mts",
     "test:math-variant-compatibility": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/math_variant_compatibility_regression.mts",
+    "test:universal-source-display-style": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/universal_source_display_style_regression.mts",
     "test:ocr-multiline": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/ocr_multiline_formula_rows_regression.ts && tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/ocr_align_copy_acceptance.mts",
     "test:ocr-provider": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/ocr_provider_transport_regression.mts && cargo test --manifest-path src-tauri/Cargo.toml --lib ocr_provider -- --nocapture",
     "test:ocr-editor": "npm run build:desktop && tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/ocr_multiline_editor_browser_regression.mts",

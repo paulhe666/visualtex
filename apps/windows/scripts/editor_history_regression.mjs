@@ -717,11 +717,8 @@ async function main() {
       request.onerror = () => resolve(false);
       request.onblocked = () => resolve(false);
     })`);
-    // A source edit gives each row the display wrapper its block was written
-    // with, so the row starts out with the $$ block the source panel shows:
-    // reverting the text then reverts the document exactly.
     await resetDocument({
-      lines: [{ id: "source-line", latex: "a=b", mode: "display", displayStyle: "double-dollar" }],
+      lines: [{ id: "source-line", latex: "a=b", mode: "display", displayStyle: "default" }],
       sourceOpen: true,
     });
     await evaluate(`new Promise((resolve) => {
