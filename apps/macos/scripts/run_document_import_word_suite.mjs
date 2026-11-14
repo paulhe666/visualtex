@@ -70,7 +70,7 @@ try {
     const result = spawnSync(
       join(process.cwd(), "node_modules", ".bin", "tsx"),
       // the script reaches the editing kernel: `mathlive` resolves to its Node build
-      ["--import", "./scripts/kernel-node.mts", "scripts/document_import_word_integration.mjs", ...stage.args],
+      ["--import", "../shared/visualtex-app/testing/node-loader.mjs", "--import", "./scripts/kernel-node.mts", "scripts/document_import_word_integration.mjs", ...stage.args],
       {
         cwd: process.cwd(),
         encoding: "utf8",

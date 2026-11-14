@@ -8,6 +8,8 @@ const checks = [
     label: "source-first wrapper registry coverage",
     command: [
       "--import",
+      "../shared/visualtex-app/testing/node-loader.mjs",
+      "--import",
       "tsx",
       "scripts/source_wrapper_registry_regression.mts",
     ],
@@ -15,6 +17,8 @@ const checks = [
   {
     label: "core LaTeX compatibility commands",
     command: [
+      "--import",
+      "../shared/visualtex-app/testing/node-loader.mjs",
       "--import",
       "tsx",
       "--import",
@@ -26,6 +30,8 @@ const checks = [
     label: "source-first wrapper browser matrix",
     command: [
       "--import",
+      "../shared/visualtex-app/testing/node-loader.mjs",
+      "--import",
       "tsx",
       "scripts/source_wrapper_browser_regression.mts",
     ],
@@ -33,6 +39,8 @@ const checks = [
   {
     label: "physics kernel compatibility commands",
     command: [
+      "--import",
+      "../shared/visualtex-app/testing/node-loader.mjs",
       "--import",
       "tsx",
       "--import",
