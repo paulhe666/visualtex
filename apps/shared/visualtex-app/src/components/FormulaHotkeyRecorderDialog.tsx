@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
 import { AlertTriangle, Check, Keyboard, X } from "lucide-react";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
+import { MathPreview } from "./MathPreview";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,
@@ -12,22 +11,18 @@ import {
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
   type FormulaHotkeyTarget,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { buttonShortcutLabel, buttonShortcutWithChord } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
-import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import {
-  officeHotkeyAction,
-  officeHotkeyActionLabel,
-} from "../shortcuts/officeHotkeys";
-import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
-import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
+} from "../shortcuts/formulaHotkeys";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
+import { useEditorStore } from "../stores/editorStore";
+// an Office action's system-wide hotkey (macOS) gives its chord up when a formula hotkey takes it
+import { useOfficeHotkeyOwner } from "@platform/officeHotkeyOwner";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
   formulaRowHotkeyChordId,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;
@@ -38,10 +33,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const setBinding = useFormulaHotkeyStore((state) => state.setBinding);
-  const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
-  const removeOfficeBinding = useOfficeHotkeyStore(
-    (state) => state.removeBinding,
-  );
+  const officeHotkeyOwner = useOfficeHotkeyOwner();
   const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
   const removeRowBinding = useFormulaRowHotkeyStore(
     (state) => state.removeBinding,
@@ -114,12 +106,9 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
           binding.target.id !== target.id &&
           formulaHotkeyChordId(binding.chord) === chordId,
         ) ?? null,
-      office:
-        officeBindings.find(
-          (binding) => formulaHotkeyChordId(binding.chord) === chordId,
-        ) ?? null,
+      office: officeHotkeyOwner(capturedChord, language),
     };
-  }, [bindings, capturedChord, officeBindings, rowBindings, target]);
+  }, [bindings, capturedChord, language, officeHotkeyOwner, rowBindings, target]);
 
   if (!target) return null;
   const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
@@ -142,10 +131,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     : conflicts.formula
     ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
     : conflicts.office
-      ? officeHotkeyActionLabel(
-          officeHotkeyAction(conflicts.office.actionId),
-          language,
-        )
+      ? conflicts.office.label
       : buttonConflict
         ? buttonShortcutLabel(buttonConflict, language)
         : null;
@@ -155,14 +141,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     setSaving(true);
     setSaveError("");
     try {
-      if (conflicts.office && isTauri()) {
-        await configureOfficeHotkeys(
-          officeBindings.filter(
-            (binding) => binding.actionId !== conflicts.office?.actionId,
-          ),
-        );
-      }
-      if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
+      if (conflicts.office) await conflicts.office.release();
       if (conflicts.row) removeRowBinding(conflicts.row.actionId);
       // a button shortcut is matched first: it gives the chord up
       if (buttonConflict) setButtonShortcut(buttonConflict, null);

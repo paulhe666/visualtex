@@ -1,17 +1,7 @@
 import { useMemo, useState } from "react";
-import {
-  FileText,
-  Keyboard,
-  Pencil,
-  Plus,
-  Presentation,
-  RotateCcw,
-  Rows3,
-  Trash2,
-} from "lucide-react";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
+import { Keyboard, Pencil, RotateCcw, Rows3, Trash2 } from "lucide-react";
+import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
-import { OfficeHotkeyRecorderDialog } from "./OfficeHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
 import { AnywhereHotkeySettingsSection } from "./AnywhereHotkeySettings";
@@ -21,23 +11,18 @@ import {
   formulaHotkeyTargetKindLabel,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import {
-  OFFICE_HOTKEY_ACTIONS,
-  officeHotkeyActionLabel,
-  type OfficeHotkeyActionDefinition,
-  type OfficeHotkeyHost,
-} from "../shortcuts/officeHotkeys";
+} from "../shortcuts/formulaHotkeys";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useEditorStore } from "../stores/editorStore";
+// each system's Office shortcuts: system-wide hotkeys on macOS, the add-ins' own shortcuts on Windows
+import { OfficeShortcutsTab } from "@platform/OfficeShortcutsTab";
 import {
   FORMULA_ROW_HOTKEY_ACTIONS,
   formulaRowHotkeyActionLabel,
   isDefaultFormulaRowHotkeyChord,
   type FormulaRowHotkeyActionDefinition,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
+} from "../shortcuts/formulaRowHotkeys";
 
 const SHORTCUT_TABS = [
   { id: "buttons", en: "Buttons", zh: "按钮" },
@@ -51,16 +36,10 @@ export function KeyboardShortcutsPanel() {
   const [tab, setTab] = useState<(typeof SHORTCUT_TABS)[number]["id"]>("buttons");
   const [editingTarget, setEditingTarget] =
     useState<FormulaHotkeyTarget | null>(null);
-  const [editingOfficeAction, setEditingOfficeAction] =
-    useState<OfficeHotkeyActionDefinition | null>(null);
   const [editingRowAction, setEditingRowAction] =
     useState<FormulaRowHotkeyActionDefinition | null>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const removeBinding = useFormulaHotkeyStore((state) => state.removeBinding);
-  const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
-  const removeOfficeBinding = useOfficeHotkeyStore(
-    (state) => state.removeBinding,
-  );
   const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
   const removeRowBinding = useFormulaRowHotkeyStore(
     (state) => state.removeBinding,
@@ -73,91 +52,6 @@ export function KeyboardShortcutsPanel() {
   const sortedBindings = useMemo(
     () => [...bindings].sort((left, right) => right.updatedAt - left.updatedAt),
     [bindings],
-  );
-
-  const renderOfficeGroup = (
-    host: OfficeHotkeyHost,
-    title: string,
-  ) => (
-    <section className="office-hotkey-group" data-office-hotkey-host={host}>
-      <header className="formula-hotkey-section-heading">
-        {host === "word" ? <FileText size={16} /> : <Presentation size={16} />}
-        <strong>{title}</strong>
-      </header>
-      <div className="office-hotkey-action-list">
-        {OFFICE_HOTKEY_ACTIONS.filter((action) => action.host === host).map(
-          (action) => {
-            const binding = officeBindings.find(
-              (item) => item.actionId === action.id,
-            );
-            const label = officeHotkeyActionLabel(action, language);
-            return (
-              <article
-                className="office-hotkey-action-row"
-                key={action.id}
-                data-office-hotkey-action={action.id}
-              >
-                <div className="office-hotkey-action-icon" aria-hidden="true">
-                  {host === "word" ? (
-                    <FileText size={18} />
-                  ) : (
-                    <Presentation size={18} />
-                  )}
-                </div>
-                <div className="formula-hotkey-binding-copy">
-                  <strong>{label}</strong>
-                  <span>
-                    {isEn ? "Ribbon button: " : "Ribbon 按钮："}
-                    {isEn ? action.ribbonLabelEn : action.ribbonLabelZh}
-                  </span>
-                </div>
-                {binding ? (
-                  <kbd>{formatFormulaHotkeyChord(binding.chord)}</kbd>
-                ) : (
-                  <span className="office-hotkey-unassigned">
-                    {isEn ? "Not set" : "未设置"}
-                  </span>
-                )}
-                <div className="formula-hotkey-binding-actions">
-                  <button
-                    type="button"
-                    className="icon-button compact"
-                    onClick={() => setEditingOfficeAction(action)}
-                    aria-label={
-                      binding
-                        ? isEn
-                          ? `Change hotkey for ${label}`
-                          : `修改${label}的快捷键`
-                        : isEn
-                          ? `Set hotkey for ${label}`
-                          : `设置${label}的快捷键`
-                    }
-                    title={binding ? (isEn ? "Change hotkey" : "修改快捷键") : (isEn ? "Set hotkey" : "设置快捷键")}
-                  >
-                    {binding ? <Pencil size={14} /> : <Plus size={14} />}
-                  </button>
-                  {binding && (
-                    <button
-                      type="button"
-                      className="icon-button compact is-danger"
-                      onClick={() => removeOfficeBinding(action.id)}
-                      aria-label={
-                        isEn
-                          ? `Remove hotkey for ${label}`
-                          : `删除${label}的快捷键`
-                      }
-                      title={isEn ? "Remove hotkey" : "删除快捷键"}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              </article>
-            );
-          },
-        )}
-      </div>
-    </section>
   );
 
   const renderRowGroup = () => (
@@ -264,12 +158,7 @@ export function KeyboardShortcutsPanel() {
         </div>
         {tab === "buttons" && <ButtonShortcutSettingsSection />}
         {tab === "global" && <AnywhereHotkeySettingsSection />}
-        {tab === "office" && (
-          <>
-            {renderOfficeGroup("word", "Microsoft Word")}
-            {renderOfficeGroup("powerpoint", "Microsoft PowerPoint")}
-          </>
-        )}
+        {tab === "office" && <OfficeShortcutsTab />}
         {tab === "editor" && (
           <>
             {renderRowGroup()}
@@ -342,10 +231,6 @@ export function KeyboardShortcutsPanel() {
       <FormulaHotkeyRecorderDialog
         target={editingTarget}
         onClose={() => setEditingTarget(null)}
-      />
-      <OfficeHotkeyRecorderDialog
-        action={editingOfficeAction}
-        onClose={() => setEditingOfficeAction(null)}
       />
       <FormulaRowHotkeyRecorderDialog
         action={editingRowAction}

@@ -1,56 +1,141 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, Keyboard, Rows3, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  AlertTriangle,
+  Check,
+  CornerDownLeft,
+  Keyboard,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
+  formulaHotkeyHasModifier,
   formulaHotkeyTargetLabel,
   type FormulaHotkeyChord,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+} from "../shortcuts/formulaHotkeys";
 import {
-  defaultFormulaRowHotkeyChord,
+  confirmEscapeChordProblem,
+  DEFAULT_CONFIRM_ESCAPE_CHORD,
+  sameConfirmEscapeChord,
+} from "../shortcuts/confirmEscapeKey";
+import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
   formulaRowHotkeyChordId,
-  formulaRowHotkeyChordProblem,
-  type FormulaRowHotkeyActionDefinition,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { buttonShortcutLabel, buttonShortcutWithChord } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
+} from "../shortcuts/formulaRowHotkeys";
+import {
+  buttonShortcutLabel,
+  buttonShortcutWithChord,
+} from "../shortcuts/buttonShortcuts";
+import { useConfirmEscapeKeyStore } from "../stores/confirmEscapeKeyStore";
+import { useEditorStore } from "../stores/editorStore";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 
-interface Props {
-  action: FormulaRowHotkeyActionDefinition | null;
-  onClose: () => void;
+function copy(isEn: boolean) {
+  return {
+    section: isEn ? "Input" : "输入",
+    label: isEn ? "Confirm escape" : "确认转义",
+  };
 }
 
-export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
+export function ConfirmEscapeKeySettingsSection() {
+  const language = useEditorStore((state) => state.language);
+  const chord = useConfirmEscapeKeyStore((state) => state.chord);
+  const setChord = useConfirmEscapeKeyStore((state) => state.setChord);
+  const reset = useConfirmEscapeKeyStore((state) => state.reset);
+  const [recording, setRecording] = useState(false);
+  const closeRecorder = useCallback(() => setRecording(false), []);
+  const isEn = language === "en";
+  const text = copy(isEn);
+  const isDefault = sameConfirmEscapeChord(chord, DEFAULT_CONFIRM_ESCAPE_CHORD);
+
+  return (
+    <section className="office-hotkey-group formula-row-hotkey-group" data-confirm-escape-key>
+      <header className="formula-hotkey-section-heading">
+        <CornerDownLeft size={16} />
+        <strong>{text.section}</strong>
+      </header>
+      <div className="office-hotkey-action-list">
+        <article className="office-hotkey-action-row" data-confirm-escape-key-row>
+          <div className="office-hotkey-action-icon" aria-hidden="true">
+            <CornerDownLeft size={18} />
+          </div>
+          <div className="formula-hotkey-binding-copy">
+            <strong>{text.label}</strong>
+          </div>
+          {chord ? (
+            <kbd>{formatFormulaHotkeyChord(chord)}</kbd>
+          ) : (
+            <span className="office-hotkey-unassigned">{isEn ? "Off" : "已关闭"}</span>
+          )}
+          <div className="formula-hotkey-binding-actions">
+            <button
+              type="button"
+              className="icon-button compact"
+              onClick={() => setRecording(true)}
+              aria-label={isEn ? `Change key for ${text.label}` : `修改${text.label}的按键`}
+              title={isEn ? "Change key" : "修改按键"}
+            >
+              <Pencil size={14} />
+            </button>
+            {!isDefault && (
+              <button
+                type="button"
+                className="icon-button compact"
+                onClick={reset}
+                aria-label={isEn ? `Restore the default key for ${text.label}` : `恢复${text.label}的默认按键`}
+                title={isEn ? "Restore default" : "恢复默认"}
+              >
+                <RotateCcw size={14} />
+              </button>
+            )}
+            {chord && (
+              <button
+                type="button"
+                className="icon-button compact is-danger"
+                onClick={() => setChord(null)}
+                aria-label={isEn ? `Turn off ${text.label}` : `关闭${text.label}`}
+                title={isEn ? "Turn off" : "关闭"}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        </article>
+      </div>
+      {recording &&
+        createPortal(
+          <ConfirmEscapeKeyRecorderDialog onClose={closeRecorder} />,
+          document.body,
+        )}
+    </section>
+  );
+}
+
+function ConfirmEscapeKeyRecorderDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   const language = useEditorStore((state) => state.language);
   const buttonShortcuts = useEditorStore((state) => state.buttonShortcuts);
   const setButtonShortcut = useEditorStore((state) => state.setButtonShortcut);
+  const existingChord = useConfirmEscapeKeyStore((state) => state.chord);
+  const setChord = useConfirmEscapeKeyStore((state) => state.setChord);
   const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
-  const setRowBinding = useFormulaRowHotkeyStore((state) => state.setBinding);
+  const removeRowBinding = useFormulaRowHotkeyStore((state) => state.removeBinding);
   const formulaBindings = useFormulaHotkeyStore((state) => state.bindings);
-  const removeFormulaBinding = useFormulaHotkeyStore(
-    (state) => state.removeBinding,
-  );
+  const removeFormulaBinding = useFormulaHotkeyStore((state) => state.removeBinding);
   const [capturedChord, setCapturedChord] = useState<FormulaHotkeyChord | null>(
-    null,
+    existingChord,
   );
   const isEn = language === "en";
-  const existingChord = action
-    ? rowBindings.find((binding) => binding.actionId === action.id)?.chord ??
-      null
-    : null;
+  const text = copy(isEn);
 
   useEffect(() => {
-    setCapturedChord(existingChord);
-  }, [action?.id, existingChord]);
-
-  useEffect(() => {
-    if (!action) return;
     const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -77,17 +162,19 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [action, onClose]);
+  }, [onClose]);
 
+  // Chords with a modifier are matched by the editor's hotkeys first.
   const conflicts = useMemo(() => {
-    if (!action || !capturedChord) return { row: null, formula: null };
+    if (!capturedChord || !formulaHotkeyHasModifier(capturedChord)) {
+      return { row: null, formula: null, button: null };
+    }
     const rowChordId = formulaRowHotkeyChordId(capturedChord);
     const chordId = formulaHotkeyChordId(capturedChord);
     return {
       row:
         rowBindings.find(
           (binding) =>
-            binding.actionId !== action.id &&
             binding.chord !== null &&
             formulaRowHotkeyChordId(binding.chord) === rowChordId,
         ) ?? null,
@@ -95,34 +182,28 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
         formulaBindings.find(
           (binding) => formulaHotkeyChordId(binding.chord) === chordId,
         ) ?? null,
+      button: buttonShortcutWithChord(buttonShortcuts, capturedChord),
     };
-  }, [action, capturedChord, formulaBindings, rowBindings]);
-
-  if (!action) return null;
-  const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
+  }, [buttonShortcuts, capturedChord, formulaBindings, rowBindings]);
 
   const problem = capturedChord
-    ? formulaRowHotkeyChordProblem(capturedChord, language)
+    ? confirmEscapeChordProblem(capturedChord, language)
     : null;
   const canSave = Boolean(capturedChord && !problem);
-  const actionLabel = formulaRowHotkeyActionLabel(action, language);
   const conflictLabel = conflicts.row
-    ? formulaRowHotkeyActionLabel(
-        formulaRowHotkeyAction(conflicts.row.actionId),
-        language,
-      )
+    ? formulaRowHotkeyActionLabel(formulaRowHotkeyAction(conflicts.row.actionId), language)
     : conflicts.formula
       ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
-      : buttonConflict
-        ? buttonShortcutLabel(buttonConflict, language)
+      : conflicts.button
+        ? buttonShortcutLabel(conflicts.button, language)
         : null;
 
-  const saveBinding = () => {
+  const save = () => {
     if (!capturedChord || !canSave) return;
-    // a button shortcut is matched first: it gives the chord up
-    if (buttonConflict) setButtonShortcut(buttonConflict, null);
+    if (conflicts.button) setButtonShortcut(conflicts.button, null);
+    if (conflicts.row) removeRowBinding(conflicts.row.actionId);
     if (conflicts.formula) removeFormulaBinding(conflicts.formula.id);
-    setRowBinding(action.id, capturedChord);
+    setChord(capturedChord);
     onClose();
   };
 
@@ -137,15 +218,15 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
         className="formula-hotkey-recorder-dialog formula-row-hotkey-recorder-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="formula-row-hotkey-recorder-title"
+        aria-labelledby="confirm-escape-key-recorder-title"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-header">
           <div>
-            <span className="eyebrow">ROW HOT KEY</span>
-            <h2 id="formula-row-hotkey-recorder-title">
-              {isEn ? "Set formula row hotkey" : "设置公式行快捷键"}
+            <span className="eyebrow">ESCAPE KEY</span>
+            <h2 id="confirm-escape-key-recorder-title">
+              {isEn ? "Set confirm-escape key" : "设置确认转义键"}
             </h2>
           </div>
           <button
@@ -161,13 +242,13 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
         <div className="formula-hotkey-recorder-content">
           <div className="formula-hotkey-target-card office-hotkey-target-card">
             <div className="formula-hotkey-target-preview">
-              <Rows3 size={28} />
+              <CornerDownLeft size={28} />
             </div>
             <div>
-              <strong>{actionLabel}</strong>
+              <strong>{text.label}</strong>
               <code>
                 {isEn ? "Default: " : "默认："}
-                {formatFormulaHotkeyChord(defaultFormulaRowHotkeyChord(action.id))}
+                {formatFormulaHotkeyChord(DEFAULT_CONFIRM_ESCAPE_CHORD)}
               </code>
             </div>
           </div>
@@ -177,9 +258,7 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
             {capturedChord ? (
               <kbd>{formatFormulaHotkeyChord(capturedChord)}</kbd>
             ) : (
-              <strong>
-                {isEn ? "Press a shortcut" : "按下快捷键"}
-              </strong>
+              <strong>{isEn ? "Press a key" : "请按键"}</strong>
             )}
           </div>
 
@@ -214,8 +293,8 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
                 ? `Current: ${formatFormulaHotkeyChord(existingChord)}`
                 : `当前：${formatFormulaHotkeyChord(existingChord)}`
               : isEn
-                ? "No hotkey assigned"
-                : "尚未设置快捷键"}
+                ? "Confirm escape is off"
+                : "确认转义已关闭"}
           </span>
           <div>
             <button type="button" className="secondary-button" onClick={onClose}>
@@ -225,7 +304,7 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
               type="button"
               className="primary-button"
               disabled={!canSave}
-              onClick={saveBinding}
+              onClick={save}
             >
               {conflictLabel
                 ? isEn

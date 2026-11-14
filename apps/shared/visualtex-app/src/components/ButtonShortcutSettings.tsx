@@ -1,23 +1,22 @@
 import { useEffect, useState } from "react";
 import { MousePointerClick, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
-import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
-import { officeHotkeyAction, officeHotkeyActionLabel } from "../shortcuts/officeHotkeys";
+import { useEditorStore } from "../stores/editorStore";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useOfficeHotkeyOwner } from "@platform/officeHotkeyOwner";
 import {
   BUTTON_SHORTCUT_ACTIONS,
   buttonShortcutChordProblem,
   buttonShortcutWithChord,
   type ButtonShortcutId,
-} from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
+} from "../shortcuts/buttonShortcuts";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
   formulaHotkeyTargetLabel,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { FORMULA_ROW_HOTKEY_ACTIONS } from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
+} from "../shortcuts/formulaHotkeys";
+import { FORMULA_ROW_HOTKEY_ACTIONS } from "../shortcuts/formulaRowHotkeys";
 
 /**
  * Settings > Keyboard shortcuts > Buttons: a chord for each common button of
@@ -33,8 +32,8 @@ export function ButtonShortcutSettingsSection() {
   const removeFormulaBinding = useFormulaHotkeyStore((state) => state.removeBinding);
   const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
   const removeRowBinding = useFormulaRowHotkeyStore((state) => state.removeBinding);
-  // Office global hotkeys are system-wide (registered by the app): change them in their own section
-  const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
+  // Office global hotkeys (macOS) are system-wide, registered by the app: change them in their own section
+  const officeHotkeyOwner = useOfficeHotkeyOwner();
   const [capturing, setCapturing] = useState<ButtonShortcutId | null>(null);
   const [message, setMessage] = useState("");
   const labelOf = (id: ButtonShortcutId) => {
@@ -65,9 +64,9 @@ export function ButtonShortcutSettingsSection() {
         return;
       }
       const key = formulaHotkeyChordId(chord);
-      const officeBinding = officeBindings.find((binding) => formulaHotkeyChordId(binding.chord) === key);
-      if (officeBinding) {
-        const label = officeHotkeyActionLabel(officeHotkeyAction(officeBinding.actionId), isEn ? "en" : "cn");
+      const officeOwner = officeHotkeyOwner(chord, isEn ? "en" : "cn");
+      if (officeOwner) {
+        const label = officeOwner.label;
         setMessage(
           isEn
             ? `Already used by the Office global shortcut “${label}”.`
@@ -99,7 +98,7 @@ export function ButtonShortcutSettingsSection() {
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [capturing, isEn, shortcuts, formulaBindings, rowBindings, officeBindings, removeFormulaBinding, removeRowBinding, setButtonShortcut]);
+  }, [capturing, isEn, shortcuts, formulaBindings, rowBindings, officeHotkeyOwner, removeFormulaBinding, removeRowBinding, setButtonShortcut]);
 
   const groups: { title: string; scope: "both" | "main" | "office" }[] = [
     { title: isEn ? "Main window and editor window" : "主程序与编辑器窗口", scope: "both" },

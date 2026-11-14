@@ -38,7 +38,7 @@ import {
   defaultCommonFormulaTileIds,
   formulaTileLibraryById,
 } from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
-import { FormulaHotkeyRecorderDialog } from "../components/FormulaHotkeyRecorderDialog";
+import { FormulaHotkeyRecorderDialog } from "../../../shared/visualtex-app/src/components/FormulaHotkeyRecorderDialog";
 import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
 import {
   deleteCustomSymbol,
