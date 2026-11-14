@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
 import {
   createDefaultFormulaRowHotkeyBindings,
   defaultFormulaRowHotkeyChord,
@@ -12,7 +12,7 @@ import {
   type FormulaRowHotkeyActionId,
   type FormulaRowHotkeyBinding,
 } from "../shortcuts/formulaRowHotkeys";
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { safeStorage } from "../runtime/safeStorage";
 
 interface FormulaRowHotkeyState {
   bindings: FormulaRowHotkeyBinding[];

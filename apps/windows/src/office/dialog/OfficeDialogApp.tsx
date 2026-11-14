@@ -20,11 +20,11 @@ import {
 import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
 import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
-import { sameConfirmEscapeChord } from "../../shortcuts/confirmEscapeKey";
+import { sameConfirmEscapeChord } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
   normalizeConfirmEscapeChord,
   useConfirmEscapeKeyStore,
-} from "../../stores/confirmEscapeKeyStore";
+} from "../../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import {

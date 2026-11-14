@@ -12,15 +12,15 @@ import {
   type FormulaHotkeyChord,
   type FormulaHotkeyTarget,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
   formulaRowHotkeyChordId,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;

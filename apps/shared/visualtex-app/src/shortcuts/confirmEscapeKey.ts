@@ -2,7 +2,7 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+} from "./formulaHotkeys";
 
 /**
  * The key that confirms a quick escape: it turns only the name right before

@@ -13,15 +13,15 @@ import {
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import {
   FORMULA_ROW_HOTKEY_ACTIONS,
   formulaRowHotkeyActionLabel,
   isDefaultFormulaRowHotkeyChord,
   type FormulaRowHotkeyActionDefinition,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 
 /** Settings → Keyboard shortcuts: every shortcut group, with the recorders they open. */
 const SHORTCUT_TABS = [

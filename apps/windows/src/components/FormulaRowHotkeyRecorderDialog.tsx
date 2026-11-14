@@ -14,11 +14,11 @@ import {
   formulaRowHotkeyChordId,
   formulaRowHotkeyChordProblem,
   type FormulaRowHotkeyActionDefinition,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 import { useEditorStore } from "../stores/editorStore";
 import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 
 interface Props {
   action: FormulaRowHotkeyActionDefinition | null;

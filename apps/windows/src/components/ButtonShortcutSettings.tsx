@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { MousePointerClick, X } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   BUTTON_SHORTCUT_ACTIONS,
   buttonShortcutChordProblem,
@@ -15,7 +15,7 @@ import {
   formulaHotkeyChordId,
   formulaHotkeyTargetLabel,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { FORMULA_ROW_HOTKEY_ACTIONS } from "../shortcuts/formulaRowHotkeys";
+import { FORMULA_ROW_HOTKEY_ACTIONS } from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 
 /**
  * Settings > Keyboard shortcuts > Buttons: a chord for each common button of

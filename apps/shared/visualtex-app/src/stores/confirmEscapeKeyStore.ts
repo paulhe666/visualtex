@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
 import {
   CONFIRM_ESCAPE_KEY_STORAGE_KEY,
   confirmEscapeChordProblem,
   DEFAULT_CONFIRM_ESCAPE_CHORD,
 } from "../shortcuts/confirmEscapeKey";
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { safeStorage } from "../runtime/safeStorage";
 
 interface ConfirmEscapeKeyState {
   /** null: no key confirms a quick escape. */

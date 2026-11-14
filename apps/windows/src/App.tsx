@@ -71,7 +71,7 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
-import { useConfirmEscapeKeyStore } from "./stores/confirmEscapeKeyStore";
+import { useConfirmEscapeKeyStore } from "../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import {
   historyManager,
   useHistorySnapshot,

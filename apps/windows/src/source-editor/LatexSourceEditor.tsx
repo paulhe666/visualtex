@@ -38,7 +38,7 @@ import { visualTeXLatexEditingExtensions } from "../../../shared/visualtex-app/s
 import {
   latexSourceCompletion,
   latexSourceCompletionTheme,
-} from "./latexSourceCompletion";
+} from "../../../shared/visualtex-app/src/source-editor/latexSourceCompletion";
 
 const visualTeXLatexHighlightStyle = HighlightStyle.define([
   {

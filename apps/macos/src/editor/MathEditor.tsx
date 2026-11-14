@@ -57,10 +57,10 @@ import {
   createFormulaLine,
   useEditorStore,
 } from "../stores/editorStore";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
-import { useConfirmEscapeKeyStore } from "../stores/confirmEscapeKeyStore";
-import { confirmEscapeKernelKey } from "../shortcuts/confirmEscapeKey";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
+import { useConfirmEscapeKeyStore } from "../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
+import { confirmEscapeKernelKey } from "../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
   formatFormulaHotkeyChord,
   matchFormulaHotkey,
@@ -69,7 +69,7 @@ import {
 import {
   matchFormulaRowHotkey,
   type FormulaRowHotkeyActionId,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,

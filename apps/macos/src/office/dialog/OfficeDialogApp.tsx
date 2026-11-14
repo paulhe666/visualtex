@@ -10,8 +10,8 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "../../stores/editorStore";
-import { useConfirmEscapeKeyStore } from "../../stores/confirmEscapeKeyStore";
-import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../shortcuts/confirmEscapeKey";
+import { useConfirmEscapeKeyStore } from "../../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
+import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,

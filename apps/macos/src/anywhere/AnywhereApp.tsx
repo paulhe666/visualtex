@@ -13,7 +13,7 @@ import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history
 import { useEditorStore } from "../stores/editorStore";
 import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   anywhereHotkeyLabel,
   matchAnywhereHotkey,

@@ -13,7 +13,7 @@ import {
   type FormulaHotkeyChord,
   type FormulaHotkeyTarget,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
@@ -22,12 +22,12 @@ import {
   officeHotkeyActionLabel,
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
   formulaRowHotkeyChordId,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;

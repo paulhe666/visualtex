@@ -25,7 +25,7 @@ import {
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
 import { useEditorStore } from "../stores/editorStore";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 
 interface Props {

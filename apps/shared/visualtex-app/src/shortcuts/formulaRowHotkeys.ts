@@ -5,7 +5,7 @@ import {
   isMacKeyboardPlatform,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+} from "./formulaHotkeys";
 
 /**
  * Formula-row actions of the main editor: split the row at the caret into a

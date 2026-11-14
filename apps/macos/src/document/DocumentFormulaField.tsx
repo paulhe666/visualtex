@@ -26,7 +26,7 @@ import {
   toggleMathLiveSelectionStyle,
 } from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";
 import { useEditorStore } from "../stores/editorStore";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../../../shared/visualtex-app/src/shortcuts/greekLetterHotkeys";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";

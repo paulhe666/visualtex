@@ -22,20 +22,20 @@ import {
   confirmEscapeChordProblem,
   DEFAULT_CONFIRM_ESCAPE_CHORD,
   sameConfirmEscapeChord,
-} from "../shortcuts/confirmEscapeKey";
+} from "../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
   formulaRowHotkeyChordId,
-} from "../shortcuts/formulaRowHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
 import {
   buttonShortcutLabel,
   buttonShortcutWithChord,
 } from "../shortcuts/buttonShortcuts";
-import { useConfirmEscapeKeyStore } from "../stores/confirmEscapeKeyStore";
+import { useConfirmEscapeKeyStore } from "../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import { useEditorStore } from "../stores/editorStore";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 
 function copy(isEn: boolean) {
   return {

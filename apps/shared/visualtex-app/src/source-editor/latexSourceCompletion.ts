@@ -13,12 +13,12 @@ import {
 import { Prec, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, keymap, type KeyBinding } from "@codemirror/view";
 import { visualTexLatexCommandSignatures } from "mathlive";
-import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { COMMAND_FREQUENCY } from "../../../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
-import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands";
-import { convertVisualTexLatexToMarkup } from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
-import { inspectMathLiveSourceSafety } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
-import { nativeSuggestionPreviewLatex } from "../../../shared/visualtex-app/src/editor/nativeSuggestionPreviews";
+import { commandRegistry } from "../autocomplete/commandRegistry";
+import { COMMAND_FREQUENCY } from "../autocomplete/commandFrequency.generated";
+import { latestSharedCommands } from "../autocomplete/latestSharedCommands";
+import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
+import { nativeSuggestionPreviewLatex } from "../editor/nativeSuggestionPreviews";
 
 // Source-code completion for the LaTeX panel. Same commands and ranking as
 // the visual editor's candidate panel (Overleaf's approach: CodeMirror's
