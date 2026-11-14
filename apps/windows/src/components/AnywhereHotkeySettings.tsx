@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, RotateCcw, Sigma, Trash2 } from "lucide-react";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 import {
   ANYWHERE_HOTKEY_ACTIONS,
   anywhereHotkeyChordProblem,
   anywhereHotkeyDefinition,
   type AnywhereHotkeyAction,
-} from "../shortcuts/anywhereHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/anywhereHotkeys";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,

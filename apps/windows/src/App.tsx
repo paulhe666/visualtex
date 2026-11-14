@@ -135,7 +135,7 @@ import {
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
-import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 

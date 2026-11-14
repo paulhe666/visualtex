@@ -91,7 +91,7 @@ pub(crate) enum Slot {
 impl Slot {
     const ALL: [Slot; 2] = [Slot::Toggle, Slot::Display];
 
-    /// Settings' action id (src/shortcuts/anywhereHotkeys.ts).
+    /// Settings' action id (apps/shared/visualtex-app/src/shortcuts/anywhereHotkeys.ts).
     pub(crate) fn from_action(action: &str) -> Option<Self> {
         match action {
             "anywhere-toggle" => Some(Slot::Toggle),

@@ -127,7 +127,7 @@ import { readLocalStorage, writeLocalStorage } from "../../shared/visualtex-app/
 import { childrenFitRow, trackPriorityCollapse } from "../../shared/visualtex-app/src/runtime/priorityCollapse";
 import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
-import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,

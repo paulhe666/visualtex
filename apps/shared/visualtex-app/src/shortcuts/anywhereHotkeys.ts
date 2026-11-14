@@ -4,16 +4,16 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { officeHotkeySupportsCode } from "./officeHotkeys";
+} from "./formulaHotkeys";
+import { anywhereKeyRules } from "@platform/anywhereKeyRules";
 
 // VisualTeX Anywhere's shortcuts (Settings > Keyboard shortcuts): the
 // system-wide ones that open and close a formula in any application (as an
 // inline or as a display formula), and
 // the ones that act while a formula is open (output format, the row's inline
-// or display form, screenshot OCR).
-// The input method gives the open formula every key but Command chords
-// (those stay the application's), so those shortcuts use Control or Option.
+// or display form, screenshot OCR). Which chords each system leaves to an open
+// formula, and which keys it can register system-wide, are the app's
+// (src/platform/anywhereKeyRules.ts).
 
 export type AnywhereHotkeyAction =
   | "anywhere-toggle"
@@ -30,7 +30,7 @@ export type AnywhereHotkeyAction =
 
 export interface AnywhereHotkeyDefinition {
   id: AnywhereHotkeyAction;
-  /** System-wide (registered with macOS), not only while a formula is open. */
+  /** System-wide (registered with the system), not only while a formula is open. */
   global: boolean;
   labelZh: string;
   labelEn: string;
@@ -90,7 +90,7 @@ function normalizeChord(value: unknown): FormulaHotkeyChord | null {
     shiftKey: v.shiftKey === true,
     metaKey: v.metaKey === true,
   };
-  return formulaHotkeyHasModifier(chord) ? chord : null;
+  return formulaHotkeyHasModifier(chord) && anywhereKeyRules.keepsStoredChord(chord) ? chord : null;
 }
 
 /** Every action, defaults for the ones not stored (an explicit null stays
@@ -108,36 +108,36 @@ export function normalizeAnywhereHotkeyBindings(value: unknown): AnywhereHotkeyB
   return bindings;
 }
 
-/** Why `chord` cannot be `action`'s shortcut, or null when it can. */
+/** Why `chord` cannot be `action`'s shortcut, or null when it can.
+ *  `silentOcr`: the main window's silent OCR shortcut is on. */
 export function anywhereHotkeyChordProblem(
   action: AnywhereHotkeyAction,
   chord: FormulaHotkeyChord,
   language: "cn" | "en" = "cn",
+  silentOcr = false,
 ): string | null {
   const en = language === "en";
-  if (!formulaHotkeyHasModifier(chord)) {
-    return en
-      ? "Add Control, Option or Command; Shift can be used in addition."
-      : "请加入 Control、Option 或 Command；Shift 可作为附加修饰键。";
-  }
+  const systemKey = anywhereKeyRules.systemKeyProblem(chord, en);
+  if (systemKey) return systemKey;
+  if (!formulaHotkeyHasModifier(chord)) return anywhereKeyRules.missingModifierText(en);
   const reserved = protectedFormulaHotkeyAction(chord, language);
   if (reserved) {
     return en
       ? `This shortcut is reserved for ${reserved} and cannot be overridden.`
       : `该快捷键已保留用于“${reserved}”，不能覆盖。`;
   }
+  if (silentOcr && anywhereKeyRules.isSilentOcrChord(chord)) {
+    return en
+      ? "This shortcut is the silent OCR shortcut. Turn silent OCR off or choose another one."
+      : "该快捷键已用作静默 OCR 快捷键，请关闭静默 OCR 或换一个快捷键。";
+  }
   if (anywhereHotkeyDefinition(action).global) {
-    if (!officeHotkeySupportsCode(chord.code)) {
+    if (!anywhereKeyRules.globalHotkeySupportsCode(chord.code)) {
       return en ? "This key cannot be a system-wide shortcut." : "该按键不能用作全局快捷键。";
     }
     return null;
   }
-  if (chord.metaKey) {
-    return en
-      ? "While a formula is open, Command shortcuts stay the application's. Use Control or Option."
-      : "公式模式中 Command 组合键仍归当前应用使用，请改用 Control 或 Option。";
-  }
-  return null;
+  return anywhereKeyRules.openFormulaChordProblem(chord, en);
 }
 
 /** The action whose chord this key is (actions used while a formula is open). */

@@ -12,8 +12,8 @@ import {
   wordDefaultBinding,
   type WordShortcutBinding,
 } from "../office/wordShortcutConflicts";
-import { ANYWHERE_HOTKEY_ACTIONS, anywhereHotkeyLabel } from "../shortcuts/anywhereHotkeys";
-import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { ANYWHERE_HOTKEY_ACTIONS, anywhereHotkeyLabel } from "../../../shared/visualtex-app/src/shortcuts/anywhereHotkeys";
+import { useAnywhereHotkeyStore } from "../../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type {
   PowerPointFormulaShortcutAction,

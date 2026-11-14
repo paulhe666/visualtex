@@ -37,7 +37,7 @@ pub(crate) enum Slot {
 impl Slot {
     const ALL: [Slot; 2] = [Slot::Toggle, Slot::Display];
 
-    /// Settings' action id (src/shortcuts/anywhereHotkeys.ts).
+    /// Settings' action id (apps/shared/visualtex-app/src/shortcuts/anywhereHotkeys.ts).
     pub(crate) fn from_action(action: &str) -> Option<Self> {
         match action {
             "anywhere-toggle" => Some(Slot::Toggle),
@@ -186,7 +186,7 @@ fn virtual_key(code: &str) -> Option<u32> {
 
 type Request = (Slot, Option<Chord>, Sender<Result<String, String>>);
 
-/// A shortcut that acts while a formula is open: the page's action id (src/shortcuts/anywhereHotkeys.ts)
+/// A shortcut that acts while a formula is open: the page's action id (apps/shared/visualtex-app/src/shortcuts/anywhereHotkeys.ts)
 /// and its chord.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

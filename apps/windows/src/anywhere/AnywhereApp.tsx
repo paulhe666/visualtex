@@ -12,7 +12,7 @@ import { useDocumentSession, useHistoryManager } from "../../../shared/visualtex
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";
-import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { useAnywhereHotkeyStore } from "../../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   ANYWHERE_HOTKEY_ACTIONS,
@@ -20,7 +20,7 @@ import {
   isAnywhereHotkeyAction,
   matchAnywhereHotkey,
   type AnywhereHotkeyAction,
-} from "../shortcuts/anywhereHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/anywhereHotkeys";
 import {
   formulaMarkdown,
   formulaPng,
