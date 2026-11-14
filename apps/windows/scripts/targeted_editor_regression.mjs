@@ -2949,7 +2949,8 @@ async function main() {
       await setFormattingValue(String.raw`\Delta`);
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const uppercaseGreekBold = await readFormattingValue();
-      if (uppercaseGreekBold !== String.raw`\mathbf{\Delta}`) {
+      // \bm keeps the symbol's own upright shape
+      if (uppercaseGreekBold !== String.raw`\bm{\Delta}`) {
         throw new Error(`Uppercase Greek bold must stay upright: ${uppercaseGreekBold}`);
       }
       await dispatchFormattingToggle('[data-formula-selection-bold]');
