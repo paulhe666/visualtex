@@ -380,3 +380,298 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Toolbar edit mode (FormulaToolbar.tsx, toolbarDrag.ts) ------------------
+   The groups' tabs, their cards and the tiles are rearranged in place: a ×
+   on each, a dashed + card at the end of a group, a ghost and a line while
+   dragging. */
+.toolbar-tabs-row {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.toolbar-tabs-row > .toolbar-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.toolbar-tabs-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-tabs-action,
+.formula-tile-tabs .formula-tile-edit-toggle {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.toolbar-tabs-action:hover,
+.toolbar-tabs-action:focus-visible,
+.formula-tile-tabs .formula-tile-edit-toggle:hover,
+.formula-tile-tabs .formula-tile-edit-toggle:focus-visible {
+  background: var(--surface-hover);
+  color: var(--accent);
+  outline: none;
+}
+
+.toolbar-tabs-action.is-done,
+.formula-tile-tabs .formula-tile-edit-toggle.is-done {
+  background: var(--accent);
+  color: var(--primary-foreground, #fff);
+}
+
+.formula-tile-tabs .formula-tile-edit-toggle {
+  align-self: center;
+  margin: 0 3px;
+  box-shadow: none;
+}
+
+.formula-tile-tabs {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+}
+
+.formula-tile-tabs.has-collapse {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px 28px;
+}
+
+.formula-tile-tabs.has-collapse .formula-tile-collapse-button {
+  grid-column: 4;
+}
+
+.toolbar-layout-menu.formula-tile-context-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 6px;
+  left: auto;
+  min-width: 196px;
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
+}
+
+.toolbar-layout-menu-label {
+  padding: 6px 10px 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* tabs */
+.toolbar-tabs-row.is-editing .toolbar-tab:not(.toolbar-tab-add):not(.toolbar-tab-rename) {
+  cursor: grab;
+}
+
+.formula-toolbar.is-horizontal .toolbar-tabs-row.is-editing .toolbar-tab:not(.toolbar-tab-add):not(.toolbar-tab-rename) {
+  padding-right: 22px;
+}
+
+.toolbar-tab-remove {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  color: var(--bg-elevated, #fff);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.toolbar-tab:is(:hover, :focus-visible, .is-active) > .toolbar-tab-remove {
+  opacity: 1;
+}
+
+/* the sidebar's tabs are narrow: the × sits on the corner, over the name */
+.formula-toolbar:not(.is-horizontal) .toolbar-tab-remove {
+  top: 1px;
+  right: 1px;
+  width: 13px;
+  height: 13px;
+  margin-top: 0;
+}
+
+.toolbar-tab-remove:hover,
+.toolbar-item-remove:hover {
+  background: var(--danger, #c4473d);
+  color: #fff;
+}
+
+.formula-toolbar .toolbar-tab.toolbar-tab-add {
+  min-width: 32px;
+  justify-content: center;
+  padding-inline: 6px;
+  color: var(--text-muted);
+}
+
+.formula-toolbar .toolbar-tab.toolbar-tab-rename {
+  min-width: 78px;
+  width: 112px;
+  border: 1px solid var(--accent-border, var(--accent));
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+  cursor: text;
+}
+
+.formula-toolbar .toolbar-tab.is-drop-target {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--text);
+}
+
+/* cards */
+.template-strip.is-toolbar-editing .template-button,
+.template-strip.is-toolbar-editing .matrix-builder.is-toolbar-edit-item,
+.formula-tile-list.is-toolbar-editing .formula-tile-item,
+[data-drop-kind="custom-section"] .formula-tile-button {
+  position: relative;
+  cursor: grab;
+}
+
+.template-strip.is-toolbar-editing .template-button:not(.toolbar-add-item) {
+  outline-style: dashed;
+}
+
+.matrix-builder.is-toolbar-edit-item > :not(.toolbar-item-remove) {
+  pointer-events: none;
+}
+
+.toolbar-item-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 78%, transparent);
+  color: var(--bg-elevated, #fff);
+  cursor: pointer;
+  opacity: 0;
+}
+
+/* a card's × shows where the pointer or the focus is */
+:is(.template-button, .matrix-builder, .formula-tile-button):is(:hover, :focus-visible) > .toolbar-item-remove,
+.toolbar-item-remove:focus-visible {
+  opacity: 1;
+}
+
+body.vtx-toolbar-dragging .toolbar-item-remove {
+  opacity: 0;
+}
+
+.formula-tile-list.is-toolbar-editing .formula-tile-remove {
+  opacity: 1;
+  visibility: visible;
+}
+
+.formula-toolbar .template-button.toolbar-add-item {
+  display: grid;
+  place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--border-strong, var(--border)) 80%, var(--accent) 20%);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.formula-toolbar .template-button.toolbar-add-item:hover,
+.formula-toolbar .template-button.toolbar-add-item:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.is-drag-source {
+  opacity: 0.32;
+}
+
+.vtx-toolbar-drag-ghost {
+  opacity: 0.9;
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 22%);
+  transform: rotate(-1.5deg);
+}
+
+.vtx-toolbar-drop-line {
+  position: fixed;
+  z-index: 2147483001;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+body.vtx-toolbar-dragging,
+body.vtx-toolbar-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* context menu: Add to group */
+.formula-hotkey-context-action.has-submenu .formula-hotkey-context-chevron {
+  margin-left: auto;
+}
+
+.formula-hotkey-context-action.has-submenu[aria-expanded="true"] {
+  background: var(--surface-hover);
+}
+
+.formula-hotkey-context-submenu.formula-tile-context-menu {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.formula-hotkey-context-check {
+  width: 14px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+/* item picker */
+.toolbar-picker-nav-heading {
+  display: block;
+  padding: 10px 10px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toolbar-picker-nav-block {
+  display: contents;
+}
+
+.toolbar-item-picker .formula-tile-library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.toolbar-item-picker .formula-tile-library-item {
+  height: 84px;
+}
+
+.toolbar-item-picker .formula-tile-library-item.is-wide {
+  grid-column: span 2;
+}

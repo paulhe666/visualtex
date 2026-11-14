@@ -5,27 +5,32 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   Check,
+  ChevronRight,
   FolderPlus,
   Keyboard,
+  MoreHorizontal,
   Palette,
   PanelRightClose,
   Pencil,
   Plus,
-  Star,
+  RotateCcw,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { create } from "zustand";
 import type { LatexCommand } from "../types/command";
 import {
   categoryLabels,
   categoryLabelsEn,
-  calculusCommandIds,
   commandRegistry,
-  commonCommandIds,
 } from "../autocomplete/commandRegistry";
 import { MathPreview } from "../components/MathPreview";
 import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
@@ -53,6 +58,17 @@ import { writeLocalStorage } from "../runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useCustomSymbolDesignerStore } from "../stores/customSymbolDesignerStore";
+import {
+  BUILT_IN_GROUP_IDS,
+  groupItems,
+  sameToolbarItem,
+  useToolbarLayoutStore,
+  type BuiltInGroupId,
+  type ToolbarGroup,
+  type ToolbarItem,
+} from "./toolbarLayout";
+import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "./toolbarDrag";
+import { ToolbarItemPickerDialog } from "./ToolbarItemPickerDialog";
 
 
 type MatrixDelimiter =
@@ -109,6 +125,8 @@ interface FormulaContextMenuState {
   target: FormulaHotkeyTarget;
   customTileId?: string;
   commonTileId?: string;
+  /** a card of a group (right-clicked in the tools view) */
+  toolbarItem?: { groupId: string; index: number; item: ToolbarItem };
   x: number;
   y: number;
 }
@@ -120,9 +138,6 @@ interface SectionEditorState {
 }
 
 const customFormulaTilesStorageKey = "visualtex-custom-formula-tiles";
-const commonToolbarCommandsStorageKey = "visualtex-common-toolbar-command-ids-v2";
-const legacyCommonToolbarCommandsStorageKey = "visualtex-common-toolbar-command-ids-v1";
-const commonToolbarCommandLimit = 45;
 const commonFormulaTileIdsStorageKey = "visualtex-common-formula-tile-ids-v1";
 const defaultCustomSectionId = "default";
 const defaultCustomSectionName = "未命名分区";
@@ -142,56 +157,6 @@ const customTileRowGap = 3;
 const customTileHorizontalChrome = 6;
 const customTileMinimumScale = 0.9;
 const customTileMaximumItemsPerRow = 7;
-
-function normalizeCommonToolbarCommandIds(value: unknown) {
-  const validIds = new Set(commandRegistry.map((command) => command.id));
-  const result: string[] = [];
-  const append = (id: unknown) => {
-    if (
-      typeof id !== "string" ||
-      !validIds.has(id) ||
-      result.includes(id) ||
-      result.length >= commonToolbarCommandLimit
-    ) {
-      return;
-    }
-    result.push(id);
-  };
-
-  if (Array.isArray(value)) value.forEach(append);
-  commonCommandIds.forEach(append);
-  commandRegistry
-    .filter((command) => !hiddenToolbarCommandIds.has(command.id))
-    .forEach((command) => append(command.id));
-  return result.slice(0, commonToolbarCommandLimit);
-}
-
-function migrateLegacyCommonToolbarCommandIds(value: unknown) {
-  if (!Array.isArray(value)) return value;
-  return value.map((id) => {
-    if (id === "notin") return "times";
-    if (id === "leftarrow") return "div";
-    return id;
-  });
-}
-
-function loadCommonToolbarCommandIds() {
-  try {
-    const current = localStorage.getItem(commonToolbarCommandsStorageKey);
-    if (current !== null) {
-      return normalizeCommonToolbarCommandIds(JSON.parse(current));
-    }
-    const legacy = localStorage.getItem(legacyCommonToolbarCommandsStorageKey);
-    if (legacy !== null) {
-      return normalizeCommonToolbarCommandIds(
-        migrateLegacyCommonToolbarCommandIds(JSON.parse(legacy)),
-      );
-    }
-    return normalizeCommonToolbarCommandIds(null);
-  } catch {
-    return normalizeCommonToolbarCommandIds(null);
-  }
-}
 
 function compactCustomTileWidth(latex: string) {
   const normalized = latex.replace(/\s+/g, "");
@@ -588,27 +553,56 @@ function persistCustomFormulaTiles(library: CustomFormulaTileLibrary) {
   }
 }
 
-const categories = [
-  "common",
-  "structure",
-  "calculus",
-  "matrix",
-  "relation",
-  "greek",
-  "arrow",
-  "physics",
-  "set",
-] as const;
-
-type ToolbarCategory = (typeof categories)[number];
+/** a group of the tools view (its id) */
+type ToolbarCategory = string;
 type ToolbarPreviewMode = "full" | "static";
+
+// The tiles (Common and custom) are one set for every toolbar on the page: an edit in one shows in the others, and
+// a drag from the classic bottom toolbar to the tiles panel lands in the same set.
+interface FormulaTilesState {
+  customTileLibrary: CustomFormulaTileLibrary;
+  commonFormulaTileIds: string[];
+  setCustomTileLibrary: (updater: (current: CustomFormulaTileLibrary) => CustomFormulaTileLibrary) => void;
+  setCommonFormulaTileIds: (updater: (current: string[]) => string[]) => void;
+}
+
+const useFormulaTilesStore = create<FormulaTilesState>()((set) => ({
+  customTileLibrary: loadCustomFormulaTiles(),
+  commonFormulaTileIds: loadCommonFormulaTileIds(),
+  setCustomTileLibrary: (updater) =>
+    set((state) => {
+      const customTileLibrary = updater(state.customTileLibrary);
+      if (customTileLibrary === state.customTileLibrary) return state;
+      persistCustomFormulaTiles(customTileLibrary);
+      return { customTileLibrary };
+    }),
+  setCommonFormulaTileIds: (updater) =>
+    set((state) => {
+      const commonFormulaTileIds = updater(state.commonFormulaTileIds);
+      if (commonFormulaTileIds === state.commonFormulaTileIds) return state;
+      writeLocalStorage(commonFormulaTileIdsStorageKey, JSON.stringify(commonFormulaTileIds));
+      return { commonFormulaTileIds };
+    }),
+}));
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === customFormulaTilesStorageKey) useFormulaTilesStore.setState({ customTileLibrary: loadCustomFormulaTiles() });
+    if (event.key === commonFormulaTileIdsStorageKey) useFormulaTilesStore.setState({ commonFormulaTileIds: loadCommonFormulaTileIds() });
+  });
+}
+
+/** The tint of a group of the user's: the built-in tints in turn. */
+const groupTintVariables = BUILT_IN_GROUP_IDS.map((id) => `var(--toolbar-category-${id})`);
+
+const registryCommandById = new Map(commandRegistry.map((command) => [command.id, command]));
 
 const toolbarPreviewOverscanRatio = 1.35;
 const toolbarScrollIdleDelayMs = 110;
 
 function sameToolbarCategoryList(
-  left: readonly ToolbarCategory[],
-  right: readonly ToolbarCategory[],
+  left: readonly string[],
+  right: readonly string[],
 ) {
   return (
     left.length === right.length &&
@@ -666,21 +660,6 @@ const matrixDelimiterOptions: Array<{
   },
 ];
 
-// Package shorthands remain available through autocomplete and raw LaTeX, but
-// the toolbar should expose each semantic template only once. Prefer the
-// primitive templates here: they render more compactly and give each visible
-// placeholder a direct, predictable caret stop.
-const hiddenToolbarCommandIds = new Set([
-  "time-ordering",
-  "shortcut-bra",
-  "shortcut-ket",
-  "shortcut-expval",
-  "shortcut-comm",
-  "shortcut-acomm",
-  "shortcut-braket",
-  "shortcut-ketbra",
-  "shortcut-mel",
-]);
 const wideToolbarCommandIds = new Set([
   "shortcut-pb",
   "commutator",
@@ -822,6 +801,28 @@ function createMatrixCommand(
   };
 }
 
+/** The tiles with one tile put at a place among its section's tiles (index past them: after the last). */
+function placeTileInSection(
+  tiles: readonly CustomFormulaTileRecord[],
+  tile: CustomFormulaTileRecord,
+  index: number,
+) {
+  const rest = tiles.filter((candidate) => candidate.id !== tile.id);
+  const sectionTiles = rest.filter((candidate) => candidate.sectionId === tile.sectionId);
+  const fromIndex = tiles
+    .filter((candidate) => candidate.sectionId === tile.sectionId)
+    .findIndex((candidate) => candidate.id === tile.id);
+  const at = fromIndex >= 0 && fromIndex < index ? index - 1 : index;
+  const before = sectionTiles[Math.max(0, at)];
+  if (before && at < sectionTiles.length) {
+    rest.splice(rest.indexOf(before), 0, tile);
+  } else {
+    const last = sectionTiles[sectionTiles.length - 1];
+    rest.splice(last ? rest.indexOf(last) + 1 : rest.length, 0, tile);
+  }
+  return rest.slice(0, maxCustomFormulaTiles);
+}
+
 export function FormulaToolbar({
   onInsert,
   view: fixedView,
@@ -836,15 +837,20 @@ export function FormulaToolbar({
   const activeView = fixedView ?? internalActiveView;
   const [activeTileCategory, setActiveTileCategory] =
     useState<TileCategory>("common");
-  const [customTileLibrary, setCustomTileLibrary] =
-    useState<CustomFormulaTileLibrary>(loadCustomFormulaTiles);
-  const [commonFormulaTileIds, setCommonFormulaTileIds] = useState(
-    loadCommonFormulaTileIds,
-  );
+  const customTileLibrary = useFormulaTilesStore((state) => state.customTileLibrary);
+  const setCustomTileLibrary = useFormulaTilesStore((state) => state.setCustomTileLibrary);
+  const commonFormulaTileIds = useFormulaTilesStore((state) => state.commonFormulaTileIds);
+  const setCommonFormulaTileIds = useFormulaTilesStore((state) => state.setCommonFormulaTileIds);
   const [tileLibraryOpen, setTileLibraryOpen] = useState(false);
-  const [commonToolbarCommandIds, setCommonToolbarCommandIds] = useState(
-    loadCommonToolbarCommandIds,
-  );
+  const toolbarGroups = useToolbarLayoutStore((state) => state.layout.groups);
+  const editing = useToolbarLayoutStore((state) => state.editing);
+  const setEditing = useToolbarLayoutStore((state) => state.setEditing);
+  const [pickerGroupId, setPickerGroupId] = useState<string | null>(null);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  /** where the Add to group list stands (beside its menu item) */
+  const [addToGroupOpen, setAddToGroupOpen] = useState<CSSProperties | null>(null);
   const [activeCustomSectionId, setActiveCustomSectionId] = useState(
     defaultCustomSectionId,
   );
@@ -935,24 +941,6 @@ export function FormulaToolbar({
   const activeCustomSection = customSections.find(
     (section) => section.id === activeCustomSectionId,
   );
-
-  useEffect(() => {
-    persistCustomFormulaTiles(customTileLibrary);
-  }, [customTileLibrary]);
-
-  useEffect(() => {
-    writeLocalStorage(
-      commonFormulaTileIdsStorageKey,
-      JSON.stringify(commonFormulaTileIds),
-    );
-  }, [commonFormulaTileIds]);
-
-  useEffect(() => {
-    writeLocalStorage(
-      commonToolbarCommandsStorageKey,
-      JSON.stringify(commonToolbarCommandIds),
-    );
-  }, [commonToolbarCommandIds]);
 
   useEffect(() => {
     if (
@@ -1525,38 +1513,41 @@ export function FormulaToolbar({
     };
   }, [contextMenu]);
 
-  const toolbarCommandsByCategory = useMemo(() => {
-    const entries = categories.map((category) => {
-      const preferredIds = category === "common"
-        ? commonToolbarCommandIds
-        : category === "calculus"
-          ? calculusCommandIds
-          : null;
-      const candidates = preferredIds
-        ? preferredIds
-            .map((id) => commandRegistry.find((command) => command.id === id))
-            .filter((command): command is LatexCommand => Boolean(command))
-        : commandRegistry.filter(
-            (command) =>
-              command.category === category &&
-              !hiddenToolbarCommandIds.has(command.id),
-          );
-      const seenCommandIds = new Set<string>();
-      return [
-        category,
-        candidates.filter((command) => {
-          if (seenCommandIds.has(command.id)) return false;
-          seenCommandIds.add(command.id);
-          return true;
-        }),
-      ] as const;
-    });
-    return Object.fromEntries(entries) as Record<
-      ToolbarCategory,
-      LatexCommand[]
-    >;
-  }, [commonToolbarCommandIds]);
-  const visibleCommands = toolbarCommandsByCategory[activeCategory];
+  // a command of a group: the registry's, or a custom symbol's (gone once the symbol is deleted)
+  const customSymbolCommandById = useMemo(
+    () => new Map(customSymbolCommands().map((command) => [command.id, command])),
+    [customSymbolRevision],
+  );
+  const resolveToolbarCommand = (id: string) =>
+    registryCommandById.get(id) ?? customSymbolCommandById.get(id);
+  const groupLabel = (group: ToolbarGroup) =>
+    group.name ??
+    (group.builtIn
+      ? (isEn ? categoryLabelsEn : categoryLabels)[group.builtIn]
+      : "");
+  const groupTintStyle = (group: ToolbarGroup) =>
+    group.builtIn
+      ? undefined
+      : ({
+          "--toolbar-category-tint":
+            groupTintVariables[
+              Math.max(0, toolbarGroups.indexOf(group)) % groupTintVariables.length
+            ],
+        } as CSSProperties);
+  const itemsByGroup = useMemo(
+    () => new Map(toolbarGroups.map((group) => [group.id, groupItems(group)])),
+    [toolbarGroups],
+  );
+  const activeGroup = toolbarGroups.find((group) => group.id === activeCategory);
+  const removedBuiltInGroups = BUILT_IN_GROUP_IDS.filter(
+    (id) => !toolbarGroups.some((group) => group.id === id),
+  );
+
+  useEffect(() => {
+    if (toolbarGroups.some((group) => group.id === activeCategory)) return;
+    setActiveCategory(toolbarGroups[0]?.id ?? "");
+  }, [activeCategory, toolbarGroups]);
+
   const toolbarPreviewModeForCategory = (
     category: ToolbarCategory,
   ): ToolbarPreviewMode =>
@@ -1783,35 +1774,304 @@ export function FormulaToolbar({
       ),
     }));
   };
-  const addCommandToCommon = (commandId: string) => {
-    setCommonToolbarCommandIds((current) =>
-      normalizeCommonToolbarCommandIds([
-        commandId,
-        ...current.filter((id) => id !== commandId),
-      ]).slice(0, commonToolbarCommandLimit),
+  // ---- the groups as the user arranges them (edit mode) ----
+  const layoutStore = useToolbarLayoutStore.getState;
+  const itemAt = (groupId: string, index: number) =>
+    itemsByGroup.get(groupId)?.[index];
+  const libraryTileIdOf = (item: ToolbarItem | undefined) => {
+    if (item?.kind !== "formula" || !item.id.startsWith("library-")) return null;
+    const id = item.id.slice("library-".length);
+    return formulaTileLibraryById.has(id) ? id : null;
+  };
+  /** what a toolbar item puts in a custom tile (the matrix builder makes none) */
+  const tileLatexOf = (item: ToolbarItem | undefined) => {
+    if (!item || item.kind === "matrix") return null;
+    if (item.kind === "formula") return item.latex;
+    return resolveToolbarCommand(item.id)?.insertTemplate ?? null;
+  };
+  const formulaItemForTile = (
+    kind: "common" | "custom",
+    tileId: string,
+    latex: string,
+  ): ToolbarItem => ({
+    kind: "formula",
+    id: kind === "common" ? `library-${tileId}` : `tile-${tileId}`,
+    latex,
+  });
+  const formulaItemCommand = (item: Extract<ToolbarItem, { kind: "formula" }>) => {
+    const libraryId = libraryTileIdOf(item);
+    const libraryTile = libraryId ? formulaTileLibraryById.get(libraryId) : undefined;
+    return createTileCommand({
+      id: item.id,
+      latex: item.latex,
+      labelZh: libraryTile?.labelZh ?? item.latex,
+      labelEn: libraryTile?.labelEn ?? item.latex,
+    });
+  };
+  const formulaItemHotkeyTarget = (
+    item: Extract<ToolbarItem, { kind: "formula" }>,
+  ) =>
+    createFormulaHotkeyTarget(
+      formulaHotkeyTargetIdForTile("custom-tile", item.id, item.latex),
+      "custom-tile",
+      formulaItemCommand(item),
     );
-    setActiveCategory("common");
-    setContextMenu(null);
+  /** a removed formula's hotkey goes with it, unless the same formula is still somewhere */
+  const forgetFormulaHotkey = (latex: string) => {
+    const trimmed = latex.trim();
+    const stillUsed =
+      useFormulaTilesStore
+        .getState()
+        .customTileLibrary.tiles.some((tile) => tile.latex === trimmed) ||
+      layoutStore().layout.groups.some((group) =>
+        groupItems(group).some(
+          (item) => item.kind === "formula" && item.latex.trim() === trimmed,
+        ),
+      );
+    if (!stillUsed) {
+      removeBindingsForTarget(formulaHotkeyTargetIdForTile("custom-tile", "", trimmed));
+    }
+  };
+  const removeToolbarItem = (groupId: string, index: number) => {
+    const item = itemAt(groupId, index);
+    layoutStore().removeItem(groupId, index);
+    if (item?.kind === "formula") forgetFormulaHotkey(item.latex);
+  };
+  const toggleItemInGroup = (groupId: string, item: ToolbarItem) => {
+    const items = itemsByGroup.get(groupId) ?? [];
+    const index = items.findIndex((candidate) => sameToolbarItem(candidate, item));
+    if (index >= 0) removeToolbarItem(groupId, index);
+    else layoutStore().insertItem(groupId, END_INDEX, item);
+  };
+  const addCustomTileAt = (latex: string, sectionId: string, index: number) => {
+    const trimmed = latex.trim();
+    if (!trimmed) return;
+    updateCustomTileLibrary((current) => {
+      const existing = current.tiles.find((tile) => tile.latex === trimmed);
+      if (!existing && current.tiles.length >= maxCustomFormulaTiles) return current;
+      const tile: CustomFormulaTileRecord = existing
+        ? { ...existing, sectionId }
+        : {
+            id: persistentCustomId("tile"),
+            latex: trimmed,
+            sectionId,
+            color: null,
+            createdAt: Date.now(),
+          };
+      return { ...current, tiles: placeTileInSection(current.tiles, tile, index) };
+    });
+  };
+  const beginRenameGroup = (group: ToolbarGroup) => {
+    setRenamingGroupId(group.id);
+    setRenameValue(groupLabel(group));
+  };
+  const commitRenameGroup = () => {
+    if (renamingGroupId) layoutStore().renameGroup(renamingGroupId, renameValue);
+    setRenamingGroupId(null);
+  };
+  const addGroup = () => {
+    const id = layoutStore().addGroup(isEn ? "New group" : "新分组");
+    setActiveCategory(id);
+    setRenamingGroupId(id);
+    setRenameValue(isEn ? "New group" : "新分组");
+    if (!editing) setEditing(true);
+  };
+  const removeGroup = (group: ToolbarGroup) => {
+    groupItems(group).forEach((item) => {
+      if (item.kind === "formula") window.setTimeout(() => forgetFormulaHotkey(item.latex), 0);
+    });
+    layoutStore().removeGroup(group.id);
+  };
+
+  const dragHandlers: DragHandlers = {
+    accepts: (source: DragSource, target: DropTarget) => {
+      if (source.type === "group-tab") return target.type === "tabs";
+      if (target.type === "tabs") return false;
+      if (target.type === "group") return true;
+      if (target.type === "common-tiles") {
+        if (source.type === "common-tile") return true;
+        return source.type === "toolbar" && libraryTileIdOf(itemAt(source.groupId, source.index)) !== null;
+      }
+      if (source.type === "toolbar") return tileLatexOf(itemAt(source.groupId, source.index)) !== null;
+      return true;
+    },
+    drop: (source: DragSource, target: DropTarget) => {
+      const store = layoutStore();
+      if (source.type === "group-tab") {
+        if (target.type === "tabs") store.moveGroup(source.groupId, target.index);
+        return;
+      }
+      if (target.type === "group") {
+        if (source.type === "toolbar") {
+          store.moveItem(source.groupId, source.index, target.groupId, target.index);
+        } else if (source.type === "common-tile") {
+          const tile = formulaTileLibraryById.get(source.tileId);
+          if (tile) store.insertItem(target.groupId, target.index, formulaItemForTile("common", tile.id, tile.latex));
+        } else {
+          const tile = customTileLibrary.tiles.find((candidate) => candidate.id === source.tileId);
+          if (tile) store.insertItem(target.groupId, target.index, formulaItemForTile("custom", tile.id, tile.latex));
+        }
+        setActiveCategory(target.groupId);
+        return;
+      }
+      if (target.type === "common-tiles") {
+        const tileId =
+          source.type === "common-tile"
+            ? source.tileId
+            : source.type === "toolbar"
+              ? libraryTileIdOf(itemAt(source.groupId, source.index))
+              : null;
+        if (!tileId) return;
+        setCommonFormulaTileIds((current) => {
+          const from = current.indexOf(tileId);
+          const next = current.filter((id) => id !== tileId);
+          const at = from >= 0 && from < target.index ? target.index - 1 : target.index;
+          next.splice(Math.max(0, Math.min(next.length, at)), 0, tileId);
+          return next;
+        });
+        return;
+      }
+      if (target.type === "custom-section") {
+        if (source.type === "custom-tile") {
+          updateCustomTileLibrary((current) => {
+            const tile = current.tiles.find((candidate) => candidate.id === source.tileId);
+            if (!tile) return current;
+            return {
+              ...current,
+              tiles: placeTileInSection(current.tiles, { ...tile, sectionId: target.sectionId }, target.index),
+            };
+          });
+        } else {
+          const latex =
+            source.type === "common-tile"
+              ? formulaTileLibraryById.get(source.tileId)?.latex
+              : tileLatexOf(itemAt(source.groupId, source.index));
+          if (latex) addCustomTileAt(latex, target.sectionId, target.index);
+        }
+        setActiveCustomSectionId(target.sectionId);
+      }
+    },
+  };
+  /** a press on a card in edit mode: a drag (a press on its × or a field inside is not) */
+  const armCardDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    source: DragSource,
+  ) => {
+    if (!editing) return;
+    if ((event.target as Element).closest("[data-toolbar-remove], input")) return;
+    armDrag(event.nativeEvent, source, event.currentTarget, dragHandlers);
+  };
+  /** Alt+arrow moves the focused card (or tab) one place; Delete removes it */
+  const moveByKeyboard = (
+    event: ReactKeyboardEvent<HTMLElement>,
+    count: number,
+    index: number,
+    move: (toIndex: number) => void,
+    remove: (() => void) | null,
+    focusSelector: (toIndex: number) => string,
+  ) => {
+    if (!editing) return;
+    if ((event.key === "Delete" || event.key === "Backspace") && remove) {
+      event.preventDefault();
+      remove();
+      return;
+    }
+    if (!event.altKey) return;
+    const back = event.key === "ArrowLeft" || event.key === "ArrowUp";
+    const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+    if (!back && !forward) return;
+    event.preventDefault();
+    const toIndex = back ? index - 1 : index + 1;
+    if (toIndex < 0 || toIndex >= count) return;
+    // insertion before the card that is there now (forward: past it)
+    move(back ? toIndex : toIndex + 1);
+    window.requestAnimationFrame(() =>
+      toolbarRef.current?.querySelector<HTMLElement>(focusSelector(toIndex))?.focus(),
+    );
+  };
+
+  useEffect(() => {
+    if (!editing) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || pickerGroupId || renamingGroupId) return;
+      const target = event.target as Element | null;
+      if (target?.closest("input, textarea, [contenteditable='true'], math-field, .modal-backdrop")) return;
+      if (document.body.classList.contains("vtx-toolbar-dragging")) return;
+      setEditing(false);
+    };
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [editing, pickerGroupId, renamingGroupId, setEditing]);
+
+  useEffect(() => {
+    if (!editing) {
+      setLayoutMenuOpen(false);
+      setRenamingGroupId(null);
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    if (!layoutMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      if ((event.target as Element | null)?.closest(".toolbar-layout-menu, [data-toolbar-layout-menu-button]")) return;
+      setLayoutMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [layoutMenuOpen]);
+
+  // the menu's real height (its items vary): it stays inside the window
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const menu = contextMenuRef.current;
+    if (!menu || !contextMenu) return;
+    const box = menu.getBoundingClientRect();
+    const overflow = box.bottom - (window.innerHeight - 8);
+    if (overflow > 0) menu.style.top = `${Math.max(8, contextMenu.y - overflow)}px`;
+  }, [contextMenu]);
+  const addToGroupPlace = (item: HTMLElement): CSSProperties => {
+    const box = item.getBoundingClientRect();
+    const width = 188;
+    const right = box.right + width + 4 <= window.innerWidth - 8;
+    const height = Math.min(toolbarGroups.length * 32 + 10, window.innerHeight - 16);
+    return {
+      position: "fixed",
+      left: right ? box.right + 2 : Math.max(8, box.left - width - 2),
+      top: Math.max(8, Math.min(box.top - 5, window.innerHeight - height - 8)),
+      width,
+      maxHeight: height,
+    };
+  };
+  /** what a right-clicked thing is as an item of a group */
+  const contextMenuItem = (menu: FormulaContextMenuState): ToolbarItem | null => {
+    if (menu.toolbarItem) return menu.toolbarItem.item;
+    const { target } = menu;
+    if (target.kind === "command") return { kind: "command", id: target.command.id };
+    if (target.kind === "matrix") return { kind: "matrix" };
+    if (menu.commonTileId) return formulaItemForTile("common", menu.commonTileId, target.command.insertTemplate);
+    if (menu.customTileId) return formulaItemForTile("custom", menu.customTileId, target.command.insertTemplate);
+    return null;
   };
   const openFormulaContextMenu = (
     event: MouseEvent<HTMLButtonElement>,
     target: FormulaHotkeyTarget,
     customTileId?: string,
     commonTileId?: string,
+    toolbarItem?: FormulaContextMenuState["toolbarItem"],
   ) => {
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = customTileId ? 252 : 224;
-    const canAddToCommon =
-      target.kind === "command" &&
-      !commonToolbarCommandIds.includes(target.command.id);
-    const menuHeight = customTileId
-      ? 330
-      : 132 + (canAddToCommon || commonTileId ? 38 : 0);
+    const menuHeight =
+      (customTileId ? 330 : 132 + (commonTileId ? 38 : 0)) +
+      76 +
+      (toolbarItem ? 38 : 0);
+    setAddToGroupOpen(null);
     setContextMenu({
       target,
       customTileId,
       commonTileId,
+      toolbarItem,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
     });
@@ -1850,11 +2110,15 @@ export function FormulaToolbar({
 
   const renderMatrixBuilder = (
     previewMode: ToolbarPreviewMode = "full",
+    edit?: { group: ToolbarGroup; index: number },
   ) => (
     <section
-      className="matrix-builder"
+      key="matrix-builder"
+      className={"matrix-builder" + (edit ? " is-toolbar-edit-item" : "")}
       aria-label={isEn ? "Custom matrix" : "自定义矩阵"}
+      {...(edit ? editItemProps(edit.group, edit.index, { kind: "matrix" }) : {})}
     >
+      {edit && renderRemoveBadge(edit.group, edit.index)}
       <div className="matrix-main-picker">
         <div className="matrix-builder-heading">
           <strong>{isEn ? "Matrix" : "矩阵"}</strong>
@@ -1969,11 +2233,78 @@ export function FormulaToolbar({
     </section>
   );
 
+  /** a card's part in edit mode: dragged, moved with Alt+arrows, removed with Delete */
+  const editItemProps = (group: ToolbarGroup, index: number, item: ToolbarItem) => {
+    const count = itemsByGroup.get(group.id)?.length ?? 0;
+    return {
+      "data-drag-index": index,
+      "data-toolbar-item-kind": item.kind,
+      tabIndex: 0,
+      onPointerDown: (event: ReactPointerEvent<HTMLElement>) =>
+        armCardDrag(event, { type: "toolbar", groupId: group.id, index }),
+      onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) =>
+        moveByKeyboard(
+          event,
+          count,
+          index,
+          (toIndex) => layoutStore().moveItem(group.id, index, group.id, toIndex),
+          () => removeToolbarItem(group.id, index),
+          (toIndex) => `[data-drop-kind="group"][data-group-id="${group.id}"] [data-drag-index="${toIndex}"]`,
+        ),
+    };
+  };
+  const renderRemoveBadge = (group: ToolbarGroup, index: number) => (
+    <span
+      role="button"
+      className="toolbar-item-remove"
+      data-toolbar-remove
+      aria-label={isEn ? "Remove" : "移除"}
+      title={isEn ? "Remove" : "移除"}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeToolbarItem(group.id, index);
+      }}
+    >
+      <X size={10} strokeWidth={2.6} />
+    </span>
+  );
+  const renderToolbarItem = (
+    group: ToolbarGroup,
+    item: ToolbarItem,
+    index: number,
+    previewMode: ToolbarPreviewMode,
+  ) => {
+    if (item.kind === "matrix") {
+      return renderMatrixBuilder(previewMode, editing ? { group, index } : undefined);
+    }
+    const command =
+      item.kind === "command" ? resolveToolbarCommand(item.id) : formulaItemCommand(item);
+    if (!command) return null;
+    return renderToolbarCommandButton(command, previewMode, { group, index, item });
+  };
+  const renderAddItemCard = (group: ToolbarGroup) => (
+    <button
+      type="button"
+      key="add-item"
+      className="template-button toolbar-add-item"
+      data-toolbar-add-item={group.id}
+      aria-label={isEn ? "Add" : "添加"}
+      title={isEn ? "Add" : "添加"}
+      onClick={() => setPickerGroupId(group.id)}
+    >
+      <Plus size={16} />
+    </button>
+  );
+
   const renderToolbarCommandButton = (
     command: LatexCommand,
     previewMode: ToolbarPreviewMode = "full",
+    place?: { group: ToolbarGroup; index: number; item: ToolbarItem },
   ) => {
-    const previewLatex = toolbarPreviewLatex(command);
+    const formulaItem = place?.item.kind === "formula" ? place.item : null;
+    const previewLatex = formulaItem ? formulaItem.latex : toolbarPreviewLatex(command);
     const widePreview = wideToolbarCommandIds.has(command.id);
     const enlargedCasesPreview =
       command.id === "cases" || command.id === "cases-three";
@@ -1985,12 +2316,28 @@ export function FormulaToolbar({
           (widePreview ? " is-wide-preview" : "") +
           (enlargedCasesPreview ? " is-enlarged-cases-preview" : "")
         }
-        data-command-id={command.id}
+        style={
+          formulaItem
+            ? {
+                gridColumn: `span ${Math.max(1, Math.min(4, Math.ceil(estimateCustomTileNaturalWidth(formulaItem.latex) / 46)))}`,
+              }
+            : undefined
+        }
+        data-command-id={formulaItem ? `formula:${formulaItem.id}` : command.id}
         data-preview-latex={previewLatex}
-        key={command.id}
-        onClick={() => onInsert(command)}
+        key={formulaItem ? `formula:${formulaItem.id}` : command.id}
+        {...(editing && place ? editItemProps(place.group, place.index, place.item) : {})}
+        onClick={() => {
+          if (!editing) onInsert(command);
+        }}
         onContextMenu={(event) =>
-          openFormulaContextMenu(event, commandHotkeyTarget(command))
+          openFormulaContextMenu(
+            event,
+            formulaItem ? formulaItemHotkeyTarget(formulaItem) : commandHotkeyTarget(command),
+            undefined,
+            undefined,
+            place ? { groupId: place.group.id, index: place.index, item: place.item } : undefined,
+          )
         }
         aria-label={isEn ? command.labelEn : command.labelZh}
         title={
@@ -2005,6 +2352,7 @@ export function FormulaToolbar({
             previewMode === "static" ? "toolbar-static-preview" : ""
           }
           fit
+          showPlaceholders={Boolean(formulaItem)}
           staticLayout={previewMode === "static"}
           maximumFitScale={
             enlargedCasesPreview
@@ -2019,6 +2367,7 @@ export function FormulaToolbar({
               : toolbarPreviewInsetRatio
           }
         />
+        {editing && place && renderRemoveBadge(place.group, place.index)}
       </button>
     );
   };
@@ -2085,65 +2434,257 @@ export function FormulaToolbar({
 
       {activeView === "tools" ? (
         <>
-          <nav className="toolbar-tabs" aria-label={isEn ? "Formula categories" : "公式分类"}>
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                className={
-                  "toolbar-tab " +
-                  (activeCategory === category ? "is-active" : "")
+          <div className={"toolbar-tabs-row" + (editing ? " is-editing" : "")}>
+            <nav
+              className="toolbar-tabs"
+              aria-label={isEn ? "Formula categories" : "公式分类"}
+              {...(editing ? { "data-drop-kind": "tabs" } : {})}
+            >
+              {toolbarGroups.map((group, index) => {
+                const label = groupLabel(group);
+                const active = activeCategory === group.id;
+                if (renamingGroupId === group.id) {
+                  return (
+                    <input
+                      key={group.id}
+                      className="toolbar-tab toolbar-tab-rename is-active"
+                      data-category={group.id}
+                      data-toolbar-tab-rename
+                      style={groupTintStyle(group)}
+                      autoFocus
+                      maxLength={24}
+                      value={renameValue}
+                      aria-label={isEn ? "Group name" : "分组名称"}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onChange={(event) => setRenameValue(event.currentTarget.value)}
+                      onBlur={commitRenameGroup}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") commitRenameGroup();
+                        if (event.key === "Escape") {
+                          event.stopPropagation();
+                          setRenamingGroupId(null);
+                        }
+                      }}
+                    />
+                  );
                 }
-                data-category={category}
-                aria-pressed={activeCategory === category}
-                onClick={() => {
-                  if (layout === "horizontal") {
-                    scrollToToolbarCategory(category, "start");
-                  } else {
-                    setActiveCategory(category);
-                  }
-                }}
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    className={"toolbar-tab " + (active ? "is-active" : "")}
+                    data-category={group.id}
+                    data-group-id={group.id}
+                    style={groupTintStyle(group)}
+                    aria-pressed={active}
+                    {...(editing
+                      ? {
+                          "data-drop-kind": "group-tab",
+                          "data-drag-index": index,
+                          title: isEn ? "Double-click to rename" : "双击重命名",
+                          onPointerDown: (event: ReactPointerEvent<HTMLElement>) =>
+                            armCardDrag(event, { type: "group-tab", groupId: group.id }),
+                          onDoubleClick: () => beginRenameGroup(group),
+                          onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
+                            if (event.key === "F2") {
+                              event.preventDefault();
+                              beginRenameGroup(group);
+                              return;
+                            }
+                            moveByKeyboard(
+                              event,
+                              toolbarGroups.length,
+                              index,
+                              (toIndex) => layoutStore().moveGroup(group.id, toIndex),
+                              null,
+                              (toIndex) => `.toolbar-tabs [data-drag-index="${toIndex}"]`,
+                            );
+                          },
+                        }
+                      : {})}
+                    onClick={() => {
+                      if (layout === "horizontal") {
+                        scrollToToolbarCategory(group.id, "start");
+                      } else {
+                        setActiveCategory(group.id);
+                      }
+                    }}
+                  >
+                    {label}
+                    {editing && (
+                      <span
+                        role="button"
+                        className="toolbar-tab-remove"
+                        data-toolbar-remove
+                        data-toolbar-remove-group={group.id}
+                        aria-label={isEn ? `Remove ${label}` : `移除${label}`}
+                        title={isEn ? "Remove group" : "移除分组"}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          removeGroup(group);
+                        }}
+                      >
+                        <X size={10} strokeWidth={2.6} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {(editing || toolbarGroups.length === 0) && (
+                <button
+                  type="button"
+                  className="toolbar-tab toolbar-tab-add"
+                  data-toolbar-add-group
+                  aria-label={isEn ? "New group" : "新建分组"}
+                  title={isEn ? "New group" : "新建分组"}
+                  onClick={addGroup}
+                >
+                  <Plus size={14} />
+                </button>
+              )}
+            </nav>
+            <div className="toolbar-tabs-actions">
+              {editing && (
+                <button
+                  type="button"
+                  className="toolbar-tabs-action"
+                  data-toolbar-layout-menu-button
+                  aria-label={isEn ? "More" : "更多"}
+                  title={isEn ? "More" : "更多"}
+                  aria-expanded={layoutMenuOpen}
+                  onClick={() => setLayoutMenuOpen((open) => !open)}
+                >
+                  <MoreHorizontal size={15} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={"toolbar-tabs-action" + (editing ? " is-done" : "")}
+                data-toolbar-edit-toggle
+                aria-pressed={editing}
+                aria-label={editing ? (isEn ? "Done" : "完成") : isEn ? "Edit toolbar" : "编辑工具栏"}
+                title={editing ? (isEn ? "Done (Esc)" : "完成 (Esc)") : isEn ? "Edit toolbar" : "编辑工具栏"}
+                onClick={() => setEditing(!editing)}
               >
-                {(isEn ? categoryLabelsEn : categoryLabels)[category]}
+                {editing ? <Check size={15} /> : <SlidersHorizontal size={14} />}
               </button>
-            ))}
-          </nav>
+              {layoutMenuOpen && (
+                <div className="toolbar-layout-menu formula-tile-context-menu" role="menu">
+                  {removedBuiltInGroups.length > 0 && (
+                    <>
+                      <div className="toolbar-layout-menu-label">{isEn ? "Restore group" : "恢复分组"}</div>
+                      {removedBuiltInGroups.map((id: BuiltInGroupId) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="menuitem"
+                          className="formula-hotkey-context-action"
+                          data-toolbar-restore-group={id}
+                          onClick={() => {
+                            layoutStore().restoreGroup(id);
+                            setActiveCategory(id);
+                            setLayoutMenuOpen(false);
+                          }}
+                        >
+                          <Plus size={14} />
+                          {(isEn ? categoryLabelsEn : categoryLabels)[id]}
+                        </button>
+                      ))}
+                      <div className="formula-hotkey-context-divider" />
+                    </>
+                  )}
+                  {activeGroup?.builtIn && activeGroup.items && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="formula-hotkey-context-action"
+                      data-toolbar-reset-group
+                      onClick={() => {
+                        layoutStore().resetGroupItems(activeGroup.id);
+                        setLayoutMenuOpen(false);
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      {isEn ? `Reset “${groupLabel(activeGroup)}”` : `重置「${groupLabel(activeGroup)}」`}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="formula-hotkey-context-action"
+                    data-toolbar-reset-all
+                    onClick={() => {
+                      layoutStore().resetAll();
+                      setLayoutMenuOpen(false);
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    {isEn ? "Restore defaults" : "恢复默认"}
+                  </button>
+                  {toolbarGroups.length > 0 && <button
+                    type="button"
+                    role="menuitem"
+                    className="formula-hotkey-context-action is-danger"
+                    data-toolbar-clear-all
+                    onClick={() => {
+                      layoutStore().clearAll();
+                      setLayoutMenuOpen(false);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    {isEn ? "Start from blank" : "从空白开始"}
+                  </button>}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div
             className={
               "template-strip" +
-              (layout === "horizontal" ? " is-continuous-categories" : "")
+              (layout === "horizontal" ? " is-continuous-categories" : "") +
+              (editing ? " is-toolbar-editing" : "")
             }
             data-active-category={activeCategory}
+            style={layout !== "horizontal" && activeGroup ? groupTintStyle(activeGroup) : undefined}
+            {...(editing && layout !== "horizontal" && activeGroup
+              ? { "data-drop-kind": "group", "data-group-id": activeGroup.id }
+              : {})}
             aria-label={isEn ? "Formula templates" : "公式模板"}
           >
             {layout === "horizontal" ? (
-              categories.map((category) => {
-                const previewMode = toolbarPreviewModeForCategory(category);
+              toolbarGroups.map((group) => {
+                const previewMode = toolbarPreviewModeForCategory(group.id);
                 return (
                   <section
-                    key={category}
+                    key={group.id}
                     className="toolbar-category-section"
-                    data-toolbar-category-section={category}
+                    data-toolbar-category-section={group.id}
                     data-preview-mode={previewMode}
-                    aria-label={(isEn ? categoryLabelsEn : categoryLabels)[category]}
+                    style={groupTintStyle(group)}
+                    {...(editing
+                      ? { "data-drop-kind": "group", "data-group-id": group.id, "data-drop-flow": "column" }
+                      : {})}
+                    aria-label={groupLabel(group)}
                   >
-                    {category === "matrix" && renderMatrixBuilder(previewMode)}
-                    {toolbarCommandsByCategory[category].map((command) =>
-                      renderToolbarCommandButton(command, previewMode),
+                    {(itemsByGroup.get(group.id) ?? []).map((item, index) =>
+                      renderToolbarItem(group, item, index, previewMode),
                     )}
+                    {editing && renderAddItemCard(group)}
                   </section>
                 );
               })
-            ) : (
+            ) : activeGroup ? (
               <>
-                {activeCategory === "matrix" && renderMatrixBuilder("full")}
-                {visibleCommands.map((command) =>
-                  renderToolbarCommandButton(command, "full"),
+                {(itemsByGroup.get(activeGroup.id) ?? []).map((item, index) =>
+                  renderToolbarItem(activeGroup, item, index, "full"),
                 )}
+                {editing && renderAddItemCard(activeGroup)}
               </>
-            )}
-      </div>
+            ) : null}
+          </div>
         </>
       ) : (
         <section
@@ -2177,6 +2718,20 @@ export function FormulaToolbar({
               }}
             >
               {isEn ? "Common" : "常用"}
+            </button>
+            <button
+              type="button"
+              className={"formula-tile-edit-toggle" + (editing ? " is-done" : "")}
+              data-toolbar-edit-toggle
+              aria-pressed={editing}
+              aria-label={editing ? (isEn ? "Done" : "完成") : isEn ? "Edit tiles" : "编辑磁贴"}
+              title={editing ? (isEn ? "Done (Esc)" : "完成 (Esc)") : isEn ? "Edit tiles" : "编辑磁贴"}
+              onClick={() => {
+                setContextMenu(null);
+                setEditing(!editing);
+              }}
+            >
+              {editing ? <Check size={15} /> : <SlidersHorizontal size={14} />}
             </button>
             {onCollapseTiles && (
               <button
@@ -2294,15 +2849,44 @@ export function FormulaToolbar({
           )}
 
           {activeTileCategory === "common" ? (
-            <div className="formula-tile-list is-common">
-              {visibleFormulaTiles.map((tile) => (
-                <div className="formula-tile-item" key={tile.id}>
+            <div
+              className={"formula-tile-list is-common" + (editing ? " is-toolbar-editing" : "")}
+              {...(editing ? { "data-drop-kind": "common-tiles" } : {})}
+            >
+              {visibleFormulaTiles.map((tile, tileIndex) => (
+                <div
+                  className="formula-tile-item"
+                  key={tile.id}
+                  {...(editing
+                    ? {
+                        "data-drag-index": tileIndex,
+                        onPointerDown: (event: ReactPointerEvent<HTMLElement>) =>
+                          armCardDrag(event, { type: "common-tile", index: tileIndex, tileId: tile.id }),
+                      }
+                    : {})}
+                >
                   <button
                     type="button"
                     className="formula-tile-button"
                     data-formula-tile-id={tile.id}
                     data-formula-tile-latex={tile.latex}
-                    onClick={() => insertFormulaTile(tile)}
+                    onClick={() => {
+                      if (!editing) insertFormulaTile(tile);
+                    }}
+                    onKeyDown={(event) =>
+                      moveByKeyboard(
+                        event,
+                        visibleFormulaTiles.length,
+                        tileIndex,
+                        (toIndex) =>
+                          dragHandlers.drop(
+                            { type: "common-tile", index: tileIndex, tileId: tile.id },
+                            { type: "common-tiles", index: toIndex },
+                          ),
+                        () => removeCommonFormulaTile(tile.id),
+                        (toIndex) => `[data-drop-kind="common-tiles"] [data-drag-index="${toIndex}"] .formula-tile-button`,
+                      )
+                    }
                     onContextMenu={(event) =>
                       openFormulaContextMenu(
                         event,
@@ -2329,6 +2913,7 @@ export function FormulaToolbar({
                     type="button"
                     className="formula-tile-remove"
                     data-formula-tile-remove={tile.id}
+                    data-toolbar-remove
                     aria-label={
                       isEn
                         ? `Remove ${tile.labelEn} from Common`
@@ -2559,6 +3144,9 @@ export function FormulaToolbar({
                       <div
                         className="custom-formula-tile-grid"
                         data-custom-tile-grid-section={section.id}
+                        {...(editing
+                          ? { "data-drop-kind": "custom-section", "data-section-id": section.id }
+                          : {})}
                       >
                         {sectionTiles.length === 0 && (
                           <button
@@ -2582,6 +3170,7 @@ export function FormulaToolbar({
                           >
                             {row.items.map((item) => {
                               const tile = item.tile;
+                              const tileIndex = sectionTiles.indexOf(tile);
                               const tileStyle = {
                                 flex: row.fill
                                   ? `${item.weight} 1 0px`
@@ -2604,7 +3193,34 @@ export function FormulaToolbar({
                                   data-formula-tile-latex={tile.latex}
                                   data-custom-tile-weight={item.weight}
                                   data-custom-tile-min-width={item.minimumWidth}
-                                  onClick={() => insertFormulaTile(tile)}
+                                  {...(editing
+                                    ? {
+                                        "data-drag-index": tileIndex,
+                                        onPointerDown: (event: ReactPointerEvent<HTMLElement>) =>
+                                          armCardDrag(event, { type: "custom-tile", tileId: tile.id }),
+                                        onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) =>
+                                          moveByKeyboard(
+                                            event,
+                                            sectionTiles.length,
+                                            tileIndex,
+                                            (toIndex) =>
+                                              dragHandlers.drop(
+                                                { type: "custom-tile", tileId: tile.id },
+                                                { type: "custom-section", sectionId: section.id, index: toIndex },
+                                              ),
+                                            () =>
+                                              deleteCustomFormulaTile(
+                                                tile.id,
+                                                formulaHotkeyTargetIdForTile("custom-tile", tile.id, tile.latex),
+                                              ),
+                                            (toIndex) =>
+                                              `[data-section-id="${section.id}"] [data-drag-index="${toIndex}"]`,
+                                          ),
+                                      }
+                                    : {})}
+                                  onClick={() => {
+                                    if (!editing) insertFormulaTile(tile);
+                                  }}
                                   onContextMenu={(event) =>
                                     openFormulaContextMenu(
                                       event,
@@ -2634,6 +3250,26 @@ export function FormulaToolbar({
                                       recordCustomTileNaturalWidth(tile.id, width)
                                     }
                                   />
+                                  {editing && (
+                                    <span
+                                      role="button"
+                                      className="toolbar-item-remove"
+                                      data-toolbar-remove
+                                      aria-label={isEn ? "Delete tile" : "删除磁贴"}
+                                      title={isEn ? "Delete tile" : "删除磁贴"}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        deleteCustomFormulaTile(
+                                          tile.id,
+                                          formulaHotkeyTargetIdForTile("custom-tile", tile.id, tile.latex),
+                                        );
+                                      }}
+                                    >
+                                      <X size={10} strokeWidth={2.6} />
+                                    </span>
+                                  )}
                                 </button>
                               );
                             })}
@@ -2651,6 +3287,7 @@ export function FormulaToolbar({
 
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="formula-tile-context-menu formula-hotkey-context-menu"
           role="menu"
           aria-label={isEn ? "Formula item actions" : "公式项目操作"}
@@ -2668,21 +3305,90 @@ export function FormulaToolbar({
                   : "未设置快捷键"}
             </span>
           </div>
-          {contextMenu.target.kind === "command" &&
-            !commonToolbarCommandIds.includes(contextMenu.target.command.id) && (
+          {contextMenuItem(contextMenu) && toolbarGroups.length > 0 && (
+            <>
               <button
                 type="button"
                 role="menuitem"
-                className="formula-hotkey-context-action"
-                data-add-to-common-command={contextMenu.target.command.id}
-                onClick={() =>
-                  addCommandToCommon(contextMenu.target.command.id)
+                className="formula-hotkey-context-action has-submenu"
+                data-add-to-group-menu
+                aria-expanded={Boolean(addToGroupOpen)}
+                onPointerEnter={(event) => {
+                  if (!addToGroupOpen) setAddToGroupOpen(addToGroupPlace(event.currentTarget));
+                }}
+                onClick={(event) =>
+                  setAddToGroupOpen(addToGroupOpen ? null : addToGroupPlace(event.currentTarget))
                 }
               >
-                <Star size={14} />
-                {isEn ? "Add to Common" : "设为常用"}
+                <FolderPlus size={14} />
+                {isEn ? "Add to group" : "添加到分组"}
+                <ChevronRight size={13} className="formula-hotkey-context-chevron" />
               </button>
-            )}
+              {addToGroupOpen && createPortal(
+                <div className="formula-hotkey-context-submenu formula-tile-context-menu" role="group" style={addToGroupOpen}>
+                  {toolbarGroups.map((group) => {
+                    const item = contextMenuItem(contextMenu) as ToolbarItem;
+                    const has = (itemsByGroup.get(group.id) ?? []).some((candidate) =>
+                      sameToolbarItem(candidate, item),
+                    );
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        role="menuitemcheckbox"
+                        aria-checked={has}
+                        className="formula-hotkey-context-action"
+                        data-add-to-group={group.id}
+                        {...(group.id === "common" && item.kind === "command"
+                          ? { "data-add-to-common-command": item.id }
+                          : {})}
+                        disabled={has}
+                        onClick={() => {
+                          layoutStore().insertItem(group.id, END_INDEX, item);
+                          setContextMenu(null);
+                        }}
+                      >
+                        <span className="formula-hotkey-context-check">{has && <Check size={13} />}</span>
+                        {groupLabel(group)}
+                      </button>
+                    );
+                  })}
+                </div>,
+                document.body,
+              )}
+            </>
+          )}
+          {contextMenu.toolbarItem && (
+            <button
+              type="button"
+              role="menuitem"
+              className="formula-hotkey-context-action"
+              data-remove-from-group={contextMenu.toolbarItem.groupId}
+              onClick={() => {
+                const place = contextMenu.toolbarItem;
+                if (place) removeToolbarItem(place.groupId, place.index);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 size={14} />
+              {isEn ? "Remove from group" : "从分组中移除"}
+            </button>
+          )}
+          {!editing && (
+            <button
+              type="button"
+              role="menuitem"
+              className="formula-hotkey-context-action"
+              data-edit-toolbar
+              onClick={() => {
+                setEditing(true);
+                setContextMenu(null);
+              }}
+            >
+              <SlidersHorizontal size={14} />
+              {isEn ? "Edit toolbar" : "编辑工具栏"}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -2828,6 +3534,24 @@ export function FormulaToolbar({
         </div>
       )}
 
+      <ToolbarItemPickerDialog
+        open={pickerGroupId !== null}
+        language={language}
+        groupName={(() => {
+          const group = toolbarGroups.find((candidate) => candidate.id === pickerGroupId);
+          return group ? groupLabel(group) : "";
+        })()}
+        has={(item) =>
+          (itemsByGroup.get(pickerGroupId ?? "") ?? []).some((candidate) =>
+            sameToolbarItem(candidate, item),
+          )
+        }
+        onToggle={(item) => {
+          if (pickerGroupId) toggleItemInGroup(pickerGroupId, item);
+        }}
+        currentLatex={activeLineLatex}
+        onClose={() => setPickerGroupId(null)}
+      />
       <FormulaTileLibraryDialog
         open={tileLibraryOpen}
         language={language}
