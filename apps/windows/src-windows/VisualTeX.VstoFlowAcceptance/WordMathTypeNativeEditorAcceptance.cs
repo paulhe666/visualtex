@@ -19,7 +19,7 @@ internal static partial class Program
             Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..", "..", "..", "..", "..", "..", "..", "..",
-                "docs", "remediation-3d207d7", "evidence", "mt-create-current-modern",
+                "apps", "windows", "test-fixtures", "mathtype-create",
                 "VisualTeX-MathType-Create-Inline.docx")),
             Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,

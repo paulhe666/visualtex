@@ -1,8 +1,0 @@
-{
-  "before": "stage04a-multiline-source",
-  "after": "stage04a-multiline-recovered",
-  "fullComEqual": true,
-  "differences": [],
-  "runtimeVerification": "body=True mathFont=True metadata=True variables=True",
-  "ownedUndoEntries": 79
-}

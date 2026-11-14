@@ -93,11 +93,11 @@ public sealed partial class NativeRenderLiveTests
         var request = new NativeRenderRequest();
         foreach (int number in new[] { 1, 15, 27, 219 })
             request.Items.Add(new NativeRenderInput { Id = "source-" + number,
-                Mtef = File.ReadAllBytes(Path.Combine(repo, "docs", "remediation-3d207d7", "evidence",
-                    "mtef-redraw-20260923", "native-core", "formula-" + number + ".mtef")) });
+                Mtef = File.ReadAllBytes(Path.Combine(repo, "apps", "windows", "test-fixtures",
+                    "mtef-redraw", "formula-" + number + ".mtef")) });
         request.Items.Add(new NativeRenderInput { Id = "nuclear",
-            Mtef = File.ReadAllBytes(Path.Combine(repo, "docs", "remediation-3d207d7", "evidence",
-                "nuclear-prescript-native-r3-20260926", "formula-1.mtef")) });
+            Mtef = File.ReadAllBytes(Path.Combine(repo, "apps", "windows", "test-fixtures",
+                "mtef-redraw", "nuclear-prescript-formula-1.mtef")) });
         return request;
     }
 
