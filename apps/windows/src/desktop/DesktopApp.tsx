@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, CheckCircle2, LoaderCircle } from "lucide-react";
-import DesktopShell from "../App";
+import DesktopShell from "../../../shared/visualtex-app/src/App";
 import {
   isSilentOcrHudPayload,
   type SilentOcrHudPayload,

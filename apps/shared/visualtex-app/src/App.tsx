@@ -1,8 +1,7 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { useDocumentModeStore } from "../../shared/visualtex-app/src/stores/documentModeStore";
-import { DocumentHistoryButtons } from "../../shared/visualtex-app/src/document/DocumentControls";
-import { useDocumentLibraryStore } from "../../shared/visualtex-app/src/document/documentLibraryApi";
-import { installMcpRenderBridge } from "./office/shared/mcpRenderBridge";
+import { useDocumentModeStore } from "./stores/documentModeStore";
+import { DocumentHistoryButtons } from "./document/DocumentControls";
+import { useDocumentLibraryStore } from "./document/documentLibraryApi";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
@@ -12,15 +11,15 @@ import {
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
-} from "../../shared/visualtex-app/src/document/documentEvents";
-import { useCustomSymbolDesignerStore } from "../../shared/visualtex-app/src/stores/customSymbolDesignerStore";
+} from "./document/documentEvents";
+import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
 
 // The custom symbol designer, loaded the first time it is opened.
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
-  const module = await import("../../shared/visualtex-app/src/components/CustomSymbolDesignerDialog");
+  const module = await import("./components/CustomSymbolDesignerDialog");
   return { default: module.CustomSymbolDesignerDialog };
 });
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BookOpenText,
@@ -49,53 +48,37 @@ import {
 import {
   type MathEditorHandle,
   type MathEditorInsertionTarget,
-} from "../../shared/visualtex-app/src/editor/MathEditor";
-import { SettingsDialog } from "../../shared/visualtex-app/src/components/SettingsDialog";
-import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
-import { HelpManualDialog } from "../../shared/visualtex-app/src/components/HelpManualDialog";
-import { OcrDialog } from "../../shared/visualtex-app/src/components/OcrDialog";
-import { ExportDialog } from "../../shared/visualtex-app/src/components/ExportDialog";
-import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
-import {
-  decodeMacOfflineOfficeStatus,
-  isMacOfficeStatusUnavailable,
-  type MacOfflineOfficeStatus,
-} from "./components/macOfficeStatusValidation";
-import {
-  MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
-  MAC_OFFICE_FIRST_RUN_STORAGE_KEY,
-  macOfficeAutoInstallErrorText,
-  MAC_POWERPOINT_REGISTRATION_RETRIES,
-  MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
-  macPowerPointRegistrationNeeded,
-  resolveMacOfficeAutoInstall,
-  resolveMacOfficeOnboarding,
-} from "./components/macOfficeOnboarding";
-import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
-import { EditorWorkspace } from "../../shared/visualtex-app/src/workspace/EditorWorkspace";
+} from "./editor/MathEditor";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { HistoryPanel } from "./components/HistoryPanel";
+import { HelpManualDialog } from "./components/HelpManualDialog";
+import { OcrDialog } from "./components/OcrDialog";
+import { ExportDialog } from "./components/ExportDialog";
+import { UpdateDialog } from "./components/UpdateDialog";
+import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
   joinFormulaLines,
   useEditorStore,
-} from "../../shared/visualtex-app/src/stores/editorStore";
-import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../shared/visualtex-app/src/history/EditorSession";
+} from "./stores/editorStore";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "./history/EditorSession";
 import {
   createBlankDocumentSnapshot,
   reconcileFormulaLines,
-} from "../../shared/visualtex-app/src/history/documentHistory";
+} from "./history/documentHistory";
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
-} from "../../shared/visualtex-app/src/history/historyTypes";
-import { copyFormulaLinesUniversal } from "../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex";
+} from "./history/historyTypes";
+import { copyFormulaLinesUniversal } from "./clipboard/LatexCopyService";
+import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type {
   FormulaDocument,
   LatexFormatProfile,
-} from "../../shared/visualtex-app/src/types/formula";
-import { applyDocumentTheme, publishSynchronizedTheme } from "../../shared/visualtex-app/src/themeSync";
-import { copyFormulaDocumentPngToClipboard } from "../../shared/visualtex-app/src/export/pngClipboard";
-import { formulaExportErrorMessage } from "../../shared/visualtex-app/src/math/latexCompatibility";
+} from "./types/formula";
+import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
+import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
+import { formulaExportErrorMessage } from "./math/latexCompatibility";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,
@@ -116,31 +99,32 @@ import {
   warmupOcrModel,
   type OcrModelName,
   type OcrProviderId,
-} from "../../shared/visualtex-app/src/ocr/ocrService";
+} from "./ocr/ocrService";
 import {
   checkForUpdates,
   openReleasePage,
   PROJECT_URL,
   type UpdateCheckResult,
-} from "../../shared/visualtex-app/src/update/updateService";
-import { readLocalStorage, writeLocalStorage } from "../../shared/visualtex-app/src/runtime/safeStorage";
-import { childrenFitRow, trackPriorityCollapse } from "../../shared/visualtex-app/src/runtime/priorityCollapse";
-import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
-import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
-import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../../shared/visualtex-app/src/stores/anywhereHotkeyStore";
+} from "./update/updateService";
+import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
+import { onPlatform } from "./runtime/platformConventions";
+// each system's part in the Office integration (add-in setup and hotkeys on macOS, preferences for the add-ins on Windows)
+import { AppOfficeIntegration } from "@platform/AppOfficeIntegration";
+import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
   normalizeQuickOcrCaptureMode,
   quickOcrCaptureToFile,
   restoreQuickOcrWindow,
-  waitForQuickOcrSystemScreenshot,
+  QUICK_OCR_CAPTURE_MODES,
   QUICK_OCR_CAPTURE_MODE_STORAGE_KEY,
   SILENT_OCR_SHORTCUT,
   SILENT_OCR_STORAGE_KEY,
   type QuickOcrCaptureMode,
 } from "@platform/quickOcr";
-import { installButtonShortcuts, onButtonShortcut } from "../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
+import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -153,11 +137,6 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
-const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
-const MAC_OFFICE_QUIT_POLL_MS = 5_000;
-const MAC_POWERPOINT_REGISTRATION_DELAY_MS = 8_000;
-const MAC_POWERPOINT_REGISTRATION_ATTEMPTS = 3;
 const APP_HEADER_COLLAPSE_LEVELS = 8;
 
 function documentContentKey() {
@@ -169,8 +148,6 @@ function documentContentKey() {
 }
 
 function App() {
-  // draws formulas for AI agents (render_latex)
-  useEffect(() => installMcpRenderBridge(), []);
   const editorRef = useRef<MathEditorHandle>(null);
   const historyManager = useHistoryManager();
   const { openDocumentWithHistory,
@@ -198,17 +175,9 @@ function App() {
   const [updateError, setUpdateError] = useState("");
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
-  const [macOfficeFirstRunOpen, setMacOfficeFirstRunOpen] = useState(false);
-  const [macOfficePromptMode, setMacOfficePromptMode] = useState<
-    "setup" | "update" | "repair"
-  >("setup");
-  const [powerpointRegistrationRequired, setPowerpointRegistrationRequired] =
-    useState(false);
-  const [macOfficePromptError, setMacOfficePromptError] = useState("");
   const [toast, setToast] = useState("");
-  const officeHotkeyBindings = useOfficeHotkeyStore(
-    (state) => state.bindings,
-  );
+  // a dialog of the platform's Office integration is open (it holds the keyboard and the update check)
+  const [platformModalOpen, setPlatformModalOpen] = useState(false);
   const [savedPulse, setSavedPulse] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
     useState<HTMLDivElement | null>(null);
@@ -229,7 +198,7 @@ function App() {
   const [silentOcrShortcut, setSilentOcrShortcut] = useState(SILENT_OCR_SHORTCUT);
   const [quickOcrCaptureMode, setQuickOcrCaptureMode] = useState<QuickOcrCaptureMode>(() => {
     const stored = readLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY);
-    return normalizeQuickOcrCaptureMode(stored) ?? "immediate";
+    return normalizeQuickOcrCaptureMode(stored) ?? QUICK_OCR_CAPTURE_MODES[0].id;
   });
   const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
@@ -239,7 +208,6 @@ function App() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
-  const macOfficeInstallStatusCheckedRef = useRef(false);
   const initialEditorFocusDoneRef = useRef(false);
   const pngClipboardBusyRef = useRef(false);
 
@@ -306,6 +274,7 @@ function App() {
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
 
   const replaceDocumentWithHistory = (after: DocumentSnapshot, source: ReplaceDocumentEntry["source"]) => {
+    // new, opened and history documents own the source buffer even if it kept focus or an unfinished draft
     if (source !== "source-apply") setSourceDocumentRevision(revision => revision + 1);
     return replaceDocumentTransaction(after, source);
   };
@@ -324,224 +293,6 @@ function App() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
-
-  useEffect(() => {
-    if (
-      !isTauriEnvironment() ||
-      macOfficeInstallStatusCheckedRef.current
-    ) {
-      return;
-    }
-    macOfficeInstallStatusCheckedRef.current = true;
-    let cancelled = false;
-    let retryTimer: number | undefined;
-    let attempt = 0;
-
-    let waitTimer: number | undefined;
-    const english = () => useEditorStore.getState().language === "en";
-
-    const showPrompt = (status: MacOfflineOfficeStatus, error = "") => {
-      setMacOfficePromptError(error);
-      const prompt = resolveMacOfficeOnboarding(
-        status,
-        readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
-      );
-      setPowerpointRegistrationRequired(
-        prompt?.powerpointRegistrationRequired ?? false,
-      );
-      if (prompt) setMacOfficePromptMode(prompt.mode);
-      setMacOfficeFirstRunOpen(prompt !== null);
-    };
-
-    // New and updated add-ins are installed without a prompt. The prompt
-    // only appears when the install fails, so the user can see why and retry.
-    const installAutomatically = async (status: MacOfflineOfficeStatus) => {
-      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
-      try {
-        decodeMacOfflineOfficeStatus(
-          await invoke<unknown>("install_macos_offline_office_addins"),
-        );
-        if (cancelled) return;
-        writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
-        setToast(
-          updating
-            ? english()
-              ? "Office add-ins updated"
-              : "Office 插件已更新"
-            : english()
-              ? "Word and PowerPoint add-ins installed"
-              : "已安装 Word 与 PowerPoint 插件",
-        );
-      } catch (reason) {
-        if (!cancelled) showPrompt(status, macOfficeAutoInstallErrorText(reason, english()));
-      }
-    };
-
-    // VBA that Office has loaded cannot be replaced; update once both quit.
-    const installAfterOfficeQuits = (status: MacOfflineOfficeStatus) => {
-      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
-      setToast(
-        english()
-          ? updating
-            ? "Office add-ins will be updated after Word and PowerPoint quit"
-            : "Office add-ins will be installed after Word and PowerPoint quit"
-          : updating
-            ? "Word 和 PowerPoint 退出后更新 Office 插件"
-            : "Word 和 PowerPoint 退出后安装 Office 插件",
-      );
-      const poll = () => {
-        void invoke<{ word: boolean; powerpoint: boolean }>("get_macos_office_hosts_running")
-          .then(async (hosts) => {
-            if (cancelled) return;
-            if (hosts.word || hosts.powerpoint) {
-              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
-              return;
-            }
-            const current = decodeMacOfflineOfficeStatus(
-              await invoke<unknown>("get_macos_offline_office_install_status"),
-            );
-            if (cancelled) return;
-            const next = resolveMacOfficeAutoInstall(
-              current,
-              readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
-            );
-            if (next === "install") void installAutomatically(current);
-            else if (next === "wait-for-office") {
-              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
-            }
-          })
-          .catch(() => {
-            if (!cancelled) waitTimer = window.setTimeout(poll, MAC_OFFICE_STATUS_RETRY_MS);
-          });
-      };
-      waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
-    };
-
-    const check = () => {
-      attempt += 1;
-      void invoke<unknown>("get_macos_offline_office_install_status")
-        .then(decodeMacOfflineOfficeStatus)
-        .then((status) => {
-          if (cancelled || !status.compiledArtifactsAvailable) return;
-
-          const automatic = resolveMacOfficeAutoInstall(
-            status,
-            readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
-          );
-          if (automatic === "install") {
-            void installAutomatically(status);
-          } else if (automatic === "wait-for-office") {
-            installAfterOfficeQuits(status);
-          } else {
-            showPrompt(status);
-          }
-        })
-        .catch((reason) => {
-          if (cancelled) return;
-          // An unfinished check (macOS privacy prompt, Office still holding its
-          // containers) is not evidence of missing files: retry quietly instead
-          // of opening a false repair prompt.
-          if (isMacOfficeStatusUnavailable(reason)) {
-            if (attempt < MAC_OFFICE_STATUS_CHECK_ATTEMPTS) {
-              retryTimer = window.setTimeout(check, MAC_OFFICE_STATUS_RETRY_MS);
-            }
-            return;
-          }
-          setPowerpointRegistrationRequired(false);
-          setMacOfficePromptMode("repair");
-          setMacOfficeFirstRunOpen(true);
-        });
-    };
-    check();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      if (waitTimer !== undefined) window.clearTimeout(waitTimer);
-    };
-  }, []);
-
-  // PowerPoint has no Startup folder: the first time it is open with the
-  // current PPAM installed but not loaded, VisualTeX registers the PPAM through
-  // PowerPoint's own scripting command. Once per PowerPoint session; PowerPoint
-  // is never launched for it.
-  useEffect(() => {
-    if (!isTauriEnvironment()) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    let runningSince: number | null = null;
-    let attempts = 0;
-    const english = () => useEditorStore.getState().language === "en";
-
-    const poll = async () => {
-      try {
-        if (readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true") return;
-        const hosts = await invoke<{ word: boolean; powerpoint: boolean }>(
-          "get_macos_office_hosts_running",
-        );
-        if (!hosts.powerpoint) {
-          runningSince = null;
-          attempts = 0;
-          return;
-        }
-        runningSince ??= Date.now();
-        // Let PowerPoint load its registered add-ins first.
-        if (attempts >= MAC_POWERPOINT_REGISTRATION_ATTEMPTS ||
-            Date.now() - runningSince < MAC_POWERPOINT_REGISTRATION_DELAY_MS) return;
-        attempts += 1;
-        const status = decodeMacOfflineOfficeStatus(
-          await invoke<unknown>("get_macos_offline_office_install_status"),
-        );
-        const registration = readLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY) ?? "";
-        if (!macPowerPointRegistrationNeeded(status)) {
-          if (status.powerpoint.loaded && registration.startsWith("pending")) {
-            writeLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY, "confirmed");
-          }
-          attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
-          return;
-        }
-        // pending:N counts the PowerPoint sessions in which VisualTeX's own
-        // registration has been retried.
-        const retries = registration.startsWith("pending")
-          ? Number(registration.split(":")[1] ?? "0") || 0
-          : 0;
-        const retry = registration.startsWith("pending") &&
-          retries < MAC_POWERPOINT_REGISTRATION_RETRIES;
-        const result = await invoke<{ outcome: string; disabledCopies: string[] }>(
-          "register_macos_powerpoint_addin",
-          { retry },
-        );
-        if (cancelled) return;
-        if (result.outcome !== "notRunning") attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
-        if (result.outcome === "registered" || result.outcome === "pending") {
-          writeLocalStorage(
-            MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
-            `pending:${retry ? retries + 1 : retries}`,
-          );
-        }
-        if (result.outcome === "registered") {
-          setToast(english() ? "VisualTeX was added to PowerPoint" : "已将 VisualTeX 加入 PowerPoint");
-        } else if (result.outcome === "pending") {
-          setToast(
-            english()
-              ? "Enable macros for the VisualTeX add-in in PowerPoint"
-              : "请在 PowerPoint 中启用 VisualTeX 加载项的宏",
-          );
-        }
-      } catch {
-        // Status unavailable or registration refused: retry a few times in this
-        // PowerPoint session; Settings keeps the manual steps.
-      } finally {
-        if (!cancelled) timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
-      }
-    };
-    timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, []);
-
 
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
@@ -611,42 +362,21 @@ function App() {
   }, [toast]);
 
   // The formula input method's system-wide shortcuts (Settings > Keyboard
-  // shortcuts); macOS keeps the last ones registered across restarts.
+  // shortcuts), registered with the system at start and whenever they change.
   const anywhereToggleChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-toggle"]);
   const anywhereDisplayChord = useAnywhereHotkeyStore((state) => state.bindings["anywhere-open-display"]);
   useEffect(() => {
-    if (!isTauri() || !anywhereToggleChord) return;
+    if (!isTauriEnvironment() || !anywhereToggleChord) return;
     void configureAnywhereGlobalHotkey("anywhere-toggle", anywhereToggleChord).catch((error) => {
       setToast(error instanceof Error ? error.message : String(error));
     });
   }, [anywhereToggleChord]);
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauriEnvironment()) return;
     void configureAnywhereGlobalHotkey("anywhere-open-display", anywhereDisplayChord).catch((error) => {
       setToast(error instanceof Error ? error.message : String(error));
     });
   }, [anywhereDisplayChord]);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    void configureOfficeHotkeys(officeHotkeyBindings).catch((error) => {
-      if (cancelled) return;
-      setToast(
-        error instanceof Error
-          ? error.message
-          : String(
-              error ||
-                (isEn
-                  ? "Unable to register Office hotkeys"
-                  : "无法注册 Office 快捷键"),
-            ),
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [officeHotkeyBindings, isEn]);
 
   useEffect(() => {
     if (!isTauriEnvironment()) {
@@ -1030,35 +760,21 @@ function App() {
 
     setQuickOcrCaptureBusy(true);
     try {
-      const waitingForSystemScreenshot =
-        quickOcrCaptureMode === "system-screenshot";
-      setToast(
-        waitingForSystemScreenshot
-          ? isEn
-            ? "Take a screenshot within 60 seconds"
-            : "请在 60 秒内截图"
-          : isEn
-            ? "Select the formula"
-            : "框选公式",
-      );
+      const captureMode =
+        QUICK_OCR_CAPTURE_MODES.find((item) => item.id === quickOcrCaptureMode) ??
+        QUICK_OCR_CAPTURE_MODES[0];
+      setToast(captureMode.waiting[isEn ? 1 : 0]);
       let capture: Awaited<ReturnType<typeof captureQuickOcrScreenshot>> = null;
       try {
-        capture = waitingForSystemScreenshot
-          ? await waitForQuickOcrSystemScreenshot()
-          : await captureQuickOcrScreenshot("immediate");
+        capture = await captureQuickOcrScreenshot(captureMode.id);
       } finally {
+        // Quick OCR is an interactive main-app workflow: after the screenshot
+        // is committed, return to the editor before recognition/insertion so
+        // the user sees the progress and the recognized formula immediately.
         await restoreQuickOcrWindow();
       }
       if (!capture) {
-        setToast(
-          waitingForSystemScreenshot
-            ? isEn
-              ? "No screenshot within 60 seconds"
-              : "60 秒内未收到系统截图"
-            : isEn
-              ? "Screenshot cancelled"
-              : "已取消截图",
-        );
+        setToast(captureMode.missed[isEn ? 1 : 0]);
         return;
       }
       await handleEditorImagePaste(
@@ -1082,13 +798,7 @@ function App() {
     setQuickOcrCaptureMode(mode);
     writeLocalStorage(QUICK_OCR_CAPTURE_MODE_STORAGE_KEY, mode);
     setToast(
-      mode === "system-screenshot"
-        ? isEn
-          ? "Quick OCR: wait for a screenshot"
-          : "快捷 OCR：等待系统截图"
-        : isEn
-          ? "Quick OCR: select at once"
-          : "快捷 OCR：立即框选",
+      (QUICK_OCR_CAPTURE_MODES.find((item) => item.id === mode) ?? QUICK_OCR_CAPTURE_MODES[0]).changed[isEn ? 1 : 0],
     );
   };
 
@@ -1336,24 +1046,6 @@ function App() {
     action();
   };
 
-  const finishMacOfficeFirstRun = useCallback((installed: boolean) => {
-    writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
-    setMacOfficeFirstRunOpen(false);
-    setToast(
-      installed
-        ? macOfficePromptMode === "update"
-          ? isEn
-            ? "Office add-ins updated"
-            : "Office 插件已更新"
-          : isEn
-            ? "Office add-ins are ready"
-            : "Office 插件已就绪"
-        : isEn
-          ? "Office add-ins not installed"
-          : "未安装 Office 插件",
-    );
-  }, [isEn, macOfficePromptMode]);
-
   const runUpdateCheck = useCallback(async (manual = true) => {
     if (manual) {
       setAutomaticUpdatePrompt(false);
@@ -1390,7 +1082,7 @@ function App() {
   useEffect(() => {
     if (
       !checkUpdatesOnStartup ||
-      macOfficeFirstRunOpen ||
+      platformModalOpen ||
       automaticUpdateCheckRef.current
     ) {
       return;
@@ -1415,7 +1107,7 @@ function App() {
       window.clearTimeout(timer);
       window.removeEventListener("online", runWhenOnline);
     };
-  }, [checkUpdatesOnStartup, macOfficeFirstRunOpen, runUpdateCheck]);
+  }, [checkUpdatesOnStartup, platformModalOpen, runUpdateCheck]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -1430,7 +1122,7 @@ function App() {
         ocrOpen ||
         historyOpen ||
         exportOpen ||
-        macOfficeFirstRunOpen ||
+        platformModalOpen ||
         updateOpen
       ) {
         return;
@@ -1477,7 +1169,7 @@ function App() {
       }
 
       if (!primaryModifier) return;
-      // a key the document editor used (Markdown input: ⌘0 and ⌘= / ⌘- are heading levels, as in Typora)
+      // a key the document editor used (Markdown input: the primary key with 0, = or - sets heading levels, as in Typora)
       if (event.defaultPrevented) return;
       if (key === "k" && event.shiftKey) {
         event.preventDefault();
@@ -1521,7 +1213,7 @@ function App() {
     ocrOpen,
     historyOpen,
     exportOpen,
-    macOfficeFirstRunOpen,
+    platformModalOpen,
     updateOpen,
   ]);
 
@@ -1765,6 +1457,7 @@ function App() {
     </div>
   );
 
+  const keypadShortcut = onPlatform("Ctrl+Shift+K", "⌘⇧K");
   const keypadToggleControl = (
     <button
       type="button"
@@ -1775,11 +1468,11 @@ function App() {
       title={
         keypadMode
           ? isEn
-            ? "Exit keypad (Ctrl+Shift+K)"
-            : "退出小键盘（Ctrl+Shift+K）"
+            ? `Exit keypad (${keypadShortcut})`
+            : `退出小键盘（${keypadShortcut}）`
           : isEn
-            ? "Keypad (Ctrl+Shift+K)"
-            : "小键盘（Ctrl+Shift+K）"
+            ? `Keypad (${keypadShortcut})`
+            : `小键盘（${keypadShortcut}）`
       }
       onClick={() => void handleKeypadModeToggle()}
     >
@@ -1905,17 +1598,17 @@ function App() {
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_NEW_REQUEST_EVENT)))}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New document" : "新建文档"}</span>
-                <kbd>Ctrl+N</kbd>
+                <kbd>{onPlatform("Ctrl+N", "⌘N")}</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT)))}>
                 <FolderOpen size={16} />
                 <span>{isEn ? "Open document" : "打开文档"}</span>
-                <kbd>Ctrl+O</kbd>
+                <kbd>{onPlatform("Ctrl+O", "⌘O")}</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT)))}>
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
-                <kbd>Ctrl+S</kbd>
+                <kbd>{onPlatform("Ctrl+S", "⌘S")}</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_FILE_EVENT)))}>
                 <FileDown size={16} />
@@ -1940,7 +1633,7 @@ function App() {
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
-                <kbd>Ctrl+N</kbd>
+                <kbd>{onPlatform("Ctrl+N", "⌘N")}</kbd>
               </button>
               <button
                 type="button"
@@ -1951,12 +1644,12 @@ function App() {
               >
                 <FolderOpen size={16} />
                 <span>{isEn ? "Open document" : "打开文档"}</span>
-                <kbd>Ctrl+O</kbd>
+                <kbd>{onPlatform("Ctrl+O", "⌘O")}</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(saveDocument)}>
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
-                <kbd>Ctrl+S</kbd>
+                <kbd>{onPlatform("Ctrl+S", "⌘S")}</kbd>
               </button>
               <button
                 type="button"
@@ -2072,13 +1765,13 @@ function App() {
           )}
           {workspaceContent === "formula" && (<>
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? "New (Ctrl+N)" : "新建 (Ctrl+N)"}>
+            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? `New (${onPlatform("Ctrl+N", "⌘N")})` : `新建 (${onPlatform("Ctrl+N", "⌘N")})`}>
               <FilePlus2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open (Ctrl+O)" : "打开 (Ctrl+O)"}>
+            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? `Open (${onPlatform("Ctrl+O", "⌘O")})` : `打开 (${onPlatform("Ctrl+O", "⌘O")})`}>
               <FolderOpen size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save (Ctrl+S)" : "保存 (Ctrl+S)"}>
+            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? `Save (${onPlatform("Ctrl+S", "⌘S")})` : `保存 (${onPlatform("Ctrl+S", "⌘S")})`}>
               <Save size={17} />
             </button>
           </div>
@@ -2092,7 +1785,7 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Undo" : "撤销"}
-              title={isEn ? "Undo (Ctrl+Z)" : "撤销 (Ctrl+Z)"}
+              title={isEn ? `Undo (${onPlatform("Ctrl+Z", "⌘Z")})` : `撤销 (${onPlatform("Ctrl+Z", "⌘Z")})`}
             >
               <Undo2 size={17} />
             </button>
@@ -2105,7 +1798,7 @@ function App() {
                 historyState.isReplaying
               }
               aria-label={isEn ? "Redo" : "重做"}
-              title={isEn ? "Redo (Ctrl+Y / Ctrl+Shift+Z)" : "重做 (Ctrl+Y / Ctrl+Shift+Z)"}
+              title={isEn ? `Redo (${onPlatform("Ctrl+Y / Ctrl+Shift+Z", "⌘⇧Z")})` : `重做 (${onPlatform("Ctrl+Y / Ctrl+Shift+Z", "⌘⇧Z")})`}
             >
               <Redo2 size={17} />
             </button>
@@ -2119,7 +1812,7 @@ function App() {
           <button type="button" className="icon-button workspace-action" onClick={() => setOcrOpen(true)} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
             <ScanLine size={17} />
           </button>
-          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings (Ctrl+,)" : "设置 (Ctrl+,)"}>
+          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? `Settings (${onPlatform("Ctrl+,", "⌘,")})` : `设置 (${onPlatform("Ctrl+,", "⌘,")})`}>
             <Settings2 size={17} />
           </button>
           {workspaceContent === "formula" && codeFormatControl}
@@ -2302,13 +1995,10 @@ function App() {
           setActiveOcrProviderId(configuration.activeProvider)
         }
       />
-      <MacOfficeFirstRunPrompt
-        open={macOfficeFirstRunOpen}
+      <AppOfficeIntegration
         language={language}
-        mode={macOfficePromptMode}
-        powerpointRegistrationRequired={powerpointRegistrationRequired}
-        initialError={macOfficePromptError}
-        onComplete={finishMacOfficeFirstRun}
+        onToast={setToast}
+        onModalOpenChange={setPlatformModalOpen}
       />
       <UpdateDialog
         open={updateOpen}

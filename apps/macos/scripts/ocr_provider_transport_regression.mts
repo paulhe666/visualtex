@@ -198,7 +198,7 @@ assert.deepEqual(receivedStages, [
 ]);
 
 for (const sourcePath of [
-  "../src/App.tsx",
+  "../../shared/visualtex-app/src/App.tsx",
   "../../shared/visualtex-app/src/components/OcrDialog.tsx",
   "../src/office/dialog/OfficeDialogApp.tsx",
 ]) {

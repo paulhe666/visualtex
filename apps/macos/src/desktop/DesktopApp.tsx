@@ -1,4 +1,4 @@
-import DesktopShell from "../App";
+import DesktopShell from "../../../shared/visualtex-app/src/App";
 
 export function DesktopApp() {
   return <DesktopShell />;

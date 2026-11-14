@@ -5,7 +5,7 @@ async function source(path) {
   return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
 }
 
-const app = await source("src/App.tsx");
+const app = await source("../shared/visualtex-app/src/App.tsx");
 const ocrDialog = await source("../shared/visualtex-app/src/components/OcrDialog.tsx");
 const ocrService = await source("../shared/visualtex-app/src/ocr/ocrService.ts");
 const quickOcr = await source("src/platform/quickOcr.ts");

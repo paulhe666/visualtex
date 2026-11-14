@@ -9,7 +9,7 @@ assert.equal(VISUALTEX_QQ_GROUP_NUMBER, "1045801770");
 assert(VISUALTEX_QQ_GROUP_QR_DATA_URL.startsWith("data:image/png;base64,"));
 assert(Buffer.from(VISUALTEX_QQ_GROUP_QR_DATA_URL.split(",")[1], "base64").length > 10_000);
 
-const appSource = await readFile("src/App.tsx", "utf8");
+const appSource = await readFile("../shared/visualtex-app/src/App.tsx", "utf8");
 const updateDialogSource = await readFile("../shared/visualtex-app/src/components/UpdateDialog.tsx", "utf8");
 const stylesSource = await readFile("../shared/visualtex-app/src/styles/app.css", "utf8");
 const windowsSettingsSource = await readFile("src/components/WindowsOfficeIntegrationSettings.tsx", "utf8");
