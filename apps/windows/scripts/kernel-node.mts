@@ -32,7 +32,7 @@ fs.writeFileSync(
 const entryFile = path.join(outDir, "entry.ts");
 fs.writeFileSync(
   entryFile,
-  `import { createAppLayoutEngine } from ${JSON.stringify(path.join(appDir, "src/editor/visualTexLayoutRuntime.ts"))};\n` +
+  `import { createAppLayoutEngine } from ${JSON.stringify(path.join(appDir, "../shared/visualtex-app/src/editor/visualTexLayoutRuntime.ts"))};\n` +
     `import { setVisualTexLayoutEngine } from ${JSON.stringify(kernelFile)};\n` +
     `setVisualTexLayoutEngine(createAppLayoutEngine((_family, text) => ` +
     `({ width: 0.5 * Array.from(text).length, ascent: 0.7, descent: 0.2 })));\n` +
@@ -47,7 +47,9 @@ await build({
   platform: "node",
   format: "esm",
   logLevel: "warning",
-  alias: { mathlive: kernelFile },
+  alias: { mathlive: kernelFile, "@platform": path.join(appDir, "src/platform") },
+  // shared code (apps/shared) has no node_modules of its own: it uses this app's
+  nodePaths: [path.join(appDir, "node_modules")],
   loader: { ".css": "empty" },
   plugins: [
     {

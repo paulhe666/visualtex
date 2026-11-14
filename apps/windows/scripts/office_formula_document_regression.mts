@@ -9,10 +9,10 @@ import {
   decodeFormulaMetadata,
   encodeFormulaMetadata,
 } from "../../shared/visualtex-app/src/office/shared/formulaMetadata.ts";
-import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
+import { isIncompleteLatexDraft } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
 import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
-import { latexToMathMl } from "../src/export/runtime.ts";
+import { latexToMathMl } from "../../shared/visualtex-app/src/export/runtime.ts";
 
 function normalize(source: string, codeFormat: string = "raw") {
   return normalizeFormulaEditorDocument(

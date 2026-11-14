@@ -87,11 +87,11 @@ import {
 } from "../../ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
 import { inConversionStage } from "../shared/conversionErrors";
-import { copyFormulaDocumentPngToClipboard } from "../../export/pngClipboard";
+import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
 import {
   normalizeFormulaSpacingPreferences,
   readPersistedFormulaSpacing,
-} from "../../editor/formulaSpacingPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
 
 type InlineOcrStatus =
   | "running"
@@ -1243,7 +1243,7 @@ export function OfficeDialogApp() {
     let inkBottomRatio: number | undefined;
     let inkCenterYRatio: number | undefined;
     try {
-      const { svgToPng } = await import("../../export/svgToPng");
+      const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
       const png = await svgToPng(
         {
           base64: base.svgBase64,

@@ -1,4 +1,4 @@
-import "./editor/visualTexLayoutRuntime";
+import "../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { installBrowserCompatibility } from "../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { prepareEditorCrashSafeRestart } from "../../shared/visualtex-app/src/runtime/editorCrashRecovery";
 import { installFloatingLayerAutoAvoidance } from "../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";

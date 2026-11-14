@@ -1,20 +1,20 @@
 import { setVisualTexEditingCore, setVisualTexLayoutEngine } from "mathlive";
-import { createVisualTexLayout, type LayoutData, type PiecePlacer } from "../../../shared/tex-layout/src/index.ts";
-import { createEditingCore } from "../../../shared/visualtex-core/src/index.ts";
-import tfm from "../../../shared/tex-layout/data/tfm.json";
-import meanings from "../../../shared/tex-layout/data/latex-meanings.json";
-import templates from "../../../shared/tex-layout/data/latex-templates.json";
-import onearg from "../../../shared/tex-layout/data/latex-onearg.json";
-import textFonts from "../../../shared/tex-layout/data/text-fonts.json";
-import fonts from "../../../shared/tex-layout/data/fonts.json";
-import "../../../shared/tex-layout/data/fonts/fonts.css";
-import profile from "../../../shared/tex-layout/data/profile.json";
-import type NtxData from "../../../shared/visualtex-app/src/editor/ntxProfileData";
-import type { PathGlyphSet } from "../../../shared/tex-layout/src/path-font.ts";
-import type { NativeMeasure } from "../../../shared/tex-layout/src/native-font.ts";
+import { createVisualTexLayout, type LayoutData, type PiecePlacer } from "../../../tex-layout/src/index.ts";
+import { createEditingCore } from "../../../visualtex-core/src/index.ts";
+import tfm from "../../../tex-layout/data/tfm.json";
+import meanings from "../../../tex-layout/data/latex-meanings.json";
+import templates from "../../../tex-layout/data/latex-templates.json";
+import onearg from "../../../tex-layout/data/latex-onearg.json";
+import textFonts from "../../../tex-layout/data/text-fonts.json";
+import fonts from "../../../tex-layout/data/fonts.json";
+import "../../../tex-layout/data/fonts/fonts.css";
+import profile from "../../../tex-layout/data/profile.json";
+import type NtxData from "./ntxProfileData";
+import type { PathGlyphSet } from "../../../tex-layout/src/path-font.ts";
+import type { NativeMeasure } from "../../../tex-layout/src/native-font.ts";
 import { gunzipSync, strFromU8 } from "fflate";
-import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../../../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData";
-import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
+import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../math/rareIntegralGlyphs.generatedData";
+import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
 
 /** A custom operator's italic correction, by the class of its box (editor and export classes). */
 function customSymbolOperatorItalic(className: string) {
@@ -36,7 +36,7 @@ import {
   formulaLetterFontFamilies,
   readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
-} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+} from "./formulaFontPreferences";
 import {
   FORMULA_SPACING_CHANGED_EVENT,
   activeFormulaSpacing,
@@ -137,7 +137,13 @@ export function placeCaretAtPoint(field: HTMLElement, clientX: number, clientY: 
   const stop = visualTexEditingCore.hitTest(mathfield, clientX, clientY);
   if (stop === null) return false;
   const drawn = field as unknown as { visualTexGoToStop?: (stop: number) => boolean };
-  return drawn.visualTexGoToStop ? drawn.visualTexGoToStop(stop) : visualTexEditingCore.goToStop(mathfield.model, stop);
+  if (drawn.visualTexGoToStop) return drawn.visualTexGoToStop(stop);
+  if (!visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
+  // goToStop moves the model only. A click beside the formula then left the
+  // caret painted where it was (WebKit no longer refocuses, which used to
+  // repaint): the element's position setter requests the render.
+  (field as unknown as { position: number }).position = mathfield.model.position;
+  return true;
 }
 
 type Profile = "cm" | "ntx";
@@ -157,7 +163,7 @@ let ntxData: typeof NtxData | null = null;
 let ntxLoading: Promise<void> | null = null;
 
 function loadNtxProfile(): Promise<void> {
-  ntxLoading ??= import("../../../shared/visualtex-app/src/editor/ntxProfileData")
+  ntxLoading ??= import("./ntxProfileData")
     .then((m) => {
       ntxData = m.default;
       profileChoice = undefined;

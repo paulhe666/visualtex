@@ -7,7 +7,7 @@ import {
   setFormulaCaretBand,
   setFormulaLineLayout,
   visualTexEditingCore,
-} from "../editor/visualTexLayoutRuntime";
+} from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { useHistoryManager } from "../history/EditorSession";
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 import { useEditorStore } from "../stores/editorStore";

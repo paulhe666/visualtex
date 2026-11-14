@@ -1,6 +1,6 @@
 import { alignWordInlineSvg } from "./wordImageGeometry";
-import { latexToSvg } from "../../export/latexToSvg";
-import type { SvgExportResult } from "../../export/exportTypes";
+import { latexToSvg } from "../../../../shared/visualtex-app/src/export/latexToSvg";
+import type { SvgExportResult } from "../../../../shared/visualtex-app/src/export/exportTypes";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 import type {
   FormulaChineseFont,

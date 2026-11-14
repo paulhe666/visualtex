@@ -84,7 +84,7 @@ import {
 import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
-} from "./mathLiveIntegralCompatibility";
+} from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
 import {
   inspectMathLiveSourceSafety,
   mathLiveSourceSafetyMessage,
@@ -98,7 +98,7 @@ import {
 } from "../../../shared/visualtex-app/src/math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { installMathLiveOptionMutationGuard } from "../../../shared/visualtex-app/src/editor/mathLiveOptionCompatibility";
-import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../../shared/visualtex-app/src/math/mathLiveCompatibilityMacros";
 import {
   nativeSuggestionPreviewHasVisibleInk,
   resolveNativeSuggestionPreview,
@@ -117,7 +117,7 @@ import {
   type MathLivePersistentTypingStyle,
 } from "./mathLiveKernelCommands";
 import { isSafeFormulaStyleColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
-import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
+import { copyFormulaDocumentPngToClipboard } from "../../../shared/visualtex-app/src/export/pngClipboard";
 import {
   formulaChineseFallbackFamily,
   formulaChineseFontFamily,
@@ -134,7 +134,7 @@ import {
   VISUALTEX_ALIGNMENT_MARKER_CLASS,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
 } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
-import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "./visualTexLayoutRuntime";
+import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { rowIndexAt, stopAtPoint, topLevelStop } from "./rowPointer";
 import type { SelectionDragHost } from "../../../shared/visualtex-core/src/index.ts";
 

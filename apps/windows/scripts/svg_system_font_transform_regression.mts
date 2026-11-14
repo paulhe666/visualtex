@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { latexToSvg } from "../src/export/runtime.ts";
+import { latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 
 const result = latexToSvg(
   String.raw`\arccos x+\operatorname{rank}(A)+\arctan y`,

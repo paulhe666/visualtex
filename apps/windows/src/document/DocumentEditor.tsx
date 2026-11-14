@@ -46,9 +46,9 @@ import {
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { cachedPreviewMarkup } from "../components/MathPreview";
-import { convertVisualTexLatexToFieldMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { convertVisualTexLatexToFieldMarkup } from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
 import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
+import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { getCustomSymbolRevision, subscribeCustomSymbols } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";

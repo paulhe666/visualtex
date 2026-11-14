@@ -18,7 +18,7 @@ import {
   saveSpacingConfigAs,
   selectSpacingConfig,
   setSpacingValue,
-} from "../editor/formulaSpacingPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
 import { FORMULA_LETTER_FONT_OPTIONS } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export const SPACING_GROUP_LABELS: Record<SpacingDefinition["group"], [string, string]> = {

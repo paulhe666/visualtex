@@ -1,6 +1,6 @@
 // The PDF's print page (print.html, a hidden window): it receives the print copy of the page view
 // (printCopy.ts), waits for its fonts and images, and says when it is ready for the platform's printing.
-import "../editor/visualTexLayoutRuntime";
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../styles.css";
 import "../../../shared/visualtex-app/src/document/document.css";
 import "../../../shared/tex-layout/data/profiles/ntx/fonts/fonts.css";

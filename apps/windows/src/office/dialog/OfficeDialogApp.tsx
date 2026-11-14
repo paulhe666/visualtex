@@ -25,7 +25,7 @@ import {
   normalizeConfirmEscapeChord,
   useConfirmEscapeKeyStore,
 } from "../../stores/confirmEscapeKeyStore";
-import { copyFormulaDocumentPngToClipboard } from "../../export/pngClipboard";
+import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import {
   readWorkspacePanelOpen,
@@ -68,10 +68,10 @@ import {
   type FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { readLocalStorage, writeLocalStorage } from "../../../../shared/visualtex-app/src/runtime/safeStorage";
-import { normalizeFormulaSpacingPreferences } from "../../editor/formulaSpacingPreferences";
-import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";
+import { normalizeFormulaSpacingPreferences } from "../../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
+import { latexToMathMl, latexToSvg } from "../../../../shared/visualtex-app/src/export/latexToSvg";
 import { annotateMathTypeAlignmentGeometry } from "../shared/mathTypeAlignmentGeometry";
-import { isIncompleteLatexDraft } from "../../math/latexCompatibility";
+import { isIncompleteLatexDraft } from "../../../../shared/visualtex-app/src/math/latexCompatibility";
 import {
   closeOfficeSessionWindow,
   getOfficePreferences,
@@ -1027,7 +1027,7 @@ export function OfficeDialogApp() {
   ): Promise<OfficeExportResult> => {
     let pngBase64: string | undefined;
     try {
-      const { svgToPng } = await import("../../export/svgToPng");
+      const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
       pngBase64 = (
         await svgToPng(
           {
@@ -1148,7 +1148,7 @@ export function OfficeDialogApp() {
     // the PNG is required here: its failure is the formula's failure, with its reason
     let pngBase64: string;
     try {
-      const { svgToPng } = await import("../../export/svgToPng");
+      const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
       pngBase64 = (
         await svgToPng(
           { base64: base.svgBase64, width: base.width, height: base.height },

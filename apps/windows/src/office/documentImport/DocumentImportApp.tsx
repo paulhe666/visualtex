@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
-import { latexToSvg } from "../../export/latexToSvg";
+import { latexToSvg } from "../../../../shared/visualtex-app/src/export/latexToSvg";
 import {
   applyDocumentTheme,
   normalizeSynchronizedTheme,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { additionalCommands } from "../../shared/visualtex-app/src/autocomplete/additionalCommands.ts";
-import { latexToSvg } from "../src/export/runtime.ts";
+import { latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 import { renderOfficeFormulaArtifacts } from "../src/office/shared/formulaRenderArtifacts.ts";
 
 const REPORTED_TIMES_FORMULA = String.raw`\theta=\arccos\left(\frac{(A-B)\cdot(C-B)}{\left|A-B\right|\left|C-B\right|}\right)`;

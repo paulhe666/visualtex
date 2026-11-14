@@ -2,7 +2,7 @@ import { EditorSessionProvider } from "../history/EditorSession";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 // formulas are laid out by the shared engine; installed before any math field exists
-import "../editor/visualTexLayoutRuntime";
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../styles.css";
 import "../styles-editor-parity.css";
 import "../styles-windows-shared-latest.css";

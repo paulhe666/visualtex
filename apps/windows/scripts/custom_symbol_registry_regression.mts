@@ -13,7 +13,7 @@ import {
 } from "../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
 import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
-import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
+import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 
 const storage = memoryStorage();
 Object.assign(safeStorage, createSafeStorage(() => storage));

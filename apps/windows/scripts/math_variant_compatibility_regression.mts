@@ -11,8 +11,8 @@ import {
   formatLatex,
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
-import { normalizePackageLatexCommands } from "../src/math/latexCompatibility.ts";
-import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility.ts";
+import { normalizePackageLatexCommands } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility.ts";
 
 const wrapperCommands = [
   "\\bm", "\\mathbfit", "\\symbfit", "\\simbfit", "\\symbf",

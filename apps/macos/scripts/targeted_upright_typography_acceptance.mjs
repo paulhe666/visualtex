@@ -5,7 +5,7 @@ import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
 } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
-import { latexToMathMl } from "../src/export/runtime.ts";
+import { latexToMathMl } from "../../shared/visualtex-app/src/export/runtime.ts";
 
 const outputPath = process.argv[2]
   ? path.resolve(process.argv[2])

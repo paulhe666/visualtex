@@ -2,8 +2,8 @@
 // running windows to draw a formula; the first answer is used.
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { latexToSvg } from "../../export/latexToSvg";
-import { svgToPng } from "../../export/runtime";
+import { latexToSvg } from "../../../../shared/visualtex-app/src/export/latexToSvg";
+import { svgToPng } from "../../../../shared/visualtex-app/src/export/runtime";
 import { wordEquationMathMl } from "../wordMathMl/wordEquationMathMl";
 import { normalizeFormulaEditorDocument } from "./formulaEditorDocument";
 

@@ -15,7 +15,7 @@ import {
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
-import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
+import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { topLevelStop } from "../editor/rowPointer";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import {

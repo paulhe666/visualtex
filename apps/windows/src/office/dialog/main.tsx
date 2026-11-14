@@ -1,4 +1,4 @@
-import "../../editor/visualTexLayoutRuntime";
+import "../../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../../styles.css";

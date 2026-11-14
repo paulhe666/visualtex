@@ -4,9 +4,9 @@ import {
 } from "../../../shared/custom-symbol-designer/src/index.ts";
 import { categoryLabels, categoryLabelsEn, commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { customSymbolCommands } from "../../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry";
-import { renderEngineSvg } from "../export/engineSvg";
-import { formulaLayoutReady } from "../editor/visualTexLayoutRuntime";
-import { latexToMathMl } from "../export/runtime";
+import { renderEngineSvg } from "../../../shared/visualtex-app/src/export/engineSvg";
+import { formulaLayoutReady } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
+import { latexToMathMl } from "../../../shared/visualtex-app/src/export/runtime";
 import { registerCustomSymbolSafely, updateCustomSymbolSafely } from "../../../shared/visualtex-app/src/math/customSymbolRegistration";
 import { deleteCustomSymbol, readCustomSymbolLibrary } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";

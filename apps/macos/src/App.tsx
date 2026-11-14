@@ -94,8 +94,8 @@ import type {
   LatexFormatProfile,
 } from "../../shared/visualtex-app/src/types/formula";
 import { applyDocumentTheme, publishSynchronizedTheme } from "../../shared/visualtex-app/src/themeSync";
-import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
-import { formulaExportErrorMessage } from "./math/latexCompatibility";
+import { copyFormulaDocumentPngToClipboard } from "../../shared/visualtex-app/src/export/pngClipboard";
+import { formulaExportErrorMessage } from "../../shared/visualtex-app/src/math/latexCompatibility";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,

@@ -8,8 +8,8 @@ import {
   formatLatex,
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
-import { convertVisualTexLatexToMarkup } from "../src/editor/mathLiveIntegralCompatibility.ts";
-import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
+import { convertVisualTexLatexToMarkup } from "../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility.ts";
+import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime.ts";
 
 const wrapperCommands = [
   "\\bm",

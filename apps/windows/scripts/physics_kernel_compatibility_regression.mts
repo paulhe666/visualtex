@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
-import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
-import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility.ts";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/mathLiveCompatibilityMacros.ts";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import { physicsToolbarCommands } from "../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
 import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";

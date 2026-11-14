@@ -1,6 +1,6 @@
 // Dev page for the document editor (document-lab.html): the editor alone, no
 // Tauri. Used by the headless tests (window.__docLab).
-import "../editor/visualTexLayoutRuntime";
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../styles.css";
 import { createRef } from "react";
 import { createRoot } from "react-dom/client";

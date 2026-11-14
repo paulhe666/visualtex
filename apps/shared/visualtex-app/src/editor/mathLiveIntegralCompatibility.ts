@@ -3,11 +3,11 @@ import {
   visualTexPackageCommands,
   type MathfieldElement,
 } from "mathlive";
-import "../../../shared/visualtex-app/src/math/customSymbolRegistration.ts";
+import "../math/customSymbolRegistration.ts";
 import {
   expandCustomSymbolsForMathLiveMarkup,
   installCustomSymbolGlobalStyle,
-} from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
+} from "../math/customSymbolRendering.ts";
 import { expandVisualTexMathLiveCompatibilityMacros } from "../math/mathLiveCompatibilityMacros.ts";
 import {
   OIINT_SIZE1_OVAL_HEIGHT_EM,
@@ -22,7 +22,7 @@ import {
   OIIINT_SIZE2_OVAL_HEIGHT_EM,
   OIIINT_SIZE2_OVAL_PATH,
   OIIINT_SIZE2_OVAL_WIDTH_EM,
-} from "../../../shared/visualtex-app/src/math/integralGlyphs.ts";
+} from "../math/integralGlyphs.ts";
 
 const globalStyleId = "visualtex-mathlive-contour-integral-style";
 const shadowStyleId = "visualtex-mathlive-contour-integral-shadow-style";
@@ -144,6 +144,7 @@ export function expandVisualTexLatexForLayout(
   callerMacroNames: ReadonlySet<string> = new Set(),
 ) {
   return expandCustomSymbolsForMathLiveMarkup(
+    // the kernel reads the package commands with their packages' arguments
     expandVisualTexMathLiveCompatibilityMacros(text, new Set([...callerMacroNames, ...visualTexPackageCommands])),
   );
 }
@@ -156,14 +157,9 @@ export function convertVisualTexLatexToMarkup(
   installCustomSymbolGlobalStyle(text);
   const callerMacros = options?.macros ?? {};
   const hasCallerMacros = Object.keys(callerMacros).length > 0;
-  const expandedCompatibility =
-    expandVisualTexMathLiveCompatibilityMacros(
-      text,
-      // the kernel reads the package commands with their packages' arguments
-      new Set([...Object.keys(callerMacros), ...visualTexPackageCommands]),
-    );
-  const expandedSource = expandCustomSymbolsForMathLiveMarkup(
-    expandedCompatibility,
+  const expandedSource = expandVisualTexLatexForLayout(
+    text,
+    new Set(Object.keys(callerMacros)),
   );
   if (hasCallerMacros) {
     return convertLatexToMarkup(expandedSource, options);

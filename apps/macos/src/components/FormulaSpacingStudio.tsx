@@ -18,7 +18,7 @@ import {
   saveSpacingConfigAs,
   selectSpacingConfig,
   setSpacingValue,
-} from "../editor/formulaSpacingPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
 
 export const SPACING_GROUP_LABELS: Record<SpacingDefinition["group"], [string, string]> = {
   scripts: ["Superscripts and subscripts", "上下标"],

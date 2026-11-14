@@ -4,42 +4,43 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
 import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
+import { EXPLICIT_MATH_FONT_PACKAGE } from "./explicit-math-font.ts";
+import { createExplicitMathFontSvgFactory } from "./explicit-math-font-svg.ts";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
-import { EXPLICIT_MATH_FONT_PACKAGE } from "../../../shared/visualtex-app/src/export/explicit-math-font.ts";
-import { createExplicitMathFontSvgFactory } from "../../../shared/visualtex-app/src/export/explicit-math-font-svg.ts";
-import { RolePreservingMmlVisitor } from "../../../shared/visualtex-app/src/export/role-preserving-mml-visitor.ts";
-import { materializeEffectiveOperatorVariants } from "../../../shared/visualtex-app/src/export/effectiveMathMlGlyphVariants.ts";
+import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
-import { normalizeMathLiveCanonicalUprightCommands } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
-import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
-import { normalizeFlexiblePackageLatexCommands } from "../math/flexibleBraket.ts";
-import { normalizeTensorIndexCommands } from "../../../shared/visualtex-app/src/math/tensorIndexCompatibility.ts";
+import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
+import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
+import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
 import {
   isSingleCompleteLatexEnvironment,
   unwrapSingleLatexDisplayMath,
-} from "../../../shared/visualtex-app/src/math/latexEnvironment.ts";
+} from "../math/latexEnvironment.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
   expandCustomSymbolsForMathMl,
   expandCustomSymbolsForSvg,
-} from "../../../shared/visualtex-app/src/math/customSymbolRendering.ts";
+} from "../math/customSymbolRendering.ts";
+import { errorMessage } from "../runtime/errorMessage.ts";
+import { splitFormulaEquationTag } from "../office/shared/formulaEquationTag.ts";
 import {
   assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,
   assertResolvedPresentationMathMl,
+  normalizePackageLatexCommands,
   VISUALTEX_MATHML_MACROS,
   VISUALTEX_SVG_MACROS,
   type VisualTexMathJaxMacro,
 } from "../math/latexCompatibility.ts";
+import { APP_PLATFORM } from "@platform/appInfo";
 import type {
   PngExportOptions,
   PngExportResult,
   SvgExportOptions,
   SvgExportResult,
 } from "./exportTypes";
-import { errorMessage } from "../../../shared/visualtex-app/src/runtime/errorMessage.ts";
-import { splitFormulaEquationTag } from "../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -48,7 +49,7 @@ import {
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
   readPersistedFormulaFontPreferences,
-} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences.ts";
+} from "../editor/formulaFontPreferences.ts";
 
 const DEFAULT_OPTIONS: SvgExportOptions = {
   displayMode: true,
@@ -62,15 +63,15 @@ RegisterHTMLHandler(adaptor);
 
 function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
   return new TeX({
-    // The explicit-font package records \mathrm/{\rm ...}/\bm scopes as the
-    // editor kernel resolves them, so exports keep the editor's glyph styles.
-    packages: [...AllPackages, EXPLICIT_MATH_FONT_PACKAGE],
+    // Export must fail at the parser boundary, never turn an unknown command
+    // or syntax error into a successful colored/text rendering. This also lets
+    // literal mtext/verb content pass without guessing from its characters.
+    packages: [...AllPackages.filter((name) => name !== "noundefined" && name !== "noerrors"), EXPLICIT_MATH_FONT_PACKAGE],
     macros,
     formatError: (_jax: unknown, error: unknown) => {
-      throw new Error(
-        errorMessage(error, "MathJax could not parse this formula."),
-        { cause: error },
-      );
+      const message = errorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
+      if (error instanceof Error && error.message.trim() === message) throw error;
+      throw new Error(message, { cause: error });
     },
   });
 }
@@ -90,13 +91,11 @@ const mathMlDocument = mathjax.document("", {
   InputJax: mathMlTexInput,
   OutputJax: mathMlOutput,
 });
-const mathDocument = mathjax.document("", {
+const svgDocument = mathjax.document("", {
   InputJax: svgTexInput,
   OutputJax: svgOutput,
 });
-const serializedMmlVisitor = new RolePreservingMmlVisitor(
-  mathMlDocument.mmlFactory,
-);
+const serializedMmlVisitor = new RolePreservingMmlVisitor(mathMlDocument.mmlFactory);
 
 function positiveFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -104,23 +103,6 @@ function positiveFinite(value: number, fallback: number) {
 
 function nonNegativeFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function prepareLatex(latex: string) {
-  let normalized = normalizeMathLiveCanonicalUprightCommands(
-    normalizeExtendedIntegralLatexCommands(
-      normalizeFlexiblePackageLatexCommands(normalizeTensorIndexCommands(latex.replace(/\r\n?/g, "\n"))),
-    ),
-  ).trim();
-  if (!normalized) throw new Error("Cannot export an empty formula.");
-  assertNoUnfilledStructuralPlaceholders(normalized);
-
-  // VisualTeX source formats legitimately serialize display formulas as
-  // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
-  // display mode, so those source delimiters must not become literal glyphs or
-  // be split into extra rows around an inner aligned/align environment.
-  normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
-  return joinFormulaRows(normalized);
 }
 
 /** Characters of an equation number as \\text{...} content. */
@@ -137,18 +119,32 @@ function joinFormulaRows(normalized: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length <= 1) return normalized;
-
   // Preserve a source string that is itself one complete TeX environment.
   // A document with multiple VisualTeX formula rows may still contain an
   // inner matrix/cases environment on one row; that must not make all rows
   // collapse into a single horizontal TeX expression.
   if (isSingleCompleteLatexEnvironment(normalized)) return normalized;
+  return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
+}
 
+function prepareLatex(latex: string) {
+  const normalized = normalizeMathLiveCanonicalUprightCommands(
+    normalizeExtendedIntegralLatexCommands(
+      normalizePackageLatexCommands(normalizeTensorIndexCommands(latex.replace(/\r\n?/g, "\n"))),
+    ),
+  ).trim();
+  if (!normalized) throw new Error("Cannot export an empty formula.");
+  assertNoUnfilledStructuralPlaceholders(normalized);
+  // VisualTeX source formats legitimately serialize display formulas as
+  // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
+  // display mode, so those source delimiters must not become literal glyphs or
+  // be split into extra rows around an inner aligned/align environment.
+  const unwrapped = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep
   // the whole document as one image, but anchor every formula row on its left
   // edge and preserve the editor's vertical ordering.
-  return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
+  return joinFormulaRows(unwrapped);
 }
 
 function extractSvg(markup: string) {
@@ -160,13 +156,46 @@ function extractSvg(markup: string) {
   return markup.slice(start, end + "</svg>".length);
 }
 
-function parseViewBox(svg: string) {
-  const match = svg.match(
-    /\bviewBox=["']\s*([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s*["']/,
+type SvgViewBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type SvgRootGeometry = {
+  viewBox: SvgViewBox;
+  unitsPerPx: number;
+  baselinePx: number | null;
+  fullViewportNestedSvg: boolean;
+};
+
+function readSvgAttribute(opening: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return opening.match(new RegExp(`\\s${escaped}=["']([^"']*)["']`, "i"))?.[1] ?? null;
+}
+
+function readStyleDeclaration(style: string | null, name: string) {
+  if (!style) return null;
+  const normalizedName = name.toLowerCase();
+  for (const declaration of style.split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator <= 0) continue;
+    if (declaration.slice(0, separator).trim().toLowerCase() === normalizedName) {
+      return declaration.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function parseSvgViewBox(value: string | null) {
+  if (!value) return null;
+  const match = value.match(
+    /^\s*([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)\s*$/,
   );
-  if (!match) throw new Error("Exported SVG is missing a valid viewBox.");
+  if (!match) throw new Error("Exported SVG has an invalid viewBox.");
   const values = match.slice(1).map(Number);
-  if (values.some((value) => !Number.isFinite(value))) {
+  if (values.some((number) => !Number.isFinite(number))) {
     throw new Error("Exported SVG has an invalid viewBox.");
   }
   const [x, y, width, height] = values;
@@ -174,6 +203,110 @@ function parseViewBox(svg: string) {
     throw new Error("Exported SVG has non-positive dimensions.");
   }
   return { x, y, width, height };
+}
+
+function parseCssSvgLength(
+  value: string | null,
+  fontSizePx: number,
+  exPx: number,
+) {
+  if (!value) return null;
+  const match = value.trim().match(/^([-+\d.eE]+)\s*(px|ex|em)?$/i);
+  if (!match) return null;
+  const number = Number(match[1]);
+  if (!Number.isFinite(number)) return null;
+  const unit = (match[2] ?? "px").toLowerCase();
+  return unit === "ex" ? number * exPx : unit === "em" ? number * fontSizePx : number;
+}
+
+function resolveSvgRootGeometry(
+  svg: string,
+  fontSizePx: number,
+  exPx: number,
+): SvgRootGeometry {
+  const rootOpening = svg.match(/^<svg\b[^>]*>/i)?.[0];
+  if (!rootOpening) throw new Error("MathJax did not produce an SVG root element.");
+
+  const rootViewBox = parseSvgViewBox(readSvgAttribute(rootOpening, "viewBox"));
+  if (rootViewBox) {
+    return {
+      viewBox: rootViewBox,
+      unitsPerPx: 1000 / fontSizePx,
+      baselinePx: null,
+      fullViewportNestedSvg: false,
+    };
+  }
+
+  // MathJax renders a top-level equation tag as a full-width labeled table.
+  // In that special layout the root SVG intentionally has width="100%" and no
+  // viewBox; its intrinsic width is carried in style.min-width, while the table
+  // and label are nested SVG viewports. Materialized Office SVGs have no CSS
+  // layout container, so make that implicit CSS-pixel viewport explicit.
+  const style = readSvgAttribute(rootOpening, "style");
+  const widthPx = parseCssSvgLength(
+    readStyleDeclaration(style, "min-width") ?? readSvgAttribute(rootOpening, "width"),
+    fontSizePx,
+    exPx,
+  );
+  const heightPx = parseCssSvgLength(
+    readSvgAttribute(rootOpening, "height"),
+    fontSizePx,
+    exPx,
+  );
+  const verticalAlignPx = parseCssSvgLength(
+    readStyleDeclaration(style, "vertical-align"),
+    fontSizePx,
+    exPx,
+  ) ?? 0;
+  if (!widthPx || widthPx <= 0 || !heightPx || heightPx <= 0) {
+    throw new Error("Exported SVG is missing a valid root viewBox and intrinsic size.");
+  }
+  return {
+    viewBox: { x: 0, y: 0, width: widthPx, height: heightPx },
+    unitsPerPx: 1,
+    baselinePx: Math.max(0, Math.min(heightPx, heightPx + verticalAlignPx)),
+    fullViewportNestedSvg: true,
+  };
+}
+
+function normalizeFullViewportNestedSvg(
+  svg: string,
+  width: number,
+  height: number,
+) {
+  return svg.replace(
+    /<svg\b([^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*)>/gi,
+    (_opening, rawAttributes: string) => {
+      let attributes = rawAttributes;
+      const append: string[] = [];
+      if (!/\swidth=["']/i.test(attributes)) append.push(`width="${width}"`);
+      if (!/\sheight=["']/i.test(attributes)) append.push(`height="${height}"`);
+      if (!/\sx=["']/i.test(attributes)) append.push('x="0"');
+      if (!/\sy=["']/i.test(attributes)) append.push('y="0"');
+      if (!/\soverflow=["']/i.test(attributes)) append.push('overflow="visible"');
+      attributes = attributes.trim();
+      return `<svg${attributes ? ` ${attributes}` : ""}${append.length ? ` ${append.join(" ")}` : ""}>`;
+    },
+  );
+}
+
+function rewriteRootSvgOpening(
+  svg: string,
+  width: number,
+  height: number,
+  viewBox: SvgViewBox,
+) {
+  return svg.replace(/^<svg\b([^>]*)>/i, (_opening, rawAttributes: string) => {
+    const attributes = rawAttributes
+      .replace(
+        /\s(?:xmlns|width|height|role|focusable|style|viewBox)=["'][^"']*["']/gi,
+        "",
+      )
+      .trim();
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"${
+      attributes ? ` ${attributes}` : ""
+    }>`;
+  });
 }
 
 function assertSelfContained(svg: string) {
@@ -239,7 +372,6 @@ function applyVisualTexSvgFontPreferences(
   );
 
   if (letterFont === DEFAULT_FORMULA_LETTER_FONT) return output;
-
   const families = formulaLetterFontFamilies(letterFont);
   output = output.replace(/<use\b([^>]*)><\/use>/gi, (whole, attributes: string) => {
     const codePoint = attributes.match(/\bdata-c=["']([0-9A-F]+)["']/i)?.[1];
@@ -248,28 +380,14 @@ function applyVisualTexSvgFontPreferences(
     if (!codePoint || !variant) return whole;
     const character = mathAlphabetBaseCharacter(codePoint);
     if (!character) return whole;
-
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    const originalTransform = attributes.match(/\btransform=["']([^"']+)["']/i)?.[1]?.trim();
-    const originalX = attributes.match(/\bx=["']([^"']+)["']/i)?.[1]?.trim();
-    const originalY = attributes.match(/\by=["']([^"']+)["']/i)?.[1]?.trim();
-    // MathJax often lays out multi-letter operators such as \\arccos or
-    // \\operatorname{rank} as several <use> glyphs inside one translated
-    // parent. Every glyph after the first then owns an additional local
-    // translate(...). Dropping that transform while replacing <use> with a
-    // system-font <text> puts every character at the same origin and produces
-    // the severe overlap/"garbled" appearance seen in Word. Preserve all
-    // glyph-local positioning before applying the y-axis flip required for SVG
-    // text inside MathJax's outer scale(1,-1) coordinate system.
-    const transform = originalTransform
-      ? `${escapeSvgAttribute(originalTransform)} scale(1,-1)`
-      : "scale(1,-1)";
-    const position = `${
-      originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""
-    }${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""}`;
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${position} transform="${transform}" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']*)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']*)["']/i)?.[1]?.trim();
+    const placement = `${originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""}${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""} transform="${originalTransform ? `${escapeSvgAttribute(originalTransform)} ` : ""}scale(1,-1)"`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${placement} font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
   return output;
 }
@@ -356,7 +474,9 @@ export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
 }
 
-export function latexToMathMl(latex: string, displayMode = true) {
+// Synchronous form for callers that cannot await (macOS builds its Word
+// equations from this exact function through src/office/wordMathMl).
+export function latexToMathMlSync(latex: string, displayMode = true) {
   const source = expandCustomSymbolsForMathMl(prepareLatex(latex));
   const root = mathMlDocument.convert(source, {
     display: displayMode,
@@ -371,9 +491,8 @@ export function latexToMathMl(latex: string, displayMode = true) {
   return mathMl;
 }
 
-/** The formula's ink: the caller's colour (#rrggbb), else near-black. */
-function inkColor(options: SvgExportOptions) {
-  return options.color && /^#[0-9a-f]{6}$/i.test(options.color) ? options.color : "#111111";
+export async function latexToMathMl(latex: string, displayMode = true) {
+  return latexToMathMlSync(latex, displayMode);
 }
 
 export async function latexToSvg(
@@ -416,9 +535,9 @@ async function latexToEngineSvg(
         chinese: normalizeFormulaChineseFont(options.formulaChineseFont ?? readPersistedFormulaFontPreferences().formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT),
       }
     : undefined;
-  // An equation number (\\tag{...}) is set apart from the formula as MathJax
-  // drew it (the same image size): the number at the right, its baseline on
-  // the formula's.
+  // An equation number (\tag{...}, as numbered Office equations carry it) is
+  // set apart from the formula as MathJax drew it (the same image size): the
+  // number at the right, its baseline on the formula's.
   const split = splitFormulaEquationTag(normalized);
   const tagged = split.equationTag !== null && split.latex.length > 0;
   const body = tagged ? split.latex : normalized;
@@ -462,7 +581,7 @@ async function latexToEngineSvg(
     ? `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#ffffff"/>`
     : `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#000000" fill-opacity="0.001"/>`;
   // Characters drawn in a system font (Chinese) stay <text>; Word for Mac
-  // turns them into CoreText outlines (src-tauri svg_font_stabilizer.rs),
+  // turns them into CoreText outlines (macOS src-tauri svg_font_stabilizer.rs),
   // which reads the marker and the engine's y-down coordinates.
   const markedBody = formula.body.replace(
     /<text /g,
@@ -482,18 +601,24 @@ async function latexToEngineSvg(
   };
 }
 
-/** The image drawn by MathJax (its TeX fonts; letters in the chosen system font). */
-function latexToMathJaxSvg(
+/** The formula's ink: the caller's colour (#rrggbb), else near-black. */
+function inkColor(options: SvgExportOptions) {
+  return options.color && /^#[0-9a-f]{6}$/i.test(options.color) ? options.color : "#111111";
+}
+
+async function latexToMathJaxSvg(
   latex: string,
   options: SvgExportOptions,
-): SvgExportResult {
+): Promise<SvgExportResult> {
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
+  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
+  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
   const exPx = fontSizePx * 0.442;
 
-  const container = mathDocument.convert(source, {
+  const container = svgDocument.convert(source, {
     display: options.displayMode,
     em: fontSizePx,
     ex: exPx,
@@ -503,40 +628,28 @@ function latexToMathJaxSvg(
   svg = applyVisualTexIntegralSvgGlyphs(svg, options.displayMode);
   svg = applyCustomSymbolArtworkToSvg(svg);
   svg = applyVisualTexSvgFontPreferences(svg, options);
-  const viewBox = parseViewBox(svg);
+  const rootGeometry = resolveSvgRootGeometry(svg, fontSizePx, exPx);
+  const viewBox = rootGeometry.viewBox;
+  if (rootGeometry.fullViewportNestedSvg) {
+    svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
+  }
 
-  const unitsPerPx = 1000 / fontSizePx;
-  const paddingUnits = paddingPx * unitsPerPx;
+  const paddingXUnits = paddingXPx * rootGeometry.unitsPerPx;
+  const paddingYUnits = paddingYPx * rootGeometry.unitsPerPx;
   const padded = {
-    x: viewBox.x - paddingUnits,
-    y: viewBox.y - paddingUnits,
-    width: viewBox.width + 2 * paddingUnits,
-    height: viewBox.height + 2 * paddingUnits,
+    x: viewBox.x - paddingXUnits,
+    y: viewBox.y - paddingYUnits,
+    width: viewBox.width + 2 * paddingXUnits,
+    height: viewBox.height + 2 * paddingYUnits,
   };
-  const width = Math.max(1, padded.width / unitsPerPx);
-  const height = Math.max(1, padded.height / unitsPerPx);
-  const baseline = Math.max(0, Math.min(height, -padded.y / unitsPerPx));
+  const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
+  const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
+  const baseline = rootGeometry.baselinePx === null
+    ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
+    : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
 
-  svg = svg
-    .replace(
-      /\bviewBox=["'][^"']+["']/,
-      `viewBox="${padded.x} ${padded.y} ${padded.width} ${padded.height}"`,
-    )
-    .replace(/^<svg\b([^>]*)>/, (_opening, rawAttributes: string) => {
-      const attributes = rawAttributes
-        .replace(
-          /\s(?:xmlns|width|height|role|focusable|style)=["'][^"']*["']/g,
-          "",
-        )
-        .trim();
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false"${
-        attributes ? ` ${attributes}` : ""
-      }>`;
-    })
-    .replace(
-      /currentColor/gi,
-      options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : inkColor(options),
-    );
+  svg = rewriteRootSvgOpening(svg, width, height, padded)
+    .replaceAll("currentColor", options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : inkColor(options));
 
   const openingEnd = svg.indexOf(">");
   if (options.background === "white") {
@@ -617,6 +730,46 @@ async function encodeCanvasPng(canvas: HTMLCanvasElement) {
   return pngDataUrlToBlob(canvas.toDataURL("image/png"));
 }
 
+/** The rows the formula's ink covers, as fractions of the image height (Word for Mac places inline pictures
+ *  by the ink centre). */
+function measurePngInk(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  opaqueBackground: string,
+) {
+  const backgroundRgb = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(
+    opaqueBackground,
+  );
+  const backgroundChannels = backgroundRgb
+    ? backgroundRgb.slice(1).map((channel) => Number.parseInt(channel, 16))
+    : null;
+  const pixels = context.getImageData(0, 0, width, height).data;
+  let inkTop = height;
+  let inkBottom = -1;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3];
+    if (alpha < 16) continue;
+    const differsFromBackground = backgroundChannels
+      ? Math.abs(pixels[index] - backgroundChannels[0]) > 10 ||
+        Math.abs(pixels[index + 1] - backgroundChannels[1]) > 10 ||
+        Math.abs(pixels[index + 2] - backgroundChannels[2]) > 10
+      : pixels[index] < 245 ||
+        pixels[index + 1] < 245 ||
+        pixels[index + 2] < 245;
+    if (!differsFromBackground) continue;
+    const row = Math.floor(index / 4 / width);
+    if (row < inkTop) inkTop = row;
+    if (row > inkBottom) inkBottom = row;
+  }
+  if (inkBottom < inkTop) {
+    throw new Error("PNG rasterization produced no visible formula ink.");
+  }
+  const inkTopRatio = inkTop / height;
+  const inkBottomRatio = (inkBottom + 1) / height;
+  return { inkTopRatio, inkBottomRatio, inkCenterYRatio: (inkTopRatio + inkBottomRatio) / 2 };
+}
+
 export async function svgToPng(
   svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
@@ -652,45 +805,29 @@ export async function svgToPng(
   }
   context.drawImage(image, 0, 0, width, height);
 
-  const backgroundRgb = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(
-    opaqueBackground,
-  );
-  const backgroundChannels = backgroundRgb
-    ? backgroundRgb.slice(1).map((channel) => Number.parseInt(channel, 16))
-    : null;
-  const pixels = context.getImageData(0, 0, width, height).data;
-  let inkTop = height;
-  let inkBottom = -1;
-  for (let index = 0; index < pixels.length; index += 4) {
-    const alpha = pixels[index + 3];
-    if (alpha < 16) continue;
-    const differsFromBackground = backgroundChannels
-      ? Math.abs(pixels[index] - backgroundChannels[0]) > 10 ||
-        Math.abs(pixels[index + 1] - backgroundChannels[1]) > 10 ||
-        Math.abs(pixels[index + 2] - backgroundChannels[2]) > 10
-      : pixels[index] < 245 ||
-        pixels[index + 1] < 245 ||
-        pixels[index + 2] < 245;
-    if (!differsFromBackground) continue;
-    const row = Math.floor(index / 4 / width);
-    if (row < inkTop) inkTop = row;
-    if (row > inkBottom) inkBottom = row;
+  if (APP_PLATFORM === "macos") {
+    // macOS: the ink rows travel with the picture, and the PNG is encoded the way WKWebView does reliably
+    const ink = measurePngInk(context, width, height, opaqueBackground);
+    const blob = await encodeCanvasPng(canvas);
+    return { blob, base64: await blobToBase64(blob), width, height, ...ink };
   }
-  if (inkBottom < inkTop) {
-    throw new Error("PNG rasterization produced no visible formula ink.");
-  }
-  const inkTopRatio = inkTop / height;
-  const inkBottomRatio = (inkBottom + 1) / height;
-  const inkCenterYRatio = (inkTopRatio + inkBottomRatio) / 2;
 
-  const blob = await encodeCanvasPng(canvas);
+  // Windows: the Office payload needs base64. Encode it directly: async canvas encoding
+  // waits for a one-second idle-task timeout in a hidden converter WebView.
+  const dataUrl = canvas.toDataURL("image/png");
+  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  if (!base64) {
+    // a canvas larger than the browser allows encodes as "data:,"
+    throw new Error(`The PNG of this formula is empty (canvas ${width}×${height} px).`);
+  }
+  const blob = new Blob(
+    [Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))],
+    { type: "image/png" },
+  );
   return {
     blob,
-    base64: await blobToBase64(blob),
+    base64,
     width,
     height,
-    inkTopRatio,
-    inkBottomRatio,
-    inkCenterYRatio,
   };
 }

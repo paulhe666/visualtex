@@ -156,7 +156,7 @@ async function prepareFormulaArtifactCommitItem(
   // Prepare both Word representations once. OMML formulas need the real image
   // geometry and SVG/DOCX cache too, otherwise their first format conversion
   // falls back to the historical 14 x 14 placeholder square.
-  const { svgToPng } = await import("../../export/svgToPng");
+  const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
   const png = await svgToPng(svg, { scale: 2, background: "transparent" });
   const pngBase64 = png.base64;
   const resolvedBaseline = svg.baseline;

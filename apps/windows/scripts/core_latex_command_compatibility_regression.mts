@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { convertLatexToMarkup } from "mathlive";
 import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry";
-import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/mathLiveCompatibilityMacros";
 import { VISUALTEX_CORE_LATEX_ALIASES } from "../../shared/visualtex-app/src/math/coreLatexAliases";
-import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility";
-import { VISUALTEX_MATHML_MACROS, VISUALTEX_SVG_MACROS, normalizePackageLatexCommands } from "../src/math/latexCompatibility";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility";
+import { VISUALTEX_MATHML_MACROS, VISUALTEX_SVG_MACROS, normalizePackageLatexCommands } from "../../shared/visualtex-app/src/math/latexCompatibility";
 import { formatLatex, parseLatexSourceDraft } from "../src/clipboard/LatexCopyService";
-import { latexToMathMl, latexToSvg } from "../src/export/runtime";
+import { latexToMathMl, latexToSvg } from "../../shared/visualtex-app/src/export/runtime";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { TeX } from "mathjax-full/js/input/tex.js";
 import { SVG } from "mathjax-full/js/output/svg.js";

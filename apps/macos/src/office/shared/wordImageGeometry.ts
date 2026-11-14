@@ -1,6 +1,6 @@
 import type { FormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { svgToBase64 } from "../../export/runtime";
-import type { SvgExportResult } from "../../export/exportTypes";
+import { svgToBase64 } from "../../../../shared/visualtex-app/src/export/runtime";
+import type { SvgExportResult } from "../../../../shared/visualtex-app/src/export/exportTypes";
 
 const referenceFontPt = 14;
 const maxWidthPt = 500;

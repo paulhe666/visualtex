@@ -11,12 +11,12 @@ import {
   X,
 } from "lucide-react";
 import { buildMarkdownDocument } from "../../../shared/visualtex-app/src/export/markdownExport";
-import { latexToSvg } from "../export/runtime";
+import { latexToSvg } from "../../../shared/visualtex-app/src/export/runtime";
 import {
   copyFormulaDocumentPngToClipboard,
   renderFormulaDocumentPng,
-} from "../export/pngClipboard";
-import { formulaExportErrorMessage } from "../math/latexCompatibility";
+} from "../../../shared/visualtex-app/src/export/pngClipboard";
+import { formulaExportErrorMessage } from "../../../shared/visualtex-app/src/math/latexCompatibility";
 import { useEditorStore } from "../stores/editorStore";
 
 export type ExportFormat = "markdown" | "svg" | "png";

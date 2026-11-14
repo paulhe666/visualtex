@@ -16,7 +16,7 @@ import { visualTexLatexCommandSignatures } from "mathlive";
 import { commandRegistry } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { COMMAND_FREQUENCY } from "../../../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands";
-import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { convertVisualTexLatexToMarkup } from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
 import { inspectMathLiveSourceSafety } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
 import { nativeSuggestionPreviewLatex } from "../../../shared/visualtex-app/src/editor/nativeSuggestionPreviews";
 

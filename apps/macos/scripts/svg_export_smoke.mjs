@@ -3,7 +3,7 @@ import {
   latexToMathMl,
   latexToSvg,
   svgToBase64,
-} from "../src/export/runtime.ts";
+} from "../../shared/visualtex-app/src/export/runtime.ts";
 import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import { EXTENDED_INTEGRAL_SYMBOLS } from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 

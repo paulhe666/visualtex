@@ -3,7 +3,7 @@
 //   tsx scripts/anywhere_unicode_regression.mts
 import assert from "node:assert/strict";
 import { DOMParser } from "@xmldom/xmldom";
-import { latexToMathMlSync } from "../src/export/runtime.ts";
+import { latexToMathMlSync } from "../../shared/visualtex-app/src/export/runtime.ts";
 import { mathMlToUnicode } from "../../shared/visualtex-app/src/anywhere/unicodeMath.ts";
 
 const parse = (xml: string) => new DOMParser().parseFromString(xml, "application/xml") as never;

@@ -11,13 +11,13 @@ import {
   X,
 } from "lucide-react";
 import { buildMarkdownDocument } from "../../../shared/visualtex-app/src/export/markdownExport";
-import { latexToSvg } from "../export/runtime";
+import { latexToSvg } from "../../../shared/visualtex-app/src/export/runtime";
 import {
   copyFormulaDocumentPngToClipboard,
   renderFormulaDocumentPng,
-} from "../export/pngClipboard";
+} from "../../../shared/visualtex-app/src/export/pngClipboard";
 import { isTauriEnvironment } from "../ocr/ocrService";
-import { formulaExportErrorMessage } from "../math/latexCompatibility";
+import { formulaExportErrorMessage } from "../../../shared/visualtex-app/src/math/latexCompatibility";
 import { useEditorStore } from "../stores/editorStore";
 
 export type ExportFormat = "markdown" | "svg" | "png";

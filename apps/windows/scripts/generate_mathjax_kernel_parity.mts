@@ -1,4 +1,4 @@
-// Writes src/math/kernelParityMacros.generated.ts: every command the editing
+// Writes apps/shared/visualtex-app/src/math/kernelParityMacros.generated.ts: every command the editing
 // kernel accepts that MathJax (the MathML behind OMML, MathType and the
 // MathJax SVG) does not define, expanded to the kernel's own meaning:
 //   - symbols: the kernel's code point with its TeX class,
@@ -17,14 +17,14 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
 import { EXPLICIT_MATH_FONT_PACKAGE } from "../../shared/visualtex-app/src/export/explicit-math-font.ts";
-import { VISUALTEX_HANDWRITTEN_MATHML_MACROS } from "../src/math/latexCompatibility.ts";
+import { VISUALTEX_HANDWRITTEN_MATHML_MACROS } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
-import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
+import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/mathLiveCompatibilityMacros.ts";
 import { kernelDictionary as kernel } from "./kernel-dictionary.mts";
 
 type Macro = string | readonly [string, number];
-const output = new URL("../src/math/kernelParityMacros.generated.ts", import.meta.url);
+const output = new URL("../../shared/visualtex-app/src/math/kernelParityMacros.generated.ts", import.meta.url);
 const check = process.argv.includes("--check");
 
 RegisterHTMLHandler(liteAdaptor());
@@ -147,7 +147,7 @@ ${body}
 if (check) {
   const current = fs.existsSync(output) ? fs.readFileSync(output, "utf8").replace(/\r\n/g, "\n") : "";
   if (current !== text) {
-    console.error("src/math/kernelParityMacros.generated.ts is out of date: run scripts/generate_mathjax_kernel_parity.mts");
+    console.error("apps/shared/visualtex-app/src/math/kernelParityMacros.generated.ts is out of date: run scripts/generate_mathjax_kernel_parity.mts");
     process.exit(1);
   }
 } else {

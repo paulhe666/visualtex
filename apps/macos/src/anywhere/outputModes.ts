@@ -101,14 +101,14 @@ export function nextOutputMode(mode: AnywhereOutputMode): AnywhereOutputMode {
 /** Loads what a mode needs before Return (the export path for Unicode and
  *  Image takes a moment the first time). */
 export function warmOutputMode(mode: AnywhereOutputMode) {
-  if (mode === "unicode") void import("../export/runtime");
-  if (mode === "image") void import("../export/pngClipboard");
+  if (mode === "unicode") void import("../../../shared/visualtex-app/src/export/runtime");
+  if (mode === "image") void import("../../../shared/visualtex-app/src/export/pngClipboard");
 }
 
 /** The formula (its rows' LaTeX) as Unicode text. */
 export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMath> {
-  const [{ latexToMathMl }, { mathMlToUnicode }] = await Promise.all([
-    import("../export/runtime"),
+  const [{ latexToMathMlSync }, { mathMlToUnicode }] = await Promise.all([
+    import("../../../shared/visualtex-app/src/export/runtime"),
     import("../../../shared/visualtex-app/src/anywhere/unicodeMath"),
   ]);
   const notes = new Set<string>();
@@ -116,7 +116,7 @@ export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMa
     .map((row) => row.trim())
     .filter(Boolean)
     .map((row) => {
-      const converted = mathMlToUnicode(latexToMathMl(row, false));
+      const converted = mathMlToUnicode(latexToMathMlSync(row, false));
       for (const note of converted.notes) notes.add(note);
       return converted.text;
     });
@@ -139,7 +139,7 @@ export function opaqueHex(color?: string | null) {
  *  a dark chat), so it looks the same to whoever sees it in either theme;
  *  otherwise the main window's image settings. */
 export async function formulaPng(rows: readonly string[], field?: FieldColors | null): Promise<string> {
-  const { renderFormulaDocumentPng } = await import("../export/pngClipboard");
+  const { renderFormulaDocumentPng } = await import("../../../shared/visualtex-app/src/export/pngClipboard");
   const { pngExportBackground, formulaLetterFont, formulaChineseFont } = useEditorStore.getState();
   const png = await renderFormulaDocumentPng(rows, {
     background: field ? (field.background as `#${string}`) : pngExportBackground,

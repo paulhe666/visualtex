@@ -130,7 +130,7 @@ async function renderTemplate(
   }
   const { wordMathMl, svg } = artifacts;
 
-  const { svgToPng } = await import("../../export/svgToPng");
+  const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
   const png = await svgToPng(svg, { scale: 2, background: "transparent" });
   const pngBase64 = png.base64;
   const baseline = svg.baseline;

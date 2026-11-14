@@ -1,3 +1,4 @@
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
@@ -128,7 +129,7 @@ async function main() {
     await sleep(1000);
     const result = await client.send("Runtime.evaluate", {
       expression: `(async () => {
-        const runtime = await import('${baseUrl}/src/export/runtime.ts');
+        const runtime = await import('${baseUrl}${sharedSourceUrl("export/runtime.ts")}');
         const geometry = await import('${baseUrl}/src/office/shared/mathTypeAlignmentGeometry.ts');
         const source = ${JSON.stringify(exactUserAligned)};
         const svg = await runtime.latexToSvg(source, {

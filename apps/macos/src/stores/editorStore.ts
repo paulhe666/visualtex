@@ -66,7 +66,7 @@ import {
   persistFormulaSpacing,
   readPersistedFormulaSpacing,
   type FormulaSpacingPreferences,
-} from "../editor/formulaSpacingPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
 import {
   normalizeButtonShortcutSettings,
   withButtonShortcut,

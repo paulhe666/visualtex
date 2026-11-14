@@ -14,7 +14,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { unzipSync, zipSync, strToU8 } from "fflate";
 import { inflateSync } from "node:zlib";
-import { latexToSvg } from "../src/export/latexToSvg.ts";
+import { latexToSvg } from "../../shared/visualtex-app/src/export/latexToSvg.ts";
 import {
   createFormulaMetadata,
   decodeFormulaMetadata,
