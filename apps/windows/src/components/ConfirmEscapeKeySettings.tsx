@@ -31,9 +31,9 @@ import {
 import {
   buttonShortcutLabel,
   buttonShortcutWithChord,
-} from "../shortcuts/buttonShortcuts";
+} from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { useConfirmEscapeKeyStore } from "../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 

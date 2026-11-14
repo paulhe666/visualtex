@@ -9,7 +9,7 @@ import {
   createFormulaLine,
   normalizeFormulaLines,
   useEditorStore,
-} from "../src/stores/editorStore.ts";
+} from "../../shared/visualtex-app/src/stores/editorStore.ts";
 
 for (const source of ["\\", String.raw`\begin`, String.raw`\begin{}`]) {
   const parsed = parseLatexSourceDraft(source, "raw");

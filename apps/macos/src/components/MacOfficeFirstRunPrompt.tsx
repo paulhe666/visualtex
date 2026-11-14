@@ -10,7 +10,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import type { Language } from "../stores/editorStore";
+import type { Language } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import {
   MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,

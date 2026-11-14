@@ -19,7 +19,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import {
   decodeBooleanStatus,
   decodeNativeRenderStatus,

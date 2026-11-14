@@ -16,7 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import type { InputBehaviorSettingKey } from "../../../shared/visualtex-app/src/types/formula";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import {
   visualTexAutoEscapeInlineShortcuts,
   visualTexAutoEscapeShortcutGroups,

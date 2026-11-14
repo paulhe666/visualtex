@@ -5,7 +5,7 @@ import {
   parseLatexSourceDraft,
 } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import type { FormulaLine } from "../../shared/visualtex-app/src/types/formula.ts";
-import { normalizeFormulaLines, useEditorStore } from "../src/stores/editorStore.ts";
+import { normalizeFormulaLines, useEditorStore } from "../../shared/visualtex-app/src/stores/editorStore.ts";
 
 const lines: FormulaLine[] = [
   { id: "inline-text", latex: String.raw`\text{哈哈哈}abc`, mode: "inline" },

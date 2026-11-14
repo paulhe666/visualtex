@@ -32,7 +32,7 @@ import {
 } from "../shared/formulaEditorDocument";
 import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
 import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
-import { useEditorStore } from "../../stores/editorStore";
+import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { documentImportErrorMessage } from "./documentImportErrors";
 import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import {

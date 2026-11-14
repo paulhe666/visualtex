@@ -4,7 +4,7 @@ import { Keyboard, X } from "lucide-react";
 import {
   officeFormulaShortcutFromEvent,
   type OfficeFormulaShortcutCapture,
-} from "../office/officeFormulaShortcuts";
+} from "../../../shared/visualtex-app/src/office/officeFormulaShortcuts";
 import {
   describeWordShortcutBinding,
   parseWordShortcutConflicts,
@@ -14,7 +14,7 @@ import {
 } from "../office/wordShortcutConflicts";
 import { ANYWHERE_HOTKEY_ACTIONS, anywhereHotkeyLabel } from "../shortcuts/anywhereHotkeys";
 import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type {
   PowerPointFormulaShortcutAction,
   PowerPointFormulaShortcutSettings,

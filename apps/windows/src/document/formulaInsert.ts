@@ -1,7 +1,7 @@
 // Formula commands of the app (toolbar, tiles, the "\" menu in the text) into the document's open formula, exactly
 // as into a formula row (prepare/attemptLatexCommandInsertion), recorded as one document edit.
 import { attemptLatexCommandInsertion, prepareLatexCommandInsertion } from "../editor/MathEditor";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { openDocumentFormula, type OpenDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 

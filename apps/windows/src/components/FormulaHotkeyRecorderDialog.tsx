@@ -13,8 +13,8 @@ import {
   type FormulaHotkeyTarget,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { useEditorStore } from "../stores/editorStore";
-import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import {
   formulaRowHotkeyAction,

@@ -13,7 +13,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import type { Language } from "../stores/editorStore";
+import type { Language } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { RELEASE_WELCOME_VERSION } from "../update/releaseWelcome";
 import { localizeReleaseNotes } from "../../../shared/visualtex-app/src/update/releaseNotes";
 import type { UpdateCheckResult } from "../../../shared/visualtex-app/src/update/updateService";

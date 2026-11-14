@@ -30,7 +30,7 @@ import {
   PanelBottomClose,
   RotateCcw,
 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { LatexSourceDraftResult } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
@@ -124,8 +124,8 @@ export function LatexSourceEditor({
   const onFocusChangeRef = useRef(onFocusChange);
   const focusReleaseFrameRef = useRef<number | null>(null);
   const language = useEditorStore((state) => state.language);
-  const sourceEditorFontSize = useEditorStore(
-    (state) => state.sourceEditorFontSize,
+  const latexSourceFontSize = useEditorStore(
+    (state) => state.latexSourceFontSize,
   );
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
@@ -350,10 +350,10 @@ export function LatexSourceEditor({
       }
       style={
         {
-          "--source-editor-font-size": `${sourceEditorFontSize}px`,
+          "--source-editor-font-size": `${latexSourceFontSize}px`,
         } as CSSProperties
       }
-      data-source-editor-font-size={sourceEditorFontSize}
+      data-source-editor-font-size={latexSourceFontSize}
     >
       {showHeader && (
         <div className="source-panel-header">

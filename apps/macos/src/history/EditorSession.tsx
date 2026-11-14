@@ -7,7 +7,7 @@ import { HistoryManager } from "./HistoryManager";
 import { documentSnapshotsEquivalent } from "./documentSnapshot";
 import { applyHistoryEntryToEditor, getEditorDocumentSnapshot } from "./documentHistory";
 import type { FormulaDocument } from "../../../shared/visualtex-app/src/types/formula";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { DocumentSnapshot, MathSelectionSnapshot, ReplaceDocumentEntry } from "../../../shared/visualtex-app/src/history/historyTypes";
 
 const HistoryContext = createContext<HistoryManager | null>(null);

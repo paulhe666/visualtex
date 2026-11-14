@@ -9,7 +9,7 @@ import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../..
 import {
   joinFormulaLines,
   useEditorStore,
-} from "../../stores/editorStore";
+} from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { useConfirmEscapeKeyStore } from "../../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
@@ -85,7 +85,7 @@ import {
   captureQuickOcrScreenshot,
   quickOcrCaptureToFile,
 } from "../../ocr/quickOcr";
-import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
+import { installButtonShortcuts, onButtonShortcut } from "../../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
 import {

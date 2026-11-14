@@ -23,7 +23,7 @@ import {
   type WordLatexRedrawFailure,
 } from "./wordLatexRedrawRenderer";
 import { mathMlToLatex } from "./mathMlToLatex";
-import { useEditorStore } from "../../stores/editorStore";
+import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { OfficeConversionError, describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 
 // The window follows the app's language (the Office add-in itself stays English: VBA MsgBox).

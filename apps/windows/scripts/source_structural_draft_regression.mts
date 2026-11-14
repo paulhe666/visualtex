@@ -10,7 +10,7 @@ import {
   createFormulaLine,
   normalizeFormulaLines,
   useEditorStore,
-} from "../src/stores/editorStore.ts";
+} from "../../shared/visualtex-app/src/stores/editorStore.ts";
 
 // Deleting the final character in CodeMirror must leave a valid empty formula,
 // so clicking the visual field can leave source-preview/read-only mode.

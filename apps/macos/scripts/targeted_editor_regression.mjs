@@ -594,7 +594,7 @@ async function main() {
         return {
           computed: content ? parseFloat(getComputedStyle(content).fontSize) : -1,
           panelValue: Number(panel?.getAttribute("data-source-editor-font-size") ?? -1),
-          persisted: persisted.sourceEditorFontSize ?? null,
+          persisted: persisted.latexSourceFontSize ?? null,
           sliderValue: slider ? Number(slider.value) : null,
         };
       })()`);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   createEditorPersistenceStorage,
   isOfficeEditorPersistenceScope,
-} from "../src/runtime/editorPersistenceStorage.ts";
+} from "../../shared/visualtex-app/src/runtime/editorPersistenceStorage.ts";
 
 // All storage is a private Map in this process, not browser/user storage.
 const key = "visualtex-editor";

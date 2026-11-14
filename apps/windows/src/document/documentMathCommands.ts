@@ -2,7 +2,7 @@
 // found as the formula editor finds its suggestions, and put into a new inline formula by the formula editor.
 import type { MathCommandProvider, MathCommandSuggestion } from "../../../shared/visualtex-document/src/index.ts";
 import { searchCommands } from "../../../shared/visualtex-app/src/autocomplete/CommandSearchEngine";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula, waitForOpenFormula } from "./formulaInsert";
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   useEditorStore,
   type EditorLayout,
-} from "../src/stores/editorStore.ts";
+} from "../../shared/visualtex-app/src/stores/editorStore.ts";
 import type { InputBehaviorSettingKey, Theme } from "../../shared/visualtex-app/src/types/formula.ts";
 
 const store = useEditorStore;
@@ -37,7 +37,7 @@ const configure = () => {
   state().setFormulaRowVerticalInset(13);
   state().setLatexSourceFontSize(19);
   state().setPngExportBackground("#123456");
-  state().setFormulaLetterFont("palatino");
+  state().setFormulaLetterFont("times");
   state().setFormulaChineseFont("songti");
   state().setPersonalize(false);
   state().setSuggestionCount(9);
@@ -70,7 +70,7 @@ assert.equal(serialized.settings.formulaToolButtonPadding, 7);
 assert.equal(serialized.settings.formulaRowVerticalInset, 13);
 assert.equal(serialized.settings.latexSourceFontSize, 19);
 assert.equal(serialized.settings.pngExportBackground, "#123456");
-assert.equal(serialized.settings.formulaLetterFont, "palatino");
+assert.equal(serialized.settings.formulaLetterFont, "times");
 assert.equal(serialized.settings.formulaChineseFont, "songti");
 assert.deepEqual(serialized.settings.inputBehavior, expectedInputBehavior);
 assert.equal(serialized.settings.personalize, false);
@@ -129,7 +129,7 @@ assert.equal(restored.formulaToolButtonPadding, 7);
 assert.equal(restored.formulaRowVerticalInset, 13);
 assert.equal(restored.latexSourceFontSize, 19);
 assert.equal(restored.pngExportBackground, "#123456");
-assert.equal(restored.formulaLetterFont, "palatino");
+assert.equal(restored.formulaLetterFont, "times");
 assert.equal(restored.formulaChineseFont, "songti");
 assert.deepEqual(restored.inputBehavior, expectedInputBehavior);
 assert.equal(restored.personalize, false);

@@ -605,7 +605,7 @@ async function main() {
       const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
       return {
         value: Number(input?.value ?? -1),
-        persisted: persisted.sourceEditorFontSize ?? null,
+        persisted: persisted.latexSourceFontSize ?? null,
       };
     })()`);
     assert.equal(defaultSourceFontSize.value, 12, JSON.stringify(defaultSourceFontSize));
@@ -720,7 +720,7 @@ async function main() {
       const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
       return {
         value: Number(input?.value ?? -1),
-        persisted: persisted.sourceEditorFontSize ?? null,
+        persisted: persisted.latexSourceFontSize ?? null,
       };
     })()`);
     assert.deepEqual(
@@ -775,7 +775,7 @@ async function main() {
         persistedPadding: persisted.formulaToolButtonPadding ?? null,
         persistedRowVerticalInset: persisted.formulaRowVerticalInset ?? null,
         sourceFontSize: Number(sourceFontSize?.value ?? -1),
-        persistedSourceFontSize: persisted.sourceEditorFontSize ?? null,
+        persistedSourceFontSize: persisted.latexSourceFontSize ?? null,
       };
     })()`);
     assert.deepEqual(
@@ -1764,7 +1764,7 @@ async function main() {
       return {
         panelValue: Number(panel?.getAttribute('data-source-editor-font-size') ?? -1),
         computed: content ? parseFloat(getComputedStyle(content).fontSize) : -1,
-        persisted: persisted.sourceEditorFontSize ?? null,
+        persisted: persisted.latexSourceFontSize ?? null,
       };
     })()`);
     assert.deepEqual(

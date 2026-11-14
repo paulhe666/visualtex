@@ -1,3 +1,4 @@
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { withBrowserTest } from "./browser_test_runtime.mjs";
@@ -16,7 +17,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   const seed = async values => {
     const id = `selection-${++fixture}-`;
     await evaluate(`(async () => {
-      const {useEditorStore: store, createFormulaLine: line} = await import('/src/stores/editorStore.ts');
+      const {useEditorStore: store, createFormulaLine: line} = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
       store.setState({ editorLayout: 'classic', sourceOpen: false,
         lines: ${JSON.stringify(values)}.map((value, i) => line(value, ${JSON.stringify(id)} + i)),
         activeLineId: ${JSON.stringify(id + "0")} });
@@ -278,7 +279,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
     const {createRoot}=(await import('/node_modules/.vite/deps/react-dom_client.js')).default;
     const {MathEditor}=await import('/src/editor/MathEditor.tsx');
     const {EditorSessionProvider,useDocumentSession}=await import('/src/history/EditorSession.tsx');
-    const {useEditorStore:store,createFormulaLine:line}=await import('/src/stores/editorStore.ts');
+    const {useEditorStore:store,createFormulaLine:line}=await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     const wait=()=>new Promise(r=>setTimeout(r,100));
     const ref=React.createRef(),host=document.createElement('div');document.body.append(host);
     function Harness(){const state=store();useDocumentSession(ref);return React.createElement(MathEditor,{

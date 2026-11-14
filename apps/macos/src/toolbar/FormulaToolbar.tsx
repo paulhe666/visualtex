@@ -53,7 +53,7 @@ import {
   formulaHotkeyTargetLabel,
   type FormulaHotkeyTarget,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../../../shared/visualtex-app/src/runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";

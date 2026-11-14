@@ -15,7 +15,7 @@ import type {
 } from "../documentImport/documentImportClient";
 import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
 import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
-import { useEditorStore } from "../../stores/editorStore";
+import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 

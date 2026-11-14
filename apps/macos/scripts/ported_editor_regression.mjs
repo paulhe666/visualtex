@@ -1,3 +1,4 @@
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
 import { withBrowserTest } from "./browser_test_runtime.mjs";
 
@@ -33,7 +34,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   };
   const reset = (latex = "") => evaluate(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const { useEditorStore: store, createFormulaLine } = await import('/src/stores/editorStore.ts');
+    const { useEditorStore: store, createFormulaLine } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     store.setState({ editorLayout: 'standard', lines: [createFormulaLine(${JSON.stringify(latex)}, 'ported')], activeLineId: 'ported' });
     await wait(200);
     const field = document.querySelector('math-field');
@@ -110,7 +111,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
 
   const source = await evaluate(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const { useEditorStore: store } = await import('/src/stores/editorStore.ts');
+    const { useEditorStore: store } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     store.setState({ sourceOpen: true });
     await wait(300);
     const { EditorView } = await import('/node_modules/.vite/deps/@codemirror_view.js');

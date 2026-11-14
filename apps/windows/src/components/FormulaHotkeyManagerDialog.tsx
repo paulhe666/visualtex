@@ -15,7 +15,7 @@ import {
 } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import {
   FORMULA_ROW_HOTKEY_ACTIONS,
   formulaRowHotkeyActionLabel,

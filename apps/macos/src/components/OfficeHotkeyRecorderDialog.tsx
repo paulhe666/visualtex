@@ -24,7 +24,7 @@ import {
   type OfficeHotkeyActionDefinition,
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 

@@ -30,7 +30,7 @@ import {
   PanelBottomClose,
   RotateCcw,
 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { LatexSourceDraftResult } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import type { LatexCodeFormat, Theme } from "../../../shared/visualtex-app/src/types/formula";

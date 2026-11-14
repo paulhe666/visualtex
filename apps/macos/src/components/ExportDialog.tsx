@@ -17,7 +17,7 @@ import {
   renderFormulaDocumentPng,
 } from "../../../shared/visualtex-app/src/export/pngClipboard";
 import { formulaExportErrorMessage } from "../../../shared/visualtex-app/src/math/latexCompatibility";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 
 export type ExportFormat = "markdown" | "svg" | "png";
 

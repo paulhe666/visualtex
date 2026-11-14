@@ -54,7 +54,7 @@ import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFo
 import { stripVisualTexAlignmentMarkers } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import { normalizeChineseLatexAsWritten } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "../../../shared/visualtex-app/src/document/MathchaChrome";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
 import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";

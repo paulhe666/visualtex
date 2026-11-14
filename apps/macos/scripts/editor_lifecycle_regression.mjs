@@ -55,7 +55,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   // The script runs through the same store and mounted MathEditor as the app.
   const focus = await evaluate(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const { useEditorStore, createFormulaLine } = await import('/src/stores/editorStore.ts');
+    const { useEditorStore, createFormulaLine } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     const readyBy = performance.now() + 10000;
     while (!document.querySelector('math-field')?.shadowRoot) {
       if (performance.now() > readyBy) throw new Error('Editor did not mount');
@@ -95,7 +95,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   ];
   const preview = await evaluate(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const { useEditorStore, createFormulaLine } = await import('/src/stores/editorStore.ts');
+    const { useEditorStore, createFormulaLine } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     useEditorStore.setState({
       editorLayout: 'standard', sourceOpen: true,
       lines: [createFormulaLine('x', 'external-sync')], activeLineId: 'external-sync',

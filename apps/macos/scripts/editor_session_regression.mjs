@@ -1,3 +1,4 @@
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
 import { withBrowserTest } from "./browser_test_runtime.mjs";
 
@@ -62,7 +63,7 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   });
 
   const transaction = await evaluate(`(async () => {
-    const { useEditorStore: store, createFormulaLine } = await import('/src/stores/editorStore.ts');
+    const { useEditorStore: store, createFormulaLine } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     const { HistoryManager } = await import('/src/history/HistoryManager.ts');
     const { commitFormulaEdit, applyHistoryEntryToEditor, getEditorDocumentSnapshot } =
       await import('/src/history/documentHistory.ts');

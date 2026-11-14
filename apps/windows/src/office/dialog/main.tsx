@@ -22,7 +22,7 @@ import {
 import {
   normalizeEditorLayout,
   useEditorStore,
-} from "../../stores/editorStore";
+} from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { VisualTexErrorBoundary } from "../../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
 
 configureOcrTransport(officeOcrTransport);

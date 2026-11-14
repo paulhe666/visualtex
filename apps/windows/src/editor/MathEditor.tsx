@@ -49,7 +49,7 @@ import { getEditorDocumentSnapshot } from "../history/documentHistory";
 import {
   createFormulaLine,
   useEditorStore,
-} from "../stores/editorStore";
+} from "../../../shared/visualtex-app/src/stores/editorStore";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import { useConfirmEscapeKeyStore } from "../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";

@@ -5,7 +5,7 @@ import {
   normalizePowerPointFormulaShortcutSettings,
   normalizeWordFormulaShortcutSettings,
   officeFormulaShortcutFromEvent,
-} from "../src/office/officeFormulaShortcuts";
+} from "../../shared/visualtex-app/src/office/officeFormulaShortcuts";
 import {
   describeWordShortcutBinding,
   parseWordShortcutConflicts,

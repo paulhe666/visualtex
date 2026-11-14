@@ -4,7 +4,8 @@ import {
   formulaHotkeyHasModifier,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-} from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+} from "./formulaHotkeys";
+import { APP_PLATFORM } from "@platform/appInfo";
 
 // Button shortcuts (Settings > Keyboard shortcuts): the user may give the
 // common buttons of the main window and of the Office editor window a key
@@ -124,19 +125,31 @@ export function buttonShortcutWithChord(
   return null;
 }
 
-/** Chords the app keeps for itself besides the protected editing ones (macOS: Command chords). */
+/**
+ * Chords the app keeps for itself besides the protected editing ones. The primary key is Ctrl on Windows and
+ * Command on macOS, where the system's own Command chords are kept as well.
+ */
 function reservedChordAction(chord: FormulaHotkeyChord, language: "cn" | "en"): string | null {
-  const only = (meta: boolean, alt: boolean, shift: boolean) =>
-    chord.metaKey === meta && chord.altKey === alt && chord.shiftKey === shift && !chord.ctrlKey;
+  const mac = APP_PLATFORM === "macos";
+  const only = (primary: boolean, alt: boolean, shift: boolean) =>
+    (mac ? chord.metaKey : chord.ctrlKey) === primary &&
+    chord.altKey === alt &&
+    chord.shiftKey === shift &&
+    !(mac ? chord.ctrlKey : chord.metaKey);
   if (chord.code === "KeyK" && only(true, false, true)) return language === "en" ? "the keypad" : "小键盘";
   if (chord.code === "Backslash" && only(true, false, false)) return language === "en" ? "switching between formula and source" : "公式 / 源码切换";
-  if (chord.code === "KeyO" && only(true, false, true)) return language === "en" ? "silent OCR (system-wide)" : "静默 OCR（全局）";
+  // silent OCR: Ctrl+Alt+O on Windows, Command+Shift+O on macOS
+  if (chord.code === "KeyO" && (mac ? only(true, false, true) : only(true, true, false))) {
+    return language === "en" ? "silent OCR (system-wide)" : "静默 OCR（全局）";
+  }
   if (chord.code === "KeyA" && only(true, false, false)) return language === "en" ? "Select all" : "全选";
   if (chord.code === "KeyG" && only(true, false, false)) return language === "en" ? "Greek letters" : "希腊字母";
-  if (chord.code === "KeyH" && only(true, false, false)) return language === "en" ? "hiding the app (macOS)" : "隐藏应用（macOS）";
-  if (chord.code === "KeyQ" && only(true, false, false)) return language === "en" ? "quitting the app (macOS)" : "退出应用（macOS）";
-  if (chord.code === "KeyW" && only(true, false, false)) return language === "en" ? "closing the window (macOS)" : "关闭窗口（macOS）";
-  if (chord.code === "Comma" && only(true, false, false)) return language === "en" ? "Settings (macOS)" : "设置（macOS）";
+  if (mac && only(true, false, false)) {
+    if (chord.code === "KeyH") return language === "en" ? "hiding the app (macOS)" : "隐藏应用（macOS）";
+    if (chord.code === "KeyQ") return language === "en" ? "quitting the app (macOS)" : "退出应用（macOS）";
+    if (chord.code === "KeyW") return language === "en" ? "closing the window (macOS)" : "关闭窗口（macOS）";
+    if (chord.code === "Comma") return language === "en" ? "Settings (macOS)" : "设置（macOS）";
+  }
   return null;
 }
 
@@ -146,9 +159,14 @@ export function buttonShortcutChordProblem(
   language: "cn" | "en" = "cn",
 ): string | null {
   if (!formulaHotkeyHasModifier(chord)) {
+    if (APP_PLATFORM === "macos") {
+      return language === "en"
+        ? "Add Command, Option or Control; Shift can be used in addition."
+        : "请加入 Command、Option 或 Control；Shift 可作为附加修饰键。";
+    }
     return language === "en"
-      ? "Add Command, Option or Control; Shift can be used in addition."
-      : "请加入 Command、Option 或 Control；Shift 可作为附加修饰键。";
+      ? "Add Ctrl, Option/Alt or Command; Shift can be used in addition."
+      : "请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。";
   }
   const reserved = reservedChordAction(chord, language) ?? protectedFormulaHotkeyAction(chord, language);
   if (reserved) {

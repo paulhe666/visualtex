@@ -25,7 +25,7 @@ import {
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import {
   OFFICE_HOTKEY_ACTIONS,
   officeHotkeyActionLabel,

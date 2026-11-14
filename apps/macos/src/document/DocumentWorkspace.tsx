@@ -27,7 +27,7 @@ import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/Math
 import type { FormulaEditSource } from "../../../shared/visualtex-app/src/history/historyTypes";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { createSafeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";

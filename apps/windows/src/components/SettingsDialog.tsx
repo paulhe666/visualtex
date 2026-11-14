@@ -40,7 +40,7 @@ import {
   MIN_FORMULA_TOOL_BUTTON_SIZE,
   MIN_LATEX_SOURCE_FONT_SIZE,
   useEditorStore,
-} from "../stores/editorStore";
+} from "../../../shared/visualtex-app/src/stores/editorStore";
 import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
 import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";

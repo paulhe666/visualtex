@@ -24,7 +24,7 @@ import {
 } from "../../../shared/visualtex-document/src/index.ts";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
 import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { Theme } from "../../../shared/visualtex-app/src/types/formula";
 import { portableFormulaLatex } from "./DocumentEditor";
 

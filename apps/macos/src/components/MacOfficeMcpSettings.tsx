@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, History, KeyRound, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { mcpClientGuides } from "../../../shared/visualtex-app/src/components/mcpClientGuides";
 
 // Settings → Office integration → AI agents (MCP): docs/office-mcp/MACOS.md. A client starts the VisualTeX

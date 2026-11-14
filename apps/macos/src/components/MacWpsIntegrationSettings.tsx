@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, Download, FileText, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { MacOfficeFullDiskAccessHelp } from "./MacOfficeFullDiskAccessHelp";
 import { StatusLine } from "./MacOfficeIntegrationSettings";
 

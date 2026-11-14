@@ -266,7 +266,7 @@ async function main() {
     const collisionChecks = await mainClient.evaluate(`(async () => {
       const registration = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistration.ts"))});
       const registry = await import(${JSON.stringify(sharedSourceUrl("math/customSymbolRegistry.ts"))});
-      const editorStore = await import("/src/stores/editorStore.ts");
+      const editorStore = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
       const exportRuntime = await import(${JSON.stringify(sharedSourceUrl("export/runtime.ts"))});
       const officeRender = await import("/src/office/shared/formulaRenderArtifacts.ts");
       const applicationConfiguration = await import("/src/runtime/applicationConfiguration.ts");
@@ -876,7 +876,7 @@ async function main() {
     process.stdout.write("[custom-symbol-runtime] export and Office rendering verified\n");
 
     const configurationSnapshot = await mainClient.evaluate(`(async () => {
-      const editorStore = await import("/src/stores/editorStore.ts");
+      const editorStore = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
       window.__visualtexEditorStore = editorStore;
       editorStore.useEditorStore.setState({
         usage: {

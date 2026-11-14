@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, RotateCcw, Sigma, Trash2 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
 import {
   ANYWHERE_HOTKEY_ACTIONS,

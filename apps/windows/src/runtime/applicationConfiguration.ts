@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { publishSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { OCR_MODELS } from "../ocr/ocrService";

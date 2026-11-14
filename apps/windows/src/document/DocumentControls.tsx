@@ -73,7 +73,7 @@ import {
 import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "../../../shared/visualtex-app/src/document/systemFonts";
 import { CitationPicker } from "../../../shared/visualtex-app/src/document/CitationPicker";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { ColorMenuButton } from "../../../shared/visualtex-app/src/document/ColorPalette";
 import { setMathLivePersistentTypingStyle, type MathLivePersistentTypingStyle } from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";

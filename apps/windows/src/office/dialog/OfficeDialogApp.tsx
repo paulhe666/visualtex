@@ -19,7 +19,7 @@ import {
 } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
 import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
-import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
+import { installButtonShortcuts, onButtonShortcut } from "../../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { sameConfirmEscapeChord } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
 import {
   normalizeConfirmEscapeChord,
@@ -48,7 +48,7 @@ import {
   joinFormulaLines,
   normalizeEditorLayout,
   useEditorStore,
-} from "../../stores/editorStore";
+} from "../../../../shared/visualtex-app/src/stores/editorStore";
 import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,

@@ -10,7 +10,7 @@ import {
 } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { useHistoryManager } from "../history/EditorSession";
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";

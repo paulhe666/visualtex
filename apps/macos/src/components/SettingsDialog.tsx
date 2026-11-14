@@ -27,20 +27,20 @@ import {
   DEFAULT_FORMULA_ROW_VERTICAL_INSET,
   DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
   DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
-  DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+  DEFAULT_LATEX_SOURCE_FONT_SIZE,
   EDITOR_ZOOM_STEP,
   MAX_FORMULA_INSET,
   MAX_FORMULA_ROW_VERTICAL_INSET,
   MAX_FORMULA_TOOL_BUTTON_PADDING,
   MAX_FORMULA_TOOL_BUTTON_SIZE,
-  MAX_SOURCE_EDITOR_FONT_SIZE,
+  MAX_LATEX_SOURCE_FONT_SIZE,
   MIN_FORMULA_INSET,
   MIN_FORMULA_ROW_VERTICAL_INSET,
   MIN_FORMULA_TOOL_BUTTON_PADDING,
   MIN_FORMULA_TOOL_BUTTON_SIZE,
-  MIN_SOURCE_EDITOR_FONT_SIZE,
+  MIN_LATEX_SOURCE_FONT_SIZE,
   useEditorStore,
-} from "../stores/editorStore";
+} from "../../../shared/visualtex-app/src/stores/editorStore";
 import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
 import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
 import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
@@ -215,8 +215,8 @@ export function SettingsDialog({
   const highlightActiveLine = useEditorStore(
     (state) => state.highlightActiveLine,
   );
-  const sourceEditorFontSize = useEditorStore(
-    (state) => state.sourceEditorFontSize,
+  const latexSourceFontSize = useEditorStore(
+    (state) => state.latexSourceFontSize,
   );
   const keypadMinimizeOnCopy = useEditorStore(
     (state) => state.keypadMinimizeOnCopy,
@@ -246,8 +246,8 @@ export function SettingsDialog({
   const setHighlightActiveLine = useEditorStore(
     (state) => state.setHighlightActiveLine,
   );
-  const setSourceEditorFontSize = useEditorStore(
-    (state) => state.setSourceEditorFontSize,
+  const setLatexSourceFontSize = useEditorStore(
+    (state) => state.setLatexSourceFontSize,
   );
   const setKeypadMinimizeOnCopy = useEditorStore(
     (state) => state.setKeypadMinimizeOnCopy,
@@ -544,8 +544,8 @@ export function SettingsDialog({
                           DEFAULT_FORMULA_ROW_VERTICAL_INSET,
                         );
       
-      setSourceEditorFontSize(
-                          DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+      setLatexSourceFontSize(
+                          DEFAULT_LATEX_SOURCE_FONT_SIZE,
                         );
     },
     fonts: () => {
@@ -1168,20 +1168,20 @@ export function SettingsDialog({
                 <label className="range-setting formula-inset-range">
                   <span>
                     <strong>{isEn ? "Text size" : "文字大小"}</strong>
-                    <span className="setting-value">{sourceEditorFontSize}px</span>
+                    <span className="setting-value">{latexSourceFontSize}px</span>
                   </span>
                   <input
                     type="range"
-                    min={MIN_SOURCE_EDITOR_FONT_SIZE}
-                    max={MAX_SOURCE_EDITOR_FONT_SIZE}
+                    min={MIN_LATEX_SOURCE_FONT_SIZE}
+                    max={MAX_LATEX_SOURCE_FONT_SIZE}
                     step="1"
-                    value={sourceEditorFontSize}
+                    value={latexSourceFontSize}
                     data-source-editor-font-size-setting
                     aria-label={
                       isEn ? "Source editor text size" : "源码编辑器文字大小"
                     }
                     onChange={(event) =>
-                      setSourceEditorFontSize(Number(event.target.value))
+                      setLatexSourceFontSize(Number(event.target.value))
                     }
                   />
                 </label>

@@ -7,7 +7,7 @@ import type {
   FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
-import { useEditorStore } from "../../stores/editorStore";
+import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
 import {
   latexLinesToOmmlArtifacts,
   type OmmlArtifacts,

@@ -70,7 +70,7 @@ import {
   MIN_EDITOR_ZOOM,
   joinFormulaLines,
   useEditorStore,
-} from "./stores/editorStore";
+} from "../../shared/visualtex-app/src/stores/editorStore";
 import { useConfirmEscapeKeyStore } from "../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import {
   historyManager,
@@ -140,7 +140,7 @@ import {
   SILENT_OCR_STORAGE_KEY,
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
-import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
+import { installButtonShortcuts, onButtonShortcut } from "../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";

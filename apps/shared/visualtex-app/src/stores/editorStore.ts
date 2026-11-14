@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CommandSource, CommandUsage } from "../../../shared/visualtex-app/src/types/command";
+import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
   FormulaAlignment,
@@ -12,32 +12,36 @@ import type {
   InputBehaviorSettings,
   LatexCodeFormat,
   LatexFormatProfile,
+  PowerPointFormulaShortcutAction,
+  PowerPointFormulaShortcutSettings,
   Theme,
-} from "../../../shared/visualtex-app/src/types/formula";
-import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
+  WordFormulaInsertFormat,
+  WordFormulaShortcutSettings,
+} from "../types/formula";
+import type { DocumentSnapshot } from "../history/historyTypes";
 import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
-} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
+} from "../clipboard/LatexCopyService";
 import {
   DEFAULT_LATEX_FORMAT_PROFILE,
   legacyCodeFormatToProfile,
   normalizeLatexFormatProfile,
-} from "../../../shared/visualtex-app/src/clipboard/latexFormatProfile";
-import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
-import { normalizeMultilineLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { normalizeFormulaLinePhysicalWhitespace } from "../../../shared/visualtex-app/src/math/formulaLineLatex";
-import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment";
-import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+} from "../clipboard/latexFormatProfile";
+import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
+import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
+import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
+import { createUuid } from "../runtime/browserCompatibility";
+import { safeStorage } from "../runtime/safeStorage";
 import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
   type PngExportBackground,
-} from "../../../shared/visualtex-app/src/export/pngBackground";
-import { isTheme } from "../../../shared/visualtex-app/src/themeCustomization";
+} from "../export/pngBackground";
+import { isTheme } from "../themeCustomization";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -54,11 +58,7 @@ import {
   type FormulaFaceRole,
   type FormulaFaces,
   type FormulaLetterFont,
-} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-
-export type Language = "cn" | "en";
-export type EditorLayout = "standard" | "classic";
-export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
+} from "../editor/formulaFontPreferences";
 import {
   defaultFormulaSpacingPreferences,
   mergeFormulaSpacingPreferences,
@@ -66,21 +66,32 @@ import {
   persistFormulaSpacing,
   readPersistedFormulaSpacing,
   type FormulaSpacingPreferences,
-} from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
+} from "../editor/formulaSpacingPreferences";
 import {
   normalizeButtonShortcutSettings,
   withButtonShortcut,
   type ButtonShortcutId,
   type ButtonShortcutSettings,
 } from "../shortcuts/buttonShortcuts";
-import type { FormulaHotkeyChord } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
+import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
+import {
+  DEFAULT_POWERPOINT_FORMULA_SHORTCUTS,
+  DEFAULT_WORD_FORMULA_SHORTCUTS,
+  normalizeOfficeFormulaShortcut,
+  normalizePowerPointFormulaShortcutSettings,
+  normalizeWordFormulaShortcutSettings,
+} from "../office/officeFormulaShortcuts";
+
+export type Language = "cn" | "en";
+export type EditorLayout = "standard" | "classic";
+export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
 export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 export const EDITOR_ZOOM_STEP = 0.05;
-export const DEFAULT_SOURCE_EDITOR_FONT_SIZE = 12;
-export const MIN_SOURCE_EDITOR_FONT_SIZE = 9;
-export const MAX_SOURCE_EDITOR_FONT_SIZE = 28;
+export const DEFAULT_LATEX_SOURCE_FONT_SIZE = 12;
+export const MIN_LATEX_SOURCE_FONT_SIZE = 8;
+export const MAX_LATEX_SOURCE_FONT_SIZE = 32;
 export const DEFAULT_FORMULA_INSET = 34;
 export const MIN_FORMULA_INSET = 0;
 export const MAX_FORMULA_INSET = 96;
@@ -168,14 +179,14 @@ function normalizeEditorZoom(value: unknown) {
   return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
 }
 
-function normalizeSourceEditorFontSize(value: unknown) {
+export function normalizeLatexSourceFontSize(value: unknown) {
   const size =
     typeof value === "number" && Number.isFinite(value)
       ? Math.round(value)
-      : DEFAULT_SOURCE_EDITOR_FONT_SIZE;
+      : DEFAULT_LATEX_SOURCE_FONT_SIZE;
   return Math.min(
-    MAX_SOURCE_EDITOR_FONT_SIZE,
-    Math.max(MIN_SOURCE_EDITOR_FONT_SIZE, size),
+    MAX_LATEX_SOURCE_FONT_SIZE,
+    Math.max(MIN_LATEX_SOURCE_FONT_SIZE, size),
   );
 }
 
@@ -376,7 +387,7 @@ interface EditorState {
   language: Language;
   zoom: number;
   sourceOpen: boolean;
-  sourceEditorFontSize: number;
+  latexSourceFontSize: number;
   latexCodeFormat: LatexCodeFormat;
   latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
@@ -404,6 +415,12 @@ interface EditorState {
   candidateStyle: CandidateStyle;
   checkUpdatesOnStartup: boolean;
   powerPointDefaultFontSizePt: number;
+  /** Word, PowerPoint and WPS shortcuts of the Windows add-ins: the Windows backend reads them from the editor
+   * preferences (the macOS app keeps its Office hotkeys in stores/officeHotkeyStore.ts) */
+  wordFormulaShortcuts: WordFormulaShortcutSettings;
+  powerPointFormulaShortcuts: PowerPointFormulaShortcutSettings;
+  wpsWriterFormulaShortcuts: WordFormulaShortcutSettings;
+  wpsPresentationFormulaShortcuts: PowerPointFormulaShortcutSettings;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   /** chords the user gave common buttons (shortcuts/buttonShortcuts.ts); none at first */
@@ -418,7 +435,7 @@ interface EditorState {
   setLanguage: (language: Language) => void;
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
-  setSourceEditorFontSize: (size: number) => void;
+  setLatexSourceFontSize: (size: number) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setLatexFormatProfile: (
     update:
@@ -453,12 +470,75 @@ interface EditorState {
   setCandidateStyle: (style: CandidateStyle) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
   setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
+  setWordFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setPowerPointFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
+  ) => void;
+  setWpsWriterFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setWpsPresentationFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
+  ) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
   clearHistory: () => void;
   loadDocument: (document: FormulaDocument) => void;
   toDocument: () => FormulaDocument;
+}
+
+/** Word or WPS Writer: the host's shortcuts after one kind changes (a shortcut taken over from
+ * the other kind leaves it). */
+function nextDocumentFormulaShortcuts(
+  hostSettings: WordFormulaShortcutSettings,
+  kind: keyof WordFormulaShortcutSettings,
+  update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+): WordFormulaShortcutSettings {
+  const otherKind = kind === "inline" ? "display" : "inline";
+  const shortcut =
+    update.shortcut === undefined
+      ? hostSettings[kind].shortcut
+      : normalizeOfficeFormulaShortcut(update.shortcut);
+  const format =
+    update.format === "omml"
+      ? "omml"
+      : update.format === "ole"
+        ? "ole"
+        : hostSettings[kind].format;
+  return {
+    ...hostSettings,
+    [kind]: { shortcut, format },
+    [otherKind]:
+      shortcut && hostSettings[otherKind].shortcut === shortcut
+        ? { ...hostSettings[otherKind], shortcut: null }
+        : hostSettings[otherKind],
+  };
+}
+
+/** PowerPoint or WPS Presentation: the host's shortcuts after one action changes (a shortcut
+ * taken over from another action leaves it). */
+function nextSlideFormulaShortcuts(
+  current: PowerPointFormulaShortcutSettings,
+  action: PowerPointFormulaShortcutAction,
+  value: string | null,
+): PowerPointFormulaShortcutSettings {
+  const shortcut = normalizeOfficeFormulaShortcut(value);
+  const next = { ...current, [action]: shortcut };
+  if (shortcut) {
+    for (const otherAction of ["svg", "ole", "inlineOmml", "displayOmml"] as const) {
+      if (otherAction !== action && next[otherAction] === shortcut) {
+        next[otherAction] = null;
+      }
+    }
+  }
+  return next;
 }
 
 const initialLatex = "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,\\mathrm{d}x = \\sqrt{\\pi}";
@@ -476,7 +556,7 @@ export const useEditorStore = create<EditorState>()(
       language: "cn",
       zoom: 0.6,
       sourceOpen: false,
-      sourceEditorFontSize: DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+      latexSourceFontSize: DEFAULT_LATEX_SOURCE_FONT_SIZE,
       latexCodeFormat: "mixed-inline-display",
       latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
@@ -512,6 +592,16 @@ export const useEditorStore = create<EditorState>()(
       candidateStyle: "list",
       checkUpdatesOnStartup: true,
       powerPointDefaultFontSizePt: 20,
+      wordFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
+      powerPointFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
+      wpsWriterFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
+      wpsPresentationFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -553,10 +643,10 @@ export const useEditorStore = create<EditorState>()(
       setLanguage: (language) => set({ language }),
       setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
-      setSourceEditorFontSize: (sourceEditorFontSize) =>
+      setLatexSourceFontSize: (latexSourceFontSize) =>
         set({
-          sourceEditorFontSize: normalizeSourceEditorFontSize(
-            sourceEditorFontSize,
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            latexSourceFontSize,
           ),
         }),
       setLatexCodeFormat: (latexCodeFormat) =>
@@ -675,6 +765,22 @@ export const useEditorStore = create<EditorState>()(
             Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
             2,
         }),
+      setWordFormulaShortcut: (kind, update) =>
+        set((state) => ({
+          wordFormulaShortcuts: nextDocumentFormulaShortcuts(state.wordFormulaShortcuts, kind, update),
+        })),
+      setPowerPointFormulaShortcut: (action, value) =>
+        set((state) => ({
+          powerPointFormulaShortcuts: nextSlideFormulaShortcuts(state.powerPointFormulaShortcuts, action, value),
+        })),
+      setWpsWriterFormulaShortcut: (kind, update) =>
+        set((state) => ({
+          wpsWriterFormulaShortcuts: nextDocumentFormulaShortcuts(state.wpsWriterFormulaShortcuts, kind, update),
+        })),
+      setWpsPresentationFormulaShortcut: (action, value) =>
+        set((state) => ({
+          wpsPresentationFormulaShortcuts: nextSlideFormulaShortcuts(state.wpsPresentationFormulaShortcuts, action, value),
+        })),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
           const now = Date.now();
@@ -791,11 +897,12 @@ export const useEditorStore = create<EditorState>()(
             // Keep the user's current workspace choice when opening old files
             // that still carry the legacy settings.sourceOpen field.
             sourceOpen: state.sourceOpen,
-            sourceEditorFontSize:
-              settings.sourceEditorFontSize === undefined
-                ? state.sourceEditorFontSize
-                : normalizeSourceEditorFontSize(
-                    settings.sourceEditorFontSize,
+            // files the macOS app wrote before the shared code name it sourceEditorFontSize
+            latexSourceFontSize:
+              (settings.latexSourceFontSize ?? settings.sourceEditorFontSize) === undefined
+                ? state.latexSourceFontSize
+                : normalizeLatexSourceFontSize(
+                    settings.latexSourceFontSize ?? settings.sourceEditorFontSize,
                   ),
             latexCodeFormat: "mixed-inline-display",
             latexFormatProfile:
@@ -877,6 +984,28 @@ export const useEditorStore = create<EditorState>()(
               settings.buttonShortcuts === undefined
                 ? state.buttonShortcuts
                 : normalizeButtonShortcutSettings(settings.buttonShortcuts),
+            wordFormulaShortcuts:
+              settings.wordFormulaShortcuts === undefined
+                ? state.wordFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(
+                    settings.wordFormulaShortcuts,
+                  ),
+            powerPointFormulaShortcuts:
+              settings.powerPointFormulaShortcuts === undefined
+                ? state.powerPointFormulaShortcuts
+                : normalizePowerPointFormulaShortcutSettings(
+                    settings.powerPointFormulaShortcuts,
+                  ),
+            wpsWriterFormulaShortcuts:
+              settings.wpsWriterFormulaShortcuts === undefined
+                ? state.wpsWriterFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(settings.wpsWriterFormulaShortcuts),
+            wpsPresentationFormulaShortcuts:
+              settings.wpsPresentationFormulaShortcuts === undefined
+                ? state.wpsPresentationFormulaShortcuts
+                : normalizePowerPointFormulaShortcutSettings(
+                    settings.wpsPresentationFormulaShortcuts,
+                  ),
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -917,7 +1046,7 @@ export const useEditorStore = create<EditorState>()(
             editorLayout: state.editorLayout,
             language: state.language,
             sourceOpen: state.sourceOpen,
-            sourceEditorFontSize: state.sourceEditorFontSize,
+            latexSourceFontSize: state.latexSourceFontSize,
             autoPairDelimiters: state.autoPairDelimiters,
             showLineNumbers: state.showLineNumbers,
             highlightActiveLine: state.highlightActiveLine,
@@ -937,6 +1066,10 @@ export const useEditorStore = create<EditorState>()(
             checkUpdatesOnStartup: state.checkUpdatesOnStartup,
             powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
             buttonShortcuts: state.buttonShortcuts,
+            wordFormulaShortcuts: state.wordFormulaShortcuts,
+            powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+            wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+            wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -957,7 +1090,7 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
-        sourceEditorFontSize: state.sourceEditorFontSize,
+        latexSourceFontSize: state.latexSourceFontSize,
         latexCodeFormat: "mixed-inline-display",
         latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
@@ -980,6 +1113,10 @@ export const useEditorStore = create<EditorState>()(
         candidateStyle: state.candidateStyle,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+        wordFormulaShortcuts: state.wordFormulaShortcuts,
+        powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+        wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+        wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
         buttonShortcuts: state.buttonShortcuts,
         usage: state.usage,
         history: state.history,
@@ -987,8 +1124,10 @@ export const useEditorStore = create<EditorState>()(
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<EditorState> & {
           latex?: string;
+          /** the macOS app's name for latexSourceFontSize before the shared code */
+          sourceEditorFontSize?: unknown;
         };
-        const { latex: legacyLatex, ...currentPersisted } = persisted;
+        const { latex: legacyLatex, sourceEditorFontSize: legacySourceFontSize, ...currentPersisted } = persisted;
         const storedFormulaFonts = readPersistedFormulaFontPreferences();
         const lines = normalizeFormulaLines(persisted.lines, legacyLatex);
         const legacyLineAlignment = Array.isArray(persisted.lines)
@@ -1005,8 +1144,8 @@ export const useEditorStore = create<EditorState>()(
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
           zoom: normalizeEditorZoom(persisted.zoom),
-          sourceEditorFontSize: normalizeSourceEditorFontSize(
-            persisted.sourceEditorFontSize,
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            persisted.latexSourceFontSize ?? legacySourceFontSize,
           ),
           latexCodeFormat: "mixed-inline-display",
           latexFormatProfile:
@@ -1077,6 +1216,18 @@ export const useEditorStore = create<EditorState>()(
             persisted.inputBehavior,
           ),
           buttonShortcuts: normalizeButtonShortcutSettings(persisted.buttonShortcuts),
+          wordFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wordFormulaShortcuts,
+          ),
+          powerPointFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
+            persisted.powerPointFormulaShortcuts,
+          ),
+          wpsWriterFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wpsWriterFormulaShortcuts,
+          ),
+          wpsPresentationFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
+            persisted.wpsPresentationFormulaShortcuts,
+          ),
           powerPointDefaultFontSizePt:
             typeof persisted.powerPointDefaultFontSizePt === "number" &&
             Number.isFinite(persisted.powerPointDefaultFontSizePt)

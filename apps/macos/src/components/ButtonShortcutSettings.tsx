@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { MousePointerClick, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
@@ -10,7 +10,7 @@ import {
   buttonShortcutChordProblem,
   buttonShortcutWithChord,
   type ButtonShortcutId,
-} from "../shortcuts/buttonShortcuts";
+} from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,

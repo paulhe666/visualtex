@@ -15,7 +15,7 @@
  */
 import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { UnicodeMath } from "../../../shared/visualtex-app/src/anywhere/unicodeMath";
 
 export type AnywhereOutputMode = "source" | "markdown" | "unicode" | "image";

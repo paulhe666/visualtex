@@ -51,7 +51,7 @@ Object.defineProperty(globalThis, "window", {
     innerWidth: 1333,
     innerHeight: 777,
     localStorage,
-    location: { search: "" },
+    location: { pathname: "/", search: "" },
     addEventListener() {},
     removeEventListener() {},
     dispatchEvent() {
@@ -114,7 +114,7 @@ const {
   buildVisualTexConfiguration,
   parseVisualTexConfiguration,
 } = await import("../src/runtime/applicationConfiguration.ts");
-const { useEditorStore } = await import("../src/stores/editorStore.ts");
+const { useEditorStore } = await import("../../shared/visualtex-app/src/stores/editorStore.ts");
 const { safeStorage } = await import("../../shared/visualtex-app/src/runtime/safeStorage.ts");
 
 const editor = useEditorStore.getState();
@@ -133,7 +133,7 @@ editor.setFormulaToolButtonPadding(7);
 editor.setFormulaRowVerticalInset(13);
 editor.setLatexSourceFontSize(19);
 editor.setPngExportBackground("#123456");
-editor.setFormulaLetterFont("palatino");
+editor.setFormulaLetterFont("times");
 editor.setFormulaChineseFont("songti");
 editor.setPersonalize(false);
 editor.setSuggestionCount(9);
@@ -195,7 +195,7 @@ assert.equal(built.version, VISUALTEX_CONFIGURATION_VERSION);
 assert.deepEqual(built.windows, { main: { width: 1333, height: 777 } });
 assert.equal(built.editorSettings.theme, "raycast");
 assert.equal(built.editorSettings.zoom, 1.25);
-assert.equal(built.editorSettings.formulaLetterFont, "palatino");
+assert.equal(built.editorSettings.formulaLetterFont, "times");
 assert.equal(built.editorSettings.formulaChineseFont, "songti");
 assert.equal(built.editorSettings.latexSourceFontSize, 19);
 assert.equal(built.editorSettings.classicTileWidth, 486);
@@ -257,7 +257,7 @@ assert.equal(restored.theme, "raycast");
 assert.equal(restored.language, "en");
 assert.equal(restored.editorLayout, "classic");
 assert.equal(restored.zoom, 1.25);
-assert.equal(restored.formulaLetterFont, "palatino");
+assert.equal(restored.formulaLetterFont, "times");
 assert.equal(restored.formulaChineseFont, "songti");
 assert.equal(restored.latexSourceFontSize, 19);
 assert.equal(restored.classicTileWidth, 486);

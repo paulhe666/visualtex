@@ -3,7 +3,7 @@ import type {
   PowerPointFormulaShortcutSettings,
   WordFormulaInsertFormat,
   WordFormulaShortcutSettings,
-} from "../../../shared/visualtex-app/src/types/formula";
+} from "../types/formula";
 
 export const DEFAULT_WORD_FORMULA_SHORTCUTS: WordFormulaShortcutSettings = {
   inline: { shortcut: null, format: "ole" },

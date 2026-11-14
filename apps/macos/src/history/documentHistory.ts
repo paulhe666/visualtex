@@ -6,7 +6,7 @@ import {
   cloneFormulaLines,
   createFormulaLine,
   useEditorStore,
-} from "../stores/editorStore";
+} from "../../../shared/visualtex-app/src/stores/editorStore";
 import type {
   DocumentSnapshot,
   FormulaEditInput,

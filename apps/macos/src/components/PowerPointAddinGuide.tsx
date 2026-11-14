@@ -1,5 +1,5 @@
 import { Check, FolderOpen, Plus } from "lucide-react";
-import type { Language } from "../stores/editorStore";
+import type { Language } from "../../../shared/visualtex-app/src/stores/editorStore";
 
 interface Props {
   language: Language;

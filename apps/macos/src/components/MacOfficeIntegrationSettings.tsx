@@ -12,7 +12,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import {
   MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,

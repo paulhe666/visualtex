@@ -15,8 +15,8 @@ import {
   formulaRowHotkeyChordProblem,
   type FormulaRowHotkeyActionDefinition,
 } from "../../../shared/visualtex-app/src/shortcuts/formulaRowHotkeys";
-import { useEditorStore } from "../stores/editorStore";
-import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
+import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaRowHotkeyStore";
 

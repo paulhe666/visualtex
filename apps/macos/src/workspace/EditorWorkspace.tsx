@@ -62,8 +62,8 @@ import {
   MIN_EDITOR_ZOOM,
   joinFormulaLines,
   useEditorStore,
-} from "../stores/editorStore";
-import { onButtonShortcut } from "../shortcuts/buttonShortcuts";
+} from "../../../shared/visualtex-app/src/stores/editorStore";
+import { onButtonShortcut } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
 import {
   formatFormulaLinesUniversal,
   parseUniversalLatexSourceDraft,
