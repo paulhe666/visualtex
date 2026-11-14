@@ -1,10 +1,8 @@
 //! Agent access to Word, PowerPoint and WPS (docs/office-mcp/DESIGN.md): the
 //! automation channel the add-ins poll, and the MCP endpoint agents call.
-#[path = "../../../../../shared/visualtex-backend/src/office/automation/audit.rs"]
 pub mod audit;
 pub mod mcp;
 pub mod registry;
-#[path = "../../../../../shared/visualtex-backend/src/office/automation/settings.rs"]
 pub mod settings;
 
 use crate::office::server::ServerContext;

@@ -1,6 +1,5 @@
-//! Append-only record of every agent tool call (docs/office-mcp/DESIGN.md §4.2, §9.4; MACOS.md), one JSON object
-//! per line: `%LOCALAPPDATA%\VisualTeX\office\logs\mcp-audit.jsonl` on Windows,
-//! `~/Library/Application Support/com.visualtex.studio/office/logs/mcp-audit.jsonl` on macOS.
+//! Append-only record of every agent tool call (DESIGN.md §4.2, §9.4):
+//! `%LOCALAPPDATA%\VisualTeX\office\logs\mcp-audit.jsonl`, one JSON object per line.
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
