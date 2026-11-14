@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
-} from "../src/editor/normalizeChineseLatex.ts";
+} from "../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import { latexToMathMl } from "../src/export/runtime.ts";
 
 const outputPath = process.argv[2]

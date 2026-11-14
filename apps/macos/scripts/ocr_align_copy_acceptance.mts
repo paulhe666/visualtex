@@ -3,7 +3,7 @@ import {
   formatLatexLines,
   parseLatexSource,
 } from "../src/clipboard/LatexCopyService.ts";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 const rows = [
   `x${VISUALTEX_ALIGNMENT_MARKER_LATEX}=a+b+c${VISUALTEX_ALIGNMENT_MARKER_LATEX}${VISUALTEX_ALIGNMENT_MARKER_LATEX}u`,

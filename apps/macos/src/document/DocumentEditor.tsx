@@ -51,9 +51,9 @@ import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences
 import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
 import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customSymbolRegistry";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
-import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
+import { stripVisualTexAlignmentMarkers } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatexAsWritten } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "../../../shared/visualtex-app/src/document/MathchaChrome";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";

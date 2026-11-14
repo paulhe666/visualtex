@@ -4,7 +4,7 @@ import "../ocr/windowsQuickOcrRuntime";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { DesktopApp } from "./DesktopApp";
-import { applyDocumentTheme, readSynchronizedTheme } from "../themeSync";
+import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { VisualTexErrorBoundary } from "../runtime/VisualTexErrorBoundary";
 
 configureOcrTransport(desktopOcrTransport);

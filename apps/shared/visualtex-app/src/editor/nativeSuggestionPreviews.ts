@@ -1,5 +1,5 @@
-import { compatibilityCommands } from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands";
-import { EXTENDED_INTEGRAL_COMMANDS } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility";
+import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
+import { EXTENDED_INTEGRAL_COMMANDS } from "../math/extendedIntegralCompatibility";
 
 export type NativeSuggestionPreviewKind =
   | "arguments"
@@ -334,6 +334,25 @@ export function nativeSuggestionPreviewLatex(command: string) {
   return (
     previewRegistry.get(command)?.latex ?? delimiterPreview(command)?.latex ?? null
   );
+}
+
+/**
+ * Every registered sample, for the MathLive kernel's candidate panel (shipped
+ * through the virtual data module at build time).
+ */
+export function nativeSuggestionPreviewTable(): Record<string, string> {
+  const table: Record<string, string> = {};
+  for (const [command, preview] of previewRegistry) table[command] = preview.latex;
+  for (const command of ["\\left", "\\right", "\\middle"]) {
+    table[command] = delimiterPreview(command)!.latex;
+  }
+  for (const size of ["big", "Big", "bigg", "Bigg"]) {
+    for (const position of ["", "l", "m", "r"]) {
+      const command = `\\${size}${position}`;
+      table[command] = delimiterPreview(command)!.latex;
+    }
+  }
+  return table;
 }
 
 export function nativeSuggestionPreviewHasVisibleInk(preview: HTMLElement) {

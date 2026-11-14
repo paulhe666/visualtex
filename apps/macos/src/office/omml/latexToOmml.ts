@@ -8,11 +8,11 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
-import { normalizeMathLiveCanonicalUprightCommands } from "../../editor/normalizeChineseLatex.ts";
+import { normalizeMathLiveCanonicalUprightCommands } from "../../../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import {
   stripVisualTexAlignmentMarkers,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
-} from "../../editor/alignmentMarkers";
+} from "../../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import {
   MATHJAX_INTEGRAL_OPERATOR_CHARACTERS,
   normalizeMathJaxUnsupportedNaryCommands,

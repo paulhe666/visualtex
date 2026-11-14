@@ -14,7 +14,7 @@ import type {
   ReplaceDocumentEntry,
   ReplaceFormulaEntry,
   TitleEditInput,
-} from "./historyTypes";
+} from "../../../shared/visualtex-app/src/history/historyTypes";
 
 export const EDIT_GROUP_TIMEOUT_MS = 500;
 export const SOURCE_EDIT_GROUP_TIMEOUT_MS = 900;

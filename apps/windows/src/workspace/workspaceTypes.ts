@@ -4,8 +4,8 @@ import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
 } from "../editor/MathEditor";
-import type { ReplaceDocumentEntry } from "../history/historyTypes";
-import type { DocumentSnapshot } from "../history/historyTypes";
+import type { ReplaceDocumentEntry } from "../../../shared/visualtex-app/src/history/historyTypes";
+import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 
 export type WorkspaceMode =
   | "desktop"

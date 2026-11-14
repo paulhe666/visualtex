@@ -1,5 +1,5 @@
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../../shared/visualtex-app/src/math/physicsKernelMacros";
+import type { LatexCommand } from "../types/command";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../math/physicsKernelMacros";
 
 type PhysicsTile = readonly [
   name: string,
@@ -10,8 +10,8 @@ type PhysicsTile = readonly [
   insertTemplate?: string,
 ];
 
-// Only expose distinct, non-conflicting physics.sty forms. Existing toolbar
-// tiles already cover bra/ket, commutators, vector shorthands and ∇ operators.
+// Expose distinct, non-conflicting physics.sty forms. Existing toolbar tiles
+// already cover bra/ket, commutators, vector shorthands and nabla operators.
 const tiles: readonly PhysicsTile[] = [
   ["quantity", "\\quantity{x}", "自适应花括号", "Physics braces", 82],
   ["pqty", "\\pqty{x}", "物理圆括号", "Physics parentheses", 82],
@@ -54,11 +54,16 @@ const kernelMacros = new Map(
 export const physicsToolbarCommands: LatexCommand[] = tiles.map(
   ([name, previewLatex, labelZh, labelEn, defaultPriority, insertTemplate]) => {
     const macro = kernelMacros.get(name);
-    if (!macro) throw new Error(`Physics toolbar command \\${name} is not supported by the kernel`);
+    if (!macro) {
+      throw new Error(
+        `Physics toolbar command \\${name} is not supported by the kernel`,
+      );
+    }
     return {
       id: `physics-${name}`,
       command: `\\${name}`,
-      insertTemplate: insertTemplate ??
+      insertTemplate:
+        insertTemplate ??
         `\\${name}${"{\\placeholder{}}".repeat(macro.args)}`,
       previewLatex,
       labelZh,

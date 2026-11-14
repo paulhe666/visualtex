@@ -8,7 +8,7 @@ import {
   VISUALTEX_MATHLIVE_PACKAGE_MACROS,
 } from "../src/math/packageMacroCompatibility.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
-import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
+import { physicsToolbarCommands } from "../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 
 const forbidden = new Set([

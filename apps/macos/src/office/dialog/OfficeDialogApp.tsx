@@ -23,7 +23,7 @@ import {
   normalizeSynchronizedTheme,
   readSynchronizedTheme,
   subscribeSynchronizedTheme,
-} from "../../themeSync";
+} from "../../../../shared/visualtex-app/src/themeSync";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,

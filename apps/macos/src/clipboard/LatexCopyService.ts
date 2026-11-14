@@ -4,7 +4,7 @@ import { normalizeMathModeSource } from "../../../shared/visualtex-app/src/math/
 import {
   normalizeCanonicalUprightCommands,
   normalizeMathLiveCanonicalUprightCommands,
-} from "../editor/normalizeChineseLatex.ts";
+} from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry.ts";
 import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
@@ -16,7 +16,7 @@ import {
   restoreLatexAlignmentMarkers,
   stripVisualTexAlignmentMarkers,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
-} from "../editor/alignmentMarkers.ts";
+} from "../../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 import type {
   FormulaDisplayStyle,
   FormulaLine,

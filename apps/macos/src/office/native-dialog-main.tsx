@@ -12,7 +12,7 @@ import "../styles-macos-responsive.css";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { OfficeDialogApp } from "./dialog/OfficeDialogApp";
-import { applyDocumentTheme, readSynchronizedTheme } from "../themeSync";
+import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 
 configureOcrTransport(desktopOcrTransport);
 applyDocumentTheme(readSynchronizedTheme());

@@ -2,7 +2,7 @@ import type { LatexCommand } from "../../../shared/visualtex-app/src/types/comma
 import { additionalCommands } from "../../../shared/visualtex-app/src/autocomplete/additionalCommands.ts";
 import { compatibilityCommands } from "../../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands.ts";
-import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
+import { physicsToolbarCommands } from "../../../shared/visualtex-app/src/autocomplete/physicsToolbarCommands.ts";
 
 const accentSemanticCommands: LatexCommand[] = [
   { id: "acute", command: "\\acute", insertTemplate: "\\acute{\\placeholder{}}", previewLatex: "\\acute{x}", labelZh: "锐音符", labelEn: "Acute accent", aliases: ["acute"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 74, supportedInMathMode: true },

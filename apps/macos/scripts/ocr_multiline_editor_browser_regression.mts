@@ -6,7 +6,7 @@ import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
 } from "./browser_test_runtime.mjs";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 const portOffset = process.pid % 700;
 const previewPort = 6900 + portOffset;

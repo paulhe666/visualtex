@@ -49,7 +49,7 @@ import type {
   RemoveLineEntry,
   ReplaceDocumentEntry,
   ReplaceFormulaEntry,
-} from "../history/historyTypes";
+} from "../../../shared/visualtex-app/src/history/historyTypes";
 import { clampSelection } from "../history/HistoryManager";
 import { useHistoryManager } from "../history/EditorSession";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
@@ -80,7 +80,7 @@ import {
   normalizeMathLiveCanonicalUprightCommands,
   resolveVisualTexInlineShortcuts,
   type VisualTexInlineShortcutDefinitions,
-} from "./normalizeChineseLatex";
+} from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
@@ -102,7 +102,7 @@ import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompati
 import {
   nativeSuggestionPreviewHasVisibleInk,
   resolveNativeSuggestionPreview,
-} from "./nativeSuggestionPreviews";
+} from "../../../shared/visualtex-app/src/editor/nativeSuggestionPreviews";
 import {
   configureMathLiveCompletion,
   dismissMathLiveSuggestions,
@@ -133,7 +133,7 @@ import {
   hasVisualTexAlignmentMarker,
   VISUALTEX_ALIGNMENT_MARKER_CLASS,
   VISUALTEX_ALIGNMENT_MARKER_LATEX,
-} from "./alignmentMarkers";
+} from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "./visualTexLayoutRuntime";
 import { rowIndexAt, stopAtPoint, topLevelStop } from "./rowPointer";
 import type { SelectionDragHost } from "../../../shared/visualtex-core/src/index.ts";

@@ -4,7 +4,7 @@ import {
   latexToSvg,
   svgToBase64,
 } from "../src/export/runtime.ts";
-import { normalizeChineseLatex } from "../src/editor/normalizeChineseLatex.ts";
+import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import { EXTENDED_INTEGRAL_SYMBOLS } from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 
 const matrixRows = Array.from({ length: 10 }, (_, row) =>

@@ -10,7 +10,7 @@ import { createExplicitMathFontSvgFactory } from "../../../shared/visualtex-app/
 import { RolePreservingMmlVisitor } from "../../../shared/visualtex-app/src/export/role-preserving-mml-visitor.ts";
 import { materializeEffectiveOperatorVariants } from "../../../shared/visualtex-app/src/export/effectiveMathMlGlyphVariants.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
-import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
+import { normalizeMathLiveCanonicalUprightCommands } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { normalizeFlexiblePackageLatexCommands } from "../math/flexibleBraket.ts";
 import { normalizeTensorIndexCommands } from "../../../shared/visualtex-app/src/math/tensorIndexCompatibility.ts";

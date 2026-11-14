@@ -1,10 +1,11 @@
-import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
-import { INPUT_SHORTCUT_GROUPS, type InputShortcutGroup } from "../../../shared/visualtex-app/src/editor/inputDictionary.ts";
+import { normalizeMathModeSource } from "../math/mathModeSource";
+import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import { INPUT_SHORTCUT_GROUPS, type InputShortcutGroup } from "./inputDictionary.ts";
 import {
   VISUALTEX_SYMBOL_SEQUENCES,
   applyInputJudgment,
   type InputJudgmentOptions,
-} from "../../../shared/visualtex-app/src/editor/inputJudgment.ts";
+} from "./inputJudgment.ts";
 
 const chineseChar = /[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’]/;
 
@@ -159,7 +160,7 @@ function normalizeLatexSource(source: string, judge: boolean): string {
     index += 1;
   }
 
-  return result;
+  return normalizeMathModeSource(result);
 }
 
 export function normalizeMultilineLatex(source: string): string {

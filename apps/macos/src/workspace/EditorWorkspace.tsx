@@ -68,7 +68,7 @@ import {
   formatFormulaLinesUniversal,
   parseUniversalLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
 import { useHistorySnapshot } from "../history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";

@@ -5,7 +5,7 @@ import type {
   FormulaChineseFont,
   FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
-import type { CustomThemeState } from "../../themeCustomization";
+import type { CustomThemeState } from "../../../../shared/visualtex-app/src/themeCustomization";
 import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
 import {
   decodeOfficeBatchConversion,

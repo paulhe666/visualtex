@@ -13,11 +13,11 @@ import {
   type FormulaSessionCallbacks,
 } from "../../../shared/visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
 import { topLevelStop } from "../editor/rowPointer";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import {
   collapseMathLiveSelectionToEnd,
   insertMathLiveAlignmentPoint,

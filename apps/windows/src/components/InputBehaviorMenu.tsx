@@ -22,7 +22,7 @@ import {
   visualTexAutoEscapeShortcutGroups,
   type VisualTexInlineShortcutDefinition,
   type VisualTexInlineShortcutDefinitions,
-} from "../editor/normalizeChineseLatex";
+} from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 
 interface InputBehaviorOption {
   key: InputBehaviorSettingKey;

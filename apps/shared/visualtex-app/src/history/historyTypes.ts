@@ -1,4 +1,4 @@
-import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";
+import type { FormulaAlignment, FormulaLine } from "../types/formula";
 
 export type EditKind =
   | "insert"
@@ -12,6 +12,16 @@ export type SelectionDirection = "forward" | "backward" | "none";
 export interface MathSelectionSnapshot {
   ranges: Array<[number, number]>;
   direction: SelectionDirection;
+}
+
+export interface DocumentSelectionPoint {
+  lineId: string;
+  offset: number;
+}
+
+export interface DocumentSelection {
+  anchor: DocumentSelectionPoint;
+  focus: DocumentSelectionPoint;
 }
 
 export type FormulaEditSource =
@@ -99,6 +109,7 @@ export interface DocumentSnapshot {
   activeLineId: string | null;
   formulaAlignment: FormulaAlignment;
   selectionByLineId: Record<string, MathSelectionSnapshot>;
+  documentSelection?: DocumentSelection | null;
 }
 
 export type ReplaceDocumentSource =

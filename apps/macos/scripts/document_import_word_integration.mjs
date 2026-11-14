@@ -25,7 +25,7 @@ import {
   serializeFormulaEditorDocument,
 } from "../src/office/shared/formulaEditorDocument.ts";
 import { renderOfficeFormulaArtifacts } from "../src/office/shared/formulaRenderArtifacts.ts";
-import { stripVisualTexAlignmentMarkers } from "../src/editor/alignmentMarkers.ts";
+import { stripVisualTexAlignmentMarkers } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
 const templatePath = join(

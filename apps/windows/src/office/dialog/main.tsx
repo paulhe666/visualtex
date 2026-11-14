@@ -18,7 +18,7 @@ import {
   applyDocumentTheme,
   normalizeSynchronizedTheme,
   readSynchronizedTheme,
-} from "../../themeSync";
+} from "../../../../shared/visualtex-app/src/themeSync";
 import {
   normalizeEditorLayout,
   useEditorStore,

@@ -1,5 +1,5 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 import {
   decodeBooleanOcrResult,
   decodeNullableOcrModelDownloadSnapshot,

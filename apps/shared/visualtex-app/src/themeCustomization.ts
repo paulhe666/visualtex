@@ -1,5 +1,5 @@
-import type { Theme } from "../../shared/visualtex-app/src/types/formula";
-import { safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage";
+import type { Theme } from "./types/formula";
+import { safeStorage } from "./runtime/safeStorage";
 
 export const CUSTOM_THEME_STORAGE_KEY = "visualtex.custom-theme.v1";
 const CUSTOM_THEME_CHANNEL = "visualtex-custom-theme";

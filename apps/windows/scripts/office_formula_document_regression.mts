@@ -11,7 +11,7 @@ import {
 } from "../src/office/shared/formulaMetadata.ts";
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 import { latexToMathMl } from "../src/export/runtime.ts";
 
 function normalize(source: string, codeFormat: string = "raw") {

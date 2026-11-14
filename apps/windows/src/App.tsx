@@ -86,18 +86,18 @@ import {
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
-} from "./history/historyTypes";
+} from "../../shared/visualtex-app/src/history/historyTypes";
 import { copyFormulaLinesUniversal } from "./clipboard/LatexCopyService";
-import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
+import { normalizeChineseLatex } from "../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import type {
   FormulaDocument,
   LatexFormatProfile,
 } from "../../shared/visualtex-app/src/types/formula";
-import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
+import { applyDocumentTheme, publishSynchronizedTheme } from "../../shared/visualtex-app/src/themeSync";
 import {
   CUSTOM_THEME_CHANGED_EVENT,
   readCustomTheme,
-} from "./themeCustomization";
+} from "../../shared/visualtex-app/src/themeCustomization";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { formulaExportErrorMessage } from "./math/latexCompatibility";
 import { ask } from "@tauri-apps/plugin-dialog";

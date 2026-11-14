@@ -79,7 +79,7 @@ import {
   THEME_DEFINITIONS,
   type CustomThemeState,
   type ThemePaletteColors,
-} from "../themeCustomization";
+} from "../../../shared/visualtex-app/src/themeCustomization";
 
 const THEME_CORE_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
   ["accent", "Accent", "强调色"],

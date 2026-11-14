@@ -11,7 +11,7 @@ import type {
   HistoryEntry,
   MathSelectionSnapshot,
   ReplayDirection,
-} from "./historyTypes";
+} from "../../../shared/visualtex-app/src/history/historyTypes";
 
 export interface FocusRestoreTarget {
   lineId: string;

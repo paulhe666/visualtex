@@ -14,7 +14,7 @@ import type {
   LatexFormatProfile,
   Theme,
 } from "../../../shared/visualtex-app/src/types/formula";
-import type { DocumentSnapshot } from "../history/historyTypes";
+import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
@@ -24,9 +24,9 @@ import {
   legacyCodeFormatToProfile,
   normalizeLatexFormatProfile,
 } from "../clipboard/latexFormatProfile";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
-import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
+import { normalizeMultilineLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../../../shared/visualtex-app/src/math/formulaLineLatex";
 import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment";
 import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
@@ -37,7 +37,7 @@ import {
   normalizePngExportBackground,
   type PngExportBackground,
 } from "../../../shared/visualtex-app/src/export/pngBackground";
-import { isTheme } from "../themeCustomization";
+import { isTheme } from "../../../shared/visualtex-app/src/themeCustomization";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,

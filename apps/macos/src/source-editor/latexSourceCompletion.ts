@@ -18,7 +18,7 @@ import { COMMAND_FREQUENCY } from "../../../shared/visualtex-app/src/autocomplet
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
 import { inspectMathLiveSourceSafety } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
-import { nativeSuggestionPreviewLatex } from "../editor/nativeSuggestionPreviews";
+import { nativeSuggestionPreviewLatex } from "../../../shared/visualtex-app/src/editor/nativeSuggestionPreviews";
 
 // Source-code completion for the LaTeX panel. Same commands and ranking as
 // the visual editor's candidate panel (Overleaf's approach: CodeMirror's

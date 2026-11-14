@@ -5,7 +5,7 @@ import {
   decodeOcrRecognitionResult,
   decodeOcrRuntimeStatus,
 } from "./ocrPayloadValidation";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 
 export type UnlistenFn = () => void;
 

@@ -24,8 +24,8 @@ import {
   serializeDocument,
 } from "../../../shared/visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
-import type { FormulaEditSource } from "../history/historyTypes";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
+import type { FormulaEditSource } from "../../../shared/visualtex-app/src/history/historyTypes";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import { createSafeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";

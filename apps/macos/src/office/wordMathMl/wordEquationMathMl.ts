@@ -1,5 +1,5 @@
 import { formatLatexLines } from "../../clipboard/LatexCopyService";
-import { stripVisualTexAlignmentMarkers } from "../../editor/alignmentMarkers";
+import { stripVisualTexAlignmentMarkers } from "../../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 import {
   serializeFormulaEditorDocument,

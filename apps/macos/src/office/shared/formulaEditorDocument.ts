@@ -9,7 +9,7 @@ import { stripMathSourceComments } from "../../../../shared/visualtex-app/src/ma
 import {
   ensureVisualTexAlignmentMarkers,
   usesExplicitAlignmentPoints,
-} from "../../editor/alignmentMarkers";
+} from "../../../../shared/visualtex-app/src/editor/alignmentMarkers";
 import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 
 export interface FormulaEditorLine {

@@ -8,7 +8,7 @@ import type {
   HistoryEntry,
   MathSelectionSnapshot,
   ReplayDirection,
-} from "../src/history/historyTypes";
+} from "../../shared/visualtex-app/src/history/historyTypes";
 import type { FormulaLine } from "../../shared/visualtex-app/src/types/formula";
 
 const selection = (position: number): MathSelectionSnapshot => ({

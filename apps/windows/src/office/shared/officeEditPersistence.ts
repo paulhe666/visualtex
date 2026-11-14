@@ -1,4 +1,4 @@
-import { normalizeChineseLatex } from "../../editor/normalizeChineseLatex";
+import { normalizeChineseLatex } from "../../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
 import type { FormulaEditorLine } from "./formulaEditorDocument";
 
 export function canonicalOfficeFingerprintLines(

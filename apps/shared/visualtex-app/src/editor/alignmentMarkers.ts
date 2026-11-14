@@ -1,4 +1,4 @@
-import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
+import type { LatexCodeFormat } from "../types/formula";
 
 /**
  * MathLive renders a bare `&` as a visible ampersand outside a tabular

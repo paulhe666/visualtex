@@ -43,7 +43,7 @@ import {
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
-} from "../../history/historyTypes";
+} from "../../../../shared/visualtex-app/src/history/historyTypes";
 import {
   joinFormulaLines,
   normalizeEditorLayout,
@@ -106,8 +106,8 @@ import {
   readPublishedSynchronizedTheme,
   readSynchronizedTheme,
   subscribeSynchronizedTheme,
-} from "../../themeSync";
-import { saveCustomTheme } from "../../themeCustomization";
+} from "../../../../shared/visualtex-app/src/themeSync";
+import { saveCustomTheme } from "../../../../shared/visualtex-app/src/themeCustomization";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,

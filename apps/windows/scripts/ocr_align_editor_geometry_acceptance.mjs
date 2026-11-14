@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
@@ -176,7 +177,7 @@ z+q+r&s=4
       const ocr = await import('/src/ocr/ocrService.ts');
       const storeModule = await import('/src/stores/editorStore.ts');
       const clipboard = await import('/src/clipboard/LatexCopyService.ts');
-      const markerModule = await import('/src/editor/alignmentMarkers.ts');
+      const markerModule = await import('${sharedSourceUrl("editor/alignmentMarkers.ts")}');
       const raw = ${JSON.stringify(rawOcrAlign)};
       const rows = ocr.normalizeOcrFormulaText(raw);
       const marker = markerModule.VISUALTEX_ALIGNMENT_MARKER_LATEX;
@@ -248,7 +249,7 @@ z+q+r&s=4
     const serialized = await evaluate(`(async () => {
       const storeModule = await import('/src/stores/editorStore.ts');
       const clipboard = await import('/src/clipboard/LatexCopyService.ts');
-      const markerModule = await import('/src/editor/alignmentMarkers.ts');
+      const markerModule = await import('${sharedSourceUrl("editor/alignmentMarkers.ts")}');
       const state = storeModule.useEditorStore.getState();
       const lines = state.lines.map((line) => line.latex);
       const aligned = clipboard.formatLatexLines(lines, 'aligned');

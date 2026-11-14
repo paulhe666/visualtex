@@ -15,7 +15,7 @@ import { OfficeDialogApp } from "../office/dialog/OfficeDialogApp";
 import { OfficeDocumentImportApp } from "../office/documentImport/OfficeDocumentImportApp";
 import { WordLatexRedrawApp } from "../office/redraw/WordLatexRedrawApp";
 import { DesktopApp } from "./DesktopApp";
-import { applyDocumentTheme, readSynchronizedTheme } from "../themeSync";
+import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { VisualTexErrorBoundary } from "../runtime/VisualTexErrorBoundary";
 import { QuickOcrHud } from "../ocr/QuickOcrHud";
 
