@@ -279,6 +279,15 @@ async function main() {
         const scriptBox = script?.getBoundingClientRect();
         return {
           value: field.value,
+          mode: field.mode,
+          sourceWrapperCommand: field.dataset.visualtexSourceWrapperCommand || "",
+          sourceWrapperKind: field.dataset.visualtexSourceWrapperKind || "",
+          sourceWrapperContent: field.dataset.visualtexSourceWrapperContent || "",
+          raw: Array.from(field.shadowRoot?.querySelectorAll(".ML__raw-latex") || [])
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent || "")
+            .join(""),
+          latexCaret: Boolean(field.shadowRoot?.querySelector(".ML__latex-caret")),
           position: field.position,
           lastOffset: field.lastOffset,
           hasFocus: field.matches(":focus-within"),
@@ -602,31 +611,30 @@ async function main() {
     const accent = await readState();
     assert.equal(accent.value, "\\hat{c}d+z");
 
+    // An input method commits through the keyboard sink (CDP's IME input, as in the Windows test); composition
+    // events dispatched on the host element with a programmatic insert never reach the editor's composition handling.
     await preparePlaceholder("\\vec{\\placeholder{}}+z");
-    await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      field.dispatchEvent(new CompositionEvent("compositionstart", {
-        bubbles: true,
-        composed: true,
-      }));
-      field.insert("m", {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceSelection",
-        selectionMode: "after",
-        focus: true,
-        scrollIntoView: false,
-      });
-      field.dispatchEvent(new CompositionEvent("compositionend", {
-        data: "m",
-        bubbles: true,
-        composed: true,
-      }));
-    })()`);
-    await sleep(120);
+    await client.send("Input.imeSetComposition", {
+      text: "m",
+      selectionStart: 1,
+      selectionEnd: 1,
+    });
+    await sleep(80);
+    await client.send("Input.insertText", { text: "m" });
+    await client.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await sleep(180);
+    const composedAccentBeforeNext = await readState();
     await typeCharacter("n", "KeyN", 78);
     const composedAccent = await readState();
-    assert.equal(composedAccent.value, "\\vec{m}n+z");
+    assert.equal(
+      composedAccent.value,
+      "\\vec{m}n+z",
+      JSON.stringify({ composedAccentBeforeNext, composedAccent }),
+    );
 
     await configure({ autoExitAccent: false });
     await preparePlaceholder("\\dot{\\placeholder{}}+z");
@@ -647,19 +655,14 @@ async function main() {
     await prepareEmptyField();
     await typeRawCommand("dot");
     const pendingDot = await readState();
-    const dotPlaceholder = pendingDot.placeholderNodes.find((node) =>
-      node.className.includes("visualtex-structural-placeholder"),
-    );
-    assert.ok(dotPlaceholder, JSON.stringify(pendingDot));
-    assert.equal(dotPlaceholder.visualBackground, "rgb(207, 232, 247)");
-    assert.equal(dotPlaceholder.color, "rgba(0, 0, 0, 0)");
-    assert.ok(
-      Number.parseFloat(dotPlaceholder.visualWidth) <= 24,
-      JSON.stringify(dotPlaceholder),
-    );
-    assert.match(pendingDot.value, /^\\dot\{(?:\\placeholder\{\})?\}$/);
-    assert.equal(pendingDot.pendingWrapperCommand, "");
-    assert.equal(pendingDot.hasPendingWrapperFrame, false);
+    // a raw accent command stays a source-first wrapper (\dot{} in LaTeX mode) until its argument is typed
+    assert.equal(pendingDot.value, "\\dot{}", JSON.stringify(pendingDot));
+    assert.equal(pendingDot.raw, "\\dot{}");
+    assert.equal(pendingDot.mode, "latex");
+    assert.equal(pendingDot.sourceWrapperCommand, "\\dot");
+    assert.equal(pendingDot.sourceWrapperKind, "accent");
+    assert.equal(pendingDot.sourceWrapperContent, "");
+    assert.equal(pendingDot.latexCaret, true);
     assert.notEqual(
       pendingDot.position,
       pendingDot.lastOffset,
@@ -680,19 +683,13 @@ async function main() {
     await typeCharacter("t", "KeyT", 84);
     await typeRawCommand("ddot");
     const pendingDdot = await readState();
-    const ddotPlaceholder = pendingDdot.placeholderNodes.find((node) =>
-      node.className.includes("visualtex-structural-placeholder"),
-    );
-    assert.ok(ddotPlaceholder, JSON.stringify(pendingDdot));
-    assert.equal(ddotPlaceholder.visualBackground, "rgb(207, 232, 247)");
-    assert.equal(ddotPlaceholder.color, "rgba(0, 0, 0, 0)");
-    assert.ok(
-      Number.parseFloat(ddotPlaceholder.visualWidth) <= 24,
-      JSON.stringify(ddotPlaceholder),
-    );
-    assert.match(pendingDdot.value, /^t\\ddot\{(?:\\placeholder\{\})?\}$/);
-    assert.equal(pendingDdot.pendingWrapperCommand, "");
-    assert.equal(pendingDdot.hasPendingWrapperFrame, false);
+    assert.equal(pendingDdot.value, "t\\ddot{}", JSON.stringify(pendingDdot));
+    assert.equal(pendingDdot.raw, "\\ddot{}");
+    assert.equal(pendingDdot.mode, "latex");
+    assert.equal(pendingDdot.sourceWrapperCommand, "\\ddot");
+    assert.equal(pendingDdot.sourceWrapperKind, "accent");
+    assert.equal(pendingDdot.sourceWrapperContent, "");
+    assert.equal(pendingDdot.latexCaret, true);
     assert.notEqual(
       pendingDdot.position,
       pendingDdot.lastOffset,
@@ -772,9 +769,13 @@ async function main() {
     );
     assert.notEqual(independentSubscript.position, independentSubscript.lastOffset);
 
-    const menu = await evaluate(`new Promise((resolve) => {
+    const menu = await evaluate(`new Promise(async (resolve) => {
       const trigger = document.querySelector(".canvas-input-behavior-trigger");
       trigger?.click();
+      // the menu renders a frame or two after the click
+      for (let tries = 0; tries < 40 && !document.querySelector(".input-behavior-option"); tries += 1) {
+        await new Promise((done) => setTimeout(done, 50));
+      }
       setTimeout(() => resolve({
         triggerText: trigger?.textContent?.trim() ?? "",
         options: [...document.querySelectorAll(".input-behavior-option")].map((option) => ({
@@ -788,7 +789,8 @@ async function main() {
       }), 50);
     })`);
     assert.match(menu.triggerText, /操作逻辑|Input behavior/);
-    assert.equal(menu.options.length, 8);
+    // the two command suggestion panel settings left on 2026-10-17
+    assert.equal(menu.options.length, 6);
     assert.equal(menu.headingDescriptionCount, 0);
     assert.ok(menu.options.every(({ hasDescription }) => !hasDescription));
     for (const expectedTitle of [
@@ -798,8 +800,6 @@ async function main() {
       /下标输入后跳出|Exit subscript after input/,
       /重音内容输入后跳出|Exit accent after input/,
       /字体命令输入后跳出|Exit font command after input/,
-      /求和、积分等结构候选框|Structured command suggestions/,
-      /其他命令候选框|Other command suggestions/,
     ]) {
       assert.ok(
         menu.options.some(({ title }) => expectedTitle.test(title)),
@@ -809,7 +809,8 @@ async function main() {
     const shortcutOption = menu.options.find(({ title }) =>
       /常用数学快捷转义|Common math shortcuts/.test(title),
     );
-    assert.equal(shortcutOption?.checked, false);
+    // on by default in both apps (the editor store's default)
+    assert.equal(shortcutOption?.checked, true);
     await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 
     const loadSingleFormulaLine = async (latex) => {
@@ -1136,7 +1137,8 @@ async function main() {
           }
         }
         const focusBounds = field.getElementInfo(focusOffset)?.bounds;
-        const fieldBounds = field.getBoundingClientRect();
+        // the field is as wide as its formula; the empty part of the row is its host's
+        const fieldBounds = (field.closest(".mathfield-host") ?? field).getBoundingClientRect();
         const contentBounds = field.shadowRoot
           ?.querySelector('[part="content"]')
           ?.getBoundingClientRect();
@@ -1204,8 +1206,8 @@ async function main() {
         [geometry.focusOffset, geometry.lastOffset],
         JSON.stringify({ geometry, released }),
       );
+      // inside one row the selection is the field's own (the custom painting is for selections across rows)
       assert.equal(released.selectedLatex, "DEF", JSON.stringify(released));
-      assert.equal(released.customSelection, true, JSON.stringify(released));
 
       await client.send("Input.dispatchMouseEvent", {
         type: "mouseMoved",
