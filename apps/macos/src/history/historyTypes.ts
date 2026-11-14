@@ -1,4 +1,4 @@
-import type { FormulaAlignment, FormulaLine } from "../types/formula";
+import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";
 
 export type EditKind =
   | "insert"

@@ -1,13 +1,13 @@
 import { validateLatex } from "mathlive/ssr";
 import { commandRegistry } from "../autocomplete/commandRegistry.ts";
-import { normalizeMathModeSource } from "../math/mathModeSource";
+import { normalizeMathModeSource } from "../../../shared/visualtex-app/src/math/mathModeSource";
 import {
   normalizeCanonicalUprightCommands,
   normalizeMathLiveCanonicalUprightCommands,
 } from "../editor/normalizeChineseLatex.ts";
 import { findCustomSymbolByCommand } from "../math/customSymbolRegistry.ts";
-import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment.ts";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../math/physicsKernelMacros.ts";
+import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment.ts";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import {
   compatibilityCommandNames,
   compatibilityRequiredArgumentCounts,
@@ -23,7 +23,7 @@ import type {
   FormulaLineMode,
   LatexCodeFormat,
   LatexFormatProfile,
-} from "../types/formula";
+} from "../../../shared/visualtex-app/src/types/formula";
 import { resolveFormulaDisplayStyle } from "./latexFormatProfile";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 

@@ -6,7 +6,7 @@ import {
   OIIINT_SIZE2_OVAL_PATH,
 } from "../../../shared/visualtex-app/src/math/integralGlyphs.ts";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../../../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData.ts";
-import { ESINT_INTEGRAL_GLYPHS } from "./esintGlyphs.ts";
+import { ESINT_INTEGRAL_GLYPHS } from "../../../shared/visualtex-app/src/math/esintGlyphs.ts";
 
 interface RareIntegralGlyphVariant {
   path: string;

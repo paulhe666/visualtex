@@ -92,7 +92,7 @@ import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import type {
   FormulaDocument,
   LatexFormatProfile,
-} from "./types/formula";
+} from "../../shared/visualtex-app/src/types/formula";
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { formulaExportErrorMessage } from "./math/latexCompatibility";

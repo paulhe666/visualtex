@@ -124,6 +124,8 @@ export interface FormulaDocument {
     formulaToolButtonPadding?: number;
     formulaRowVerticalInset?: number;
     latexSourceFontSize?: number;
+    /** The name macOS used for latexSourceFontSize before the apps shared their code (read when importing). */
+    sourceEditorFontSize?: number;
     pngExportBackground?: "transparent" | `#${string}`;
     formulaLetterFont?:
       | "katex"

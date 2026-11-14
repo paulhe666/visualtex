@@ -11,7 +11,8 @@
     "src/office/shared/**/*.ts",
     "src/workspace/**/*.ts",
     "src/workspace/**/*.tsx",
-    "../shared/visualtex-core/src/kernel/*.d.ts"
+    "../shared/visualtex-core/src/kernel/*.d.ts",
+    "../shared/visualtex-app/src/*.d.ts"
   ],
   "references": []
 }

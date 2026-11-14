@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isOfficeApplyShortcut } from "../src/office/dialog/officeApplyShortcut.ts";
+import { isOfficeApplyShortcut } from "../../shared/visualtex-app/src/office/dialog/officeApplyShortcut.ts";
 
 const base = {
   key: "s",

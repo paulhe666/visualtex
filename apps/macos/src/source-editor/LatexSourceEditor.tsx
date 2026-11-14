@@ -33,7 +33,7 @@ import {
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import type { LatexCodeFormat } from "../types/formula";
+import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 import {
   latexSourceCompletion,

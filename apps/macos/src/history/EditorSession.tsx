@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import { HistoryManager } from "./HistoryManager";
 import { documentSnapshotsEquivalent } from "./documentSnapshot";
 import { applyHistoryEntryToEditor, getEditorDocumentSnapshot } from "./documentHistory";
-import type { FormulaDocument } from "../types/formula";
+import type { FormulaDocument } from "../../../shared/visualtex-app/src/types/formula";
 import { useEditorStore } from "../stores/editorStore";
 import type { DocumentSnapshot, MathSelectionSnapshot, ReplaceDocumentEntry } from "./historyTypes";
 

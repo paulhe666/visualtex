@@ -15,7 +15,7 @@ import {
   MousePointerClick,
   Search,
 } from "lucide-react";
-import type { InputBehaviorSettingKey } from "../types/formula";
+import type { InputBehaviorSettingKey } from "../../../shared/visualtex-app/src/types/formula";
 import { useEditorStore } from "../stores/editorStore";
 import {
   visualTexAutoEscapeInlineShortcuts,

@@ -17,7 +17,7 @@ import {
   MATHJAX_INTEGRAL_OPERATOR_CHARACTERS,
   normalizeMathJaxUnsupportedNaryCommands,
 } from "../../export/mathJaxCompatibility.ts";
-import type { LatexCodeFormat } from "../../types/formula";
+import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 import {
   assertResolvedPresentationMathMl,
   VISUALTEX_MATHML_MACROS,

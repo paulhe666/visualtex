@@ -71,7 +71,7 @@ import {
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
 import { useHistorySnapshot } from "../history/EditorSession";
-import type { FormulaAlignment, FormulaLine } from "../types/formula";
+import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";
 import { normalizeCustomFormulaColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
 import {

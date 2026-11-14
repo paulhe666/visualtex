@@ -13,7 +13,7 @@ import type {
   LatexCodeFormat,
   LatexFormatProfile,
   Theme,
-} from "../types/formula";
+} from "../../../shared/visualtex-app/src/types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import {
   DEFAULT_LATEX_CODE_FORMAT,
@@ -28,7 +28,7 @@ import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../../../shared/visualtex-app/src/math/formulaLineLatex";
-import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
+import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment";
 import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";

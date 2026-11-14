@@ -3,7 +3,7 @@ import type {
   FormulaDisplayStyle,
   LatexCodeFormat,
   LatexFormatProfile,
-} from "../types/formula";
+} from "../../../shared/visualtex-app/src/types/formula";
 
 export const DEFAULT_LATEX_FORMAT_PROFILE: LatexFormatProfile = {
   inlineWrapper: "dollar",

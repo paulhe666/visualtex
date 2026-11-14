@@ -4,7 +4,7 @@ import {
   MAX_MATHLIVE_ENVIRONMENT_DEPTH,
   MAX_MATHLIVE_GROUP_DEPTH,
   MAX_MATHLIVE_SOURCE_LENGTH,
-} from "../src/editor/mathLiveSourceSafety.ts";
+} from "../../shared/visualtex-app/src/editor/mathLiveSourceSafety.ts";
 
 assert.equal(
   inspectMathLiveSourceSafety(

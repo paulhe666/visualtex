@@ -19,7 +19,7 @@ import type {
   PowerPointFormulaShortcutAction,
   PowerPointFormulaShortcutSettings,
   WordFormulaShortcutSettings,
-} from "../types/formula";
+} from "../../../shared/visualtex-app/src/types/formula";
 
 type WordShortcutAction = keyof WordFormulaShortcutSettings;
 /** Word and WPS Writer: inline and display formulas with a format each. */

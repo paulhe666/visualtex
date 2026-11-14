@@ -19,7 +19,7 @@ import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMml
 import { EXPLICIT_MATH_FONT_PACKAGE } from "../../shared/visualtex-app/src/export/explicit-math-font.ts";
 import { VISUALTEX_HANDWRITTEN_MATHML_MACROS } from "../src/math/latexCompatibility.ts";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
 import { kernelDictionary as kernel } from "./kernel-dictionary.mts";
 

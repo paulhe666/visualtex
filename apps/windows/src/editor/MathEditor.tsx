@@ -31,7 +31,7 @@ import type {
   InputBehaviorSettingKey,
   LatexCodeFormat,
   InputBehaviorSettings,
-} from "../types/formula";
+} from "../../../shared/visualtex-app/src/types/formula";
 import type {
   AddLineEntry,
   EditKind,
@@ -66,7 +66,7 @@ import {
 import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,
-} from "../shortcuts/greekLetterHotkeys";
+} from "../../../shared/visualtex-app/src/shortcuts/greekLetterHotkeys";
 import {
   normalizeChineseLatex,
   normalizeContextualUprightSymbols,
@@ -81,9 +81,9 @@ import {
 import {
   inspectMathLiveSourceSafety,
   mathLiveSourceSafetyMessage,
-} from "./mathLiveSourceSafety";
+} from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
-import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
+import { isSingleCompleteLatexEnvironment } from "../../../shared/visualtex-app/src/math/latexEnvironment";
 import {
   installCustomSymbolGlobalStyle,
   installCustomSymbolShadowStyle,

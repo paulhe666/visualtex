@@ -1,4 +1,4 @@
-import type { Theme } from "./types/formula";
+import type { Theme } from "../../shared/visualtex-app/src/types/formula";
 import {
   applyThemePalette,
   isTheme,

@@ -3,7 +3,7 @@ import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility.ts";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";

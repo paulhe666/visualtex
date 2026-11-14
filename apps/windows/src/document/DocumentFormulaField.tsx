@@ -28,7 +28,7 @@ import {
 import { useEditorStore } from "../stores/editorStore";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../shortcuts/formulaHotkeys";
-import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../shortcuts/greekLetterHotkeys";
+import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../../../shared/visualtex-app/src/shortcuts/greekLetterHotkeys";
 import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula } from "./formulaInsert";
 import { setOpenDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";

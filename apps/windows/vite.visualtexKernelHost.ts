@@ -7,7 +7,7 @@ import { latestSharedCommands } from "../shared/visualtex-app/src/autocomplete/l
 import { COMMAND_FREQUENCY } from "../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "./src/editor/sourceWrapperRegistry";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../shared/visualtex-app/src/math/coreLatexAliases";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./src/math/physicsKernelMacros";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../shared/visualtex-app/src/math/physicsKernelMacros";
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   decodeNativeSystemMathFontProbes,
   decodeNativeSystemMathGlyphOutline,
-} from "../src/math/systemMathGlyphPayloadValidation.ts";
+} from "../../shared/visualtex-app/src/math/systemMathGlyphPayloadValidation.ts";
 import { decodeQuickOcrCapture } from "../../shared/visualtex-app/src/ocr/quickOcrPayloadValidation.ts";
 
 const probes = [

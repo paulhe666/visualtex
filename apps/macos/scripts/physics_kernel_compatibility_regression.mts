@@ -7,7 +7,7 @@ import {
   VISUALTEX_MATHJAX_PACKAGE_MACROS,
   VISUALTEX_MATHLIVE_PACKAGE_MACROS,
 } from "../src/math/packageMacroCompatibility.ts";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../shared/visualtex-app/src/math/physicsKernelMacros.ts";
 import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 

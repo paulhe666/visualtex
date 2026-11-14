@@ -4,7 +4,7 @@ import {
   getLatexCodeFormatDefinition,
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
-import type { FormulaLine } from "../src/types/formula.ts";
+import type { FormulaLine } from "../../shared/visualtex-app/src/types/formula.ts";
 import { normalizeFormulaLines, useEditorStore } from "../src/stores/editorStore.ts";
 
 const lines: FormulaLine[] = [

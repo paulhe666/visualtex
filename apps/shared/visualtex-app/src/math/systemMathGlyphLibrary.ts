@@ -1,28 +1,16 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { CustomSymbolGlyphAsset } from "../../../shared/visualtex-app/src/math/customSymbolDesignerTypes";
+import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
 import {
   decodeNativeSystemMathFontProbes,
   decodeNativeSystemMathGlyphOutline,
 } from "./systemMathGlyphPayloadValidation";
+// the two native backends name these commands differently
+import { onPlatform } from "../runtime/platformConventions";
 
 export interface NativeSystemMathFontProbe {
   requestedFamily: string;
   resolvedFamily: string;
   available: boolean;
-}
-
-interface NativeSystemMathGlyphOutline {
-  character: string;
-  requestedFamily: string;
-  resolvedFamily: string;
-  fallbackUsed: boolean;
-  glyphId: number;
-  path: string;
-  metrics: {
-    widthEm: number;
-    ascentEm: number;
-    descentEm: number;
-  };
 }
 
 export interface NativeSystemMathGlyphAsset {
@@ -50,7 +38,7 @@ export async function probeNativeSystemMathFonts(
 ): Promise<NativeSystemMathFontProbe[] | null> {
   if (!isTauri()) return null;
   return decodeNativeSystemMathFontProbes(
-    await invoke<unknown>("probe_system_math_fonts", {
+    await invoke<unknown>(onPlatform("probe_system_math_fonts", "probe_macos_math_fonts"), {
       fontFamilies: [...fontFamilies],
     }),
   );
@@ -62,7 +50,7 @@ export async function compileNativeSystemMathGlyphAsset(
 ): Promise<NativeSystemMathGlyphAsset | null> {
   if (!isTauri()) return null;
   const outline = decodeNativeSystemMathGlyphOutline(
-    await invoke<unknown>("extract_system_math_glyph", {
+    await invoke<unknown>(onPlatform("extract_system_math_glyph", "extract_macos_math_glyph"), {
       fontFamilies: [...fontFamilies],
       character,
     }),

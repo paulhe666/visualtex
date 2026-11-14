@@ -1,6 +1,6 @@
 import { readResponseErrorMessage } from "../../errors/readErrorMessage";
 import { useEditorStore } from "../../stores/editorStore";
-import type { FormulaDocument } from "../../types/formula";
+import type { FormulaDocument } from "../../../../shared/visualtex-app/src/types/formula";
 import type {
   FormulaChineseFont,
   FormulaLetterFont,

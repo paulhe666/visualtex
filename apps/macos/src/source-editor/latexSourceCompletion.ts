@@ -17,7 +17,7 @@ import { commandRegistry } from "../autocomplete/commandRegistry";
 import { COMMAND_FREQUENCY } from "../../../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
-import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
+import { inspectMathLiveSourceSafety } from "../../../shared/visualtex-app/src/editor/mathLiveSourceSafety";
 import { nativeSuggestionPreviewLatex } from "../editor/nativeSuggestionPreviews";
 
 // Source-code completion for the LaTeX panel. Same commands and ranking as

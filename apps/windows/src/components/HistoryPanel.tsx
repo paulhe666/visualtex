@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Clock3, Trash2, X } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { useEditorStore } from "../stores/editorStore";
-import type { FormulaHistoryItem } from "../types/formula";
+import type { FormulaHistoryItem } from "../../../shared/visualtex-app/src/types/formula";
 
 interface Props {
   open: boolean;

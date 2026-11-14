@@ -56,7 +56,7 @@ import {
 import type {
   InputBehaviorSettingKey,
   LatexCodeFormat,
-} from "../../types/formula";
+} from "../../../../shared/visualtex-app/src/types/formula";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
@@ -99,7 +99,7 @@ import {
 } from "../shared/formulaEditorDocument";
 import { canonicalOfficeFingerprintLines } from "../shared/officeEditPersistence";
 import { messageOfficeParent } from "./dialogMessages";
-import { registerOfficeApplyShortcut } from "./officeApplyShortcut";
+import { registerOfficeApplyShortcut } from "../../../../shared/visualtex-app/src/office/dialog/officeApplyShortcut";
 import {
   applyDocumentTheme,
   normalizeSynchronizedTheme,

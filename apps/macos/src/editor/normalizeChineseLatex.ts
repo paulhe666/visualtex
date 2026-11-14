@@ -1,4 +1,4 @@
-import { normalizeMathModeSource } from "../math/mathModeSource";
+import { normalizeMathModeSource } from "../../../shared/visualtex-app/src/math/mathModeSource";
 import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { INPUT_SHORTCUT_GROUPS, type InputShortcutGroup } from "../../../shared/visualtex-app/src/editor/inputDictionary.ts";
 import {

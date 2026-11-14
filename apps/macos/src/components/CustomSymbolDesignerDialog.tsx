@@ -11,7 +11,7 @@ import { registerCustomSymbolSafely, updateCustomSymbolSafely } from "../math/cu
 import { deleteCustomSymbol, readCustomSymbolLibrary } from "../math/customSymbolRegistry";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 import { containsCustomSymbolCommand } from "../math/customSymbolRendering";
-import { compileNativeSystemMathGlyphAsset, probeNativeSystemMathFonts } from "../math/systemMathGlyphLibrary";
+import { compileNativeSystemMathGlyphAsset, probeNativeSystemMathFonts } from "../../../shared/visualtex-app/src/math/systemMathGlyphLibrary";
 import { MathPreview } from "./MathPreview";
 
 // The custom symbol designer lives in apps/shared/custom-symbol-designer (the

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { LatexCodeFormat } from "../types/formula";
+import type { LatexCodeFormat } from "../../../shared/visualtex-app/src/types/formula";
 import type { OcrModelName } from "./ocrService";
 import {
   decodeQuickOcrCapture,

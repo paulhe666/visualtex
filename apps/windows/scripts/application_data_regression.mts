@@ -3,7 +3,7 @@ import {
   useEditorStore,
   type EditorLayout,
 } from "../src/stores/editorStore.ts";
-import type { InputBehaviorSettingKey, Theme } from "../src/types/formula.ts";
+import type { InputBehaviorSettingKey, Theme } from "../../shared/visualtex-app/src/types/formula.ts";
 
 const store = useEditorStore;
 

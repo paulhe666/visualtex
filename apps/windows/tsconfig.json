@@ -32,10 +32,11 @@
       "@tauri-apps/plugin-opener": ["./node_modules/@tauri-apps/plugin-opener"],
       "mathjax-full/*": ["./node_modules/mathjax-full/*"],
       "mermaid": ["./node_modules/mermaid"],
+      "fflate": ["./node_modules/fflate"],
       "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
       "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
     }
   },
-  "include": ["src", "../shared/visualtex-core/src/kernel/*.d.ts"],
+  "include": ["src", "../shared/visualtex-core/src/kernel/*.d.ts", "../shared/visualtex-app/src/*.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

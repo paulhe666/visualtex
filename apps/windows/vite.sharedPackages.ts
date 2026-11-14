@@ -30,4 +30,5 @@ export const sharedPackageDedupe = [
   "@tauri-apps/plugin-opener",
   "mathjax-full",
   "mermaid",
+  "fflate",
 ];

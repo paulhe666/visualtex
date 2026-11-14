@@ -4,13 +4,13 @@ import {
   parseLatexSource,
 } from "../../clipboard/LatexCopyService";
 import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
-import { unwrapSingleLatexDisplayMath } from "../../math/latexEnvironment";
-import { stripMathSourceComments } from "../../math/mathModeSource";
+import { unwrapSingleLatexDisplayMath } from "../../../../shared/visualtex-app/src/math/latexEnvironment";
+import { stripMathSourceComments } from "../../../../shared/visualtex-app/src/math/mathModeSource";
 import {
   ensureVisualTexAlignmentMarkers,
   usesExplicitAlignmentPoints,
 } from "../../editor/alignmentMarkers";
-import type { LatexCodeFormat } from "../../types/formula";
+import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 
 export interface FormulaEditorLine {
   id: string;

@@ -5,7 +5,7 @@ import { publishSynchronizedTheme } from "../themeSync";
 import { OCR_MODELS } from "../ocr/ocrService";
 import { normalizeQuickOcrCaptureMode } from "../ocr/quickOcr";
 import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
-import type { FormulaDocument, FormulaHistoryItem } from "../types/formula";
+import type { FormulaDocument, FormulaHistoryItem } from "../../../shared/visualtex-app/src/types/formula";
 import {
   CUSTOM_SYMBOL_STORAGE_KEY,
   readCustomSymbolLibrary,

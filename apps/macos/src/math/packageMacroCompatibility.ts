@@ -1,5 +1,5 @@
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../../shared/visualtex-app/src/math/coreLatexAliases";
-import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./physicsKernelMacros";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../../../shared/visualtex-app/src/math/physicsKernelMacros";
 
 export interface VisualTexMathLiveMacroDefinition {
   def: string;

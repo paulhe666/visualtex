@@ -9,7 +9,7 @@ import type {
   MathSelectionSnapshot,
   ReplayDirection,
 } from "../src/history/historyTypes";
-import type { FormulaLine } from "../src/types/formula";
+import type { FormulaLine } from "../../shared/visualtex-app/src/types/formula";
 
 const selection = (position: number): MathSelectionSnapshot => ({
   ranges: [[position, position]],

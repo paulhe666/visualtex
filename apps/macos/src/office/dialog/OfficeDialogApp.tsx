@@ -16,7 +16,7 @@ import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
-import type { LatexCodeFormat } from "../../types/formula";
+import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
 import { normalizeLatexFormatProfile } from "../../clipboard/latexFormatProfile";
 import {
   applyDocumentTheme,
@@ -67,7 +67,7 @@ import {
 } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
 import { messageOfficeParent } from "./dialogMessages";
-import { registerOfficeApplyShortcut } from "./officeApplyShortcut";
+import { registerOfficeApplyShortcut } from "../../../../shared/visualtex-app/src/office/dialog/officeApplyShortcut";
 import {
   OCR_MODELS,
   cancelOcrRecognition,

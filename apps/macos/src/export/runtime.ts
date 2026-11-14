@@ -17,7 +17,7 @@ import { normalizeTensorIndexCommands } from "../../../shared/visualtex-app/src/
 import {
   isSingleCompleteLatexEnvironment,
   unwrapSingleLatexDisplayMath,
-} from "../math/latexEnvironment.ts";
+} from "../../../shared/visualtex-app/src/math/latexEnvironment.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
