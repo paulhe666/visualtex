@@ -112,6 +112,11 @@ try {
     }
     return result.result.value;
   };
+  // the target lists the app's URL before the page commits (until then the document is about:blank, which has no
+  // localStorage)
+  for (let tries = 0; tries < 300 && !String(await evaluate("location.href")).startsWith(baseUrl); tries += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 
   await evaluate(`(() => {
     for (const key of [
