@@ -1,7 +1,7 @@
 # VisualTeX for AI agents on the Mac: MCP for Word, PowerPoint and WPS
 
 Status: built 2026-11-02; WPS Writer and WPS Presentation 2026-11-03 (§5). The tools, their arguments and their answers are those of the Windows server
-(DESIGN.md §5, §6, §14 in the Windows repository); this page says how the Mac carries them out.
+(DESIGN.md §5, §6, §14 beside this file); this page says how the Mac carries them out.
 
 ## 1. Pieces
 

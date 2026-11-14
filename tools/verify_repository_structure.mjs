@@ -30,6 +30,11 @@ for (const path of [
   "apps/windows/src-windows",
   "apps/windows/office/windows/ole/manifests/visualtex-word.template.xml",
   "apps/windows/office/windows/ole/manifests/visualtex-powerpoint.template.xml",
+  "apps/shared/visualtex-core/src/kernel",
+  "apps/shared/tex-layout/src",
+  "apps/shared/visualtex-document/src",
+  "apps/shared/custom-symbol-designer/src",
+  "apps/shared/visualtex-app/src",
   "README.md",
   "docs/ARCHITECTURE.md",
   "docs/images/application.png",
@@ -94,14 +99,14 @@ if (windowsPackage.dependencies?.["@microsoft/office-js"] || windowsPackage.devD
   failures.push("The Windows native VSTO build must not depend on retired Office.js packages");
 }
 
-for (const path of ["apps/macos", "apps/windows"]) {
+for (const path of ["apps/macos", "apps/windows", "apps/shared"]) {
   if (lstatSync(resolve(root, path)).isSymbolicLink()) {
     failures.push(`${path} must be a real directory, not a symbolic link`);
   }
 }
 
 // Stream NUL-delimited names: Unicode paths and large repositories are ordinary input.
-const git = spawn("git", ["ls-files", "-z", "apps/macos", "apps/windows"], { cwd: root });
+const git = spawn("git", ["ls-files", "-z", "apps/macos", "apps/windows", "apps/shared"], { cwd: root });
 git.stdout.setEncoding("utf8");
 let gitError = "";
 git.stderr.setEncoding("utf8");
@@ -110,7 +115,25 @@ const finished = new Promise((resolve, reject) => {
   git.on("error", reject);
   git.on("close", code => code === 0 ? resolve() : reject(new Error(gitError || `git exited ${code}`)));
 });
+const importPattern = /(?:from\s*|import\s*\(\s*|(?:Include|Project|path)\s*=\s*)["']([^"']+)["']/g;
+function relativeTargets(relativePath) {
+  const content = readFileSync(resolve(root, relativePath), "utf8");
+  const targets = [];
+  for (const [, specifier] of content.matchAll(importPattern)) {
+    if (!specifier.startsWith(".")) continue;
+    targets.push([specifier, relative(root, resolve(dirname(resolve(root, relativePath)), specifier.replaceAll("\\", "/"))).replaceAll("\\", "/")]);
+  }
+  return targets;
+}
 function checkTrackedPath(relativePath) {
+  // Shared code never reaches into an application.
+  if (relativePath.startsWith("apps/shared/")) {
+    if (!/\.(?:ts|tsx|mts|mjs|rs)$/.test(relativePath)) return;
+    for (const [specifier, target] of relativeTargets(relativePath)) {
+      if (/^apps\/(?:macos|windows)\//.test(target)) failures.push(`${relativePath} imports an application: ${specifier}`);
+    }
+    return;
+  }
   if (/^apps\/(macos|windows)\/office\/vendor\/office-js\//.test(relativePath)) {
     failures.push(`Retired committed Office.js vendor file: ${relativePath}`);
   }
@@ -118,13 +141,9 @@ function checkTrackedPath(relativePath) {
   if (!/^apps\/(?:macos|windows)\/(?:src\/|src-tauri\/src\/|src-windows\/)/.test(relativePath)
       || /\/(?:bin|obj|artifacts)\//.test(relativePath)
       || !/\.(?:ts|tsx|rs|csproj|projitems)$/.test(relativePath)) return;
-  const content = readFileSync(resolve(root, relativePath), "utf8");
   const platform = relativePath.split("/")[1];
   const other = platform === "windows" ? "macos" : "windows";
-  const references = content.matchAll(/(?:from\s*|import\s*\(\s*|(?:Include|Project|path)\s*=\s*)["']([^"']+)["']/g);
-  for (const [, specifier] of references) {
-    if (!specifier.startsWith(".")) continue;
-    const target = relative(root, resolve(dirname(resolve(root, relativePath)), specifier.replaceAll("\\", "/"))).replaceAll("\\", "/");
+  for (const [specifier, target] of relativeTargets(relativePath)) {
     if (target.startsWith(`apps/${other}/`)) failures.push(`${relativePath} imports the other platform: ${specifier}`);
   }
 }

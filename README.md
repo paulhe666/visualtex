@@ -186,14 +186,15 @@ macOS 版本要求 macOS 11 或更高版本。Windows 版 Office 集成稳定支
 
 ## 开发
 
-仓库中的 macOS 与 Windows 实现相互独立：
+macOS 与 Windows 两个应用在同一个仓库、同一条历史中开发，共用 `apps/shared` 中的代码：
 
 ```text
 visualtex/
 ├── apps/
+│   ├── shared/      # 两个应用共用：编辑内核、TeX 排版、文档编辑器、自定义符号设计器、共用前端代码
 │   ├── macos/       # macOS 应用、Tauri、DOTM/PPAM、OCR 与测试
 │   └── windows/     # Windows 应用、Tauri、VSTO/OLE、OCR 与测试
-├── docs/            # 架构文档与 README 图片
+├── docs/            # 架构与设计文档、README 图片
 ├── tools/           # 仓库结构检查
 └── README.md
 ```
@@ -361,14 +362,15 @@ The macOS version requires macOS 11 or later. The Windows Office integration is 
 
 ## Development
 
-The macOS and Windows implementations are maintained separately:
+The macOS and Windows applications are developed in one repository and one history, and share the code in `apps/shared`:
 
 ```text
 visualtex/
 ├── apps/
+│   ├── shared/      # shared by both: editing kernel, TeX layout, document editor, custom symbol designer, common frontend code
 │   ├── macos/       # macOS application, Tauri, DOTM/PPAM, OCR, and tests
 │   └── windows/     # Windows application, Tauri, VSTO/OLE, OCR, and tests
-├── docs/            # Architecture documents and README images
+├── docs/            # Architecture and design documents, README images
 ├── tools/           # Repository structure checks
 └── README.md
 ```

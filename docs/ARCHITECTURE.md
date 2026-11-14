@@ -2,63 +2,81 @@
 
 ## 中文
 
-### 目标
+### 结构
 
-`main` 保存两个完整而独立的桌面应用，而不是一套通过大量平台判断运行的共享应用。
+一个仓库、一条历史（`main`），Windows 和 Mac 两台机器都在这条历史上工作。仓库里是两个桌面应用和它们共用的代码：
 
 ```text
-apps/macos    = macOS 编辑器 + macOS Tauri + DOTM/PPAM + VBA/AppleScript + macOS OCR
-apps/windows  = Windows 编辑器 + Windows Tauri + VSTO/OLE + Windows OCR
+apps/shared     两个应用原样共用的代码
+  visualtex-core          编辑内核（src/kernel 是 VisualTeX 自己的 MathLive TypeScript 分支）、结构规则、光标与选区
+  tex-layout              TeX 排版引擎、字体与度量
+  visualtex-document      文档编辑器（Markdown 行、公式、表格、引用）
+  custom-symbol-designer  自定义符号设计器
+  visualtex-app           两个应用共用的前端代码（逐步迁入，见“共享规则”）
+apps/windows    Windows 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、C# Office 加载项（src-windows：
+                VSTO、OLE 服务器、MathType，WPS 通过 COM 使用同一套加载项）、输入法（input-method）、OCR
+apps/macos      macOS 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、Office 加载项（office/macos-offline：
+                DOTM/PPAM、VBA 与 AppleScript，另有 WPS 加载项）、输入法（input-method）、OCR
+engine          未完成的编辑器 Rust 重写，两个应用都不使用
+docs            本文件、设计文档（editing-core、document-editor、office-mcp）、equation-format-v2.md
+tools           仓库结构检查
 ```
 
-两边拥有独立的：
+每个应用各自拥有 `package.json` 与 `package-lock.json`、`Cargo.toml` 与 `Cargo.lock`、Vite/TypeScript/Tauri 配置、
+脚本和测试。`apps/shared` 没有自己的 `node_modules`：应用以相对路径引用共享文件，由应用的 Vite 配置从应用自己的
+`node_modules` 解析依赖（`vite.sharedPackages.ts`）。内核通过构建期模块 `virtual:visualtex-kernel-host`
+（`vite.visualtexKernelHost.ts`）取得各应用的命令表和输入规则。
 
-- `src/`
-- `src-tauri/`
-- `package.json` 与 `package-lock.json`
-- `Cargo.toml` 与 `Cargo.lock`
-- Vite、TypeScript、Tauri 配置
-- Office 插件、安装器、脚本和测试
-- 编辑器组件、Session 协议实现和平台运行时
+### 共享规则
 
-仓库顶层不再保留第三套 `src`、`src-tauri`、`office` 或 `src-windows`。顶层只负责说明、CI 和命令调度。
+1. `apps/shared` 不引用 `apps/windows` 或 `apps/macos`。（`npm run test:repository` 检查）
+2. 一个应用不引用另一个应用。（同上）
+3. 两个应用都需要、且内容相同的文件放在 `apps/shared`，不在两个应用里各放一份。因平台不同而不同的文件留在各自的应用里。
+4. 共享代码里的平台差异是一个模块：每个应用提供导出相同的版本（作为参数传入，或像 `virtual:visualtex-kernel-host`
+   那样由宿主模块提供）；不在共享代码里写平台判断，也不保留改过的副本。
+5. 不提交构建产物、日志、截图或测试文档；有名字的测试素材目录除外。
+
+`apps/windows/src` 与 `apps/macos/src` 里仍有许多相同或几乎相同的文件。它们逐个迁入 `apps/shared`，每次迁移都在两个平台上验证。
+
+### 在两台机器上工作
+
+- 两台机器都提交到 `main`。在一台机器上开始工作前，先合入另一台机器的新提交；提交之后，把提交带到另一台机器。
+  在有共同的远程仓库之前，提交以 git bundle 传递：`git bundle create`，在另一台机器上 `git fetch` 这个 bundle 再合并。
+- 对 `apps/shared` 的修改只做一次（在哪台机器上都可以），经 git 到达另一台机器，不再复制文件。
+- 对一个应用的修改在它自己的目录里完成。若另一个应用也要同样的行为，那是另一个应用目录里的第二个修改，
+  或者是把这段代码移入 `apps/shared` 的理由。
 
 ### 平台边界
 
 #### macOS
 
-macOS 使用 DOTM、PPAM、VBA、AppleScriptTask、Office Group Container 和 Tauri 本地编辑窗口。Word 可插入图片或 OMML 公式；PowerPoint 使用本地图片/矢量公式流程。该实现不包含 Office.js、XML Manifest 或 Windows COM/OLE 代码；私有回环 TLS companion 仅用于 Session/OCR API。
+macOS 使用 DOTM、PPAM（VBA、AppleScriptTask）、Office Group Container 和 Tauri 本地编辑窗口；WPS 有自己的加载项。
+Word 可插入图片公式或原生公式（OMML）；PowerPoint 使用本地图片/矢量公式流程。不包含 Office.js 和 Windows COM/OLE 代码。
 
 #### Windows
 
-Windows 使用 VSTO Ribbon、Office 事件和 ATL COM LocalServer。专业模式保存真实的 `VisualTeX.Formula.1` OLE 对象，同时保留 OMML 与跨平台图片模式。仅 `office/windows/ole/` 保留当前仍支持的 Windows Office.js 兼容/清理路径，其静态资源在构建时生成而不提交；该实现不包含 macOS DOTM、PPAM 或 AppleScript。
+Windows 使用 VSTO Ribbon、Office 事件和 ATL COM LocalServer。专业模式保存真实的 `VisualTeX.Formula.1` OLE 对象，
+同时保留 OMML 与跨平台图片模式；WPS 文字与 WPS 演示通过 COM 使用同一套 C# 加载项。仅 `office/windows/ole/`
+保留当前仍支持的 Office.js 兼容/清理路径，其静态资源在构建时生成而不提交。不包含 DOTM、PPAM 或 AppleScript。
 
-### 文档兼容与源码解耦
+### 跨平台文档
 
-源码完全分开不等于文档必须互不识别。两个应用可以各自实现相同的公式元数据字段，以便图片公式或 OMML 在不同平台打开时保留 LaTeX、公式 ID 和显示模式。兼容规则是文件格式约定，不是共享代码包。
+两个应用写入相同的公式元数据（LaTeX、公式 ID、显示模式），图片公式和 OMML 公式在另一平台打开时仍保留这些信息；
+格式见 `docs/equation-format-v2.md`。Word 公式在两个平台上应得到相同的结果：Mac 应用的 OMML 写入器是 Windows C#
+写入器的 Rust 移植，它的输入 MathML 来自 Windows LaTeX → MathML 代码的一份副本
+（`apps/macos/src/office/wordMathMl/windows`，由 `apps/macos/scripts/sync_word_mathml_mirror.mjs` 维护）。
+这份副本目前有 14 个文件落后于 `apps/windows/src`，之后由 `apps/shared` 中的共享代码取代。
 
-### 分支策略
+### 分支
 
-以下两个旧分支仅作为本次导入来源：
-
-- `feat/macos-offline-office-native`
-- `dev-windows-native-office-v1.2.0`
-
-导入完成后，新功能分支应从 `main` 创建，并只修改对应目录：
-
-```text
-feat/macos-*    → apps/macos/**
-feat/windows-*  → apps/windows/**
-```
-
-不要再从旧的“仓库根目录就是单个平台应用”的分支继续长期开发，否则后续仍需要重复做目录前缀迁移。
+- `main`：产品，两个平台。
+- `web`：网站（visualtex.pauljianliao.com）。它通过 `scripts/sync-mac-editor.mjs` 和补丁运行 macOS 前端；推送即部署。
 
 ### CI
 
-- `.github/workflows/macos.yml` 只在 macOS 代码变化时运行；
-- `.github/workflows/windows.yml` 只在 Windows 代码变化时运行；
-- `.github/workflows/repository.yml` 检查顶层结构和平台隔离；
-- 一个平台的依赖、构建失败或 Office 工具链不会阻断另一个平台的日常开发任务。
+- `.github/workflows/macos.yml` 在 `apps/macos/**` 或 `apps/shared/**` 变化时运行；
+- `.github/workflows/windows.yml` 在 `apps/windows/**` 或 `apps/shared/**` 变化时运行；
+- `.github/workflows/repository.yml` 检查仓库结构。
 
 ### 顶层命令
 
@@ -74,78 +92,108 @@ npm run check
 
 `tools/verify_repository_structure.mjs` 会检查：
 
-- 两个应用目录和关键平台代码是否存在；
-- 仓库根目录是否重新出现旧应用源码；
-- 两个子项目名称和版本是否合理；
-- README 使用的真实截图是否存在；
-- 平台目录是否为真实目录而非符号链接；
-- 一个平台的源码是否直接引用另一个平台目录。
+- 两个应用目录、`apps/shared` 的各个包和关键平台代码是否存在；
+- 已退役的根目录应用源码和 Office.js 路径是否重新出现；
+- 两个子项目的名称，以及 package、Tauri、Cargo 版本是否一致；
+- README 使用的截图是否存在；
+- 应用目录与 `apps/shared` 是否为真实目录而非符号链接；
+- 上面的共享规则 1 和 2。
 
 ---
 
 ## English
 
-### Goal
+### Layout
 
-`main` contains two complete, independent desktop applications. It does not contain one shared application controlled by a growing set of platform conditionals.
+One repository and one history (`main`), used on both the Windows and the Mac machine. It holds two desktop
+applications and the code they share:
 
 ```text
-apps/macos    = macOS editor + macOS Tauri + DOTM/PPAM + VBA/AppleScript + macOS OCR
-apps/windows  = Windows editor + Windows Tauri + VSTO/OLE + Windows OCR
+apps/shared     code both applications run unchanged
+  visualtex-core          editing kernel (src/kernel is VisualTeX's own TypeScript fork of MathLive), structure rules, caret and selection
+  tex-layout              TeX layout engine, fonts and metrics
+  visualtex-document      document editor (Markdown lines, formulas, tables, references)
+  custom-symbol-designer  custom symbol designer
+  visualtex-app           frontend code common to both applications (filled step by step, see "Sharing rules")
+apps/windows    Windows application: editor shell (src), Tauri backend (src-tauri), Office add-ins in C# (src-windows:
+                VSTO, OLE server, MathType; WPS uses the same add-ins through COM), input method (input-method), OCR
+apps/macos      macOS application: editor shell (src), Tauri backend (src-tauri), Office add-ins (office/macos-offline:
+                DOTM/PPAM with VBA and AppleScript, and a WPS add-in), input method (input-method), OCR
+engine          an unfinished Rust rewrite of the editor; neither application uses it
+docs            this file, the design documents (editing-core, document-editor, office-mcp), equation-format-v2.md
+tools           repository checks
 ```
 
-Each application owns its own:
+Each application has its own `package.json` and `package-lock.json`, `Cargo.toml` and `Cargo.lock`,
+Vite/TypeScript/Tauri configuration, scripts and tests. `apps/shared` has no `node_modules`: an application imports
+shared files by relative path, and its Vite configuration resolves their packages from the application's own
+`node_modules` (`vite.sharedPackages.ts`). The kernel receives each application's command tables and input rules
+through the build-time module `virtual:visualtex-kernel-host` (`vite.visualtexKernelHost.ts`).
 
-- `src/`
-- `src-tauri/`
-- `package.json` and `package-lock.json`
-- `Cargo.toml` and `Cargo.lock`
-- Vite, TypeScript, and Tauri configuration
-- Office add-ins, installers, scripts, and tests
-- Editor components, Session implementation, and platform runtime
+### Sharing rules
 
-There is no third application at the repository root. The root only provides documentation, CI, and command dispatching.
+1. `apps/shared` never imports from `apps/windows` or `apps/macos`. (checked by `npm run test:repository`)
+2. An application never imports from the other application. (checked as well)
+3. A file both applications need with the same content belongs in `apps/shared`, not in both applications. A file
+   that differs because the platforms differ stays in its application.
+4. A platform difference inside shared code is a module each application supplies with the same exports (passed in
+   as a parameter, or through a host module like `virtual:visualtex-kernel-host`); never a platform check inside
+   shared code and never an edited copy.
+5. No build output, logs, screenshots or test documents are committed, except in a named fixtures folder.
+
+`apps/windows/src` and `apps/macos/src` still hold many files that are identical or nearly so. They move to
+`apps/shared` one at a time, each move checked on both platforms.
+
+### Working on both machines
+
+- Both machines commit to `main`. Before starting work on one machine, bring in the commits made on the other; after
+  committing, carry them over. Until there is a shared remote, commits travel as git bundles: `git bundle create`,
+  then `git fetch` the bundle on the other machine and merge.
+- A change to `apps/shared` is made once, on either machine, and reaches the other machine through git, not by
+  copying files.
+- A change to one application is made in its own directory. When the other application should behave the same, that
+  is a second change in the other application's directory, or a reason to move the code to `apps/shared`.
 
 ### Platform boundaries
 
 #### macOS
 
-macOS uses DOTM, PPAM, VBA, AppleScriptTask, the Office Group Container, and local Tauri editor windows. Word supports picture and OMML formulas; PowerPoint uses the local picture/vector workflow. The application contains no Office.js, XML manifests, or Windows COM/OLE code; its private loopback TLS companion is limited to Session/OCR APIs.
+macOS uses DOTM and PPAM add-ins (VBA, AppleScriptTask), the Office group container and local Tauri editor windows;
+WPS has its own add-in. Word gets picture formulas or native equations (OMML); PowerPoint uses the local
+picture/vector workflow. The application contains no Office.js and no Windows COM/OLE code.
 
 #### Windows
 
-Windows uses VSTO Ribbons, Office events, and an ATL COM LocalServer. Professional mode stores real `VisualTeX.Formula.1` OLE objects while retaining OMML and cross-platform picture modes. Only `office/windows/ole/` retains the currently supported Windows Office.js compatibility/cleanup route, with generated assets excluded from Git. The application contains no macOS DOTM, PPAM, or AppleScript components.
+Windows uses VSTO Ribbons, Office events and an ATL COM LocalServer. Professional mode stores real
+`VisualTeX.Formula.1` OLE objects while keeping OMML and the cross-platform picture mode; WPS Writer and WPS
+Presentation use the same C# add-ins through COM. Only `office/windows/ole/` keeps the still supported Office.js
+compatibility/cleanup route, with generated assets excluded from Git. The application contains no DOTM, PPAM or
+AppleScript components.
 
-### Document compatibility without source coupling
+### Documents across platforms
 
-Fully separate source trees do not require incompatible documents. Each application may independently implement the same metadata fields so picture formulas or OMML can preserve LaTeX, formula IDs, and display mode across platforms. That is a file-format agreement, not a shared code package.
+Both applications write the same formula metadata (LaTeX, formula ID, display mode), so picture and OMML formulas
+keep it when opened on the other platform; `docs/equation-format-v2.md` describes the format. Word equations are
+meant to come out the same on both platforms: the Mac application's OMML writer is a Rust port of the Windows C#
+writer, and its input MathML comes from a copy of the Windows LaTeX → MathML code
+(`apps/macos/src/office/wordMathMl/windows`, kept by `apps/macos/scripts/sync_word_mathml_mirror.mjs`). That copy is
+currently 14 files behind `apps/windows/src`; it is to be replaced by shared code in `apps/shared`.
 
-### Branch strategy
+### Branches
 
-The original platform branches are import sources for this migration:
-
-- `feat/macos-offline-office-native`
-- `dev-windows-native-office-v1.2.0`
-
-After migration, new work should branch from `main` and modify only its platform directory:
-
-```text
-feat/macos-*    → apps/macos/**
-feat/windows-*  → apps/windows/**
-```
-
-Continuing long-term development from the old root-shaped branches would recreate the same prefix migration problem.
+- `main`: the product, both platforms.
+- `web`: the website (visualtex.pauljianliao.com). It runs the macOS frontend through `scripts/sync-mac-editor.mjs`
+  and patches; pushing it deploys the site.
 
 ### CI
 
-- `.github/workflows/macos.yml` runs only for macOS changes;
-- `.github/workflows/windows.yml` runs only for Windows changes;
-- `.github/workflows/repository.yml` verifies the repository boundary;
-- One platform's dependency or native Office toolchain does not block ordinary development of the other.
+- `.github/workflows/macos.yml` runs when `apps/macos/**` or `apps/shared/**` changes;
+- `.github/workflows/windows.yml` runs when `apps/windows/**` or `apps/shared/**` changes;
+- `.github/workflows/repository.yml` checks the repository structure.
 
 ### Root commands
 
-The root `package.json` has no React, Tauri, or Office dependencies. It only dispatches commands:
+The root `package.json` has no React, Tauri or Office dependencies. It only dispatches commands:
 
 ```bash
 npm run bootstrap
@@ -155,4 +203,7 @@ npm run test:repository
 npm run check
 ```
 
-`tools/verify_repository_structure.mjs` verifies required platform files, the absence of legacy root application directories, package identity, screenshot presence, real directories instead of symlinks, and accidental cross-platform path references.
+`tools/verify_repository_structure.mjs` checks that the application directories, the `apps/shared` packages and key
+platform files exist; that retired root-level application sources and Office.js paths have not come back; that the
+package names and the package, Tauri and Cargo versions agree; that the README screenshots exist; that the
+application directories and `apps/shared` are real directories, not symbolic links; and sharing rules 1 and 2.

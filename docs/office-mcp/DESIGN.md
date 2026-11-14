@@ -445,4 +445,4 @@ Added 2026-11-02:
   commit "Word: one font size for every inline or display formula". `list_formulas` gives `font_size_pt`.
 - Verified with `e2e-ppt.ps1 -Scenario powerpoint-layout` and `powerpoint` (twice), `e2e-word.ps1 -Scenario
   word-fontsize` and `word`: no failures.
-- macOS: the same tools for Word and PowerPoint for Mac, see `MACOS.md` in the macOS repository.
+- macOS: the same tools for Word and PowerPoint for Mac, see `MACOS.md` beside this file.

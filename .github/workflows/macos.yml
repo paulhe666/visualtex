@@ -4,12 +4,14 @@ on:
   push:
     paths:
       - "apps/macos/**"
+      - "apps/shared/**"
       - "package.json"
       - "tools/**"
       - ".github/workflows/macos.yml"
   pull_request:
     paths:
       - "apps/macos/**"
+      - "apps/shared/**"
       - "package.json"
       - "tools/**"
       - ".github/workflows/macos.yml"
