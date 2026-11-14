@@ -13,6 +13,7 @@ in history: every file is still in git. Read one with `git show <commit>^:<path>
 | Stray files (write probe, a screenshot named `-`, a `.orig` merge leftover, an empty `.sha256.txt`, a compiled smoke `.exe`) | `73147fb4` |
 | 38 empty or comment-only C# files in `src-windows` | `5bf98320` |
 | Windows checkpoint scripts `cp239_*`–`cp260_*` | `c3138129` |
+| 188 scripts no file named (Office probes and repros, installed-app checks, retired stubs, the macOS copy of the Windows reference editor regression) | `3d1e6e4b` |
 
 Test inputs that lived in `docs/remediation-3d207d7/evidence` and are still used moved to
 `apps/windows/test-fixtures` (`mtef-redraw/`, `mathtype-create/`).
