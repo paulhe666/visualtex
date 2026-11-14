@@ -17,7 +17,6 @@ apps/windows    Windows 应用：编辑器外壳（src）、Tauri 后端（src-t
                 VSTO、OLE 服务器、MathType，WPS 通过 COM 使用同一套加载项）、输入法（input-method）、OCR
 apps/macos      macOS 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、Office 加载项（office/macos-offline：
                 DOTM/PPAM、VBA 与 AppleScript，另有 WPS 加载项）、输入法（input-method）、OCR
-engine          未完成的编辑器 Rust 重写，两个应用都不使用
 docs            本文件、设计文档（editing-core、document-editor、office-mcp）、equation-format-v2.md
 tools           仓库结构检查
 ```
@@ -119,7 +118,6 @@ apps/windows    Windows application: editor shell (src), Tauri backend (src-taur
                 VSTO, OLE server, MathType; WPS uses the same add-ins through COM), input method (input-method), OCR
 apps/macos      macOS application: editor shell (src), Tauri backend (src-tauri), Office add-ins (office/macos-offline:
                 DOTM/PPAM with VBA and AppleScript, and a WPS add-in), input method (input-method), OCR
-engine          an unfinished Rust rewrite of the editor; neither application uses it
 docs            this file, the design documents (editing-core, document-editor, office-mcp), equation-format-v2.md
 tools           repository checks
 ```
