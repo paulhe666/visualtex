@@ -3596,8 +3596,6 @@ button:disabled {
 }
 
 .header-actions .file-actions {
-  position: relative;
-  left: 6px;
   gap: 4px;
   margin-left: 0;
   margin-right: 4px;
