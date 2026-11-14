@@ -5,14 +5,14 @@ import {
   compatibilityRequiredArgumentCounts,
   compatibilityWrapperCanonicalTargets,
   compatibilityWrapperPreviews,
-} from "../../shared/visualtex-app/src/autocomplete/compatibilityCommands.ts";
-import { commandRegistry } from "../../shared/visualtex-app/src/autocomplete/commandRegistry.ts";
+} from "../src/autocomplete/compatibilityCommands.ts";
+import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import {
   formatLatex,
   parseLatexSourceDraft,
-} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
-import { normalizePackageLatexCommands } from "../../shared/visualtex-app/src/math/latexCompatibility.ts";
-import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../../shared/visualtex-app/src/math/packageMacroCompatibility.ts";
+} from "../src/clipboard/LatexCopyService.ts";
+import { normalizePackageLatexCommands } from "../src/math/latexCompatibility.ts";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility.ts";
 
 const wrapperCommands = [
   "\\bm", "\\mathbfit", "\\symbfit", "\\simbfit", "\\symbf",
@@ -37,7 +37,7 @@ for (const command of ["\\comm", "\\acomm", "\\pb", "\\dv", "\\pdv", "\\braket",
   assert.ok(compatibilityRawPlaceholderTemplates.has(command), `${command} is missing structural placeholder registration`);
 }
 
-assert.equal(compatibilityWrapperCanonicalTargets.get("\\boldmath"), "\\mathbfit");
+assert.equal(compatibilityWrapperCanonicalTargets.get("\\boldmath"), "\\bm");
 assert.equal(compatibilityWrapperCanonicalTargets.get("\\simbfit"), "\\symbfit");
 assert.equal(compatibilityWrapperCanonicalTargets.get("\\Bbb"), "\\mathbb");
 assert.equal(compatibilityWrapperCanonicalTargets.get("\\frak"), "\\mathfrak");
@@ -83,8 +83,9 @@ assert.match(normalizedExportSource, /\\frac/u);
 
 for (const [source, pattern] of [
   [String.raw`\braket{\phi}{\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*\\psi\\right\\rangle/u],
-  [String.raw`\braket{\phi|\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*\\psi\\right\\rangle/u],
-  [String.raw`\braket{\phi|A|\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*A\\middle\\vert\s*\\psi\\right\\rangle/u],
+  // braket.sty's one argument keeps its | separators as written, as \braket does in LaTeX
+  [String.raw`\braket{\phi|\psi}`, /^\\mathinner\{\\langle\{\\phi\|\\psi\}\\rangle\}$/u],
+  [String.raw`\braket{\phi|A|\psi}`, /^\\mathinner\{\\langle\{\\phi\|A\|\\psi\}\\rangle\}$/u],
 ] as const) {
   const normalized = normalizePackageLatexCommands(source);
   assert.doesNotMatch(normalized, /\\braket(?![A-Za-z@])/u);
@@ -93,9 +94,10 @@ for (const [source, pattern] of [
 
 const physicsAndUnitSource = String.raw`\mqty{a&b\\c&d}+\qtyrange{1}{10}{\milli\second}+\ang{30}+\unit{\joule\per\mole}`;
 for (const [source, expected] of [
-  [String.raw`\braket{\phi|\psi}`, String.raw`\left\langle \phi\middle\vert \psi\right\rangle`],
+  [String.raw`\braket{\phi|\psi}`, String.raw`\mathinner{\langle{\phi|\psi}\rangle}`],
   [String.raw`\braket{\phi}{\psi}`, String.raw`\left\langle \phi\middle\vert \psi\right\rangle`],
-  [String.raw`\braket{a||b}`, String.raw`\left\langle a\middle\Vert b\right\rangle`],
+  [String.raw`\braket{a}`, String.raw`\left\langle a\middle\vert a\right\rangle`],
+  [String.raw`\braket{a||b}`, String.raw`\mathinner{\langle{a||b}\rangle}`],
 ] as const) {
   assert.equal(
     normalizePackageLatexCommands(source),
