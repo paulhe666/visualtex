@@ -296,7 +296,8 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="3"]
   .office-font-size-setting
   > span,
-/* 4: the OCR model selector leaves; 5: undo and redo leave (⌘Z still works). */
+/* 4: the OCR model selector leaves; 5: undo and redo leave (⌘Z still works). Level 6 compacts a platform's own
+   header controls (src/platform/styles.css). */
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="4"] .canvas-ocr-model,
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
   .office-inline-actions

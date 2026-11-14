@@ -6,6 +6,19 @@
    list WebView2 shows while typing a command (#visualtex-native-input-suggestion-popover,
    editor/mathLiveKernelCommands.ts). */
 
+/* The Office editor header's collapse levels (responsive.css) for the Windows controls: 5: undo and redo leave
+   (Ctrl+Z still works); 6: the OCR button keeps its icon, the equation-number box loses its caption. */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
+  .office-inline-history-actions
+  > :is(.office-history-icon-button, .office-inline-action-divider),
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="6"]
+  .office-inline-history-actions
+  > .secondary-button:not(.office-inline-cancel)
+  > span,
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="6"] .office-auto-commit-setting > span {
+  display: none;
+}
+
 :root.visualtex-source-editor-focused
   #visualtex-native-input-suggestion-popover {
   display: none !important;

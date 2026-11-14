@@ -2413,16 +2413,11 @@ export function OfficeDialogApp() {
       {session.host === "word" && displayMode === "block" ? (
         <label
           className="office-auto-commit-setting"
-          title={
-            session.objectMode === "mathTypeOle"
-              ? isEn
-                ? "Equation number"
-                : "公式编号"
-              : undefined
-          }
+          title={isEn ? "Equation number" : "公式编号"}
         >
           <input
             type="checkbox"
+            aria-label={isEn ? "Equation number" : "公式编号"}
             checked={numbered}
             onChange={(event) => setNumbered(event.target.checked)}
           />
