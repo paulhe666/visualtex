@@ -438,7 +438,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Application? _application;
     private WordFormulaService? _formulaService;
     private OfficeUiDispatcher? _dispatcher;
-    private VisualTeXSessionClient? _sessionClient;
+    // Created off Word's UI thread: loading the HTTP stack and the companion
+    // configuration was ~0.3 s of the add-in's start, which WPS holds against it.
+    private Task<VisualTeXSessionClient>? _sessionClientTask;
     private OfficeAutomationAgent? _automationAgent;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
@@ -503,10 +505,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Office.COMAddIn? _comAddIn;
 
     // No ribbon in a host the user did not install the add-in for (OfficeHostSelection).
-    public string GetCustomUI(string ribbonId) =>
-        OfficeHostSelection.IsCurrentHostEnabled()
+    public string GetCustomUI(string ribbonId)
+    {
+        var startup = new OfficeHostSelection.StartupSteps();
+        var ribbon = OfficeHostSelection.IsCurrentHostEnabled()
             ? WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml)
             : string.Empty;
+        startup.Mark("ribbonXml");
+        startup.Record(OfficeHostEnvironment.IsWps ? "WpsWriterRibbon" : "WordRibbon");
+        return ribbon;
+    }
 
     public void OnConnection(
         object application,
@@ -530,7 +538,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "installed-addin-suppressed-for-manual-acceptance");
             return;
         }
-        OfficeHostSelection.RecordLoad(OfficeHostEnvironment.IsWps ? "WpsWriter" : "Word");
+        var startup = new OfficeHostSelection.StartupSteps();
+        var hostName = OfficeHostEnvironment.IsWps ? "WpsWriter" : "Word";
+        OfficeHostSelection.RecordLoad(hostName);
+        startup.Mark("recordLoad");
         // Microsoft Office or WPS left out at installation: stay inert in this host.
         if (!OfficeHostSelection.IsCurrentHostEnabled())
         {
@@ -547,46 +558,66 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try { _comAddIn.Object = this; } catch { }
         }
+        startup.Mark("addInObject");
         var officeMathFontReady = WordOfficeMathFontLoader.TryEnsureLoaded(
             out var officeMathFontError);
+        startup.Mark("mathFont");
         _formulaService = new WordFormulaService(_application);
+        startup.Mark("formulaService");
         WordOmmlMathFontSetting.Install();
+        startup.Mark("ommlMathFontSetting");
         _dispatcher = new OfficeUiDispatcher();
         WpsOleDisplayRefresh.Attach(_application, _dispatcher.Post);
+        startup.Mark("dispatcher");
         _acceptanceSelectionDiagnostics = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
             "1",
             StringComparison.Ordinal);
-        _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
-        _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
+        var lifetime = _lifetime.Token;
         // Agent access (docs/office-mcp): the add-in polls the companion for read commands.
         var dispatcher = _dispatcher;
-        _automationAgent = new OfficeAutomationAgent(
-            _sessionClient,
-            new WordAutomationHost(_application, _formulaService, ExecuteAutomationWrite),
-            operation => dispatcher.InvokeAsync(operation),
-            WordDoubleClickHook.TraceMessage);
-        _automationAgent.Start();
+        var automationHost = new WordAutomationHost(_application, _formulaService, ExecuteAutomationWrite);
+        _sessionClientTask = Task.Run(() => new VisualTeXSessionClient());
+        _ = _sessionClientTask.ContinueWith(task =>
+        {
+            if (task.Status != TaskStatus.RanToCompletion || lifetime.IsCancellationRequested) return;
+            _ = PrewarmCompanionAsync(task.Result, lifetime);
+            var agent = new OfficeAutomationAgent(
+                task.Result,
+                automationHost,
+                operation => dispatcher.InvokeAsync(operation),
+                WordDoubleClickHook.TraceMessage);
+            _automationAgent = agent;
+            agent.Start();
+            if (lifetime.IsCancellationRequested) try { agent.Dispose(); } catch { }
+        }, TaskScheduler.Default);
+        startup.Mark("sessionClient");
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
         _application.WindowActivate += OnWindowActivate;
         _application.DocumentOpen += OnDocumentOpen;
         _application.DocumentBeforeSave += OnDocumentBeforeSave;
+        startup.Mark("events");
+        // One read of the window for every hook: WPS answers ActiveWindow slowly
+        // while it is still starting; one read per hook cost ~0.4 s there.
+        int? ownerHwnd = null;
+        Window? ownerWindow = null;
+        try
+        {
+            ownerWindow = _application.ActiveWindow;
+            if (ownerWindow is not null) ownerHwnd = ownerWindow.Hwnd;
+        }
+        catch { }
+        finally { ReleaseComObject(ownerWindow); }
+        startup.Mark("activeWindow");
         string? doubleClickError = null;
         try
         {
             _doubleClickHook = new WordDoubleClickHook(
                 ShouldInterceptNativeOleDoubleClick,
                 OnNativeWordDoubleClick);
-            Window? ownerWindow = null;
-            try
-            {
-                ownerWindow = _application.ActiveWindow;
-                if (ownerWindow is not null) _doubleClickHook.BindOwnerWindow(ownerWindow.Hwnd);
-            }
-            catch { }
-            finally { ReleaseComObject(ownerWindow); }
+            if (ownerHwnd is int hwnd) _doubleClickHook.BindOwnerWindow(hwnd);
             _doubleClickHook.Start();
         }
         catch (Exception error)
@@ -595,17 +626,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = null;
             doubleClickError = error.Message;
         }
+        startup.Mark("doubleClickHook");
         try
         {
             _copyPasteHook = new WordCopyPasteHook(OnWordClipboardGesture);
-            Window? ownerWindow = null;
-            try
-            {
-                ownerWindow = _application.ActiveWindow;
-                if (ownerWindow is not null) _copyPasteHook.BindOwnerWindow(ownerWindow.Hwnd);
-            }
-            catch { }
-            finally { ReleaseComObject(ownerWindow); }
+            if (ownerHwnd is int hwnd) _copyPasteHook.BindOwnerWindow(hwnd);
             _copyPasteHook.Start();
         }
         catch (Exception error)
@@ -615,6 +640,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WordDoubleClickHook.TraceMessage(
                 $"copy-paste-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
+        startup.Mark("copyPasteHook");
         try
         {
             _keyboardHook = new OfficeFormulaShortcutKeyboardHook(
@@ -622,14 +648,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 OnWordFormulaShortcut,
                 OnWordPasteKeyGesture,
                 WordDoubleClickHook.TraceMessage);
-            Window? ownerWindow = null;
-            try
-            {
-                ownerWindow = _application.ActiveWindow;
-                if (ownerWindow is not null) _keyboardHook.BindOwnerWindow(ownerWindow.Hwnd);
-            }
-            catch { }
-            finally { ReleaseComObject(ownerWindow); }
+            if (ownerHwnd is int hwnd) _keyboardHook.BindOwnerWindow(hwnd);
             _keyboardHook.Start();
         }
         catch (Exception error)
@@ -639,17 +658,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WordDoubleClickHook.TraceMessage(
                 $"paste-key-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
+        startup.Mark("keyboardHook");
         try
         {
             _deleteKeyHook = new WordDeleteKeyHook(OnWordDeleteKeyGesture);
-            Window? ownerWindow = null;
-            try
-            {
-                ownerWindow = _application.ActiveWindow;
-                if (ownerWindow is not null) _deleteKeyHook.BindOwnerWindow(ownerWindow.Hwnd);
-            }
-            catch { }
-            finally { ReleaseComObject(ownerWindow); }
+            if (ownerHwnd is int hwnd) _deleteKeyHook.BindOwnerWindow(hwnd);
             _deleteKeyHook.Start();
         }
         catch (Exception error)
@@ -659,11 +672,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WordDoubleClickHook.TraceMessage(
                 $"delete-key-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
+        startup.Mark("deleteKeyHook");
         SetStatus(!officeMathFontReady
             ? $"VisualTeX 已就绪，但 Word 数学字体不可用：{officeMathFontError}"
             : doubleClickError is null
                 ? "VisualTeX Word VSTO 已就绪。"
                 : $"VisualTeX 已就绪，但 OLE 双击监听不可用：{doubleClickError}");
+        startup.Mark("status");
+        startup.Record(hostName);
     }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) => Dispose();
@@ -1026,7 +1042,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            (_sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
+            (SessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
                 .OpenDesktop();
             SetStatus(T("VisualTeX 已打开。", "VisualTeX is open."));
         }
@@ -2883,6 +2899,27 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
+    // The session client, waiting for its background creation if it is still running.
+    private VisualTeXSessionClient? SessionClient
+    {
+        get
+        {
+            var task = _sessionClientTask;
+            if (task is null) return null;
+            try { return task.GetAwaiter().GetResult(); }
+            catch { return null; }
+        }
+    }
+
+    private static void DisposeSessionClient(Task<VisualTeXSessionClient>? task)
+    {
+        if (task is null) return;
+        _ = task.ContinueWith(created =>
+        {
+            if (created.Status == TaskStatus.RanToCompletion) created.Result.Dispose();
+        }, TaskScheduler.Default);
+    }
+
     private static async Task PrewarmCompanionAsync(
         VisualTeXSessionClient client,
         CancellationToken cancellationToken)
@@ -3014,7 +3051,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         string? activeSessionId;
         lock (_activeSessionOperationGate) activeSessionId = _activeSessionId;
-        var client = _sessionClient;
+        var client = SessionClient;
         if (string.IsNullOrWhiteSpace(activeSessionId) || client is null)
         {
             SetStatus("VisualTeX 正在准备编辑窗口，请稍候再试。");
@@ -3159,7 +3196,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             var dispatcher = _dispatcher ?? throw new InvalidOperationException("Word dispatcher is unavailable.");
             var service = _formulaService ?? throw new InvalidOperationException("Word formula service is unavailable.");
-            var client = _sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable.");
+            var client = SessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable.");
             SetStatus(T("正在连接 VisualTeX 本地服务…", "Connecting to the local VisualTeX service…"));
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
             TraceOpenPerformance("health");
@@ -3539,11 +3576,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "VisualTeX Word 写入失败",
                 "VisualTeX Word formula write failed");
             OfficeAutomationRun.Current?.Fail(failureMessage);
-            if (sessionId is not null && _sessionClient is not null)
+            if (sessionId is not null && SessionClient is not null)
             {
                 try
                 {
-                    await _sessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
+                    await SessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch { }
@@ -3627,7 +3664,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        var client = _sessionClient;
+        var client = SessionClient;
         var lifetime = _lifetime;
         if (dispatcher is null
             || service is null
@@ -4974,7 +5011,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         WriteBulkAcceptanceLog("bulk-import-start");
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        var client = _sessionClient;
+        var client = SessionClient;
         var application = _application;
         var lifetime = _lifetime;
         if (dispatcher is null
@@ -6610,11 +6647,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         ClearNativeOleTarget();
         try { _automationAgent?.Dispose(); } catch { }
         _automationAgent = null;
-        _sessionClient?.Dispose();
+        DisposeSessionClient(_sessionClientTask);
         WpsOleDisplayRefresh.Attach(null, null);
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
-        _sessionClient = null;
+        _sessionClientTask = null;
         _dispatcher = null;
         _formulaService = null;
         WordOmmlMathFontSetting.Uninstall();

@@ -343,7 +343,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private Application? _application;
     private PowerPointFormulaService? _formulaService;
     private OfficeUiDispatcher? _dispatcher;
-    private VisualTeXSessionClient? _sessionClient;
+    // Created off PowerPoint's UI thread: loading the HTTP stack and the companion
+    // configuration was ~0.3 s of the add-in's start, which WPS holds against it.
+    private Task<VisualTeXSessionClient>? _sessionClientTask;
     private OfficeAutomationAgent? _automationAgent;
     private PowerPointDoubleClickHook? _doubleClickHook;
     private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
@@ -362,10 +364,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public string DiagnosticLastError { get; private set; } = string.Empty;
 
     // No ribbon in a host the user did not install the add-in for (OfficeHostSelection).
-    public string GetCustomUI(string ribbonId) =>
-        OfficeHostSelection.IsCurrentHostEnabled()
+    public string GetCustomUI(string ribbonId)
+    {
+        var startup = new OfficeHostSelection.StartupSteps();
+        var ribbon = OfficeHostSelection.IsCurrentHostEnabled()
             ? WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml)
             : string.Empty;
+        startup.Mark("ribbonXml");
+        startup.Record(OfficeHostEnvironment.IsWps ? "WpsPresentationRibbon" : "PowerPointRibbon");
+        return ribbon;
+    }
 
     public void OnConnection(
         object application,
@@ -373,7 +381,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         object addInInstance,
         ref Array custom)
     {
-        OfficeHostSelection.RecordLoad(OfficeHostEnvironment.IsWps ? "WpsPresentation" : "PowerPoint");
+        var startup = new OfficeHostSelection.StartupSteps();
+        var hostName = OfficeHostEnvironment.IsWps ? "WpsPresentation" : "PowerPoint";
+        OfficeHostSelection.RecordLoad(hostName);
+        startup.Mark("recordLoad");
         // Microsoft Office or WPS left out at installation: stay inert in this host.
         if (!OfficeHostSelection.IsCurrentHostEnabled()) return;
         _application = (Application)application;
@@ -382,23 +393,36 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             try { _comAddIn.Object = this; } catch { }
         }
+        startup.Mark("addInObject");
         _dispatcher = new OfficeUiDispatcher();
+        startup.Mark("dispatcher");
         _formulaService = new PowerPointFormulaService(
             _application,
             _dispatcher.Post,
             _dispatcher.PostDelayed);
-        _sessionClient = new VisualTeXSessionClient();
+        startup.Mark("formulaService");
         _lifetime = new CancellationTokenSource();
-        _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
+        var lifetime = _lifetime.Token;
         // Agent access (docs/office-mcp): the add-in polls the companion for read commands.
         var dispatcher = _dispatcher;
-        _automationAgent = new OfficeAutomationAgent(
-            _sessionClient,
-            new PowerPointAutomationHost(_application, _formulaService, ExecuteAutomationWrite),
-            operation => dispatcher.InvokeAsync(operation),
-            PowerPointDoubleClickHook.TraceMessage);
-        _automationAgent.Start();
+        var automationHost = new PowerPointAutomationHost(_application, _formulaService, ExecuteAutomationWrite);
+        _sessionClientTask = Task.Run(() => new VisualTeXSessionClient());
+        _ = _sessionClientTask.ContinueWith(task =>
+        {
+            if (task.Status != TaskStatus.RanToCompletion || lifetime.IsCancellationRequested) return;
+            _ = PrewarmCompanionAsync(task.Result, lifetime);
+            var agent = new OfficeAutomationAgent(
+                task.Result,
+                automationHost,
+                operation => dispatcher.InvokeAsync(operation),
+                PowerPointDoubleClickHook.TraceMessage);
+            _automationAgent = agent;
+            agent.Start();
+            if (lifetime.IsCancellationRequested) try { agent.Dispose(); } catch { }
+        }, TaskScheduler.Default);
+        startup.Mark("sessionClient");
         _application.WindowSelectionChange += OnWindowSelectionChange;
+        startup.Mark("events");
         string? doubleClickError = null;
         try
         {
@@ -411,6 +435,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = null;
             doubleClickError = error.Message;
         }
+        startup.Mark("doubleClickHook");
         string? keyboardError = null;
         try
         {
@@ -426,6 +451,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _keyboardHook = null;
             keyboardError = error.Message;
         }
+        startup.Mark("keyboardHook");
         SetStatus(doubleClickError is not null
             ? T($"VisualTeX 已就绪，但双击监听不可用：{doubleClickError}",
                 $"VisualTeX is ready, but double-click detection is unavailable: {doubleClickError}")
@@ -433,6 +459,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 ? T($"VisualTeX 已就绪，但公式快捷键不可用：{keyboardError}",
                     $"VisualTeX is ready, but the formula shortcuts are unavailable: {keyboardError}")
                 : T("VisualTeX PowerPoint VSTO 已就绪。", "VisualTeX for PowerPoint is ready."));
+        startup.Mark("status");
+        startup.Record(hostName);
     }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) => Dispose();
@@ -540,7 +568,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            (_sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
+            (SessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
                 .OpenDesktop();
             SetStatus(T("VisualTeX 已打开。", "VisualTeX is open."));
         }
@@ -551,6 +579,27 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "无法打开 VisualTeX",
                 "Unable to open VisualTeX"));
         }
+    }
+
+    // The session client, waiting for its background creation if it is still running.
+    private VisualTeXSessionClient? SessionClient
+    {
+        get
+        {
+            var task = _sessionClientTask;
+            if (task is null) return null;
+            try { return task.GetAwaiter().GetResult(); }
+            catch { return null; }
+        }
+    }
+
+    private static void DisposeSessionClient(Task<VisualTeXSessionClient>? task)
+    {
+        if (task is null) return;
+        _ = task.ContinueWith(created =>
+        {
+            if (created.Status == TaskStatus.RanToCompletion) created.Result.Dispose();
+        }, TaskScheduler.Default);
     }
 
     private static async Task PrewarmCompanionAsync(
@@ -856,12 +905,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 return;
             }
             var activeSessionId = Volatile.Read(ref _activeSessionId);
-            if (!string.IsNullOrWhiteSpace(activeSessionId) && _sessionClient is not null)
+            if (!string.IsNullOrWhiteSpace(activeSessionId) && SessionClient is not null)
             {
                 try
                 {
                     GrantVisualTeXForegroundActivation();
-                    await _sessionClient.OpenEditorAsync(activeSessionId!, cancellationToken)
+                    await SessionClient.OpenEditorAsync(activeSessionId!, cancellationToken)
                         .ConfigureAwait(false);
                     SetStatus(T("已有 VisualTeX 编辑任务，已将编辑窗口切换到前台。",
                         "A VisualTeX editor task is already open; its window was brought to the front."));
@@ -894,7 +943,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var service = _formulaService ?? throw new InvalidOperationException(T(
                 "VisualTeX PowerPoint 插件尚未完成初始化（缺少公式服务）。",
                 "The VisualTeX PowerPoint add-in has not finished starting (no formula service)."));
-            var client = _sessionClient ?? throw new InvalidOperationException(T(
+            var client = SessionClient ?? throw new InvalidOperationException(T(
                 "VisualTeX PowerPoint 插件尚未完成初始化（缺少 VisualTeX 会话客户端）。",
                 "The VisualTeX PowerPoint add-in has not finished starting (no VisualTeX session client)."));
             SetStatus(T("正在连接 VisualTeX 本地服务…", "Connecting to the local VisualTeX service…"));
@@ -1120,11 +1169,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 error,
                 "VisualTeX PowerPoint 写入失败",
                 "VisualTeX PowerPoint formula write failed");
-            if (sessionId is not null && _sessionClient is not null)
+            if (sessionId is not null && SessionClient is not null)
             {
                 try
                 {
-                    await _sessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
+                    await SessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch { }
@@ -1250,13 +1299,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _keyboardHook?.Dispose();
         try { _automationAgent?.Dispose(); } catch { }
         _automationAgent = null;
-        _sessionClient?.Dispose();
+        DisposeSessionClient(_sessionClientTask);
         try { _formulaService?.Dispose(); } catch { }
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
         _doubleClickHook = null;
         _keyboardHook = null;
-        _sessionClient = null;
+        _sessionClientTask = null;
         _dispatcher = null;
         _formulaService = null;
         Volatile.Write(ref _activeSessionId, null);

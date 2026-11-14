@@ -118,7 +118,7 @@ public sealed partial class ThisAddIn
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        var client = _sessionClient;
+        var client = SessionClient;
         var application = _application;
         if (dispatcher is null || service is null || client is null || application is null) return;
         if (!await _operationGate.WaitAsync(TimeSpan.FromSeconds(2), lifetimeToken).ConfigureAwait(false))

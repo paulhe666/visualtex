@@ -43,6 +43,39 @@ internal static class OfficeHostSelection
         catch { }
     }
 
+    /// <summary>
+    /// Notes how long the add-in's start in a host took, per step: string value
+    /// &lt;host&gt;Startup = "local time|total ms|step=ms;step=ms". WPS turns off add-ins it
+    /// considers to slow its startup; these numbers show which step that was.
+    /// </summary>
+    internal sealed class StartupSteps
+    {
+        private readonly Stopwatch total = Stopwatch.StartNew();
+        private readonly List<string> steps = new();
+        private long last;
+
+        internal void Mark(string step)
+        {
+            var now = total.ElapsedMilliseconds;
+            steps.Add(step + "=" + (now - last).ToString(CultureInfo.InvariantCulture));
+            last = now;
+        }
+
+        internal void Record(string host)
+        {
+            try
+            {
+                var value = string.Join("|",
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                    total.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
+                    string.Join(";", steps));
+                using var key = Registry.CurrentUser.CreateSubKey(KeyPath);
+                key?.SetValue(host + "Startup", value, RegistryValueKind.String);
+            }
+            catch { }
+        }
+    }
+
     private static bool IsEnabled(string name)
     {
         try

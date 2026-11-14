@@ -84,7 +84,7 @@ public sealed partial class ThisAddIn
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        var client = _sessionClient;
+        var client = SessionClient;
         var lifetime = _lifetime;
         if (dispatcher is null
             || service is null

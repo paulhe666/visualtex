@@ -64,11 +64,9 @@ internal sealed class WordCopyPasteHook : IDisposable
     internal void Start()
     {
         _lastClipboardSequence = GetClipboardSequenceNumber();
+        // Not waiting for the thread: in WPS the first new thread took ~0.4 s to
+        // run, all of it inside the host's timed add-in start.
         _thread.Start();
-        if (!_ready.Wait(TimeSpan.FromSeconds(5)))
-            throw new TimeoutException("Word clipboard observer did not start.");
-        WordDoubleClickHook.TraceMessage(
-            $"copy-paste-observer-started clipboardSequence={_lastClipboardSequence}");
     }
 
     internal static uint CurrentClipboardSequence => GetClipboardSequenceNumber();
@@ -76,6 +74,8 @@ internal sealed class WordCopyPasteHook : IDisposable
     private void Run()
     {
         _ready.Set();
+        WordDoubleClickHook.TraceMessage(
+            $"copy-paste-observer-started clipboardSequence={_lastClipboardSequence}");
         while (!_stop.Wait(45))
         {
             var current = GetClipboardSequenceNumber();

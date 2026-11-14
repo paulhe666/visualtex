@@ -84,17 +84,10 @@ internal sealed class WordDoubleClickHook : IDisposable
             _pairing.Reset();
     }
 
-    public void Start()
-    {
-        _thread.Start();
-        if (!_ready.Wait(TimeSpan.FromSeconds(5)))
-            throw new TimeoutException("Word double-click hook did not start.");
-        if (_hook == IntPtr.Zero)
-            throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Word double-click hook could not be installed.");
-        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X} classifyPresses={_classifyPresses} testRejectPresses={_testRejectPresses}");
-    }
+    // Does not wait for the hook thread: in WPS installing the low-level mouse
+    // hook took ~0.4 s, all of it inside the host's timed add-in start. The
+    // thread reports its own result to the trace.
+    public void Start() => _thread.Start();
 
     internal static void TraceMessage(string message)
     {
@@ -119,7 +112,12 @@ internal sealed class WordDoubleClickHook : IDisposable
         _hookCallback = HookCallback;
         _hook = SetWindowsHookEx(WhMouseLl, _hookCallback, IntPtr.Zero, 0);
         _ready.Set();
-        if (_hook == IntPtr.Zero) return;
+        if (_hook == IntPtr.Zero)
+        {
+            TraceMessage($"hook-start-failed error={Marshal.GetLastWin32Error()}");
+            return;
+        }
+        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X} classifyPresses={_classifyPresses} testRejectPresses={_testRejectPresses}");
         while (GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)
         {
             TranslateMessage(ref message);
@@ -233,6 +231,8 @@ internal sealed class WordDoubleClickHook : IDisposable
 
     public void Dispose()
     {
+        // Start no longer waits for the hook thread; let it reach its message loop.
+        if (_thread.IsAlive) _ready.Wait(TimeSpan.FromSeconds(2));
         if (_threadId != 0)
             PostThreadMessage(_threadId, WmQuit, IntPtr.Zero, IntPtr.Zero);
         _thread.Join(TimeSpan.FromSeconds(2));
