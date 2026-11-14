@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import {
   Braces,
   CheckCircle2,

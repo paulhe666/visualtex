@@ -1,12 +1,12 @@
 // How many of VisualTeX's commands the Math Characters output writes
-// exactly (src/anywhere/unicodeMath.ts): every built-in command's preview
+// exactly (apps/shared/visualtex-app/src/anywhere/unicodeMath.ts): every built-in command's preview
 // formula, empty slots filled with x, through the export path's MathML.
 // "exact": no conversion notes; "approx": linearized (notes); "error": the
 // MathML path cannot read it (the output falls back to LaTeX).
 //   tsx scripts/anywhere_unicode_survey.mts [out.json]
 import { DOMParser } from "@xmldom/xmldom";
 import { latexToMathMl } from "../src/export/runtime.ts";
-import { mathMlToUnicode } from "../src/anywhere/unicodeMath.ts";
+import { mathMlToUnicode } from "../../shared/visualtex-app/src/anywhere/unicodeMath.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import { writeFileSync } from "node:fs";
 const parse = (xml: string) => new DOMParser().parseFromString(xml, "application/xml") as never;

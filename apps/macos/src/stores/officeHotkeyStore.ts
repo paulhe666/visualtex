@@ -13,7 +13,7 @@ import {
   type OfficeHotkeyActionId,
   type OfficeHotkeyBinding,
 } from "../shortcuts/officeHotkeys";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface OfficeHotkeyState {
   bindings: OfficeHotkeyBinding[];

@@ -1,5 +1,5 @@
-import { createUuid } from "../../runtime/browserCompatibility";
-import { splitFormulaEquationTag } from "../shared/formulaEquationTag.ts";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
+import { splitFormulaEquationTag } from "../../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 
 export type DocumentSourceFormat = "auto" | "markdown" | "latex";
 export type ResolvedDocumentSourceFormat = Exclude<DocumentSourceFormat, "auto">;

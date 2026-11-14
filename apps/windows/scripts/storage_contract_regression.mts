@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { createSafeStorage as windowsStorage } from "../src/runtime/safeStorage.ts";
-import { createSafeStorage as macosStorage } from "../../macos/src/runtime/safeStorage.ts";
+import { createSafeStorage as windowsStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
+import { createSafeStorage as macosStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
 
 for (const factory of [windowsStorage, macosStorage]) {

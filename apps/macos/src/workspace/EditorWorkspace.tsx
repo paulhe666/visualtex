@@ -40,13 +40,13 @@ import {
 import { DocumentWorkspace } from "../document/DocumentWorkspace";
 import { DocumentControls } from "../document/DocumentControls";
 import { DocumentSourceView } from "../document/DocumentSourceView";
-import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
+import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../../../shared/visualtex-app/src/document/documentEvents";
 import { useDocumentModeStore } from "../stores/documentModeStore";
 import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../stores/documentEditorStore";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
-import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
-import { trackPriorityCollapse } from "../runtime/priorityCollapse";
-import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
+import { trackHorizontalOverflow } from "../../../shared/visualtex-app/src/runtime/horizontalOverflowState";
+import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime/priorityCollapse";
+import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
@@ -72,7 +72,7 @@ import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
 import { useHistorySnapshot } from "../history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../types/formula";
-import { normalizeCustomFormulaColor } from "./formulaColor";
+import { normalizeCustomFormulaColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
 import {
   readWorkspacePanelOpen,

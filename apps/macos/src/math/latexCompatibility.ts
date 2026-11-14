@@ -1,7 +1,7 @@
 import {
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
-} from "./extendedIntegralCompatibility.ts";
+} from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { VISUALTEX_MATHJAX_PACKAGE_MACROS } from "./packageMacroCompatibility.ts";
 export type VisualTexMathJaxMacro = string | readonly [replacement: string, argumentCount: number];
 

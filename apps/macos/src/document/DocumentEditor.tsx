@@ -52,22 +52,22 @@ import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/
 import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customSymbolRegistry";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
-import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
 import { useEditorStore } from "../stores/editorStore";
-import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
+import { ContextMenu, type ContextMenuState } from "../../../shared/visualtex-app/src/document/MathchaChrome";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
-import { LinkDialog } from "./LinkDialog";
+import { LinkDialog } from "../../../shared/visualtex-app/src/document/LinkDialog";
 import { FootnoteDialog } from "./FootnoteDialog";
-import { CitationPicker } from "./CitationPicker";
-import { MarginGuides } from "./MarginGuides";
+import { CitationPicker } from "../../../shared/visualtex-app/src/document/CitationPicker";
+import { MarginGuides } from "../../../shared/visualtex-app/src/document/MarginGuides";
 import { createPortal } from "react-dom";
 import { documentMathCommands } from "./documentMathCommands";
 import { codeHighlighter } from "./codeHighlighter";
 import { drawDiagram } from "./diagrams";
-import "./document.css";
+import "../../../shared/visualtex-app/src/document/document.css";
 
 /** Mathcha's defaults (MATHCHA-SPEC.md): text 15px, formulas 17px, at zoom 1. */
 export const DOCUMENT_TEXT_SIZE = 15;

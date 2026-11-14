@@ -12,7 +12,7 @@ import {
   type FormulaRowHotkeyActionId,
   type FormulaRowHotkeyBinding,
 } from "../shortcuts/formulaRowHotkeys";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface FormulaRowHotkeyState {
   bindings: FormulaRowHotkeyBinding[];

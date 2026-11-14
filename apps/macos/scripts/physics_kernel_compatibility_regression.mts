@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
 import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
-import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases.ts";
+import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../../shared/visualtex-app/src/math/coreLatexAliases.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
 import {
   VISUALTEX_MATHJAX_PACKAGE_MACROS,

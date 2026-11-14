@@ -1,10 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEditorStore } from "../stores/editorStore";
-import { safeStorage } from "./safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { publishSynchronizedTheme } from "../themeSync";
 import { OCR_MODELS } from "../ocr/ocrService";
 import { normalizeQuickOcrCaptureMode } from "../ocr/quickOcr";
-import type { CommandUsage } from "../types/command";
+import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
 import type { FormulaDocument, FormulaHistoryItem } from "../types/formula";
 import {
   CUSTOM_SYMBOL_STORAGE_KEY,

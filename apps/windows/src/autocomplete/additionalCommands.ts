@@ -1,4 +1,4 @@
-import type { CommandCategory, LatexCommand } from "../types/command";
+import type { CommandCategory, LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 
 const makeCommand = (
   id: string,

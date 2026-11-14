@@ -28,7 +28,7 @@ import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
 } from "../../editor/MathEditor";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import {
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
@@ -38,7 +38,7 @@ import { errorMessage } from "../../runtime/errorMessage";
 import {
   readLocalStorage,
   writeLocalStorage,
-} from "../../runtime/safeStorage";
+} from "../../../../shared/visualtex-app/src/runtime/safeStorage";
 import {
   closeCurrentTauriWindow,
   invokeTauri,

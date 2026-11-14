@@ -1,4 +1,4 @@
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../math/physicsKernelMacros";
 
 type PhysicsTile = readonly [

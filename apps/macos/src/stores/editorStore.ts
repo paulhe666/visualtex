@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CommandSource, CommandUsage } from "../types/command";
+import type { CommandSource, CommandUsage } from "../../../shared/visualtex-app/src/types/command";
 import type {
   FormulaDocument,
   FormulaAlignment,
@@ -25,18 +25,18 @@ import {
   normalizeLatexFormatProfile,
 } from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
-import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
+import { setUprightJudgmentEnabled } from "../../../shared/visualtex-app/src/editor/inputJudgment";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
-import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
+import { normalizeFormulaLinePhysicalWhitespace } from "../../../shared/visualtex-app/src/math/formulaLineLatex";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
-import { createUuid } from "../runtime/browserCompatibility";
-import { safeStorage } from "../runtime/safeStorage";
+import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
   type PngExportBackground,
-} from "../export/pngBackground";
+} from "../../../shared/visualtex-app/src/export/pngBackground";
 import { isTheme } from "../themeCustomization";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,

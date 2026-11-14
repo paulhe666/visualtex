@@ -1,13 +1,13 @@
 import "./editor/visualTexLayoutRuntime";
-import { installBrowserCompatibility } from "./runtime/browserCompatibility";
+import { installBrowserCompatibility } from "../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { prepareEditorCrashSafeRestart } from "./runtime/editorCrashRecovery";
-import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
+import { installFloatingLayerAutoAvoidance } from "../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";
 import "./styles.css";
 import "./styles-macos-main.css";
 import "./styles-editor-parity.css";
 import "./styles-latest-macos-ui.css";
 import "./styles-windows-shared-latest.css";
-import "./styles-formula-tiles.css";
+import "../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "./styles-windows-responsive.css";
 
 installBrowserCompatibility();

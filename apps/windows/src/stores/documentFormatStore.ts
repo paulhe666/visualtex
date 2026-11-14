@@ -2,7 +2,7 @@
 // written and which groups of Markdown input rules are on. Documents are typed and written as Markdown.
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 /** Groups of Markdown input rules that can be turned off (SiYuan had to add such switches after false positives). */
 export interface MarkdownRules {

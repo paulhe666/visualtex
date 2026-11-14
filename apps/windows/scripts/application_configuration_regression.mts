@@ -115,7 +115,7 @@ const {
   parseVisualTexConfiguration,
 } = await import("../src/runtime/applicationConfiguration.ts");
 const { useEditorStore } = await import("../src/stores/editorStore.ts");
-const { safeStorage } = await import("../src/runtime/safeStorage.ts");
+const { safeStorage } = await import("../../shared/visualtex-app/src/runtime/safeStorage.ts");
 
 const editor = useEditorStore.getState();
 editor.setTheme("raycast");

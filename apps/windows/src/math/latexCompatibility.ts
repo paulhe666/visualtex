@@ -1,7 +1,7 @@
 import {
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
-} from "./extendedIntegralCompatibility.ts";
+} from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "./packageMacroCompatibility.ts";
 import { KERNEL_PARITY_MACROS } from "./kernelParityMacros.generated.ts";
 

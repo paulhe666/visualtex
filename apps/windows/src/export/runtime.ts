@@ -11,8 +11,8 @@ import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
-import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
-import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
+import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
+import { normalizeTensorIndexCommands } from "../../../shared/visualtex-app/src/math/tensorIndexCompatibility.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
@@ -20,7 +20,7 @@ import {
   expandCustomSymbolsForSvg,
 } from "../math/customSymbolRendering.ts";
 import { readErrorMessage } from "../errors/readErrorMessage.ts";
-import { splitFormulaEquationTag } from "../office/shared/formulaEquationTag.ts";
+import { splitFormulaEquationTag } from "../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 import {
   assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,

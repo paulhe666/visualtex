@@ -17,7 +17,7 @@ import {
   EXTENDED_INTEGRAL_COMMANDS,
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
-} from "../src/math/extendedIntegralCompatibility.ts";
+} from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 
 const execFileAsync = promisify(execFile);
 

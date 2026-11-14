@@ -9,7 +9,7 @@ import {
   formulaTileSubjects,
   type FormulaTileLibraryGroup,
   type FormulaTileSubject,
-} from "./formulaTileLibrary";
+} from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
 
 // Long formulas get a double-width card so they stay readable.
 const wideFormulaLength = 72;

@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
+import type { CustomSymbolGlyphAsset } from "../../../shared/visualtex-app/src/math/customSymbolDesignerTypes";
 import {
   decodeNativeSystemMathFontProbes,
   decodeNativeSystemMathGlyphOutline,

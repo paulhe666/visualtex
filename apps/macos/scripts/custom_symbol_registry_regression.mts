@@ -11,7 +11,7 @@ import {
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
 } from "../src/math/customSymbolRegistry.ts";
-import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
+import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
 import { memoryStorage } from "./memory_storage.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 

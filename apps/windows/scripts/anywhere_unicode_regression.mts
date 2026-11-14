@@ -1,10 +1,10 @@
-// VisualTeX Anywhere's Math Characters output (src/anywhere/unicodeMath.ts):
+// VisualTeX Anywhere's Math Characters output (apps/shared/visualtex-app/src/anywhere/unicodeMath.ts):
 // formulas as Unicode text, from the MathML of the export path.
 //   tsx scripts/anywhere_unicode_regression.mts
 import assert from "node:assert/strict";
 import { DOMParser } from "@xmldom/xmldom";
 import { latexToMathMlSync } from "../src/export/runtime.ts";
-import { mathMlToUnicode } from "../src/anywhere/unicodeMath.ts";
+import { mathMlToUnicode } from "../../shared/visualtex-app/src/anywhere/unicodeMath.ts";
 
 const parse = (xml: string) => new DOMParser().parseFromString(xml, "application/xml") as never;
 const unicode = (latex: string) => mathMlToUnicode(latexToMathMlSync(latex, false), parse);

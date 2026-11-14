@@ -4,8 +4,8 @@ import {
   OIINT_SIZE2_OVAL_PATH,
   OIIINT_SIZE1_OVAL_PATH,
   OIIINT_SIZE2_OVAL_PATH,
-} from "./integralGlyphs.ts";
-import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "./rareIntegralGlyphs.generatedData.ts";
+} from "../../../shared/visualtex-app/src/math/integralGlyphs.ts";
+import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../../../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData.ts";
 import { ESINT_INTEGRAL_GLYPHS } from "./esintGlyphs.ts";
 
 interface RareIntegralGlyphVariant {

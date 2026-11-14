@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { convertLatexToMarkup } from "mathlive";
 import { commandRegistry } from "../src/autocomplete/commandRegistry";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros";
-import { VISUALTEX_CORE_LATEX_ALIASES } from "../src/math/coreLatexAliases";
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../../shared/visualtex-app/src/math/coreLatexAliases";
 
 const registryCommands = new Set(commandRegistry.map((entry) => entry.command));
 

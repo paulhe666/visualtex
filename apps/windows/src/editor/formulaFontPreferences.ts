@@ -1,4 +1,4 @@
-import { safeStorage } from "../runtime/safeStorage.ts";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage.ts";
 
 // The formula fonts of the main app: the math font, KaTeX (LaTeX's Computer
 // Modern) or newtxmath (LaTeX's newtxtext + newtxmath; stored as "times"),

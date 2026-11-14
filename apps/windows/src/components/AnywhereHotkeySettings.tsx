@@ -15,7 +15,7 @@ import {
   type FormulaHotkeyChord,
 } from "../shortcuts/formulaHotkeys";
 import { SILENT_OCR_STORAGE_KEY } from "../ocr/quickOcr";
-import { readLocalStorage } from "../runtime/safeStorage";
+import { readLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 /**
  * Settings > Keyboard shortcuts > Formula input method (VisualTeX Anywhere):

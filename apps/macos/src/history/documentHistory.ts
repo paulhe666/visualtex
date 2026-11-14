@@ -1,7 +1,7 @@
 import type { HistoryManager } from "./HistoryManager";
 import { cloneSelectionMap } from "./documentSnapshot";
 import type { FormulaLine } from "../types/formula";
-import { createUuid } from "../runtime/browserCompatibility";
+import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import {
   cloneFormulaLines,
   createFormulaLine,

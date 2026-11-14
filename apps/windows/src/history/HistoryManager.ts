@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { createUuid } from "../runtime/browserCompatibility";
+import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { loadRecentCheckpoints, persistCheckpoint } from "./checkpointStore";
 import type {
   ChangeTitleEntry,

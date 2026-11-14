@@ -11,7 +11,7 @@ import {
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
-} from "./document/documentEvents";
+} from "../../shared/visualtex-app/src/document/documentEvents";
 import { useCustomSymbolDesignerStore } from "./stores/customSymbolDesignerStore";
 
 // The custom symbol designer, loaded the first time it is opened.
@@ -127,8 +127,8 @@ import {
   PROJECT_URL,
   type UpdateCheckResult,
 } from "./update/updateService";
-import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
-import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
+import { readLocalStorage, writeLocalStorage } from "../../shared/visualtex-app/src/runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "../../shared/visualtex-app/src/runtime/priorityCollapse";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,

@@ -64,7 +64,7 @@ const entries = [...sums]
   .sort((a, b) => b[1] - a[1])
   .map(([command, score]) => [command, Number(score.toFixed(4))] as const);
 
-const out = argument("out") ?? "src/autocomplete/commandFrequency.generated.ts";
+const out = argument("out") ?? "../shared/visualtex-app/src/autocomplete/commandFrequency.generated.ts";
 writeFileSync(
   out,
   [

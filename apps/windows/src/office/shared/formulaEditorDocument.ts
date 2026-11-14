@@ -3,7 +3,7 @@ import {
   isLatexCodeFormat,
   parseLatexSource,
 } from "../../clipboard/LatexCopyService";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import type { LatexCodeFormat } from "../../types/formula";
 
 export interface FormulaEditorLine {

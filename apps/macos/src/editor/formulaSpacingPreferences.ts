@@ -1,4 +1,4 @@
-import { safeStorage } from "../runtime/safeStorage.ts";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage.ts";
 import {
   SPACING_DEFINITIONS,
   spacingPercent,

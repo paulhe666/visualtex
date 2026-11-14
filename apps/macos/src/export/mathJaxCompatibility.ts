@@ -11,7 +11,7 @@ import {
   OIIINT_SIZE1_OVAL_WIDTH_EM,
   OIIINT_SIZE2_OVAL_PATH,
   OIIINT_SIZE2_OVAL_WIDTH_EM,
-} from "../math/integralGlyphs.ts";
+} from "../../../shared/visualtex-app/src/math/integralGlyphs.ts";
 import {
   RARE_INTEGRAL_GLYPHS,
   RARE_INTEGRAL_GLYPH_UNITS_PER_EM,

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import {
   createUuid,
   installBrowserCompatibility,
-} from "../src/runtime/browserCompatibility.ts";
-import { safeStorage } from "../src/runtime/safeStorage.ts";
+} from "../../shared/visualtex-app/src/runtime/browserCompatibility.ts";
+import { safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
 
 function override(target, key, value) {
   Object.defineProperty(target, key, {

@@ -1,7 +1,7 @@
 // The main window shows the formula rows or a document (docs/document-editor/DESIGN.md §6.5).
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 export type WorkspaceContent = "formula" | "document";
 

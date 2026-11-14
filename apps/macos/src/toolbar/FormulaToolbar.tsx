@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import {
   categoryLabels,
   categoryLabelsEn,
@@ -37,7 +37,7 @@ import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
 import {
   defaultCommonFormulaTileIds,
   formulaTileLibraryById,
-} from "./formulaTileLibrary";
+} from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
 import { FormulaHotkeyRecorderDialog } from "../components/FormulaHotkeyRecorderDialog";
 import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
 import {
@@ -54,7 +54,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
-import { writeLocalStorage } from "../runtime/safeStorage";
+import { writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useCustomSymbolDesignerStore } from "../stores/customSymbolDesignerStore";
@@ -67,7 +67,7 @@ import {
   type ToolbarGroup,
   type ToolbarItem,
 } from "./toolbarLayout";
-import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "./toolbarDrag";
+import { armDrag, END_INDEX, type DragHandlers, type DragSource, type DropTarget } from "../../../shared/visualtex-app/src/toolbar/toolbarDrag";
 import { ToolbarItemPickerDialog } from "./ToolbarItemPickerDialog";
 
 

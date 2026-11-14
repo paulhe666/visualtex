@@ -1,6 +1,6 @@
 import { cloneSelection, cloneDocumentSnapshot, documentSnapshotsEquivalent } from "./documentSnapshot";
 import { loadRecentCheckpoints, persistCheckpoint } from "./checkpointStore";
-import { createUuid } from "../runtime/browserCompatibility";
+import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import type {
   ChangeTitleEntry,
   DocumentCheckpoint,

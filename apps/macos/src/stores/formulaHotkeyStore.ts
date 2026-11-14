@@ -10,9 +10,9 @@ import {
   type FormulaHotkeyTarget,
   type FormulaHotkeyTargetKind,
 } from "../shortcuts/formulaHotkeys";
-import type { LatexCommand } from "../types/command";
-import { createUuid } from "../runtime/browserCompatibility";
-import { safeStorage } from "../runtime/safeStorage";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import { createUuid } from "../../../shared/visualtex-app/src/runtime/browserCompatibility";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface FormulaHotkeyState {
   bindings: FormulaHotkeyBinding[];

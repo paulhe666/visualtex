@@ -4,7 +4,7 @@ import {
   installMathLiveOptionMutationGuard,
   readMathLiveOptionBeforeMount,
   setMathLiveOptionsBeforeMount,
-} from "../src/editor/mathLiveOptionCompatibility.ts";
+} from "../../shared/visualtex-app/src/editor/mathLiveOptionCompatibility.ts";
 
 type FakeOptions = Record<string, unknown>;
 

@@ -1,5 +1,5 @@
 import { wordImageReferenceGeometry } from "../shared/wordImageGeometry";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import {
   normalizeFormulaEditorDocument,
   serializeFormulaEditorDocument,

@@ -654,7 +654,7 @@ export function onInput(
 }
 
 // VisualTeX kernel: the input judgment. One routine and one dictionary
-// (src/editor/inputJudgment.ts) decide what is set upright (units, function
+// (apps/shared/visualtex-app/src/editor/inputJudgment.ts) decide what is set upright (units, function
 // names, constants, labels, the differential d), automatically, once a word
 // is finished: by a key that is not a letter, a caret move, or leaving the
 // field. Quick escapes (alpha -> \alpha) happen only on the confirm-escape

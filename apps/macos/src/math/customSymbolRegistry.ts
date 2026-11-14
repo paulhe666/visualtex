@@ -1,6 +1,6 @@
 import type { MacroDictionary, MathfieldElement } from "mathlive";
 import { commandRegistry } from "../autocomplete/commandRegistry";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import type {
   CustomSymbolDefinition,
   CustomSymbolDesignerSourceArchive,
@@ -11,7 +11,7 @@ import type {
   CustomSymbolMetrics,
   CustomSymbolVectorShape,
   CustomSymbolVectorTransform,
-} from "./customSymbolTypes";
+} from "../../../shared/visualtex-app/src/math/customSymbolTypes";
 
 export const CUSTOM_SYMBOL_STORAGE_KEY = "visualtex.custom-symbols.v1";
 export const CUSTOM_SYMBOL_STORAGE_INDEX_KEY = "visualtex.custom-symbols.v2.index";

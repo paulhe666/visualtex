@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 
 const offset = process.pid % 650;
 const vitePort = 21100 + offset;
@@ -238,7 +239,7 @@ async function main() {
 
     const crossWindowStorageKey = "visualtex.regression.cross-window-removal";
     const cachedStorageValue = await mainClient.evaluate(`(async () => {
-      const storageModule = await import("/src/runtime/safeStorage.ts");
+      const storageModule = await import(${JSON.stringify(sharedSourceUrl("runtime/safeStorage.ts"))});
       window.__visualtexSafeStorage = storageModule.safeStorage;
       storageModule.safeStorage.setItemStrict(
         ${JSON.stringify(crossWindowStorageKey)},

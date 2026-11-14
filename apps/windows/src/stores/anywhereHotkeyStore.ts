@@ -11,7 +11,7 @@ import {
   type AnywhereHotkeyAction,
   type AnywhereHotkeyBindings,
 } from "../shortcuts/anywhereHotkeys";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface AnywhereHotkeyState {
   bindings: AnywhereHotkeyBindings;

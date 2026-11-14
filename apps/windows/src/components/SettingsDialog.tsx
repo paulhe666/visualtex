@@ -45,7 +45,7 @@ import { MathPreview } from "./MathPreview";
 import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
 import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 import { KeyboardShortcutsPanel } from "./FormulaHotkeyManagerDialog";
-import { pngExportBackgroundPickerValue } from "../export/pngBackground";
+import { pngExportBackgroundPickerValue } from "../../../shared/visualtex-app/src/export/pngBackground";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,

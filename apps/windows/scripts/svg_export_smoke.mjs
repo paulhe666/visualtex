@@ -5,7 +5,7 @@ import {
   svgToBase64,
 } from "../src/export/runtime.ts";
 import { normalizeChineseLatex } from "../src/editor/normalizeChineseLatex.ts";
-import { EXTENDED_INTEGRAL_SYMBOLS } from "../src/math/extendedIntegralCompatibility.ts";
+import { EXTENDED_INTEGRAL_SYMBOLS } from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 
 const matrixRows = Array.from({ length: 10 }, (_, row) =>

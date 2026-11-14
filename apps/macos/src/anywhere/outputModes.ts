@@ -14,9 +14,9 @@
  * keeps Source). The export path (MathJax) loads when a mode needs it.
  */
 import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
-import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import { useEditorStore } from "../stores/editorStore";
-import type { UnicodeMath } from "./unicodeMath";
+import type { UnicodeMath } from "../../../shared/visualtex-app/src/anywhere/unicodeMath";
 
 export type AnywhereOutputMode = "source" | "markdown" | "unicode" | "image";
 
@@ -109,7 +109,7 @@ export function warmOutputMode(mode: AnywhereOutputMode) {
 export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMath> {
   const [{ latexToMathMl }, { mathMlToUnicode }] = await Promise.all([
     import("../export/runtime"),
-    import("./unicodeMath"),
+    import("../../../shared/visualtex-app/src/anywhere/unicodeMath"),
   ]);
   const notes = new Set<string>();
   const texts = rows

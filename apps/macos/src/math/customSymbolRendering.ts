@@ -3,7 +3,7 @@ import type {
   CustomSymbolDefinition,
   CustomSymbolVectorShape,
   CustomSymbolVectorTransform,
-} from "./customSymbolTypes";
+} from "../../../shared/visualtex-app/src/math/customSymbolTypes";
 import {
   applyCustomSymbolMacrosToMathfield,
   customSymbolCssClass,

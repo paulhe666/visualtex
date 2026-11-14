@@ -6,13 +6,13 @@ import "../../styles-macos-main.css";
 import "../../styles-editor-parity.css";
 import "../../styles-latest-macos-ui.css";
 import "../../styles-windows-shared-latest.css";
-import "../../styles-formula-tiles.css";
+import "../../../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "../../styles-windows-responsive.css";
 import "../../math/customSymbolRendering";
 import { configureOcrTransport } from "../../ocr/ocrService";
 import { officeOcrTransport } from "../api/ocrHttpTransport";
 import { OfficeDialogApp } from "./OfficeDialogApp";
-import { installFloatingLayerAutoAvoidance } from "../../runtime/floatingLayerAutoAvoidance";
+import { installFloatingLayerAutoAvoidance } from "../../../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";
 import { DocumentImportApp } from "../documentImport/DocumentImportApp";
 import {
   applyDocumentTheme,

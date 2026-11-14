@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, History, KeyRound, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-import { mcpClientGuides } from "./mcpClientGuides";
+import { mcpClientGuides } from "../../../shared/visualtex-app/src/components/mcpClientGuides";
 
 // Settings → Office integration → AI agents (MCP): docs/office-mcp/DESIGN.md §9.3, §10.
 

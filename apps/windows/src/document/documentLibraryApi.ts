@@ -5,7 +5,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Node } from "prosemirror-model";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { renderedText } from "../../../shared/visualtex-document/src/index.ts";
 
 export interface LibraryDocument {

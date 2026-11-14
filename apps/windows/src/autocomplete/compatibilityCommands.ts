@@ -1,5 +1,5 @@
-import { VISUALTEX_CORE_LATEX_ALIASES } from "../math/coreLatexAliases";
-import type { CommandCategory, LatexCommand } from "../types/command";
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../../../shared/visualtex-app/src/math/coreLatexAliases";
+import type { CommandCategory, LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 
 interface CompatibilityCommandSpec {
   id: string;

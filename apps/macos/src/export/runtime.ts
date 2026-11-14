@@ -11,9 +11,9 @@ import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
-import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import { normalizeExtendedIntegralLatexCommands } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import { normalizeFlexiblePackageLatexCommands } from "../math/flexibleBraket.ts";
-import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
+import { normalizeTensorIndexCommands } from "../../../shared/visualtex-app/src/math/tensorIndexCompatibility.ts";
 import {
   isSingleCompleteLatexEnvironment,
   unwrapSingleLatexDisplayMath,
@@ -39,7 +39,7 @@ import type {
   SvgExportResult,
 } from "./exportTypes";
 import { errorMessage } from "../runtime/errorMessage.ts";
-import { splitFormulaEquationTag } from "../office/shared/formulaEquationTag.ts";
+import { splitFormulaEquationTag } from "../../../shared/visualtex-app/src/office/shared/formulaEquationTag.ts";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,

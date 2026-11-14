@@ -26,9 +26,9 @@ import {
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
 import type { FormulaEditSource } from "../history/historyTypes";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
-import { createSafeStorage } from "../runtime/safeStorage";
+import { createSafeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { useEditorStore } from "../stores/editorStore";
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
 import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
@@ -45,7 +45,7 @@ import {
   type LibraryDocument,
 } from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
-import { openDocumentFormula } from "./openDocumentFormula";
+import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
 import { imagePathKey, loadImportImages } from "./importImages";
 import {
@@ -57,7 +57,7 @@ import {
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
-} from "./documentEvents";
+} from "../../../shared/visualtex-app/src/document/documentEvents";
 import { TutorialDialog } from "./TutorialDialog";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
 

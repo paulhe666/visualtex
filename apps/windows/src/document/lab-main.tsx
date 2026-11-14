@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
 import { DocumentControls, DocumentTextToolbar } from "./DocumentControls";
 import * as documentCore from "../../../shared/visualtex-document/src/index.ts";
-import { sampleDocument } from "./sampleDocument";
+import { sampleDocument } from "../../../shared/visualtex-app/src/document/sampleDocument";
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import type { MathEditorHandle } from "../editor/MathEditor";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
@@ -15,7 +15,7 @@ import { useDocumentEditorStore } from "../stores/documentEditorStore";
 import { useDocumentLibraryStore } from "./documentLibraryApi";
 import { EditorState, NodeSelection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { buildPrintCopy } from "./printCopy";
+import { buildPrintCopy } from "../../../shared/visualtex-app/src/document/printCopy";
 
 const editor = createRef<DocumentEditorHandle>();
 (window as unknown as Record<string, unknown>).__docLab = { editor, core: documentCore, pm: { NodeSelection, TextSelection, EditorState, EditorView }, sampleDocument, format: useDocumentFormatStore, editorStore: useDocumentEditorStore, libraryStore: useDocumentLibraryStore, buildPrintCopy };

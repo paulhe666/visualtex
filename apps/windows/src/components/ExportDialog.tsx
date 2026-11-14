@@ -10,7 +10,7 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import { buildMarkdownDocument } from "../export/markdownExport";
+import { buildMarkdownDocument } from "../../../shared/visualtex-app/src/export/markdownExport";
 import { latexToSvg } from "../export/runtime";
 import {
   copyFormulaDocumentPngToClipboard,

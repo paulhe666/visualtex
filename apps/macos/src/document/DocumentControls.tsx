@@ -71,11 +71,11 @@ import {
   type PaperName,
 } from "../../../shared/visualtex-document/src/index.ts";
 import { fontLabel, PREFERRED_CJK, PREFERRED_LATIN, systemFontFamilies, type SystemFontFamily } from "./systemFonts";
-import { CitationPicker } from "./CitationPicker";
+import { CitationPicker } from "../../../shared/visualtex-app/src/document/CitationPicker";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
 import { useEditorStore } from "../stores/editorStore";
-import { openDocumentFormula } from "./openDocumentFormula";
-import { ColorMenuButton } from "./ColorPalette";
+import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
+import { ColorMenuButton } from "../../../shared/visualtex-app/src/document/ColorPalette";
 import { setMathLivePersistentTypingStyle, type MathLivePersistentTypingStyle } from "../editor/mathLiveKernelCommands";
 import { portableFormulaLatex } from "./DocumentEditor";
 

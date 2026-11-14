@@ -7,7 +7,7 @@ import "../styles-macos-main.css";
 import "../styles-editor-parity.css";
 import "../styles-latest-macos-ui.css";
 import "../styles-windows-shared-latest.css";
-import "../styles-formula-tiles.css";
+import "../../../shared/visualtex-app/src/styles-formula-tiles.css";
 import "../styles-windows-responsive.css";
 import "../math/customSymbolRendering";
 import "./anywhere.css";

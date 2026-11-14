@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { withBrowserTest } from "./browser_test_runtime.mjs";
+import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 
 await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   const floating = await evaluate(`(async () => {
-    const { installFloatingLayerAutoAvoidance } = await import('/src/runtime/floatingLayerAutoAvoidance.ts');
+    const { installFloatingLayerAutoAvoidance } = await import('${sharedSourceUrl("runtime/floatingLayerAutoAvoidance.ts")}');
     const timeout = window.setTimeout;
     const wait = (ms) => new Promise((resolve) => timeout(resolve, ms));
     let timers = 0;

@@ -1,5 +1,5 @@
 import { commandRegistry } from "../autocomplete/commandRegistry";
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 
 export type FormulaHotkeyTargetKind =
   | "command"

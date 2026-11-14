@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
-import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import type { LatexCodeFormat } from "../types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 import {

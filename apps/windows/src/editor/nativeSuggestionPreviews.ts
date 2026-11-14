@@ -1,5 +1,5 @@
 import { compatibilityCommands } from "../autocomplete/compatibilityCommands";
-import { EXTENDED_INTEGRAL_COMMANDS } from "../math/extendedIntegralCompatibility";
+import { EXTENDED_INTEGRAL_COMMANDS } from "../../../shared/visualtex-app/src/math/extendedIntegralCompatibility";
 
 export type NativeSuggestionPreviewKind =
   | "arguments"

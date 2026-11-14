@@ -1,5 +1,5 @@
 import type { MathfieldElement, Selection, Selector } from "mathlive";
-import type { CommandUsage } from "../types/command";
+import type { CommandUsage } from "../../../shared/visualtex-app/src/types/command";
 
 export interface MathLivePersistentTypingStyle {
   bold: boolean;

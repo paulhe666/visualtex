@@ -1,6 +1,6 @@
-import { installBrowserCompatibility } from "./runtime/browserCompatibility";
+import { installBrowserCompatibility } from "../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { prepareEditorCrashSafeRestart } from "./runtime/editorCrashRecovery";
-import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
+import { installFloatingLayerAutoAvoidance } from "../../shared/visualtex-app/src/runtime/floatingLayerAutoAvoidance";
 
 installBrowserCompatibility();
 installFloatingLayerAutoAvoidance();

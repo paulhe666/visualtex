@@ -22,7 +22,7 @@ import {
   OIIINT_SIZE2_OVAL_HEIGHT_EM,
   OIIINT_SIZE2_OVAL_PATH,
   OIIINT_SIZE2_OVAL_WIDTH_EM,
-} from "../math/integralGlyphs.ts";
+} from "../../../shared/visualtex-app/src/math/integralGlyphs.ts";
 
 const globalStyleId = "visualtex-mathlive-contour-integral-style";
 const shadowStyleId = "visualtex-mathlive-contour-integral-shadow-style";

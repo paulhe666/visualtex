@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMarkdownDocument } from "../src/export/markdownExport.ts";
+import { buildMarkdownDocument } from "../../shared/visualtex-app/src/export/markdownExport.ts";
 
 assert.equal(
   buildMarkdownDocument("高斯积分", [

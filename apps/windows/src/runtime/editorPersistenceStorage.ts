@@ -1,4 +1,4 @@
-import { safeStorage } from "./safeStorage.ts";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage.ts";
 
 interface EditorStorage {
   getItem(key: string): string | null;

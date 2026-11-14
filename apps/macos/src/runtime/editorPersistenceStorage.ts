@@ -1,5 +1,5 @@
 import type { PersistStorage, StorageValue } from "zustand/middleware";
-import { safeStorage } from "./safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface EditorStorage {
   getItem(key: string): string | null;

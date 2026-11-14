@@ -1,4 +1,4 @@
-import { createUuid } from "../../runtime/browserCompatibility.ts";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility.ts";
 
 export type DocumentImportSourceKind = "auto" | "markdown" | "latex";
 export type DocumentFormulaDisplayMode = "inline" | "block";

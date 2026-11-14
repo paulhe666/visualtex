@@ -3,7 +3,7 @@ import { latexToSvg, svgToPng } from "./runtime";
 import {
   normalizePngExportBackground,
   type PngExportBackground,
-} from "./pngBackground";
+} from "../../../shared/visualtex-app/src/export/pngBackground";
 import type { PngExportResult } from "./exportTypes";
 import type {
   FormulaChineseFont,

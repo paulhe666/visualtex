@@ -20,11 +20,11 @@ import {
 import { flushSync } from "react-dom";
 import { ClipboardCopy } from "lucide-react";
 import { formatLatexLines } from "../clipboard/LatexCopyService";
-import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 import type {
   CommandSource,
   LatexCommand,
-} from "../types/command";
+} from "../../../shared/visualtex-app/src/types/command";
 import type {
   FormulaAlignment,
   FormulaLine,
@@ -90,7 +90,7 @@ import {
   refreshCustomSymbolMathfield,
 } from "../math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
-import { installMathLiveOptionMutationGuard } from "./mathLiveOptionCompatibility";
+import { installMathLiveOptionMutationGuard } from "../../../shared/visualtex-app/src/editor/mathLiveOptionCompatibility";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
 import {
   nativeSuggestionPreviewHasVisibleInk,
@@ -110,7 +110,7 @@ import {
   toggleMathLiveSelectionStyle,
   type MathLivePersistentTypingStyle,
 } from "./mathLiveKernelCommands";
-import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
+import { isSafeFormulaStyleColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
   formulaChineseFallbackFamily,

@@ -6,7 +6,7 @@ import {
   EXTENDED_INTEGRAL_COMMANDS,
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
-} from "../src/math/extendedIntegralCompatibility.ts";
+} from "../../shared/visualtex-app/src/math/extendedIntegralCompatibility.ts";
 import {
   ESINT_GLYPH_PAYLOAD,
   ESINT_INTEGRAL_GLYPHS,
@@ -15,7 +15,7 @@ import {
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,
-} from "../src/math/rareIntegralGlyphs.generatedData.ts";
+} from "../../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData.ts";
 
 const decodedRareJson = strFromU8(
   gunzipSync(Uint8Array.from(Buffer.from(RARE_INTEGRAL_GLYPHS_GZIP_BASE64, "base64"))),

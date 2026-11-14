@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import {
   AlertCircle,
   Check,
@@ -67,7 +67,7 @@ import {
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
-import { readLocalStorage, writeLocalStorage } from "../../runtime/safeStorage";
+import { readLocalStorage, writeLocalStorage } from "../../../../shared/visualtex-app/src/runtime/safeStorage";
 import { normalizeFormulaSpacingPreferences } from "../../editor/formulaSpacingPreferences";
 import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";
 import { annotateMathTypeAlignmentGeometry } from "../shared/mathTypeAlignmentGeometry";
@@ -91,7 +91,7 @@ import {
   type OfficePreferences,
 } from "../api/sessionClient";
 import { useOfficeSession } from "./useOfficeSession";
-import { attachFormulaEquationTag } from "../shared/formulaEquationTag";
+import { attachFormulaEquationTag } from "../../../../shared/visualtex-app/src/office/shared/formulaEquationTag";
 import {
   normalizeFormulaEditorDocument,
   serializeFormulaEditorRenderDocument,

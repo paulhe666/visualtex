@@ -1,4 +1,4 @@
-// Real-browser regression for the input judgment (src/editor/inputJudgment.ts,
+// Real-browser regression for the input judgment (apps/shared/visualtex-app/src/editor/inputJudgment.ts,
 // kernel part-021): quick escapes confirmed by a key (Space by default) for the
 // name right before the caret, Backspace undoing them, automatic upright
 // typography, the two switches and the confirm-escape key setting.

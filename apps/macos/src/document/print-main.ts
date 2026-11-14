@@ -2,7 +2,7 @@
 // (printCopy.ts), waits for its fonts and images, and says when it is ready for the platform's printing.
 import "../editor/visualTexLayoutRuntime";
 import "../styles.css";
-import "./document.css";
+import "../../../shared/visualtex-app/src/document/document.css";
 import "../../../shared/tex-layout/data/profiles/ntx/fonts/fonts.css";
 import "./print.css";
 import { isTauri } from "@tauri-apps/api/core";

@@ -1,4 +1,4 @@
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 
 type GreekShortcutDefinition = {
   id: string;

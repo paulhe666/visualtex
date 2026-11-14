@@ -6,7 +6,7 @@ import {
   confirmEscapeChordProblem,
   DEFAULT_CONFIRM_ESCAPE_CHORD,
 } from "../shortcuts/confirmEscapeKey";
-import { safeStorage } from "../runtime/safeStorage";
+import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 interface ConfirmEscapeKeyState {
   /** null: no key confirms a quick escape. */

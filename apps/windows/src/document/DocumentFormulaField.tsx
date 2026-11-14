@@ -29,9 +29,9 @@ import { useEditorStore } from "../stores/editorStore";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../shortcuts/formulaHotkeys";
 import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../shortcuts/greekLetterHotkeys";
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula } from "./formulaInsert";
-import { setOpenDocumentFormula } from "./openDocumentFormula";
+import { setOpenDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
 
 /** The row editor's formula size is 54px x zoom. */
 const ROW_FORMULA_FONT_SIZE = 54;

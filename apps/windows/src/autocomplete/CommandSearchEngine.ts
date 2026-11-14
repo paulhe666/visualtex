@@ -1,5 +1,5 @@
 import { getRuntimeCommandRegistry } from "./runtimeCommandRegistry";
-import type { CommandUsage, LatexCommand } from "../types/command";
+import type { CommandUsage, LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 
 const normalize = (value: string) =>
   value.trim().replace(/^\\/, "").toLocaleLowerCase();

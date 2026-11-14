@@ -12,7 +12,7 @@ import {
   resolveVisualTexInlineShortcuts,
   visualTexAutoEscapeInlineShortcuts,
 } from "../src/editor/normalizeChineseLatex.ts";
-import { applyInputJudgment } from "../src/editor/inputJudgment.ts";
+import { applyInputJudgment } from "../../shared/visualtex-app/src/editor/inputJudgment.ts";
 
 const formulas = [
   "a=b+c",
@@ -121,7 +121,7 @@ assert.equal(
   "copied LaTeX must never expose MathLive-only upright commands",
 );
 // Typed words are decided by the one input judgment once finished
-// (src/editor/inputJudgment.ts); MathLive converts only symbol sequences as
+// (apps/shared/visualtex-app/src/editor/inputJudgment.ts); MathLive converts only symbol sequences as
 // they are typed.
 const typed = (latex, escapes = true) =>
   applyInputJudgment(latex, { upright: true, escapes, typed: true });

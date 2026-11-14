@@ -25,7 +25,7 @@ import type {
   LatexFormatProfile,
 } from "../types/formula";
 import { resolveFormulaDisplayStyle } from "./latexFormatProfile";
-import { toPortableBoldLatex } from "./portableBoldLatex";
+import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
 
 export type LatexCodeFormatGroup = "single" | "multi";
 

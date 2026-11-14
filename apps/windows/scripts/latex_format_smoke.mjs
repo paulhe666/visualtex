@@ -5,7 +5,7 @@ import {
   parseLatexSource,
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
-import { normalizeFormulaLinePhysicalWhitespace } from "../src/math/formulaLineLatex.ts";
+import { normalizeFormulaLinePhysicalWhitespace } from "../../shared/visualtex-app/src/math/formulaLineLatex.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
 
 const importedAlignedSource = String.raw`\begin{aligned}

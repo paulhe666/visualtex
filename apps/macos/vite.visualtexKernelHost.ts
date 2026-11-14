@@ -3,16 +3,16 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 import { commandRegistry } from "./src/autocomplete/commandRegistry";
-import { latestSharedCommands } from "./src/autocomplete/latestSharedCommands";
-import { COMMAND_FREQUENCY } from "./src/autocomplete/commandFrequency.generated";
+import { latestSharedCommands } from "../shared/visualtex-app/src/autocomplete/latestSharedCommands";
+import { COMMAND_FREQUENCY } from "../shared/visualtex-app/src/autocomplete/commandFrequency.generated";
 import { sourceWrapperCanonicalTargets, sourceWrapperKinds } from "./src/editor/sourceWrapperRegistry";
 import { nativeSuggestionPreviewTable } from "./src/editor/nativeSuggestionPreviews";
-import { VISUALTEX_CORE_MATHLIVE_MACROS } from "./src/math/coreLatexAliases";
+import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../shared/visualtex-app/src/math/coreLatexAliases";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./src/math/physicsKernelMacros";
 import {
   RARE_INTEGRAL_GLYPHS_GZIP_BASE64,
   RARE_INTEGRAL_GLYPHS_JSON_SHA256,
-} from "./src/math/rareIntegralGlyphs.generatedData";
+} from "../shared/visualtex-app/src/math/rareIntegralGlyphs.generatedData";
 
 /**
  * The host module of the editing kernel (apps/shared/visualtex-core/src/kernel):
@@ -22,7 +22,7 @@ import {
  */
 export const kernelHostModuleId = "virtual:visualtex-kernel-host";
 const resolvedKernelHostModuleId = "\0visualtex-kernel-host";
-const inputJudgmentModule = fileURLToPath(new URL("./src/editor/inputJudgment.ts", import.meta.url)).replace(/\\/g, "/");
+const inputJudgmentModule = fileURLToPath(new URL("../shared/visualtex-app/src/editor/inputJudgment.ts", import.meta.url)).replace(/\\/g, "/");
 
 interface RareIntegralGlyphDefinition {
   command: string;

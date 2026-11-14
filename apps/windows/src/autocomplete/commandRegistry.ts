@@ -1,7 +1,7 @@
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { additionalCommands } from "./additionalCommands.ts";
 import { compatibilityCommands } from "./compatibilityCommands.ts";
-import { latestSharedCommands } from "./latestSharedCommands.ts";
+import { latestSharedCommands } from "../../../shared/visualtex-app/src/autocomplete/latestSharedCommands.ts";
 import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 
 const accentSemanticCommands: LatexCommand[] = [

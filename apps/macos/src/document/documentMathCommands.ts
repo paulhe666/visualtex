@@ -3,7 +3,7 @@
 import type { MathCommandProvider, MathCommandSuggestion } from "../../../shared/visualtex-document/src/index.ts";
 import { searchCommands } from "../autocomplete/CommandSearchEngine";
 import { useEditorStore } from "../stores/editorStore";
-import type { LatexCommand } from "../types/command";
+import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
 import { insertCommandIntoFormula, waitForOpenFormula } from "./formulaInsert";
 
 const found = new Map<string, LatexCommand>();

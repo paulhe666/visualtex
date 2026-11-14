@@ -31,7 +31,7 @@ import {
   normalizeFormulaEditorDocument,
 } from "../shared/formulaEditorDocument";
 import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
-import { createUuid } from "../../runtime/browserCompatibility";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
 import { useEditorStore } from "../../stores/editorStore";
 import { documentImportErrorMessage } from "./documentImportErrors";
 import { describeConversionFailure } from "../shared/conversionErrors";

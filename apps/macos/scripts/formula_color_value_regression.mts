@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   isSafeFormulaStyleColor,
   normalizeCustomFormulaColor,
-} from "../src/workspace/formulaColor";
+} from "../../shared/visualtex-app/src/workspace/formulaColor";
 
 assert.equal(normalizeCustomFormulaColor("#F7103A"), "#f7103a");
 assert.equal(normalizeCustomFormulaColor("#f13"), "#ff1133");

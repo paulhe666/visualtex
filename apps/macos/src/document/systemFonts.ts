@@ -4,7 +4,7 @@
 // allows it: asked when a font menu opens), each font's file read for its Chinese characters and Chinese name; a
 // browser without it gets the usual fonts of Windows, macOS and Linux that it finds installed.
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
+import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 
 export interface SystemFontFamily {
   /** the name the font is asked for by (CSS, LaTeX) */
