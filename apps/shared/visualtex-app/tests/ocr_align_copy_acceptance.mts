@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import {
   formatLatexLines,
   parseLatexSource,
-} from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
+} from "../src/clipboard/LatexCopyService.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
 
 const rows = [
   `x${VISUALTEX_ALIGNMENT_MARKER_LATEX}=a+b+c${VISUALTEX_ALIGNMENT_MARKER_LATEX}${VISUALTEX_ALIGNMENT_MARKER_LATEX}u`,
@@ -28,5 +28,5 @@ assert.deepEqual(
 assert.equal((copied.match(/&/g) ?? []).length, 9);
 
 console.log(
-  "macOS OCR aligned copy acceptance passed: FormulaLines serialize as one aligned environment with real '&' anchors and parse back to the exact VisualTeX marker rows.",
+  "OCR aligned copy acceptance passed: FormulaLines serialize as one aligned environment with real '&' anchors and parse back to the exact VisualTeX marker rows.",
 );

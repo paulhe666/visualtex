@@ -4,7 +4,7 @@ import {
   MAX_MATHLIVE_ENVIRONMENT_DEPTH,
   MAX_MATHLIVE_GROUP_DEPTH,
   MAX_MATHLIVE_SOURCE_LENGTH,
-} from "../../shared/visualtex-app/src/editor/mathLiveSourceSafety.ts";
+} from "../src/editor/mathLiveSourceSafety.ts";
 
 assert.equal(
   inspectMathLiveSourceSafety(
@@ -14,7 +14,7 @@ assert.equal(
 );
 
 // Long but shallow formulas are legitimate and must not be rejected merely for
-// being large. The guard targets structural recursion, not ordinary size.
+// being large. The crash guard targets structural recursion, not ordinary size.
 assert.equal(inspectMathLiveSourceSafety("x+".repeat(20_000)), null);
 
 const nestedGroups =
@@ -37,6 +37,7 @@ assert.deepEqual(inspectMathLiveSourceSafety(nestedEnvironments), {
   limit: MAX_MATHLIVE_ENVIRONMENT_DEPTH,
 });
 
+// A literal escaped \\begin token must not be mistaken for an environment.
 const escapedBegins = String.raw`\\begin{array}{c}`.repeat(
   MAX_MATHLIVE_ENVIRONMENT_DEPTH + 50,
 );

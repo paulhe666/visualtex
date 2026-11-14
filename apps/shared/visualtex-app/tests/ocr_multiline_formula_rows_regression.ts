@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import {
   normalizeOcrFormulaLines,
   splitOcrLatexIntoFormulaLines,
-} from "../../shared/visualtex-app/src/ocr/ocrService.ts";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
+} from "../src/ocr/ocrService.ts";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
 
 assert.deepEqual(
   splitOcrLatexIntoFormulaLines(
@@ -65,4 +65,4 @@ assert.deepEqual(
   "align* must unwrap and encode only top-level alignment anchors",
 );
 
-console.log("macOS OCR multiline formula-row normalization passed.");
+console.log("OCR multiline formula-row normalization passed.");
