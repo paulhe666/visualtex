@@ -2925,8 +2925,9 @@ async function main() {
       await setFormattingValue(String.raw`\mathbf{q}`);
       await dispatchFormattingToggle('[data-formula-selection-italic]');
       const boldItalicApplied = await readFormattingValue();
-      if (boldItalicApplied !== String.raw`\mathbfit{q}`) {
-        throw new Error(`Italic toggle must preserve bold as \\mathbfit; received ${boldItalicApplied}`);
+      // bold italic on a letter whose own slant is italic is the symbol-wide \bm
+      if (boldItalicApplied !== String.raw`\bm{q}`) {
+        throw new Error(`Italic toggle must keep bold, written \\bm; received ${boldItalicApplied}`);
       }
       await dispatchFormattingToggle('[data-formula-selection-italic]');
       const boldUprightRestored = await readFormattingValue();
