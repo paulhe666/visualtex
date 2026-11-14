@@ -4,7 +4,7 @@ import { rm } from "node:fs/promises";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const port = 17000 + (process.pid % 1000);
 const debugPort = 22000 + (process.pid % 1000);

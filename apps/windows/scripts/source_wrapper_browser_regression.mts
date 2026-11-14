@@ -9,7 +9,7 @@ import {
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const requestedCommand = process.argv[2] || "";
 const cases = [...sourceWrapperKinds.entries()]

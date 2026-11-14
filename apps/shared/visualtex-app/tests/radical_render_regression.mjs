@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
+import { createBrowserProfilePath, resolveChromiumExecutable } from "../testing/browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = `/tmp/visualtex-radical-render-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = createBrowserProfilePath("visualtex-radical-render");
+const chromePath = resolveChromiumExecutable();
 const screenshotPath = "build-logs/radical-render-regression.png";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -365,7 +366,7 @@ async function main() {
     chrome?.kill("SIGTERM");
     preview.kill("SIGTERM");
     await sleep(300);
-    await rm(chromeProfile, { recursive: true, force: true });
+    await rm(chromeProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined);
   }
 }
 

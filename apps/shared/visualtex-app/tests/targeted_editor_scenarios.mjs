@@ -1,7 +1,10 @@
+// Targeted editor scenarios (one per run: node ../shared/visualtex-app/tests/targeted_editor_scenarios.mjs <scenario>),
+// run from an app folder against its built frontend; each app's package.json lists the scenarios it runs.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
+import { createBrowserProfilePath, resolveChromiumExecutable } from "../testing/browser_test_runtime.mjs";
 
 const supportedScenarios = [
   "wrapper",
@@ -64,7 +67,7 @@ const supportedScenarios = [
 const scenario = process.argv[2];
 if (!supportedScenarios.includes(scenario)) {
   throw new Error(
-    `Usage: node scripts/targeted_editor_regression.mjs <${supportedScenarios.join("|")}>`,
+    `Usage: node ../shared/visualtex-app/tests/targeted_editor_scenarios.mjs <${supportedScenarios.join("|")}>`,
   );
 }
 
@@ -72,8 +75,8 @@ const offset = process.pid % 1000;
 const previewPort = 16400 + offset;
 const debugPort = 21600 + offset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = `/tmp/visualtex-targeted-${scenario}-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProfile = createBrowserProfilePath(`visualtex-targeted-${scenario}`);
+const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const canonicalLatex = (value) =>
   value.replace(/\s+/g, "").replace(/\{([A-Za-z0-9])\}/g, "$1");

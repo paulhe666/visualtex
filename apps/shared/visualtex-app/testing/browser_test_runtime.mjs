@@ -1,9 +1,13 @@
+// The browser side of the regressions both apps run, from the app folder: Chrome (or Edge) located per system, a
+// throwaway profile, and withBrowserTest (the app's Vite dev server plus a headless browser driven over CDP).
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 
 export function createBrowserProfilePath(name) {
   return join(tmpdir(), `${name}-${process.pid}`);
@@ -83,7 +87,9 @@ export function resolveChromiumExecutable() {
 
 // Shared by regressions that need the actual application and isolated DOM probes.
 export async function withBrowserTest(run) {
-  const { createServer } = await import("vite");
+  // Vite and its configuration come from the app the test runs in (apps/shared has no node_modules)
+  const vitePath = createRequire(join(process.cwd(), "package.json")).resolve("vite");
+  const { createServer } = await import(pathToFileURL(vitePath).href);
   const server = await createServer({
     logLevel: "error",
     server: { host: "127.0.0.1", port: 0, strictPort: false },

@@ -1,7 +1,7 @@
 import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
-import { withBrowserTest } from "./browser_test_runtime.mjs";
+import { withBrowserTest } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 // Exercise the shipped editor and kernel through public field APIs and real
 // pointer/key events. Store access only supplies isolated document fixtures.

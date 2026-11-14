@@ -7,7 +7,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const offset = process.pid % 600;

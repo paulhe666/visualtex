@@ -22,7 +22,7 @@ import { inflateSync } from "node:zlib";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

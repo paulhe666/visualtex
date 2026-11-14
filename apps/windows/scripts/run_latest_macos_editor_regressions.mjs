@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
-const upstreamRunner = "scripts/run_upstream_macos_regression.mjs";
 
 const checks = [
   {
@@ -79,8 +78,28 @@ const checks = [
     command: ["scripts/targeted_editor_regression.mjs", "horizontal-overflow"],
   },
   {
-    label: "existing vertical structures and native placeholders",
-    command: ["scripts/run_new_macos_editor_regressions.mjs"],
+    label: "shared scenario vertical-structure-probe",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "vertical-structure-probe"],
+  },
+  {
+    label: "shared scenario vertical-structure-navigation",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "vertical-structure-navigation"],
+  },
+  {
+    label: "shared scenario native-structure-audit",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-audit"],
+  },
+  {
+    label: "shared scenario native-structure-input-under",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-under"],
+  },
+  {
+    label: "shared scenario native-structure-input-multi",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-multi"],
+  },
+  {
+    label: "shared scenario native-structure-input-core",
+    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-core"],
   },
   {
     label: "current structural placeholder core",
@@ -92,10 +111,7 @@ const checks = [
   },
   {
     label: "Enter transitions",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/enter_transition_regression.mjs",
-    ],
+    command: ["../shared/visualtex-app/tests/enter_transition_regression.mjs"],
   },
   {
     label: "current Windows structured Chinese IME",
@@ -107,10 +123,7 @@ const checks = [
   },
   {
     label: "line scrolling, deletion, merge and clipping",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/line_scroll_clipping_regression.mjs",
-    ],
+    command: ["../shared/visualtex-app/tests/line_scroll_clipping_regression.mjs"],
   },
   {
     label: "complete current Windows input behaviour",

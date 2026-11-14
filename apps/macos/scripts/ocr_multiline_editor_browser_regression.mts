@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
 
 const portOffset = process.pid % 700;

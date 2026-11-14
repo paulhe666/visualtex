@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const scenario = process.argv[2] ?? "all";
 const caseFilter = process.argv[3]?.trim() ?? "";

@@ -1,6 +1,6 @@
 import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 import assert from "node:assert/strict";
-import { withBrowserTest } from "./browser_test_runtime.mjs";
+import { withBrowserTest } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 // Editor behaviours shared with the Windows editor (ported 2026-10-14):
 // Cmd+J sibling script, Tab focus, Escape on a selection, big-operator

@@ -8,7 +8,7 @@ import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSource
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const portOffset = process.pid % 800;
 const devPort = 6100 + portOffset;

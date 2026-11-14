@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { withBrowserTest } from "./browser_test_runtime.mjs";
+import { withBrowserTest } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 
 await withBrowserTest(async ({ baseUrl, send, evaluate }) => {

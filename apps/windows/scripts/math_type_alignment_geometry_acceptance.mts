@@ -6,7 +6,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const portOffset = process.pid % 700;
 const devPort = 7600 + portOffset;

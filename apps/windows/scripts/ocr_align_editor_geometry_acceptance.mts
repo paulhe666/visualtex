@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { normalizeOcrFormulaText } from "../../shared/visualtex-app/src/ocr/ocrService.ts";
 import {
   formatLatexLines,

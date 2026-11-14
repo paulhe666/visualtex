@@ -4,7 +4,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
 if (!new Set(["startup", "history-core", "multiline-input", "multiline-align", "script-template", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {

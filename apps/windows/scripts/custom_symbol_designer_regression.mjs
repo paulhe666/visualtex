@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import { createBrowserProfilePath, resolveChromiumExecutable } from "./browser_test_runtime.mjs";
+import { createBrowserProfilePath, resolveChromiumExecutable } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const offset = process.pid % 700;
 const port = 23300 + offset;

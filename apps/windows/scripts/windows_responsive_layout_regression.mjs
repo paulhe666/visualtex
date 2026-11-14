@@ -7,7 +7,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 // Responsive layout guards for the Windows desktop and Office editors:
 // - the bottom dock and the header rows never paint controls over each other,

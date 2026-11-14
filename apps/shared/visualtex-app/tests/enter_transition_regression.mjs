@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import { createBrowserProfilePath, resolveChromiumExecutable } from "../testing/browser_test_runtime.mjs";
 
 const offset = process.pid % 1000;
 const previewPort = 9800 + offset;
 const debugPort = 14800 + offset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const profile = `/tmp/visualtex-enter-transition-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const profile = createBrowserProfilePath("visualtex-enter-transition");
+const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -601,7 +602,7 @@ async function main() {
     await sleep(250);
     for (let attempt = 0; attempt < 4; attempt += 1) {
       try {
-        await rm(profile, { recursive: true, force: true });
+        await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined);
         break;
       } catch (error) {
         if (attempt === 3) throw error;

@@ -12,7 +12,7 @@ import process from "node:process";
 import {
   createBrowserProfilePath,
   resolveChromiumExecutable,
-} from "./browser_test_runtime.mjs";
+} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const argument = (name) =>
   process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);

@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import { createBrowserProfilePath, resolveChromiumExecutable } from "../testing/browser_test_runtime.mjs";
 
 const offset = process.pid % 700;
 const previewPort = 9700 + offset;
 const debugPort = 15700 + offset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
-const profile = `/tmp/visualtex-line-layout-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const profile = createBrowserProfilePath("visualtex-line-layout");
+const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeout = 15000) {
@@ -550,5 +551,5 @@ try {
   chrome?.kill("SIGTERM");
   preview.kill("SIGTERM");
   await sleep(220);
-  await rm(profile, { recursive: true, force: true });
+  await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined);
 }
