@@ -70,6 +70,12 @@ function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
     macros,
     formatError: (_jax: unknown, error: unknown) => {
       const message = errorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
+      // an unknown command is worded as the other export guards word it (office/shared/conversionErrors.ts
+      // translates that sentence for the user)
+      const unknownCommand = message.match(/^Undefined control sequence (\\[A-Za-z@]+|\\.)/);
+      if (unknownCommand) {
+        throw new Error(`MathJax did not resolve LaTeX command ${unknownCommand[1]}.`, { cause: error });
+      }
       if (error instanceof Error && error.message.trim() === message) throw error;
       throw new Error(message, { cause: error });
     },
@@ -474,9 +480,9 @@ export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
 }
 
-// Synchronous form for callers that cannot await (macOS builds its Word
-// equations from this exact function through src/office/wordMathMl).
-export function latexToMathMlSync(latex: string, displayMode = true) {
+// Synchronous (MathJax converts synchronously): a validation that calls it fails at once, and callers that await it
+// still may. macOS builds its Word equations from this function (src/office/wordMathMl).
+export function latexToMathMl(latex: string, displayMode = true) {
   const source = expandCustomSymbolsForMathMl(prepareLatex(latex));
   const root = mathMlDocument.convert(source, {
     display: displayMode,
@@ -489,10 +495,6 @@ export function latexToMathMlSync(latex: string, displayMode = true) {
   }
   assertResolvedPresentationMathMl(mathMl);
   return mathMl;
-}
-
-export async function latexToMathMl(latex: string, displayMode = true) {
-  return latexToMathMlSync(latex, displayMode);
 }
 
 export async function latexToSvg(

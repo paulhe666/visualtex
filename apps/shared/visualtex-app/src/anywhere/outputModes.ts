@@ -107,7 +107,7 @@ export function warmOutputMode(mode: AnywhereOutputMode) {
 
 /** The formula (its rows' LaTeX) as Unicode text. */
 export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMath> {
-  const [{ latexToMathMlSync }, { mathMlToUnicode }] = await Promise.all([
+  const [{ latexToMathMl }, { mathMlToUnicode }] = await Promise.all([
     import("../export/runtime"),
     import("./unicodeMath"),
   ]);
@@ -116,7 +116,7 @@ export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMa
     .map((row) => row.trim())
     .filter(Boolean)
     .map((row) => {
-      const converted = mathMlToUnicode(latexToMathMlSync(row, false));
+      const converted = mathMlToUnicode(latexToMathMl(row, false));
       for (const note of converted.notes) notes.add(note);
       return converted.text;
     });

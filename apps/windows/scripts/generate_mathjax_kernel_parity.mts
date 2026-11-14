@@ -41,7 +41,7 @@ function compiler(macros: Record<string, Macro>) {
   const serializer = new SerializedMmlVisitor(document.mmlFactory);
   return (latex: string) => {
     try {
-      // as latexToMathMlSync: compile only; errors throw or leave an merror node
+      // as latexToMathMl: compile only; errors throw or leave an merror node
       const root = document.convert(latex, { display: true, end: STATE.COMPILED });
       const mathMl = serializer.visitTree(root as any);
       return /<merror\b/.test(mathMl) ? `merror: ${mathMl.replace(/<[^>]+>/g, " ").trim()}` : null;

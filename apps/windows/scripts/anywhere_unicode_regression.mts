@@ -3,11 +3,11 @@
 //   tsx scripts/anywhere_unicode_regression.mts
 import assert from "node:assert/strict";
 import { DOMParser } from "@xmldom/xmldom";
-import { latexToMathMlSync } from "../../shared/visualtex-app/src/export/runtime.ts";
+import { latexToMathMl } from "../../shared/visualtex-app/src/export/runtime.ts";
 import { mathMlToUnicode } from "../../shared/visualtex-app/src/anywhere/unicodeMath.ts";
 
 const parse = (xml: string) => new DOMParser().parseFromString(xml, "application/xml") as never;
-const unicode = (latex: string) => mathMlToUnicode(latexToMathMlSync(latex, false), parse);
+const unicode = (latex: string) => mathMlToUnicode(latexToMathMl(latex, false), parse);
 
 const cases: [string, string][] = [
   ["x^2", "x²"],

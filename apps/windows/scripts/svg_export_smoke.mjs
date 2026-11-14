@@ -103,6 +103,9 @@ for (const [name, latex] of cases) {
   }
   if (name === "tagged-equation") {
     assert.ok(result.width > 250, "tagged equation keeps its full intrinsic width");
+  }
+  // MathJax's SVG nests the tag's table and label in viewports of their own; the layout engine draws them in one
+  if (name === "tagged-equation" && result.svg.includes("data-mml-node")) {
     const nestedViewports = [...result.svg.matchAll(
       /<svg\b[^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*>/g,
     )].map((match) => match[0]);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { searchCommands } from "../../shared/visualtex-app/src/autocomplete/CommandSearchEngine.ts";
+import { customSymbolCommands } from "../../shared/visualtex-app/src/autocomplete/runtimeCommandRegistry.ts";
 import { parseLatexSourceDraft } from "../../shared/visualtex-app/src/clipboard/LatexCopyService.ts";
 import {
   CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
@@ -80,7 +80,7 @@ try {
   assert.equal(unknownSourceDraft.valid, false);
   assert.equal(unknownSourceDraft.error, "unknown-command");
 
-  const suggestions = searchCommands("selfdefa", {}, false, 8);
+  const suggestions = customSymbolCommands().filter(command => command.command === "\\selfdefa");
   assert.equal(suggestions[0]?.command, "\\selfdefa");
   assert.equal(suggestions[0]?.id, "custom-symbol:regression-selfdefa");
 
@@ -168,7 +168,7 @@ try {
     "erase",
   );
 
-  const mathMl = await latexToMathMl("A\\selfdefa B", false);
+  const mathMl = latexToMathMl("A\\selfdefa B", false);
   assert.match(mathMl, /<mo>&#x2248;<\/mo>/, "OMML/MathML fallback must be semantic, not vector data");
 
   registerCustomSymbol({
@@ -179,9 +179,9 @@ try {
     role: "ordinary",
     ommlFallback: null,
   });
-  await assert.rejects(
+  assert.throws(
     () => latexToMathMl("\\selfdefb", false),
-    /Undefined control sequence \\selfdefb/,
+    /did not resolve LaTeX command \\selfdefb/,
   );
 
   updateCustomSymbol("regression-selfdefa", {
@@ -198,19 +198,19 @@ try {
   assert.equal(deletedSourceDraft.valid, false);
   assert.equal(deletedSourceDraft.error, "unknown-command");
   assert.equal(
-    searchCommands("selfdefa", {}, false, 8).some(
+    customSymbolCommands().filter(command => command.command === "\\selfdefa").some(
       (command) => command.command === "\\selfdefa",
     ),
     false,
   );
   await assert.rejects(
-    () => latexToSvg("\\selfdefa", {
+    async () => latexToSvg("\\selfdefa", {
       displayMode: false,
       fontSizePt: 12,
       paddingPx: 0,
       background: "transparent",
     }),
-    /MathJax could not parse|Undefined control sequence|Unknown symbol|unresolved LaTeX command/i,
+    /Unsupported LaTeX|MathJax could not parse|Undefined control sequence|Unknown symbol|unresolved LaTeX command/i,
   );
 
   replaceCustomSymbolLibrary({ version: 1, symbols: [] });
@@ -408,7 +408,7 @@ try {
   );
 
   console.log(
-    "Custom symbol registry validation, persistence, runtime command search, SVG roles, fallback, update, and delete regression passed",
+    "Custom symbol registry validation, persistence, runtime command catalog, SVG roles, fallback, update, and delete regression passed",
   );
 } finally {
   replaceCustomSymbolLibrary({ version: 1, symbols: [] });

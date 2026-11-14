@@ -21,12 +21,14 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   bfseries: ["\\mathbf{#1}", 1], // mathlive-compatibility
   biconditional: "\\mathrel{⟷}", // symbol mrel U+27F7
   biginterleave: "\\mathop{⫼}", // symbol mop U+2AFC
+  bigsqcap: "\\mathop{⨅}", // symbol mop U+2A05
   boldmath: ["\\mathbfit{#1}", 1], // mathlive-compatibility
   boxast: "\\mathbin{⧆}", // symbol mbin U+29C6
   boxbar: "\\mathbin{◫}", // symbol mbin U+25EB
   boxbox: "\\mathbin{⧈}", // symbol mbin U+29C8
   boxbslash: "\\mathbin{⧅}", // symbol mbin U+29C5
   boxcircle: "\\mathbin{⧇}", // symbol mbin U+29C7
+  boxempty: "\\mathbin{□}", // symbol mbin U+25A1
   boxslash: "\\mathbin{⧄}", // symbol mbin U+29C4
   bull: "\\bullet", // texvc
   C: "\\mathbb{C}", // texvc
@@ -86,7 +88,8 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   leftrightarrowtriangle: "\\mathrel{⇿}", // symbol mrel U+21FF
   leftslice: "\\mathrel{⪦}", // symbol mrel U+2AA6
   lightning: "\\mathrel{↯}", // symbol mrel U+21AF
-  llbracket: "⟦", // symbol mopen U+27E6
+  llceil: "⌈", // symbol mopen U+2308
+  llfloor: "⌊", // symbol mopen U+230A
   longmapsfrom: "\\mathrel{⟻}", // symbol mrel U+27FB
   Longmapsfrom: "\\mathrel{⟽}", // symbol mrel U+27FD
   Longmapsto: "\\mathrel{⟾}", // symbol mrel U+27FE
@@ -95,6 +98,7 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   Lrarr: "\\Leftrightarrow", // texvc
   mapsfrom: "\\mathrel{↤}", // symbol mrel U+21A4
   Mapsfrom: "\\mathrel{⤆}", // symbol mrel U+2906
+  Mapsto: "\\mathrel{⤇}", // symbol mrel U+2907
   MapsTo: "\\mathrel{⤇}", // symbol mrel U+2907
   mathellipsis: "\\mathinner{…}", // symbol minner U+2026
   measeq: "\\mathrel{≝}", // symbol mrel U+225D
@@ -112,6 +116,10 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   nvrightarrowtail: "\\mathrel{⤔}", // symbol mrel U+2914
   nvtwoheadrightarrow: "\\mathrel{⤀}", // symbol mrel U+2900
   nvtwoheadrightarrowtail: "\\mathrel{⤗}", // symbol mrel U+2917
+  obar: "\\mathbin{⌽}", // symbol mbin U+233D
+  obslash: "\\mathbin{⦸}", // symbol mbin U+29B8
+  ogreaterthan: "\\mathbin{⧁}", // symbol mbin U+29C1
+  olessthan: "\\mathbin{⧀}", // symbol mbin U+29C0
   Omicron: "\\mathrm{O}", // texvc
   originalof: "\\mathrel{⊶}", // symbol mrel U+22B6
   parallelogram: "▱", // symbol mord U+25B1
@@ -133,12 +141,17 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   rightarrowtriangle: "\\mathrel{⇾}", // symbol mrel U+21FE
   rightslice: "\\mathrel{⪧}", // symbol mrel U+2AA7
   roundimplies: "\\mathrel{⥰}", // symbol mrel U+2970
-  rrbracket: "⟧", // symbol mclose U+27E7
+  rrceil: "⌉", // symbol mclose U+2309
+  rrfloor: "⌋", // symbol mclose U+230B
   sampi: "ϡ", // symbol mord U+3E1
   Sampi: "Ϡ", // symbol mord U+3E0
   sdot: "\\cdot", // texvc
   sect: "\\S", // texvc
   sh: "\\operatorname{sh}", // function
+  shortdownarrow: "\\mathrel{↓}", // symbol mrel U+2193
+  shortleftarrow: "\\mathrel{←}", // symbol mrel U+2190
+  shortrightarrow: "\\mathrel{→}", // symbol mrel U+2192
+  shortuparrow: "\\mathrel{↑}", // symbol mrel U+2191
   simbfit: ["\\symbfit{#1}", 1], // mathlive-compatibility
   spades: "\\spadesuit", // texvc
   sub: "\\subset", // texvc
@@ -154,6 +167,15 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   uArr: "\\Uparrow", // texvc
   Uarr: "\\Uparrow", // texvc
   varcoppa: "\\coppa", // texvc
+  varcurlyvee: "\\mathbin{⋎}", // symbol mbin U+22CE
+  varcurlywedge: "\\mathbin{⋏}", // symbol mbin U+22CF
+  varobslash: "\\mathbin{⦸}", // symbol mbin U+29B8
+  varocircle: "\\mathbin{⊚}", // symbol mbin U+229A
+  varodot: "\\mathbin{⊙}", // symbol mbin U+2299
+  varominus: "\\mathbin{⊖}", // symbol mbin U+2296
+  varoplus: "\\mathbin{⊕}", // symbol mbin U+2295
+  varoslash: "\\mathbin{⊘}", // symbol mbin U+2298
+  varotimes: "\\mathbin{⊗}", // symbol mbin U+2297
   weierp: "\\wp", // texvc
   Yup: "⅄", // symbol mord U+2144
   Z: "\\mathbb{Z}", // texvc
