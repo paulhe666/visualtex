@@ -8,7 +8,7 @@ async function source(path) {
 const app = await source("src/App.tsx");
 const ocrDialog = await source("src/components/OcrDialog.tsx");
 const ocrService = await source("src/ocr/ocrService.ts");
-const quickOcr = await source("src/ocr/quickOcr.ts");
+const quickOcr = await source("src/platform/quickOcr.ts");
 const quickRuntime = await source("src/ocr/windowsQuickOcrRuntime.ts");
 const desktopApp = await source("src/desktop/DesktopApp.tsx");
 const editorWorkspace = await source("../shared/visualtex-app/src/workspace/EditorWorkspace.tsx");
@@ -49,9 +49,9 @@ assert.ok(quickOcrNative.includes("Get-Process -Name 'PixPin'"));
 assert.ok(quickOcrNative.includes("Start-Process -FilePath $pixpin | Out-Null"));
 assert.ok(quickOcrNative.includes("pixpin.screenShot(ShotAction.Copy)"));
 assert.ok(quickOcrNative.includes('"clipboard" | "system-screenshot"'));
-assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="windows"'));
-assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="pixpin"'));
-assert.ok(editorWorkspace.includes('data-quick-ocr-mode-option="clipboard"'));
+// the shared menu lists the app's capture modes (src/platform/quickOcr.ts)
+assert.ok(editorWorkspace.includes("data-quick-ocr-mode-option={item.id}"));
+for (const mode of ['id: "windows"', 'id: "pixpin"', 'id: "clipboard"']) assert.ok(quickOcr.includes(mode), mode);
 
 // Silent OCR must be a native closed loop: global hotkey -> screenshot -> OCR
 // -> selected source wrapper -> clipboard. It must not depend on a live React
@@ -221,14 +221,13 @@ assert.ok(
 );
 assert.ok(editorStore.includes("keypadMinimizeOnCopy: true"));
 assert.ok(mathEditor.includes("VISUALTEX_ALIGNMENT_MARKER_LATEX"));
-assert.ok(mathEditor.includes('activeMathLiveEnvironmentName(field) === "cases"'));
-assert.ok(mathEditor.includes('field.executeCommand("addRowAfter")'));
+// Enter in cases and & in matrices are the editing core's (visualtex-core keys.ts), covered by the editor tests
 assert.ok(formulaHotkeyStore.includes("createDefaultFormulaHotkeyBindings()"));
-assert.ok(formulaHotkeys.includes('controlChord("KeyR")'));
-assert.ok(formulaHotkeys.includes('controlChord("KeyF")'));
-assert.ok(formulaHotkeys.includes('controlChord("KeyJ")'));
-assert.ok(formulaHotkeys.includes('controlChord("KeyL")'));
-assert.ok(formulaHotkeys.includes('controlChord("KeyD")'));
+assert.ok(formulaHotkeys.includes('primaryChord("KeyR")'));
+assert.ok(formulaHotkeys.includes('primaryChord("KeyF")'));
+assert.ok(formulaHotkeys.includes('primaryChord("KeyJ")'));
+assert.ok(formulaHotkeys.includes('primaryChord("KeyL")'));
+assert.ok(formulaHotkeys.includes('primaryChord("KeyD")'));
 
 // MathLive's native context menu must never be exposed. VisualTeX owns the
 // right-click surface and provides PNG copy as a standalone menu action.
@@ -238,11 +237,7 @@ assert.ok(mathEditor.includes('className="formula-editor-context-menu"'));
 assert.ok(mathEditor.includes("复制 PNG 到剪贴板"));
 assert.ok(mathEditor.includes("field.menuItems = []"));
 
-// The Windows-specific designer sizing may not reintroduce the clipping that
-// the macOS three-pane layout already solved.
-assert.ok(officeStyles.includes("max-height: calc(100vh - 20px);"));
-assert.ok(officeStyles.includes("overscroll-behavior: contain;"));
-assert.ok(officeStyles.includes(".custom-symbol-designer-sidebar"));
-assert.ok(officeStyles.includes("overflow: auto;"));
+// The symbol designer's sizing is its own package's (custom-symbol-designer/src/ui/designer.css), the same in
+// both apps.
 
 console.log("Windows OCR/editor macOS-parity regression passed");
