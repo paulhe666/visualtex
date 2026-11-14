@@ -168,6 +168,20 @@ async function main() {
       throw new Error("Runtime evaluation retry exhausted.");
     };
 
+    // A fresh Vite server optimizes the dependencies the first import finds and reloads the page; an import made
+    // meanwhile fails ("Failed to fetch dynamically imported module"). Import once until that has settled.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const warm = await evaluateWithNavigationRetry({
+        expression: `import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)}).then(() => "ok", (error) => String(error))`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (warm.result?.value === "ok") break;
+      await sleep(1500);
+      await client.send("Page.reload", { ignoreCache: false }).catch(() => undefined);
+      await sleep(1500);
+    }
+
     const formulas = [
       String.raw`\frac{a}{b}+dddc`,
       String.raw`\int_a^b x\,dy`,
@@ -833,8 +847,8 @@ async function main() {
       await Promise.race([exited, sleep(2_000)]);
     }
     vite.kill("SIGTERM");
-    await rm(chromeProfile, { recursive: true, force: true });
-    if (docxDirectory) await rm(docxDirectory, { recursive: true, force: true });
+    await rm(chromeProfile, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+    if (docxDirectory) await rm(docxDirectory, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
   }
 }
 
