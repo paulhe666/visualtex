@@ -2051,6 +2051,17 @@ export function FormulaToolbar({
     return () => window.removeEventListener("keydown", leave);
   }, [editing, pickerGroupId, renamingGroupId, setEditing]);
 
+  // the name field opens with the name selected (autoFocus + select on focus leaves WebKit's caret at the end)
+  useEffect(() => {
+    if (!renamingGroupId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const input = toolbarRef.current?.querySelector<HTMLInputElement>("[data-toolbar-tab-rename]");
+      input?.focus();
+      input?.select();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [renamingGroupId]);
+
   useEffect(() => {
     if (!editing) {
       setLayoutMenuOpen(false);
@@ -2499,11 +2510,9 @@ export function FormulaToolbar({
                       data-category={group.id}
                       data-toolbar-tab-rename
                       style={groupTintStyle(group)}
-                      autoFocus
                       maxLength={24}
                       value={renameValue}
                       aria-label={isEn ? "Group name" : "分组名称"}
-                      onFocus={(event) => event.currentTarget.select()}
                       onChange={(event) => setRenameValue(event.currentTarget.value)}
                       onBlur={commitRenameGroup}
                       onKeyDown={(event) => {

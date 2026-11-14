@@ -675,3 +675,8 @@ body.vtx-toolbar-dragging * {
 .toolbar-item-picker .formula-tile-library-item.is-wide {
   grid-column: span 2;
 }
+
+/* while the strip scrolls its sections ignore the pointer (styles.css); in edit mode a drag must still find them */
+.formula-toolbar.is-horizontal .template-strip.is-toolbar-editing[data-scrolling="true"] .toolbar-category-section {
+  pointer-events: auto;
+}
