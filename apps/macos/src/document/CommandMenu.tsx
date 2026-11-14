@@ -14,7 +14,7 @@ import {
   type CommandPreview,
 } from "../../../shared/visualtex-document/src/index.ts";
 import { cachedPreviewMarkup } from "../components/MathPreview";
-import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
+import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { getFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
 import { getCustomSymbolRevision } from "../math/customSymbolRegistry";
 

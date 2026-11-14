@@ -19,7 +19,7 @@ import {
   selectSpacingConfig,
   setSpacingValue,
 } from "../editor/formulaSpacingPreferences";
-import { FORMULA_LETTER_FONT_OPTIONS } from "../editor/formulaFontPreferences";
+import { FORMULA_LETTER_FONT_OPTIONS } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export const SPACING_GROUP_LABELS: Record<SpacingDefinition["group"], [string, string]> = {
   scripts: ["Superscripts and subscripts", "上下标"],

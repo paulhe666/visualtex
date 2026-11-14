@@ -48,7 +48,7 @@ import {
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
   readPersistedFormulaFontPreferences,
-} from "../editor/formulaFontPreferences.ts";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences.ts";
 
 const DEFAULT_OPTIONS: SvgExportOptions = {
   displayMode: true,

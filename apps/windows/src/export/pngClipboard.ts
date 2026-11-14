@@ -7,7 +7,7 @@ import type { PngExportResult } from "./exportTypes";
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
-} from "../editor/formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export interface FormulaPngRenderPreferences {
   background: PngExportBackground;

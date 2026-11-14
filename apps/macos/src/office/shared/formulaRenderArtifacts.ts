@@ -5,7 +5,7 @@ import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { inConversionStage } from "./conversionErrors";
 import { useEditorStore } from "../../stores/editorStore";
 import {

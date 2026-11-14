@@ -1,4 +1,4 @@
-import type { FormulaLetterFont } from "../../editor/formulaFontPreferences";
+import type { FormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { svgToBase64 } from "../../export/runtime";
 import type { SvgExportResult } from "../../export/exportTypes";
 

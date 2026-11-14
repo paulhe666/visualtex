@@ -1,7 +1,7 @@
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
-} from "../editor/formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export interface SvgExportOptions {
   displayMode: boolean;

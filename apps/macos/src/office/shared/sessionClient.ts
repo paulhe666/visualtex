@@ -6,7 +6,7 @@ import type {
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import {
   invokeTauri,
   isTauriRuntimeAvailable,

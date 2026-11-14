@@ -1,4 +1,5 @@
-import { safeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage.ts";
+import { onPlatform } from "../runtime/platformConventions";
+import { safeStorage } from "../runtime/safeStorage.ts";
 
 // The formula fonts of the main app: the math font, KaTeX (LaTeX's Computer
 // Modern) or newtxmath (LaTeX's newtxtext + newtxmath; stored as "times"),
@@ -45,6 +46,9 @@ const FORMULA_CHINESE_FONT_STORAGE_KEY = "visualtex.formula-chinese-font";
 export const FORMULA_FONT_PREFERENCES_CHANGED_EVENT =
   "visualtex-formula-font-preferences-changed";
 
+// Formulas are laid out again on the change notification, so it is sent only
+// when the stored value changes (the Office window applies the main app's
+// preferences on every sync).
 function notifyFormulaFontPreferencesChanged() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(FORMULA_FONT_PREFERENCES_CHANGED_EVENT));
@@ -114,13 +118,19 @@ export const FORMULA_CHINESE_FONT_OPTIONS: ReadonlyArray<{
   id: FormulaChineseFont;
   labelZh: string;
   labelEn: string;
-}> = [
+}> = onPlatform([
   { id: "system", labelZh: "系统默认", labelEn: "System default" },
   { id: "pingfang", labelZh: "苹方（兼容）", labelEn: "PingFang compatible" },
   { id: "songti", labelZh: "宋体", labelEn: "SimSun / Songti" },
   { id: "kaiti", labelZh: "楷体", labelEn: "KaiTi" },
   { id: "heiti", labelZh: "黑体", labelEn: "SimHei" },
-];
+], [
+  { id: "system", labelZh: "系统默认", labelEn: "System default" },
+  { id: "pingfang", labelZh: "苹方", labelEn: "PingFang SC" },
+  { id: "songti", labelZh: "宋体", labelEn: "Songti SC" },
+  { id: "kaiti", labelZh: "楷体", labelEn: "Kaiti SC" },
+  { id: "heiti", labelZh: "黑体", labelEn: "Heiti SC" },
+]);
 
 const LETTER_FONT_FAMILIES: Record<
   FormulaLetterFont,
@@ -137,19 +147,25 @@ const LETTER_FONT_FAMILIES: Record<
 };
 
 const LETTER_PRIMARY_FONT_NAMES: Record<FormulaLetterFont, string> = {
-  katex: "KaTeX_Main",
+  katex: "KaTeX_Math",
   times: "Times New Roman",
 };
 
-const CHINESE_PRIMARY_FONT_NAMES: Record<FormulaChineseFont, string> = {
+const CHINESE_PRIMARY_FONT_NAMES: Record<FormulaChineseFont, string> = onPlatform({
   system: "Microsoft YaHei",
   pingfang: "Microsoft YaHei",
   songti: "SimSun",
   kaiti: "KaiTi",
   heiti: "SimHei",
-};
+}, {
+  system: "PingFang SC",
+  pingfang: "PingFang SC",
+  songti: "Songti SC",
+  kaiti: "Kaiti SC",
+  heiti: "Heiti SC",
+});
 
-const CHINESE_FONT_FAMILIES: Record<FormulaChineseFont, string> = {
+const CHINESE_FONT_FAMILIES: Record<FormulaChineseFont, string> = onPlatform({
   system:
     '"Microsoft YaHei", "Microsoft JhengHei", "Noto Sans CJK SC", "PingFang SC", sans-serif',
   pingfang:
@@ -157,10 +173,20 @@ const CHINESE_FONT_FAMILIES: Record<FormulaChineseFont, string> = {
   songti: 'SimSun, NSimSun, "Songti SC", STSong, serif',
   kaiti: 'KaiTi, "KaiTi_GB2312", "Kaiti SC", STKaiti, serif',
   heiti: 'SimHei, "Microsoft YaHei", "Heiti SC", STHeiti, sans-serif',
-};
+}, {
+  system:
+    '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
+  pingfang:
+    '"PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
+  songti: '"Songti SC", STSong, SimSun, "Songti TC", serif',
+  kaiti: '"Kaiti SC", STKaiti, KaiTi, "KaiTi_GB2312", serif',
+  heiti:
+    '"Heiti SC", STHeiti, "PingFang SC", "Microsoft YaHei", sans-serif',
+});
 
-// local() names (full and PostScript) of the faces in CHINESE_FONT_FAMILIES.
-const CHINESE_LOCAL_FACES: Record<FormulaChineseFont, readonly string[]> = {
+// local() names (full and PostScript) of the faces in CHINESE_FONT_FAMILIES, in the same order; the
+// fonts and their order follow each system (Windows: YaHei, SimSun…; macOS: PingFang, Songti SC…).
+const CHINESE_LOCAL_FACES: Record<FormulaChineseFont, readonly string[]> = onPlatform({
   system: [
     "Microsoft YaHei", "MicrosoftYaHei", "Microsoft JhengHei", "MicrosoftJhengHeiRegular",
     "Noto Sans CJK SC", "NotoSansCJKsc-Regular", "PingFang SC", "PingFangSC-Regular",
@@ -172,7 +198,19 @@ const CHINESE_LOCAL_FACES: Record<FormulaChineseFont, readonly string[]> = {
   songti: ["SimSun", "NSimSun", "Songti SC", "STSongti-SC-Regular", "STSong"],
   kaiti: ["KaiTi", "KaiTi_GB2312", "Kaiti SC", "STKaiti-SC-Regular", "STKaiti"],
   heiti: ["SimHei", "Microsoft YaHei", "MicrosoftYaHei", "Heiti SC", "STHeiti"],
-};
+}, {
+  system: [
+    "PingFang SC", "PingFangSC-Regular", "Hiragino Sans GB", "HiraginoSansGB-W3",
+    "Noto Sans CJK SC", "NotoSansCJKsc-Regular", "Microsoft YaHei", "MicrosoftYaHei",
+  ],
+  pingfang: [
+    "PingFang SC", "PingFangSC-Regular", "Hiragino Sans GB", "HiraginoSansGB-W3",
+    "Noto Sans CJK SC", "NotoSansCJKsc-Regular", "Microsoft YaHei", "MicrosoftYaHei",
+  ],
+  songti: ["Songti SC", "STSongti-SC-Regular", "STSong", "SimSun", "NSimSun"],
+  kaiti: ["Kaiti SC", "STKaiti-SC-Regular", "STKaiti", "KaiTi", "KaiTi_GB2312"],
+  heiti: ["Heiti SC", "STHeitiSC-Light", "STHeiti", "PingFang SC", "PingFangSC-Regular", "Microsoft YaHei"],
+});
 
 // CJK ideographs plus the punctuation in VISUALTEX_FORMULA_CHINESE_GLYPH_PATTERN.
 const CHINESE_UNICODE_RANGE = [
@@ -242,9 +280,6 @@ export function readPersistedFormulaFontPreferences(): {
   };
 }
 
-// Formulas are laid out again on the change notification, so it is sent only
-// when the stored value changes (the Office window applies the main app's
-// preferences on every sync).
 export function persistFormulaLetterFontPreference(value: FormulaLetterFont) {
   const next = normalizeFormulaLetterFont(value);
   if (safeStorage.getItem(FORMULA_LETTER_FONT_STORAGE_KEY) === next) return;

@@ -36,7 +36,7 @@ import {
   formulaLetterFontFamilies,
   readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
-} from "./formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import {
   FORMULA_SPACING_CHANGED_EVENT,
   activeFormulaSpacing,

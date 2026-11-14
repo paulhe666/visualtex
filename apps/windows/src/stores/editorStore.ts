@@ -58,7 +58,7 @@ import {
   type FormulaFaceRole,
   type FormulaFaces,
   type FormulaLetterFont,
-} from "../editor/formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import {
   defaultFormulaSpacingPreferences,
   mergeFormulaSpacingPreferences,

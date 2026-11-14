@@ -66,7 +66,7 @@ import {
   normalizeFormulaLetterFont,
   type FormulaChineseFont,
   type FormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { readLocalStorage, writeLocalStorage } from "../../../../shared/visualtex-app/src/runtime/safeStorage";
 import { normalizeFormulaSpacingPreferences } from "../../editor/formulaSpacingPreferences";
 import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";

@@ -5,7 +5,7 @@ import {
   type FormulaChineseFont,
   type FormulaLetterFont,
   type LegacyFormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export interface VisualTeXFormulaMetadata {
   schema: "visualtex-formula";

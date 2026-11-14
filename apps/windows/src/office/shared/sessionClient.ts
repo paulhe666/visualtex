@@ -4,7 +4,7 @@ import type { FormulaDocument } from "../../../../shared/visualtex-app/src/types
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import type { CustomThemeState } from "../../../../shared/visualtex-app/src/themeCustomization";
 import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
 import {

@@ -2,7 +2,7 @@ import { convertLatexToSvg } from "mathlive";
 import type { GlyphTable, SvgFormula } from "../../../shared/tex-layout/src/index.ts";
 import { expandVisualTexLatexForLayout } from "../editor/mathLiveIntegralCompatibility.ts";
 import { formulaLayoutReady, withFormulaLayoutFonts } from "../editor/visualTexLayoutRuntime.ts";
-import type { FormulaChineseFont, FormulaLetterFont } from "../editor/formulaFontPreferences.ts";
+import type { FormulaChineseFont, FormulaLetterFont } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences.ts";
 import { customSymbolArtworkForClass } from "../math/customSymbolRendering.ts";
 
 // Exported, copied and Office images drawn by the editor's own layout engine:

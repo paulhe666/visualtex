@@ -6,7 +6,7 @@ import {
   normalizeFormulaLetterFont,
   type FormulaChineseFont,
   type FormulaLetterFont,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 export type InlineImageMathStyle = "text" | "display";
 

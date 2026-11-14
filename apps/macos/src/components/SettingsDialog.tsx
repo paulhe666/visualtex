@@ -58,7 +58,7 @@ import {
   type FormulaChineseFont,
   type FormulaFaceRole,
   type FormulaLetterFont,
-} from "../editor/formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { PREFERRED_LATIN, systemFontFamilies } from "../../../shared/visualtex-app/src/document/systemFonts";
 
 const FORMULA_FACE_LABELS: Record<FormulaFaceRole, { zh: string; en: string }> = {

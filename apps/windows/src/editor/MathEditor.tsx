@@ -122,7 +122,7 @@ import {
   VISUALTEX_FORMULA_LETTER_GLYPH_CLASS,
   type FormulaChineseFont,
   type FormulaLetterFont,
-} from "./formulaFontPreferences";
+} from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import {
   hasVisualTexAlignmentMarker,
   VISUALTEX_ALIGNMENT_MARKER_CLASS,

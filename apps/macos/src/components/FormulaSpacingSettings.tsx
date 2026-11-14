@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronRight, RotateCcw, Ruler } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import { activeFormulaSpacingConfig, resetActiveSpacing } from "../editor/formulaSpacingPreferences";
-import { FORMULA_LETTER_FONT_OPTIONS } from "../editor/formulaFontPreferences";
+import { FORMULA_LETTER_FONT_OPTIONS } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { FormulaSpacingStudio } from "./FormulaSpacingStudio";
 
 /**

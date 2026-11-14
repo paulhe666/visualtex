@@ -5,7 +5,7 @@ import {
   type Spacing,
   type SpacingKey,
 } from "../../../shared/tex-layout/src/spacing.ts";
-import type { FormulaLetterFont } from "./formulaFontPreferences.ts";
+import type { FormulaLetterFont } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences.ts";
 
 // Formula spacing (Settings > Interface customization): for each formula font
 // a list of named configurations of the layout engine's spacing adjustments

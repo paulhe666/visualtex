@@ -33,7 +33,7 @@ import {
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
   readPersistedFormulaFontPreferences,
-} from "../../editor/formulaFontPreferences";
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { errorMessage } from "../../runtime/errorMessage";
 import {
   readLocalStorage,

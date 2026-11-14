@@ -8,7 +8,7 @@ import type {
   PreparedPowerPointCommit,
 } from "./sessionClient";
 import { isVisualTeXFormulaMetadata } from "./formulaMetadata";
-import { normalizeFormulaLetterFont } from "../../editor/formulaFontPreferences";
+import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 
 const SESSION_MODES = ["create", "edit"] as const;
 const OFFICE_HOSTS = ["word", "powerpoint"] as const;
