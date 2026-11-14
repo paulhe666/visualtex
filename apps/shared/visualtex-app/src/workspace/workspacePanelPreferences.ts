@@ -1,4 +1,4 @@
-import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
+import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
 import type { WorkspaceMode } from "./workspaceTypes";
 
 export type WorkspacePanelPreference = "toolbar" | "tiles" | "source";

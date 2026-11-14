@@ -72,7 +72,7 @@ import {
   resolveMacOfficeOnboarding,
 } from "./components/macOfficeOnboarding";
 import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
-import { EditorWorkspace } from "./workspace/EditorWorkspace";
+import { EditorWorkspace } from "../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
   joinFormulaLines,

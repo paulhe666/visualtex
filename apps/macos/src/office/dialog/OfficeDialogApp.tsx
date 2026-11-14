@@ -4,7 +4,7 @@ import { MathfieldElement } from "mathlive";
 import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
 import { OcrDialog } from "../../components/OcrDialog";
 import { installMcpRenderBridge } from "../shared/mcpRenderBridge";
-import { EditorWorkspace } from "../../workspace/EditorWorkspace";
+import { EditorWorkspace } from "../../../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../../../shared/visualtex-app/src/history/EditorSession";
 import {
   joinFormulaLines,
@@ -49,7 +49,7 @@ import type { InlineImageMathStyle } from "../../../../shared/visualtex-app/src/
 import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,
-} from "../../workspace/workspacePanelPreferences";
+} from "../../../../shared/visualtex-app/src/workspace/workspacePanelPreferences";
 import {
   renderOfficeFormulaArtifacts,
   tryRenderOfficeFormulaDraftArtifacts,

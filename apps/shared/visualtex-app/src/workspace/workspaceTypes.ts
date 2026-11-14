@@ -3,9 +3,9 @@ import type { QuickOcrCaptureMode } from "@platform/quickOcr";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
-} from "../../../shared/visualtex-app/src/editor/MathEditor";
-import type { ReplaceDocumentEntry } from "../../../shared/visualtex-app/src/history/historyTypes";
-import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
+} from "../editor/MathEditor";
+import type { ReplaceDocumentEntry } from "../history/historyTypes";
+import type { DocumentSnapshot } from "../history/historyTypes";
 
 export type WorkspaceMode =
   | "desktop"

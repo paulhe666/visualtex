@@ -26,11 +26,11 @@ import {
   useConfirmEscapeKeyStore,
 } from "../../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
 import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
-import { EditorWorkspace } from "../../workspace/EditorWorkspace";
+import { EditorWorkspace } from "../../../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,
-} from "../../workspace/workspacePanelPreferences";
+} from "../../../../shared/visualtex-app/src/workspace/workspacePanelPreferences";
 import { useDocumentSession, useHistoryManager, useHistorySnapshot } from "../../../../shared/visualtex-app/src/history/EditorSession";
 import type {
   DocumentSnapshot,

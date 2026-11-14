@@ -703,7 +703,7 @@ const officeDialogSource = readFileSync(
   "utf8",
 );
 const editorWorkspaceSource = readFileSync(
-  new URL("../src/workspace/EditorWorkspace.tsx", import.meta.url),
+  new URL("../../shared/visualtex-app/src/workspace/EditorWorkspace.tsx", import.meta.url),
   "utf8",
 );
 // Word formulas follow the text size Word reports where they go; a size picked

@@ -36,20 +36,20 @@ import {
 import {
   MathEditor,
   type MathEditorSelectionTarget,
-} from "../../../shared/visualtex-app/src/editor/MathEditor";
-import { DocumentWorkspace } from "../../../shared/visualtex-app/src/document/DocumentWorkspace";
-import { DocumentControls } from "../../../shared/visualtex-app/src/document/DocumentControls";
-import { DocumentSourceView } from "../../../shared/visualtex-app/src/document/DocumentSourceView";
-import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../../../shared/visualtex-app/src/document/documentEvents";
-import { useDocumentModeStore } from "../../../shared/visualtex-app/src/stores/documentModeStore";
-import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { InputBehaviorMenu } from "../../../shared/visualtex-app/src/components/InputBehaviorMenu";
-import { trackHorizontalOverflow } from "../../../shared/visualtex-app/src/runtime/horizontalOverflowState";
-import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime/priorityCollapse";
-import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { FormulaToolbar } from "../../../shared/visualtex-app/src/toolbar/FormulaToolbar";
-import { LatexSourceEditor } from "../../../shared/visualtex-app/src/source-editor/LatexSourceEditor";
-import { formatLatexSourceForEditor } from "../../../shared/visualtex-app/src/source-editor/latexSourceEditorSupport";
+} from "../editor/MathEditor";
+import { DocumentWorkspace } from "../document/DocumentWorkspace";
+import { DocumentControls } from "../document/DocumentControls";
+import { DocumentSourceView } from "../document/DocumentSourceView";
+import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../document/documentEvents";
+import { useDocumentModeStore } from "../stores/documentModeStore";
+import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../stores/documentEditorStore";
+import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
+import { trackPriorityCollapse } from "../runtime/priorityCollapse";
+import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
+import { FormulaToolbar } from "../toolbar/FormulaToolbar";
+import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
+import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import {
   DEFAULT_CLASSIC_DOCK_HEIGHT,
   DEFAULT_CLASSIC_TILE_WIDTH,
@@ -62,18 +62,20 @@ import {
   MIN_EDITOR_ZOOM,
   joinFormulaLines,
   useEditorStore,
-} from "../../../shared/visualtex-app/src/stores/editorStore";
-import { onButtonShortcut } from "../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
+} from "../stores/editorStore";
+import { onButtonShortcut } from "../shortcuts/buttonShortcuts";
 import {
   formatFormulaLinesUniversal,
   parseUniversalLatexSourceDraft,
-} from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { reconcileFormulaLines } from "../../../shared/visualtex-app/src/history/documentHistory";
-import { useHistorySnapshot } from "../../../shared/visualtex-app/src/history/EditorSession";
-import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";
-import { normalizeCustomFormulaColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
+} from "../clipboard/LatexCopyService";
+import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { reconcileFormulaLines } from "../history/documentHistory";
+import { useHistorySnapshot } from "../history/EditorSession";
+import type { FormulaAlignment, FormulaLine } from "../types/formula";
+import { normalizeCustomFormulaColor } from "./formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
+import { onPlatform, primaryModifierOnly } from "../runtime/platformConventions";
+import { QUICK_OCR_CAPTURE_MODES, SILENT_OCR_SHORTCUT } from "@platform/quickOcr";
 import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,
@@ -108,11 +110,12 @@ type ClassicResizeTarget = "tiles" | "dock";
 
 const compactOfficeTileBreakpoint = 760;
 const compactOfficeEditorReserve = 220;
-const compactOfficeTileShare = 0.45;
+const officeTileShare = 0.45;
 
-// The formula canvas is the primary surface. In a compact Office editor the
-// tile rail may take at most 45% of the workspace (never less than its
-// minimum width), so the canvas is not squeezed narrower than the rail.
+// The formula canvas is the primary surface. In the Office editor the tile
+// rail may take at most 45% of the workspace (never less than its minimum
+// width), so the canvas is not squeezed narrower than the rail; a rail
+// widened in a large window is narrowed again when the window shrinks.
 function classicTileWidthMaximum(
   workspaceWidth: number,
   isOfficeWorkspace: boolean,
@@ -121,8 +124,8 @@ function classicTileWidthMaximum(
     isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint;
   const byReserve =
     workspaceWidth - (compactOffice ? compactOfficeEditorReserve : 360);
-  const limit = compactOffice
-    ? Math.min(byReserve, Math.floor(workspaceWidth * compactOfficeTileShare))
+  const limit = isOfficeWorkspace
+    ? Math.min(byReserve, Math.floor(workspaceWidth * officeTileShare))
     : byReserve;
   return Math.max(MIN_CLASSIC_TILE_WIDTH, limit);
 }
@@ -255,10 +258,10 @@ export function EditorWorkspace({
   ocrBusy = false,
   onOcrRecognizerChange,
   onQuickOcr,
-  quickOcrCaptureMode = "immediate",
+  quickOcrCaptureMode = QUICK_OCR_CAPTURE_MODES[0].id,
   onQuickOcrCaptureModeChange,
   silentOcrEnabled = false,
-  silentOcrShortcut = "⌘⇧O",
+  silentOcrShortcut = SILENT_OCR_SHORTCUT,
   onSilentOcrEnabledChange,
   ocrOverlay,
 }: EditorWorkspaceProps) {
@@ -366,6 +369,8 @@ export function EditorWorkspace({
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const historyReplayActive = useHistorySnapshot().isReplaying;
+  const sourceShortcut = onPlatform("Ctrl+\\", "⌘\\");
+  const sourceShortcutKeys = onPlatform("Control+Backslash", "Meta+Backslash");
   const language = useEditorStore((state) => state.language);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
@@ -443,12 +448,13 @@ export function EditorWorkspace({
     setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
   }, [mode, setStoredSourceOpen]);
 
+  // Ctrl+\ (Command+\ on macOS) moves focus between the formula and the LaTeX
+  // source, opening the source panel when needed.
   useEffect(() => {
     const toggleFormulaSourceFocus = (event: KeyboardEvent) => {
       if (
         event.isComposing ||
-        !event.metaKey ||
-        event.ctrlKey ||
+        !primaryModifierOnly(event) ||
         event.altKey ||
         event.shiftKey ||
         event.code !== "Backslash"
@@ -462,7 +468,7 @@ export function EditorWorkspace({
       ) {
         return;
       }
-      // the document's own ⌘\ (Markdown input: clear the formatting, as in Typora)
+      // the document's own Ctrl+\ / Command+\ (Markdown input: clear the formatting, as in Typora)
       if (event.target instanceof Element && event.target.closest(".vtx-document")) return;
 
       event.preventDefault();
@@ -1851,41 +1857,26 @@ export function EditorWorkspace({
                           <Camera size={14} />
                           <strong>{isEn ? "Run Quick OCR" : "开始快捷 OCR"}</strong>
                           <span>
-                            {quickOcrCaptureMode === "system-screenshot"
-                              ? isEn
-                                ? "Wait for macOS screenshot"
-                                : "等待 macOS 系统截图"
-                              : isEn
-                                ? "Immediate selection"
-                                : "立即框选"}
+                            {(QUICK_OCR_CAPTURE_MODES.find((item) => item.id === quickOcrCaptureMode) ??
+                              QUICK_OCR_CAPTURE_MODES[0]).current[isEn ? 1 : 0]}
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          className={quickOcrCaptureMode === "immediate" ? "is-active" : ""}
-                          onClick={() => {
-                            onQuickOcrCaptureModeChange("immediate");
-                            setQuickOcrModeMenuOpen(false);
-                          }}
-                          role="menuitemradio"
-                          aria-checked={quickOcrCaptureMode === "immediate"}
-                          data-quick-ocr-mode-option="immediate"
-                        >
-                          <strong>{isEn ? "Immediate selection (default)" : "立即框选（默认）"}</strong>
-                        </button>
-                        <button
-                          type="button"
-                          className={quickOcrCaptureMode === "system-screenshot" ? "is-active" : ""}
-                          onClick={() => {
-                            onQuickOcrCaptureModeChange("system-screenshot");
-                            setQuickOcrModeMenuOpen(false);
-                          }}
-                          role="menuitemradio"
-                          aria-checked={quickOcrCaptureMode === "system-screenshot"}
-                          data-quick-ocr-mode-option="system-screenshot"
-                        >
-                          <strong>{isEn ? "Wait for system screenshot (⌘⇧3 / 4 / 5)" : "等待系统截图（⌘⇧3 / 4 / 5）"}</strong>
-                        </button>
+                        {QUICK_OCR_CAPTURE_MODES.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={quickOcrCaptureMode === item.id ? "is-active" : ""}
+                            onClick={() => {
+                              onQuickOcrCaptureModeChange(item.id);
+                              setQuickOcrModeMenuOpen(false);
+                            }}
+                            role="menuitemradio"
+                            aria-checked={quickOcrCaptureMode === item.id}
+                            data-quick-ocr-mode-option={item.id}
+                          >
+                            <strong>{item.option[isEn ? 1 : 0]}</strong>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -2185,15 +2176,15 @@ export function EditorWorkspace({
                         setSourceOpen(true);
                         setClassicDockOpen(true);
                       }}
-                      aria-keyshortcuts="Meta+Backslash"
+                      aria-keyshortcuts={sourceShortcutKeys}
                       title={
                         documentMode
                           ? isEn
-                            ? "Source (⌘\\)"
-                            : "源码（⌘\\）"
+                            ? `Source (${sourceShortcut})`
+                            : `源码（${sourceShortcut}）`
                           : isEn
-                            ? "LaTeX source (⌘\\)"
-                            : "LaTeX 源码（⌘\\）"
+                            ? `LaTeX source (${sourceShortcut})`
+                            : `LaTeX 源码（${sourceShortcut}）`
                       }
                     >
                       <Code2 size={16} />
@@ -2318,23 +2309,23 @@ export function EditorWorkspace({
                       }
                       data-source-toggle
                       aria-expanded={sourceOpen}
-                      aria-keyshortcuts="Meta+Backslash"
+                      aria-keyshortcuts={sourceShortcutKeys}
                       title={
                         documentMode
                           ? sourceOpen
                             ? isEn
-                              ? "Hide the source (⌘\\)"
-                              : "收起源码（⌘\\）"
+                              ? `Hide the source (${sourceShortcut})`
+                              : `收起源码（${sourceShortcut}）`
                             : isEn
-                              ? "Show the source (⌘\\)"
-                              : "展开源码（⌘\\）"
+                              ? `Show the source (${sourceShortcut})`
+                              : `展开源码（${sourceShortcut}）`
                           : sourceOpen
                             ? isEn
-                              ? "Hide LaTeX source (⌘\\)"
-                              : "收起 LaTeX 源码（⌘\\）"
+                              ? `Hide LaTeX source (${sourceShortcut})`
+                              : `收起 LaTeX 源码（${sourceShortcut}）`
                             : isEn
-                              ? "Show LaTeX source (⌘\\)"
-                              : "展开 LaTeX 源码（⌘\\）"
+                              ? `Show LaTeX source (${sourceShortcut})`
+                              : `展开 LaTeX 源码（${sourceShortcut}）`
                       }
                       onClick={() => setSourceOpen(!sourceOpen)}
                     >

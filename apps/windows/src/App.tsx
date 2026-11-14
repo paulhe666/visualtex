@@ -63,7 +63,7 @@ import { HelpDialog } from "./components/HelpDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { UpdateDialog } from "../../shared/visualtex-app/src/components/UpdateDialog";
-import { EditorWorkspace } from "./workspace/EditorWorkspace";
+import { EditorWorkspace } from "../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
   MAX_EDITOR_ZOOM,
