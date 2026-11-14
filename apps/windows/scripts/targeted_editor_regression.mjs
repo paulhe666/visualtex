@@ -3142,7 +3142,7 @@ async function main() {
           ready:
             values.length === 2 &&
             values[0] === "abc" &&
-            values[1] === "\\\\mathbfit{xyz}",
+            values[1] === "\\\\bm{xyz}",
           values,
           activeIndex: fields.findIndex((field) => field.hasFocus()),
         };
@@ -3159,7 +3159,7 @@ async function main() {
         const values = [...document.querySelectorAll("math-field")].map((field) =>
           field.value.replace(/\s+/g, ""),
         );
-        return { ready: values.length === 2 && values[0] === "abc" && values[1] === "\\\\mathbfit{xyz}", values };
+        return { ready: values.length === 2 && values[0] === "abc" && values[1] === "\\\\bm{xyz}", values };
       })()`, "redo reapplies formatting only to the active formula row");
 
       console.log(JSON.stringify({
