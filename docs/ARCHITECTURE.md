@@ -13,6 +13,8 @@ apps/shared     两个应用原样共用的代码
   visualtex-document      文档编辑器（Markdown 行、公式、表格、引用）
   custom-symbol-designer  自定义符号设计器
   visualtex-app           两个应用共用的前端代码：主窗口、设置、文档模式、OCR、VisualTeX Anywhere、导出、样式表
+  visualtex-backend       两个 Tauri 后端都编译的 Rust 模块（离线 OCR 模型、文档库），用 #[path] 引入：Tauri
+                          命令必须在应用自己的 crate 里
 apps/windows    Windows 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、C# Office 加载项（src-windows：
                 VSTO、OLE 服务器、MathType，WPS 通过 COM 使用同一套加载项）、输入法（input-method）、OCR
 apps/macos      macOS 应用：编辑器外壳（src）、Tauri 后端（src-tauri）、Office 加载项（office/macos-offline：
@@ -26,7 +28,9 @@ tools           仓库结构检查
 `node_modules` 解析依赖（`apps/shared/visualtex-app/vite/sharedPackages.ts`）。内核通过构建期模块
 `virtual:visualtex-kernel-host`（`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`）取得共享的命令表和输入规则。
 Node 脚本（测试、生成器）用 `tsx --import ../shared/visualtex-app/testing/node-loader.mjs` 运行，共享代码的依赖和
-`@platform/…` 从当前应用解析；两个应用都运行的测试在 `apps/shared/visualtex-app/tests`。
+`@platform/…` 从当前应用解析；两个应用都运行的测试在 `apps/shared/visualtex-app/tests`。浏览器测试用
+`testing/browser_test_runtime.mjs`（按系统找到 Chrome/Edge；`withBrowserTest` = 应用的 Vite 开发服务器加经 CDP
+驱动的无头浏览器），在页面里引入共享模块用 `testing/sharedSourceUrl.mjs`。
 
 ### 共享规则
 
@@ -40,7 +44,8 @@ Node 脚本（测试、生成器）用 `tsx --import ../shared/visualtex-app/tes
 5. 不提交构建产物、日志、截图或测试文档；有名字的测试素材目录除外。
 
 留在应用里的是两个平台做法不同的部分：入口和它们的 HTML 页面、Office 编辑窗口与文档导入（后端协议不同）、
-各自的 Office 集成设置、快捷 OCR 与静默 OCR 窗口、macOS 的 Office 快捷键，以及 `src/platform`。
+各自的 Office 集成设置、快捷 OCR 与静默 OCR 窗口、macOS 的 Office 快捷键、供 AI 智能体使用的 Office MCP 后端
+（`src-tauri/src/office/automation`）及其设置（两个系统上的加载项连接方式不同），以及 `src/platform`。
 
 | `src/platform` 模块 | 内容 |
 |---|---|
@@ -131,6 +136,8 @@ apps/shared     code both applications run unchanged
   custom-symbol-designer  custom symbol designer
   visualtex-app           frontend code common to both applications: the main window, settings, document mode, OCR,
                           VisualTeX Anywhere, export, the stylesheets
+  visualtex-backend       Rust modules both Tauri backends compile (offline OCR models, the document library), included
+                          with #[path] because Tauri commands must live in the application's own crate
 apps/windows    Windows application: editor shell (src), Tauri backend (src-tauri), Office add-ins in C# (src-windows:
                 VSTO, OLE server, MathType; WPS uses the same add-ins through COM), input method (input-method), OCR
 apps/macos      macOS application: editor shell (src), Tauri backend (src-tauri), Office add-ins (office/macos-offline:
@@ -148,7 +155,9 @@ and input rules through the build-time module `virtual:visualtex-kernel-host`
 (`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`). Node scripts (tests, generators) run with
 `tsx --import ../shared/visualtex-app/testing/node-loader.mjs`, which resolves the packages and `@platform/…` of
 shared code from the application they run in; the tests both applications run are in
-`apps/shared/visualtex-app/tests`.
+`apps/shared/visualtex-app/tests`. Browser tests use `testing/browser_test_runtime.mjs` (Chrome or Edge located per
+system; `withBrowserTest` = the application's Vite dev server plus a headless browser driven over CDP) and
+`testing/sharedSourceUrl.mjs` to import a shared module inside the page.
 
 ### Sharing rules
 
@@ -165,7 +174,8 @@ shared code from the application they run in; the tests both applications run ar
 
 What stays in the applications is what the platforms do differently: the entry points and their HTML pages, the
 Office editor window and document import (their backends differ), each Office integration's settings, the quick and
-silent OCR windows, the Office hotkeys of macOS, and `src/platform`.
+silent OCR windows, the Office hotkeys of macOS, the Office MCP backend for AI agents (`src-tauri/src/office/automation`)
+with its settings (the add-ins connect to it differently on each system), and `src/platform`.
 
 | `src/platform` module | What it holds |
 |---|---|
