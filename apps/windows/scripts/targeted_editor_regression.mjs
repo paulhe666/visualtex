@@ -5754,7 +5754,7 @@ async function main() {
       const commonTilesState = await waitForEvaluation(`(() => {
         const panel = document.querySelector(".formula-tiles-panel");
         const buttons = [...document.querySelectorAll(
-          '.formula-tile-list > .formula-tile-button',
+          '.formula-tile-list > .formula-tile-item > .formula-tile-button',
         )];
         const previews = buttons.map((button) => {
           const host = button.querySelector(".formula-tile-preview");
@@ -9628,7 +9628,7 @@ async function main() {
       await evaluate(`document.querySelector('[data-toolbar-view="tiles"]').click()`);
       const commonTileState = await waitForEvaluation(`(() => {
         const tiles = [...document.querySelectorAll(
-          '.formula-tile-list > .formula-tile-button',
+          '.formula-tile-list > .formula-tile-item > .formula-tile-button',
         )];
         return {
           ready:
