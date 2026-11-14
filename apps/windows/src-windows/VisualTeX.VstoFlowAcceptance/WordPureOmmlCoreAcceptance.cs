@@ -1,1 +1,0 @@
-// Intentionally left as a reserved acceptance-file name.\n// The active pure Word OMML acceptance lives in WordHostCorePureOmmlAcceptance.cs.\n
