@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
+import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../../../shared/visualtex-app/src/editor/MathEditor";
 import {
   editingModelOf,
   redrawOpenFormulas,
@@ -8,8 +8,7 @@ import {
   setFormulaLineLayout,
   visualTexEditingCore,
 } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { historyManager } from "../history/HistoryManager";
-import { applyHistoryEntryToEditor, getEditorDocumentSnapshot } from "../history/documentHistory";
+import { useDocumentSession, useHistoryManager } from "../../../shared/visualtex-app/src/history/EditorSession";
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";
@@ -598,6 +597,9 @@ function sameLayout(a: AnywhereLayout | null, b: AnywhereLayout) {
  */
 export function AnywhereApp() {
   const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  // Undo and redo (Ctrl+Z, Ctrl+Y) replay the formula's history in this window's editor, as in the main window.
+  useDocumentSession(editorRef);
   const stripRef = useRef<HTMLDivElement>(null);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
@@ -1138,28 +1140,6 @@ export function AnywhereApp() {
       for (const disposer of disposers) void disposer.then((unlisten) => unlisten());
     };
   }, [activate, startNewFormula, runFormulaShortcut, pasteIntoFormula]);
-
-  // Undo and redo (Ctrl+Z, Ctrl+Y) replay the formula's history in this
-  // window's editor, as in the main window.
-  useEffect(() => {
-    historyManager.configure({
-      getDocumentSnapshot: () =>
-        getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
-      applyEntry: async (entry, direction) => {
-        const target = applyHistoryEntryToEditor(entry, direction);
-        if (!target) return;
-        if (
-          entry.type === "add-line" ||
-          entry.type === "remove-line" ||
-          entry.type === "replace-document"
-        ) {
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        }
-        await editorRef.current?.restoreSelection(target.lineId, target.latex, target.selection);
-      },
-    });
-    return () => historyManager.configure(null);
-  }, []);
 
   // Ready once the editor has mounted its field: the native side then sends
   // activations here instead of holding them.

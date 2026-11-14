@@ -37,9 +37,9 @@ import {
 import {
   MathEditor,
   type MathEditorSelectionTarget,
-} from "../editor/MathEditor";
-import { DocumentWorkspace } from "../document/DocumentWorkspace";
-import { DocumentControls } from "../document/DocumentControls";
+} from "../../../shared/visualtex-app/src/editor/MathEditor";
+import { DocumentWorkspace } from "../../../shared/visualtex-app/src/document/DocumentWorkspace";
+import { DocumentControls } from "../../../shared/visualtex-app/src/document/DocumentControls";
 import { DocumentSourceView } from "../document/DocumentSourceView";
 import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../../../shared/visualtex-app/src/document/documentEvents";
 import { useDocumentModeStore } from "../../../shared/visualtex-app/src/stores/documentModeStore";
@@ -70,8 +70,8 @@ import {
   parseUniversalLatexSourceDraft,
 } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { reconcileFormulaLines } from "../history/documentHistory";
-import { useHistorySnapshot } from "../history/HistoryManager";
+import { reconcileFormulaLines } from "../../../shared/visualtex-app/src/history/documentHistory";
+import { useHistorySnapshot } from "../../../shared/visualtex-app/src/history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../../../shared/visualtex-app/src/types/formula";
 import { normalizeCustomFormulaColor } from "../../../shared/visualtex-app/src/workspace/formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
@@ -225,7 +225,6 @@ export function EditorWorkspace({
   reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
-  onHistoryBusyChange,
   onPasteImage,
   onCopyPng,
   onCopy,
@@ -1183,7 +1182,6 @@ export function EditorWorkspace({
           previewLines ? undefined : showOcrActions ? onPasteImage : undefined
         }
         onCopyPng={previewLines ? undefined : onCopyPng}
-        onHistoryBusyChange={onHistoryBusyChange}
         overlay={previewLines ? undefined : ocrOverlay}
       />
     );

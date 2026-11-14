@@ -22,16 +22,16 @@ import {
   parseDocument,
   parseMathText,
   serializeDocument,
-} from "../../../shared/visualtex-document/src/index.ts";
+} from "../../../visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
-import type { FormulaEditSource } from "../../../shared/visualtex-app/src/history/historyTypes";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
-import { createSafeStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+import type { FormulaEditSource } from "../history/historyTypes";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
+import { createSafeStorage } from "../runtime/safeStorage";
+import { useEditorStore } from "../stores/editorStore";
+import type { LatexCommand } from "../types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
 import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "../../../shared/visualtex-app/src/document/DocumentLibrary";
+import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
 import {
   documentLibrary,
   documentTitle,
@@ -43,11 +43,11 @@ import {
   useDocumentLibraryStore,
   type Library,
   type LibraryDocument,
-} from "../../../shared/visualtex-app/src/document/documentLibraryApi";
+} from "./documentLibraryApi";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
-import { openDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
+import { openDocumentFormula } from "./openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
-import { imagePathKey, loadImportImages } from "../../../shared/visualtex-app/src/document/importImages";
+import { imagePathKey, loadImportImages } from "./importImages";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_FILE_EVENT,
@@ -57,8 +57,8 @@ import {
   DOCUMENT_OPEN_REQUEST_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
-} from "../../../shared/visualtex-app/src/document/documentEvents";
-import { TutorialDialog } from "../../../shared/visualtex-app/src/document/TutorialDialog";
+} from "./documentEvents";
+import { TutorialDialog } from "./TutorialDialog";
 import { getEditorDocumentSnapshot } from "../history/documentHistory";
 
 // Before the library the one document was kept here; the first start with the library takes it in (once; the key

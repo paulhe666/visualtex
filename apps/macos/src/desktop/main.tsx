@@ -1,4 +1,4 @@
-import { EditorSessionProvider } from "../history/EditorSession";
+import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 // formulas are laid out by the shared engine; installed before any math field exists

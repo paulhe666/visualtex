@@ -26,7 +26,7 @@ import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores
 import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import type { Theme } from "../../../shared/visualtex-app/src/types/formula";
-import { portableFormulaLatex } from "./DocumentEditor";
+import { portableFormulaLatex } from "../../../shared/visualtex-app/src/document/DocumentEditor";
 
 export const highlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.definitionKeyword, tags.macroName, tags.labelName, tags.heading], color: "var(--syntax-command)" },

@@ -2,6 +2,7 @@
 import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import { Component, Fragment, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
 import "../styles.css";
 import "../styles-macos-main.css";
 import "../styles-editor-parity.css";
@@ -88,7 +89,9 @@ if (!root) throw new Error("Missing VisualTeX Anywhere root element.");
 createRoot(root).render(
   <StrictMode>
     <AnywhereErrorBoundary>
-      <AnywhereApp />
+      <EditorSessionProvider>
+        <AnywhereApp />
+      </EditorSessionProvider>
     </AnywhereErrorBoundary>
   </StrictMode>,
 );

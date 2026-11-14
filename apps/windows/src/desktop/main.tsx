@@ -6,6 +6,7 @@ import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { DesktopApp } from "./DesktopApp";
 import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { VisualTexErrorBoundary } from "../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
+import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
 
 configureOcrTransport(desktopOcrTransport);
 applyDocumentTheme(readSynchronizedTheme());
@@ -15,8 +16,10 @@ if (!root) throw new Error("Missing VisualTeX application root element.");
 
 createRoot(root).render(
   <StrictMode>
-    <VisualTexErrorBoundary>
-      <DesktopApp />
-    </VisualTexErrorBoundary>
+    <EditorSessionProvider>
+      <VisualTexErrorBoundary>
+        <DesktopApp />
+      </VisualTexErrorBoundary>
+    </EditorSessionProvider>
   </StrictMode>,
 );

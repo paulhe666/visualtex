@@ -4,8 +4,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import type { EditorView } from "prosemirror-view";
-import { closeFormula, collapseTransaction, hideSourceMarkers, openFormulaId } from "../../../shared/visualtex-document/src/index.ts";
-import { buildPrintCopy } from "../../../shared/visualtex-app/src/document/printCopy";
+import { closeFormula, collapseTransaction, hideSourceMarkers, openFormulaId } from "../../../visualtex-document/src/index.ts";
+import { buildPrintCopy } from "./printCopy";
 import { PAGE_GAP } from "./DocumentEditor";
 
 const PRINT_WINDOW = "pdf-print";

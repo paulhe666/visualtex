@@ -4,12 +4,12 @@ import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../styles.css";
 import { createRef } from "react";
 import { createRoot } from "react-dom/client";
-import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
-import { DocumentControls, DocumentTextToolbar } from "./DocumentControls";
+import { DocumentEditor, type DocumentEditorHandle } from "../../../shared/visualtex-app/src/document/DocumentEditor";
+import { DocumentControls, DocumentTextToolbar } from "../../../shared/visualtex-app/src/document/DocumentControls";
 import * as documentCore from "../../../shared/visualtex-document/src/index.ts";
 import { sampleDocument } from "../../../shared/visualtex-app/src/document/sampleDocument";
-import { DocumentWorkspace } from "./DocumentWorkspace";
-import type { MathEditorHandle } from "../editor/MathEditor";
+import { DocumentWorkspace } from "../../../shared/visualtex-app/src/document/DocumentWorkspace";
+import type { MathEditorHandle } from "../../../shared/visualtex-app/src/editor/MathEditor";
 import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
 import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
 import { useDocumentLibraryStore } from "../../../shared/visualtex-app/src/document/documentLibraryApi";
@@ -24,20 +24,22 @@ const editor = createRef<DocumentEditorHandle>();
 const workspace = new URLSearchParams(window.location.search).has("workspace");
 const editorHandle = createRef<MathEditorHandle>();
 
-// The workspace's bottom-bar controls above the editor (in the app they sit in the bottom bar).
-createRoot(document.getElementById("root")!).render(
+// The workspace's bottom-bar controls above the editor (in the app they sit in the bottom bar). __docLab.showWorkspace(false)
+// takes the workspace down and (true) puts it back, as leaving document mode for formula mode and coming back does.
+const root = createRoot(document.getElementById("root")!);
+const render = (shown: boolean) => root.render(
   workspace ? (
     <div style={{ background: "#fff", height: "100vh", display: "flex", flexDirection: "column" }}>
       <div className="classic-bottom-workspace-controls lab-controls" style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, padding: "4px 8px", borderBottom: "1px solid #ddd" }}>
         <DocumentControls />
       </div>
       <div className="editor-surface document-editor-surface" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <DocumentWorkspace
+        {shown && <DocumentWorkspace
           editorRef={editorHandle}
           onPasteImage={(file, target) => {
             (window as unknown as Record<string, unknown>).__pastedImage = { name: file.name, type: file.type, target };
           }}
-        />
+        />}
       </div>
     </div>
   ) :
@@ -52,3 +54,5 @@ createRoot(document.getElementById("root")!).render(
     </div>
   </div>,
 );
+render(true);
+(window as unknown as { __docLab: Record<string, unknown> }).__docLab.showWorkspace = render;

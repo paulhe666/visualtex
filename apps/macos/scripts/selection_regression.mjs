@@ -277,8 +277,8 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
   const delayed = await evaluate(`(async () => {
     const React=(await import('/node_modules/.vite/deps/react.js')).default;
     const {createRoot}=(await import('/node_modules/.vite/deps/react-dom_client.js')).default;
-    const {MathEditor}=await import('/src/editor/MathEditor.tsx');
-    const {EditorSessionProvider,useDocumentSession}=await import('/src/history/EditorSession.tsx');
+    const {MathEditor}=await import(${JSON.stringify(sharedSourceUrl("editor/MathEditor.tsx"))});
+    const {EditorSessionProvider,useDocumentSession}=await import(${JSON.stringify(sharedSourceUrl("history/EditorSession.tsx"))});
     const {useEditorStore:store,createFormulaLine:line}=await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
     const wait=()=>new Promise(r=>setTimeout(r,100));
     const ref=React.createRef(),host=document.createElement('div');document.body.append(host);

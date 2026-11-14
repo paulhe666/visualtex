@@ -24,6 +24,7 @@ import {
   useEditorStore,
 } from "../../../../shared/visualtex-app/src/stores/editorStore";
 import { VisualTexErrorBoundary } from "../../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
+import { EditorSessionProvider } from "../../../../shared/visualtex-app/src/history/EditorSession";
 
 configureOcrTransport(officeOcrTransport);
 installFloatingLayerAutoAvoidance();
@@ -49,18 +50,20 @@ function mount() {
   const runtime = new URLSearchParams(window.location.search).get("runtime");
   createRoot(root).render(
     <StrictMode>
-      <VisualTexErrorBoundary
-        title="VisualTeX Office 编辑器加载失败"
-        description="Office 编辑器加载失败。"
-        logContext="VisualTeX Office dialog crashed"
-        enableSafeRestart={false}
-      >
-        {runtime === "vsto-bulk-import" ? (
-          <DocumentImportApp />
-        ) : (
-          <OfficeDialogApp />
-        )}
-      </VisualTexErrorBoundary>
+      <EditorSessionProvider>
+        <VisualTexErrorBoundary
+          title="VisualTeX Office 编辑器加载失败"
+          description="Office 编辑器加载失败。"
+          logContext="VisualTeX Office dialog crashed"
+          enableSafeRestart={false}
+        >
+          {runtime === "vsto-bulk-import" ? (
+            <DocumentImportApp />
+          ) : (
+            <OfficeDialogApp />
+          )}
+        </VisualTexErrorBoundary>
+      </EditorSessionProvider>
     </StrictMode>,
   );
 }

@@ -42,32 +42,32 @@ import {
   imageFiles,
   insertImagesAtSelection,
   registerImageFile,
-} from "../../../shared/visualtex-document/src/index.ts";
+} from "../../../visualtex-document/src/index.ts";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { cachedPreviewMarkup } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { convertVisualTexLatexToFieldMarkup } from "../../../shared/visualtex-app/src/editor/mathLiveIntegralCompatibility";
-import { markVisualTexFormulaFontGlyphs } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
-import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { getCustomSymbolRevision, subscribeCustomSymbols } from "../../../shared/visualtex-app/src/math/customSymbolRegistry";
+import { cachedPreviewMarkup } from "../components/MathPreview";
+import { convertVisualTexLatexToFieldMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
+import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
+import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customSymbolRegistry";
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
-import { stripVisualTexAlignmentMarkers } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
-import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import { normalizeChineseLatexAsWritten } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { ContextMenu, type ContextMenuState } from "../../../shared/visualtex-app/src/document/MathchaChrome";
-import { useDocumentEditorStore } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { useDocumentFormatStore } from "../../../shared/visualtex-app/src/stores/documentFormatStore";
-import { CommandMenu } from "../../../shared/visualtex-app/src/document/CommandMenu";
-import { LinkDialog } from "../../../shared/visualtex-app/src/document/LinkDialog";
-import { FootnoteDialog } from "../../../shared/visualtex-app/src/document/FootnoteDialog";
-import { CitationPicker } from "../../../shared/visualtex-app/src/document/CitationPicker";
-import { MarginGuides } from "../../../shared/visualtex-app/src/document/MarginGuides";
+import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
+import { useEditorStore } from "../stores/editorStore";
+import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
+import { useDocumentEditorStore } from "../stores/documentEditorStore";
+import { useDocumentFormatStore } from "../stores/documentFormatStore";
+import { CommandMenu } from "./CommandMenu";
+import { LinkDialog } from "./LinkDialog";
+import { FootnoteDialog } from "./FootnoteDialog";
+import { CitationPicker } from "./CitationPicker";
+import { MarginGuides } from "./MarginGuides";
 import { createPortal } from "react-dom";
 import { documentMathCommands } from "./documentMathCommands";
-import { codeHighlighter } from "../../../shared/visualtex-app/src/document/codeHighlighter";
-import { drawDiagram } from "../../../shared/visualtex-app/src/document/diagrams";
-import "../../../shared/visualtex-app/src/document/document.css";
+import { codeHighlighter } from "./codeHighlighter";
+import { drawDiagram } from "./diagrams";
+import "./document.css";
 
 /** Mathcha's defaults (MATHCHA-SPEC.md): text 15px, formulas 17px, at zoom 1. */
 export const DOCUMENT_TEXT_SIZE = 15;

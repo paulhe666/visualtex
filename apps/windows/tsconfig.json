@@ -20,6 +20,7 @@
       "react": ["./node_modules/@types/react"],
       "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
       "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/client": ["./node_modules/@types/react-dom/client"],
       "lucide-react": ["./node_modules/lucide-react"],
       "prosemirror-*": ["./node_modules/prosemirror-*"],
       "markdown-it": ["./node_modules/@types/markdown-it"],

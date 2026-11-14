@@ -3,7 +3,7 @@ import type { QuickOcrCaptureMode } from "../ocr/quickOcr";
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
-} from "../editor/MathEditor";
+} from "../../../shared/visualtex-app/src/editor/MathEditor";
 import type { ReplaceDocumentEntry } from "../../../shared/visualtex-app/src/history/historyTypes";
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 

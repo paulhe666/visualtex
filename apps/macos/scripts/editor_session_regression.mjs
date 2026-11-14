@@ -64,9 +64,9 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
 
   const transaction = await evaluate(`(async () => {
     const { useEditorStore: store, createFormulaLine } = await import(${JSON.stringify(sharedSourceUrl("stores/editorStore.ts"))});
-    const { HistoryManager } = await import('/src/history/HistoryManager.ts');
+    const { HistoryManager } = await import(${JSON.stringify(sharedSourceUrl("history/HistoryManager.ts"))});
     const { commitFormulaEdit, applyHistoryEntryToEditor, getEditorDocumentSnapshot } =
-      await import('/src/history/documentHistory.ts');
+      await import(${JSON.stringify(sharedSourceUrl("history/documentHistory.ts"))});
     store.setState({ lines: [createFormulaLine('a', 'one'), createFormulaLine('b', 'two')], activeLineId: 'one' });
     const history = new HistoryManager();
     history.configure({ getDocumentSnapshot: getEditorDocumentSnapshot, applyEntry: applyHistoryEntryToEditor });

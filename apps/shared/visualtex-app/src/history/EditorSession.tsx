@@ -6,9 +6,9 @@ import { flushSync } from "react-dom";
 import { HistoryManager } from "./HistoryManager";
 import { documentSnapshotsEquivalent } from "./documentSnapshot";
 import { applyHistoryEntryToEditor, getEditorDocumentSnapshot } from "./documentHistory";
-import type { FormulaDocument } from "../../../shared/visualtex-app/src/types/formula";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import type { DocumentSnapshot, MathSelectionSnapshot, ReplaceDocumentEntry } from "../../../shared/visualtex-app/src/history/historyTypes";
+import type { FormulaDocument } from "../types/formula";
+import { useEditorStore } from "../stores/editorStore";
+import type { DocumentSnapshot, MathSelectionSnapshot, ReplaceDocumentEntry } from "./historyTypes";
 
 const HistoryContext = createContext<HistoryManager | null>(null);
 

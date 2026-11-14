@@ -11,27 +11,27 @@ import {
   type FormulaKey,
   type FormulaSelection,
   type FormulaSessionCallbacks,
-} from "../../../shared/visualtex-document/src/index.ts";
+} from "../../../visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
-import { normalizeChineseLatex } from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
-import { configureMathLiveCompletion } from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";
-import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { topLevelStop } from "../../../shared/visualtex-app/src/editor/rowPointer";
-import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../../shared/visualtex-app/src/editor/alignmentMarkers";
+import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
+import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
+import { topLevelStop } from "../editor/rowPointer";
+import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
 import {
   collapseMathLiveSelectionToEnd,
   insertMathLiveAlignmentPoint,
   insertMathLiveRowBreak,
   moveMathLiveToNextColumn,
   toggleMathLiveSelectionStyle,
-} from "../../../shared/visualtex-app/src/editor/mathLiveKernelCommands";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { useFormulaHotkeyStore } from "../../../shared/visualtex-app/src/stores/formulaHotkeyStore";
-import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../../../shared/visualtex-app/src/shortcuts/formulaHotkeys";
-import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../../../shared/visualtex-app/src/shortcuts/greekLetterHotkeys";
-import type { LatexCommand } from "../../../shared/visualtex-app/src/types/command";
+} from "../editor/mathLiveKernelCommands";
+import { useEditorStore } from "../stores/editorStore";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { matchFormulaHotkey, resolveFormulaHotkeyCommand } from "../shortcuts/formulaHotkeys";
+import { greekLetterHotkeyCommandFromEvent, isGreekLetterHotkeyPrefix } from "../shortcuts/greekLetterHotkeys";
+import type { LatexCommand } from "../types/command";
 import { insertCommandIntoFormula } from "./formulaInsert";
-import { setOpenDocumentFormula } from "../../../shared/visualtex-app/src/document/openDocumentFormula";
+import { setOpenDocumentFormula } from "./openDocumentFormula";
 
 /** The row editor's formula size is 54px x zoom. */
 const ROW_FORMULA_FONT_SIZE = 54;

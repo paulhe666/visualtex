@@ -1,6 +1,6 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentModeStore } from "../../shared/visualtex-app/src/stores/documentModeStore";
-import { DocumentHistoryButtons } from "./document/DocumentControls";
+import { DocumentHistoryButtons } from "../../shared/visualtex-app/src/document/DocumentControls";
 import { useDocumentLibraryStore } from "../../shared/visualtex-app/src/document/documentLibraryApi";
 import { installMcpRenderBridge } from "./office/shared/mcpRenderBridge";
 import {
@@ -49,7 +49,7 @@ import {
 import {
   type MathEditorHandle,
   type MathEditorInsertionTarget,
-} from "./editor/MathEditor";
+} from "../../shared/visualtex-app/src/editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
@@ -78,11 +78,11 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "../../shared/visualtex-app/src/stores/editorStore";
-import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "./history/EditorSession";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../shared/visualtex-app/src/history/EditorSession";
 import {
   createBlankDocumentSnapshot,
   reconcileFormulaLines,
-} from "./history/documentHistory";
+} from "../../shared/visualtex-app/src/history/documentHistory";
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   EDIT_GROUP_TIMEOUT_MS,
   HistoryManager,
-} from "../src/history/HistoryManager";
+} from "../../shared/visualtex-app/src/history/HistoryManager";
 import type {
   DocumentSnapshot,
   HistoryEntry,

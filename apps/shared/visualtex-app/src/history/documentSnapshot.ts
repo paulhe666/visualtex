@@ -1,4 +1,4 @@
-import type { DocumentSnapshot, MathSelectionSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
+import type { DocumentSnapshot, MathSelectionSnapshot } from "./historyTypes";
 
 export function cloneSelection(selection: MathSelectionSnapshot): MathSelectionSnapshot {
   return {

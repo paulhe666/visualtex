@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
+import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../../../shared/visualtex-app/src/editor/MathEditor";
 import {
   editingModelOf,
   redrawOpenFormulas,
@@ -8,7 +8,7 @@ import {
   setFormulaLineLayout,
   visualTexEditingCore,
 } from "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
-import { useHistoryManager } from "../history/EditorSession";
+import { useHistoryManager } from "../../../shared/visualtex-app/src/history/EditorSession";
 import type { DocumentSnapshot } from "../../../shared/visualtex-app/src/history/historyTypes";
 import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { applyDocumentTheme } from "../../../shared/visualtex-app/src/themeSync";

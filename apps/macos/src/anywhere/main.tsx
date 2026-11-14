@@ -1,6 +1,6 @@
 import { Component, Fragment, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { EditorSessionProvider } from "../history/EditorSession";
+import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
 // formulas are laid out by the shared engine; installed before any math field exists
 import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
 import "../styles.css";

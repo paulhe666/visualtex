@@ -31,15 +31,7 @@ import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,
 } from "../../workspace/workspacePanelPreferences";
-import {
-  historyManager,
-  useHistorySnapshot,
-} from "../../history/HistoryManager";
-import {
-  applyHistoryEntryToEditor,
-  documentSnapshotsEquivalent,
-  getEditorDocumentSnapshot,
-} from "../../history/documentHistory";
+import { useDocumentSession, useHistoryManager, useHistorySnapshot } from "../../../../shared/visualtex-app/src/history/EditorSession";
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
@@ -60,7 +52,7 @@ import type {
 import type {
   MathEditorHandle,
   MathEditorInsertionTarget,
-} from "../../editor/MathEditor";
+} from "../../../../shared/visualtex-app/src/editor/MathEditor";
 import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import {
   normalizeFormulaLetterFont,
@@ -450,6 +442,8 @@ function documentFingerprint(
 
 export function OfficeDialogApp() {
   const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  const { replaceDocumentWithHistory } = useDocumentSession(editorRef);
   const loadedSessionIdRef = useRef("");
   const skipAutosaveForSessionRef = useRef("");
   const originalFingerprintRef = useRef("");
@@ -470,7 +464,6 @@ export function OfficeDialogApp() {
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     readWorkspacePanelOpen("office-edit", "tiles", window.innerWidth >= 1040),
   );
-  const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
   const [objectMode, setObjectMode] = useState<OfficeObjectMode>("nativeOle");
@@ -854,69 +847,6 @@ export function OfficeDialogApp() {
       stopActivationRepair();
     };
   }, [session?.id]);
-
-  const captureSnapshot = useCallback(
-    (): DocumentSnapshot =>
-      getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
-    [],
-  );
-
-  const restoreSnapshotFocus = useCallback((snapshot: DocumentSnapshot) => {
-    const lineId = snapshot.activeLineId;
-    if (!lineId) return;
-    const line = snapshot.lines.find((item) => item.id === lineId);
-    if (!line) return;
-    void editorRef.current?.restoreSelection(
-      lineId,
-      line.latex,
-      snapshot.selectionByLineId[lineId] ?? null,
-    );
-  }, []);
-
-  const replaceDocumentWithHistory = useCallback(
-    (
-      after: DocumentSnapshot,
-      source: ReplaceDocumentEntry["source"],
-    ) => {
-      historyManager.commitPendingTransaction();
-      const before = captureSnapshot();
-      if (documentSnapshotsEquivalent(before, after)) return false;
-      useEditorStore.getState().replaceDocumentState(after);
-      historyManager.push({
-        type: "replace-document",
-        before,
-        after,
-        source,
-        timestamp: Date.now(),
-      });
-      window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-      return true;
-    },
-    [captureSnapshot, restoreSnapshotFocus],
-  );
-
-  useEffect(() => {
-    historyManager.configure({
-      getDocumentSnapshot: captureSnapshot,
-      applyEntry: async (entry, direction) => {
-        const target = applyHistoryEntryToEditor(entry, direction);
-        if (!target) return;
-        if (
-          entry.type === "add-line" ||
-          entry.type === "remove-line" ||
-          entry.type === "replace-document"
-        ) {
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        }
-        await editorRef.current?.restoreSelection(
-          target.lineId,
-          target.latex,
-          target.selection,
-        );
-      },
-    });
-    return () => historyManager.configure(null);
-  }, [captureSnapshot]);
 
   const currentRenderedLatex = useMemo(
     () =>
@@ -2569,7 +2499,7 @@ export function OfficeDialogApp() {
         aria-label={isEn ? "Undo" : "撤销"}
         title={isEn ? "Undo" : "撤销"}
         onClick={() => historyManager.requestUndo()}
-        disabled={historyBusy || !historyState.canUndo || historyState.isReplaying}
+        disabled={!historyState.canUndo || historyState.isReplaying}
       >
         <Undo2 size={16} strokeWidth={2} />
       </button>
@@ -2580,7 +2510,7 @@ export function OfficeDialogApp() {
         aria-label={isEn ? "Redo" : "重做"}
         title={isEn ? "Redo" : "重做"}
         onClick={() => historyManager.requestRedo()}
-        disabled={historyBusy || !historyState.canRedo || historyState.isReplaying}
+        disabled={!historyState.canRedo || historyState.isReplaying}
       >
         <Redo2 size={16} strokeWidth={2} />
       </button>
@@ -2627,7 +2557,6 @@ export function OfficeDialogApp() {
         editorInstanceKey={session.id}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={handleSidebarOpenChange}
-        onHistoryBusyChange={setHistoryBusy}
         onPasteImage={handleEditorImagePaste}
         onQuickOcr={() => void handleQuickOcr()}
         onCopy={handleCopy}
