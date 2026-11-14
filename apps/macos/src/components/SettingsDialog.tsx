@@ -42,7 +42,7 @@ import {
   useEditorStore,
 } from "../../../shared/visualtex-app/src/stores/editorStore";
 import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
+import { FormulaSpacingSettings } from "../../../shared/visualtex-app/src/components/FormulaSpacingSettings";
 import { AgentSettings, OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 import { KeyboardShortcutsPanel } from "./FormulaHotkeyManagerDialog";
 import { pngExportBackgroundPickerValue } from "../../../shared/visualtex-app/src/export/pngBackground";

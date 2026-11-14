@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Search, X } from "lucide-react";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
+import { MathPreview } from "../components/MathPreview";
 import {
   formulaTileLevelLabels,
   formulaTileLibrary,
@@ -9,7 +9,7 @@ import {
   formulaTileSubjects,
   type FormulaTileLibraryGroup,
   type FormulaTileSubject,
-} from "../../../shared/visualtex-app/src/toolbar/formulaTileLibrary";
+} from "./formulaTileLibrary";
 
 // Long formulas get a double-width card so they stay readable.
 const wideFormulaLength = 72;

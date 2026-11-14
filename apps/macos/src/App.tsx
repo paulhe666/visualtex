@@ -51,7 +51,7 @@ import {
   type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { HistoryPanel } from "./components/HistoryPanel";
+import { HistoryPanel } from "../../shared/visualtex-app/src/components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";

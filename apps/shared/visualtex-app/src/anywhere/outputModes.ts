@@ -13,10 +13,10 @@
  * The mode is remembered per application (a chat keeps Image, an AI chat
  * keeps Source). The export path (MathJax) loads when a mode needs it.
  */
-import { formatFormulaLinesUniversal } from "../../../shared/visualtex-app/src/clipboard/LatexCopyService";
-import { toPortableBoldLatex } from "../../../shared/visualtex-app/src/clipboard/portableBoldLatex";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import type { UnicodeMath } from "../../../shared/visualtex-app/src/anywhere/unicodeMath";
+import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { useEditorStore } from "../stores/editorStore";
+import type { UnicodeMath } from "./unicodeMath";
 
 export type AnywhereOutputMode = "source" | "markdown" | "unicode" | "image";
 
@@ -101,15 +101,15 @@ export function nextOutputMode(mode: AnywhereOutputMode): AnywhereOutputMode {
 /** Loads what a mode needs before Return (the export path for Unicode and
  *  Image takes a moment the first time). */
 export function warmOutputMode(mode: AnywhereOutputMode) {
-  if (mode === "unicode") void import("../../../shared/visualtex-app/src/export/runtime");
-  if (mode === "image") void import("../../../shared/visualtex-app/src/export/pngClipboard");
+  if (mode === "unicode") void import("../export/runtime");
+  if (mode === "image") void import("../export/pngClipboard");
 }
 
 /** The formula (its rows' LaTeX) as Unicode text. */
 export async function formulaUnicode(rows: readonly string[]): Promise<UnicodeMath> {
   const [{ latexToMathMlSync }, { mathMlToUnicode }] = await Promise.all([
-    import("../../../shared/visualtex-app/src/export/runtime"),
-    import("../../../shared/visualtex-app/src/anywhere/unicodeMath"),
+    import("../export/runtime"),
+    import("./unicodeMath"),
   ]);
   const notes = new Set<string>();
   const texts = rows
@@ -139,7 +139,7 @@ export function opaqueHex(color?: string | null) {
  *  a dark chat), so it looks the same to whoever sees it in either theme;
  *  otherwise the main window's image settings. */
 export async function formulaPng(rows: readonly string[], field?: FieldColors | null): Promise<string> {
-  const { renderFormulaDocumentPng } = await import("../../../shared/visualtex-app/src/export/pngClipboard");
+  const { renderFormulaDocumentPng } = await import("../export/pngClipboard");
   const { pngExportBackground, formulaLetterFont, formulaChineseFont } = useEditorStore.getState();
   const png = await renderFormulaDocumentPng(rows, {
     background: field ? (field.background as `#${string}`) : pngExportBackground,

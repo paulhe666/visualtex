@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
+import { MathPreview } from "./MathPreview";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,14 +15,14 @@ import {
   MousePointerClick,
   Search,
 } from "lucide-react";
-import type { InputBehaviorSettingKey } from "../../../shared/visualtex-app/src/types/formula";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
+import type { InputBehaviorSettingKey } from "../types/formula";
+import { useEditorStore } from "../stores/editorStore";
 import {
   visualTexAutoEscapeInlineShortcuts,
   visualTexAutoEscapeShortcutGroups,
   type VisualTexInlineShortcutDefinition,
   type VisualTexInlineShortcutDefinitions,
-} from "../../../shared/visualtex-app/src/editor/normalizeChineseLatex";
+} from "../editor/normalizeChineseLatex";
 
 interface InputBehaviorOption {
   key: InputBehaviorSettingKey;

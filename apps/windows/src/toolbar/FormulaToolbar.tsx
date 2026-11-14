@@ -33,7 +33,7 @@ import {
   commandRegistry,
 } from "../../../shared/visualtex-app/src/autocomplete/commandRegistry";
 import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
+import { FormulaTileLibraryDialog } from "../../../shared/visualtex-app/src/toolbar/FormulaTileLibraryDialog";
 import {
   defaultCommonFormulaTileIds,
   formulaTileLibraryById,

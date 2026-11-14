@@ -30,7 +30,7 @@ import {
   rememberOutputMode,
   warmOutputMode,
   type AnywhereOutputMode,
-} from "./outputModes";
+} from "../../../shared/visualtex-app/src/anywhere/outputModes";
 import {
   ANYWHERE_ACTIVATE_EVENT,
   ANYWHERE_COMPOSE_EVENT,

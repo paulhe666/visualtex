@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ChevronRight, RotateCcw, Ruler } from "lucide-react";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
-import { activeFormulaSpacingConfig, resetActiveSpacing } from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
-import { FORMULA_LETTER_FONT_OPTIONS } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import { useEditorStore } from "../stores/editorStore";
+import { activeFormulaSpacingConfig, resetActiveSpacing } from "../editor/formulaSpacingPreferences";
+import { FORMULA_LETTER_FONT_OPTIONS } from "../editor/formulaFontPreferences";
 import { FormulaSpacingStudio } from "./FormulaSpacingStudio";
 
 /**
@@ -31,11 +31,11 @@ export function FormulaSpacingSettings({ isEn }: { isEn: boolean }) {
           <strong id="formula-spacing-customization-title">
             {isEn ? "Formula spacing" : "公式间距"}
           </strong>
-          <small data-formula-spacing-summary>
+          <span className="setting-value" data-formula-spacing-summary>
             {isEn
               ? `${fontLabel} · ${configName} · ${adjusted ? `${adjusted} adjusted` : "LaTeX's spacing"}`
               : `${fontLabel} · ${configName} · ${adjusted ? `已调整 ${adjusted} 项` : "LaTeX 标准间距"}`}
-          </small>
+          </span>
         </div>
         <button
           type="button"

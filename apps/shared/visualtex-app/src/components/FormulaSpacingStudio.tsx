@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, X } from "lucide-react";
-import { MathPreview } from "../../../shared/visualtex-app/src/components/MathPreview";
-import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorStore";
+import { MathPreview } from "./MathPreview";
+import { useEditorStore } from "../stores/editorStore";
 import {
   SPACING_DEFINITIONS,
   spacingPercent,
   type SpacingDefinition,
   type SpacingKey,
-} from "../../../shared/tex-layout/src/spacing.ts";
+} from "../../../tex-layout/src/spacing.ts";
 import {
   FORMULA_SPACING_MAX_CONFIGS,
   activeFormulaSpacingConfig,
@@ -18,8 +18,7 @@ import {
   saveSpacingConfigAs,
   selectSpacingConfig,
   setSpacingValue,
-} from "../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
-import { FORMULA_LETTER_FONT_OPTIONS } from "../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+} from "../editor/formulaSpacingPreferences";
 
 export const SPACING_GROUP_LABELS: Record<SpacingDefinition["group"], [string, string]> = {
   scripts: ["Superscripts and subscripts", "上下标"],
@@ -140,7 +139,6 @@ export function FormulaSpacingStudio({ isEn, onClose }: { isEn: boolean; onClose
   const specimenRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const fontLabel = FORMULA_LETTER_FONT_OPTIONS.find((o) => o.id === font)?.label ?? font;
   const state = spacing[font];
   const active = activeFormulaSpacingConfig(spacing, font);
   const nameOf = (name: string) => name || (isEn ? "Default" : "默认");
@@ -238,7 +236,6 @@ export function FormulaSpacingStudio({ isEn, onClose }: { isEn: boolean; onClose
             <span className="eyebrow">SPACING</span>
             <h2 id="formula-spacing-studio-title">
               {isEn ? "Formula spacing" : "公式间距"}
-              <small>{isEn ? `${fontLabel} · % of LaTeX spacing` : `${fontLabel} · 相对 LaTeX 标准间距（%）`}</small>
             </h2>
           </div>
           <button

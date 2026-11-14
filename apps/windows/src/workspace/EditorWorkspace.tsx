@@ -44,7 +44,7 @@ import { DocumentSourceView } from "../document/DocumentSourceView";
 import { DOCUMENT_COPY_MARKDOWN_EVENT } from "../../../shared/visualtex-app/src/document/documentEvents";
 import { useDocumentModeStore } from "../../../shared/visualtex-app/src/stores/documentModeStore";
 import { documentCounts, stepDocumentZoom, useDocumentEditorStore, DOCUMENT_ZOOMS } from "../../../shared/visualtex-app/src/stores/documentEditorStore";
-import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { InputBehaviorMenu } from "../../../shared/visualtex-app/src/components/InputBehaviorMenu";
 import { trackHorizontalOverflow } from "../../../shared/visualtex-app/src/runtime/horizontalOverflowState";
 import { trackPriorityCollapse } from "../../../shared/visualtex-app/src/runtime/priorityCollapse";
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
