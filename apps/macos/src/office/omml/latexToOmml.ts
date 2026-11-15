@@ -164,7 +164,7 @@ const ACCENT_CHARACTERS = new Set([
   "̈",
 ]);
 const STRETCHY_ARROW_CHARACTERS = new Set(["→", "←", "↔"]);
-// Windows' Word writer (WordOmmlConverter.NormalizeMathMlAccents) makes every
+// Windows' Word writer (WordOmmlFromMathMl.NormalizeMathMlAccents) makes every
 // arrow mark Word's own accent object with the combining arrow: \vec{F},
 // \vec{AB} and \overrightarrow{AB} alike, unless MathML says accent="false".
 const WORD_ARROW_ACCENTS = new Map([

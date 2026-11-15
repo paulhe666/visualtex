@@ -38,7 +38,7 @@ pub(crate) fn prepare_mathml_for_table_cell(mathml: &str) -> Result<String, Stri
     prep::cell_math::prepare(mathml)
 }
 
-/// WordOmmlConverter.BuildWordNativeNumberedOmml.
+/// WordOmmlEquationNumbers.BuildWordNativeNumberedOmml.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_word_native_numbered_omml(
     semantic_omml: &str,

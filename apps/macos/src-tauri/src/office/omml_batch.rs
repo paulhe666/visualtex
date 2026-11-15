@@ -297,7 +297,7 @@ fn parse_xml(value: &str) -> Result<XmlNode, String> {
 // Equation format v2 (docs/equation-format-v2.md): the Word add-in decides a
 // number's context (label, heading prefix, restart) from the document and asks
 // the app for the finished numbered equations, built by the shared writer
-// (WordOmmlConverter.BuildWordNativeNumberedOmml on Windows). One package holds
+// (WordOmmlEquationNumbers.BuildWordNativeNumberedOmml on Windows). One package holds
 // every requested equation, one paragraph each; the add-in inserts it or
 // copies the number slots out of it.
 //

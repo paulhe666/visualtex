@@ -1,5 +1,5 @@
 //! Port of WordOmmlConverter.TransformOmmlToMathMl and the recovery passes it
-//! runs over the projection (WordOmmlConverter.cs).
+//! runs over the projection (WordOmmlConverter.cs, WordOmmlToMathMl.cs).
 
 use super::contracts::{find_omml_space_text, maximum_omml_space_text_length, normalize_color, resolve_effective_variant};
 use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS};

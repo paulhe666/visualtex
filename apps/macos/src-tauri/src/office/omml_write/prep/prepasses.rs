@@ -34,18 +34,18 @@ use crate::office::omml_write::prep::xlinq::{
     replace_with, BLOCK_READER, PREPASS_READER, XDOCUMENT_PARSE_PRESERVE,
 };
 
-/// WordOmmlConverter.NaryCharacters.
+/// WordOmmlFromMathMl.NaryCharacters.
 pub const NARY_CHARACTERS: &str =
     "\u{2211}\u{220F}\u{2210}\u{222B}\u{222C}\u{222D}\u{222E}\u{222F}\u{2230}\u{2231}\u{2232}\u{2233}\u{2A0B}\u{2A0C}\u{2A0D}\u{2A0E}\u{2A0F}\u{2A10}\u{2A11}\u{2A12}\u{2A13}\u{2A14}\u{2A15}\u{2A16}\u{2A17}\u{2A18}\u{2A19}\u{2A1A}\u{2A1B}\u{2A1C}\u{22C0}\u{22C1}\u{22C2}\u{22C3}";
 
-/// WordOmmlConverter.ExtendedIntegralCharacters.
+/// WordOmmlFromMathMl.ExtendedIntegralCharacters.
 pub const EXTENDED_INTEGRAL_CHARACTERS: &str =
     "\u{222F}\u{2230}\u{2231}\u{2232}\u{2233}\u{2A0B}\u{2A0C}\u{2A0D}\u{2A0E}\u{2A0F}\u{2A10}\u{2A11}\u{2A12}\u{2A13}\u{2A14}\u{2A15}\u{2A16}\u{2A17}\u{2A18}\u{2A19}\u{2A1A}\u{2A1B}\u{2A1C}";
 
-/// WordOmmlConverter.OmmlSpaceTextAttribute.
+/// WordOmmlFromMathMl.OmmlSpaceTextAttribute.
 pub const OMML_SPACE_TEXT_ATTRIBUTE: &str = "data-visualtex-omml-space";
 
-/// WordOmmlConverter.OmmlRunRoleAttribute.
+/// WordOmmlFromMathMl.OmmlRunRoleAttribute.
 pub const OMML_RUN_ROLE_ATTRIBUTE: &str = "data-visualtex-omml-run-role";
 
 fn is_nary_character(c: char) -> bool {
@@ -94,7 +94,7 @@ fn text_is_significant(doc: &Doc, node: NodeId) -> bool {
 
 // ---- ValidateMathMlForOmml ------------------------------------------------------
 
-/// WordOmmlConverter.ValidateMathMlForOmml.
+/// WordOmmlFromMathMl.ValidateMathMlForOmml.
 pub fn validate_mathml_for_omml(mathml: &str) -> Result<(), String> {
     let document = parse(mathml, &formula_reader("MathML"))?;
     if !document.root().is_some_and(|root| is_mathml(&document.doc, root, "math")) {
@@ -108,7 +108,7 @@ pub fn validate_mathml_for_omml(mathml: &str) -> Result<(), String> {
 
 // ---- s01 NormalizeMathTypeBinomialPiles -------------------------------------------
 
-/// WordOmmlConverter.NormalizeMathTypeBinomialPiles.
+/// WordOmmlFromMathMl.NormalizeMathTypeBinomialPiles.
 pub fn normalize_math_type_binomial_piles(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) || !contains_ignore_case(mathml, "data-mtef-pile") {
         return Ok(mathml.to_string());
@@ -146,7 +146,7 @@ pub fn normalize_math_type_binomial_piles(mathml: &str) -> Result<String, String
 
 // ---- s02 NormalizeMathJaxBinomialDelimiters -----------------------------------------
 
-/// WordOmmlConverter.NormalizeMathJaxBinomialDelimiters.
+/// WordOmmlFromMathMl.NormalizeMathJaxBinomialDelimiters.
 pub fn normalize_mathjax_binomial_delimiters(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) || !mathml.contains("linethickness") {
         return Ok(mathml.to_string());
@@ -195,7 +195,7 @@ pub fn normalize_mathjax_binomial_delimiters(mathml: &str) -> Result<String, Str
 
 // ---- s03 NormalizePlainBracketPairs ---------------------------------------------------
 
-/// WordOmmlConverter.AdaptiveBracketPairs.
+/// WordOmmlFromMathMl.AdaptiveBracketPairs.
 const ADAPTIVE_BRACKET_PAIRS: &[(&str, &str)] = &[
     ("(", ")"),
     ("[", "]"),
@@ -333,7 +333,7 @@ fn build_brackets(
     Ok(result)
 }
 
-/// WordOmmlConverter.NormalizePlainBracketPairs.
+/// WordOmmlFromMathMl.NormalizePlainBracketPairs.
 pub fn normalize_plain_bracket_pairs(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
@@ -398,7 +398,7 @@ fn is_legacy_table_fence(doc: &Doc, element: NodeId, expected_tex_class: &str) -
     FALLBACK_FENCE_CHARACTERS.contains(&doc.value(element).as_str())
 }
 
-/// WordOmmlConverter.NormalizeFencedMathMlTables.
+/// WordOmmlFromMathMl.NormalizeFencedMathMlTables.
 pub fn normalize_fenced_mathml_tables(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) || !mathml.contains("mrow") {
         return Ok(mathml.to_string());
@@ -474,7 +474,7 @@ fn is_only_content_of_outer_script_argument(doc: &Doc, candidate: NodeId) -> boo
     false
 }
 
-/// WordOmmlConverter.NormalizeNestedEmptyBaseScripts.
+/// WordOmmlFromMathMl.NormalizeNestedEmptyBaseScripts.
 pub fn normalize_nested_empty_base_scripts(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
@@ -510,7 +510,7 @@ fn is_empty_base(doc: &Doc, element: NodeId) -> bool {
         && doc.elements(element).iter().all(|&child| is_empty_base(doc, child))
 }
 
-/// WordOmmlConverter.NormalizeMathMlPrescripts.
+/// WordOmmlFromMathMl.NormalizeMathMlPrescripts.
 pub fn normalize_mathml_prescripts(mathml: &str) -> Result<String, String> {
     const SEQUENCE_NAMES: &[&str] = &["math", "mrow", "mstyle", "mtd", "msqrt", "mphantom", "mpadded", "menclose"];
     const BASE_NAMES: &[&str] = &[
@@ -588,7 +588,7 @@ fn accent_character(source: &str) -> Option<&'static str> {
     })
 }
 
-/// WordOmmlConverter.NormalizeMathMlAccents.
+/// WordOmmlFromMathMl.NormalizeMathMlAccents.
 pub fn normalize_mathml_accents(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
@@ -632,7 +632,7 @@ fn is_nary_limit(doc: &Doc, element: NodeId) -> bool {
         .is_some_and(|&op| is_mathml(doc, op, "mo") && is_nary_text(&doc.value(op)))
 }
 
-/// WordOmmlConverter.NormalizeNaryArguments.
+/// WordOmmlFromMathMl.NormalizeNaryArguments.
 pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
@@ -737,7 +737,7 @@ pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
 
 // ---- s09 NormalizeMathMlTokenStyleAuthority ------------------------------------------------
 
-/// WordOmmlConverter.NormalizeMathMlTokenStyleAuthority.
+/// WordOmmlFromMathMl.NormalizeMathMlTokenStyleAuthority.
 pub fn normalize_mathml_token_style_authority(mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
@@ -783,7 +783,7 @@ pub fn materialize_inherited_colors(mathml: &str) -> Result<String, String> {
 
 // ---- s11 ProjectMathMlSpacesForOmml ---------------------------------------------------------
 
-/// WordOmmlConverter.ProjectMathMlSpacesForOmml: (MathML, capabilities).
+/// WordOmmlFromMathMl.ProjectMathMlSpacesForOmml: (MathML, capabilities).
 pub fn project_mathml_spaces_for_omml(mathml: &str) -> Result<(String, Vec<MathSpaceOmmlCapability>), String> {
     if !mathml.contains("mspace") {
         return Ok((mathml.to_string(), Vec::new()));
@@ -813,7 +813,7 @@ pub fn project_mathml_spaces_for_omml(mathml: &str) -> Result<(String, Vec<MathS
 
 // ---- s12 ReplaceExtendedIntegralsWithOfficePlaceholders -------------------------------------
 
-/// WordOmmlConverter.ReplaceExtendedIntegralsWithOfficePlaceholders:
+/// WordOmmlFromMathMl.ReplaceExtendedIntegralsWithOfficePlaceholders:
 /// (MathML, the n-ary characters in document order).
 pub fn replace_extended_integrals_with_office_placeholders(mathml: &str) -> Result<(String, Vec<String>), String> {
     if is_null_or_white_space(mathml) {
@@ -841,7 +841,7 @@ pub fn replace_extended_integrals_with_office_placeholders(mathml: &str) -> Resu
 
 // ---- IsBlockMathMl ------------------------------------------------------------------------------
 
-/// WordOmmlConverter.IsBlockMathMl: display="block" on the root
+/// WordOmmlFromMathMl.IsBlockMathMl: display="block" on the root
 /// (OrdinalIgnoreCase); false whenever the MathML cannot be read.
 pub fn is_block_mathml(mathml: &str) -> bool {
     match parse(mathml, &BLOCK_READER) {

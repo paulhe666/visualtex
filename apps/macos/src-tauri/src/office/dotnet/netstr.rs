@@ -245,7 +245,7 @@ pub fn first_is_math_symbol(value: &str) -> bool {
     value.chars().next().is_some_and(is_math_symbol)
 }
 
-/// WordOmmlConverter.ContainsUnicodeLetter: any code point (surrogate pairs
+/// WordOmmlFingerprints.ContainsUnicodeLetter: any code point (surrogate pairs
 /// read as one, CharUnicodeInfo.GetUnicodeCategory(string, int)) whose
 /// category is Lu, Ll, Lt, Lm, Lo or Nl.
 pub fn contains_unicode_letter(value: &str) -> bool {

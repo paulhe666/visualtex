@@ -327,7 +327,7 @@ async function main() {
       "Hat accents must not use a caret that touches the base glyph.",
     );
     // Arrows are Word's own accent object with the combining arrow, as the
-    // Windows writer produces them (WordOmmlConverter.NormalizeMathMlAccents).
+    // Windows writer produces them (WordOmmlFromMathMl.NormalizeMathMlAccents).
     expectIncludes(
       shortVectorAndHats,
       '<m:chr m:val="\u20d7"/>',

@@ -1,8 +1,8 @@
-//! Port of the WordOmmlConverter.cs passes that run after the MathML
+//! Port of the WordOmmlFromMathMl.cs passes that run after the MathML
 //! preparation (s01..s12) in TransformMathMlToOmml, plus
 //! ReplaceExtendedIntegralsWithOfficePlaceholders (whose n-ary list feeds
 //! RestoreExtendedIntegralCharacters), IsBlockMathMl and
-//! BuildWordNativeNumberedOmml.
+//! BuildWordNativeNumberedOmml (WordOmmlEquationNumbers.cs).
 //!
 //! Each pass parses its input like the C# does (XDocument.Parse(...,
 //! LoadOptions.PreserveWhitespace) unless noted) and serializes with
@@ -21,9 +21,9 @@ const M: &str = OMML_NS;
 const W: &str = WORD_NS;
 const MML: &str = MATHML_NS;
 
-/// WordOmmlConverter.NaryCharacters.
+/// WordOmmlFromMathMl.NaryCharacters.
 pub const NARY_CHARACTERS: &str = "∑∏∐∫∬∭∮∯∰∱∲∳⨋⨌⨍⨎⨏⨐⨑⨒⨓⨔⨕⨖⨗⨘⨙⨚⨛⨜⋀⋁⋂⋃";
-/// WordOmmlConverter.ExtendedIntegralCharacters.
+/// WordOmmlFromMathMl.ExtendedIntegralCharacters.
 pub const EXTENDED_INTEGRAL_CHARACTERS: &str = "∯∰∱∲∳⨋⨌⨍⨎⨏⨐⨑⨒⨓⨔⨕⨖⨗⨘⨙⨚⨛⨜";
 const NATIVE_NUMBER_BOOKMARK_PREFIX: &str = "VTEqNum_";
 
@@ -703,7 +703,7 @@ pub fn normalize_display_nary_omml(omml: &str, display: bool) -> Result<String, 
         // large in a display equation. With m:grow it stretched to its
         // operand's height, so beside a fraction, brackets or a matrix the sign
         // became huge while its limits stayed script size (as on Windows,
-        // WordOmmlConverter.NormalizeDisplayNaryOmml). Empty limits are hidden
+        // WordOmmlFromMathMl.NormalizeDisplayNaryOmml). Empty limits are hidden
         // for both inline and display OMML.
         let _ = display;
         if let Some(grow) = doc.element(properties, M, "grow") {
@@ -1100,7 +1100,7 @@ impl NumberedBuilder<'_> {
 
 // ---- ApplyExplicitTransferMathFont / NormalizeMathFontName -------------------
 
-/// WordOmmlConverter.NormalizeMathFontName.
+/// WordOmmlDocuments.NormalizeMathFontName.
 pub fn normalize_math_font_name(math_font_name: &str) -> String {
     if is_null_or_white_space(math_font_name) {
         "Cambria Math".to_string()
@@ -1109,7 +1109,7 @@ pub fn normalize_math_font_name(math_font_name: &str) -> String {
     }
 }
 
-/// WordOmmlConverter.ApplyExplicitTransferMathFont(omml, mathFontName): every
+/// WordOmmlDocuments.ApplyExplicitTransferMathFont(omml, mathFontName): every
 /// mathematical run (m:nor text runs keep their text font) and every m:ctrlPr
 /// names the document's OpenType math font in w:rFonts ascii/hAnsi. Windows
 /// imports exactly this into the document.

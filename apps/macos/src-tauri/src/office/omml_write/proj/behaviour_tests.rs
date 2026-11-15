@@ -1,5 +1,5 @@
 //! Behaviour the Windows corpus does not reach (it has no extended integrals
-//! and no document-level whitespace), derived from WordOmmlConverter.cs.
+//! and no document-level whitespace), derived from WordOmmlFromMathMl.cs.
 
 use crate::office::omml_write::proj as port;
 

@@ -1,6 +1,6 @@
 //! MathML -> Word OMML writer, ported byte-exact from the Windows add-in's
 //! WordOmmlConverter.TransformMathMlToOmml (everything after the MathML
-//! preparation passes s01..s12) and WordOmmlConverter.BuildWordNativeNumberedOmml:
+//! preparation passes s01..s12) and WordOmmlEquationNumbers.BuildWordNativeNumberedOmml:
 //!
 //! ```text
 //! projection = MathMlOmmlProjection.Project(m)          -> project
@@ -63,42 +63,42 @@ pub fn extract_single_omath(xml: &str) -> Result<String, String> {
     converter::extract_single_omath(xml)
 }
 
-/// o01: WordOmmlConverter.RestoreExtendedIntegralCharacters(omml, naryCharacters).
+/// o01: WordOmmlFromMathMl.RestoreExtendedIntegralCharacters(omml, naryCharacters).
 pub fn restore_extended_integral_characters(omml: &str, nary_characters: &[String]) -> Result<String, String> {
     converter::restore_extended_integral_characters(omml, nary_characters)
 }
 
-/// o02: WordOmmlConverter.NormalizeExplicitUprightRuns(omml, mathMl).
+/// o02: WordOmmlFromMathMl.NormalizeExplicitUprightRuns(omml, mathMl).
 pub fn normalize_explicit_upright_runs(omml: &str, prepared_mathml: &str) -> Result<String, String> {
     converter::normalize_explicit_upright_runs(omml, prepared_mathml)
 }
 
-/// o03: WordOmmlConverter.NormalizeAppliedFunctionStructures(omml, mathMl).
+/// o03: WordOmmlFromMathMl.NormalizeAppliedFunctionStructures(omml, mathMl).
 pub fn normalize_applied_function_structures(omml: &str, prepared_mathml: &str) -> Result<String, String> {
     converter::normalize_applied_function_structures(omml, prepared_mathml)
 }
 
-/// o04: WordOmmlConverter.NormalizeExplicitTableColumnAlignment(omml, mathMl).
+/// o04: WordOmmlFromMathMl.NormalizeExplicitTableColumnAlignment(omml, mathMl).
 pub fn normalize_explicit_table_column_alignment(omml: &str, prepared_mathml: &str) -> Result<String, String> {
     converter::normalize_explicit_table_column_alignment(omml, prepared_mathml)
 }
 
-/// o05: WordOmmlConverter.NormalizeOmmlPlaceholderVisibility(omml).
+/// o05: WordOmmlFromMathMl.NormalizeOmmlPlaceholderVisibility(omml).
 pub fn normalize_omml_placeholder_visibility(omml: &str) -> Result<String, String> {
     converter::normalize_omml_placeholder_visibility(omml)
 }
 
-/// o06: WordOmmlConverter.NormalizeOptionalPrescriptSlots(omml).
+/// o06: WordOmmlFromMathMl.NormalizeOptionalPrescriptSlots(omml).
 pub fn normalize_optional_prescript_slots(omml: &str) -> Result<String, String> {
     converter::normalize_optional_prescript_slots(omml)
 }
 
-/// o07: WordOmmlConverter.NormalizeDisplayNaryOmml(omml, display).
+/// o07: WordOmmlFromMathMl.NormalizeDisplayNaryOmml(omml, display).
 pub fn normalize_display_nary_omml(omml: &str, display: bool) -> Result<String, String> {
     converter::normalize_display_nary_omml(omml, display)
 }
 
-/// o08: WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(omml).
+/// o08: WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(omml).
 pub fn normalize_generated_omml_argument_order(omml: &str) -> Result<String, String> {
     converter::normalize_generated_omml_argument_order(omml)
 }
@@ -113,13 +113,13 @@ pub fn finish_omml(
     converter::finish_omml(projection, prepared_mathml, nary_characters, is_block)
 }
 
-/// WordOmmlConverter.ReplaceExtendedIntegralsWithOfficePlaceholders(mathMl):
+/// WordOmmlFromMathMl.ReplaceExtendedIntegralsWithOfficePlaceholders(mathMl):
 /// (MathMl, NaryCharacters). Run it on the s11 output; its MathML is s12.
 pub fn replace_extended_integrals_with_office_placeholders(mathml: &str) -> Result<(String, Vec<String>), String> {
     converter::replace_extended_integrals_with_office_placeholders(mathml)
 }
 
-/// WordOmmlConverter.IsBlockMathMl(mathMl).
+/// WordOmmlFromMathMl.IsBlockMathMl(mathMl).
 pub fn is_block_mathml(mathml: &str) -> bool {
     converter::is_block_mathml(mathml)
 }
@@ -133,7 +133,7 @@ pub fn transform_prepared_mathml_to_omml(s11_mathml: &str) -> Result<String, Str
     finish_omml(&projection, &prepared, &nary_characters, display)
 }
 
-/// WordOmmlConverter.BuildWordNativeNumberedOmml(semanticOmml, sequenceName,
+/// WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(semanticOmml, sequenceName,
 /// numberBookmarkName, restartHeadingLevel, headingSeparator,
 /// initialSequenceResult, literalHeadingPrefix, restartSequenceValue).
 #[allow(clippy::too_many_arguments)]
@@ -159,7 +159,7 @@ pub fn build_word_native_numbered_omml(
     )
 }
 
-/// WordOmmlConverter.ApplyExplicitTransferMathFont(omml, mathFontName).
+/// WordOmmlDocuments.ApplyExplicitTransferMathFont(omml, mathFontName).
 pub fn apply_explicit_transfer_math_font(omml: &str, math_font_name: &str) -> Result<String, String> {
     converter::apply_explicit_transfer_math_font(omml, math_font_name)
 }
@@ -167,7 +167,7 @@ pub fn apply_explicit_transfer_math_font(omml: &str, math_font_name: &str) -> Re
 #[cfg(test)]
 mod behaviour_tests;
 
-/// WordOmmlConverter.NormalizeMathFontName.
+/// WordOmmlDocuments.NormalizeMathFontName.
 pub fn normalize_math_font_name(math_font_name: &str) -> String {
     converter::normalize_math_font_name(math_font_name)
 }
