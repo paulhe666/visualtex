@@ -897,7 +897,7 @@ async fn recognize_formula_image(context: &ServerContext, arguments: &Map<String
     let result = context
         .companion
         .ocr
-        .recognize(app, crate::OcrImageRequest { bytes, extension, model })
+        .recognize(app, crate::ocr::OcrImageRequest { bytes, extension, model })
         .await
         .map_err(|error| {
             let code = if error.contains("not installed") || error.contains("Python executable is missing") {

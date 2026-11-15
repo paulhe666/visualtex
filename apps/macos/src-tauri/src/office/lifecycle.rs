@@ -8,7 +8,7 @@ use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::server;
 use crate::office::sessions::SessionStore;
 use crate::office::state::{OfficeCompanionState, OfficeCompanionStatus, OfficePaths};
-use crate::OcrState;
+use crate::ocr::OcrState;
 #[cfg(debug_assertions)]
 use std::path::PathBuf;
 use std::process::Command;

@@ -1,4 +1,4 @@
-use crate::{OcrImageRequest, OcrState, ALLOWED_MODELS, MAX_IMAGE_BYTES};
+use crate::ocr::{OcrImageRequest, OcrState, ALLOWED_MODELS, MAX_IMAGE_BYTES};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
@@ -821,7 +821,7 @@ async fn run_silent_ocr(app: AppHandle) {
             .clone();
         let active_provider = ocr.active_provider(&app)?;
         let requested = current_model(&state);
-        let model = if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+        let model = if active_provider == crate::ocr::provider::LOCAL_PROVIDER {
             let runtime = ocr.runtime_status(app.clone(), false).await?;
             if !runtime.installed {
                 return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
@@ -848,7 +848,7 @@ async fn run_silent_ocr(app: AppHandle) {
         emit_hud(
             &app,
             "running",
-            if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+            if active_provider == crate::ocr::provider::LOCAL_PROVIDER {
                 "正在使用本地模型识别公式…"
             } else {
                 "正在通过已配置的 OCR API 识别公式…"

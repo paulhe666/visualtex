@@ -1,7 +1,7 @@
 use crate::office::formula_cache::FormulaMetadataCache;
 use crate::office::powerpoint_native::{PowerPointInteractionBus, PowerPointNativeSelection};
 use crate::office::sessions::SessionStore;
-use crate::OcrState;
+use crate::ocr::OcrState;
 use axum_server::Handle;
 use serde::Serialize;
 use std::collections::HashMap;

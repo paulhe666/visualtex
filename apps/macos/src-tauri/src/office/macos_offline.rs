@@ -9914,7 +9914,7 @@ mod tests {
             .expect("live formula cache should initialize");
         let state = OfficeCompanionState::new(
             None,
-            crate::OcrState::default(),
+            crate::ocr::OcrState::default(),
             paths,
             "a".repeat(64),
             session_store,
