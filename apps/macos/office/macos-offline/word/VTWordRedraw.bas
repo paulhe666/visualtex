@@ -1717,26 +1717,32 @@ End Sub
 ' A display formula stands in a paragraph of its own, as on Windows: text that shared the
 ' paragraph with its LaTeX code goes to the paragraph before or after it. Left in the
 ' paragraph, the equation joined an equation next to it (Word merges adjacent equations)
-' or became inline. Table cells keep their paragraph as it is.
-Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef cursorRange As Range)
+' or became inline. The marks are written next to the code's first and last characters,
+' before the code is replaced: written at a math zone's edge, Word refuses them ("Math
+' objects can't include paragraph marks"). Table cells keep their paragraph as it is.
+Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef sourceRange As Range)
     Dim documentObject As Document
     Dim paragraphRange As Range
-    Dim position As Long
+    Dim sourceStart As Long
+    Dim sourceEnd As Long
 
-    Set documentObject = cursorRange.Document
-    position = cursorRange.Start
-    Set paragraphRange = cursorRange.Paragraphs(1).Range.Duplicate
+    Set documentObject = sourceRange.Document
+    sourceStart = sourceRange.Start
+    sourceEnd = sourceRange.End
+    If sourceEnd <= sourceStart Then Exit Sub
+    Set paragraphRange = sourceRange.Paragraphs(1).Range.Duplicate
     If paragraphRange.Information(wdWithInTable) Then Exit Sub
     If VTContainsVisibleWordBodyText(documentObject.Range( _
-       Start:=position, End:=paragraphRange.End - 1).Text) Then
-        documentObject.Range(Start:=position, End:=position).InsertBefore vbCr
+       Start:=sourceEnd, End:=paragraphRange.End - 1).Text) Then
+        documentObject.Range(Start:=sourceEnd - 1, End:=sourceEnd).InsertAfter vbCr
     End If
     If VTContainsVisibleWordBodyText(documentObject.Range( _
-       Start:=paragraphRange.Start, End:=position).Text) Then
-        documentObject.Range(Start:=position, End:=position).InsertBefore vbCr
-        position = position + 1
+       Start:=paragraphRange.Start, End:=sourceStart).Text) Then
+        documentObject.Range(Start:=sourceStart, End:=sourceStart + 1).InsertBefore vbCr
+        sourceStart = sourceStart + 1
+        sourceEnd = sourceEnd + 1
     End If
-    Set cursorRange = documentObject.Range(Start:=position, End:=position)
+    Set sourceRange = documentObject.Range(Start:=sourceStart, End:=sourceEnd)
 End Sub
 
 Public Function VTContainsVisibleWordBodyText( _
@@ -2552,6 +2558,11 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
                 Set sourceRange = VTNumberedImageReplacementRange( _
                     sourceRange, numberParagraphCleared)
             End If
+            If operationName = "latexRedraw" And _
+               VTDispatchOptional(manifest, VTDocumentImportItemKey( _
+                   itemIndex, "displayMode")) = "block" Then
+                VTSeparateLatexRedrawDisplayParagraph sourceRange
+            End If
             replacementStart = sourceRange.Start
             sourceRange.Delete
             mutationOccurred = True
@@ -2560,11 +2571,6 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
             If numberParagraphCleared Then
                 VTNormalizePlainWordParagraph _
                     cursorRange.Paragraphs(1).Range.Duplicate
-            End If
-            If operationName = "latexRedraw" And _
-               VTDispatchOptional(manifest, VTDocumentImportItemKey( _
-                   itemIndex, "displayMode")) = "block" Then
-                VTSeparateLatexRedrawDisplayParagraph cursorRange
             End If
             formulaFailureDescription = ""
             If Not sharedVectorDocument Is Nothing Then
