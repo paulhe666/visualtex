@@ -313,8 +313,8 @@ Private Function VTPptAgentFormulaJson( _
             If zoneStart > 0 Then
                 fromIndex = zoneStart - contextChars
                 If fromIndex < 1 Then fromIndex = 1
-                before = Mid$(textValue, fromIndex, zoneStart - fromIndex)
-                after = Mid$(textValue, zoneStart + zoneLength, contextChars)
+                before = VTWholeCharacters(Mid$(textValue, fromIndex, zoneStart - fromIndex))
+                after = VTWholeCharacters(Mid$(textValue, zoneStart + zoneLength, contextChars))
             End If
         End If
     End If
@@ -632,6 +632,7 @@ Private Function VTPptAgentGetSelection() As String
             preview = ActiveWindow.Selection.TextRange.Text
             On Error GoTo 0
             If Len(preview) > 200 Then preview = Left$(preview, 200) & ChrW(8230)
+            preview = VTWholeCharacters(preview)
         End If
     End If
     If Len(formula) = 0 Then formula = "null"

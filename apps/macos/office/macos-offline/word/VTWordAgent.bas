@@ -212,10 +212,10 @@ Private Function VTAgentFormulaJson( _
     If contextChars > 0 Then
         contextStart = sourceRange.Start - contextChars
         If contextStart < 0 Then contextStart = 0
-        before = documentObject.Range(contextStart, sourceRange.Start).Text
+        before = VTWholeCharacters(documentObject.Range(contextStart, sourceRange.Start).Text)
         contextEnd = sourceRange.End + contextChars
         If contextEnd > documentObject.Content.End Then contextEnd = documentObject.Content.End
-        after = documentObject.Range(sourceRange.End, contextEnd).Text
+        after = VTWholeCharacters(documentObject.Range(sourceRange.End, contextEnd).Text)
     End If
 
     VTAgentFormulaJson = "{""formula_id"":" & VTJsonString(agentId) & _
@@ -434,6 +434,7 @@ Public Function VTAgentGetSelection() As String
         kind = "text"
         preview = selected.Text
         If Len(preview) > 200 Then preview = Left$(preview, 200) & ChrW(8230)
+        preview = VTWholeCharacters(preview)
     End If
     If Len(formula) = 0 Then formula = "null"
     VTAgentGetSelection = "{""document"":" & VTJsonString(VTWordDocumentIdentityForDocument(documentObject)) & _

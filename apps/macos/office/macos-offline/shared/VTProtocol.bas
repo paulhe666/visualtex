@@ -114,6 +114,33 @@ Public Function VTPendingMarker(ByVal sessionId As String, ByVal formulaId As St
     VTPendingMarker = VT_PENDING_PREFIX & sessionId & ":" & formulaId
 End Function
 
+' Text cut out of a document by position, without the lone half of a character outside the BMP at a cut:
+' Word for Mac counts a math letter such as U+1D44E as two positions, and the UTF-8 writer (VTUtf8Encode)
+' refuses a lone surrogate, which failed a whole agent answer over a few characters of context.
+Public Function VTWholeCharacters(ByVal value As String) As String
+    Dim result As String
+    Dim index As Long
+    Dim codeUnit As Long
+    Dim nextUnit As Long
+
+    index = 1
+    Do While index <= Len(value)
+        codeUnit = AscW(Mid$(value, index, 1)) And &HFFFF&
+        If codeUnit >= &HD800& And codeUnit <= &HDBFF& Then
+            nextUnit = 0
+            If index < Len(value) Then nextUnit = AscW(Mid$(value, index + 1, 1)) And &HFFFF&
+            If nextUnit >= &HDC00& And nextUnit <= &HDFFF& Then
+                result = result & Mid$(value, index, 2)
+                index = index + 1
+            End If
+        ElseIf codeUnit < &HDC00& Or codeUnit > &HDFFF& Then
+            result = result & Mid$(value, index, 1)
+        End If
+        index = index + 1
+    Loop
+    VTWholeCharacters = result
+End Function
+
 Public Function VTJsonString(ByVal value As String) As String
     Dim result As String
     Dim index As Long
