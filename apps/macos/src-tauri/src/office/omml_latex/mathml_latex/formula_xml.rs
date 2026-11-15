@@ -10,8 +10,8 @@ use quick_xml::events::Event;
 use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
 
-use super::dom::{Doc, ParseOptions};
-use super::netstr::len16;
+use crate::office::dotnet::dom::{Doc, ParseOptions};
+use crate::office::dotnet::netstr::len16;
 
 pub const MAXIMUM_CHARACTERS: usize = 4_000_000;
 pub const MAXIMUM_DEPTH: usize = 256;

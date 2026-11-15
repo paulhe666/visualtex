@@ -3,7 +3,8 @@
 //! MathMlToLatexConverter.ConvertWordEquation): PowerPoint's run colors are
 //! carried into Word run properties, then the shared Word equation reader and
 //! LaTeX source style apply. Native MathML/text clipboard flavors are not used.
-use super::super::omml_latex::{self, dom::{Doc, Name, ParseOptions}};
+use super::super::omml_latex;
+use crate::office::dotnet::dom::{Doc, Name, ParseOptions};
 use super::{parse, Node, A, M};
 
 type Result<T> = std::result::Result<T, String>;

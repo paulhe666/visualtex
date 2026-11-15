@@ -1,12 +1,12 @@
 //! Port of WordOmmlConverter.TransformOmmlToMathMl and the recovery passes it
 //! runs over the projection (WordOmmlConverter.cs).
 
-use super::contracts::{
-    contains_ignore_case, dotnet_trim, eq_ignore_case, find_omml_space_text, is_dotnet_digit, is_math_symbol,
-    is_null_or_white_space, maximum_omml_space_text_length, normalize_color, resolve_effective_variant,
-    to_lower_invariant, try_parse_int,
+use super::contracts::{find_omml_space_text, maximum_omml_space_text_length, normalize_color, resolve_effective_variant};
+use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS};
+use crate::office::dotnet::netstr::{
+    contains_ignore_case, eq_ignore_case, int_try_parse, is_dotnet_digit, is_math_symbol, is_null_or_white_space,
+    to_lower_invariant, trim,
 };
-use super::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS};
 use super::projection;
 use super::xml;
 use regex::Regex;
@@ -26,10 +26,6 @@ fn invalid_data(message: &str) -> String {
 
 fn named(doc: &Doc, nodes: Vec<NodeId>, ns: &str, local: &str) -> Vec<NodeId> {
     nodes.into_iter().filter(|&node| doc.is(node, ns, local)).collect()
-}
-
-fn has_elements(doc: &Doc, node: NodeId) -> bool {
-    doc.child_nodes(node).iter().any(|&child| doc.is_element(child))
 }
 
 fn child_path(doc: &Doc, node: Option<NodeId>, path: &[(&str, &str)]) -> Option<NodeId> {
@@ -367,7 +363,7 @@ fn canonicalize_mathml_element(doc: &mut Doc, root: NodeId) {
 fn restore_merged_numeric_punctuation_tokens(doc: &mut Doc, root: NodeId) {
     for number in named(doc, doc.descendants_and_self(root), ML, "mn") {
         let value = doc.value(number);
-        if is_null_or_white_space(&value) || (!value.contains(',') && !value.contains(';')) {
+        if is_null_or_white_space(value.as_str()) || (!value.contains(',') && !value.contains(';')) {
             continue;
         }
         if !value.chars().all(|c| is_dotnet_digit(c) || c == ',' || c == ';') {
@@ -434,7 +430,7 @@ fn restore_word_canonical_asterisk_operators(doc: &mut Doc, root: NodeId) {
         .descendants_and_self(root)
         .into_iter()
         .filter(|&e| doc.is(e, ML, "mi") || doc.is(e, ML, "mo"))
-        .filter(|&e| !has_elements(doc, e) && doc.value(e) == "*")
+        .filter(|&e| !doc.has_elements(e) && doc.value(e) == "*")
         .collect();
     for token in tokens {
         doc.set_name(token, Name::new(ML, "mo"));
@@ -483,13 +479,13 @@ fn restore_omml_matrix_column_alignment(source: &Doc, equation: NodeId, doc: &mu
         for group in groups {
             for column in source.elements_named(group, M, "mc") {
                 let properties = source.element(column, M, "mcPr");
-                let count = match try_parse_int(
+                let count = match int_try_parse(
                     child_path(source, properties, &[(M, "count")]).and_then(|e| source.attr_ns(e, M, "val")),
                 ) {
                     Some(parsed) if parsed > 0 => parsed.min(64) as usize,
                     _ => 1,
                 };
-                let justification = to_lower_invariant(dotnet_trim(
+                let justification = to_lower_invariant(trim(
                     child_path(source, properties, &[(M, "mcJc")])
                         .and_then(|e| source.attr_ns(e, M, "val"))
                         .unwrap_or("center"),
@@ -597,7 +593,7 @@ fn flatten_mathml_token_text(doc: &Doc, element: NodeId) -> String {
     let mut builder = String::new();
     for child in doc.elements(element) {
         let value = flatten_mathml_token_text(doc, child);
-        if value.is_empty() && has_elements(doc, child) {
+        if value.is_empty() && doc.has_elements(child) {
             return String::new();
         }
         builder.push_str(&value);
@@ -623,7 +619,7 @@ fn restore_omml_limit_base_semantics(source: &Doc, equation: NodeId, doc: &mut D
         let Some(base_slot) = source.element(limit, M, "e") else { continue };
         let visible_runs: Vec<NodeId> = named(source, source.descendants(base_slot), M, "r")
             .into_iter()
-            .filter(|&run| direct_text(source, run).into_iter().any(|t| !is_null_or_white_space(&source.value(t))))
+            .filter(|&run| direct_text(source, run).into_iter().any(|t| !is_null_or_white_space(source.value(t).as_str())))
             .collect();
         if visible_runs.is_empty() {
             continue;
@@ -633,7 +629,7 @@ fn restore_omml_limit_base_semantics(source: &Doc, equation: NodeId, doc: &mut D
             .flat_map(|&run| direct_text(source, run))
             .map(|t| source.value(t))
             .collect();
-        if is_null_or_white_space(&base_text) {
+        if is_null_or_white_space(base_text.as_str()) {
             continue;
         }
         let explicitly_normal = visible_runs
@@ -674,7 +670,7 @@ fn restore_omml_script_base_run_semantics(source: &Doc, equation: NodeId, doc: &
         let Some(base_slot) = source.element(script, M, "e") else { continue };
         let base_text: String =
             named(source, source.descendants(base_slot), M, "t").into_iter().map(|t| source.value(t)).collect();
-        if is_null_or_white_space(&base_text) {
+        if is_null_or_white_space(base_text.as_str()) {
             continue;
         }
         let target_name = if source.is(script, M, "sSub") {
@@ -747,7 +743,7 @@ fn restore_omml_function_application_runs(source: &Doc, equation: NodeId, doc: &
             continue;
         }
         let function_name: String = direct_text(source, run).into_iter().map(|t| source.value(t)).collect();
-        if is_null_or_white_space(&function_name) {
+        if is_null_or_white_space(function_name.as_str()) {
             continue;
         }
         let next_run = source_runs[index];
@@ -802,7 +798,7 @@ fn restore_omml_explicit_space_tokens(doc: &mut Doc, root: NodeId) {
         let mut index = 0;
         while index < children.len() {
             let first = children[index];
-            if !doc.is(first, ML, "mo") || has_elements(doc, first) || find_omml_space_text(&doc.value(first)).is_none()
+            if !doc.is(first, ML, "mo") || doc.has_elements(first) || find_omml_space_text(&doc.value(first)).is_none()
             {
                 index += 1;
                 continue;
@@ -814,7 +810,7 @@ fn restore_omml_explicit_space_tokens(doc: &mut Doc, root: NodeId) {
                 let candidate = children[next];
                 let candidate_value = doc.value(candidate);
                 if !doc.is(candidate, ML, "mo")
-                    || has_elements(doc, candidate)
+                    || doc.has_elements(candidate)
                     || doc.attrs(first) != doc.attrs(candidate)
                     || find_omml_space_text(&candidate_value).is_none()
                     || text.encode_utf16().count() + candidate_value.encode_utf16().count() > maximum

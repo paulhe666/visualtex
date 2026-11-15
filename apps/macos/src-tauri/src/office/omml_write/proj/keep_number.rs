@@ -11,7 +11,7 @@
 //! (m:nor), which WPS leaves alone, with the switch character restored.
 
 use super::converter::extract_single_omath;
-use super::dom::{Doc, Name, NodeId, OMML_NS, WORD_NS, XMLNS_NS};
+use crate::office::dotnet::dom::{Doc, Name, NodeId, OMML_NS, WORD_NS, XMLNS_NS};
 use super::xml_reader::{self, PRESERVE_WHITESPACE};
 use super::xml_writer::to_string_disable_formatting;
 

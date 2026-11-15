@@ -19,7 +19,7 @@
 //!
 //! Based on the reference port's omml_mathml/xml.rs.
 
-use crate::office::omml_write::proj::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
+use crate::office::dotnet::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
@@ -175,7 +175,7 @@ pub fn parse_document(xml: &str, options: ReadOptions) -> Result<Document, Strin
                 // XContainer.ReadContentFrom: an end tag with no content read
                 // leaves content = string.Empty.
                 if doc.child_nodes(id).is_empty() {
-                    doc.empty_string_content.insert(id);
+                    doc.nodes[id].empty_string_content = true;
                 }
             }
             Event::CData(text) => {

@@ -8,8 +8,6 @@
 //! `fixtures/windows_reference.json` holds the Windows C# output for real and
 //! generated Word equations; the port must reproduce it exactly.
 
-#[allow(dead_code)]
-pub(crate) mod dom;
 mod mathml_latex;
 mod omml_mathml;
 mod source_style;
@@ -40,7 +38,7 @@ pub(crate) fn omml_to_latex(omml: &str, display: bool) -> Result<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::dom::{Doc, ParseOptions};
+    use crate::office::dotnet::dom::{Doc, ParseOptions};
 
     #[test]
     fn reproduces_the_windows_converter_output() {

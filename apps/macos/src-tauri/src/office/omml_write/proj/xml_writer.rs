@@ -20,7 +20,7 @@
 //!   attribute escaping, NewLineHandling.Replace with Environment.NewLine
 //!   ("\r\n" on Windows, where the reference output was recorded).
 
-use crate::office::omml_write::proj::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
+use crate::office::dotnet::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
 
 /// XmlWriterSettings.NewLineChars on Windows (Environment.NewLine).
 pub const NEW_LINE: &str = "\r\n";
@@ -667,7 +667,7 @@ pub fn escape_attribute(out: &mut String, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::office::omml_write::proj::dom::{Doc, Name, OMML_NS};
+    use crate::office::dotnet::dom::{Doc, Name, OMML_NS};
     use crate::office::omml_write::proj::xml_reader::{parse, PRESERVE_WHITESPACE};
 
     fn round_trip(xml: &str) -> String {

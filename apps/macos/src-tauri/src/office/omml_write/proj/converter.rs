@@ -8,9 +8,9 @@
 //! LoadOptions.PreserveWhitespace) unless noted) and serializes with
 //! `Root.ToString(SaveOptions.DisableFormatting)`.
 
-use crate::office::omml_write::proj::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS, XML_NS};
-use crate::office::omml_write::proj::netstr::{
-    contains_ordinal_ignore_case, contains_unicode_letter, equals_ordinal_ignore_case, first_letter_run,
+use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS, XML_NS};
+use crate::office::dotnet::netstr::{
+    contains_ignore_case, contains_unicode_letter, eq_ignore_case, first_letter_run,
     is_null_or_white_space, is_white_space, len16, parse_combining_characters, substring, substring_from,
     to_lower_invariant, trim,
 };
@@ -109,7 +109,7 @@ pub fn replace_extended_integrals_with_office_placeholders(mathml: &str) -> Resu
 /// false when the MathML cannot be read.
 pub fn is_block_mathml(mathml: &str) -> bool {
     match parse(mathml, IGNORE_WHITESPACE_READER) {
-        Ok((doc, root)) => equals_ordinal_ignore_case(doc.attr(root, "display"), "block"),
+        Ok((doc, root)) => eq_ignore_case(doc.attr(root, "display"), "block"),
         Err(_) => false,
     }
 }
@@ -283,7 +283,7 @@ fn find_matching_delimiter_end(value: &str, open: &str, close: &str, depth: &mut
 pub fn normalize_applied_function_structures(omml: &str, mathml: &str) -> Result<String, String> {
     if is_null_or_white_space(omml)
         || is_null_or_white_space(mathml)
-        || (!mathml.contains('\u{2061}') && !contains_ordinal_ignore_case(mathml, "2061"))
+        || (!mathml.contains('\u{2061}') && !contains_ignore_case(mathml, "2061"))
     {
         return Ok(omml.to_string());
     }
@@ -308,7 +308,7 @@ pub fn normalize_applied_function_structures(omml: &str, mathml: &str) -> Result
             .filter(|&element| source.is(element, MML, "mi") || source.is(element, MML, "mo"))
             .find_map(|element| first_letter_run(&source.value(element)))
             .unwrap_or_default();
-        if is_null_or_white_space(&function_token) {
+        if is_null_or_white_space(function_token.as_str()) {
             continue;
         }
 
@@ -351,7 +351,7 @@ pub fn normalize_applied_function_structures(omml: &str, mathml: &str) -> Result
         let Some(function_element) = target.previous_element(marker_run) else { continue };
         let function_visible_text: String =
             target.descendants_named(function_element, M, "t").into_iter().map(|t| target.value(t)).collect();
-        if !contains_ordinal_ignore_case(&function_visible_text, &application.function_token) {
+        if !contains_ignore_case(&function_visible_text, &application.function_token) {
             continue;
         }
 
@@ -664,7 +664,7 @@ fn has_nary_limit_content(doc: &Doc, limit: Option<NodeId>) -> bool {
     doc.descendants_and_self(limit)
         .into_iter()
         .filter(|&element| doc.local(element) == "t")
-        .any(|element| !is_null_or_white_space(&doc.value(element)))
+        .any(|element| !is_null_or_white_space(doc.value(element).as_str()))
 }
 
 /// SetNaryLimitVisibility(properties, propertyName, hidden).
@@ -872,7 +872,7 @@ pub fn build_word_native_numbered_omml(
     if is_null_or_white_space(initial_sequence_result) || has_field_control_character(initial_sequence_result) {
         return Err(argument_error("The initial SEQ result is invalid.", "initialSequenceResult"));
     }
-    let number_bookmark_name = number_bookmark_name.filter(|name| !is_null_or_white_space(name));
+    let number_bookmark_name = number_bookmark_name.filter(|name| !is_null_or_white_space(*name));
     if let Some(name) = number_bookmark_name {
         validate_managed_equation_bookmark_name(name, NATIVE_NUMBER_BOOKMARK_PREFIX, "numberBookmarkName")?;
     }

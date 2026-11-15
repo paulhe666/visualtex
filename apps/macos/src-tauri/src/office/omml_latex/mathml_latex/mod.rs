@@ -2,14 +2,10 @@
 //! with the token-style, color, accent-geometry and space contracts it uses.
 #![allow(dead_code)]
 
-use super::dom;
-
 mod contracts;
 mod converter;
 mod formula_xml;
-mod netstr;
 mod tables;
-mod unicode_tables;
 
 #[cfg(test)]
 mod unit_tests;

@@ -28,8 +28,8 @@
 //! * a document type declaration is rejected (XDocument.Parse would parse it;
 //!   FormulaXml, and so ValidateMathMlForOmml, rejects it as well).
 
-use crate::office::omml_write::prep::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
-use crate::office::omml_write::prep::netstr::len16;
+use crate::office::dotnet::dom::{Data, Doc, Name, NodeId, XMLNS_NS, XML_NS};
+use crate::office::dotnet::netstr::len16;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
@@ -912,14 +912,6 @@ impl NamespaceResolver {
     }
 }
 
-/// XAttribute.IsNamespaceDeclaration.
-pub fn is_namespace_declaration(name: &Name) -> bool {
-    if name.ns.is_empty() {
-        name.local == "xmlns"
-    } else {
-        name.ns == XMLNS_NS
-    }
-}
 
 fn declared_prefix(name: &Name) -> String {
     if name.ns.is_empty() { String::new() } else { name.local.clone() }
@@ -950,7 +942,7 @@ impl ElementWriter<'_> {
         let mut current = self.doc.parent(node);
         while let Some(ancestor) = current {
             for (name, value) in self.doc.attrs(ancestor) {
-                if is_namespace_declaration(name) {
+                if Doc::is_namespace_declaration(name) {
                     self.resolver.add_first(declared_prefix(name), value.clone());
                 }
             }
@@ -964,7 +956,7 @@ impl ElementWriter<'_> {
         };
         self.resolver.push_scope();
         for (attribute, value) in attrs {
-            if is_namespace_declaration(attribute) {
+            if Doc::is_namespace_declaration(attribute) {
                 self.resolver.add(declared_prefix(attribute), value.clone());
             }
         }
@@ -1095,23 +1087,12 @@ pub fn replace_nodes(doc: &mut Doc, container: NodeId, nodes: &[NodeId]) {
     }
 }
 
-/// XNode.ElementsAfterSelf().
-pub fn elements_after_self(doc: &Doc, node: NodeId) -> Vec<NodeId> {
-    let Some(parent) = doc.parent(node) else { return Vec::new() };
-    let siblings = doc.child_nodes(parent);
-    let index = siblings.iter().position(|&id| id == node).expect("child of its parent");
-    siblings[index + 1..].iter().copied().filter(|&id| doc.is_element(id)).collect()
-}
 
 /// XContainer.Nodes() as XLinq enumerates it.
 pub fn nodes(doc: &Doc, node: NodeId) -> Vec<NodeId> {
     doc.child_nodes(node).to_vec()
 }
 
-/// XContainer.HasElements.
-pub fn has_elements(doc: &Doc, node: NodeId) -> bool {
-    doc.child_nodes(node).iter().any(|&id| doc.is_element(id))
-}
 
 #[cfg(test)]
 mod tests {

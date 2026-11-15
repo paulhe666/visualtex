@@ -23,13 +23,9 @@
 //! The projection (MathMlOmmlProjection.Project) and the OMML post-passes are
 //! ported separately and consume [`PreparedMathMl`].
 
-#[allow(dead_code)]
-pub mod dom;
 pub mod cell_math;
 pub mod contracts;
-pub mod netstr;
 mod prepasses;
-mod unicode_letters;
 pub mod xlinq;
 
 pub use contracts::MathSpaceOmmlCapability;
@@ -58,7 +54,7 @@ pub struct PreparedMathMl {
 /// The pre-pass part of TransformMathMlToOmml: the empty-input check,
 /// ValidateMathMlForOmml, s01..s12 and IsBlockMathMl.
 pub fn prepare_mathml_for_omml(mathml: &str) -> Result<PreparedMathMl, String> {
-    if netstr::is_white_space(mathml) {
+    if crate::office::dotnet::netstr::is_null_or_white_space(mathml) {
         return Err("VisualTeX did not provide MathML for the Word OMML formula.".to_string());
     }
     validate_mathml_for_omml(mathml)?;

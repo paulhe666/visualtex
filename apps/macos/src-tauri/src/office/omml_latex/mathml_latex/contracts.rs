@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::dom::{Doc, NodeId, MATHML_NS};
-use super::netstr::{eq_ignore_case, is_null_or_white_space, to_lower_invariant, to_upper_invariant};
+use crate::office::dotnet::dom::{Doc, NodeId, MATHML_NS};
+use crate::office::dotnet::netstr::{eq_ignore_case, is_null_or_white_space, to_lower_invariant, to_upper_invariant};
 
 // ---- MathMlTokenStyleContract -------------------------------------------------
 
@@ -155,7 +155,7 @@ pub fn effective_color(doc: &Doc, element: NodeId) -> Option<String> {
 
 pub fn wrap_color(source: String, color: Option<&str>) -> String {
     match color {
-        Some(color) if !is_null_or_white_space(Some(&source)) => {
+        Some(color) if !is_null_or_white_space(source.as_str()) => {
             format!("\\textcolor{{{color}}}{{{source}}}")
         }
         _ => source,

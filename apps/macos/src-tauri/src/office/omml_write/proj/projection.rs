@@ -6,8 +6,8 @@
 //! OmmlMathMlProjection.ReaderSettings(), i.e. IgnoreWhitespace = true);
 //! projected OMML nodes are created in `out`.
 
-use crate::office::omml_write::proj::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS, XMLNS_NS, XML_NS};
-use crate::office::omml_write::proj::netstr::len16;
+use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS, XMLNS_NS, XML_NS};
+use crate::office::dotnet::netstr::len16;
 use crate::office::omml_write::proj::xml_reader::{self, PROJECTION_READER};
 use crate::office::omml_write::proj::xml_writer;
 
@@ -176,7 +176,7 @@ fn first_scalar(value: &str) -> String {
 /// String.Substring(1) for a color value; a split surrogate pair would make
 /// the XmlWriter throw.
 fn substring1(value: &str) -> Result<String, String> {
-    crate::office::omml_write::proj::netstr::substring_from(value, 1)
+    crate::office::dotnet::netstr::substring_from(value, 1)
 }
 
 impl<'a> Projector<'a> {

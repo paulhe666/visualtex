@@ -1,92 +1,11 @@
 //! Small shared VstoShared helpers reached by TransformOmmlToMathMl:
 //! MathMlColorContract.Normalize, MathMlTokenStyleContract.ResolveEffectiveVariant,
-//! MathSpaceContract.FindOmmlSpaceText, and the .NET string primitives they use.
+//! MathSpaceContract.FindOmmlSpaceText.
 
-use super::dom::{Doc, NodeId, MATHML_NS};
+use crate::office::dotnet::dom::{Doc, NodeId, MATHML_NS};
+use crate::office::dotnet::netstr::{is_null_or_white_space, to_lower_invariant, trim};
 use regex::Regex;
 use std::sync::LazyLock;
-
-// ---- .NET string primitives ------------------------------------------------
-
-/// string.IsNullOrWhiteSpace (char.IsWhiteSpace == Unicode White_Space).
-pub fn is_null_or_white_space(value: &str) -> bool {
-    value.chars().all(char::is_whitespace)
-}
-
-/// String.Trim() (char.IsWhiteSpace).
-pub fn dotnet_trim(value: &str) -> &str {
-    value.trim_matches(char::is_whitespace)
-}
-
-/// ToLowerInvariant: simple (one-to-one) case mapping per character; .NET keeps U+0130 (dotted I).
-pub fn to_lower_invariant(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| {
-            if c == '\u{130}' {
-                return c;
-            }
-            let mut lower = c.to_lowercase();
-            match (lower.next(), lower.next()) {
-                (Some(single), None) => single,
-                _ => c,
-            }
-        })
-        .collect()
-}
-
-/// Ordinal ignore-case equality for the ASCII literals this code compares with.
-pub fn eq_ignore_case(value: &str, literal: &str) -> bool {
-    value.eq_ignore_ascii_case(literal)
-}
-
-/// IndexOf(literal, StringComparison.OrdinalIgnoreCase) >= 0 for ASCII literals.
-pub fn contains_ignore_case(value: &str, literal: &str) -> bool {
-    value.to_ascii_lowercase().contains(&literal.to_ascii_lowercase())
-}
-
-/// int.TryParse(string) with NumberStyles.Integer and invariant signs.
-pub fn try_parse_int(value: Option<&str>) -> Option<i32> {
-    let value = value?;
-    let trimmed = value.trim_matches(|c: char| matches!(c, '\t' | '\n' | '\u{B}' | '\u{C}' | '\r' | ' '));
-    let (negative, digits) = match trimmed.as_bytes().first() {
-        Some(b'-') => (true, &trimmed[1..]),
-        Some(b'+') => (false, &trimmed[1..]),
-        _ => (false, trimmed),
-    };
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let mut result: i64 = 0;
-    for b in digits.bytes() {
-        result = result * 10 + i64::from(b - b'0');
-        if result > i64::from(i32::MAX) + 1 {
-            return None;
-        }
-    }
-    let result = if negative { -result } else { result };
-    i32::try_from(result).ok()
-}
-
-/// char.IsDigit on one UTF-16 code unit (astral characters are surrogates).
-pub fn is_dotnet_digit(c: char) -> bool {
-    static DIGIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A\p{Nd}\z").unwrap());
-    if c.is_ascii_digit() {
-        return true;
-    }
-    if c.len_utf16() != 1 {
-        return false;
-    }
-    let mut buffer = [0u8; 4];
-    DIGIT.is_match(c.encode_utf8(&mut buffer))
-}
-
-/// CharUnicodeInfo.GetUnicodeCategory(...) == UnicodeCategory.MathSymbol.
-pub fn is_math_symbol(c: char) -> bool {
-    static MATH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A\p{Sm}\z").unwrap());
-    let mut buffer = [0u8; 4];
-    MATH.is_match(c.encode_utf8(&mut buffer))
-}
 
 // ---- MathMlColorContract ---------------------------------------------------
 
@@ -95,7 +14,7 @@ pub fn is_math_symbol(c: char) -> bool {
 pub fn normalize_color(value: Option<&str>) -> Option<String> {
     static SIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#[0-9a-fA-F]{6}\n?$").unwrap());
     static THREE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#[0-9a-fA-F]{3}\n?$").unwrap());
-    let color = dotnet_trim(value?);
+    let color = trim(value?);
     if color.is_empty() {
         return None;
     }
@@ -175,7 +94,7 @@ pub fn resolve_declared_variant(doc: &Doc, element: NodeId) -> Option<String> {
             break;
         }
         if let Some(declared) = doc.attr(current, "mathvariant") {
-            let declared = dotnet_trim(declared);
+            let declared = trim(declared);
             if !declared.is_empty() {
                 return Some(to_lower_invariant(declared));
             }
@@ -194,14 +113,14 @@ pub fn resolve_effective_variant(doc: &Doc, token: NodeId) -> Option<String> {
     }
     if let Some(declared) = declared.as_deref() {
         if !is_null_or_white_space(declared) {
-            return Some(to_lower_invariant(dotnet_trim(declared)));
+            return Some(to_lower_invariant(trim(declared)));
         }
     }
     if !doc.elements(token).is_empty() {
         return None;
     }
     let value = doc.value(token);
-    let trimmed = dotnet_trim(&value);
+    let trimmed = trim(&value);
     let italic = doc.local(token) == "mi"
         && is_single_mathml_character(trimmed)
         && !matches!(trimmed, "′" | "″" | "‴" | "⁗" | "‵" | "‶" | "‷");
@@ -236,14 +155,4 @@ pub fn maximum_omml_space_text_length() -> usize {
 
 pub fn find_omml_space_text(text: &str) -> Option<&'static OmmlSpace> {
     OMML_SPACES.iter().find(|space| space.text == text)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn to_lower_invariant_keeps_dotted_capital_i() {
-        assert_eq!(to_lower_invariant("\u{130}BOLD"), "\u{130}bold");
-    }
 }

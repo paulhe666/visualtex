@@ -23,8 +23,8 @@
 //! System.Xml.Linq builds (namespace declarations as attributes, `<a></a>` as
 //! empty-string content), `xml_writer` reproduces XLinq's ElementWriter on
 //! .NET's XmlWellFormedWriter (prefix lookup, generated `p{N}` prefixes,
-//! default-namespace declarations, escaping, "\r\n" new lines) and `netstr`
-//! gives .NET 8's UTF-16 string semantics and Unicode 15.0 data.
+//! default-namespace declarations, escaping, "\r\n" new lines) and
+//! `office::dotnet::netstr` gives .NET 8's UTF-16 string semantics and Unicode 15.0 data.
 //!
 //! Errors are the C# exceptions as text ("InvalidDataException: ...").
 //!
@@ -32,16 +32,9 @@
 //! XML comments and processing instructions are dropped when read (XLinq keeps
 //! them unless the reader ignores them), and CDATA sections become text.
 
-// The shared arena DOM (also used by the other half of the port); not every
-// helper is needed here, and its reference-port Doc::parse uses a deprecated
-// quick-xml call that this crate never reaches (it reads with xml_reader).
-#[allow(dead_code, deprecated)]
-pub mod dom;
 mod converter;
 mod keep_number;
-mod netstr;
 mod projection;
-mod unicode_tables;
 mod xml_reader;
 mod xml_writer;
 

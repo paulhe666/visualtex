@@ -6,7 +6,7 @@
 //! double-struck, sans-serif and monospace letters become Unicode's
 //! mathematical alphanumerics. Colors are not kept.
 
-use super::dom::{Doc, Name, NodeId, MATHML_NS};
+use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS};
 use super::xlinq::{self, XDOCUMENT_PARSE_PRESERVE};
 
 fn is_mathml(doc: &Doc, node: NodeId, local: &str) -> bool {

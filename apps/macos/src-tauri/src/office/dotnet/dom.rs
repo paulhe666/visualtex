@@ -1,9 +1,21 @@
-//! Minimal mutable XML tree for the OMML -> MathML -> LaTeX port.
+//! Minimal mutable XML tree for the Rust ports of the Windows converters (OMML -> MathML -> LaTeX, and the MathML ->
+//! OMML pre-passes and projection).
 //!
 //! It mirrors the subset of System.Xml.Linq that the Windows converters use:
 //! namespaced element/attribute names, text nodes (adjacent text merged, as
 //! XDocument does), parent links, pre-order descendants and in-place edits.
 //! Nodes live in an arena; detached nodes simply stay unreachable.
+//!
+//! What only the MathML -> OMML ports use (the trees of the OMML -> MathML reader never carry it):
+//! - [`XMLNS_NS`]: XLinq keeps namespace declarations as ordinary attributes
+//!   named `xmlns` (no namespace) and `{http://www.w3.org/2000/xmlns/}prefix`;
+//!   their readers store them that way, in source order.
+//! - [`Node::empty_string_content`]: XLinq's distinction between an element
+//!   with no content (`content == null`, written `<x />`) and one whose content
+//!   is the empty string (`content == ""`, read from `<x></x>`, `new XElement(name, "")`
+//!   or set through `Value = ""`, written `<x></x>`). It is only ever true while the element
+//!   has no child nodes: every method that adds a child clears it, as
+//!   XContainer.AddNode does, `clear_children` clears it (RemoveNodes), and deep copies keep it.
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
@@ -13,6 +25,8 @@ pub const MATHML_NS: &str = "http://www.w3.org/1998/Math/MathML";
 pub const OMML_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 pub const WORD_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 pub const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
+/// XNamespace.Xmlns: the namespace of `xmlns:prefix` declaration attributes.
+pub const XMLNS_NS: &str = "http://www.w3.org/2000/xmlns/";
 
 pub type NodeId = usize;
 
@@ -46,6 +60,9 @@ pub struct Node {
     pub data: Data,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
+    /// XContainer.content == "" (see the module documentation): an element
+    /// without child nodes that serializes as a start/end tag pair.
+    pub empty_string_content: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -77,12 +94,22 @@ impl Doc {
     // ---- construction -----------------------------------------------------
 
     pub fn new_element(&mut self, name: Name) -> NodeId {
-        self.nodes.push(Node { data: Data::Element { name, attrs: Vec::new() }, parent: None, children: Vec::new() });
+        self.nodes.push(Node {
+            data: Data::Element { name, attrs: Vec::new() },
+            parent: None,
+            children: Vec::new(),
+            empty_string_content: false,
+        });
         self.nodes.len() - 1
     }
 
     pub fn new_text(&mut self, text: &str) -> NodeId {
-        self.nodes.push(Node { data: Data::Text(text.to_string()), parent: None, children: Vec::new() });
+        self.nodes.push(Node {
+            data: Data::Text(text.to_string()),
+            parent: None,
+            children: Vec::new(),
+            empty_string_content: false,
+        });
         self.nodes.len() - 1
     }
 
@@ -90,6 +117,7 @@ impl Doc {
     /// Appending text next to a text node merges them, as XContainer.Add does.
     pub fn append(&mut self, parent: NodeId, child: NodeId) {
         self.detach(child);
+        self.nodes[parent].empty_string_content = false;
         if let Data::Text(added) = self.nodes[child].data.clone() {
             if let Some(&last) = self.nodes[parent].children.last() {
                 if let Data::Text(existing) = &mut self.nodes[last].data {
@@ -116,6 +144,7 @@ impl Doc {
         let parent = self.nodes[reference].parent.expect("reference has no parent");
         let index = self.index_in_parent(reference).unwrap();
         self.nodes[node].parent = Some(parent);
+        self.nodes[parent].empty_string_content = false;
         self.nodes[parent].children.insert(index, node);
     }
 
@@ -125,6 +154,7 @@ impl Doc {
         let parent = self.nodes[reference].parent.expect("reference has no parent");
         let index = self.index_in_parent(reference).unwrap();
         self.nodes[node].parent = Some(parent);
+        self.nodes[parent].empty_string_content = false;
         self.nodes[parent].children.insert(index + 1, node);
     }
 
@@ -144,8 +174,10 @@ impl Doc {
         }
     }
 
-    /// Removes all child nodes (XContainer.RemoveNodes).
+    /// Removes all child nodes (XContainer.RemoveNodes); the content becomes
+    /// null, so an empty-string content is cleared too.
     pub fn clear_children(&mut self, node: NodeId) {
+        self.nodes[node].empty_string_content = false;
         for child in std::mem::take(&mut self.nodes[node].children) {
             self.nodes[child].parent = None;
         }
@@ -164,6 +196,7 @@ impl Doc {
             }
             Data::Text(text) => self.new_text(&text),
         };
+        self.nodes[copy].empty_string_content = self.nodes[node].empty_string_content;
         for child in self.nodes[node].children.clone() {
             let child_copy = self.deep_clone(child);
             self.nodes[child_copy].parent = Some(copy);
@@ -184,6 +217,7 @@ impl Doc {
             }
             Data::Text(text) => self.new_text(text),
         };
+        self.nodes[copy].empty_string_content = other.nodes[node].empty_string_content;
         for &child in &other.nodes[node].children {
             let child_copy = self.import(other, child);
             self.nodes[child_copy].parent = Some(copy);
@@ -256,9 +290,14 @@ impl Doc {
     }
 
     /// XElement.Value = text: replaces all children with one text node.
+    /// An empty value leaves the element with empty-string content, which
+    /// XLinq writes as `<x></x>` (XContainer.AddString).
     pub fn set_value(&mut self, node: NodeId, value: &str) {
         self.clear_children(node);
         self.append_text(node, value);
+        if value.is_empty() && self.is_element(node) {
+            self.nodes[node].empty_string_content = true;
+        }
     }
 
     pub fn attrs(&self, node: NodeId) -> &[(Name, String)] {
@@ -406,6 +445,68 @@ impl Doc {
         self.nodes[parent].children.get(index + 1).copied()
     }
 
+    // ---- more XLinq operations ------------------------------------------
+
+    /// XContainer.Add(string): appends text (merging with a trailing text
+    /// node); an empty string turns null content into empty-string content.
+    pub fn add_string(&mut self, parent: NodeId, text: &str) {
+        if text.is_empty() {
+            if self.nodes[parent].children.is_empty() && self.is_element(parent) {
+                self.nodes[parent].empty_string_content = true;
+            }
+            return;
+        }
+        self.append_text(parent, text);
+    }
+
+    /// Whether the element's content is the empty string (`<a></a>`).
+    pub fn has_empty_string_content(&self, node: NodeId) -> bool {
+        self.nodes[node].empty_string_content
+    }
+
+    /// XContainer.AddFirst(node): detaches `child` and inserts it as the first child.
+    pub fn add_first(&mut self, parent: NodeId, child: NodeId) {
+        self.detach(child);
+        self.nodes[parent].empty_string_content = false;
+        self.nodes[child].parent = Some(parent);
+        self.nodes[parent].children.insert(0, child);
+    }
+
+    /// XElement.HasElements.
+    pub fn has_elements(&self, node: NodeId) -> bool {
+        self.nodes[node].children.iter().any(|&id| self.is_element(id))
+    }
+
+    /// XNode.ElementsBeforeSelf(): preceding sibling elements in document order.
+    pub fn elements_before_self(&self, node: NodeId) -> Vec<NodeId> {
+        let Some(parent) = self.nodes[node].parent else { return Vec::new() };
+        let siblings = &self.nodes[parent].children;
+        let index = siblings.iter().position(|&id| id == node).unwrap_or(0);
+        siblings[..index].iter().copied().filter(|&id| self.is_element(id)).collect()
+    }
+
+    /// XNode.ElementsAfterSelf(): following sibling elements in document order.
+    pub fn elements_after_self(&self, node: NodeId) -> Vec<NodeId> {
+        let Some(parent) = self.nodes[node].parent else { return Vec::new() };
+        let siblings = &self.nodes[parent].children;
+        let Some(index) = siblings.iter().position(|&id| id == node) else { return Vec::new() };
+        siblings[index + 1..].iter().copied().filter(|&id| self.is_element(id)).collect()
+    }
+
+    /// Descendants(name): descendant elements with the name, document order.
+    pub fn descendants_named(&self, node: NodeId, ns: &str, local: &str) -> Vec<NodeId> {
+        self.descendants(node).into_iter().filter(|&id| self.is(id, ns, local)).collect()
+    }
+
+    /// XAttribute.IsNamespaceDeclaration for an attribute name.
+    pub fn is_namespace_declaration(name: &Name) -> bool {
+        if name.ns.is_empty() {
+            name.local == "xmlns"
+        } else {
+            name.ns == XMLNS_NS
+        }
+    }
+
     // ---- parsing ----------------------------------------------------------
 
     pub fn parse(xml: &str, options: ParseOptions) -> Result<Doc, String> {
@@ -540,7 +641,7 @@ impl Doc {
                     out.push('"');
                 }
                 let children = &self.nodes[node].children;
-                if children.is_empty() {
+                if children.is_empty() && !self.nodes[node].empty_string_content {
                     out.push_str(" />");
                     return;
                 }

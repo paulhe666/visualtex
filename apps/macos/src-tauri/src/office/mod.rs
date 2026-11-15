@@ -1,6 +1,7 @@
 pub mod automation;
 pub mod background;
 pub mod certificate;
+pub(crate) mod dotnet;
 pub mod formula_cache;
 pub mod hotkeys;
 pub mod lifecycle;

@@ -1,7 +1,7 @@
 //! Port of OmmlMathMlProjection.cs: VisualTeX's own OMML -> presentation
 //! MathML projection (the replacement for Office's OMML2MML.XSL).
 
-use super::dom::{Data, Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS};
+use crate::office::dotnet::dom::{Data, Doc, Name, NodeId, MATHML_NS, OMML_NS, WORD_NS};
 use super::xml;
 use std::sync::LazyLock;
 

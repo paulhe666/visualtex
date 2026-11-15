@@ -4,7 +4,7 @@
 //! readers decide it per text node while reading (XmlTextReaderImpl.ParseText),
 //! so this module reads with quick-xml directly and builds the same tree.
 
-use super::dom::{Data, Doc, Name, NodeId, XML_NS};
+use crate::office::dotnet::dom::{self, Data, Doc, Name, NodeId, XML_NS};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
@@ -265,7 +265,7 @@ pub fn to_default_namespace_xml(doc: &Doc, root: NodeId, namespace: &str) -> Str
 
 fn write_node(doc: &Doc, node: NodeId, declare: Option<&str>, out: &mut String) {
     match &doc.nodes[node].data {
-        Data::Text(text) => out.push_str(&super::dom::escape_text(text)),
+        Data::Text(text) => out.push_str(&dom::escape_text(text)),
         Data::Element { name, attrs } => {
             out.push('<');
             out.push_str(&name.local);
@@ -278,12 +278,12 @@ fn write_node(doc: &Doc, node: NodeId, declare: Option<&str>, out: &mut String) 
                 }
                 out.push_str(&attribute.local);
                 out.push_str("=\"");
-                out.push_str(&super::dom::escape_attr(value));
+                out.push_str(&dom::escape_attr(value));
                 out.push('"');
             }
             if let Some(namespace) = declare {
                 out.push_str(" xmlns=\"");
-                out.push_str(&super::dom::escape_attr(namespace));
+                out.push_str(&dom::escape_attr(namespace));
                 out.push('"');
             }
             let children = doc.child_nodes(node);

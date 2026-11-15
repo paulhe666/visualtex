@@ -2,9 +2,8 @@
 //! MathMlExplicitFenceContract, MathMlTokenStyleContract, MathMlColorContract
 //! and MathSpaceContract (C# names are kept in the doc comments).
 
-use crate::office::omml_write::prep::dom::{Doc, NodeId, MATHML_NS};
-use crate::office::omml_write::prep::netstr::{eq_ignore_case, is_null_or_white_space, to_lower_invariant, to_upper_invariant, trim};
-use crate::office::omml_write::prep::xlinq::{has_elements, is_namespace_declaration};
+use crate::office::dotnet::dom::{Doc, NodeId, MATHML_NS};
+use crate::office::dotnet::netstr::{eq_ignore_case, is_null_or_white_space, to_lower_invariant, to_upper_invariant, trim};
 
 // ---- MathMlExplicitFenceContract ---------------------------------------------
 
@@ -21,15 +20,15 @@ fn is_mathml_or_none(ns: &str) -> bool {
 /// MathMlExplicitFenceContract.IsProjectableEndpoint.
 pub fn is_projectable_endpoint(doc: &Doc, element: NodeId) -> bool {
     let Some(name) = doc.name(element) else { return false };
-    if name.local != "mo" || !is_mathml_or_none(&name.ns) || has_elements(doc, element) {
+    if name.local != "mo" || !is_mathml_or_none(&name.ns) || doc.has_elements(element) {
         return false;
     }
     doc.attrs(element).iter().all(|(attribute, value)| {
-        is_namespace_declaration(attribute)
+        Doc::is_namespace_declaration(attribute)
             || (attribute.ns.is_empty() && attribute.local == "data-mjx-texclass")
             || (attribute.ns.is_empty()
                 && matches!(attribute.local.as_str(), "fence" | "stretchy" | "symmetric")
-                && eq_ignore_case(Some(value), "true"))
+                && eq_ignore_case(Some(value.as_str()), "true"))
     })
 }
 
@@ -103,7 +102,7 @@ pub fn resolve_effective_variant_with(doc: &Doc, token: NodeId, declared: Option
     if !is_null_or_white_space(declared) {
         return Some(to_lower_invariant(trim(declared.unwrap())));
     }
-    if has_elements(doc, token) {
+    if doc.has_elements(token) {
         return None;
     }
     let value = doc.value(token);

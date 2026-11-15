@@ -8,9 +8,9 @@ use super::contracts::{
     accent_is_stretchy, effective_color, explicit_color, is_single_mathml_character, resolve_declared_variant,
     resolve_effective_variant, resolve_effective_variant_auto, space_latex_source, wrap_color,
 };
-use super::dom::{Doc, NodeId};
+use crate::office::dotnet::dom::{Doc, NodeId};
 use super::formula_xml;
-use super::netstr::{
+use crate::office::dotnet::netstr::{
     contains_ignore_case, eq_ignore_case, first_is_math_symbol, int_try_parse, is_letter_low, is_letter_or_digit_low,
     is_lower_greek, is_null_or_white_space, is_upper_greek, len16, to_lower_invariant, to_upper_invariant, units,
 };
@@ -124,7 +124,7 @@ impl Converter<'_> {
     fn classed_container(&self, element: NodeId) -> String {
         let content = self.children(element);
         match self.explicit_atom_class_command(element) {
-            Some(command) if !is_null_or_white_space(Some(&content)) => {
+            Some(command) if !is_null_or_white_space(content.as_str()) => {
                 format!("{command}{{{}}}", content.trim())
             }
             _ => content,
@@ -779,7 +779,7 @@ impl Converter<'_> {
                 Some(format!("\\mathbfit{{{escaped}}}"))
             } else if has("bold") {
                 Some(format!("\\mathbf{{{escaped}}}"))
-            } else if name == "mn" && eq_ignore_case(Some(&variant), "italic") {
+            } else if name == "mn" && eq_ignore_case(Some(variant.as_str()), "italic") {
                 Some(format!("\\mathit{{{escaped}}}"))
             } else if explicitly_upright {
                 Some(format!("\\mathrm{{{escaped}}}"))

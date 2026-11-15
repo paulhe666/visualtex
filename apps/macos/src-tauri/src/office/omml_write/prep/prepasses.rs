@@ -25,14 +25,13 @@ use crate::office::omml_write::prep::contracts::{
     describe_omml_space, effective_color, has_tex_class, is_projectable_endpoint, resolve_effective_variant,
     try_get_row, MathSpaceOmmlCapability,
 };
-use crate::office::omml_write::prep::dom::{Doc, Name, NodeId, MATHML_NS};
-use crate::office::omml_write::prep::netstr::{
-    contains_ignore_case, contains_unicode_letter, eq_ignore_case, is_null_or_empty, is_white_space, len16, trim,
+use crate::office::dotnet::dom::{Doc, Name, NodeId, MATHML_NS};
+use crate::office::dotnet::netstr::{
+    contains_ignore_case, contains_unicode_letter, eq_ignore_case, is_null_or_empty, is_null_or_white_space, len16, trim,
 };
 use crate::office::omml_write::prep::xlinq::{
-    add_after_self, add_node, element_to_string, elements_after_self, formula_reader, has_elements,
-    is_namespace_declaration, new_element_with, nodes, parse, remove, replace_nodes, replace_with, BLOCK_READER,
-    PREPASS_READER, XDOCUMENT_PARSE_PRESERVE,
+    add_after_self, add_node, element_to_string, formula_reader, new_element_with, nodes, parse, remove, replace_nodes,
+    replace_with, BLOCK_READER, PREPASS_READER, XDOCUMENT_PARSE_PRESERVE,
 };
 
 /// WordOmmlConverter.NaryCharacters.
@@ -90,7 +89,7 @@ fn new_empty_operand(doc: &mut Doc) -> NodeId {
 }
 
 fn text_is_significant(doc: &Doc, node: NodeId) -> bool {
-    doc.text(node).is_some_and(|text| !is_white_space(text))
+    doc.text(node).is_some_and(|text| !is_null_or_white_space(text))
 }
 
 // ---- ValidateMathMlForOmml ------------------------------------------------------
@@ -111,7 +110,7 @@ pub fn validate_mathml_for_omml(mathml: &str) -> Result<(), String> {
 
 /// WordOmmlConverter.NormalizeMathTypeBinomialPiles.
 pub fn normalize_math_type_binomial_piles(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) || !contains_ignore_case(mathml, "data-mtef-pile") {
+    if is_null_or_white_space(mathml) || !contains_ignore_case(mathml, "data-mtef-pile") {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &XDOCUMENT_PARSE_PRESERVE)?;
@@ -149,7 +148,7 @@ pub fn normalize_math_type_binomial_piles(mathml: &str) -> Result<String, String
 
 /// WordOmmlConverter.NormalizeMathJaxBinomialDelimiters.
 pub fn normalize_mathjax_binomial_delimiters(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) || !mathml.contains("linethickness") {
+    if is_null_or_white_space(mathml) || !mathml.contains("linethickness") {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &XDOCUMENT_PARSE_PRESERVE)?;
@@ -162,8 +161,8 @@ pub fn normalize_mathjax_binomial_delimiters(mathml: &str) -> Result<String, Str
         let inner = doc.elements(element);
         if inner.len() != 1
             || !is_mathml(doc, inner[0], "mo")
-            || has_elements(doc, inner[0])
-            || is_white_space(&doc.value(inner[0]))
+            || doc.has_elements(inner[0])
+            || is_null_or_white_space(doc.value(inner[0]).as_str())
         {
             return None;
         }
@@ -228,7 +227,7 @@ fn bracket_token(doc: &Doc, element: NodeId, role: &str) -> Option<String> {
         }
         token = inner[0];
     }
-    if !is_mathml(doc, token, "mo") || has_elements(doc, token) {
+    if !is_mathml(doc, token, "mo") || doc.has_elements(token) {
         return None;
     }
     if doc.attr(token, "mathvariant").is_some() {
@@ -336,7 +335,7 @@ fn build_brackets(
 
 /// WordOmmlConverter.NormalizePlainBracketPairs.
 pub fn normalize_plain_bracket_pairs(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
     }
     // MathType read-back (data-mtef-*) keeps its literal brackets.
@@ -401,7 +400,7 @@ fn is_legacy_table_fence(doc: &Doc, element: NodeId, expected_tex_class: &str) -
 
 /// WordOmmlConverter.NormalizeFencedMathMlTables.
 pub fn normalize_fenced_mathml_tables(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) || !mathml.contains("mrow") {
+    if is_null_or_white_space(mathml) || !mathml.contains("mrow") {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &XDOCUMENT_PARSE_PRESERVE)?;
@@ -477,7 +476,7 @@ fn is_only_content_of_outer_script_argument(doc: &Doc, candidate: NodeId) -> boo
 
 /// WordOmmlConverter.NormalizeNestedEmptyBaseScripts.
 pub fn normalize_nested_empty_base_scripts(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &PREPASS_READER)?;
@@ -537,8 +536,8 @@ pub fn normalize_mathml_prescripts(mathml: &str) -> Result<String, String> {
         if arguments.len() != expected || !is_empty_base(doc, arguments[0]) {
             continue;
         }
-        let Some(basis) = elements_after_self(doc, script).first().copied() else { continue };
-        if !is_mathml_any(doc, basis, BASE_NAMES) || is_white_space(&doc.value(basis)) {
+        let Some(basis) = doc.elements_after_self(script).first().copied() else { continue };
+        if !is_mathml_any(doc, basis, BASE_NAMES) || is_null_or_white_space(doc.value(basis).as_str()) {
             continue;
         }
         let sub = if local == "msup" { new_mathml(doc, "none") } else { doc.deep_clone(arguments[1]) };
@@ -547,12 +546,12 @@ pub fn normalize_mathml_prescripts(mathml: &str) -> Result<String, String> {
         } else {
             doc.deep_clone(arguments[if local == "msubsup" { 2 } else { 1 }])
         };
-        if is_white_space(&doc.value(sub)) && is_white_space(&doc.value(sup)) {
+        if is_null_or_white_space(doc.value(sub).as_str()) && is_null_or_white_space(doc.value(sup).as_str()) {
             continue;
         }
         let native = new_mathml(doc, "mmultiscripts");
         let attributes: Vec<(Name, String)> =
-            doc.attrs(script).iter().filter(|(name, _)| !is_namespace_declaration(name)).cloned().collect();
+            doc.attrs(script).iter().filter(|(name, _)| !Doc::is_namespace_declaration(name)).cloned().collect();
         for (name, value) in attributes {
             doc.set_attr_ns(native, &name.ns, &name.local, Some(&value));
         }
@@ -591,7 +590,7 @@ fn accent_character(source: &str) -> Option<&'static str> {
 
 /// WordOmmlConverter.NormalizeMathMlAccents.
 pub fn normalize_mathml_accents(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &PREPASS_READER)?;
@@ -635,7 +634,7 @@ fn is_nary_limit(doc: &Doc, element: NodeId) -> bool {
 
 /// WordOmmlConverter.NormalizeNaryArguments.
 pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &PREPASS_READER)?;
@@ -652,7 +651,7 @@ pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
         .collect();
     let doc = &mut document.doc;
     for op in operators {
-        let has_argument = !elements_after_self(doc, op).is_empty();
+        let has_argument = !doc.elements_after_self(op).is_empty();
         let copy = doc.deep_clone(op);
         let empty_row = new_mathml(doc, "mrow");
         let synthetic_limit = new_element_with(doc, MATHML_NS, "msub", &[copy, empty_row]);
@@ -665,7 +664,7 @@ pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
 
     // Fold every consecutive n-ary chain from right to left.
     let parents: Vec<NodeId> = match doc.root {
-        Some(root) => doc.descendants_and_self(root).into_iter().filter(|&element| has_elements(doc, element)).collect(),
+        Some(root) => doc.descendants_and_self(root).into_iter().filter(|&element| doc.has_elements(element)).collect(),
         None => Vec::new(),
     };
     for parent in parents {
@@ -726,7 +725,7 @@ pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
         if !is_mathml(doc, op, "mo") || !is_nary_text(&doc.value(op)) {
             continue;
         }
-        let Some(argument) = elements_after_self(doc, limit).first().copied() else { continue };
+        let Some(argument) = doc.elements_after_self(limit).first().copied() else { continue };
         if is_mathml_any(doc, argument, &["mrow", "mstyle"]) {
             continue;
         }
@@ -740,7 +739,7 @@ pub fn normalize_nary_arguments(mathml: &str) -> Result<String, String> {
 
 /// WordOmmlConverter.NormalizeMathMlTokenStyleAuthority.
 pub fn normalize_mathml_token_style_authority(mathml: &str) -> Result<String, String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok(mathml.to_string());
     }
     let mut document = parse(mathml, &XDOCUMENT_PARSE_PRESERVE)?;
@@ -817,7 +816,7 @@ pub fn project_mathml_spaces_for_omml(mathml: &str) -> Result<(String, Vec<MathS
 /// WordOmmlConverter.ReplaceExtendedIntegralsWithOfficePlaceholders:
 /// (MathML, the n-ary characters in document order).
 pub fn replace_extended_integrals_with_office_placeholders(mathml: &str) -> Result<(String, Vec<String>), String> {
-    if is_white_space(mathml) {
+    if is_null_or_white_space(mathml) {
         return Ok((mathml.to_string(), Vec::new()));
     }
     let mut document = parse(mathml, &PREPASS_READER)?;

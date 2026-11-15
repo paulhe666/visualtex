@@ -2,8 +2,6 @@
 //! WordOmmlConverter.TransformOmmlToMathMl from the Windows add-in.
 #![allow(dead_code)]
 
-use super::dom;
-
 mod contracts;
 mod projection;
 mod transform;
