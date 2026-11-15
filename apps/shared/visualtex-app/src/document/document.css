@@ -687,8 +687,9 @@
   position: absolute;
   inset: 0;
   overflow: auto;
-  /* a scroll bar that takes room ("always show scroll bars") has its room kept: the page's width (and the fitted
-     zoom) never changes as it comes and goes */
+  /* a scroll bar that takes room ("always show scroll bars") has its room kept as it comes and goes; the page is sized
+     and placed in the canvas's width less a fixed room for the bar (DocumentEditor), so a switch between overlay and
+     classic bars doesn't move or rescale it either */
   scrollbar-gutter: stable;
   padding: 0;
   background: #fff;

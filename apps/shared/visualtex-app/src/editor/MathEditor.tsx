@@ -635,10 +635,11 @@ function replaceTextualPlaceholder(
 
 
 const BASE_FORMULA_FONT_SIZE = 54;
-const MIN_FORMULA_FONT_SIZE = BASE_FORMULA_FONT_SIZE * 0.2;
 
-const formulaFontSize = (zoom: number) =>
-  Math.max(MIN_FORMULA_FONT_SIZE, BASE_FORMULA_FONT_SIZE * zoom);
+// No floor of its own: the zoom's owner bounds it (the formula mode's MIN_EDITOR_ZOOM, Anywhere's smallest formula),
+// and a document formula's editor is drawn at the page's size, beside its picture at that size. (A floor of 10.8 px
+// drew document formulas below it larger than their pictures: they grew and shrank as their editors came and went.)
+const formulaFontSize = (zoom: number) => BASE_FORMULA_FONT_SIZE * zoom;
 
 function formulaRowHeightMetrics(
   latex: string,

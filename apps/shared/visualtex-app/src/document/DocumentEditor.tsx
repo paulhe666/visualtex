@@ -3,7 +3,7 @@
 // window and goes on downwards, and the "\" command menu; its controls, LaTeX and status are the workspace's
 // (DocumentControls, documentEditorStore). Closed formulas are the engine's static markup; the open one is a
 // DocumentFormulaField.
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { NodeSelection, TextSelection, type Command, type EditorState } from "prosemirror-state";
@@ -78,6 +78,8 @@ export const PX_PER_MM = 96 / 25.4;
 /** The gap between two pages, and the room around the sheet, in screen pixels. */
 export const PAGE_GAP = 16;
 const SHEET_SIDE_ROOM = 24;
+/** The room kept at the canvas's right for its vertical scroll bar: a classic bar's on Windows (17 px), macOS's 15. */
+const SCROLLBAR_ROOM = 17;
 
 /** Body fonts whose letters are large for their size (sans): their formulas are set a little larger. */
 const LARGE_BODY_FONTS = /arial|helvetica|calibri|segoe|verdana|tahoma|yahei|dengxian|pingfang|hei|sans/i;
@@ -638,26 +640,40 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
   // the body as the exported class sets it (article, or ctexart for Chinese text): size, spacing, indent
   const layout = useMemo(() => (settingsDoc ? bodyLayout(settingsDoc) : null), [settingsDoc]);
   const layoutKey = layout ? JSON.stringify(layout) : "";
-  // fitting the width: the zoom at which the page fills the window's width
-  useEffect(() => {
-    const store = useDocumentEditorStore.getState();
-    if (!fitWidth || !frame || !settings) {
-      if (!fitWidth && store.effectiveZoom !== manualZoom) store.setEffectiveZoom(manualZoom);
-      return;
-    }
-    const paperWidth = PAPER_SIZES[settings.paper].width * PX_PER_MM;
-    const fit = () => {
-      // the page touches both sides; rounded down so that it never overflows into a horizontal scrollbar
-      const width = frame.clientWidth;
-      if (width <= 0) return;
-      const next = Math.floor(Math.min(4, Math.max(0.3, width / paperWidth)) * 1000) / 1000;
-      if (Math.abs(useDocumentEditorStore.getState().effectiveZoom - next) > 0.0005) useDocumentEditorStore.getState().setEffectiveZoom(next);
+  // the canvas's width less the room for its vertical scroll bar, the same whatever kind of bar is showing. macOS shows
+  // overlay bars (no room) or classic ones (15 px) and switches between them by itself: "Show scroll bars:
+  // Automatically" follows whether a mouse is attached, and Universal Control attaches one and lets it go as the
+  // pointer moves between devices. Fitted to the room inside the bar (clientWidth), the page was rescaled by about 2%
+  // at every switch: text and formulas grew or shrank, the pages were measured again and the view moved.
+  const scrollbarRoom = useRef(SCROLLBAR_ROOM);
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  // (before the first paint: the page is drawn in its place at once)
+  useLayoutEffect(() => {
+    if (!frame) return;
+    const measure = () => {
+      // a classic bar wider than the room kept: the room grows to it, once
+      scrollbarRoom.current = Math.max(scrollbarRoom.current, frame.offsetWidth - frame.clientWidth);
+      setCanvasWidth(Math.max(0, frame.offsetWidth - scrollbarRoom.current));
     };
-    fit();
-    const observer = new ResizeObserver(fit);
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(frame);
     return () => observer.disconnect();
-  }, [fitWidth, frame, settings, manualZoom]);
+  }, [frame]);
+  // fitting the width: the zoom at which the page fills the canvas's width
+  useEffect(() => {
+    const store = useDocumentEditorStore.getState();
+    if (!fitWidth) {
+      if (store.effectiveZoom !== manualZoom) store.setEffectiveZoom(manualZoom);
+      return;
+    }
+    if (!settings || canvasWidth <= 0) return;
+    // the page touches the left side and the scroll bar's room; rounded down so that it never overflows into a
+    // horizontal scrollbar
+    const paperWidth = PAPER_SIZES[settings.paper].width * PX_PER_MM;
+    const next = Math.floor(Math.min(4, Math.max(0.3, canvasWidth / paperWidth)) * 1000) / 1000;
+    if (Math.abs(store.effectiveZoom - next) > 0.0005) store.setEffectiveZoom(next);
+  }, [fitWidth, canvasWidth, settings, manualZoom]);
   // the zoom or the page changed: the formulas' live editors take the page's size, and the pages are measured again
   useEffect(() => {
     const view = viewRef.current;
@@ -674,7 +690,9 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       width: paper.width * mm,
       minHeight: pageHeight,
       padding: `${settings.marginTop * mm}px ${settings.marginRight * mm}px ${settings.marginBottom * mm}px ${settings.marginLeft * mm}px`,
-      margin: fitWidth ? `${SHEET_SIDE_ROOM}px 0` : `${SHEET_SIDE_ROOM}px auto`,
+      // centred in the canvas's width less the scroll bar's room (a fitted page fills it), so that it stays where it is
+      // when the bar changes kind
+      margin: `${SHEET_SIDE_ROOM}px 0 ${SHEET_SIDE_ROOM}px ${Math.max(0, Math.floor((canvasWidth - paper.width * mm) / 2))}px`,
       fontSize: layout.fontSize * (96 / 72) * zoom,
       // the pages: white, then the gap between them (the canvas shows through)
       background: `repeating-linear-gradient(to bottom, var(--vtx-paper, #fff) 0, var(--vtx-paper, #fff) ${pageHeight}px, transparent ${pageHeight}px, transparent ${pageHeight + PAGE_GAP}px)`,
@@ -697,7 +715,7 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
     } as CSSProperties;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, layoutKey, zoom, lang, fitWidth]);
+  }, [settings, layoutKey, zoom, lang, canvasWidth]);
 
   const view = viewRef.current;
   const writeText = (text: string) => void navigator.clipboard.writeText(text);
