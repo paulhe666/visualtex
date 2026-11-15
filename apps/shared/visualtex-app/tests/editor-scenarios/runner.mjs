@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { withAppBrowser } from "../../testing/browser_test_runtime.mjs";
+import { BLANK_PAGE_PATH, withAppBrowser } from "../../testing/browser_test_runtime.mjs";
 
 const scenarioDir = new URL("./scenarios/", import.meta.url);
 const registry = new Map();
@@ -134,17 +134,12 @@ async function main() {
     const ctx = { client, evaluate, waitForEvaluation, key, typeText, clickSelectorWithPointer, sleep, scenario, baseUrl, canonicalLatex };
     await scenarioModule.beforeNavigation?.(ctx);
 
-    await client.send("Page.navigate", { url: baseUrl });
-    await sleep(650);
-    // a larger bundle can still be loading after the fixed delay
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      try {
-        if ((await evaluate("document.readyState")) === "complete") break;
-      } catch {
-        // The previous document is still being replaced.
-      }
-      await sleep(100);
-    }
+    // The start state goes into localStorage on a blank page of the app's origin, so it is in place before the app
+    // first loads (written into a running app, the app's own next save could overwrite it before a reload).
+    await client.send("Page.navigate", { url: `${baseUrl}${BLANK_PAGE_PATH}` });
+    await waitForEvaluation(`(() => ({
+      ready: location.pathname === ${JSON.stringify(BLANK_PAGE_PATH)} && document.readyState === "complete",
+    }))()`, "blank page of the app's origin");
     const storage = scenarioModule.storage?.() ?? {};
     const localStorageItems = scenarioModule.localStorageItems?.() ?? {};
     await evaluate(`(() => {
@@ -152,29 +147,25 @@ async function main() {
       localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
       localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
       localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
-      const storageKey = "visualtex-editor";
-      const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
       const line = { id: crypto.randomUUID(), latex: "" };
-      persisted.state = {
-        ...(persisted.state || {}),
-        lines: [line],
-        activeLineId: line.id,
-        checkUpdatesOnStartup: false,
-        ...${JSON.stringify(storage)},
-      };
-      if (!${JSON.stringify(Object.hasOwn(storage, "inputBehavior"))}) delete persisted.state.inputBehavior;
-      localStorage.setItem(storageKey, JSON.stringify(persisted));
+      localStorage.setItem("visualtex-editor", JSON.stringify({
+        state: { lines: [line], activeLineId: line.id, checkUpdatesOnStartup: false, ...${JSON.stringify(storage)} },
+        version: 0,
+      }));
       for (const [key, value] of Object.entries(${JSON.stringify(localStorageItems)})) localStorage.setItem(key, value);
     })()`);
-    await client.send("Page.reload", { ignoreCache: true });
-    await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`, "formula field");
+    await client.send("Page.navigate", { url: baseUrl });
+    await waitForEvaluation(`(() => ({
+      ready: location.pathname === "/" && Boolean(document.querySelector("math-field")),
+    }))()`, "formula field");
     await evaluate(`(() => {
       const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
         .find((button) => /Later|稍后处理/.test(button.textContent || ''));
       if (laterButton instanceof HTMLElement) laterButton.click();
       return true;
     })()`);
-    await sleep(80);
+    // the app's own first saves after it starts
+    await sleep(400);
 
     const ensurePointerTarget = async (x, y) => {
       await waitForEvaluation(`(() => {

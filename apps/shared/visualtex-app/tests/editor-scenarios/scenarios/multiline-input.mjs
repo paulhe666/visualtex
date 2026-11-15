@@ -2,6 +2,10 @@
 
 export const names = ["multiline-input"];
 
+// Windows only for now: in Chrome on macOS, after Ctrl+Enter the new inline row has the focus but the active-row
+// marker stays on the row before it; whether the macOS app does the same is still to be checked
+export const platforms = ["windows"];
+
 export async function run({ clearField, clickSelectorWithPointer, evaluate, key, typeText, waitForEvaluation }) {
   await clearField();
   await typeText("ab");

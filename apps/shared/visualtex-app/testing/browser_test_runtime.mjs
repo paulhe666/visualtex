@@ -212,15 +212,41 @@ async function appVite() {
   return import(pathToFileURL(vitePath).href);
 }
 
+// A page of the app's origin without the app: localStorage written there is in place before the app first loads.
+export const BLANK_PAGE_PATH = "/__visualtex_test_blank";
+
+// ahead of Vite's own middleware, whose HTML fallback would answer with the app
+const blankPagePlugin = {
+  name: "visualtex-test-blank-page",
+  configureServer(server) {
+    server.middlewares.use(serveBlankPage);
+  },
+  configurePreviewServer(server) {
+    server.middlewares.use(serveBlankPage);
+  },
+};
+
+function serveBlankPage(request, response, next) {
+  if (request.url !== BLANK_PAGE_PATH) return next();
+  response.setHeader("Content-Type", "text/html");
+  response.end("<!doctype html><html><body></body></html>");
+}
+
 // The app the test runs in, served on a free port: its built dist by `vite preview` (server "preview"; `outDir`
-// previews another build than dist/) or its sources by the Vite dev server (server "dev").
+// previews another build than dist/) or its sources by the Vite dev server (server "dev"). Both also serve
+// BLANK_PAGE_PATH.
 export async function startAppServer({ server = "preview", outDir } = {}) {
   const vite = await appVite();
   const listen = { host: "127.0.0.1", port: 0, strictPort: false };
   const http =
     server === "dev"
-      ? await vite.createServer({ logLevel: "error", server: listen })
-      : await vite.preview({ logLevel: "error", preview: listen, ...(outDir ? { build: { outDir } } : {}) });
+      ? await vite.createServer({ logLevel: "error", server: listen, plugins: [blankPagePlugin] })
+      : await vite.preview({
+          logLevel: "error",
+          preview: listen,
+          plugins: [blankPagePlugin],
+          ...(outDir ? { build: { outDir } } : {}),
+        });
   try {
     if (server === "dev") await http.listen();
   } catch (error) {
@@ -262,17 +288,13 @@ export async function withBrowserTest(run) {
   const server = await vite.createServer({
     logLevel: "error",
     server: { host: "127.0.0.1", port: 0, strictPort: false },
-  });
-  server.middlewares.use((request, response, next) => {
-    if (request.url !== "/__visualtex_test_blank") return next();
-    response.setHeader("Content-Type", "text/html");
-    response.end('<!doctype html><html><body></body></html>');
+    plugins: [blankPagePlugin],
   });
   let browser;
   try {
     await server.listen();
     const baseUrl = `http://127.0.0.1:${server.httpServer.address().port}`;
-    browser = await launchBrowser(`${baseUrl}/__visualtex_test_blank`);
+    browser = await launchBrowser(`${baseUrl}${BLANK_PAGE_PATH}`);
     const { client } = browser;
     const send = (method, params) => client.send(method, params, 60000);
     const evaluate = (expression) => client.evaluate(expression, 60000);
