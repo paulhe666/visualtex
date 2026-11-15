@@ -1,12 +1,9 @@
-import { spawn } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import process from "node:process";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { boundaryValueDocumentSource } from "./fixtures/boundary_value_document_source.mjs";
 import { longPhysicsDocumentSource } from "./fixtures/long_physics_document_source.mjs";
 
-const offset = process.pid % 1000;
-const previewPort = 18400 + offset;
-const debugPort = 23600 + offset;
 const sessionId = "12345678-1234-4234-9234-123456789abc";
 const longPhysicsRegression = process.argv.includes("--long-physics");
 const boundaryValueRegression = process.argv.includes("--boundary-value");
@@ -36,9 +33,6 @@ const customSettingsRegression =
   !literalFallbackRegression &&
   !theoremStructureRegression &&
   !edgeStructureRegression;
-const baseUrl = `http://127.0.0.1:${previewPort}/?view=office-document-import&sessionId=${sessionId}&transport=tauri`;
-const chromeProfile = `/tmp/visualtex-document-import-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function assertWordCompatibleSvg(value, formulaId) {
@@ -75,111 +69,10 @@ function assertRenderedPngPreview(value, formulaId) {
   }
 }
 
-async function waitFor(url, timeoutMs = 15_000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Retry while the local process starts.
-    }
-    await sleep(80);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.events = [];
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) {
-        if (
-          message.method === "Runtime.exceptionThrown" ||
-          message.method === "Runtime.consoleAPICalled"
-        ) {
-          this.events.push(message);
-        }
-        return;
-      }
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
 async function main() {
-  const preview = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "preview",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(previewPort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome;
-  let client;
-
-  try {
-    await waitFor(`http://127.0.0.1:${previewPort}`);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        "--window-size=1400,1000",
-        "about:blank",
-      ],
-      { stdio: "ignore" },
-    );
-
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await (
-      await fetch(`http://127.0.0.1:${debugPort}/json/list`)
-    ).json();
-    const page = targets.find((target) => target.type === "page");
-    if (!page) throw new Error("No Chrome page target found");
-
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
-    await client.send("Runtime.enable");
-    await client.send("Page.enable");
+  await withAppBrowser(async ({ baseUrl: origin, client }) => {
+    // the document import view of the built app
+    const baseUrl = `${origin}/?view=office-document-import&sessionId=${sessionId}&transport=tauri`;
     await client.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `(() => {
         let callbackId = 1;
@@ -825,13 +718,7 @@ f^{*}(\mathbf{x})
       hasPng: Boolean(formula.pngBase64),
     })) }, null, 2));
     console.log("Document import browser regression passed");
-  } finally {
-    client?.close();
-    chrome?.kill("SIGTERM");
-    preview.kill("SIGTERM");
-    await sleep(500);
-    await rm(chromeProfile, { recursive: true, force: true }).catch(() => {});
-  }
+  }, { path: "about:blank" });
 }
 
 await main();

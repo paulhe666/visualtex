@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
 import process from "node:process";
 import {
   canonicalSourceWrapperCommand,
   sourceWrapperKinds,
 } from "../../shared/visualtex-app/src/editor/sourceWrapperRegistry.ts";
-import {
-  createBrowserProfilePath,
-  resolveChromiumExecutable,
-} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const requestedCommand = process.argv[2] || "";
 const cases = [...sourceWrapperKinds.entries()]
@@ -20,104 +15,9 @@ const cases = [...sourceWrapperKinds.entries()]
   }))
   .filter((testCase) => !requestedCommand || testCase.command === requestedCommand);
 
-const offset = process.pid % 1000;
-const previewPort = 19300 + offset;
-const debugPort = 24300 + offset;
-const baseUrl = "http://127.0.0.1:" + previewPort;
-const profile = createBrowserProfilePath("visualtex-source-wrapper-registry");
-const browserPath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(url, timeoutMs = 20000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return response;
-    } catch {}
-    await sleep(80);
-  }
-  throw new Error("Timed out waiting for " + url);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  close() {
-    this.socket?.close();
-  }
-}
-
-const preview = spawn(
-  process.execPath,
-  [
-    "node_modules/vite/bin/vite.js",
-    "preview",
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(previewPort),
-    "--strictPort",
-  ],
-  { cwd: process.cwd(), stdio: "ignore" },
-);
-let browser;
-let client;
-
-try {
-  await waitFor(baseUrl);
-  browser = spawn(
-    browserPath,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--remote-debugging-port=" + debugPort,
-      "--user-data-dir=" + profile,
-      "--window-size=1400,1000",
-      baseUrl,
-    ],
-    { stdio: "ignore" },
-  );
-
-  const targetResponse = await waitFor("http://127.0.0.1:" + debugPort + "/json/list");
-  const targets = await targetResponse.json();
-  const page =
-    targets.find((target) => target.type === "page" && target.url.startsWith(baseUrl)) ??
-    targets.find((target) => target.type === "page");
-  assert.ok(page, "No browser page target found");
-
-  client = new CdpClient(page.webSocketDebuggerUrl);
-  await client.connect();
-  await client.send("Runtime.enable");
-  await client.send("Page.enable");
+await withAppBrowser(async ({ baseUrl, client }) => {
   await client.send("Page.navigate", { url: baseUrl });
   await sleep(1800);
 
@@ -321,17 +221,4 @@ try {
       cases.length +
       " commands.",
   );
-} finally {
-  client?.close();
-  browser?.kill("SIGTERM");
-  preview.kill("SIGTERM");
-  await sleep(200);
-  await rm(profile, {
-    recursive: true,
-    force: true,
-    maxRetries: 4,
-    retryDelay: 150,
-  }).catch((error) => {
-    if (process.platform !== "win32" || error?.code !== "EBUSY") throw error;
-  });
-}
+});

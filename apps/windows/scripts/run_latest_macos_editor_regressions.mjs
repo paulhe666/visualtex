@@ -44,12 +44,12 @@ const checks = [
       "tsx",
       "--import",
       "../shared/visualtex-app/testing/kernel-node.mts",
-      "scripts/physics_kernel_compatibility_regression.mts",
+      "../shared/visualtex-app/tests/physics_kernel_compatibility_regression.mts",
     ],
   },
   {
     label: "built MathLive physics kernel",
-    command: ["scripts/physics_kernel_browser_regression.mjs"],
+    command: ["../shared/visualtex-app/tests/physics_kernel_browser_regression.mjs"],
   },
   {
     label: "Office editor persistence isolation",
@@ -63,47 +63,47 @@ const checks = [
   },
   {
     label: "current Windows formula tiles",
-    command: ["scripts/targeted_editor_regression.mjs", "formula-tiles"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "formula-tiles"],
   },
   {
     label: "current Windows editor layout and matrix builder",
-    command: ["scripts/targeted_editor_regression.mjs", "layout"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "layout"],
   },
   {
     label: "current Windows formula formatting",
-    command: ["scripts/targeted_editor_regression.mjs", "formula-formatting"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "formula-formatting"],
   },
   {
     label: "current Windows horizontal formula overflow",
-    command: ["scripts/targeted_editor_regression.mjs", "horizontal-overflow"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "horizontal-overflow"],
   },
   {
     label: "shared scenario vertical-structure-probe",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "vertical-structure-probe"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "vertical-structure-probe"],
   },
   {
     label: "shared scenario native-structure-audit",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-audit"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "native-structure-audit"],
   },
   {
     label: "shared scenario native-structure-input-under",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-under"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "native-structure-input-under"],
   },
   {
     label: "shared scenario native-structure-input-multi",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-multi"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "native-structure-input-multi"],
   },
   {
     label: "shared scenario native-structure-input-core",
-    command: ["../shared/visualtex-app/tests/targeted_editor_scenarios.mjs", "native-structure-input-core"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "native-structure-input-core"],
   },
   {
     label: "current structural placeholder core",
-    command: ["scripts/targeted_editor_regression.mjs", "placeholder-core"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "placeholder-core"],
   },
   {
     label: "Word-like delete and line editing",
-    command: ["scripts/targeted_editor_regression.mjs", "delete"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "delete"],
   },
   {
     label: "Enter transitions",
@@ -111,11 +111,11 @@ const checks = [
   },
   {
     label: "current Windows structured Chinese IME",
-    command: ["scripts/targeted_editor_regression.mjs", "structured-chinese-ime"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "structured-chinese-ime"],
   },
   {
     label: "current Windows stale IME recovery",
-    command: ["scripts/targeted_editor_regression.mjs", "ime-stale-recovery"],
+    command: ["../shared/visualtex-app/tests/editor-scenarios/runner.mjs", "ime-stale-recovery"],
   },
   {
     label: "line scrolling, deletion, merge and clipping",

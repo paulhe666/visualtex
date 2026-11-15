@@ -1,68 +1,11 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-
-const portOffset = process.pid % 1000;
-const vitePort = 6400 + portOffset;
-const debugPort = 11400 + portOffset;
-const baseUrl = `http://127.0.0.1:${vitePort}`;
-const chromeProfile = `/tmp/visualtex-omml-smoke-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const sleep = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-async function waitFor(url, timeoutMs = 20_000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return response;
-    } catch {
-      // Retry while the local process starts.
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);
@@ -103,53 +46,8 @@ const uncommonIntegralOperators = [
 ];
 
 async function main() {
-  const vite = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(vitePort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome;
-  let client;
   let docxDirectory;
-
-  try {
-    await waitFor(baseUrl);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        baseUrl,
-      ],
-      { stdio: "ignore" },
-    );
-
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const pages = await (
-      await fetch(`http://127.0.0.1:${debugPort}/json/list`)
-    ).json();
-    const page = pages.find(
-      (item) => item.type === "page" && item.url?.startsWith(baseUrl),
-    );
-    if (!page?.webSocketDebuggerUrl) {
-      throw new Error("Chrome did not expose a debuggable page.");
-    }
-
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
-    await client.send("Runtime.enable");
-
+  await withAppBrowser(async ({ baseUrl, client }) => {
     const evaluateWithNavigationRetry = async (params) => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
@@ -839,17 +737,9 @@ async function main() {
     }
 
     console.log("Word structural OMML regression passed.");
-  } finally {
-    client?.close();
-    if (chrome && chrome.exitCode === null) {
-      const exited = new Promise((resolve) => chrome.once("exit", resolve));
-      chrome.kill("SIGTERM");
-      await Promise.race([exited, sleep(2_000)]);
-    }
-    vite.kill("SIGTERM");
-    await rm(chromeProfile, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+  }, { server: "dev", windowSize: null }).finally(async () => {
     if (docxDirectory) await rm(docxDirectory, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
-  }
+  });
 }
 
 main().catch((error) => {

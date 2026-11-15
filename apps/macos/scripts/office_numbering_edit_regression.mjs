@@ -1,31 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
-const offset = process.pid % 500;
-const port = 9900 + offset, debugPort = 18000 + offset;
-const baseUrl = `http://127.0.0.1:${port}`;
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 const sessionId = "11111111-2222-4333-8444-555555555555";
-const profile = `/private/tmp/visualtex-number-toggle-${process.pid}`;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(test) {
   const deadline = Date.now() + 20000;
   do { const value = await test(); if (value) return value; await sleep(50); } while (Date.now() < deadline);
   throw new Error("Timed out waiting for numbering editor regression");
 }
-const preview = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { stdio: "ignore" });
-let chrome, socket;
-try {
-  await waitFor(async () => { try { return (await fetch(baseUrl)).ok; } catch {} });
-  chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, baseUrl], { stdio: "ignore" });
-  const targets = await waitFor(async () => { try { return await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json(); } catch {} });
-  socket = new WebSocket(targets.find(t => t.type === "page").webSocketDebuggerUrl);
-  await new Promise(resolve => socket.addEventListener("open", resolve, { once: true }));
-  let id = 0; const pending = new Map();
-  socket.addEventListener("message", event => { const msg = JSON.parse(event.data); const call = pending.get(msg.id); if (call) { pending.delete(msg.id); msg.error ? call.reject(new Error(msg.error.message)) : call.resolve(msg.result); } });
-  const send = (method, params = {}) => new Promise((resolve, reject) => { pending.set(++id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async expression => { const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; };
-  await send("Runtime.enable");
-  await send("Page.enable");
+await withAppBrowser(async ({ baseUrl, send, evaluate }) => {
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
     const q = new URLSearchParams(location.search);
     const callbacks = new Map(), listeners = new Map(); let serial = 0;
@@ -96,7 +78,4 @@ try {
     }
     console.log(`PASS ${native ? "OMML" : "image"}: ${initial ? "disable" : "enable"} numbering, rapid toggle + ${close}, delayed drafts`);
   }
-} finally {
-  socket?.close(); chrome?.kill(); preview.kill();
-  await sleep(150); await rm(profile, { recursive: true, force: true });
-}
+});

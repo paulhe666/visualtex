@@ -1,92 +1,9 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
 import process from "node:process";
+import { CdpClient, withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { sharedSourceUrl } from "../../shared/visualtex-app/testing/sharedSourceUrl.mjs";
 
-const offset = process.pid % 650;
-const vitePort = 21100 + offset;
-const debugPort = 27100 + offset;
-const baseUrl = `http://127.0.0.1:${vitePort}`;
-const officeUrl = `${baseUrl}/office-native-dialog.html?session=00000000-0000-4000-8000-000000000000&theme=light`;
-const chromeProfile = `/tmp/visualtex-custom-symbol-runtime-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitFor(url, timeoutMs = 15000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Retry while local services start.
-    }
-    await sleep(80);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`CDP ${method} timed out`));
-      }, 15000);
-      this.pending.set(id, {
-        resolve: (value) => {
-          clearTimeout(timeout);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-      });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-  async evaluate(expression) {
-    const result = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (result.exceptionDetails) {
-      throw new Error(
-        result.exceptionDetails.exception?.description ||
-          result.exceptionDetails.text ||
-          "Runtime.evaluate failed",
-      );
-    }
-    return result.result.value;
-  }
-  close() {
-    this.socket?.close();
-  }
-}
 
 async function findPage(debugPort, predicate) {
   const targets = await (
@@ -152,45 +69,12 @@ async function typeRawCommandPrefix(client, command) {
 }
 
 async function main() {
-  const vite = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(vitePort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome;
-  let mainClient;
   let officeClient;
-
-  try {
-    await waitFor(baseUrl);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        "--window-size=1400,1000",
-        baseUrl,
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const mainTarget = await findPage(
-      debugPort,
-      (url) => url === baseUrl || url === `${baseUrl}/`,
-    );
+  await withAppBrowser(async ({ baseUrl, client: mainClient, debugPort }) => {
+    const officeUrl = `${baseUrl}/office-native-dialog.html?session=00000000-0000-4000-8000-000000000000&theme=light`;
+    // the page the browser opened; the Office window comes next to it
+    const mainTarget = await findPage(debugPort, (url) => url === baseUrl || url === `${baseUrl}/`);
     assert.ok(mainTarget, "Main page target must exist");
-    mainClient = await connectTarget(mainTarget);
     await mainClient.send("Page.navigate", { url: baseUrl });
     await sleep(500);
 
@@ -1010,14 +894,7 @@ async function main() {
     console.log(
       "Custom symbol live registration, Mathfield refresh, search, update/delete, export, Office rendering, configuration round trip, and Office-window synchronization regression passed",
     );
-  } finally {
-    mainClient?.close();
-    officeClient?.close();
-    chrome?.kill("SIGTERM");
-    vite.kill("SIGTERM");
-    await sleep(240);
-    await rm(chromeProfile, { recursive: true, force: true }).catch(() => undefined);
-  }
+  }, { server: "dev" }).finally(() => officeClient?.close());
 }
 
 main().catch((error) => {

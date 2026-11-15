@@ -1,114 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
-import process from "node:process";
-import { createBrowserProfilePath, resolveChromiumExecutable } from "../testing/browser_test_runtime.mjs";
+import { withAppBrowser } from "../testing/browser_test_runtime.mjs";
 
-const offset = process.pid % 1000;
-const previewPort = 9800 + offset;
-const debugPort = 14800 + offset;
-const baseUrl = `http://127.0.0.1:${previewPort}`;
-const profile = createBrowserProfilePath("visualtex-enter-transition");
-const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(url, timeoutMs = 15000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Retry while the local process starts.
-    }
-    await sleep(80);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
 async function main() {
-  const preview = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "preview",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(previewPort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome;
-  let client;
-
-  try {
-    await waitFor(baseUrl);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${profile}`,
-        "--window-size=1400,1000",
-        baseUrl,
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await (
-      await fetch(`http://127.0.0.1:${debugPort}/json/list`)
-    ).json();
-    const page = targets.find(
-      (target) => target.type === "page" && target.url.startsWith(baseUrl),
-    );
-    if (!page) throw new Error("No VisualTeX target found");
-
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
-    await client.send("Runtime.enable");
-    await client.send("Page.enable");
+  await withAppBrowser(async ({ baseUrl, client }) => {
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(550);
 
@@ -595,21 +491,7 @@ async function main() {
     }
 
     console.log("Enter transition regression passed");
-  } finally {
-    client?.close();
-    chrome?.kill("SIGTERM");
-    preview.kill("SIGTERM");
-    await sleep(250);
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      try {
-        await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined);
-        break;
-      } catch (error) {
-        if (attempt === 3) throw error;
-        await sleep(120);
-      }
-    }
-  }
+  });
 }
 
 await main();

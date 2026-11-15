@@ -1,127 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
-import process from "node:process";
-import {
-  createBrowserProfilePath,
-  resolveChromiumExecutable,
-} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../../shared/visualtex-app/src/editor/alignmentMarkers.ts";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
-const portOffset = process.pid % 700;
-const previewPort = 6900 + portOffset;
-const debugPort = 16900 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = createBrowserProfilePath("visualtex-macos-ocr-multiline-editor");
-const chromePath = resolveChromiumExecutable();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(url: string, timeoutMs = 20_000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Retry while local Vite/Chromium processes start.
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  nextId = 1;
-  pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-  socket?: WebSocket;
-
-  constructor(readonly url: string) {}
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise<void>((resolve, reject) => {
-      this.socket!.addEventListener("open", () => resolve(), { once: true });
-      this.socket!.addEventListener("error", () => reject(new Error("CDP WebSocket failed")), {
-        once: true,
-      });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method: string, params: Record<string, unknown> = {}) {
-    const id = this.nextId++;
-    return new Promise<any>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket!.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
 async function main() {
-  const preview = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "preview",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(previewPort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome: ReturnType<typeof spawn> | undefined;
-  let client: CdpClient | undefined;
-
-  try {
-    await waitFor(baseUrl);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        "--window-size=1400,1000",
-        baseUrl,
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    let page: any;
-    for (let attempt = 0; attempt < 80 && !page; attempt += 1) {
-      const targets = (await (
-        await fetch(`http://127.0.0.1:${debugPort}/json/list`)
-      ).json()) as any[];
-      page = targets.find(
-        (target) => target.type === "page" && target.url.startsWith(baseUrl),
-      );
-      if (!page) await sleep(100);
-    }
-    if (!page) throw new Error("No VisualTeX browser page target found");
-
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
-    await client.send("Runtime.enable");
-    await client.send("Page.enable");
-
+  await withAppBrowser(async ({ baseUrl, client }) => {
     const evaluate = async (expression: string) => {
-      const result = await client!.send("Runtime.evaluate", {
+      const result = await client.send("Runtime.evaluate", {
         expression,
         awaitPromise: true,
         returnByValue: true,
@@ -371,17 +257,7 @@ async function main() {
     console.log(
       `macOS OCR multi-align editor browser regression passed: rows=${state.count}, markerSpreads=${state.markerSpreads.join("/")}px, Paddle progress=${state.progressMessages.length} stages.`,
     );
-  } finally {
-    client?.close();
-    chrome?.kill("SIGTERM");
-    preview.kill("SIGTERM");
-    await rm(chromeProfile, {
-      recursive: true,
-      force: true,
-      maxRetries: 4,
-      retryDelay: 150,
-    }).catch(() => undefined);
-  }
+  });
 }
 
 await main();

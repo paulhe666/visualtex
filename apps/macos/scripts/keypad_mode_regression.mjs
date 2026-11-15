@@ -1,109 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
-import process from "node:process";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
-const portOffset = process.pid % 700;
-const previewPort = 8500 + portOffset;
-const debugPort = 13500 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}`;
-const chromeProfile = `/tmp/visualtex-keypad-mode-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(url, timeoutMs = 15000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Retry while local processes start.
-    }
-    await sleep(80);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
 async function main() {
-  const preview = spawn(
-    process.execPath,
-    [
-      "node_modules/vite/bin/vite.js",
-      "preview",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(previewPort),
-      "--strictPort",
-    ],
-    { cwd: process.cwd(), stdio: "ignore" },
-  );
-  let chrome;
-  let client;
-  try {
-    await waitFor(baseUrl);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        "--window-size=619,368",
-        baseUrl,
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-    const page = targets.find(
-      (target) => target.type === "page" && target.url.startsWith(baseUrl),
-    );
-    if (!page) throw new Error("No VisualTeX Chrome page target found");
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
-    await client.send("Runtime.enable");
-    await client.send("Page.enable");
+  await withAppBrowser(async ({ baseUrl, client }) => {
     await sleep(500);
 
     const evaluate = async (expression) => {
@@ -474,13 +375,7 @@ async function main() {
     );
 
     console.log("Keypad mode browser regression passed");
-  } finally {
-    client?.close();
-    chrome?.kill("SIGTERM");
-    preview.kill("SIGTERM");
-    await sleep(180);
-    await rm(chromeProfile, { recursive: true, force: true }).catch(() => {});
-  }
+  }, { windowSize: "619,368" });
 }
 
 await main();

@@ -1,25 +1,18 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import process from "node:process";
-import {
-  createBrowserProfilePath,
-  resolveChromiumExecutable,
-} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+import { CdpClient, launchBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const offset = process.pid % 600;
 const port = 20200 + offset;
-const debugPort = 21200 + offset;
 const baseUrl = `http://127.0.0.1:${port}`;
 const sessionId = "office-font-size-regression-session";
 const officeUrl = `${baseUrl}/dialog/${sessionId}?runtime=vsto-desktop`;
 const converterUrl = `${baseUrl}/dialog/${sessionId}?runtime=vsto-convert`;
 const distRoot = join(process.cwd(), "dist-office-windows-native");
-const chromeProfile = createBrowserProfilePath("visualtex-office-font-size");
-const chromePath = resolveChromiumExecutable();
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -180,74 +173,6 @@ async function waitFor(url, timeoutMs = 15_000) {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async evaluate(expression) {
-    const result = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (result.exceptionDetails) {
-      throw new Error(
-        result.exceptionDetails.exception?.description ||
-          result.exceptionDetails.text ||
-          "Runtime.evaluate failed",
-      );
-    }
-    return result.result.value;
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
-async function waitForPage() {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 15_000) {
-    const targets = await (
-      await fetch(`http://127.0.0.1:${debugPort}/json/list`)
-    ).json();
-    const target = targets.find(
-      (candidate) => candidate.type === "page" && candidate.url.startsWith(officeUrl),
-    );
-    if (target) return target;
-    await sleep(80);
-  }
-  throw new Error("Timed out waiting for Office font-size regression page");
-}
-
 async function waitForEvaluation(client, expression, description, timeoutMs = 10_000) {
   const startedAt = Date.now();
   let lastValue;
@@ -340,28 +265,13 @@ async function main() {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);
   });
-  let chrome;
+  let browser;
   let client;
   try {
     await waitFor(`${baseUrl}/api/v1/preferences`);
-    chrome = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${chromeProfile}`,
-        "--window-size=1240,820",
-        officeUrl,
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const target = await waitForPage();
-    client = new CdpClient(target.webSocketDebuggerUrl);
-    await client.connect();
+    browser = await launchBrowser(officeUrl, { windowSize: "1240,820" });
+    const { debugPort } = browser;
+    client = browser.client;
     await client.send("Runtime.enable");
     await client.send("Page.enable");
 
@@ -1797,9 +1707,8 @@ async function main() {
     console.log("Office formula font-size regression passed");
   } finally {
     client?.close();
-    chrome?.kill("SIGTERM");
+    await browser?.close();
     await new Promise((resolve) => server.close(resolve));
-    await rm(chromeProfile, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

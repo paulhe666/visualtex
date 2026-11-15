@@ -13,16 +13,12 @@
 // (Backspace and Delete from every stop), click (on the caret, else beside it),
 // placeholder (caret against the empty-slot marker, measured in pixels) and
 // convert (the caret after input conversions, a fixed list of cases).
-import { spawn } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
-import {
-  createBrowserProfilePath,
-  resolveChromiumExecutable,
-} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+import { launchBrowser, startAppServer } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -46,43 +42,6 @@ function option(args, name, fallback = null) {
 }
 
 // ------------------------------------------------------------------ browser --
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
 
 async function waitFor(url, timeoutMs = 20000) {
   const started = Date.now();
@@ -589,44 +548,15 @@ async function run(args) {
     (latex) => !filter || latex.includes(filter),
   );
 
-  const portOffset = process.pid % 1000;
-  const debugPort = 12400 + portOffset;
-  let preview = null;
-  if (!url) {
-    const previewPort = 7400 + portOffset;
-    url = `http://127.0.0.1:${previewPort}/`;
-    preview = spawn(
-      process.execPath,
-      ["node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
-      { cwd: join(here, ".."), stdio: "ignore" },
-    );
-  }
-  const profile = createBrowserProfilePath("visualtex-editing-core-harness");
-  let chrome = null;
-  let client = null;
+  // without --url: the built dist of the app this runs in
+  const preview = url ? null : await startAppServer();
+  if (!url) url = `${preview.baseUrl}/`;
+  let browser = null;
   const results = { url, letterFont: letterFont ?? null, date: new Date().toISOString(), tests, formulas: [] };
   try {
     await waitFor(url);
-    chrome = spawn(
-      resolveChromiumExecutable(),
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-        `--remote-debugging-port=${debugPort}`,
-        `--user-data-dir=${profile}`,
-        "--window-size=1400,1000",
-        "about:blank",
-      ],
-      { stdio: "ignore" },
-    );
-    await waitFor(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-    const page = targets.find((t) => t.type === "page");
-    if (!page) throw new Error("No Chrome page target found");
-    client = new CdpClient(page.webSocketDebuggerUrl);
-    await client.connect();
+    browser = await launchBrowser("about:blank");
+    const { client } = browser;
     await client.send("Runtime.enable");
     await client.send("Page.enable");
     await client.send("Emulation.setDeviceMetricsOverride", {
@@ -678,14 +608,8 @@ async function run(args) {
       }
     }
   } finally {
-    client?.close();
-    chrome?.kill();
-    preview?.kill();
-    try {
-      rmSync(profile, { recursive: true, force: true });
-    } catch {
-      // The browser may still hold the profile for a moment.
-    }
+    await browser?.close();
+    await preview?.close();
   }
   writeFileSync(out, JSON.stringify(results, null, 1));
   console.log(`wrote ${out}`);

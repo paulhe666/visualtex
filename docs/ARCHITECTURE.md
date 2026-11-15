@@ -29,8 +29,10 @@ tools           仓库结构检查
 `virtual:visualtex-kernel-host`（`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`）取得共享的命令表和输入规则。
 Node 脚本（测试、生成器）用 `tsx --import ../shared/visualtex-app/testing/node-loader.mjs` 运行，共享代码的依赖和
 `@platform/…` 从当前应用解析；两个应用都运行的测试在 `apps/shared/visualtex-app/tests`。浏览器测试用
-`testing/browser_test_runtime.mjs`（按系统找到 Chrome/Edge；`withBrowserTest` = 应用的 Vite 开发服务器加经 CDP
-驱动的无头浏览器），在页面里引入共享模块用 `testing/sharedSourceUrl.mjs`。
+`testing/browser_test_runtime.mjs`：按系统找到 Chrome/Edge，`withAppBrowser` = 应用构建好的 dist（`vite preview`）
+或 Vite 开发服务器加经 CDP 驱动的无头浏览器（端口由系统分配，可并行），`withBrowserTest` = 开发服务器的空白页，
+用来在页面里引入应用模块（`testing/sharedSourceUrl.mjs`）。编辑器场景在 `tests/editor-scenarios`：一个运行器，
+每个场景一个文件，只适用于一个平台的场景用 `platforms` 标明（`npm run test:editor-scenarios` 全部运行）。
 
 ### 共享规则
 
@@ -107,8 +109,13 @@ npm run bootstrap
 npm run build:macos
 npm run build:windows
 npm run test:repository
-npm run check
+npm run check            # 仓库结构 + 本机应用的全部检查
+npm run check:windows    # 或 check:macos
 ```
+
+`tools/check_app.mjs` 先构建一次，再逐个运行应用 `package.json` 里的 `test:*`、`verify:*`、`check:*`；不运行的
+（需要 Office、安装或发布版、OCR 模型，或会用当前会话的剪贴板）列在该 `package.json` 的 `checks.skip` 并写明原因。
+日志和结果在 `apps/<app>/.check-logs`。
 
 `tools/verify_repository_structure.mjs` 会检查：
 
@@ -155,9 +162,12 @@ and input rules through the build-time module `virtual:visualtex-kernel-host`
 (`apps/shared/visualtex-app/vite/visualtexKernelHost.ts`). Node scripts (tests, generators) run with
 `tsx --import ../shared/visualtex-app/testing/node-loader.mjs`, which resolves the packages and `@platform/…` of
 shared code from the application they run in; the tests both applications run are in
-`apps/shared/visualtex-app/tests`. Browser tests use `testing/browser_test_runtime.mjs` (Chrome or Edge located per
-system; `withBrowserTest` = the application's Vite dev server plus a headless browser driven over CDP) and
-`testing/sharedSourceUrl.mjs` to import a shared module inside the page.
+`apps/shared/visualtex-app/tests`. Browser tests use `testing/browser_test_runtime.mjs`: Chrome or Edge located per
+system; `withAppBrowser` = the application's built dist (`vite preview`) or its Vite dev server plus a headless
+browser driven over CDP (ports chosen by the system, so tests can run in parallel); `withBrowserTest` = a blank page
+of the dev server for importing application modules in the page (`testing/sharedSourceUrl.mjs`). Editor scenarios
+are in `tests/editor-scenarios`: one runner, one file per scenario, `platforms` marks a scenario that applies to one
+platform only (`npm run test:editor-scenarios` runs them all).
 
 ### Sharing rules
 
@@ -243,8 +253,14 @@ npm run bootstrap
 npm run build:macos
 npm run build:windows
 npm run test:repository
-npm run check
+npm run check            # repository structure + every check of this system's application
+npm run check:windows    # or check:macos
 ```
+
+`tools/check_app.mjs` builds once, then runs each `test:*`, `verify:*` and `check:*` script of the application's
+`package.json`; the ones it leaves out (they need Office, an installed or release build, the OCR models, or use the
+session's clipboard) are listed under `checks.skip` in that `package.json` with the reason. Logs and results go to
+`apps/<app>/.check-logs`.
 
 `tools/verify_repository_structure.mjs` checks that the application directories, the `apps/shared` packages and key
 platform files exist; that retired root-level application sources and Office.js paths have not come back; that the

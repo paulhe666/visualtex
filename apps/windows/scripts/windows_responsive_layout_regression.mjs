@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import process from "node:process";
-import {
-  createBrowserProfilePath,
-  resolveChromiumExecutable,
-} from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+import { launchBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
 
 // Responsive layout guards for the Windows desktop and Office editors:
 // - the bottom dock and the header rows never paint controls over each other,
@@ -29,7 +25,6 @@ import {
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const offset = process.pid % 500;
 const port = 24400 + offset;
-const debugPort = 25400 + offset;
 const baseUrl = `http://127.0.0.1:${port}`;
 const sessionId = "11111111-2222-4333-8444-555555555555";
 const desktopDist = resolve(process.env.VT_DESKTOP_DIST || "dist");
@@ -38,8 +33,6 @@ const scan = process.env.VT_SCAN === "1";
 const reportPath = process.env.VT_REPORT;
 const shotsDir = process.env.VT_SHOTS;
 const only = process.env.VT_ONLY; // "desktop" or "office"
-const chromeProfile = createBrowserProfilePath("visualtex-responsive-layout");
-const chromePath = resolveChromiumExecutable();
 let distRoot = desktopDist;
 
 const mimeTypes = {
@@ -162,62 +155,6 @@ const server = createServer(async (request, response) => {
     response.end(String(error));
   }
 });
-
-class CdpClient {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async connect() {
-    this.socket = new WebSocket(this.url);
-    await new Promise((done, fail) => {
-      this.socket.addEventListener("open", done, { once: true });
-      this.socket.addEventListener("error", fail, { once: true });
-    });
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    return new Promise((done, fail) => {
-      this.pending.set(id, { resolve: done, reject: fail });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async evaluate(expression) {
-    const result = await this.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Runtime.evaluate failed");
-    }
-    return result.result.value;
-  }
-
-  close() {
-    this.socket?.close();
-  }
-}
-
-async function waitForUrl(url, timeoutMs = 15_000) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {}
-    await sleep(80);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
 
 // ---- In-page probes ------------------------------------------------------
 
@@ -397,25 +334,10 @@ async function main() {
     server.once("error", fail);
     server.listen(port, "127.0.0.1", done);
   });
-  let chrome;
-  let client;
+  let browser;
   try {
-    chrome = spawn(chromePath, [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--hide-scrollbars=false",
-      `--remote-debugging-port=${debugPort}`,
-      `--user-data-dir=${chromeProfile}`,
-      "--window-size=1440,900",
-      "about:blank",
-    ], { stdio: "ignore" });
-    await waitForUrl(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-    const target = targets.find((candidate) => candidate.type === "page");
-    client = new CdpClient(target.webSocketDebuggerUrl);
-    await client.connect();
+    browser = await launchBrowser("about:blank", { windowSize: "1440,900", args: ["--hide-scrollbars=false"] });
+    const { client } = browser;
     await client.send("Runtime.enable");
     await client.send("Page.enable");
 
@@ -755,10 +677,8 @@ async function main() {
 
     await client.send("Browser.close").catch(() => {});
   } finally {
-    client?.close();
-    if (chrome && !chrome.killed) chrome.kill();
+    await browser?.close();
     await new Promise((done) => server.close(done));
-    await rm(chromeProfile, { recursive: true, force: true }).catch(() => {});
   }
 
   report.failures = failures;
