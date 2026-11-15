@@ -60,6 +60,7 @@ import {
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
 import { PREFERRED_LATIN, systemFontFamilies } from "../document/systemFonts";
+import { CandidateBoxPreview } from "../document/CommandMenu";
 
 const FORMULA_FACE_LABELS: Record<FormulaFaceRole, { zh: string; en: string }> = {
   letter: { zh: "字母字体", en: "Letters" },
@@ -1218,6 +1219,9 @@ export function SettingsDialog({
                       {isEn ? "AxMath style" : "AxMath 风格"}
                     </button>
                   </div>
+                </div>
+                <div className="candidate-style-preview">
+                  <CandidateBoxPreview lang={isEn ? "en" : "zh"} />
                 </div>
                 <label className="switch-row">
                   <span>

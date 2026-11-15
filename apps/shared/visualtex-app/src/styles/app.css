@@ -5455,7 +5455,7 @@ html body #mathlive-suggestion-popover .visualtex-native-preview-placeholder {
   display: inline-block;
   overflow: hidden;
   border-radius: 0.08em;
-  background: #d9edf9;
+  background: var(--formula-placeholder);
   color: transparent;
   line-height: 0;
   vertical-align: -0.08em;
@@ -9925,14 +9925,73 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   z-index: 1200 !important;
 }
 
-/* Candidate bar (Settings > Formula editor > Candidates): the candidates in one row, each one's
-   command on a dark band above its picture, the current one lighter. */
+/* The candidate boxes' colours, theme by theme (every look of Settings > Formula editor > Candidates draws with them,
+   in the formula editor and in the document's menus): the default list's band, the current row's band and picture,
+   the horizontal looks' header bands and picture cells, the numbers, and the text and pictures in them. The themes
+   this stylesheet colours have theirs here; the others' come with their palettes (themeCustomization.ts), a custom
+   theme's from its own colours. */
+:root {
+  --cand-band: #e2edf5;
+  --cand-band-current: #c9dfef;
+  --cand-picture-current: #eef4f8;
+  --cand-head: #1d4f71;
+  --cand-head-hover: #245e86;
+  --cand-head-current: #2b78ad;
+  --cand-head-text: #ffffff;
+  --cand-cell: #eef4f8;
+  --cand-cell-current: #d9eaf6;
+  --cand-mark: var(--accent);
+  --cand-text: var(--text);
+}
+:root[data-theme="beige"] {
+  --cand-band: #efe5d9;
+  --cand-band-current: #e1d5c6;
+  --cand-picture-current: #f6eee3;
+  --cand-head: #60442b;
+  --cand-head-hover: #6e5137;
+  --cand-head-current: #88694e;
+  --cand-cell: #f6eee3;
+  --cand-cell-current: #e9dfd1;
+}
+:root[data-theme="dark"] {
+  --cand-band: #26394a;
+  --cand-band-current: #2f5470;
+  --cand-picture-current: #363d47;
+  --cand-head: #132c40;
+  --cand-head-hover: #1a3a52;
+  --cand-head-current: #2c6f99;
+  --cand-cell: #363d47;
+  --cand-cell-current: #27495f;
+}
+:root[data-theme="purple"] {
+  --cand-band: #4b3b5c;
+  --cand-band-current: #5f4d76;
+  --cand-picture-current: #453851;
+  --cand-head: #2e2639;
+  --cand-head-hover: #443955;
+  --cand-head-current: #786495;
+  --cand-cell: #453851;
+  --cand-cell-current: #5a486f;
+}
+:root[data-theme="green"] {
+  --cand-band: #314b3d;
+  --cand-band-current: #3e604c;
+  --cand-picture-current: #35443d;
+  --cand-head: #1e2f24;
+  --cand-head-hover: #2c4636;
+  --cand-head-current: #4d7a5f;
+  --cand-cell: #35443d;
+  --cand-cell-current: #3b5a48;
+}
+
+/* Candidate bar (Settings > Formula editor > Candidates > AxMath style): the candidates in one row, each one's
+   command on a dark band above its picture on a neutral one, the current one lighter, in the theme's colours. */
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
   min-width: 0;
   max-width: calc(100vw - 16px);
   border: 0 !important;
   border-radius: 0 !important;
-  background: #ffffff !important;
+  background: var(--surface) !important;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24) !important;
 }
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).top-tip::after,
@@ -9947,7 +10006,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   padding: 0 !important;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #ffffff !important;
+  background: var(--surface) !important;
 }
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li,
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li {
@@ -9973,8 +10032,8 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   align-items: center;
   min-width: 0;
   padding: 5px 0;
-  background: #5c3b18;
-  color: #ffffff !important;
+  background: var(--cand-head);
+  color: var(--cand-head-text) !important;
   font: 13px/1.2 Menlo, Consolas, "JetBrains Mono", monospace !important;
   text-align: left;
   white-space: nowrap;
@@ -10007,46 +10066,31 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   align-items: center;
   justify-content: center;
   padding: 4px 8px;
-  background: #ede4e4;
-  color: #1e232a !important;
+  background: color-mix(in srgb, var(--cand-text) 7%, var(--surface));
+  color: var(--cand-text) !important;
   font-size: 1.15rem !important;
 }
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__index,
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__latex {
-  background: #a66a2f;
-  color: #ffffff !important;
+  background: var(--cand-head-current);
+  color: var(--cand-head-text) !important;
 }
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__command {
-  background: #f6ecda;
-  color: #1e232a !important;
+  background: var(--cand-cell-current);
+  color: var(--cand-text) !important;
 }
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover .ML__popover__index,
 :root[data-candidate-style="bar"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover .ML__popover__latex {
-  background: #7d5226;
+  background: var(--cand-head-hover);
 }
 
 /* Candidates in one row (Settings > Formula editor > Candidates > Horizontal): the AxMath style's layout — a column per
    candidate, its number and command on a dark band above its picture on a light one, the current one brighter — in
-   the default box's blues, frame and shadow. */
+   the theme's colours and the default box's frame and shadow. */
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
-  --cand-head: #1d4f71;
-  --cand-head-hover: #245e86;
-  --cand-head-current: #2b78ad;
-  --cand-head-text: #ffffff;
-  --cand-cell: #eef4f8;
-  --cand-cell-current: #d9eaf6;
-  --cand-line: #ffffff;
   min-width: 0;
   max-width: calc(100vw - 16px);
-  background: var(--cand-line) !important;
-}
-:root[data-theme="dark"][data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
-  --cand-head: #132c40;
-  --cand-head-hover: #1a3a52;
-  --cand-head-current: #2c6f99;
-  --cand-cell: #363d47;
-  --cand-cell-current: #27495f;
-  --cand-line: #202328;
+  background: var(--surface) !important;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).top-tip::after,
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover).bottom-tip::after {
@@ -10060,7 +10104,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   padding: 0 !important;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--cand-line) !important;
+  background: var(--surface) !important;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li,
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li,
@@ -10121,7 +10165,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   justify-content: center;
   padding: 4px 8px;
   background: var(--cand-cell);
-  color: var(--text) !important;
+  color: var(--cand-text) !important;
   font-size: 1.15rem !important;
 }
 :root[data-candidate-style="row"] body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__index,
@@ -10143,28 +10187,17 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 }
 
 /* The default list (Settings > Formula editor > Candidates > Default): a table — each candidate's number and command
-   on a soft blue band, its picture beside it on the box's surface, the current one's band and picture tinted
-   deeper; rows flush, 1 px lines. */
+   on a band of the theme's colour, its picture beside it on the box's surface, the current one's band and picture
+   tinted deeper; rows flush, 1 px lines. */
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
-  --cand-band: #e2edf5;
-  --cand-band-current: #c9dfef;
   --cand-picture: var(--surface);
-  --cand-picture-current: #eef4f8;
-  --cand-line: #ffffff;
   --cand-band-width: 196px;
-  background: var(--cand-line) !important;
-}
-:root[data-theme="dark"][data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) {
-  --cand-band: #26394a;
-  --cand-band-current: #2f5470;
-  --cand-picture: var(--surface);
-  --cand-picture-current: #363d47;
-  --cand-line: #202328;
+  background: var(--surface) !important;
 }
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) ul {
   row-gap: 1px;
   padding: 0 !important;
-  background: var(--cand-line) !important;
+  background: var(--surface) !important;
 }
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li,
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li + li,
@@ -10192,13 +10225,13 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 }
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__index {
   justify-self: center;
-  color: var(--accent) !important;
+  color: var(--cand-mark) !important;
 }
 :root[data-candidate-style="list"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__latex {
   display: block;
   padding: 0 10px 0 0;
   overflow: hidden;
-  color: var(--text) !important;
+  color: var(--cand-text) !important;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10211,6 +10244,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   align-items: center;
   justify-content: center;
   padding: 4px 10px;
+  color: var(--cand-text) !important;
 }
 
 /* Cards (Settings > Formula editor > Candidates > Cards), after launchers like Raycast and Spotlight: each candidate's
@@ -10244,10 +10278,10 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   background: transparent !important;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:hover {
-  background: color-mix(in srgb, var(--accent-soft) 50%, transparent) !important;
+  background: color-mix(in srgb, var(--cand-band) 50%, transparent) !important;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current {
-  background: var(--accent-soft) !important;
+  background: var(--cand-band) !important;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li > * {
   grid-row: 1;
@@ -10269,7 +10303,8 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   overflow: hidden;
   padding: 0 !important;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 6%, var(--surface));
+  background: color-mix(in srgb, var(--cand-text) 6%, var(--surface));
+  color: var(--cand-text) !important;
   font-size: 0.78rem !important;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__command {
@@ -10281,7 +10316,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   grid-row: 1;
   align-self: end;
   max-width: 100%;
-  color: var(--text) !important;
+  color: var(--cand-text) !important;
   font: 13px/1.25 "JetBrains Mono", Menlo, Consolas, monospace !important;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li:not(:has(.ML__popover__name)) .ML__popover__latex {
@@ -10289,7 +10324,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
   align-self: center;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__match {
-  color: var(--accent);
+  color: var(--cand-mark);
   font-weight: 700;
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) .ML__popover__name {
@@ -10322,7 +10357,7 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 }
 :root[data-candidate-style="card"] body:not(.anywhere-page) :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-popover) li.ML__popover__current .ML__popover__index {
   border-color: var(--accent-border);
-  color: var(--accent) !important;
+  color: var(--cand-mark) !important;
 }
 
 /* Settings: a label and its choice on one row */
@@ -10340,4 +10375,27 @@ html body :is(#mathlive-suggestion-popover, #visualtex-native-input-suggestion-p
 }
 .settings-inline-choice .theme-segment {
   flex: 0 0 380px;
+}
+/* each choice as wide as its name needs (a long one such as "AxMath 风格" kept on one line) */
+.settings-inline-choice .theme-segment button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+/* the candidate box in the chosen look under the looks' buttons (CandidateBoxPreview): the menu's own box, in place,
+   with the formula editor's rows (a command without its description, except on cards) */
+.candidate-style-preview {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+  padding: 0 4px 12px;
+}
+.candidate-style-preview .vtx-cmd-menu {
+  position: relative;
+  z-index: auto;
+  flex: none;
+  max-width: 100%;
+  pointer-events: none;
+}
+:root:not([data-candidate-style="card"]) .candidate-style-preview .vtx-cmd-desc {
+  display: none;
 }

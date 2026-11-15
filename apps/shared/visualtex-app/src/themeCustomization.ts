@@ -69,6 +69,28 @@ function documentColors(
   };
 }
 
+/** The command candidate boxes' colours: every look in Settings > Formula editor > Candidates draws with them, in the
+ *  formula editor and in the document's menus (app.css's --cand-*). */
+export interface CandidateColors {
+  /** the default list's band (number and command), the cards' current row */
+  band: string;
+  /** the default list's band and picture of the current row */
+  bandCurrent: string;
+  pictureCurrent: string;
+  /** the horizontal looks' header band (number and command): resting, under the pointer, the current one's; its text */
+  head: string;
+  headHover: string;
+  headCurrent: string;
+  headText: string;
+  /** the horizontal look's picture cell, and the current one's */
+  cell: string;
+  cellCurrent: string;
+  /** the numbers and the letters typed so far */
+  mark: string;
+  /** the commands and the pictures */
+  text: string;
+}
+
 export interface ThemeDefinition {
   id: Theme;
   labelEn: string;
@@ -76,6 +98,8 @@ export interface ThemeDefinition {
   mode: ThemePaletteMode;
   swatches: readonly [string, string, string];
   colors?: ThemePaletteColors;
+  /** its candidate boxes' colours, chosen for it (the themes app.css colours have theirs there) */
+  candidate?: CandidateColors;
 }
 
 export interface CustomThemeState {
@@ -236,6 +260,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#5267C9",
       toolbarSet: "#18864B",
     }),
+    candidate: {
+      band: "#E7F3FF",
+      bandCurrent: "#D2E9FF",
+      pictureCurrent: "#F2F9FF",
+      head: "#184B7A",
+      headHover: "#1D5991",
+      headCurrent: "#2673BD",
+      headText: "#FFFFFF",
+      cell: "#F2F9FF",
+      cellCurrent: "#DEEFFF",
+      mark: "#287AC7",
+      text: "#1A1C1F",
+    },
   },
   {
     id: "notion",
@@ -287,6 +324,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#EEE0DA",
       toolbarSet: "#FADEC9",
     }),
+    candidate: {
+      band: "#E9F0FA",
+      bandCurrent: "#D7E3F5",
+      pictureCurrent: "#F3F7FC",
+      head: "#2A4B7A",
+      headHover: "#325990",
+      headCurrent: "#4072B9",
+      headText: "#FFFFFF",
+      cell: "#F3F7FC",
+      cellCurrent: "#E2EBF8",
+      mark: "#4274BD",
+      text: "#37352F",
+    },
   },
   {
     id: "one",
@@ -338,6 +388,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#526FFF",
       toolbarSet: "#50A14F",
     }),
+    candidate: {
+      band: "#E7E9FA",
+      bandCurrent: "#D6DBF9",
+      pictureCurrent: "#EFF1FA",
+      head: "#354294",
+      headHover: "#3F4EAF",
+      headCurrent: "#5165E2",
+      headText: "#FFFFFF",
+      cell: "#EFF1FA",
+      cellCurrent: "#E0E4F9",
+      mark: "#5165E2",
+      text: "#383A42",
+    },
   },
   {
     id: "proof",
@@ -389,6 +452,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#BFC5C0",
       toolbarSet: "#B8C9BC",
     }),
+    candidate: {
+      band: "#E1E4DD",
+      bandCurrent: "#D0D7CF",
+      pictureCurrent: "#EAEBE5",
+      head: "#345142",
+      headHover: "#3E5F4E",
+      headCurrent: "#527A65",
+      headText: "#FFFFFF",
+      cell: "#EAEBE5",
+      cellCurrent: "#DADFD7",
+      mark: "#4B745F",
+      text: "#2D312E",
+    },
   },
   {
     id: "raycast",
@@ -440,6 +516,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#5856D6",
       toolbarSet: "#34A853",
     }),
+    candidate: {
+      band: "#FDEEED",
+      bandCurrent: "#FBDFDE",
+      pictureCurrent: "#FEF6F5",
+      head: "#763734",
+      headHover: "#8C413E",
+      headCurrent: "#B45450",
+      headText: "#FFFFFF",
+      cell: "#FEF6F5",
+      cellCurrent: "#FCE8E7",
+      mark: "#BE5854",
+      text: "#1D1D1F",
+    },
   },
   {
     id: "rose-pine",
@@ -491,6 +580,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#286983",
       toolbarSet: "#56949F",
     }),
+    candidate: {
+      band: "#F3E7E1",
+      bandCurrent: "#EFDCD6",
+      pictureCurrent: "#F6EDE7",
+      head: "#61403E",
+      headHover: "#744C4A",
+      headCurrent: "#96635F",
+      headText: "#FFFFFF",
+      cell: "#F6EDE7",
+      cellCurrent: "#F2E2DD",
+      mark: "#9A6662",
+      text: "#575279",
+    },
   },
   {
     id: "solarized",
@@ -542,6 +644,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#CB4B16",
       toolbarSet: "#859900",
     }),
+    candidate: {
+      band: "#F3E9CF",
+      bandCurrent: "#EBDEBD",
+      pictureCurrent: "#F7EFD9",
+      head: "#5A4817",
+      headHover: "#6A551B",
+      headCurrent: "#886C23",
+      headText: "#FFFFFF",
+      cell: "#F7EFD9",
+      cellCurrent: "#F0E5C8",
+      mark: "#8B6F24",
+      text: "#53656B",
+    },
   },
   {
     id: "vercel",
@@ -593,6 +708,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#0066FF",
       toolbarSet: "#46A758",
     }),
+    candidate: {
+      band: "#E6EDFE",
+      bandCurrent: "#D1DEFD",
+      pictureCurrent: "#F1F5FE",
+      head: "#1D439D",
+      headHover: "#2250BA",
+      headCurrent: "#2C67F1",
+      headText: "#FFFFFF",
+      cell: "#F1F5FE",
+      cellCurrent: "#DDE7FE",
+      mark: "#2C67F1",
+      text: "#1A1A1A",
+    },
   },
   {
     id: "vscode-plus",
@@ -644,6 +772,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#0070C1",
       toolbarSet: "#16825D",
     }),
+    candidate: {
+      band: "#E7EFF8",
+      bandCurrent: "#D2E1F2",
+      pictureCurrent: "#F2F6FB",
+      head: "#204A7B",
+      headHover: "#265892",
+      headCurrent: "#3273BE",
+      headText: "#FFFFFF",
+      cell: "#F2F6FB",
+      cellCurrent: "#DFE9F6",
+      mark: "#3376C2",
+      text: "#000000",
+    },
   },
   {
     id: "xcode",
@@ -695,6 +836,19 @@ const EXTRA_THEME_DEFINITIONS: readonly ThemeDefinition[] = [
       toolbarPhysics: "#804FB8",
       toolbarSet: "#3E8087",
     }),
+    candidate: {
+      band: "#E2E2FE",
+      bandCurrent: "#CACAFD",
+      pictureCurrent: "#EFEFFE",
+      head: "#0A09A2",
+      headHover: "#2726C0",
+      headCurrent: "#5C5BF8",
+      headText: "#FFFFFF",
+      cell: "#EFEFFE",
+      cellCurrent: "#D9D8FD",
+      mark: "#0F0EF5",
+      text: "#262626",
+    },
   }
 ];
 
@@ -846,6 +1000,106 @@ function foregroundOn(hex: string) {
   const { r, g, b } = parseHex(hex);
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   return luminance > 0.61 ? "#111318" : "#FFFFFF";
+}
+
+/** The WCAG contrast ratio of two colours (1 to 21). */
+function contrastRatio(a: string, b: string) {
+  const luminance = (hex: string) => {
+    const { r, g, b: blue } = parseHex(hex);
+    const channel = (value: number) => {
+      const c = value / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(blue);
+  };
+  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (high + 0.05) / (low + 0.05);
+}
+
+/** `hex` darkened step by step (from `from` toward black) until it has `target` contrast against `against`. */
+function darkenTo(hex: string, against: string, target: number, from = 0) {
+  let amount = from;
+  let color = mixHex(hex, "#000000", amount);
+  while (contrastRatio(color, against) < target && amount < 0.8) {
+    amount += 0.02;
+    color = mixHex(hex, "#000000", amount);
+  }
+  return color;
+}
+
+/** A palette's candidate colours made from its own colours (a custom theme's: the others have theirs chosen). Light:
+ *  bands and cells tinted with the accent, header bands the accent darkened for white text — as the light theme's,
+ *  the resting band about 8.7:1, the current one about 4.8:1 — and text that stays readable on the current band.
+ *  Dark: tints of the accent over the surface, the header bands from the background. */
+function candidateColors(colors: ThemePaletteColors, mode: ThemePaletteMode): CandidateColors {
+  const { accent, surface, foreground, background } = colors;
+  if (mode === "dark") {
+    let share = 0.48;
+    let headCurrent = mixHex(surface, accent, share);
+    while (contrastRatio(headCurrent, "#FFFFFF") < 4.6 && share > 0.1) {
+      share -= 0.02;
+      headCurrent = mixHex(surface, accent, share);
+    }
+    const head = mixHex(background, accent, 0.16);
+    return {
+      band: mixHex(surface, accent, 0.15),
+      bandCurrent: mixHex(surface, accent, 0.3),
+      pictureCurrent: mixHex(surface, foreground, 0.08),
+      head,
+      headHover: mixHex(head, headCurrent, 0.3),
+      headCurrent,
+      headText: "#FFFFFF",
+      cell: mixHex(surface, foreground, 0.08),
+      cellCurrent: mixHex(surface, accent, 0.26),
+      mark: accent,
+      text: foreground,
+    };
+  }
+  const bandCurrent = mixHex(surface, accent, 0.22);
+  const head = darkenTo(accent, "#FFFFFF", 8.7, 0.2);
+  let headCurrent = accent;
+  if (contrastRatio(accent, "#FFFFFF") > 5) {
+    // a dark accent: lighter, as far as white text stays readable
+    for (let amount = 0.02; amount <= 0.6 && contrastRatio(mixHex(accent, "#FFFFFF", amount), "#FFFFFF") >= 4.8; amount += 0.02) {
+      headCurrent = mixHex(accent, "#FFFFFF", amount);
+    }
+  } else {
+    headCurrent = darkenTo(accent, "#FFFFFF", 4.8);
+  }
+  return {
+    band: mixHex(surface, accent, 0.12),
+    bandCurrent,
+    pictureCurrent: mixHex(surface, accent, 0.065),
+    head,
+    headHover: mixHex(head, headCurrent, 0.35),
+    headCurrent,
+    headText: "#FFFFFF",
+    cell: mixHex(surface, accent, 0.065),
+    cellCurrent: mixHex(surface, accent, 0.16),
+    mark: darkenTo(accent, bandCurrent, 3.5),
+    text: contrastRatio(foreground, bandCurrent) < 4.5 ? darkenTo(foreground, bandCurrent, 4.5) : foreground,
+  };
+}
+
+const candidateProperties: Record<keyof CandidateColors, string> = {
+  band: "--cand-band",
+  bandCurrent: "--cand-band-current",
+  pictureCurrent: "--cand-picture-current",
+  head: "--cand-head",
+  headHover: "--cand-head-hover",
+  headCurrent: "--cand-head-current",
+  headText: "--cand-head-text",
+  cell: "--cand-cell",
+  cellCurrent: "--cand-cell-current",
+  mark: "--cand-mark",
+  text: "--cand-text",
+};
+
+function applyCandidateColors(colors: CandidateColors) {
+  const root = document.documentElement;
+  for (const [key, property] of Object.entries(candidateProperties) as [keyof CandidateColors, string][]) {
+    root.style.setProperty(property, colors[key]);
+  }
 }
 
 const inlineThemeProperties = [
@@ -1004,6 +1258,7 @@ export function clearInlineThemePalette() {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   for (const property of inlineThemeProperties) root.style.removeProperty(property);
+  for (const property of Object.values(candidateProperties)) root.style.removeProperty(property);
   delete root.dataset.themePalette;
 }
 
@@ -1176,6 +1431,7 @@ export function applyThemePalette(theme: Theme) {
     const custom = readCustomTheme();
     root.dataset.themePalette = "custom";
     applyColors(custom.colors, custom.mode);
+    applyCandidateColors(candidateColors(custom.colors, custom.mode));
     return;
   }
   const definition = getThemeDefinition(theme);
@@ -1183,6 +1439,7 @@ export function applyThemePalette(theme: Theme) {
     root.dataset.themePalette = theme;
     applyColors(definition.colors, definition.mode);
   }
+  if (definition.candidate) applyCandidateColors(definition.candidate);
 }
 
 export function publishCustomTheme(state: CustomThemeState) {

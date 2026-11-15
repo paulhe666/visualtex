@@ -2550,28 +2550,19 @@
 }
 
 /* ---- the default list (Settings > Formula editor > Candidates > Default): the "\" and "/" menus as a table — number
-   and command (its description under it) on a soft blue band, the picture beside it; rows flush, 1 px lines ---- */
+   and command (its description under it) on a band of the theme's colour (app.css: the candidate colours), the
+   picture beside it; rows flush, 1 px lines ---- */
 :root[data-candidate-style="list"] .vtx-cmd-menu {
-  --cand-band: #e2edf5;
-  --cand-band-current: #c9dfef;
   --cand-picture: var(--surface);
-  --cand-picture-current: #eef4f8;
-  --cand-line: #ffffff;
   --cand-band-width: 196px;
-  background: var(--cand-line);
-}
-:root[data-theme="dark"][data-candidate-style="list"] .vtx-cmd-menu {
-  --cand-band: #26394a;
-  --cand-band-current: #2f5470;
-  --cand-picture-current: #363d47;
-  --cand-line: #202328;
+  background: var(--surface);
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-list {
   display: flex;
   flex-direction: column;
   row-gap: 1px;
   padding: 0;
-  background: var(--cand-line);
+  background: var(--surface);
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item,
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item + .vtx-cmd-item,
@@ -2595,22 +2586,24 @@
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-index,
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-index {
-  color: var(--accent);
+  color: var(--cand-mark);
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-copy {
   padding: 5px 10px 5px 0;
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-label {
-  color: var(--text);
+  color: var(--cand-text);
 }
 :root[data-candidate-style="list"] .vtx-cmd-menu .vtx-cmd-preview {
   justify-self: center;
   max-width: none;
   padding: 4px 10px;
+  color: var(--cand-text);
 }
 
 /* ---- cards (Settings > Formula editor > Candidates > Cards): the menus with the picture in a tile at the left, the
-   command over its description, the number as a key at the right, a soft rounded fill for the current one ---- */
+   command over its description, the number as a key at the right, a soft rounded fill (the theme's candidate band)
+   for the current one ---- */
 :root[data-candidate-style="card"] .vtx-cmd-menu {
   border-radius: 12px;
 }
@@ -2629,10 +2622,10 @@
   background: transparent;
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item:hover {
-  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  background: color-mix(in srgb, var(--cand-band) 50%, transparent);
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current {
-  background: var(--accent-soft);
+  background: var(--cand-band);
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-preview {
   grid-column: 1;
@@ -2642,7 +2635,8 @@
   max-width: none;
   height: 42px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 6%, var(--surface));
+  background: color-mix(in srgb, var(--cand-text) 6%, var(--surface));
+  color: var(--cand-text);
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-preview {
   background: var(--surface);
@@ -2653,7 +2647,7 @@
   grid-row: 1;
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-label {
-  color: var(--text);
+  color: var(--cand-text);
   font-size: 13px;
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-index {
@@ -2676,30 +2670,15 @@
 }
 :root[data-candidate-style="card"] .vtx-cmd-menu .vtx-cmd-item.is-current .vtx-cmd-index {
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--cand-mark);
 }
 
 /* ---- candidates in one row (Settings > Formula editor > Candidates > Horizontal): the "\" menu laid out as the AxMath
-   style — a dark band (number, command) above a light picture, the current one brighter — in the default box's blues ---- */
+   style — a dark band (number, command) above a light picture, the current one brighter — in the theme's colours ---- */
 :root[data-candidate-style="row"] .vtx-cmd-menu {
-  --cand-head: #1d4f71;
-  --cand-head-hover: #245e86;
-  --cand-head-current: #2b78ad;
-  --cand-head-text: #ffffff;
-  --cand-cell: #eef4f8;
-  --cand-cell-current: #d9eaf6;
-  --cand-line: #ffffff;
   width: auto;
   max-width: min(calc(100% - 8px), 760px);
-  background: var(--cand-line);
-}
-:root[data-theme="dark"][data-candidate-style="row"] .vtx-cmd-menu {
-  --cand-head: #132c40;
-  --cand-head-hover: #1a3a52;
-  --cand-head-current: #2c6f99;
-  --cand-cell: #363d47;
-  --cand-cell-current: #27495f;
-  --cand-line: #202328;
+  background: var(--surface);
 }
 :root[data-candidate-style="row"] .vtx-cmd-list {
   display: flex;
@@ -2709,7 +2688,7 @@
   padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--cand-line);
+  background: var(--surface);
 }
 :root[data-candidate-style="row"] .vtx-cmd-item,
 :root[data-candidate-style="row"] .vtx-cmd-item + .vtx-cmd-item,
@@ -2764,7 +2743,7 @@
   min-height: 36px;
   padding: 4px 8px;
   background: var(--cand-cell);
-  color: var(--text);
+  color: var(--cand-text);
 }
 :root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-index,
 :root[data-candidate-style="row"] .vtx-cmd-item.is-current .vtx-cmd-copy {
@@ -2779,13 +2758,14 @@
   background: var(--cand-head-hover);
 }
 
-/* ---- candidate bar (Settings > Formula editor > Candidates): the "\" menu in one row ---- */
+/* ---- candidate bar (Settings > Formula editor > Candidates > AxMath style): the "\" menu in one row, in the theme's
+   colours ---- */
 :root[data-candidate-style="bar"] .vtx-cmd-menu {
   width: auto;
   max-width: min(calc(100% - 8px), 760px);
   border: 0;
   border-radius: 0;
-  background: #ffffff;
+  background: var(--surface);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
 }
 :root[data-candidate-style="bar"] .vtx-cmd-list {
@@ -2796,7 +2776,7 @@
   padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #ffffff;
+  background: var(--surface);
 }
 :root[data-candidate-style="bar"] .vtx-cmd-item,
 :root[data-candidate-style="bar"] .vtx-cmd-item + .vtx-cmd-item {
@@ -2820,8 +2800,8 @@
   display: flex;
   align-items: center;
   padding: 5px 0;
-  background: #5c3b18;
-  color: #ffffff;
+  background: var(--cand-head);
+  color: var(--cand-head-text);
   font: 13px/1.2 Menlo, Consolas, "JetBrains Mono", monospace;
 }
 :root[data-candidate-style="bar"] .vtx-cmd-index {
@@ -2838,7 +2818,7 @@
 :root[data-candidate-style="bar"] .vtx-cmd-label,
 :root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-label {
   overflow: visible;
-  color: #ffffff;
+  color: var(--cand-head-text);
   font: inherit;
 }
 :root[data-candidate-style="bar"] .vtx-cmd-desc {
@@ -2851,20 +2831,20 @@
   max-width: none;
   min-height: 34px;
   padding: 4px 8px;
-  background: #ede4e4;
-  color: #1e232a;
+  background: color-mix(in srgb, var(--cand-text) 7%, var(--surface));
+  color: var(--cand-text);
 }
 :root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-index,
 :root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-copy {
-  background: #a66a2f;
-  color: #ffffff;
+  background: var(--cand-head-current);
+  color: var(--cand-head-text);
 }
 :root[data-candidate-style="bar"] .vtx-cmd-item.is-current .vtx-cmd-preview {
-  background: #f6ecda;
+  background: var(--cand-cell-current);
 }
 :root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-index,
 :root[data-candidate-style="bar"] .vtx-cmd-item:hover .vtx-cmd-copy {
-  background: #7d5226;
+  background: var(--cand-head-hover);
 }
 
 /* ---- tutorials (TutorialDialog.tsx): the tasks on the left, the video and what it shows on the right ---- */
