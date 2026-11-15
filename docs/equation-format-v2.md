@@ -172,3 +172,36 @@ reported, not hidden:
   therefore leaves the next paragraph's first character in a run of its own on
   macOS (same text and formatting). VisualTeX for Mac assigns no paragraph style
   where Windows changes none.
+
+## 7. Converters by path
+
+Checked 2026-11-14. LaTeX reaches the OMML writers as MathML from the shared
+`latexToMathMl` (§1) on both platforms.
+
+| Path | Windows | macOS |
+|---|---|---|
+| Insert or edit a Word equation | C# `WordOmmlConverter.TransformMathMlToOmml`, `BuildWordNativeNumberedOmml` | Rust `omml_write` (`macos_offline/word.rs`: `word_equation_artifacts`, `insertion_omml`, `keep_equation_number`) |
+| PowerPoint native equation | C# `PowerPointNativeOmmlKernel` (the shared writer's OMML) | Rust `omml_write::transform_mathml_to_omml` (`macos_offline/powerpoint.rs`; table cells through `prepare_mathml_for_table_cell`) |
+| WPS Writer and Presentation | C# in the same add-ins (`WpsXmlInsertion`, `WpsNativeEquations`) | Rust `omml_write::wps_equation_docx`, `wps_field_instructions` (`wps/bridge.rs`, `macos_offline/word.rs`) |
+| Document import | C# (the add-in writes each formula) | Rust `omml_write::word_equation_artifacts` / `wps_equation_docx` (`macos_offline/document_import.rs`) |
+| Format conversion to OMML | C# (`WordFormulaService.FormatConversionCore`, `PowerPointFormulaService.FormatConversion`) | Rust `omml_batch` (`word_equation_docx`, `build_word_native_numbered_omml`) |
+| LaTeX redraw | C# (`*.LatexRedraw*`) | Rust (`macos_offline/presentation_redraw.rs`; Word through the editor path) |
+| Reading a Word equation (edit, conversion to VisualTeX, restore, agent reads) | C# `TransformOmmlToMathMl` + `MathMlToLatexConverter.ConvertWordEquation` | Rust `omml_latex` (`macos_offline::word_omml_to_mathml` + `mathml_to_word_equation_latex`; `omml_batch`, `automation/hosts.rs`) |
+| Reading a PowerPoint native equation | C# `PowerPointNativeOmmlKernel.ReadNativeMathMl` + `ConvertWordEquation` | Rust `powerpoint_omml_to_latex` (run colours into Word run properties, then `omml_latex`) |
+
+The Rust ports share one copy of the .NET behaviour they reproduce
+(`src-tauri/src/office/dotnet`: the XLinq tree, .NET string semantics, Unicode
+tables); each keeps its own XML reader and writer, as the C# code uses
+different reader settings and writers.
+
+A third converter, the TypeScript `apps/macos/src/office/omml/latexToOmml.ts`
+(MathJax LaTeX → OMML), is still computed by the macOS Office editor for
+PowerPoint (native equations and redraw) and sent as `ommlBase64` /
+`ommlDocxBase64`. The app uses it only for an export without MathML
+(fallbacks in `powerpoint.rs`, `word.rs`, `document_import.rs`), and the editor
+never sends one: it always sends `wordMathMl` when it asks for an equation and
+fails instead. Only `test:word-omml` exercises it.
+
+Proposal, not done (it changes what runs): remove `latexToOmml.ts`, the `omml`
+artifact and the fallbacks, so each platform has one writer and macOS's is held
+byte-identical to Windows' by the forward corpus (§1).
