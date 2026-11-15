@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 const read = (path) => readFile(path, "utf8");
+// A Rust module that is a folder (office/server/, ocr/): its files in name order.
+async function rustModule(folder) {
+  const names = (await readdir(folder)).filter((name) => name.endsWith(".rs")).sort();
+  return (await Promise.all(names.map((name) => readFile(`${folder}/${name}`, "utf8")))).join("\n");
+}
 const [
   tauriConfig,
   lifecycle,
@@ -20,7 +25,7 @@ const [
   read("src-tauri/src/app_lifecycle.rs"),
   read("src-tauri/src/lib.rs"),
   read("src-tauri/src/office/lifecycle.rs"),
-  read("src-tauri/src/office/server.rs"),
+  rustModule("src-tauri/src/office/server"),
   read("src-tauri/src/office/sessions.rs"),
   read("scripts/ensure_windows_office_certificate.ps1"),
   read("src-tauri/windows/hooks.nsh"),

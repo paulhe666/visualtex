@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 async function source(path) {
   return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
+}
+// A Rust module that is a folder (office/server/, ocr/): its files in name order.
+async function rustModule(folder) {
+  const names = (await readdir(folder)).filter((name) => name.endsWith(".rs")).sort();
+  return (await Promise.all(names.map((name) => readFile(`${folder}/${name}`, "utf8")))).join("\n").replace(/\r\n?/g, "\n");
 }
 
 const app = await source("../shared/visualtex-app/src/App.tsx");
@@ -22,12 +27,15 @@ const windowsStyles = await source("src/platform/styles.css");
 const officeStyles = (await source("../shared/visualtex-app/src/styles/workspace.css")) + windowsStyles;
 const sharedStyles = await source("../shared/visualtex-app/src/styles/app.css");
 const latestStyles = sharedStyles + windowsStyles;
-const tauriLib = await source("src-tauri/src/lib.rs");
+// lib.rs with the OCR runtime it hands its commands to (src/ocr and the part both backends share)
+const tauriLib = (await source("src-tauri/src/lib.rs")) + (await rustModule("src-tauri/src/ocr")) +
+  (await source("../shared/visualtex-backend/src/ocr_common.rs"));
 const appLifecycle = await source("src-tauri/src/app_lifecycle.rs");
 const quickOcrNative = await source("src-tauri/src/windows_quick_ocr.rs");
 const silentOcrNative = await source("src-tauri/src/windows_silent_ocr_hotkey.rs");
-const ocrProviderNative = await source("src-tauri/src/ocr_provider.rs");
-const officeServer = await source("src-tauri/src/office/server.rs");
+const ocrProviderNative = (await source("src-tauri/src/ocr/provider.rs")) +
+  (await source("../shared/visualtex-backend/src/ocr_provider_common.rs"));
+const officeServer = await rustModule("src-tauri/src/office/server");
 const officeState = await source("src-tauri/src/office/state.rs");
 
 // Quick OCR must minimize the native main window before launching either

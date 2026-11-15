@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 async function source(path) {
   return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
+}
+// A Rust module that is a folder (office/server/, ocr/): its files in name order.
+async function rustModule(folder) {
+  const names = (await readdir(folder)).filter((name) => name.endsWith(".rs")).sort();
+  return (await Promise.all(names.map((name) => readFile(`${folder}/${name}`, "utf8")))).join("\n").replace(/\r\n?/g, "\n");
 }
 
 const certificate = await source("scripts/ensure_windows_office_certificate.ps1");
@@ -12,7 +17,7 @@ const sessionClient = await source(
   "src-windows/VisualTeX.WindowsOffice.Contracts/VisualTeXSessionClient.cs",
 );
 const lifecycle = await source("src-tauri/src/office/lifecycle.rs");
-const server = await source("src-tauri/src/office/server.rs");
+const server = await rustModule("src-tauri/src/office/server");
 const state = await source("src-tauri/src/office/state.rs");
 const backend = await source("src-tauri/src/office/windows_backend.rs");
 const platform = await source("src-tauri/src/office/platform/mod.rs");
@@ -39,8 +44,8 @@ assert.ok(!certificate.includes('Programs\\VisualTeX\\VisualTeX.exe'));
 assert.ok(!certificate.includes('VisualTeX\\visualtex.exe'));
 assert.ok(certificate.includes("Add-CertificateToCurrentUserStore Root $certificate"));
 assert.ok(!certificate.includes("certutil.exe"));
-assert.ok(lifecycle.includes("crate::ocr_install::decode_process_output(&output.stdout)"));
-assert.ok(lifecycle.includes("crate::ocr_install::decode_process_output(&output.stderr)"));
+assert.ok(lifecycle.includes("crate::ocr::install::decode_process_output(&output.stdout)"));
+assert.ok(lifecycle.includes("crate::ocr::install::decode_process_output(&output.stderr)"));
 assert.ok(!backend.includes('hidden_command("certutil.exe")'));
 
 const destructiveMarkers = [
