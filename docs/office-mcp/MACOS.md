@@ -10,7 +10,7 @@ Status: built 2026-11-02; WPS Writer and WPS Presentation 2026-11-03 (§5). The 
 | MCP endpoint (`/mcp`, bearer token, audit log, read-only mode) | `src-tauri/src/office/automation/mcp.rs`, `settings.rs`, `audit.rs` on the companion (`server.rs`) |
 | stdio relay a client starts (`VisualTeX --mcp-stdio`) | `automation/stdio.rs`: pins the companion's certificate, starts the app in the background if it is not running |
 | Word and PowerPoint as hosts | `automation/hosts.rs`: one call of the add-in's `VisualTeX_AgentRun` macro per operation |
-| writes | `automation/writes.rs`, `macos_offline.rs` (agent sessions) |
+| writes | `automation/writes.rs`, `macos_offline/open_url.rs` (agent sessions) |
 | rendering for `render_latex` | `automation/render.rs` + `src/office/shared/mcpRenderBridge.ts` (the app's own renderer) |
 | settings | Settings → Office integration → AI agents (`src/components/MacOfficeMcpSettings.tsx`) |
 
