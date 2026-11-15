@@ -221,7 +221,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private static void GrantVisualTeXForegroundActivation()
     {
         try { _ = AllowSetForegroundWindow(AllowAnyProcessToSetForeground); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private const string RibbonXml = """
@@ -1336,7 +1336,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ui.InvalidateControl("VisualTeX.WordVsto.FontSizeDecrease");
             ui.InvalidateControl("VisualTeX.WordVsto.FontSizeIncrease");
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private void InvalidateEquationNumberFormatControls()
@@ -1353,7 +1353,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             ui.InvalidateControl("VisualTeX.WordVsto.NumberFormatHeading2Dot");
             ui.InvalidateControl("VisualTeX.WordVsto.NumberFormatHeading2Dash");
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private void ScheduleTypingCaretNormalization()
@@ -1396,7 +1396,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 finally { Interlocked.Exchange(ref _normalizingTypingCaret, 0); }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { ReleaseComObject(currentSelection); }
         });
     }
@@ -2045,10 +2045,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void OnWindowActivate(Document document, Window window)
     {
-        try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
-        try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
-        try { _keyboardHook?.BindOwnerWindow(window.Hwnd); } catch { }
-        try { _deleteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { _keyboardHook?.BindOwnerWindow(window.Hwnd); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { _deleteKeyHook?.BindOwnerWindow(window.Hwnd); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
         uint copySequence = 0;
         lock (_copyPasteGate)
@@ -2072,7 +2072,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         copySnapshot.KnownDocumentEnd,
                         attempt: 0);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             else
             {
@@ -2100,7 +2100,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (selection is not null)
                 ScheduleFormulaFontControlsInvalidation(selection, contextChanged: true);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { ReleaseComObject(selection); }
 
         // Returning from the VisualTeX Office editor does not necessarily move
@@ -2938,10 +2938,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             await client.PrewarmConverterAsync(cancellationToken).ConfigureAwait(false);
             await ommlReadPrewarm.ConfigureAwait(false);
         }
-        catch
+        catch (Exception ignored)
         {
             // Startup must remain non-blocking. The first explicit Office action
             // retries the full diagnostic/startup path and reports any failure.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -2988,9 +2989,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private async Task ObserveRibbonSessionTaskAsync(Task task)
     {
         try { await task.ConfigureAwait(false); }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ignored)
         {
             // Add-in shutdown can cancel before RunSessionAsync acquires its gate.
+            IgnoredErrors.Ignore(ignored);
         }
         catch (Exception error)
         {
@@ -3040,7 +3042,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             cancellation = _activeSessionCancellation;
         }
         try { cancellation.Cancel(); }
-        catch (ObjectDisposedException) { }
+        catch (ObjectDisposedException ignored) { IgnoredErrors.Ignore(ignored); }
         return true;
     }
 
@@ -3583,7 +3585,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await SessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             SetStatus(failureMessage);
         }
@@ -3591,15 +3593,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             if (emfPath is not null)
             {
-                try { File.Delete(emfPath); } catch { }
+                try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (svgPath is not null)
             {
-                try { File.Delete(svgPath); } catch { }
+                try { File.Delete(svgPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (imagePath is not null)
             {
-                try { File.Delete(imagePath); } catch { }
+                try { File.Delete(imagePath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             ClearActiveSessionOperation(operationCancellation);
             operationCancellation.Dispose();
@@ -4521,8 +4523,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         // it did not reach; this only observes the task.
                         WriteRedrawAcceptanceLog($"render-stream-observed error={error.GetType().Name}: {error.Message}");
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException ignored)
                     {
+                        IgnoredErrors.Ignore(ignored);
                     }
                     streamed?.Dispose();
                 }
@@ -4679,7 +4682,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await client.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             SetStatus(statusMessage);
             if (!string.Equals(
@@ -4701,7 +4704,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         return true;
                     }).ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally
@@ -4752,10 +4755,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 return true;
             }).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ignored)
         {
             // Redraw has already finished. A transient UI notification failure
             // must not turn successful document mutations into an operation error.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -5000,7 +5004,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         return true;
                     }).ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally { progress.Dispose(); _operationGate.Release(); }
@@ -5926,7 +5930,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     Encoding.UTF8);
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void WriteBulkAcceptanceLog(string message)
@@ -5947,13 +5951,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     Encoding.UTF8);
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void TryDeleteFile(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        try { File.Delete(path!); } catch { }
+        try { File.Delete(path!); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private async Task RepairInlineFormulaBaselinesAsync()
@@ -6582,14 +6586,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var userMessage = OfficePluginLanguage.SafeStatusMessage(message);
         dispatcher.Post(() =>
         {
-            try { application.StatusBar = userMessage; } catch { }
+            try { application.StatusBar = userMessage; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         });
     }
 
     private static void ReleaseComObject(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     internal void ResetSelectionChangeDiagnosticsForAcceptance()
@@ -6619,23 +6623,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _activeSessionId = null;
         }
         try { activeOperationCancellation?.Cancel(); }
-        catch (ObjectDisposedException) { }
+        catch (ObjectDisposedException ignored) { IgnoredErrors.Ignore(ignored); }
         if (_application is not null)
         {
-            try { _application.WindowBeforeDoubleClick -= OnWindowBeforeDoubleClick; } catch { }
-            try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }
-            try { _application.WindowActivate -= OnWindowActivate; } catch { }
-            try { _application.DocumentOpen -= OnDocumentOpen; } catch { }
-            try { _application.DocumentBeforeSave -= OnDocumentBeforeSave; } catch { }
+            try { _application.WindowBeforeDoubleClick -= OnWindowBeforeDoubleClick; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { _application.WindowActivate -= OnWindowActivate; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { _application.DocumentOpen -= OnDocumentOpen; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { _application.DocumentBeforeSave -= OnDocumentBeforeSave; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
-        try { _doubleClickHook?.Dispose(); } catch { }
+        try { _doubleClickHook?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _doubleClickHook = null;
-        try { _copyPasteHook?.Dispose(); } catch { }
+        try { _copyPasteHook?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _copyPasteHook = null;
-        try { _keyboardHook?.Dispose(); } catch { }
+        try { _keyboardHook?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _keyboardHook = null;
         EndActivePasteUndoRecord(null, "addin-dispose");
-        try { _deleteKeyHook?.Dispose(); } catch { }
+        try { _deleteKeyHook?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _deleteKeyHook = null;
         lock (_copyPasteGate)
         {
@@ -6645,7 +6649,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         Interlocked.Increment(ref _copyPasteWatchGeneration);
         Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
-        try { _automationAgent?.Dispose(); } catch { }
+        try { _automationAgent?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _automationAgent = null;
         DisposeSessionClient(_sessionClientTask);
         WpsOleDisplayRefresh.Attach(null, null);
@@ -6660,7 +6664,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _ribbonUi = null;
         if (_comAddIn is not null)
         {
-            try { _comAddIn.Object = null; } catch { }
+            try { _comAddIn.Object = null; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             ReleaseComObject(_comAddIn);
             _comAddIn = null;
         }

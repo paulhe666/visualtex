@@ -87,7 +87,7 @@ internal sealed class OfficeOperationProgress : IDisposable
         {
             if (!_cancellation.IsCancellationRequested) _cancellation.Cancel();
         }
-        catch (ObjectDisposedException) { }
+        catch (ObjectDisposedException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     internal void Report(string message, int completed = 0, int total = 0)

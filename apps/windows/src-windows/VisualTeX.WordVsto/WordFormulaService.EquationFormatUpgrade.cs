@@ -176,7 +176,7 @@ internal sealed partial class WordFormulaService
     {
         string? mathFont = null;
         try { mathFont = document.OMathFontName; }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         return string.Equals(
                 mathFont, WordOfficeMathFontLoader.LegacyLatinModernMathFamily, StringComparison.OrdinalIgnoreCase)
             || AnyStory(document, story => ReplaceFont(story, WordOfficeMathFontLoader.LegacyLatinModernMathFamily, null));
@@ -192,7 +192,7 @@ internal sealed partial class WordFormulaService
         WordOfficeMathFontLoader.EnsureLoaded();
         string? mathFont = null;
         try { mathFont = document.OMathFontName; }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         if (string.Equals(
                 mathFont, WordOfficeMathFontLoader.LegacyLatinModernMathFamily, StringComparison.OrdinalIgnoreCase))
         {

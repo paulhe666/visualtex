@@ -279,7 +279,7 @@ internal static class WordMathTypeNumbering
                             placeRefPosition,
                             numberTemplate!);
             }
-            try { placeRef.ShowCodes = false; } catch { }
+            try { placeRef.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -692,7 +692,7 @@ internal static class WordMathTypeNumbering
                 // the outer instruction stream. MathType's native MTPlaceRef keeps
                 // every child in result view, which also makes the complete outer
                 // code serializable/reusable as one field tree.
-                try { nested.ShowCodes = false; } catch { }
+                try { nested.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
 
             Release(outerCode);
@@ -706,7 +706,7 @@ internal static class WordMathTypeNumbering
             if (!TryReadCompleteMathTypePlaceRefTemplate(document, outer, out _))
                 throw new InvalidOperationException(
                     "Word detached one or more nested MathType number fields while constructing MTPlaceRef.");
-            try { outer.ShowCodes = false; } catch { }
+            try { outer.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var result = outer;
             outer = null;
             return result;
@@ -846,7 +846,7 @@ internal static class WordMathTypeNumbering
                 using (WordOperationMetrics.Measure(
                            "MathType.Display.RemoveListNumbering"))
                 {
-                    try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
+                    try { paragraphRange.ListFormat.RemoveNumbers(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
 
@@ -1584,12 +1584,12 @@ internal static class WordMathTypeNumbering
             Release(stagingInsertion);
             if (stagingDocument is not null)
             {
-                try { stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(stagingDocument);
             Release(documents);
             Release(application);
-            try { targetDocument.Activate(); } catch { }
+            try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1929,12 +1929,12 @@ internal static class WordMathTypeNumbering
                         paragraphRange.Font.Hidden = 0;
                         paragraphRange.Delete();
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 return;
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(paragraphRange);

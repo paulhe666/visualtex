@@ -159,7 +159,7 @@ public sealed partial class PowerPointFormulaService
             plan.DocumentId = DocumentIdentity(presentation);
             window = _application.ActiveWindow
                 ?? throw new InvalidOperationException(Text("没有活动的 PowerPoint 窗口。", "No active PowerPoint window."));
-            try { plan.OriginalViewType = window.ViewType; } catch { }
+            try { plan.OriginalViewType = window.ViewType; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             view = window.View;
             try
             {
@@ -182,7 +182,7 @@ public sealed partial class PowerPointFormulaService
         }
         finally
         {
-            if (snapshot is not null) { try { File.Delete(snapshot); } catch { } }
+            if (snapshot is not null) { try { File.Delete(snapshot); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             Release(current);
             Release(view);
             Release(window);
@@ -436,10 +436,10 @@ public sealed partial class PowerPointFormulaService
             ShapeName = SafeShapeName(shape),
             SourceKind = kind,
         };
-        try { unit.Rotation = shape.Rotation; } catch { }
-        try { unit.FlipHorizontal = shape.HorizontalFlip == MsoTriState.msoTrue; } catch { }
-        try { unit.FlipVertical = shape.VerticalFlip == MsoTriState.msoTrue; } catch { }
-        try { unit.Visible = shape.Visible != MsoTriState.msoFalse; } catch { }
+        try { unit.Rotation = shape.Rotation; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { unit.FlipHorizontal = shape.HorizontalFlip == MsoTriState.msoTrue; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { unit.FlipVertical = shape.VerticalFlip == MsoTriState.msoTrue; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { unit.Visible = shape.Visible != MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return unit;
     }
 
@@ -719,16 +719,16 @@ public sealed partial class PowerPointFormulaService
                             fore = ((dynamic)fill).ForeColor;
                             colors.Add((PowerPointConversionColors.FromOfficeRgb(Convert.ToInt32(((dynamic)fore).RGB)), length));
                         }
-                        catch { }
+                        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         finally { Release(fore); Release(fill); Release(font); Release(run); }
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(runs); Release(zone); }
                 result.Add(colors);
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(zones); Release(range); Release(frame); }
         return result;
     }
@@ -753,7 +753,7 @@ public sealed partial class PowerPointFormulaService
                         animatedShape = effect.Shape;
                         ids.Add(animatedShape.Id);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     finally { Release(animatedShape); Release(effect); }
                 }
             }
@@ -766,7 +766,7 @@ public sealed partial class PowerPointFormulaService
             interactive = timeline.InteractiveSequences;
             for (var index = 1; index <= interactive.Count; index++) Collect(interactive[index]);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(interactive); Release(timeline); }
         return ids;
     }
@@ -800,11 +800,11 @@ public sealed partial class PowerPointFormulaService
                             : ReadMathZoneGeometry(item).Count;
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(item); }
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(items); }
         return count;
     }
@@ -816,7 +816,7 @@ public sealed partial class PowerPointFormulaService
         {
             tags = shape.Tags;
             string? encoded = null;
-            try { encoded = tags[MetadataTag]; } catch { }
+            try { encoded = tags[MetadataTag]; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (FormulaMetadataCodec.Decode(encoded) is not null) return encoded;
             try { encoded = shape.AlternativeText; } catch { encoded = null; }
             return FormulaMetadataCodec.Decode(encoded) is not null ? encoded : null;
@@ -916,7 +916,7 @@ public sealed partial class PowerPointFormulaService
         }
         finally
         {
-            if (snapshot is not null) { try { File.Delete(snapshot); } catch { } }
+            if (snapshot is not null) { try { File.Delete(snapshot); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             Release(presentation);
         }
     }
@@ -978,7 +978,7 @@ public sealed partial class PowerPointFormulaService
             result.Converted = true;
             foreach (var replacement in created)
             {
-                try { result.ReplacementShapeIds.Add(replacement.Id); } catch { }
+                try { result.ReplacementShapeIds.Add(replacement.Id); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             deferRedraw = oleRestores.Count > 0;
             foreach (var restore in oleRestores)
@@ -1127,12 +1127,12 @@ public sealed partial class PowerPointFormulaService
             ((dynamic)frame).WordWrap = MsoTriState.msoFalse;
             ((dynamic)frame).AutoSize = MsoAutoSize.msoAutoSizeShapeToFitText;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(frame); }
         // WPS ignores TextFrame2.WordWrap (see CreateStandalone).
         if (OfficeHostEnvironment.IsWps)
         {
-            try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch { }
+            try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         try
         {
@@ -1146,7 +1146,7 @@ public sealed partial class PowerPointFormulaService
                 shape.Top += centerY - (zone.Top + zone.Height / 2f);
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private const string MathTypeNamePrefix = "MathType_";
@@ -1165,7 +1165,7 @@ public sealed partial class PowerPointFormulaService
                 ? (index == 0 ? sourceName : $"{sourceName} ({index + 1})")
                 : fallbackPrefix is null ? null : fallbackPrefix + Guid.NewGuid().ToString("N");
             if (name is null) continue;
-            try { created[index].Name = name; } catch { }
+            try { created[index].Name = name; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1180,7 +1180,7 @@ public sealed partial class PowerPointFormulaService
         // the box's own tags/actions follow the first object. (Animated boxes
         // are never split; capture reports them instead.)
         var first = created[0];
-        try { first.Title = source.Title; } catch { }
+        try { first.Title = source.Title; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         CopyMathTypeShapeTags(source, first);
         CopyMathTypeShapeActions(source, first);
         var placeholder = PlaceholderCleanup.Capture(slide, source);
@@ -1331,7 +1331,7 @@ public sealed partial class PowerPointFormulaService
             Release(shapes);
             Release(slide);
             Release(slides);
-            if (draft is not null) { try { draft.Close(); } catch { } }
+            if (draft is not null) { try { draft.Close(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             Release(draft);
             Release(presentations);
         }
@@ -1342,13 +1342,13 @@ public sealed partial class PowerPointFormulaService
         if (staging is null) return;
         if (staging.Presentation is not null)
         {
-            try { staging.Presentation.Close(); } catch { }
+            try { staging.Presentation.Close(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(staging.Presentation);
             staging.Presentation = null;
         }
         if (!string.IsNullOrWhiteSpace(staging.Root))
         {
-            try { Directory.Delete(staging.Root, true); } catch { }
+            try { Directory.Delete(staging.Root, true); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1484,7 +1484,7 @@ public sealed partial class PowerPointFormulaService
                         entry.Result.Converted = true;
                         foreach (var shape in shapes)
                         {
-                            try { entry.Result.ReplacementShapeIds.Add(shape.Id); } catch { }
+                            try { entry.Result.ReplacementShapeIds.Add(shape.Id); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         }
                     }
                     catch (Exception error)
@@ -1510,7 +1510,7 @@ public sealed partial class PowerPointFormulaService
                 Release(entry.Source);
                 Release(entry.Slide);
             }
-            if (snapshot is not null) { try { File.Delete(snapshot); } catch { } }
+            if (snapshot is not null) { try { File.Delete(snapshot); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             Release(stagingShapes);
             Release(stagingSlide);
             Release(stagingSlides);
@@ -1550,7 +1550,7 @@ public sealed partial class PowerPointFormulaService
             {
                 if (window.ViewType != plan.OriginalViewType) window.ViewType = plan.OriginalViewType;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (plan.OriginalSlideId == 0) return;
             slides = presentation.Slides;
             try { slide = FindSlideById(slides, plan.OriginalSlideId); }
@@ -1559,11 +1559,11 @@ public sealed partial class PowerPointFormulaService
             try
             {
                 Slide? currentSlide = null;
-                try { currentSlide = (Slide)view.Slide; } catch { }
+                try { currentSlide = (Slide)view.Slide; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (currentSlide is null || currentSlide.SlideID != slide.SlideID) view.GotoSlide(slide.SlideIndex);
                 Release(currentSlide);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var selectable = replacements.Where(entry => entry.SlideId == plan.OriginalSlideId).Select(entry => entry.ShapeId).ToHashSet();
             try
             {
@@ -1594,9 +1594,9 @@ public sealed partial class PowerPointFormulaService
                 range = shapes.Range(indexes.ToArray());
                 range.Select(MsoTriState.msoTrue);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(range);
@@ -1682,11 +1682,11 @@ public sealed partial class PowerPointFormulaService
                         if (_existing.Contains(placeholder.Id) || !IsEmptyPlaceholder(placeholder)) continue;
                         placeholder.Delete();
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     finally { Release(placeholder); }
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(placeholders); Release(shapes); }
         }
 
@@ -1771,7 +1771,7 @@ internal sealed class PowerPointModalGuard : IDisposable
             {
                 if (IsWindow(window)) EnableWindow(window, true);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         _disabled.Clear();
     }

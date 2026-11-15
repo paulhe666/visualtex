@@ -189,7 +189,7 @@ internal static class PowerPointClipboard
                 }
                 finally { CloseClipboard(); }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
 
         private static void Release(List<(uint Format, byte[]? Bytes, IntPtr Metafile)> items)

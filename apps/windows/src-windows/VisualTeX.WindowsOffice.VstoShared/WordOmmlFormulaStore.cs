@@ -394,7 +394,7 @@ internal static class WordOmmlFormulaStore
                         return result;
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(bookmarkRange);
@@ -454,7 +454,7 @@ internal static class WordOmmlFormulaStore
                     bookmark = null;
                     return result;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(bookmarkRange);
@@ -785,11 +785,12 @@ internal static class WordOmmlFormulaStore
                     RememberPart(document, part, metadata);
                     formulaIds.Add(parsed.ToString("D"));
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // An unreadable custom XML part is not a safe logical formula
                     // identity. Leave it untouched and exclude it from copy/dedup
                     // decisions rather than guessing from malformed metadata.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally { Release(part); }
             }
@@ -900,10 +901,11 @@ internal static class WordOmmlFormulaStore
                         return;
                     }
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Some Word builds reject in-place replacement after an
                     // OMath rebuild. Fall back to add-then-delete below.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
             parts = ((dynamic)document).CustomXMLParts;
@@ -916,7 +918,7 @@ internal static class WordOmmlFormulaStore
             // update never destroys the last valid metadata copy.
             if (existing is not null)
             {
-                try { ((dynamic)existing).Delete(); } catch { }
+                try { ((dynamic)existing).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             RememberPart(document, added, metadata);
             RemoveDuplicateMetadataParts(
@@ -997,7 +999,7 @@ internal static class WordOmmlFormulaStore
                     staleProbe = ((dynamic)parts).SelectByID(cachedPartId!);
                     if (staleProbe is not null)
                     {
-                        try { ((dynamic)addedPart).Delete(); } catch { }
+                        try { ((dynamic)addedPart).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         return false;
                     }
                     RememberPart(document, addedPart, metadata);
@@ -1008,7 +1010,7 @@ internal static class WordOmmlFormulaStore
                 {
                     if (addedPart is not null)
                     {
-                        try { ((dynamic)addedPart).Delete(); } catch { }
+                        try { ((dynamic)addedPart).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     }
                     return false;
                 }
@@ -1139,10 +1141,11 @@ internal static class WordOmmlFormulaStore
                     ((dynamic)part).Delete();
                     removed++;
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // An unreadable or non-deletable part is not safe to mutate.
                     // Leave it untouched rather than guessing from malformed data.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally { Release(part); }
             }
@@ -1735,7 +1738,7 @@ internal static class WordOmmlFormulaStore
                     }
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(tableMathRange);
@@ -2068,7 +2071,7 @@ internal static class WordOmmlFormulaStore
         {
             font = equationRange.Font;
             var size = 11f;
-            try { size = font.Size; } catch { }
+            try { size = font.Size; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (float.IsNaN(size) || float.IsInfinity(size) || size <= 0 || size > 256)
                 size = 11f;
             return Math.Max(11f, size * 1.5f);
@@ -2209,7 +2212,7 @@ internal static class WordOmmlFormulaStore
                             formulaId,
                             StringComparison.OrdinalIgnoreCase))
                         continue;
-                    try { ((dynamic)part).Delete(); } catch { }
+                    try { ((dynamic)part).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 finally { Release(part); }
             }
@@ -2269,7 +2272,7 @@ internal static class WordOmmlFormulaStore
                         }
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(cachedPart); }
                 ForgetPart(document, formulaId);
             }
@@ -2319,6 +2322,6 @@ internal static class WordOmmlFormulaStore
     internal static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

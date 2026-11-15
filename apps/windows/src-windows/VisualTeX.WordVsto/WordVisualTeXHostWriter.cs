@@ -174,7 +174,7 @@ internal static class WordVisualTeXHostWriter
         }
         catch
         {
-            try { shape?.Delete(); } catch { }
+            try { shape?.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (shape is not null)
                 WordFormulaIdentityStore.RemoveVisualTeX(document, metadata.FormulaId);
             throw;
@@ -851,6 +851,6 @@ internal static class WordVisualTeXHostWriter
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

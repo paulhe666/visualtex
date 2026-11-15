@@ -125,7 +125,7 @@ internal static class WordEquationHeadings
                             frames = range.Frames;
                             if (frames.Count > 0) continue;
                         }
-                        catch { }
+                        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         if (IsVisualTeXStructuralHeadingParagraph(range))
                             continue;
 
@@ -137,7 +137,7 @@ internal static class WordEquationHeadings
                                 listFormat.ListString,
                                 outlineLevel);
                         }
-                        catch { }
+                        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         candidates.Add(new HeadingParagraphCandidate(
                             range.Start,
                             outlineLevel,
@@ -235,7 +235,7 @@ internal static class WordEquationHeadings
                         frames = range.Frames;
                         if (frames.Count > 0) continue;
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     if (IsVisualTeXStructuralHeadingParagraph(range))
                         continue;
 
@@ -247,7 +247,7 @@ internal static class WordEquationHeadings
                             listFormat.ListString,
                             outlineLevel);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     candidates.Add(new HeadingParagraphCandidate(
                         range.Start,
                         outlineLevel,
@@ -594,7 +594,7 @@ internal static class WordEquationHeadings
                         // Word's layout cache. Do not query wdWithInTable here.
                         if (RangeIsWhollyWithinTable(range)) continue;
                         try { frames = range.Frames; if (frames.Count > 0) continue; }
-                        catch (COMException) { }
+                        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
                         if (IsVisualTeXStructuralHeadingParagraph(range)) continue;
                         var number = string.Empty;
                         try
@@ -602,7 +602,7 @@ internal static class WordEquationHeadings
                             list = range.ListFormat;
                             number = NormalizeHeadingNumberText(list.ListString, level);
                         }
-                        catch (COMException) { }
+                        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
                         if (string.IsNullOrWhiteSpace(number)) number = ParseHeadingNumberFromText(range.Text, level);
                         if (string.IsNullOrWhiteSpace(number)) continue;
                         if (level < targetLevel)

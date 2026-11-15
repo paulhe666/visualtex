@@ -549,10 +549,11 @@ internal sealed partial class WordFormulaService
             bookmark = bookmarks[name];
             bookmark.Delete();
         }
-        catch
+        catch (Exception ignored)
         {
             // Cleanup of an explicitly named local locator is best-effort. It is
             // never formula-existence or semantic-success evidence.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -592,7 +593,7 @@ internal sealed partial class WordFormulaService
                     matches.Add(
                         FormulaOleContract.NativeOleMode);
             }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException ignored) { IgnoredErrors.Ignore(ignored); }
 
             try
             {
@@ -604,7 +605,7 @@ internal sealed partial class WordFormulaService
                     matches.Add(
                         FormulaOleContract.WordOmmlMode);
             }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException ignored) { IgnoredErrors.Ignore(ignored); }
 
             try
             {
@@ -616,7 +617,7 @@ internal sealed partial class WordFormulaService
                     matches.Add(
                         FormulaOleContract.MathTypeOleMode);
             }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException ignored) { IgnoredErrors.Ignore(ignored); }
 
             if (matches.Count != 1)
                 throw new InvalidDataException(
@@ -834,7 +835,7 @@ internal sealed partial class WordFormulaService
                     hostRange.End,
                     hostRange.End);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -887,9 +888,10 @@ internal sealed partial class WordFormulaService
             format = typingRange.ParagraphFormat;
             format.Reset();
         }
-        catch
+        catch (Exception ignored)
         {
             // Formatting the continuation line must never fail the formula write.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {

@@ -850,11 +850,11 @@ internal sealed partial class WordFormulaService
                 var expected = copiedFieldResults[index - 1] ?? string.Empty;
                 if (!string.Equals(result.Text ?? string.Empty, expected, StringComparison.Ordinal))
                     result.Text = expected;
-                try { nested.ShowCodes = false; } catch { }
+                try { nested.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
 
             var viewShowsCodes = false;
-            try { viewShowsCodes = document.ActiveWindow.View.ShowFieldCodes; } catch { }
+            try { viewShowsCodes = document.ActiveWindow.View.ShowFieldCodes; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (viewShowsCodes)
                 return true;
 

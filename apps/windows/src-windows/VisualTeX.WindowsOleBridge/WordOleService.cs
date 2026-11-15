@@ -284,11 +284,12 @@ internal sealed class WordOleService : IWordFormulaService
     private static void TryReconcileEquationNumbers(dynamic document)
     {
         try { ReconcileEquationNumbers(document); }
-        catch
+        catch (Exception ignored)
         {
             // The formula image and its metadata are already durable. A user can
             // retry the numbering-only operation from the Ribbon without
             // creating a duplicate formula or losing a successful replacement.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -412,10 +413,11 @@ internal sealed class WordOleService : IWordFormulaService
                     rightMargin = Convert.ToSingle(((dynamic)pageSetup).RightMargin);
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // A standard 8.5-inch page with one-inch margins is a safe
                 // fallback when a protected/custom story does not expose setup.
+                IgnoredErrors.Ignore(ignored);
             }
 
             var positions = CalculateEquationTabStops(
@@ -702,7 +704,7 @@ internal sealed class WordOleService : IWordFormulaService
             var formulaHeight = Convert.ToSingle(((dynamic)shape).Height);
             var numberFontSize = 11f;
             try { numberFontSize = Convert.ToSingle(((dynamic)font).Size); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             ((dynamic)font).Position = CalculateEquationNumberFontPosition(
                 formulaHeight,
                 numberFontSize);
@@ -771,10 +773,10 @@ internal sealed class WordOleService : IWordFormulaService
     {
         dynamic candidate = shape;
         string? encoded = null;
-        try { encoded = candidate.AlternativeText as string; } catch { }
+        try { encoded = candidate.AlternativeText as string; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         if (string.IsNullOrWhiteSpace(encoded))
         {
-            try { encoded = candidate.Title as string; } catch { }
+            try { encoded = candidate.Title as string; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         return MetadataCodec.Decode(encoded);
     }
@@ -817,7 +819,7 @@ internal sealed class WordOleService : IWordFormulaService
     private static void EndUndoRecord(object? undoRecord)
     {
         if (undoRecord is null) return;
-        try { ((dynamic)undoRecord).EndCustomRecord(); } catch { }
+        try { ((dynamic)undoRecord).EndCustomRecord(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void ApplyInlineBaseline(
@@ -963,7 +965,7 @@ internal sealed class WordOleService : IWordFormulaService
             var fullName = document.FullName as string;
             if (!string.IsNullOrWhiteSpace(fullName)) return fullName;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return document.Name as string ?? "Word";
     }
 
@@ -982,6 +984,6 @@ internal sealed class WordOleService : IWordFormulaService
     private static void TryDelete(object? shape)
     {
         if (shape is null) return;
-        try { ((dynamic)shape).Delete(); } catch { }
+        try { ((dynamic)shape).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

@@ -102,7 +102,7 @@ internal sealed class WordDoubleClickHook : IDisposable
                     $"{DateTimeOffset.Now:O} pid={Process.GetCurrentProcess().Id} tid={Environment.CurrentManagedThreadId} {message}{Environment.NewLine}");
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private void Run()

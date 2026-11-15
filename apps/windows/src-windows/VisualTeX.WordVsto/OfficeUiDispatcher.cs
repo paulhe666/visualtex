@@ -31,7 +31,7 @@ internal sealed class OfficeUiDispatcher : IDisposable
         {
             _control.BeginInvoke(new Action(() => RunFireAndForgetSafely(operation)));
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     public Task<T> InvokeAsync<T>(Func<T> operation)

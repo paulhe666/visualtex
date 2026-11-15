@@ -63,6 +63,6 @@ internal static class ComRelease
     public static void Final(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.FinalReleaseComObject(value); } catch { }
+        try { Marshal.FinalReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

@@ -205,7 +205,7 @@ internal static class WordBulkInsertion
             if (font.Bold != (run.Bold ? -1 : 0)) font.Bold = run.Bold ? 1 : 0;
             if (font.Italic != (run.Italic ? -1 : 0)) font.Italic = run.Italic ? 1 : 0;
             if (font.StrikeThrough != (run.Strike ? -1 : 0)) font.StrikeThrough = run.Strike ? 1 : 0;
-            try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch { }
+            try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var underline = run.Underline
                 ? WdUnderline.wdUnderlineSingle
                 : WdUnderline.wdUnderlineNone;
@@ -214,13 +214,13 @@ internal static class WordBulkInsertion
             if (font.Subscript != 0) font.Subscript = 0;
             if (font.Superscript != 0) font.Superscript = 0;
             if (font.Position != 0) font.Position = 0;
-            try { if (font.AllCaps != 0) font.AllCaps = 0; } catch { }
-            try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch { }
+            try { if (font.AllCaps != 0) font.AllCaps = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (run.Code)
             {
                 font.Name = "Consolas";
-                try { font.NameAscii = "Consolas"; } catch { }
-                try { font.NameFarEast = "Microsoft YaHei UI"; } catch { }
+                try { font.NameAscii = "Consolas"; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { font.NameFarEast = "Microsoft YaHei UI"; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally
@@ -290,7 +290,7 @@ internal static class WordBulkInsertion
                 case WordBulkBlockKind.Code:
                     font = range.Font;
                     font.Name = "Consolas";
-                    try { font.NameAscii = "Consolas"; } catch { }
+                    try { font.NameAscii = "Consolas"; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     paragraph.LeftIndent = 18f;
                     paragraph.SpaceBefore = 3f;
                     paragraph.SpaceAfter = 3f;

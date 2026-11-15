@@ -205,23 +205,24 @@ public sealed class VisualTeXSessionClient : IDisposable
         {
             handler.SslProtocols = SslProtocols.Tls12;
         }
-        catch (PlatformNotSupportedException)
+        catch (PlatformNotSupportedException ignored)
         {
             // .NET Framework 4.7.2 supports this property. Keep the system TLS
             // default only on runtimes where the property is unavailable.
+            IgnoredErrors.Ignore(ignored);
         }
         handler.ServerCertificateCustomValidationCallback = CaptureServerCertificate;
         // The agent channel keeps a long poll open beside the add-in's own requests
         // and render waits; .NET Framework allows only two connections per server.
         try { handler.MaxConnectionsPerServer = 16; }
-        catch (PlatformNotSupportedException) { }
+        catch (PlatformNotSupportedException ignored) { IgnoredErrors.Ignore(ignored); }
         try
         {
             var servicePoint = ServicePointManager.FindServicePoint(
                 new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"));
             if (servicePoint.ConnectionLimit < 16) servicePoint.ConnectionLimit = 16;
         }
-        catch (Exception) { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _http = new HttpClient(handler)
         {
             BaseAddress = new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"),
@@ -1558,7 +1559,7 @@ public sealed class VisualTeXSessionClient : IDisposable
                     keep = candidate.StartTime >= requested.AddSeconds(-1)
                         && PathsEqual(candidate.MainModule?.FileName ?? string.Empty, _configuration.ExecutablePath);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (keep) return candidate;
                 candidate.Dispose();
             }
@@ -1649,9 +1650,10 @@ public sealed class VisualTeXSessionClient : IDisposable
                 File.AppendAllText(logPath, builder.ToString(), new UTF8Encoding(false));
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Diagnostics must never block Office operations.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 

@@ -799,9 +799,10 @@ internal static class WordSourceFontSize
                     if (TryResolveWordFontSize(font.Size, out fontSizePt))
                         return true;
                 }
-                catch (COMException)
+                catch (COMException ignored)
                 {
                     // Keep probing neighboring Word story coordinates.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally
                 {

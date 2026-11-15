@@ -202,8 +202,8 @@ internal sealed class NativeWorkerBackend : IDisposable
     private static void DeleteOwnedDirectory(string directory)
     {
         try { Directory.Delete(directory, recursive: true); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException ignored) { IgnoredErrors.Ignore(ignored); }
+        catch (UnauthorizedAccessException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private sealed class WorkerRequest

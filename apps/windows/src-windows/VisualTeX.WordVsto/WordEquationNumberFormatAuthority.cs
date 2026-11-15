@@ -75,7 +75,7 @@ internal static class WordEquationNumberFormatAuthority
         if (scope is null) return ResolveUncached(document);
         string? key = null;
         try { key = document.FullName; }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         if (string.IsNullOrEmpty(key)) return ResolveUncached(document);
         if (scope.TryGet(key!, out var cached)) return cached;
         var resolved = ResolveUncached(document);

@@ -283,7 +283,7 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
     private static void StartNewUndoEntry(object? application)
     {
         if (application is null) return;
-        try { ((dynamic)application).StartNewUndoEntry(); } catch { }
+        try { ((dynamic)application).StartNewUndoEntry(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static (object? Slide, object? Shape) FindFormula(
@@ -352,7 +352,7 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
             dynamic candidate = shape;
             tags = candidate.Tags;
             string? encoded = null;
-            try { encoded = ((dynamic)tags).Item(MetadataTag) as string; } catch { }
+            try { encoded = ((dynamic)tags).Item(MetadataTag) as string; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             encoded ??= candidate.AlternativeText as string;
             return MetadataCodec.Decode(encoded);
         }
@@ -540,7 +540,7 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
             var fullName = presentation.FullName as string;
             if (!string.IsNullOrWhiteSpace(fullName)) return fullName;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return presentation.Name as string ?? "PowerPoint";
     }
 
@@ -571,6 +571,6 @@ internal sealed class PowerPointOleService : IPowerPointFormulaService
     private static void TryDelete(object? shape)
     {
         if (shape is null) return;
-        try { ((dynamic)shape).Delete(); } catch { }
+        try { ((dynamic)shape).Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

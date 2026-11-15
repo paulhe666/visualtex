@@ -30,7 +30,7 @@ internal static class WordOmmlMathFontSetting
                     if (key?.GetValue(ValueName) is string stored)
                         choice = WordOmmlMathFontPolicy.Parse(stored);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 _choice = choice;
                 return choice;
             }
@@ -49,9 +49,10 @@ internal static class WordOmmlMathFontSetting
             using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, writable: true);
             key?.SetValue(ValueName, WordOmmlMathFontPolicy.Id(choice), RegistryValueKind.String);
         }
-        catch
+        catch (Exception ignored)
         {
             // Keep the in-process choice even if the profile rejects persistence.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 

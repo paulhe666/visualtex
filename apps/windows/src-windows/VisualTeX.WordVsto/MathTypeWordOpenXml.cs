@@ -1459,7 +1459,7 @@ internal static class MathTypeWordOpenXml
     {
         if (value is null || !Marshal.IsComObject(value)) return;
         try { Marshal.FinalReleaseComObject(value); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     [StructLayout(LayoutKind.Sequential)]

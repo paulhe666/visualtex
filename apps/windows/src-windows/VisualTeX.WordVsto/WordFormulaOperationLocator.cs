@@ -428,7 +428,7 @@ internal static class WordFormulaOperationLocator
                 WordFormulaHostKind.VisualTeX);
             if (visual is not null) return visual;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
         try
         {
@@ -605,6 +605,6 @@ internal static class WordFormulaOperationLocator
             || !Marshal.IsComObject(value))
             return;
         try { Marshal.ReleaseComObject(value); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

@@ -32,7 +32,7 @@ internal sealed class OfficeUiDispatcher : IDisposable
         {
             _control.BeginInvoke(new Action(() => RunFireAndForgetSafely(operation)));
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     public void PostDelayed(Action operation, int delayMilliseconds)
@@ -66,7 +66,7 @@ internal sealed class OfficeUiDispatcher : IDisposable
             if (_control.InvokeRequired) _control.BeginInvoke(new Action(Schedule));
             else Schedule();
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     public Task<T> InvokeAsync<T>(Func<T> operation)
@@ -97,7 +97,7 @@ internal sealed class OfficeUiDispatcher : IDisposable
     {
         foreach (var timer in _delayedTimers.ToArray())
         {
-            try { timer.Stop(); } catch { }
+            try { timer.Stop(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             timer.Dispose();
         }
         _delayedTimers.Clear();

@@ -2865,9 +2865,9 @@ internal static partial class WordFormulaNumberingKernel
                     "The number-table anchor belongs to a user table.");
 
             object normal = WdBuiltinStyle.wdStyleNormal;
-            try { range.set_Style(ref normal); } catch { }
+            try { range.set_Style(ref normal); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             format = range.ParagraphFormat;
-            try { format.Reset(); } catch { }
+            try { format.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             format.Alignment =
                 WdParagraphAlignment.wdAlignParagraphLeft;
             format.SpaceBefore = 0f;
@@ -2879,7 +2879,7 @@ internal static partial class WordFormulaNumberingKernel
             tabs.ClearAll();
 
             font = range.Font;
-            try { font.Reset(); } catch { }
+            try { font.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             font.Hidden = 0;
             font.Position = 0;
         }
@@ -3043,6 +3043,6 @@ internal static partial class WordFormulaNumberingKernel
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

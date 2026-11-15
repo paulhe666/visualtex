@@ -166,8 +166,8 @@ internal static partial class WordOmmlConverter
         try
         {
             probe = exactEquation.Duplicate;
-            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (COMException) { }
-            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (COMException) { }
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             var expanded = TryReadExactlyOneEquationXml(probe);
             if (expanded is not null) return expanded;
         }
@@ -227,6 +227,6 @@ internal static partial class WordOmmlConverter
     internal static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

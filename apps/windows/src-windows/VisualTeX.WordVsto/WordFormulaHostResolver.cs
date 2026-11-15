@@ -159,8 +159,8 @@ internal static class WordFormulaHostResolver
                 Release(maths);
                 maths = null;
                 probe = selectionRange.Duplicate;
-                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 try { maths = probe.OMaths; } catch { maths = null; }
                 if (maths is null || maths.Count == 0) return null;
             }
@@ -297,8 +297,8 @@ internal static class WordFormulaHostResolver
         try
         {
             probe = selectionRange.Duplicate;
-            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             shapes = probe.InlineShapes;
 
             for (var index = 1; index <= shapes.Count; index++)
@@ -341,7 +341,7 @@ internal static class WordFormulaHostResolver
                 metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(
                     selected.Shape);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             var displayMode = metadata?.DisplayMode;
             if (!string.Equals(displayMode, "block", StringComparison.OrdinalIgnoreCase))
@@ -523,10 +523,11 @@ internal static class WordFormulaHostResolver
                     result.Add(
                         Address(fieldResult));
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // A broken REF can reject Result access. It cannot be used
                     // as positive evidence that an OMath is only cached rendering.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally
                 {
@@ -843,7 +844,7 @@ internal static class WordFormulaHostResolver
             tables = range.Tables;
             if (tables.Count == 0) return false;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(tables); }
         try
         {
@@ -863,6 +864,6 @@ internal static class WordFormulaHostResolver
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

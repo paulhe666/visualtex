@@ -39,7 +39,7 @@ internal sealed partial class WordFormulaService
                 if (_documentChangeAttached)
                 {
                     try { application.DocumentChange -= KeepScreenUpdatingSuspended; }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     _documentChangeAttached = false;
                 }
                 _application = null;
@@ -59,11 +59,12 @@ internal sealed partial class WordFormulaService
                         $"omml-screen-update-guard-reasserted activeDocument={TryReadActiveDocumentName(application)} screenUpdating={application.ScreenUpdating}");
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Word may be between document/window states. The target rebind
                 // performed by the owning transaction will retry the invariant
                 // before this scope is released.
+                IgnoredErrors.Ignore(ignored);
             }
         }
 
@@ -85,7 +86,7 @@ internal sealed partial class WordFormulaService
                 if (document is not null)
                 {
                     try { Marshal.ReleaseComObject(document); }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
         }
@@ -101,11 +102,11 @@ internal sealed partial class WordFormulaService
             if (_documentChangeAttached)
             {
                 try { application.DocumentChange -= KeepScreenUpdatingSuspended; }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 _documentChangeAttached = false;
             }
             try { application.ScreenUpdating = _previous; }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -190,8 +191,8 @@ internal sealed partial class WordFormulaService
             // Reverse of Enter: the progress window gives up topmost and returns
             // to its owner before Word restores and activates the document.
             _notify?.Invoke(false);
-            try { window.WindowState = _previous; } catch { }
-            try { _document.Activate(); } catch { }
+            try { window.WindowState = _previous; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { _document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-window-restored state={_previous} active={IsActiveDocument(_document)}");
             Marshal.ReleaseComObject(window);

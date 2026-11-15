@@ -27,7 +27,7 @@ internal static class PowerPointNativeOmmlPackage
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
             return ReadStandalone(archive, slideId, shapeId);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally { try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
     }
 
     internal static string ReadStandalone(ZipArchive archive, int slideId, int shapeId)
@@ -61,7 +61,7 @@ internal static class PowerPointNativeOmmlPackage
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
             return SelectTextHost(ReadSlide(archive, slideId), host).ToString(SaveOptions.DisableFormatting);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally { try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
     }
 
     internal static string ReadEquation(string shapeXml, int ordinal, int expectedCount)

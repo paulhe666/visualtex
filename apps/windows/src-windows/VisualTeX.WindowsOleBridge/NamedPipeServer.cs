@@ -149,7 +149,7 @@ internal sealed class NamedPipeServer
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException ignored) { IgnoredErrors.Ignore(ignored); }
         catch (Exception error)
         {
             _logger.Error("Named pipe client failed.", error);

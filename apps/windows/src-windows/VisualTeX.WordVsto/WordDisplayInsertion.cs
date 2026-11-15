@@ -513,10 +513,11 @@ internal static class WordDisplayInsertion
                 }
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Rollback is best-effort and must never mask the original Word/OLE
             // failure. The caller rethrows the original exception with stage data.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -1256,7 +1257,7 @@ internal static class WordDisplayInsertion
                 format.SpaceAfter = 0;
                 format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             }
-            try { paragraphRange.ListFormat.RemoveNumbers(); } catch { }
+            try { paragraphRange.ListFormat.RemoveNumbers(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally { Release(format); }
     }
@@ -1616,8 +1617,8 @@ internal static class WordDisplayInsertion
         selection.ParagraphFormat.LeftIndent = 0;
         selection.ParagraphFormat.FirstLineIndent = 0;
         object normal = WdBuiltinStyle.wdStyleNormal;
-        try { selection.Range.set_Style(ref normal); } catch { }
-        try { selection.Range.ListFormat.RemoveNumbers(); } catch { }
+        try { selection.Range.set_Style(ref normal); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { selection.Range.ListFormat.RemoveNumbers(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         ResetSelectionTransientFormatting(selection);
     }
 
@@ -1669,13 +1670,13 @@ internal static class WordDisplayInsertion
         if (font.Bold != 0) font.Bold = 0;
         if (font.Italic != 0) font.Italic = 0;
         if (font.StrikeThrough != 0) font.StrikeThrough = 0;
-        try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch { }
+        try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         if (font.Underline != WdUnderline.wdUnderlineNone) font.Underline = WdUnderline.wdUnderlineNone;
         if (font.Hidden != 0) font.Hidden = 0;
         if (font.Subscript != 0) font.Subscript = 0;
         if (font.Superscript != 0) font.Superscript = 0;
         if (font.Position != 0) font.Position = 0;
-        try { if (font.AllCaps != 0) font.AllCaps = 0; } catch { }
-        try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch { }
+        try { if (font.AllCaps != 0) font.AllCaps = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

@@ -74,11 +74,12 @@ internal static class WordNumberedTableDisplay
                     metadata);
                 return false;
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException ignored)
             {
                 // Only an identity that no longer resolves to a unique physical
                 // OMath can be considered deletion residue. Other failures remain
                 // strict and are not converted into cleanup permission.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {
@@ -546,7 +547,7 @@ internal static class WordNumberedTableDisplay
                     // so it is safe to inspect the existing native tree. Healthy
                     // edit paths never serialize the live range merely for layout.
                     try { heightSourceOmml = activeRange.WordOpenXML; }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 if (!string.IsNullOrWhiteSpace(heightSourceOmml))
                     minimumDisplayHeightPoints = EstimateNativeOmmlDisplayLineHeightPoints(
@@ -904,7 +905,7 @@ internal static class WordNumberedTableDisplay
                         frames = paragraphRange.Frames;
                         if (frames.Count > 0) continue;
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
                     var listNumber = string.Empty;
                     try
@@ -914,7 +915,7 @@ internal static class WordNumberedTableDisplay
                             listFormat.ListString,
                             outlineLevel);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     var explicitNumber = !string.IsNullOrWhiteSpace(listNumber)
                         ? listNumber
                         : ParseHeadingNumberFromText(paragraphRange.Text, outlineLevel);
@@ -1303,11 +1304,11 @@ internal static class WordNumberedTableDisplay
                     anchorFrames = anchorParagraphRange.Frames;
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             object normalStyle = WdBuiltinStyle.wdStyleNormal;
             anchorParagraphRange.set_Style(ref normalStyle);
             anchorFormat = anchorParagraphRange.ParagraphFormat;
-            try { anchorFormat.Reset(); } catch { }
+            try { anchorFormat.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             anchorFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
             anchorFormat.LeftIndent = 0f;
             anchorFormat.RightIndent = 0f;
@@ -1318,7 +1319,7 @@ internal static class WordNumberedTableDisplay
             anchorTabs = anchorFormat.TabStops;
             anchorTabs.ClearAll();
             anchorFont = anchorParagraphRange.Font;
-            try { anchorFont.Reset(); } catch { }
+            try { anchorFont.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             anchorFont.Hidden = 0;
             anchorFont.Position = 0;
             // Consume the dedicated empty body paragraph at a table boundary.
@@ -1453,7 +1454,7 @@ internal static class WordNumberedTableDisplay
                     rollback = table.Range;
                     rollback.Delete();
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(rollback); }
             }
             throw;
@@ -2337,11 +2338,12 @@ internal static class WordNumberedTableDisplay
 
             typingRange.Delete();
         }
-        catch
+        catch (Exception ignored)
         {
             // The numbered tables and their mandatory compact separator are already
             // durable. Failure to remove one generated empty tail must not damage
             // either formula or route into a legacy numbering path.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -2580,15 +2582,15 @@ internal static class WordNumberedTableDisplay
                 object normalStyle = WdBuiltinStyle.wdStyleNormal;
                 paragraphRange.set_Style(ref normalStyle);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             font = paragraphRange.Font;
-            try { font.Reset(); } catch { }
+            try { font.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             font.Size = CompactTypingTailFontSizePoints;
             font.Hidden = 0;
             font.Position = 0;
             font.Color = WdColor.wdColorAutomatic;
             format = paragraphRange.ParagraphFormat;
-            try { format.Reset(); } catch { }
+            try { format.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             format.LineSpacingRule = WdLineSpacing.wdLineSpaceExactly;
             format.LineSpacing = CompactTypingTailLineSpacingPoints;
             format.SpaceBefore = 0f;
@@ -2657,7 +2659,7 @@ internal static class WordNumberedTableDisplay
                 var detected = GetDpiForWindow(new IntPtr(window.Hwnd));
                 if (detected > 0) dpi = detected;
             }
-            catch (EntryPointNotFoundException) { }
+            catch (EntryPointNotFoundException ignored) { IgnoredErrors.Ignore(ignored); }
             if (heightPixels <= 0 || zoomPercentage <= 0 || dpi == 0)
                 return null;
             var heightPoints = heightPixels
@@ -2847,12 +2849,12 @@ internal static class WordNumberedTableDisplay
                 if (!string.IsNullOrWhiteSpace(preparedOmml))
                 {
                     try { tall = HasTallNativeOmmlStructure(preparedOmml!); }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 else
                 {
                     try { tall = HasTallNativeOmmlStructure(formulaRange.WordOpenXML); }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
             return tall ? Math.Max(1f, size * 0.2f) : 0f;
@@ -2921,7 +2923,7 @@ internal static class WordNumberedTableDisplay
                 minimumDisplayHeightPoints,
                 preparedOmml);
             centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            try { centerFormat.DisableLineHeightGrid = -1; } catch { }
+            try { centerFormat.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -3137,9 +3139,9 @@ internal static class WordNumberedTableDisplay
                         }
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
-            try { document.Activate(); } catch { }
+            try { document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(centerMathRange);
             Release(centerMath);
             Release(centerMaths);
@@ -3229,7 +3231,7 @@ internal static class WordNumberedTableDisplay
 
             templateRows = templateTable.Rows;
             templateRow = templateRows[1];
-            try { templateRow.HeightRule = WdRowHeightRule.wdRowHeightAuto; } catch { }
+            try { templateRow.HeightRule = WdRowHeightRule.wdRowHeightAuto; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             centerCell = templateTable.Cell(1, 2);
             centerRange = centerCell.Range;
             centerFormat = centerRange.ParagraphFormat;
@@ -3244,7 +3246,7 @@ internal static class WordNumberedTableDisplay
                     "The OMML numbering table template still carries formula identity or content.");
 
             result = templateTable.Range.Duplicate;
-            try { targetDocument.Activate(); } catch { }
+            try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var returned = result;
             result = null;
             return returned;
@@ -3253,7 +3255,7 @@ internal static class WordNumberedTableDisplay
         {
             if (templateDocument is not null)
             {
-                try { templateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { templateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(templateDocument);
                 templateDocument = null!;
             }
@@ -3321,8 +3323,8 @@ internal static class WordNumberedTableDisplay
             table.RightPadding = 0f;
             table.TopPadding = 0f;
             table.BottomPadding = 0f;
-            try { table.Spacing = 0f; } catch { }
-            try { table.AutoFitBehavior(WdAutoFitBehavior.wdAutoFitFixed); } catch { }
+            try { table.Spacing = 0f; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { table.AutoFitBehavior(WdAutoFitBehavior.wdAutoFitFixed); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             borders = table.Borders;
             borders.Enable = 0;
 
@@ -3332,9 +3334,9 @@ internal static class WordNumberedTableDisplay
             // converted table at page X=0 for the current live layout when center
             // alignment is applied before the former MathType paragraph has fully
             // settled, even though the saved tblW is correct.
-            try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch { }
-            try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch { }
-            try { rows.AllowBreakAcrossPages = 0; } catch { }
+            try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rows.AllowBreakAcrossPages = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             columns = table.Columns;
             if (columns.Count != 3
@@ -3382,8 +3384,8 @@ internal static class WordNumberedTableDisplay
             rightFormat.SpaceBefore = rightFormat.SpaceAfter = 0f;
             centerFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             rightFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            try { centerFormat.DisableLineHeightGrid = -1; } catch { }
-            try { rightFormat.DisableLineHeightGrid = -1; } catch { }
+            try { centerFormat.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rightFormat.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             // The number cell deliberately uses a *real* right TabStop. Because the
             // three-column host is symmetric and has zero padding, this tab lands at
@@ -3402,10 +3404,10 @@ internal static class WordNumberedTableDisplay
             // after widths, cells and tab stops are final. This writes no floating
             // table properties; it only forces the live row back to the body text
             // boundary with zero direct indent.
-            try { rows.WrapAroundText = 0; } catch { }
-            try { rows.LeftIndent = 0f; } catch { }
-            try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch { }
-            try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch { }
+            try { rows.WrapAroundText = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rows.LeftIndent = 0f; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rows.SetLeftIndent(0f, WdRulerStyle.wdAdjustNone); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { rows.Alignment = WdRowAlignment.wdAlignRowLeft; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             // AutoFitBehavior, SetWidth, and late row normalization can reset the
             // aggregate table width to w:type="auto" on a paragraph that used to
@@ -4035,7 +4037,7 @@ internal static class WordNumberedTableDisplay
                     // already-proven equation so legacy Auto rows get the same
                     // structure-aware minimum as newly inserted formulas.
                     try { repairedHeightOmml = centerMathRange.WordOpenXML; }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     repairedMinimumHeight = EstimateNativeOmmlDisplayLineHeightPoints(
                         centerMathRange,
                         repairedMinimumHeight.Value,

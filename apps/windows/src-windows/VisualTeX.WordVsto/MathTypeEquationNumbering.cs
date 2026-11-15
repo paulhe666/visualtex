@@ -753,10 +753,11 @@ internal static class MathTypeEquationNumbering
                 }
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Local field discovery is only a performance path. Preserve the exact
             // whole-document lookup below for unusual Word range/field ownership.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -880,7 +881,7 @@ internal static class MathTypeEquationNumbering
                 previousShowHidden = bookmarks.ShowHidden;
                 bookmarks.ShowHidden = true;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             for (var index = 1; index <= bookmarks.Count; index++)
             {
                 Release(bookmarkRange);
@@ -921,7 +922,7 @@ internal static class MathTypeEquationNumbering
         {
             if (bookmarks is not null)
             {
-                try { bookmarks.ShowHidden = previousShowHidden; } catch { }
+                try { bookmarks.ShowHidden = previousShowHidden; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(bookmarkRange);
             Release(bookmark);
@@ -1042,7 +1043,7 @@ internal static class MathTypeEquationNumbering
                     plan.FieldStart + 1)
                 ?? throw new InvalidDataException(
                     $"Word did not materialize the rebuilt MathType MTPlaceRef at {plan.FieldStart}.");
-            try { rebuilt.ShowCodes = false; } catch { }
+            try { rebuilt.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             code = rebuilt.Code;
             font = code.Font;
             font.Color = plan.CodeColor;
@@ -1267,7 +1268,7 @@ internal static class MathTypeEquationNumbering
                 previousShowHidden = bookmarks.ShowHidden;
                 bookmarks.ShowHidden = true;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             foreach (var bookmarkName in plan.BookmarkNames)
             {
                 if (!bookmarks.Exists(bookmarkName))
@@ -1292,7 +1293,7 @@ internal static class MathTypeEquationNumbering
         {
             if (bookmarks is not null)
             {
-                try { bookmarks.ShowHidden = previousShowHidden; } catch { }
+                try { bookmarks.ShowHidden = previousShowHidden; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(bookmarkRange);
             Release(bookmark);
@@ -1386,6 +1387,6 @@ internal static class MathTypeEquationNumbering
     {
         if (value is null || !Marshal.IsComObject(value)) return;
         try { Marshal.ReleaseComObject(value); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

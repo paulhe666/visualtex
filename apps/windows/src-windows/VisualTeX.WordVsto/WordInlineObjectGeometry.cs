@@ -47,8 +47,8 @@ internal static class WordInlineObjectGeometry
                     out var serializedWidth, out var serializedHeight))
                 return (serializedWidth, serializedHeight);
         }
-        catch (COMException) { }
-        catch (System.Xml.XmlException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+        catch (System.Xml.XmlException ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(range); }
         return (width, height);
     }

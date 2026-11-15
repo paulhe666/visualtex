@@ -239,7 +239,7 @@ public sealed partial class PowerPointFormulaService
             format.LeftIndent = 18f;
             format.FirstLineIndent = -18f;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     /// The text box an insert_rich_text wrote, with its frame and the formulas now in it.

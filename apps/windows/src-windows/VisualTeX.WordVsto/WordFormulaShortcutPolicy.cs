@@ -277,7 +277,7 @@ internal static class WordFormulaShortcutPolicy
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetFocus();

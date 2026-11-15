@@ -143,7 +143,7 @@ internal sealed class WordParagraphFormatting : IDisposable
                     || !Near(a.CharacterUnitFirstLineIndent, b.CharacterUnitFirstLineIndent))
                     return false;
             }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             tabsA = a.TabStops;
             tabsB = b.TabStops;
             return tabsA.Count == tabsB.Count;

@@ -65,9 +65,10 @@ internal static class Program
                     if (!cancellation.IsCancellationRequested)
                         cancellation.Cancel();
                 }
-                catch (ObjectDisposedException)
+                catch (ObjectDisposedException ignored)
                 {
                     // A parent/process-exit notification can race normal disposal.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
             EventHandler parentExited = (_, _) => CancelBridge();

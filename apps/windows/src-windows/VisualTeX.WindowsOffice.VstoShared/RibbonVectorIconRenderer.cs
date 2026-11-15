@@ -126,7 +126,7 @@ internal static class RibbonVectorIconRenderer
         foreach (var family in new[] { "Cambria Math", "Cambria", "Times New Roman", "Segoe UI" })
         {
             try { return new Font(family, points, style, GraphicsUnit.Point); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         return new Font(FontFamily.GenericSerif, points, style, GraphicsUnit.Point);
     }

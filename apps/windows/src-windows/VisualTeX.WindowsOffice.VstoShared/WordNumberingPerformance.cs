@@ -102,7 +102,7 @@ internal static class WordNumberingPerformance
         {
             Microsoft.Office.Interop.Word.Application? application = null;
             try { application = document.Application; }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return new ScreenUpdatingScope(application);
         }
 
@@ -112,7 +112,7 @@ internal static class WordNumberingPerformance
             _application = null;
             if (!_active || application is null) return;
             try { application.ScreenUpdating = _previous; }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -136,7 +136,7 @@ internal static class WordNumberingPerformance
                     return true;
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return false;
     }
 
@@ -400,6 +400,6 @@ internal static class WordNumberingPerformance
     {
         if (value is null || !Marshal.IsComObject(value)) return;
         try { Marshal.FinalReleaseComObject(value); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

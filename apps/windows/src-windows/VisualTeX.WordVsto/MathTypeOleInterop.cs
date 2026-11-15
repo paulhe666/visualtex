@@ -32,10 +32,11 @@ internal static partial class MathTypeOleInterop
                 if (progId?.StartsWith(FormulaOleContract.VersionIndependentProgId, StringComparison.OrdinalIgnoreCase) == true)
                     return false;
             }
-            catch
+            catch (Exception ignored)
             {
                 // A missing MathType registration can make OLEFormat access fail.
                 // Fall through to the serialized WordOpenXML/CFB identity below.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {
@@ -86,10 +87,11 @@ internal static partial class MathTypeOleInterop
                 if (TryResolveCapabilities(format.ProgID, out capabilities))
                     return true;
             }
-            catch
+            catch (Exception ignored)
             {
                 // A damaged/missing ProgID registration can make OLEFormat fail.
                 // Fall through to the serialized storage identity below.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {

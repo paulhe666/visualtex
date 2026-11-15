@@ -450,7 +450,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (selected.ObjectMode == FormulaOleContract.WordOmmlMode)
                 return NativeShapeFontSize(selected);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
         object? mathRange = null;
         object? font = null;
@@ -845,7 +845,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
         {
             if (pngPath is not null)
             {
-                try { File.Delete(pngPath); } catch { }
+                try { File.Delete(pngPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             StartNewUndoEntry();
             Release(oleObject);
@@ -1243,7 +1243,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             replacement.Visible = MsoTriState.msoTrue;
             ProbeOleStage("finalized", replacement);
             DeleteReplacedShape(slide, oldShape, replacement);
-            try { replacement.Select(MsoTriState.msoTrue); } catch { }
+            try { replacement.Select(MsoTriState.msoTrue); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             ScheduleOleGeometryRestore(
                 DocumentIdentity(presentation),
                 metadata.FormulaId,
@@ -1350,7 +1350,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
 
     private void StartNewUndoEntry()
     {
-        try { _application.StartNewUndoEntry(); } catch { }
+        try { _application.StartNewUndoEntry(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static Shape AddOleObjectOffscreen(
@@ -1659,9 +1659,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
     private static object? GetRunningOleObject(OLEFormat format)
     {
         object? value = null;
-        try { value = format.Object; } catch { }
+        try { value = format.Object; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         if (value is not null) return value;
-        try { format.DoVerb(); } catch { }
+        try { format.DoVerb(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         try { value = format.Object; } catch { value = null; }
         return value;
     }
@@ -1701,7 +1701,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
         {
             tags = shape.Tags;
             string? encoded = null;
-            try { encoded = tags[MetadataTag]; } catch { }
+            try { encoded = tags[MetadataTag]; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             FormulaMetadata? metadata = FormulaMetadataCodec.Decode(encoded);
             if (metadata is not null) return metadata;
             try { encoded = shape.AlternativeText; } catch { encoded = null; }
@@ -2057,10 +2057,11 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 ApplyOleSizeAndRefresh(shape, target.Width, target.Height);
                 RestoreOlePosition(shape, target.Left, target.Top);
             }
-            catch
+            catch (Exception ignored)
             {
                 // Geometry repair is best-effort and must never destabilize the
                 // PowerPoint UI after the original conversion has completed.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {
@@ -2110,12 +2111,12 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (_oleGeometryRestoreGenerations.ContainsKey(key))
                 _oleGeometryTargets[key] = (shape.Left, shape.Top, shape.Width, shape.Height);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Configure(Shape shape, FormulaMetadata metadata)
     {
-        try { shape.LockAspectRatio = MsoTriState.msoTrue; } catch { }
+        try { shape.LockAspectRatio = MsoTriState.msoTrue; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         // WPS Presentation refuses Shape.Name on embedded OLE objects (E_FAIL for any
         // name). The formula keeps WPS's name and is found through its tags/metadata.
         if (!OfficeHostEnvironment.IsWps)
@@ -2137,7 +2138,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 || FormulaMetadataCodec.Decode(alternativeText) is not null)
                 shape.AlternativeText = encoded;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         WritePictureScale(shape, metadata);
     }
 
@@ -2163,14 +2164,14 @@ public sealed partial class PowerPointFormulaService : IDisposable
             tags.Add(MacReferenceWidthTag, (width * reference).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
             tags.Add(MacReferenceHeightTag, (height * reference).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(tags); }
     }
 
     private static void TryApplyRotation(Shape shape, float rotation)
     {
         if (Math.Abs(rotation) < 0.01f) return;
-        try { shape.Rotation = rotation; } catch { }
+        try { shape.Rotation = rotation; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void MoveToZOrder(Shape shape, int target)
@@ -2349,11 +2350,11 @@ public sealed partial class PowerPointFormulaService : IDisposable
                     shape = shapes[index];
                     centers.Add((shape.Left + shape.Width / 2f, shape.Top + shape.Height / 2f));
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(shape); }
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(shapes); }
 
         for (var attempt = 0; attempt < 20; attempt++)
@@ -2506,7 +2507,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
     private static void TryDelete(Shape? shape)
     {
         if (shape is null) return;
-        try { shape.Delete(); } catch { }
+        try { shape.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Release(object? value)
@@ -2515,6 +2516,6 @@ public sealed partial class PowerPointFormulaService : IDisposable
         // Office may return the same RCW to the host and to this service.
         // FinalReleaseComObject would invalidate every shared reference in the
         // add-in AppDomain, so release only the reference acquired here.
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

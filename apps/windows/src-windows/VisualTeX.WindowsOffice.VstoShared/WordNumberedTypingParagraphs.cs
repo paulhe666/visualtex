@@ -150,11 +150,12 @@ internal static class WordNumberedTypingParagraphs
                     cleanupLegacyFrames: false);
                 repaired++;
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // A malformed legacy bookmark should not make an otherwise valid
                 // document unusable. The normal conversion safety checks will still
                 // stop before deleting a source if this one could not be repaired.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {
@@ -920,13 +921,13 @@ internal static class WordNumberedTypingParagraphs
                 object normalStyle = WdBuiltinStyle.wdStyleNormal;
                 paragraphRange.set_Style(ref normalStyle);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 listFormat = paragraphRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             font = paragraphRange.Font;
             font.Reset();
             font.Hidden = 0;
@@ -938,7 +939,7 @@ internal static class WordNumberedTypingParagraphs
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
             try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             selection.SetRange(paragraphRange.Start, paragraphRange.Start);
             selectionFont = selection.Font;
@@ -1149,13 +1150,13 @@ internal static class WordNumberedTypingParagraphs
                 object normalStyle = WdBuiltinStyle.wdStyleNormal;
                 paragraphRange.set_Style(ref normalStyle);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 listFormat = paragraphRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             font = paragraphRange.Font;
             font.Reset();
             font.Hidden = 0;
@@ -1167,7 +1168,7 @@ internal static class WordNumberedTypingParagraphs
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
             try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             bookmarks = document.Bookmarks;
             if (bookmarks.Exists(CompactTypingTailBookmarkName))

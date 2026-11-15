@@ -626,7 +626,7 @@ internal static class WordOmmlNativeSource
                         }
                     }
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(currentBookmark);
@@ -853,7 +853,7 @@ internal static class WordOmmlNativeSource
         {
             foreach (var owner in owners.Values)
             {
-                try { owner.Delete(); } catch { }
+                try { owner.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(owner);
             }
             owners.Clear();
@@ -2190,6 +2190,6 @@ internal static class WordOmmlNativeSource
     private static void Release(object? value)
     {
         if (value is null || !System.Runtime.InteropServices.Marshal.IsComObject(value)) return;
-        try { System.Runtime.InteropServices.Marshal.ReleaseComObject(value); } catch { }
+        try { System.Runtime.InteropServices.Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

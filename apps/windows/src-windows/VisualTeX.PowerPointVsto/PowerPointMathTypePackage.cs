@@ -39,7 +39,7 @@ internal static class PowerPointMathTypePackage
             using var archive = new ZipArchive(file, ZipArchiveMode.Read);
             return Read(archive, slideId, shapeId);
         }
-        finally { try { File.Delete(path); } catch { } }
+        finally { try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
     }
 
     internal static Equation Read(ZipArchive archive, int slideId, int shapeId)

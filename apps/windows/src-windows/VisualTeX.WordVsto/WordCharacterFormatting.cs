@@ -209,6 +209,7 @@ internal sealed class WordCharacterFormatting
                 // the generated MathType paragraph. Keep every other captured
                 // property strict; only this known Style.Font incompatibility is
                 // allowed to fall back to Word's inherited East-Asian style font.
+                IgnoredErrors.Ignore(error);
             }
         }
         if (Color.HasValue) font.Color = Color.Value;

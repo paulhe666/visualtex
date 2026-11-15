@@ -178,9 +178,10 @@ internal sealed class OfficeFormulaShortcutConfiguration
                 if (bindings is null) continue;
                 return new OfficeFormulaShortcutConfiguration(bindings);
             }
-            catch
+            catch (Exception ignored)
             {
                 // Missing or inaccessible settings mean the shortcuts are disabled.
+                IgnoredErrors.Ignore(ignored);
             }
         }
         return new OfficeFormulaShortcutConfiguration(
@@ -433,7 +434,7 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
 
     private void Trace(string message)
     {
-        try { _trace?.Invoke(message); } catch { }
+        try { _trace?.Invoke(message); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static bool IsKeyDown(int virtualKey) =>
@@ -443,7 +444,7 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
     {
         if (_hook != IntPtr.Zero)
         {
-            try { UnhookWindowsHookEx(_hook); } catch { }
+            try { UnhookWindowsHookEx(_hook); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             _hook = IntPtr.Zero;
         }
         _hookCallback = null;

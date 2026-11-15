@@ -74,9 +74,10 @@ public sealed partial class ThisAddIn
             using var key = Registry.CurrentUser.CreateSubKey(FormatConversionRegistryPath, writable: true);
             key?.SetValue(VisualTeXTargetValueName, mode!, RegistryValueKind.String);
         }
-        catch
+        catch (Exception ignored)
         {
             // Keep the in-process choice even if the profile rejects persistence.
+            IgnoredErrors.Ignore(ignored);
         }
         var ribbon = _ribbonUi;
         if (ribbon is null) return;
@@ -85,7 +86,7 @@ public sealed partial class ThisAddIn
             dynamic ui = ribbon;
             foreach (var id in VisualTeXTargetControlIds) ui.InvalidateControl(id);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     public string GetVisualTeXTargetFormLabel(Office.IRibbonControl control) =>
@@ -108,7 +109,7 @@ public sealed partial class ThisAddIn
                     && stored == FormulaOleContract.CrossPlatformPictureMode)
                     mode = stored;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             _visualTeXTargetMode = mode;
             return mode;
         }
@@ -410,7 +411,7 @@ public sealed partial class ThisAddIn
                 }
                 foreach (var path in temporaryFiles.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    try { File.Delete(path); } catch { }
+                    try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
 
@@ -1087,7 +1088,7 @@ internal static class PowerPointOperationLog
                     File.AppendAllText(path, line);
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         });
     }
 }

@@ -102,7 +102,7 @@ internal sealed partial class WordFormulaService
                         out var resolvedUniformSize))
                     uniformScopeFontSize = resolvedUniformSize;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(scopeFont); }
 
             var fontIndexReconstructedLength = -1;
@@ -760,10 +760,11 @@ internal sealed partial class WordFormulaService
                     viewState,
                     preferredSelection: null);
             }
-            catch
+            catch (Exception ignored)
             {
                 // View restoration is transient UI state and cannot invalidate a
                 // successfully committed document mutation.
+                IgnoredErrors.Ignore(ignored);
             }
             batchTimings["restoreView"] =
                 applyWatch.ElapsedMilliseconds - applyStageStart;
@@ -1199,7 +1200,7 @@ internal sealed partial class WordFormulaService
             if (mathTypeSection is not null)
             {
                 mathTypeSection.Dispose();
-                try { document.Activate(); } catch { }
+                try { document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         result.BatchTimings["coordinateRebase"] =
@@ -1885,9 +1886,10 @@ internal sealed partial class WordFormulaService
                     return only;
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Fall through to the per-target section lookup below.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {

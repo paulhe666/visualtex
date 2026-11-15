@@ -24,7 +24,7 @@ internal static class OlePngPreviewExtractor
         private static void DeleteIfPresent(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return;
-            try { File.Delete(path); } catch { }
+            try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 

@@ -84,7 +84,7 @@ internal sealed class OfficeStaDispatcher : IDisposable
             _ready.Set();
             while (_queue.TryTake(out var work))
             {
-                try { work(); } catch { }
+                try { work(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally
@@ -109,7 +109,7 @@ internal sealed class OfficeStaDispatcher : IDisposable
             {
                 _control.BeginInvoke(new Action(() => _context?.ExitThread()));
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         if (!_thread.Join(TimeSpan.FromSeconds(3)))
         {

@@ -104,9 +104,10 @@ internal static class WordInlineBaseline
                 || currentPosition != targetPosition)
                 font.Position = targetPosition;
         }
-        catch
+        catch (Exception ignored)
         {
             // Baseline repair is best-effort and must not interrupt Word input.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -156,10 +157,11 @@ internal static class WordInlineBaseline
             if (nextCharacter.Text is "\v" or "\r" or "\n")
                 ResetRangeFontPosition(nextCharacter);
         }
-        catch
+        catch (Exception ignored)
         {
             // Baseline restoration is best-effort and must not invalidate the
             // formula that has already been inserted or resized.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -249,10 +251,11 @@ internal static class WordInlineBaseline
             // VisualTeX inline OLE, whose first U+200C at Range.End is owned by us.
             anchor.Delete();
         }
-        catch
+        catch (Exception ignored)
         {
             // The formula may have been deleted by Word between range capture and
             // cleanup. Orphan-anchor removal is best-effort in rollback paths.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -295,9 +298,10 @@ internal static class WordInlineBaseline
             TryDeleteTemporaryInlineBoundaryAt(document, sentinelStart - 1, protectedFollowingText);
             TryDeleteTemporaryInlineBoundaryAt(document, sentinelStart, protectedFollowingText);
         }
-        catch
+        catch (Exception ignored)
         {
             // A stale or externally edited sentinel must never block formula work.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -440,9 +444,10 @@ internal static class WordInlineBaseline
                 var result = probe.Duplicate;
                 return result;
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Keep probing nearby ordinary prose.
+                IgnoredErrors.Ignore(ignored);
             }
             finally
             {

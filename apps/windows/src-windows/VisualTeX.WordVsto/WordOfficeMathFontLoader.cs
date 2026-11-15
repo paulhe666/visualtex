@@ -236,7 +236,7 @@ internal static class WordOfficeMathFontLoader
             {
                 if (!state.SessionRegistrationUsed || string.IsNullOrWhiteSpace(state.Path)) continue;
                 try { _ = RemoveFontResourceEx(state.Path, 0, IntPtr.Zero); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 state.SessionRegistrationUsed = false;
                 state.Verified = false;
                 state.Path = string.Empty;
@@ -259,10 +259,11 @@ internal static class WordOfficeMathFontLoader
                 timeoutMilliseconds: timeoutMilliseconds,
                 out _);
         }
-        catch
+        catch (Exception ignored)
         {
             // AddFontResourceEx already made the family available to this
             // process. A blocked desktop broadcast is not a fatal error.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 

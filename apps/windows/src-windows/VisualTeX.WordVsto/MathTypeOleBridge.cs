@@ -87,11 +87,12 @@ internal static class MathTypeOleBridge
                     EditWordOwnedOle(application, shape, originalLatex, saveChanges: true);
                     _ = MathTypeOleStorage.ReadMathMl(shape);
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Preserve the original verification exception. A second
                     // failure here is intentionally not hidden by deleting or
                     // replacing the third-party OLE object.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 throw;
             }
@@ -322,11 +323,11 @@ internal static class MathTypeOleBridge
             while (DateTime.UtcNow < deadline && IsWindow(editorWindow))
             {
                 try { HandleCloseDialogs(processId, editorWindow, saveChanges: false); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Thread.Sleep(70);
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static bool AreEquivalentLatex(string expected, string actual)
@@ -430,7 +431,7 @@ internal static class MathTypeOleBridge
     {
         if (backup is null) return;
         try { System.Windows.Forms.Clipboard.SetDataObject(backup, true); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void RestoreForeground(IntPtr previousForeground, Word.Application application)
@@ -451,13 +452,13 @@ internal static class MathTypeOleBridge
             }
             finally { Release(activeWindow); }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);

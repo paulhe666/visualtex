@@ -245,7 +245,7 @@ internal sealed partial class WordFormulaService
                 _application.ScreenUpdating = false;
                 screenUpdatingSuspended = true;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             oldShape = ResolveMathTypeDisplayRepairTarget(document, target)
                 ?? throw new InvalidOperationException("A MathType equation changed after the display scan.");
@@ -392,7 +392,7 @@ internal sealed partial class WordFormulaService
             Release(editOptions);
             if (screenUpdatingSuspended)
             {
-                try { _application.ScreenUpdating = previousScreenUpdating; } catch { }
+                try { _application.ScreenUpdating = previousScreenUpdating; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (!viewRestored) RestoreViewState(document, viewState, null);
             if (!undoEnded) EndUndoRecord(undoRecord);

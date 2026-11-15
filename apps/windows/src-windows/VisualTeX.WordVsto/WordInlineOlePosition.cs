@@ -110,7 +110,7 @@ internal static class WordInlineOlePosition
                     if (!MathTypeOleInterop.IsMathTypeOle(peer)) continue;
                     positions.Add(ReadInlineOleWordPosition(peer));
                 }
-                catch (COMException) { }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(peerRange);
@@ -170,7 +170,7 @@ internal static class WordInlineOlePosition
                     return wordPosition;
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(font);
@@ -284,7 +284,7 @@ internal static class WordInlineOlePosition
                     }
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(font);

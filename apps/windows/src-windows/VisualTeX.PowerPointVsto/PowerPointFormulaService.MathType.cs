@@ -38,7 +38,7 @@ public sealed partial class PowerPointFormulaService
         internal float SourceHeight;
         public void Dispose()
         {
-            if (OwnsEmf) { try { File.Delete(EmfPath); } catch { } }
+            if (OwnsEmf) { try { File.Delete(EmfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
         }
     }
 
@@ -328,7 +328,7 @@ public sealed partial class PowerPointFormulaService
             }
             else if (!OfficeHostEnvironment.IsWps) replacement.Name = $"MathType_{session.FormulaId}";
             committed = true;
-            try { replacement.Select(MsoTriState.msoTrue); } catch { }
+            try { replacement.Select(MsoTriState.msoTrue); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return Result(session, presentation, MathTypeReference(slide, replacement));
         }
         catch
@@ -391,7 +391,7 @@ public sealed partial class PowerPointFormulaService
                     if (!isMathType && !IsNativeOle(shape)) return false;
                     reference = isMathType ? MathTypeReference(slide, shape) : ManagedReference(slide, shape);
                     // The second click normally follows a first click that selected it.
-                    try { shape.Select(MsoTriState.msoTrue); } catch { }
+                    try { shape.Select(MsoTriState.msoTrue); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     return true;
                 }
                 finally { Release(shape); }
@@ -455,10 +455,10 @@ public sealed partial class PowerPointFormulaService
             Release(shapes);
             Release(slide);
             Release(slides);
-            if (staging is not null) { try { staging.Close(); } catch { } }
+            if (staging is not null) { try { staging.Close(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             Release(staging);
             Release(presentations);
-            try { Directory.Delete(root, true); } catch { }
+            try { Directory.Delete(root, true); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -478,7 +478,7 @@ public sealed partial class PowerPointFormulaService
                 PowerPointClipboard.ServeSentMessages(attempt == 1 ? 40 : 150 * attempt);
                 return target.Paste();
             }
-            catch (COMException) when (attempt < 5) { }
+            catch (COMException ignored) when (attempt < 5) { IgnoredErrors.Ignore(ignored); }
             catch (COMException error)
             {
                 throw new InvalidOperationException(
@@ -533,7 +533,7 @@ public sealed partial class PowerPointFormulaService
             target.AlternativeText = alternativeText;
         // A formula hidden in the Selection Pane (for example one revealed by an
         // animation trigger) stays hidden after conversion.
-        try { target.Visible = source.Visible; } catch { }
+        try { target.Visible = source.Visible; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         CopyMathTypeShapeTags(source, target);
         CopyMathTypeShapeActions(source, target);
         var placeholder = PlaceholderCleanup.Capture(slide, source);
@@ -589,7 +589,7 @@ public sealed partial class PowerPointFormulaService
         internal void Commit() => Rollback.Clear();
         public void Dispose()
         {
-            while (Rollback.Count > 0) { try { Rollback.Pop()(); } catch { } }
+            while (Rollback.Count > 0) { try { Rollback.Pop()(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             for (var i = Owned.Count - 1; i >= 0; i--) Release(Owned[i]);
             Owned.Clear();
         }
@@ -692,12 +692,12 @@ public sealed partial class PowerPointFormulaService
                         transfer.Rollback.Push(() => recreated.Delete());
                         var recreatedTiming = recreated.Timing;
                         transfer.Owned.Add(recreatedTiming);
-                        try { recreated.Exit = original.Exit; } catch { }
-                        try { recreatedTiming.Duration = timing.Duration; } catch { }
-                        try { recreatedTiming.TriggerDelayTime = timing.TriggerDelayTime; } catch { }
-                        try { recreatedTiming.RepeatCount = timing.RepeatCount; } catch { }
-                        try { recreatedTiming.RewindAtEnd = timing.RewindAtEnd; } catch { }
-                        try { recreated.MoveTo(position + 1); } catch { }
+                        try { recreated.Exit = original.Exit; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                        try { recreatedTiming.Duration = timing.Duration; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                        try { recreatedTiming.TriggerDelayTime = timing.TriggerDelayTime; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                        try { recreatedTiming.RepeatCount = timing.RepeatCount; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                        try { recreatedTiming.RewindAtEnd = timing.RewindAtEnd; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                        try { recreated.MoveTo(position + 1); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         copies[mainOriginals + j].Delete();
                     }
                     finally { Release(trigger); Release(timing); Release(original); Release(sequence); }
@@ -715,7 +715,7 @@ public sealed partial class PowerPointFormulaService
                         var effect = sequence[i];
                         var timing = effect.Timing;
                         Shape? trigger = null;
-                        try { trigger = timing.TriggerShape; } catch { }
+                        try { trigger = timing.TriggerShape; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         try
                         {
                             if (trigger?.Id != sourceId) continue;

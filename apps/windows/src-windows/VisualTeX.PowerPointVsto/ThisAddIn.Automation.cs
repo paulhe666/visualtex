@@ -251,7 +251,7 @@ public sealed partial class ThisAddIn
         // PowerPoint leaves the formula it wrote selected
         object? selection = null;
         try { selection = await dispatcher.InvokeAsync(() => service.AutomationGetSelection(null)).ConfigureAwait(false); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         var result = run.Finish();
         if (selection is not null) result["selection"] = selection;
         return result;

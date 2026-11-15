@@ -86,7 +86,7 @@ internal sealed partial class WordFormulaService
                     }
                     finally { Release(range); }
                 }
-                try { selection.SetRange(start, end); } catch { }
+                try { selection.SetRange(start, end); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             return result;
         }

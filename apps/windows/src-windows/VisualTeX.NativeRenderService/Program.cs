@@ -36,7 +36,7 @@ internal sealed class RenderService : ServiceBase
     {
         stop.Cancel();
         pipe?.Dispose();
-        try { listener?.Wait(5000); } catch (AggregateException) { }
+        try { listener?.Wait(5000); } catch (AggregateException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private async Task ListenAsync(NamedPipeServerStream endpoint, CancellationToken token)
@@ -107,8 +107,8 @@ internal sealed class RenderService : ServiceBase
             if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024) File.Delete(path);
             File.AppendAllText(path, DateTime.UtcNow.ToString("O") + " " + message + Environment.NewLine);
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException ignored) { IgnoredErrors.Ignore(ignored); }
+        catch (UnauthorizedAccessException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void VerifyPrivateIdentity()

@@ -146,7 +146,7 @@ internal static class WordFormulaHostLayout
             font = equationRange.Font;
             font.Position = 0;
             font.Size = normalized;
-            try { font.SizeBi = normalized; } catch { }
+            try { font.SizeBi = normalized; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally { Release(font); }
     }
@@ -188,7 +188,7 @@ internal static class WordFormulaHostLayout
                 selectionFont ??= selection?.Font;
                 if (selectionFont is not null) selectionFont.Position = 0;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -386,28 +386,28 @@ internal static class WordFormulaHostLayout
         Microsoft.Office.Interop.Word.Font source,
         Microsoft.Office.Interop.Word.Font target)
     {
-        try { target.Name = source.Name; } catch { }
+        try { target.Name = source.Name; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         try
         {
             var size = source.Size;
             if (size > 0 && size < 1000) target.Size = size;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         try
         {
             var sizeBi = source.SizeBi;
             if (sizeBi > 0 && sizeBi < 1000) target.SizeBi = sizeBi;
         }
-        catch { }
-        try { target.Bold = source.Bold; } catch { }
-        try { target.Italic = source.Italic; } catch { }
-        try { target.Color = source.Color; } catch { }
-        try { target.Underline = source.Underline; } catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { target.Bold = source.Bold; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { target.Italic = source.Italic; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { target.Color = source.Color; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { target.Underline = source.Underline; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

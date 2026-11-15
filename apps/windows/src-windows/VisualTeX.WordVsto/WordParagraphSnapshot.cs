@@ -89,7 +89,7 @@ internal sealed class WordParagraphSnapshot
                 snapshot.lineUnitBefore = format.LineUnitBefore;
                 snapshot.lineUnitAfter = format.LineUnitAfter;
             }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             return snapshot;
         }
         catch (COMException) { return null; }
@@ -141,7 +141,7 @@ internal sealed class WordParagraphSnapshot
             {
                 ListFormat? list = null;
                 try { list = range.ListFormat; list.RemoveNumbers(); }
-                catch (COMException) { }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(list); }
             }
             Release(format);
@@ -187,7 +187,7 @@ internal sealed class WordParagraphSnapshot
                 if (Math.Abs(readCharacters() - characters) > Tolerance) writeCharacters(characters);
                 return;
             }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         }
         if (Math.Abs(readPoints() - points) > Tolerance) writePoints(points);
     }
@@ -204,7 +204,7 @@ internal sealed class WordParagraphSnapshot
             () => format.SpaceAfter, value => format.SpaceAfter = value);
         if (format.LineSpacingRule != lineSpacingRule) format.LineSpacingRule = lineSpacingRule;
         if (Math.Abs(format.LineSpacing - lineSpacing) > Tolerance)
-            try { format.LineSpacing = lineSpacing; } catch (COMException) { }
+            try { format.LineSpacing = lineSpacing; } catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         if (format.KeepTogether != keepTogether) format.KeepTogether = keepTogether;
         if (format.KeepWithNext != keepWithNext) format.KeepWithNext = keepWithNext;
         if (format.WidowControl != widowControl) format.WidowControl = widowControl;
@@ -224,7 +224,7 @@ internal sealed class WordParagraphSnapshot
                 if (Math.Abs(readLines() - lines) > Tolerance) writeLines(lines);
                 return;
             }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         }
         if (Math.Abs(readPoints() - points) > Tolerance) writePoints(points);
     }
@@ -254,7 +254,7 @@ internal sealed class WordParagraphSnapshot
                 normal = styles[ref normalId];
                 usesDefault = string.Equals(normal.NameLocal, name, StringComparison.Ordinal);
             }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             return name;
         }
         catch (COMException) { return null; }
@@ -278,7 +278,7 @@ internal sealed class WordParagraphSnapshot
             if (format is not null)
                 current = $" now=L{format.LeftIndent:0.#}/R{format.RightIndent:0.#}/F{format.FirstLineIndent:0.#}/B{format.SpaceBefore:0.#}/A{format.SpaceAfter:0.#}";
         }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         WordDoubleClickHook.TraceMessage(
             $"paragraph-restore {stage} style={styleName} default={UsesDefaultStyle} numbered={numbered}"
             + $" want=L{leftIndent:0.#}/R{rightIndent:0.#}/F{firstLineIndent:0.#}/B{spaceBefore:0.#}/A{spaceAfter:0.#}{current}");

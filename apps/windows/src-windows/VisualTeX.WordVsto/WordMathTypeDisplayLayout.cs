@@ -274,7 +274,7 @@ internal static class WordMathTypeDisplayLayout
                 format.SpaceBefore = preservedLayout.SpaceBefore;
                 format.SpaceAfter = preservedLayout.SpaceAfter;
                 format.LineSpacingRule = preservedLayout.LineSpacingRule;
-                try { format.LineSpacing = preservedLayout.LineSpacing; } catch { }
+                try { format.LineSpacing = preservedLayout.LineSpacing; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 format.KeepTogether = preservedLayout.KeepTogether;
                 format.KeepWithNext = preservedLayout.KeepWithNext;
                 format.WidowControl = preservedLayout.WidowControl;
@@ -353,7 +353,7 @@ internal static class WordMathTypeDisplayLayout
         using (WordOperationMetrics.Measure("MathType.Geometry.LocalTables"))
         {
             try { localTables = paragraphRange.Tables; mayOwnCell = localTables.Count != 0; }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(localTables); }
         }
         if (mayOwnCell)
@@ -424,10 +424,11 @@ internal static class WordMathTypeDisplayLayout
                             && !float.IsInfinity(candidateSpace))
                             spaceAfter = candidateSpace;
                     }
-                    catch
+                    catch (Exception ignored)
                     {
                         // The width is still authoritative. Missing spacing must
                         // never downgrade a valid multi-column section to page width.
+                        IgnoredErrors.Ignore(ignored);
                     }
                 }
                 widths.Add(width);
@@ -461,9 +462,10 @@ internal static class WordMathTypeDisplayLayout
                     }
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Background/protected stories can reject page-position queries.
+                IgnoredErrors.Ignore(ignored);
             }
 
             return widths.Min();
@@ -514,7 +516,7 @@ internal static class WordMathTypeDisplayLayout
                 if (bool.TryParse(text, out bool parsed))
                     return parsed ? "right" : "left";
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return "right";
         }
         finally
@@ -550,10 +552,10 @@ internal static class WordMathTypeDisplayLayout
                     }
                     finally { Release(fieldCode); }
                 }
-                try { field.Update(); } catch { }
+                try { field.Update(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (!wps)
-                try { outer.Update(); } catch { }
+                try { outer.Update(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -989,7 +991,7 @@ internal static class WordMathTypeDisplayLayout
             format.SpaceBefore = layout.SpaceBefore;
             format.SpaceAfter = layout.SpaceAfter;
             format.LineSpacingRule = layout.LineSpacingRule;
-            try { format.LineSpacing = layout.LineSpacing; } catch { }
+            try { format.LineSpacing = layout.LineSpacing; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             format.BaseLineAlignment = layout.BaseLineAlignment;
             format.KeepTogether = layout.KeepTogether;
             format.KeepWithNext = layout.KeepWithNext;

@@ -631,7 +631,7 @@ internal static partial class MathTypeOleInterop
         {
             if (locked != IntPtr.Zero && globalMemory != IntPtr.Zero)
             {
-                try { GlobalUnlock(globalMemory); } catch { }
+                try { GlobalUnlock(globalMemory); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             CloseOleObject(oleObject);
             ReleaseRawComPointer(ref storage);
@@ -699,7 +699,7 @@ internal static partial class MathTypeOleInterop
         {
             if (locked != IntPtr.Zero && globalMemory != IntPtr.Zero)
             {
-                try { GlobalUnlock(globalMemory); } catch { }
+                try { GlobalUnlock(globalMemory); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             CloseOleObject(oleObject);
             ReleaseRawComPointer(ref storage);
@@ -843,7 +843,7 @@ internal static partial class MathTypeOleInterop
                 finally { process.Dispose(); }
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return false;
     }
 
@@ -1004,7 +1004,7 @@ internal static partial class MathTypeOleInterop
     private static void ReleaseRawComPointer(ref IntPtr pointer)
     {
         if (pointer == IntPtr.Zero) return;
-        try { Marshal.Release(pointer); } catch { }
+        try { Marshal.Release(pointer); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         pointer = IntPtr.Zero;
     }
 
@@ -1518,7 +1518,7 @@ internal static partial class MathTypeOleInterop
                     runtimeRoots.Add(Path.Combine(installRoot!, "mathtype-runtime"));
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
         var localAppData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
@@ -1579,7 +1579,7 @@ internal static partial class MathTypeOleInterop
             var merged = Registry.ClassesRoot.OpenSubKey(relativePath);
             if (merged is not null) return merged;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
         var views = Environment.Is64BitOperatingSystem
             ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
@@ -1598,9 +1598,10 @@ internal static partial class MathTypeOleInterop
                     var key = baseKey.OpenSubKey("Software\\Classes\\" + relativePath);
                     if (key is not null) return key;
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Continue across per-user/per-machine and 32/64-bit views.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
         }
@@ -1629,7 +1630,7 @@ internal static partial class MathTypeOleInterop
                     var path = NormalizeLocalServerPath(key?.GetValue(null) as string);
                     if (!string.IsNullOrWhiteSpace(path)) return path;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         return null;
@@ -1660,9 +1661,10 @@ internal static partial class MathTypeOleInterop
                          SearchOption.AllDirectories))
                 candidates.Add(path);
         }
-        catch
+        catch (Exception ignored)
         {
             // Installation discovery is best-effort; explicit candidates remain.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -1750,13 +1752,13 @@ internal static partial class MathTypeOleInterop
     {
         if (value is not IOleObjectClose oleObject) return;
         try { oleObject.Close(OleCloseNoSave); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     [StructLayout(LayoutKind.Sequential)]

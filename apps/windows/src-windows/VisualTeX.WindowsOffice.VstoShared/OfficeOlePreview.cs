@@ -283,7 +283,7 @@ internal static class OfficeOlePreview
         }
         catch
         {
-            try { File.Delete(emfPath); } catch { }
+            try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             throw;
         }
     }
@@ -337,7 +337,7 @@ internal static class OfficeOlePreview
         }
         catch
         {
-            try { File.Delete(emfPath); } catch { }
+            try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             throw;
         }
     }
@@ -411,10 +411,10 @@ internal static class OfficeOlePreview
         }
         catch
         {
-            try { File.Delete(emfPath); } catch { }
+            try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (!string.IsNullOrWhiteSpace(generatedPngPath))
             {
-                try { File.Delete(generatedPngPath); } catch { }
+                try { File.Delete(generatedPngPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }
@@ -497,10 +497,10 @@ internal static class OfficeOlePreview
         }
         catch
         {
-            try { File.Delete(emfPath); } catch { }
+            try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (!string.IsNullOrWhiteSpace(generatedPngPath))
             {
-                try { File.Delete(generatedPngPath); } catch { }
+                try { File.Delete(generatedPngPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }
@@ -618,8 +618,8 @@ internal static class OfficeOlePreview
         }
         catch
         {
-            try { File.Delete(emfPath); } catch { }
-            try { File.Delete(pngPath); } catch { }
+            try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { File.Delete(pngPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             throw;
         }
         finally
@@ -631,7 +631,7 @@ internal static class OfficeOlePreview
                     var abandoned = CloseEnhMetaFile(recordingDc);
                     if (abandoned != IntPtr.Zero) DeleteEnhMetaFile(abandoned);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (recordedMetafile != IntPtr.Zero) DeleteEnhMetaFile(recordedMetafile);
             if (sourceMetafile != IntPtr.Zero) DeleteEnhMetaFile(sourceMetafile);
@@ -1685,11 +1685,12 @@ internal static class OfficeOlePreview
                     resolvedStyle = ResolveSupportedFontStyle(family, requestedStyle);
                     return new FontFamily(family.Name);
                 }
-                catch (ArgumentException)
+                catch (ArgumentException ignored)
                 {
                     // Candidate is not available on this machine; try the next
                     // declared fallback instead of silently collapsing all CJK
                     // aliases to GenericSerif.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally { family?.Dispose(); }
             }

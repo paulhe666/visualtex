@@ -73,7 +73,7 @@ internal static class PowerPointCellEquations
         {
             if (box is not null)
             {
-                try { box.Delete(); } catch { }
+                try { box.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(box);
             Release(shapes);
@@ -133,14 +133,14 @@ internal static class PowerPointCellEquations
                     paragraph.Alignment = PpParagraphAlignment.ppAlignCenter;
                     paragraph.Bullet.Visible = MsoTriState.msoFalse;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(paragraph); }
             }
         }
         finally { Release(equation); Release(text); }
         // A caret failure after a successful write is not a failed insertion.
         try { Select(cell, zone.Value.Start + zone.Value.Length, 0); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     // The math zone of a shape's (or cell's) text overlapping [start, start + length).

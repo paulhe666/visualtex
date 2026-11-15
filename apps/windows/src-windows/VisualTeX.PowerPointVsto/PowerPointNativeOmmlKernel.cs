@@ -43,8 +43,8 @@ internal static class PowerPointNativeOmmlKernel
                 top,
                 Math.Max(1f, width),
                 Math.Max(1f, height));
-            try { shape.Fill.Visible = MsoTriState.msoFalse; } catch { }
-            try { shape.Line.Visible = MsoTriState.msoFalse; } catch { }
+            try { shape.Fill.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { shape.Line.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 var frame = shape.TextFrame2;
@@ -59,12 +59,12 @@ internal static class PowerPointNativeOmmlKernel
                     MsoParagraphAlignment.msoAlignCenter;
                 Release(frame);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             // WPS ignores TextFrame2.WordWrap; an equation wider than its box
             // would wrap onto a second line.
             if (OfficeHostEnvironment.IsWps)
             {
-                try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch { }
+                try { shape.TextFrame.WordWrap = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
 
             // A new text box shows uncolored text in the slide's text color
@@ -97,7 +97,7 @@ internal static class PowerPointNativeOmmlKernel
         {
             if (shape is not null)
             {
-                try { shape.Delete(); } catch { }
+                try { shape.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }
@@ -351,7 +351,7 @@ internal static class PowerPointNativeOmmlKernel
                 position += piece.Length;
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(range); Release(text); Release(frame); }
     }
 
@@ -387,7 +387,7 @@ internal static class PowerPointNativeOmmlKernel
             bullet = paragraph.Bullet;
             bullet.Visible = MsoTriState.msoFalse;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(bullet); Release(paragraph); Release(continuation); }
     }
 
@@ -484,7 +484,7 @@ internal static class PowerPointNativeOmmlKernel
                     paragraph.Bullet.Visible = MsoTriState.msoFalse;
                     Release(paragraph);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (hideContinuationBullet)
                 {
                     text = frame.TextRange;
@@ -501,7 +501,7 @@ internal static class PowerPointNativeOmmlKernel
                 caret = text.Characters(pastedStart + pastedLength, 0);
                 caret.Select();
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -546,7 +546,7 @@ internal static class PowerPointNativeOmmlKernel
                 if (Math.Abs(font.Size - fontSize) > 0.01f) font.Size = fontSize;
                 Release(font);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (display)
             {
                 try
@@ -556,7 +556,7 @@ internal static class PowerPointNativeOmmlKernel
                     paragraph.Bullet.Visible = MsoTriState.msoFalse;
                     Release(paragraph);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (hideContinuationBullet)
                 {
                     PptTextFrame? frame = null;
@@ -567,7 +567,7 @@ internal static class PowerPointNativeOmmlKernel
                         text = frame.TextRange;
                         HideContinuationBullet(text, pasted.Start + pasted.Length);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     finally { Release(text); Release(frame); }
                 }
             }
@@ -577,7 +577,7 @@ internal static class PowerPointNativeOmmlKernel
                 caret = WpsNativeEquations.Characters(shape, pasted.Start + pasted.Length, 0);
                 caret.Select();
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -620,7 +620,7 @@ internal static class PowerPointNativeOmmlKernel
                     return result;
                 }
             }
-            catch (COMException) when (attempt < 5) { }
+            catch (COMException ignored) when (attempt < 5) { IgnoredErrors.Ignore(ignored); }
             catch (COMException error)
             {
                 throw new InvalidOperationException(
@@ -807,7 +807,7 @@ internal static class PowerPointNativeOmmlKernel
                     candidates.Add(
                         acceptancePath!);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             try
             {
@@ -826,7 +826,7 @@ internal static class PowerPointNativeOmmlKernel
                             directory!,
                             "VisualTeX.WordVsto.dll"));
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             candidates.Add(
                 Path.Combine(
@@ -918,7 +918,7 @@ internal static class PowerPointNativeOmmlKernel
                     return;
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(activeSlide);
@@ -987,7 +987,7 @@ internal static class PowerPointNativeOmmlKernel
             if (direct.HasValue)
                 return direct.Value;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(font);
@@ -1002,7 +1002,7 @@ internal static class PowerPointNativeOmmlKernel
             totalLength = Convert.ToInt32(
                 ((dynamic)fullRange).Length);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
         // If PowerPoint reports a mixed/undefined caret format, use nearby
         // prose without crossing a paragraph mark. Prefer the character on the
@@ -1029,7 +1029,7 @@ internal static class PowerPointNativeOmmlKernel
                 if (nearby.HasValue)
                     return nearby.Value;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(font);
@@ -1047,7 +1047,7 @@ internal static class PowerPointNativeOmmlKernel
             if (whole.HasValue)
                 return whole.Value;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(font);
@@ -1082,7 +1082,7 @@ internal static class PowerPointNativeOmmlKernel
                 var language = LanguageTag(character);
                 if (language is not null) return language;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(character); }
         }
         return LanguageTag(fullRange) ?? PresentationLanguage(shape);
@@ -1166,6 +1166,6 @@ internal static class PowerPointNativeOmmlKernel
         {
             Marshal.ReleaseComObject(value);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

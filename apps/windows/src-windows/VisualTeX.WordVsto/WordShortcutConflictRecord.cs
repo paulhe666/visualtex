@@ -61,9 +61,10 @@ internal static class WordShortcutConflictRecord
                 else key.SetValue(ValueName, next, RegistryValueKind.String);
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Only an explanation for the settings page; never affects routing.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 }

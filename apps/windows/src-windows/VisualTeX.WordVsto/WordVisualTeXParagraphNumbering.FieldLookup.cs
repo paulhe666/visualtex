@@ -592,6 +592,6 @@ internal static partial class WordVisualTeXParagraphNumbering
             Marshal.ReleaseComObject(
                 value);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

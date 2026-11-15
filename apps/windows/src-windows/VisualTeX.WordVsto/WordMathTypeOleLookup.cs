@@ -35,7 +35,7 @@ internal static class WordMathTypeOleLookup
                     keepCandidate = true;
                     return candidate;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(range);
@@ -365,10 +365,11 @@ internal static class WordMathTypeOleLookup
                     finally { Release(candidate); }
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Fall back to a document scan below. The source range can move
                 // if surrounding prose changes while the VisualTeX editor is open.
+                IgnoredErrors.Ignore(ignored);
             }
 
             // During whole-document format conversion targets are processed from
@@ -422,7 +423,7 @@ internal static class WordMathTypeOleLookup
                     finally { Release(nearestLocal); }
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(localShapes);
@@ -673,7 +674,7 @@ internal static class WordMathTypeOleLookup
                     candidate = null;
                     bestDistance = distance;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 finally
                 {
                     Release(range);

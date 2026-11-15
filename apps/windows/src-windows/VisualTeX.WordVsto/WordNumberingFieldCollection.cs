@@ -163,7 +163,7 @@ internal sealed class WordNumberingFieldCollection : IDisposable
             foreach (var field in scan.Locked)
             {
                 try { field.Locked = false; }
-                catch (COMException) when (!completed) { }
+                catch (COMException ignored) when (!completed) { IgnoredErrors.Ignore(ignored); }
                 finally { Release(field); }
             }
             foreach (var field in scan.Numbers) Release(field);

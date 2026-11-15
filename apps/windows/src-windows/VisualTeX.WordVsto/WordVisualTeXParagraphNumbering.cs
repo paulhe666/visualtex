@@ -955,7 +955,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                 {
                     nested.ShowCodes = false;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (createdFields is not null)
                 {
                     createdFields.Add(index, segment.Value, nested);
@@ -980,7 +980,7 @@ internal static partial class WordVisualTeXParagraphNumbering
             {
                 outer.ShowCodes = false;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             var result = outer;
             outer = null;
@@ -1142,7 +1142,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                 {
                     field.ShowCodes = false;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (!deferEvaluation) field.Update();
                 copies?.Remember(document, copyKey!, field);
             }
@@ -1517,7 +1517,7 @@ internal static partial class WordVisualTeXParagraphNumbering
             return;
         }
         placeRef.Update();
-        try { placeRef.ShowCodes = false; } catch { }
+        try { placeRef.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void UpdatePlaceRefFields(Field placeRef)
@@ -1556,7 +1556,7 @@ internal static partial class WordVisualTeXParagraphNumbering
             foreach (var sequence in sequenceFields) sequence.Update();
             if (!OfficeHostEnvironment.IsWps)
             {
-                try { placeRef.ShowCodes = false; } catch { }
+                try { placeRef.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally

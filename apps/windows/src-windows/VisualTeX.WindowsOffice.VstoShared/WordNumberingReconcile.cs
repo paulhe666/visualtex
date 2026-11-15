@@ -43,10 +43,11 @@ internal static class WordNumberingReconcile
     public static void TryReconcile(Document document)
     {
         try { Reconcile(document); }
-        catch
+        catch (Exception ignored)
         {
             // Formula insertion/update is already durable. The user can retry
             // only the numbering command without duplicating or losing it.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -605,10 +606,10 @@ internal static class WordNumberingReconcile
             Release(cleanTableTemplateRange);
             if (cleanTableTemplateDocument is not null)
             {
-                try { cleanTableTemplateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { cleanTableTemplateDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(cleanTableTemplateDocument);
-            try { document.Activate(); } catch { }
+            try { document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -698,11 +699,12 @@ internal static class WordNumberingReconcile
                             && WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                                 WordOmmlConverter.ReadLocalEquationXml(formulaRange)));
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Any ambiguous legacy native host is handled conservatively by
                     // the normal structural path; fresh table-free insertions keep
                     // their immediate Shape creation behavior.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
             var visibleNumberCreated = ConfigureNumberedDisplayFormula(
@@ -1236,7 +1238,7 @@ internal static class WordNumberingReconcile
             if (!document.ReadOnly)
             {
                 try { repairedBookmark = bookmarks.Add(name, range); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             var recoveredResult = range;
             range = null;
@@ -1364,10 +1366,11 @@ internal static class WordNumberingReconcile
                     }
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Fall through to the paragraph owner. This is the native
                 // MathType-style layout used by numbered VisualTeX OLE formulas.
+                IgnoredErrors.Ignore(ignored);
             }
 
             paragraphs = visibleRange.Paragraphs;

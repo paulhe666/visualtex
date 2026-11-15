@@ -52,7 +52,7 @@ internal static class WpsOleDisplayRefresh
             document = range.Document;
             Mark(document);
         }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(document); }
     }
 

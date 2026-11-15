@@ -21,7 +21,7 @@ internal static class ReplacementTransaction
         {
             if (candidate is not null)
             {
-                try { deleteCandidate(candidate); } catch { }
+                try { deleteCandidate(candidate); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }

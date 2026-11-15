@@ -95,7 +95,7 @@ public static class FormulaMetadataCodec
                 return;
             metadata.RenderFontSizePt = Math.Round(renderFontSizePt, 3);
         }
-        catch (JsonException) { }
+        catch (JsonException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static string Base64UrlEncode(byte[] bytes) =>

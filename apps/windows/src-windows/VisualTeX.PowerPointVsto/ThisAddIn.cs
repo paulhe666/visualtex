@@ -114,7 +114,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private static void GrantVisualTeXForegroundActivation()
     {
         try { _ = AllowSetForegroundWindow(AllowAnyProcessToSetForeground); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private const string RibbonXml = """
@@ -1176,7 +1176,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await SessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             ReportError(failureMessage);
         }
@@ -1185,15 +1185,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             preparedMathType?.Dispose();
             if (emfPath is not null)
             {
-                try { File.Delete(emfPath); } catch { }
+                try { File.Delete(emfPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (svgPath is not null)
             {
-                try { File.Delete(svgPath); } catch { }
+                try { File.Delete(svgPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (imagePath is not null)
             {
-                try { File.Delete(imagePath); } catch { }
+                try { File.Delete(imagePath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (sessionId is not null
                 && string.Equals(
@@ -1233,7 +1233,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var userMessage = OfficePluginLanguage.SafeStatusMessage(message);
         dispatcher.Post(() =>
         {
-            try { ((dynamic)application).StatusBar = userMessage; } catch { }
+            try { ((dynamic)application).StatusBar = userMessage; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         });
     }
 
@@ -1274,7 +1274,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     System.Windows.Forms.MessageBoxButtons.OK,
                     System.Windows.Forms.MessageBoxIcon.Warning);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return true;
         });
     }
@@ -1282,25 +1282,25 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private static void ReleaseComObject(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private void Dispose()
     {
         _lifetime?.Cancel();
         // Never leave PowerPoint without input if it shuts down mid-batch.
-        try { _activeModalGuard?.Dispose(); } catch { }
+        try { _activeModalGuard?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _activeModalGuard = null;
         if (_application is not null)
         {
-            try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }
+            try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         _doubleClickHook?.Dispose();
         _keyboardHook?.Dispose();
-        try { _automationAgent?.Dispose(); } catch { }
+        try { _automationAgent?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _automationAgent = null;
         DisposeSessionClient(_sessionClientTask);
-        try { _formulaService?.Dispose(); } catch { }
+        try { _formulaService?.Dispose(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
         _doubleClickHook = null;
@@ -1313,7 +1313,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _ribbonUi = null;
         if (_comAddIn is not null)
         {
-            try { _comAddIn.Object = null; } catch { }
+            try { _comAddIn.Object = null; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             ReleaseComObject(_comAddIn);
             _comAddIn = null;
         }

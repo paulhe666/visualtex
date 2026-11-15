@@ -370,8 +370,8 @@ internal sealed partial class WordFormulaService
                 if (run.Code)
                 {
                     runFont.Name = "Consolas";
-                    try { runFont.NameAscii = "Consolas"; } catch { }
-                    try { runFont.NameFarEast = "Microsoft YaHei UI"; } catch { }
+                    try { runFont.NameAscii = "Consolas"; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                    try { runFont.NameFarEast = "Microsoft YaHei UI"; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
             finally { Release(runFont); Release(range); }

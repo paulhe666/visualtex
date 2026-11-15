@@ -388,7 +388,7 @@ internal static class WordFormulaOle
             if (formula is not null)
             {
                 try { FormulaOleInterop.CloseAfterSave(formula); }
-                catch when (!initialized) { }
+                catch (Exception ignored) when (!initialized) { IgnoredErrors.Ignore(ignored); }
             }
             Release(oleObject);
             Release(format);
@@ -424,7 +424,7 @@ internal static class WordFormulaOle
             if (formula is not null)
             {
                 try { FormulaOleInterop.CloseAfterSave(formula); }
-                catch when (!updated) { }
+                catch (Exception ignored) when (!updated) { IgnoredErrors.Ignore(ignored); }
             }
             Release(oleObject);
             Release(format);

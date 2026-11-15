@@ -83,7 +83,7 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
                     File.AppendAllText(path, line);
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         });
     }
 
@@ -156,7 +156,7 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     {
         if (_hook != IntPtr.Zero)
         {
-            try { UnhookWindowsHookEx(_hook); } catch { }
+            try { UnhookWindowsHookEx(_hook); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             _hook = IntPtr.Zero;
         }
         _hookCallback = null;

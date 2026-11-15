@@ -94,6 +94,7 @@ internal sealed class WordOperationProgress : IDisposable
         catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
         {
             // The progress window already closed.
+            IgnoredErrors.Ignore(error);
         }
     }
 

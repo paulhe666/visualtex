@@ -72,9 +72,10 @@ public static class VisualTeXServiceErrors
                     && !string.IsNullOrWhiteSpace(value.GetString()))
                     return value.GetString()!.Trim();
             }
-            catch (JsonException)
+            catch (JsonException ignored)
             {
                 // not JSON after all: the body itself is the detail
+                IgnoredErrors.Ignore(ignored);
             }
         }
         return text.Length > 1000 ? text.Substring(0, 1000) + "…" : text;

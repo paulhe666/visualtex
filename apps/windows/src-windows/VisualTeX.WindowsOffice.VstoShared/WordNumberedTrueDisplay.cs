@@ -494,11 +494,12 @@ internal static class WordNumberedTrueDisplay
                 shapeRange = paragraphRange.ShapeRange;
                 if (shapeRange.Count > 0) return false;
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Word throws when no Shape is anchored to the paragraph, which is
                 // the expected healthy case. Any other structural proof above still
                 // remains mandatory.
+                IgnoredErrors.Ignore(ignored);
             }
             return true;
         }
@@ -936,7 +937,7 @@ internal static class WordNumberedTrueDisplay
                 bookmarkRange = bookmark.Range;
                 managedAnchorPositions.Add(bookmarkRange.Start);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally
             {
                 Release(bookmarkRange);
@@ -1047,10 +1048,11 @@ internal static class WordNumberedTrueDisplay
                         mathRange.End,
                         fingerprint));
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Skip an inaccessible/transient OMath. No identity is safer
                     // than guessing while Word is still committing a paste.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally
                 {
@@ -1570,10 +1572,11 @@ internal static class WordNumberedTrueDisplay
                 object normalStyle = WdBuiltinStyle.wdStyleNormal;
                 typingParagraphRange!.set_Style(ref normalStyle);
             }
-            catch
+            catch (Exception ignored)
             {
                 // A locked/custom style collection may reject Normal. Direct
                 // formatting reset below still produces an ordinary typing row.
+                IgnoredErrors.Ignore(ignored);
             }
             font = typingParagraphRange!.Font;
             font.Reset();
@@ -1897,7 +1900,7 @@ internal static class WordNumberedTrueDisplay
                     xml,
                     formulaId);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Console.WriteLine(
                 $"    native-hash-diagnostic context={context} formulaId={formulaId} maths={maths.Count} type={(math is null ? "none" : math.Type.ToString())} range={formulaRange.Start}:{formulaRange.End} mathRange={(mathRange is null ? "none" : mathRange.Start + ":" + mathRange.End)} paragraph={(paragraphRange is null ? "none" : paragraphRange.Start + ":" + paragraphRange.End)} paragraphText='{paragraphText}' trailing='{trailingText}' fields={fields.Count} codes=[{string.Join(" | ", codes)}] direct={direct} bookmarks=num:{bookmarks.Exists(numberName)},visible:{bookmarks.Exists(visibleName)},caption:{bookmarks.Exists(captionName)} xml={xml}");
         }
@@ -2453,7 +2456,7 @@ internal static class WordNumberedTrueDisplay
         }
         finally
         {
-            try { DeleteBookmarkOnly(document, temporaryBookmarkName); } catch { }
+            try { DeleteBookmarkOnly(document, temporaryBookmarkName); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(anchorInlineShapes);
             Release(anchorFields);
             Release(anchorMaths);
@@ -2785,7 +2788,7 @@ internal static class WordNumberedTrueDisplay
                 listFormat = anchorParagraphRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             tabStops = paragraphFormat.TabStops;
             tabStops.ClearAll();
             borders = anchorParagraphRange.Borders;
@@ -3110,7 +3113,7 @@ internal static class WordNumberedTrueDisplay
                 font = formulaRange.Font;
                 fontSize = font.Size;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (float.IsNaN(fontSize)
                 || float.IsInfinity(fontSize)
                 || fontSize <= 0f
@@ -3130,7 +3133,7 @@ internal static class WordNumberedTrueDisplay
                     lineSpacing = paragraphFormat.LineSpacing;
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             var xml = XDocument.Parse(
                 formulaRange.WordOpenXML ?? string.Empty,
@@ -3458,10 +3461,11 @@ internal static class WordNumberedTrueDisplay
             if (xml.Descendants(mathNamespace + "rad").Any())
                 height = Math.Max(height, fontSize * 2.35f + 3f);
         }
-        catch
+        catch (Exception ignored)
         {
             // Keep the conservative default when Word returns a story fragment
             // that cannot be parsed as standalone OpenXML.
+            IgnoredErrors.Ignore(ignored);
         }
         return Math.Max(
             NativeDisplayNumberShapeDefaultHeightPoints,
@@ -4298,7 +4302,7 @@ internal static class WordNumberedTrueDisplay
             WpsXmlInsertion.Insert(
                 paragraphRange,
                 xml.ToString(SaveOptions.DisableFormatting));
-            try { document.Repaginate(); } catch { }
+            try { document.Repaginate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -4435,7 +4439,7 @@ internal static class WordNumberedTrueDisplay
             {
                 if (attempt > 0)
                 {
-                    try { document.Repaginate(); } catch { }
+                    try { document.Repaginate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     System.Threading.Thread.Sleep(40 * (attempt + 1));
                 }
                 Release(shape);
@@ -4685,6 +4689,7 @@ internal static class WordNumberedTrueDisplay
                 // builds and COMException on others. Legacy/copied Shapes can also
                 // have an Office-generated name; fall back to deterministic
                 // AlternativeText identity below.
+                IgnoredErrors.Ignore(error);
             }
             finally
             {
@@ -4887,9 +4892,10 @@ internal static class WordNumberedTrueDisplay
                 anchoredShapes = paragraphRange.ShapeRange;
                 if (anchoredShapes.Count != 0) return false;
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Word throws when the paragraph has no anchored Shape.
+                IgnoredErrors.Ignore(ignored);
             }
             format = paragraphRange.ParagraphFormat;
             if (format.LineSpacingRule != WdLineSpacing.wdLineSpaceExactly
@@ -5013,10 +5019,11 @@ internal static class WordNumberedTrueDisplay
                 removed = true;
             }
         }
-        catch (COMException)
+        catch (COMException ignored)
         {
             // Continue with bookmark/anchor cleanup. A protected Shape can still
             // leave enough deterministic identity for the next reconciliation.
+            IgnoredErrors.Ignore(ignored);
         }
         finally { Release(shape); }
 
@@ -5071,7 +5078,7 @@ internal static class WordNumberedTrueDisplay
             paragraphs = anchorRange.Paragraphs;
             if (paragraphs.Count != 1)
             {
-                try { anchorBookmark?.Delete(); } catch { }
+                try { anchorBookmark?.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 return removed;
             }
             paragraph = paragraphs[1];
@@ -5111,7 +5118,7 @@ internal static class WordNumberedTrueDisplay
         catch
         {
             try { DeleteBookmarkOnly(document, NativeDisplayAnchorBookmarkName(formulaId)); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return removed;
         }
         finally
@@ -5433,9 +5440,10 @@ internal static class WordNumberedTrueDisplay
                 anchoredShapes = candidateRange.ShapeRange;
                 if (anchoredShapes.Count != 0) return !hasAnchorEvidence;
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Word throws when a paragraph has no anchored Shape.
+                IgnoredErrors.Ignore(ignored);
             }
 
             candidateFormat = candidateRange.ParagraphFormat;
@@ -5608,12 +5616,13 @@ internal static class WordNumberedTrueDisplay
             if (!HasNativeDisplayAnchorCommitMarker(document, formulaId))
                 MarkNativeDisplayAnchorCommitted(document, formulaId);
         }
-        catch
+        catch (Exception ignored)
         {
             // The next document-open migration can still identify a surviving
             // Shape-era paragraph from its retained one-point formatting. This
             // best-effort marker restoration primarily covers Word's one-turn
             // delayed paragraph deletion after removing a floating Shape.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {

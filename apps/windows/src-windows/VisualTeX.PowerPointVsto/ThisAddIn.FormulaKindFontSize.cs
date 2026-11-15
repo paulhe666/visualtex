@@ -121,6 +121,6 @@ public sealed partial class ThisAddIn
             dynamic ui = ribbon;
             foreach (var id in FormulaKindFontSizeControlIds) ui.InvalidateControl(id);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

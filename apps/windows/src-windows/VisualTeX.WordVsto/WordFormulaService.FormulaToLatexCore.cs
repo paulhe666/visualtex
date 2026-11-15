@@ -197,9 +197,10 @@ internal sealed partial class WordFormulaService
                     viewState,
                     preferredSelection: null);
             }
-            catch
+            catch (Exception ignored)
             {
                 // UI state is not document correctness.
+                IgnoredErrors.Ignore(ignored);
             }
 
             return result;

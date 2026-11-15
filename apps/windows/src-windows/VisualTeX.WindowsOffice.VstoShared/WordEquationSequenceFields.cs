@@ -193,7 +193,7 @@ internal static class WordEquationSequenceFields
                         frames = range.Frames;
                         if (frames.Count > 0) continue;
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
                     sawHeadingCandidate = true;
                     var listNumber = string.Empty;
@@ -204,7 +204,7 @@ internal static class WordEquationSequenceFields
                             listFormat.ListString,
                             outlineLevel);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     var explicitNumber = !string.IsNullOrWhiteSpace(listNumber)
                         ? listNumber
                         : ParseHeadingNumberFromText(range.Text, outlineLevel);

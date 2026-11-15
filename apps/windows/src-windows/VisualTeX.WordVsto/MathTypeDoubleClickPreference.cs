@@ -62,11 +62,12 @@ internal static class MathTypeDoubleClickPreference
                 }
                 _lastWriteUtc = lastWriteUtc;
             }
-            catch
+            catch (Exception ignored)
             {
                 // A transient read while the desktop app atomically replaces the
                 // preference file must never flip behavior. Retain the last known
                 // value and retry on the next refresh interval.
+                IgnoredErrors.Ignore(ignored);
             }
             return _cachedEnabled;
         }

@@ -96,10 +96,11 @@ internal sealed partial class WordFormulaService
                 selectionRange,
                 WordFormulaHostKind.VisualTeX);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException ignored)
         {
             // A selection spanning more than one host is handled by the bounded
             // scope index below. Never fall back to a document-wide search.
+            IgnoredErrors.Ignore(ignored);
         }
 
         try
@@ -109,9 +110,10 @@ internal sealed partial class WordFormulaService
                 selectionRange,
                 WordFormulaHostKind.Omml);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException ignored)
         {
             // Same bounded-group handling as above.
+            IgnoredErrors.Ignore(ignored);
         }
 
         if (visualTeX is not null && omml is not null)
@@ -345,11 +347,12 @@ internal sealed partial class WordFormulaService
                             targetPayload.Latex;
                     }
                 }
-                catch (InvalidDataException)
+                catch (InvalidDataException ignored)
                 {
                     // A caret touching two independent hosts is ambiguous. Do not
                     // guess which host Word will merge; repair will require an
                     // independently materialized pasted host instead.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
 
@@ -1251,7 +1254,7 @@ internal sealed partial class WordFormulaService
             if (originalLock.HasValue)
             {
                 try { shape.LockAspectRatio = originalLock.Value; }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
 
@@ -1283,14 +1286,14 @@ internal sealed partial class WordFormulaService
                     WdUnits.wdCharacter,
                     -1);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 probe.MoveEnd(
                     WdUnits.wdCharacter,
                     1);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             bookmarks = probe.Bookmarks;
             for (var index = bookmarks.Count;

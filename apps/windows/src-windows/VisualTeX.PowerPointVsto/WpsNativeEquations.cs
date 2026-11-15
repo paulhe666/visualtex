@@ -135,11 +135,11 @@ internal static class WpsNativeEquations
                         color = font.Color;
                         colors.Add((PowerPointConversionColors.FromOfficeRgb(color.RGB), run.Length));
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     finally { Release(color); Release(font); Release(run); }
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(runs); Release(range); }
             result.Add(colors);
         }
@@ -172,12 +172,12 @@ internal static class WpsNativeEquations
         {
             if (scratch is not null)
             {
-                try { scratch.Saved = MsoTriState.msoTrue; } catch { }
-                try { scratch.Close(); } catch { }
+                try { scratch.Saved = MsoTriState.msoTrue; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { scratch.Close(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(scratch);
             Release(presentations);
-            try { File.Delete(path); } catch { }
+            try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -279,7 +279,7 @@ internal static class WpsNativeEquations
                 view = window.View;
                 view.Paste();
             }
-            catch (COMException) when (attempt < 3) { }
+            catch (COMException ignored) when (attempt < 3) { IgnoredErrors.Ignore(ignored); }
             finally { Release(view); Release(window); }
 
             var after = LiveText(shape);
@@ -337,7 +337,7 @@ internal static class WpsNativeEquations
     {
         if (value is not null && Marshal.IsComObject(value))
         {
-            try { Marshal.ReleaseComObject(value); } catch { }
+            try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 }

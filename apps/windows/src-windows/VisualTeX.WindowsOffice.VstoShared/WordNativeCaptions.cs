@@ -974,10 +974,11 @@ internal static class WordNativeCaptions
                 object captionStyle = WdBuiltinStyle.wdStyleCaption;
                 captionRange.set_Style(ref captionStyle);
             }
-            catch
+            catch (Exception ignored)
             {
                 // Some locked/custom documents reject assigning the built-in
                 // caption style. The SEQ field and bookmarks remain valid.
+                IgnoredErrors.Ignore(ignored);
             }
 
             bookmarks = document.Bookmarks;
@@ -1243,7 +1244,7 @@ internal static class WordNativeCaptions
                 listFormat = captionRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             // Keep the final paragraph mark in normal body flow. Word 2021 rejects
             // Frames.Add on a whole caption paragraph immediately before a user
@@ -1330,7 +1331,7 @@ internal static class WordNativeCaptions
                 listFormat = captionRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             // A legacy Word Frame remains in the main document story, so Word's
             // native Cross-reference dialog and plain REF fields still recognize
@@ -1413,7 +1414,7 @@ internal static class WordNativeCaptions
             format.KeepWithNext = 0;
             format.PageBreakBefore = 0;
             format.WidowControl = 0;
-            try { format.DisableLineHeightGrid = -1; } catch { }
+            try { format.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             paragraphMark = paragraphRange.Document.Range(
                 paragraphRange.End - 1,
@@ -1423,10 +1424,11 @@ internal static class WordNativeCaptions
             markFont.Size = 1f;
             markFont.Position = 0;
         }
-        catch
+        catch (Exception ignored)
         {
             // The clipping Frame still protects the SEQ target if a protected or
             // custom paragraph refuses the optional flow compaction.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {

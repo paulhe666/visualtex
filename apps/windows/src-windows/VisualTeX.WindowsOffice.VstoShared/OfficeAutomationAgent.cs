@@ -84,7 +84,7 @@ internal sealed class OfficeAutomationAgent : IDisposable
 
     private void Trace(string message)
     {
-        try { _trace?.Invoke("automation " + message); } catch { }
+        try { _trace?.Invoke("automation " + message); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private async Task RunAsync(CancellationToken cancellation)
@@ -280,7 +280,7 @@ internal sealed class OfficeAutomationAgent : IDisposable
                 TimeSpan.FromSeconds(2),
                 CancellationToken.None);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }
 

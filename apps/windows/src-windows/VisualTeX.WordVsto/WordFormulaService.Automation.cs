@@ -311,7 +311,7 @@ internal sealed partial class WordFormulaService
         if (written?.FormulaId is { Length: > 0 } id)
         {
             try { return ResolveAutomationFormula(document, "vtx:" + id); }
-            catch (OfficeAutomationException) { }
+            catch (OfficeAutomationException ignored) { IgnoredErrors.Ignore(ignored); }
         }
         Selection? selection = null;
         Range? probe = null;
@@ -381,7 +381,7 @@ internal sealed partial class WordFormulaService
             {
                 if (_application.Documents.Count > 0) return _application.ActiveDocument;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             throw new OfficeAutomationException("document_not_found", "No document is open.");
         }
         Documents? documents = null;
@@ -576,7 +576,7 @@ internal sealed partial class WordFormulaService
             if (numbered)
             {
                 try { number = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(hostXml); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             var semanticXml = numbered ? WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(hostXml) : hostXml;
             var mathMl = WordOmmlConverter.TransformOmmlToMathMl(semanticXml, display);
@@ -587,7 +587,7 @@ internal sealed partial class WordFormulaService
                 var font = exact.Font.Size;
                 if (font > 0 && font < 1000) size = font;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return new AutomationSemantic
             {
                 Latex = latex,
@@ -667,7 +667,7 @@ internal sealed partial class WordFormulaService
                 paragraphs = head.Paragraphs;
                 paragraph = Math.Max(1, paragraphs.Count);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(paragraphs); Release(head); }
         }
         return new
@@ -759,18 +759,18 @@ internal sealed partial class WordFormulaService
         WordFormulaHostDescriptor? host = null;
         string kind = AutomationVisualTeXKind;
         try { host = WordFormulaHostResolver.ResolveLocal(document, selection, WordFormulaHostKind.VisualTeX); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         if (host is null)
         {
             kind = AutomationMathTypeKind;
             try { host = WordMathTypeHostAdapter.ResolveLocal(_application, document, selection); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         if (host is null)
         {
             kind = AutomationOmmlKind;
             try { host = WordFormulaHostLookup.ResolveLocal(document, selection, WordFormulaHostKind.Omml); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         if (host is null) return null;
         var formula = new AutomationFormula { Host = host, Kind = kind };

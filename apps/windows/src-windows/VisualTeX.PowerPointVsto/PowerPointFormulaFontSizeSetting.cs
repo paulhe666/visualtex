@@ -56,9 +56,10 @@ internal static class PowerPointFormulaFontSizeSetting
             else
                 key?.DeleteValue(name, throwOnMissingValue: false);
         }
-        catch
+        catch (Exception ignored)
         {
             // Keep the in-process choice even if the profile rejects persistence.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -73,7 +74,7 @@ internal static class PowerPointFormulaFontSizeSetting
                 && value <= FormulaFontSize.MaximumPt)
                 return FormulaFontSize.Normalize(value);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return null;
     }
 }

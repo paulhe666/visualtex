@@ -46,7 +46,7 @@ internal static class WordFormulaMetadataReader
     {
         if (shape is null) return null;
         string? encoded = null;
-        try { encoded = shape.AlternativeText; } catch { }
+        try { encoded = shape.AlternativeText; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         var metadata = FormulaMetadataCodec.Decode(encoded);
         if (metadata is null)
         {
@@ -60,12 +60,12 @@ internal static class WordFormulaMetadataReader
     {
         if (shape is null || metadata is null) return;
         var encoded = FormulaMetadataCodec.Encode(metadata);
-        try { shape.AlternativeText = encoded; } catch { }
+        try { shape.AlternativeText = encoded; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         // WPS fails InlineShape.Title with E_FAIL, and a failed call inside a custom
         // UndoRecord makes WPS roll the whole record (the new formula) back.
         if (!OfficeHostEnvironment.IsWps)
         {
-            try { shape.Title = encoded; } catch { }
+            try { shape.Title = encoded; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -158,7 +158,7 @@ internal static class WordFormulaMetadataReader
                 if (usedLegacyUpdate && formula is not null)
                 {
                     try { FormulaOleInterop.CloseAfterSave(formula); }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 preservedPreview?.Dispose();
                 Release(oleObject);
@@ -257,10 +257,11 @@ internal static class WordFormulaMetadataReader
                 return CloneWithFormulaId(metadata, formulaId);
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // A missing/invalid local identity bookmark must not hide otherwise
             // valid VisualTeX metadata.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -284,6 +285,6 @@ internal static class WordFormulaMetadataReader
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

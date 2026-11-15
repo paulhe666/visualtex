@@ -1450,7 +1450,7 @@ internal static class WordVisibleEquationNumbers
                 maths = range.OMaths;
                 if (maths.Count > 0) containingMath = maths[1];
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (containingMath is not null)
             {
                 Range? containingRange = null;
@@ -1487,7 +1487,7 @@ internal static class WordVisibleEquationNumbers
                 if (string.Equals(trailing.Text, ")", StringComparison.Ordinal))
                     trailing.Delete();
             }
-            try { containingMath?.BuildUp(); } catch { }
+            try { containingMath?.BuildUp(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {

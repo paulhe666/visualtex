@@ -240,7 +240,7 @@ internal static class WordEquationParagraphLayout
                 nativeOmmlParagraph = maths.Count > 0
                     && !(bool)formulaRange.get_Information(WdInformation.wdWithInTable);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             format.LeftIndent = 0f;
             format.RightIndent = 0f;
             format.FirstLineIndent = 0f;
@@ -266,11 +266,12 @@ internal static class WordEquationParagraphLayout
                 listFormat = paragraphRange.ListFormat;
                 listFormat.RemoveNumbers(WdNumberType.wdNumberParagraph);
             }
-            catch
+            catch (Exception ignored)
             {
                 // Protected/custom stories can reject list normalization. The
                 // page-break flags above still remove Word's black paragraph
                 // marker when formatting marks are shown.
+                IgnoredErrors.Ignore(ignored);
             }
             tabStops = format.TabStops;
             tabStops.ClearAll();
@@ -295,10 +296,11 @@ internal static class WordEquationParagraphLayout
                         rightMargin = pageSetup.RightMargin;
                     }
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Standard US Letter and one-inch margins are a safe fallback
                     // for protected/custom stories without an exposed PageSetup.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
 
@@ -418,10 +420,11 @@ internal static class WordEquationParagraphLayout
                             }
                         }
                     }
-                    catch
+                    catch (Exception ignored)
                     {
                         // Keep the same safe page fallback as the full paragraph
                         // configurator for protected/custom stories.
+                        IgnoredErrors.Ignore(ignored);
                     }
                 }
 
@@ -508,10 +511,11 @@ internal static class WordEquationParagraphLayout
                     return rangeWidth;
                 }
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Protected/custom stories can reject positional information.
                 // Fall through to the screen-box fallback only for that case.
+                IgnoredErrors.Ignore(ignored);
             }
 
             // Exceptional fallback for stories without usable Range.Information.
@@ -535,9 +539,10 @@ internal static class WordEquationParagraphLayout
                     var detectedDpi = GetDpiForWindow(new IntPtr(window.Hwnd));
                     if (detectedDpi > 0) dpi = detectedDpi;
                 }
-                catch (EntryPointNotFoundException)
+                catch (EntryPointNotFoundException ignored)
                 {
                     // Windows versions without per-window DPI APIs use 96 DPI.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 if (screenWidth <= 0 || zoomPercentage <= 0 || dpi == 0)
                     return null;
@@ -615,9 +620,10 @@ internal static class WordEquationParagraphLayout
                     rightMargin = pageSetup.RightMargin;
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // Use the same standard-page fallback as ConfigureEquationParagraph.
+                IgnoredErrors.Ignore(ignored);
             }
             var expected = CalculateEquationTabStops(
                 pageWidth,
@@ -705,11 +711,12 @@ internal static class WordEquationParagraphLayout
                 }
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Physical centering is a layout refinement. If Word refuses geometry
             // queries in a protected/background story, retain the width-based tab
             // computed by ConfigureEquationParagraph rather than breaking numbering.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {

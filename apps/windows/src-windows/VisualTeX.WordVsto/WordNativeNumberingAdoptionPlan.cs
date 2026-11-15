@@ -225,7 +225,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                 Release(change.PreparedNumber);
                 change.PreparedNumber = null;
             }
-            try { _formatStaging.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { _formatStaging.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(_formatStaging); _formatStaging = null;
             throw;
         }
@@ -842,7 +842,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         _literalStaging?.Dispose(); _literalStaging = null;
         if (_formatStaging is not null)
         {
-            try { _formatStaging.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { _formatStaging.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(_formatStaging);
             _formatStaging = null;
         }

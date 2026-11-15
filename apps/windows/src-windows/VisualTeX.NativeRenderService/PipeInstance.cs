@@ -13,8 +13,8 @@ internal static class PipeInstance
     internal static void Reset(NamedPipeServerStream endpoint)
     {
         try { endpoint.Disconnect(); }
-        catch (ObjectDisposedException) { }
-        catch (InvalidOperationException) { } // never connected, or already reset
-        catch (IOException) { }
+        catch (ObjectDisposedException ignored) { IgnoredErrors.Ignore(ignored); }
+        catch (InvalidOperationException ignored) { IgnoredErrors.Ignore(ignored); } // never connected, or already reset
+        catch (IOException ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

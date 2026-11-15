@@ -344,8 +344,8 @@ internal sealed partial class WordFormulaService
         try
         {
             probe = selectionRange.Duplicate;
-            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             shapes = probe.InlineShapes;
             for (var index = 1; index <= shapes.Count; index++)
             {
@@ -430,7 +430,7 @@ internal sealed partial class WordFormulaService
                 if (candidate > 0 && candidate < 256)
                     fontSize = FormulaFontSize.Normalize(candidate);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             var formulaId = ResolveReadOnlyOmmlSessionFormulaId(
                 document,
@@ -1003,8 +1003,8 @@ internal sealed partial class WordFormulaService
             // field unused here. Keep the same tiny structural/ownership probe,
             // but establish the trailing boundary before any payload access.
             probe = caret.Duplicate;
-            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             shapes = probe.InlineShapes;
             var touchingHosts = 0;
             for (var index = 1; index <= shapes.Count; index++)
@@ -1034,10 +1034,11 @@ internal sealed partial class WordFormulaService
                 return;
             WordFormulaHostLayout.RestoreInlineCaret(_application, hostRange);
         }
-        catch
+        catch (Exception ignored)
         {
             // Selection-change normalization is best-effort and must never
             // interrupt ordinary Word input.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -1068,14 +1069,14 @@ internal sealed partial class WordFormulaService
                 sourceFont = source.Font;
                 selectionFont = selection.Font;
                 selectionFont.Name = sourceFont.Name;
-                try { selectionFont.NameAscii = sourceFont.NameAscii; } catch { }
-                try { selectionFont.NameFarEast = sourceFont.NameFarEast; } catch { }
-                try { selectionFont.NameOther = sourceFont.NameOther; } catch { }
+                try { selectionFont.NameAscii = sourceFont.NameAscii; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { selectionFont.NameFarEast = sourceFont.NameFarEast; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { selectionFont.NameOther = sourceFont.NameOther; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 selectionFont.Size = sourceFont.Size;
                 selectionFont.Bold = sourceFont.Bold;
                 selectionFont.Italic = sourceFont.Italic;
-                try { selectionFont.Underline = sourceFont.Underline; } catch { }
-                try { selectionFont.Color = sourceFont.Color; } catch { }
+                try { selectionFont.Underline = sourceFont.Underline; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { selectionFont.Color = sourceFont.Color; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 var sourcePosition = sourceFont.Position;
                 selectionFont.Position = sourcePosition == (int)WdConstants.wdUndefined
                     ? 0
@@ -1089,8 +1090,8 @@ internal sealed partial class WordFormulaService
             selectionFont.Hidden = 0;
             selectionFont.Subscript = 0;
             selectionFont.Superscript = 0;
-            try { selectionFont.Spacing = 0; } catch { }
-            try { selectionFont.Scaling = 100; } catch { }
+            try { selectionFont.Spacing = 0; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { selectionFont.Scaling = 100; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally
         {
@@ -1305,7 +1306,7 @@ internal sealed partial class WordFormulaService
             if (TryNormalizeDefinedWordFontSize(font.Size, out var size))
                 return size;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(font); }
 
         return metadata is null
@@ -1620,7 +1621,7 @@ internal sealed partial class WordFormulaService
             if (pngPath is not null)
             {
                 try { File.Delete(pngPath); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(oleObject);
             Release(format);
@@ -2814,13 +2815,13 @@ internal sealed partial class WordFormulaService
                         document,
                         metadata.FormulaId);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 if (document is not null && !string.IsNullOrWhiteSpace(createdObjectBookmarkName))
                     TryDeleteBookmark(document, createdObjectBookmarkName);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 if (!inline && document is not null && insertionStart >= 0)
@@ -2835,7 +2836,7 @@ internal sealed partial class WordFormulaService
                     TryDelete(shape);
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 if (createdSectionBreakCodeStart >= 0 && document is not null)
@@ -2843,7 +2844,7 @@ internal sealed partial class WordFormulaService
                         document,
                         createdSectionBreakCodeStart);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var hresult = error is COMException
                 ? $" HRESULT=0x{error.HResult:X8}."
                 : string.Empty;
@@ -2861,11 +2862,12 @@ internal sealed partial class WordFormulaService
             {
                 EndUndoRecord(undoRecord);
             }
-            catch when (insertionFailed)
+            catch (Exception ignored) when (insertionFailed)
             {
                 // The primary insertion exception already carries the useful
                 // stage/HRESULT. A dead Word RPC server cannot close the borrowed
                 // undo record and must not mask that original failure.
+                IgnoredErrors.Ignore(ignored);
             }
             Release(undoRecord);
             preparedHeadingParagraph?.Dispose();
@@ -3834,7 +3836,7 @@ internal sealed partial class WordFormulaService
                 _application.ScreenUpdating = false;
                 screenUpdatingSuspended = true;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=resolve-source formulaId={session.FormulaId}");
@@ -4211,7 +4213,7 @@ internal sealed partial class WordFormulaService
             Release(editOptions);
             if (screenUpdatingSuspended)
             {
-                try { _application.ScreenUpdating = previousScreenUpdating; } catch { }
+                try { _application.ScreenUpdating = previousScreenUpdating; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (!editViewRestored) RestoreViewState(document, viewState, finalSelection);
             if (!editUndoEnded) EndUndoRecord(undoRecord);
@@ -4290,7 +4292,7 @@ internal sealed partial class WordFormulaService
                 _application.ScreenUpdating = false;
                 screenUpdatingSuspended = true;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             oldShape = ResolveCapturedFormulaPicture(
                     document,
                     session.SourceObjectId,
@@ -4352,7 +4354,7 @@ internal sealed partial class WordFormulaService
             RestoreViewState(document, viewState, finalSelection);
             if (screenUpdatingSuspended)
             {
-                try { _application.ScreenUpdating = previousScreenUpdating; } catch { }
+                try { _application.ScreenUpdating = previousScreenUpdating; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             EndUndoRecord(undoRecord);
             Release(undoRecord);
@@ -4394,11 +4396,12 @@ internal sealed partial class WordFormulaService
             document = _application.ActiveDocument;
             RestoreViewState(document, state, preferredSelection: null);
         }
-        catch
+        catch (Exception ignored)
         {
             // View restoration must never turn an otherwise successful formula
             // conversion into an error. The original document is reactivated by
             // the conversion write path before this method normally runs.
+            IgnoredErrors.Ignore(ignored);
         }
         finally { Release(document); }
     }
@@ -4412,11 +4415,11 @@ internal sealed partial class WordFormulaService
         {
             selection = _application.Selection;
             range = selection.Range;
-            try { window = _application.ActiveWindow; } catch { }
+            try { window = _application.ActiveWindow; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             int? vertical = null;
             int? horizontal = null;
-            try { vertical = window?.VerticalPercentScrolled; } catch { }
-            try { horizontal = window?.HorizontalPercentScrolled; } catch { }
+            try { vertical = window?.VerticalPercentScrolled; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { horizontal = window?.HorizontalPercentScrolled; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return new WordViewState
             {
                 SelectionStart = range.Start,
@@ -4464,7 +4467,7 @@ internal sealed partial class WordFormulaService
                 fallback = document.Range(ref startValue, ref endValue);
                 selection.SetRange(fallback.Start, fallback.End);
             }
-            try { window = _application.ActiveWindow; } catch { }
+            try { window = _application.ActiveWindow; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             if (window is not null)
             {
                 try
@@ -4473,17 +4476,17 @@ internal sealed partial class WordFormulaService
                         && window.HorizontalPercentScrolled != state.HorizontalPercentScrolled.Value)
                         window.HorizontalPercentScrolled = state.HorizontalPercentScrolled.Value;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 try
                 {
                     if (state.VerticalPercentScrolled.HasValue
                         && window.VerticalPercentScrolled != state.VerticalPercentScrolled.Value)
                         window.VerticalPercentScrolled = state.VerticalPercentScrolled.Value;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(window);
@@ -4572,10 +4575,11 @@ internal sealed partial class WordFormulaService
             selection.SetRange(range.End, range.End);
             ApplyInlineTypingFormattingToSelection(selection, range);
         }
-        catch
+        catch (Exception ignored)
         {
             // The MathType OLE is already structurally valid. A transient Word
             // insertion-format refusal must not invalidate the conversion.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -4622,10 +4626,11 @@ internal sealed partial class WordFormulaService
             selection.SetRange(safePosition, safePosition);
             ApplyInlineTypingFormattingToSelection(selection, formulaRange);
         }
-        catch
+        catch (Exception ignored)
         {
             // Structural caret placement remains useful even if Word rejects a
             // transient insertion-format mutation at an unusual protected range.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -4654,10 +4659,11 @@ internal sealed partial class WordFormulaService
             selection.SetRange(caret.Start, caret.End);
             ApplyInlineTypingFormattingToSelection(selection, formulaRange);
         }
-        catch
+        catch (Exception ignored)
         {
             // Keep the caret outside the formula even if Word refuses to mutate
             // insertion formatting at an unusual protected boundary.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -4814,7 +4820,7 @@ internal sealed partial class WordFormulaService
                         center,
                         WordFormulaHostKind.VisualTeX);
             }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException ignored) { IgnoredErrors.Ignore(ignored); }
 
             if (host is null)
             {
@@ -4826,7 +4832,7 @@ internal sealed partial class WordFormulaService
                             center,
                             WordFormulaHostKind.Omml);
                 }
-                catch (InvalidDataException) { }
+                catch (InvalidDataException ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (host is null)
                 return null;
@@ -4981,11 +4987,12 @@ internal sealed partial class WordFormulaService
             // afterwards if they intentionally want to inspect field instructions.
             view.ShowFieldCodes = false;
         }
-        catch
+        catch (Exception ignored)
         {
             // Hidden/protected automation windows can reject View mutations. The
             // formula operation itself remains valid; only interactive presentation
             // normalization is best-effort in that environment.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -5226,19 +5233,19 @@ internal sealed partial class WordFormulaService
     private static void TryDelete(InlineShape? shape)
     {
         if (shape is null) return;
-        try { shape.Delete(); } catch { }
+        try { shape.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void TryDelete(Table? table)
     {
         if (table is null) return;
-        try { table.Delete(); } catch { }
+        try { table.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void TryDelete(Range? range)
     {
         if (range is null) return;
-        try { range.Delete(); } catch { }
+        try { range.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     internal static void Release(object? value)
@@ -5247,6 +5254,6 @@ internal sealed partial class WordFormulaService
         // Office may return the same RCW to the host and to this service.
         // FinalReleaseComObject would invalidate every shared reference in the
         // add-in AppDomain, so release only the reference acquired here.
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

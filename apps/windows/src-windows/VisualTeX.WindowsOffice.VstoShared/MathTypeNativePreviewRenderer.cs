@@ -98,8 +98,8 @@ internal static class MathTypeNativePreviewRenderer
         public void Dispose()
         {
             if (string.IsNullOrWhiteSpace(WmfPath)) return;
-            try { File.Delete(WmfPath); } catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            try { File.Delete(WmfPath); } catch (IOException ignored) { IgnoredErrors.Ignore(ignored); }
+            catch (UnauthorizedAccessException ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -330,8 +330,8 @@ internal static class MathTypeNativePreviewRenderer
             try { File.WriteAllBytes(path, item.Wmf); }
             catch
             {
-                try { File.Delete(path); } catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
+                try { File.Delete(path); } catch (IOException ignored) { IgnoredErrors.Ignore(ignored); }
+                catch (UnauthorizedAccessException ignored) { IgnoredErrors.Ignore(ignored); }
                 throw;
             }
             var key = keys[item.Id];

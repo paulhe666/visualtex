@@ -62,9 +62,10 @@ internal static class OfficePluginLanguage
                     RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
                 if (ParseEnglishPreference(value).HasValue) return value;
             }
-            catch
+            catch (Exception ignored)
             {
                 // A missing or inaccessible shared setting falls back to Office UI culture.
+                IgnoredErrors.Ignore(ignored);
             }
         }
         return null;

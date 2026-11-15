@@ -397,7 +397,7 @@ internal sealed class MathTypeOleClipboardProxy : System.Runtime.InteropServices
             if (Marshal.IsComObject(enumerator))
             {
                 try { Marshal.ReleaseComObject(enumerator); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         return formats;

@@ -137,7 +137,7 @@ internal static class MathTypeWordCommandsBridge
             Release(format);
             if (initialized && term is not null)
             {
-                try { term(); } catch { }
+                try { term(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (module != IntPtr.Zero) FreeLibrary(module);
         }
@@ -255,7 +255,7 @@ internal static class MathTypeWordCommandsBridge
             // Exact equivalent of MathType's MTSetData.ShutdownMT for modern Word.
             shapeRange = shape.Range;
             fields = shapeRange.Fields;
-            try { fields.Update(); } catch { }
+            try { fields.Update(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var closeStatus = closeEquation(1, runningObject);
             if (closeStatus != MtOk)
                 throw new InvalidOperationException(
@@ -271,7 +271,7 @@ internal static class MathTypeWordCommandsBridge
             Release(format);
             if (initialized && term is not null)
             {
-                try { term(); } catch { }
+                try { term(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (module != IntPtr.Zero) FreeLibrary(module);
         }
@@ -397,7 +397,7 @@ internal static class MathTypeWordCommandsBridge
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.FinalReleaseComObject(value); } catch { }
+        try { Marshal.FinalReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

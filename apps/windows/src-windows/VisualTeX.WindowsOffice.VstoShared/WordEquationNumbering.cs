@@ -188,9 +188,10 @@ internal static class WordEquationNumbering
                     $"{DateTimeOffset.Now:O} pid={System.Diagnostics.Process.GetCurrentProcess().Id} {message}{Environment.NewLine}");
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // Diagnostic tracing must never affect numbering behavior.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 }

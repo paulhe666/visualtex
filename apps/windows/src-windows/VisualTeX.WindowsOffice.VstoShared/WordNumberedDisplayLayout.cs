@@ -236,10 +236,11 @@ internal static class WordNumberedDisplayLayout
             object start = true;
             window.ScrollIntoView(range, ref start);
         }
-        catch
+        catch (Exception ignored)
         {
             // Background/protected windows can reject scrolling. Width/geometry
             // readers retain their conservative fallback behavior in that case.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -642,11 +643,12 @@ internal static class WordNumberedDisplayLayout
                 row.Delete();
             }
         }
-        catch
+        catch (Exception ignored)
         {
             // This is a defensive cleanup for a Word table-conversion quirk.
             // Numbering itself is already durable, so never make formula creation
             // fail solely because an extra empty row could not be trimmed.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {
@@ -687,7 +689,7 @@ internal static class WordNumberedDisplayLayout
             math = maths[1];
             if (math.Type != WdOMathType.wdOMathDisplay)
                 math.Type = WdOMathType.wdOMathDisplay;
-            try { math.Justification = WdOMathJc.wdOMathJcCenterGroup; } catch { }
+            try { math.Justification = WdOMathJc.wdOMathJcCenterGroup; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             refreshed = math.Range;
             formulaRange.SetRange(refreshed.Start, refreshed.End);
         }
@@ -724,7 +726,7 @@ internal static class WordNumberedDisplayLayout
             tables = range.Tables;
             if (tables.Count == 0) return false;
         }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(tables); }
         return (bool)range.get_Information(WdInformation.wdWithInTable);
     }
@@ -1149,7 +1151,7 @@ internal static class WordNumberedDisplayLayout
                         "Word could not stage exactly one native OMath before numbering-table migration.");
                 stagingMath = stagingMaths[1];
                 stagingMathRange = stagingMath.Range.Duplicate;
-                try { stagingDocument.Saved = true; } catch { }
+                try { stagingDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 document.Activate();
             }
 
@@ -1197,7 +1199,7 @@ internal static class WordNumberedDisplayLayout
             oldFormulaBookmark = WordOmmlFormulaStore.FindByFormulaId(
                 document,
                 formulaId);
-            try { oldFormulaBookmark?.Delete(); } catch { }
+            try { oldFormulaBookmark?.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             TraceMigration("remove-number-artifacts");
 
             object separator = WdTableFieldSeparator.wdSeparateByTabs;
@@ -1407,7 +1409,7 @@ internal static class WordNumberedDisplayLayout
                     stagingDocument.Saved = true;
                     stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(stagingDocument);
             Release(application);
@@ -1694,7 +1696,7 @@ internal static class WordNumberedDisplayLayout
                     // temporary hidden Word document. Re-activate the real target
                     // after that staging document is closed so the next immediate
                     // VisualTeX edit does not observe a transient/no ActiveDocument.
-                    try { document.Activate(); } catch { }
+                    try { document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     return;
                 }
                 if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
@@ -1966,7 +1968,7 @@ internal static class WordNumberedDisplayLayout
                 format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
                 format.SpaceBefore = 0f;
                 format.SpaceAfter = 0f;
-                try { format.DisableLineHeightGrid = -1; } catch { }
+                try { format.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
         finally
@@ -2011,7 +2013,7 @@ internal static class WordNumberedDisplayLayout
             format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            try { format.DisableLineHeightGrid = -1; } catch { }
+            try { format.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return true;
         }
         finally

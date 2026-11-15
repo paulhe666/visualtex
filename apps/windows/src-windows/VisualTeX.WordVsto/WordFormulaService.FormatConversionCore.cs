@@ -1061,7 +1061,7 @@ internal sealed partial class WordFormulaService
             // only its own indents are the user's there.
             sourceParagraph.Restore(range, keepStyle: !sourceParagraph.UsesDefaultStyle);
         }
-        catch (COMException) { }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(range);

@@ -92,7 +92,7 @@ internal sealed class WordDeleteKeyHook : IDisposable
     {
         if (_hook != IntPtr.Zero)
         {
-            try { UnhookWindowsHookEx(_hook); } catch { }
+            try { UnhookWindowsHookEx(_hook); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             _hook = IntPtr.Zero;
         }
         _hookCallback = null;

@@ -180,7 +180,7 @@ internal sealed partial class WordFormulaService
                     tracking.Delete();
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             Release(tracked);
             Release(tracking);

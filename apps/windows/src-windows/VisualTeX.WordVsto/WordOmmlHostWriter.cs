@@ -561,7 +561,7 @@ internal static class WordOmmlHostWriter
         {
             if (inserted is not null)
             {
-                try { inserted.Delete(); } catch { }
+                try { inserted.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }
@@ -1341,6 +1341,6 @@ internal static class WordOmmlHostWriter
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

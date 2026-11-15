@@ -1245,7 +1245,7 @@ internal static class WordNativeOmmlNumbering
                         xml,
                         formulaId: null);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
             return
                 $"range={range.StoryType}:{range.Start}:{range.End} "
@@ -1384,6 +1384,6 @@ internal static class WordNativeOmmlNumbering
     {
         if (value is null || !Marshal.IsComObject(value))
             return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

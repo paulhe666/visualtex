@@ -556,7 +556,7 @@ internal static class WordFormulaLatexSource
                 format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
                 format.SpaceBefore = 0f;
                 format.SpaceAfter = 0f;
-                try { format.DisableLineHeightGrid = -1; } catch { }
+                try { format.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             tabStops = format.TabStops;
             tabStops.ClearAll();
@@ -605,7 +605,7 @@ internal static class WordFormulaLatexSource
                     paragraphFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
                     paragraphFormat.SpaceBefore = 0f;
                     paragraphFormat.SpaceAfter = 0f;
-                    try { paragraphFormat.DisableLineHeightGrid = -1; } catch { }
+                    try { paragraphFormat.DisableLineHeightGrid = -1; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
         }

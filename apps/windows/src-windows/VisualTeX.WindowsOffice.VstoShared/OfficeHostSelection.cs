@@ -31,7 +31,7 @@ internal static class OfficeHostSelection
                 using var process = Process.GetCurrentProcess();
                 version = process.MainModule?.FileVersionInfo.ProductVersion ?? string.Empty;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var value = string.Join("|",
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 version.Replace("|", " "),
@@ -40,7 +40,7 @@ internal static class OfficeHostSelection
             using var key = Registry.CurrentUser.CreateSubKey(KeyPath);
             key?.SetValue(host + "Loaded", value, RegistryValueKind.String);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ internal static class OfficeHostSelection
                 using var key = Registry.CurrentUser.CreateSubKey(KeyPath);
                 key?.SetValue(host + "Startup", value, RegistryValueKind.String);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 

@@ -226,8 +226,8 @@ internal static class WordMathTypeHostAdapter
             probe = selectionRange.Duplicate;
             if (!requireExact)
             {
-                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             shapes = probe.InlineShapes;
 
@@ -830,6 +830,6 @@ internal static class WordMathTypeHostAdapter
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

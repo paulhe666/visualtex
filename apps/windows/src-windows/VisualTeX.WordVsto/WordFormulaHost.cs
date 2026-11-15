@@ -36,7 +36,7 @@ internal static class WordFormulaHost
             // document). A position inside a table keeps the exact proof below.
             var mayOwnCell = true;
             try { tables = probe.Tables; mayOwnCell = tables.Count != 0; }
-            catch (COMException) { }
+            catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
             if (!mayOwnCell) return null;
             if (!(bool)probe.get_Information(WdInformation.wdWithInTable)) return null;
             cells = probe.Cells;

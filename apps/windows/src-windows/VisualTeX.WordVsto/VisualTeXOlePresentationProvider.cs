@@ -102,10 +102,10 @@ internal static class VisualTeXOlePresentationProvider
             if (instance is not null && Marshal.IsComObject(instance))
             {
                 try { Marshal.FinalReleaseComObject(instance); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
-            try { File.Delete(stagedEmf); } catch { }
-            try { File.Delete(stagedPng); } catch { }
+            try { File.Delete(stagedEmf); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { File.Delete(stagedPng); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 

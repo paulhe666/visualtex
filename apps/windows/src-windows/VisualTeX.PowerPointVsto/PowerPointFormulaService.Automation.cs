@@ -123,7 +123,7 @@ public sealed partial class PowerPointFormulaService
                     int? slideCount = null;
                     Slides? slides = null;
                     try { slides = presentation.Slides; slideCount = slides.Count; }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     finally { Release(slides); }
                     result.Add(new
                     {
@@ -219,7 +219,7 @@ public sealed partial class PowerPointFormulaService
                 slideIndex = slide.SlideIndex;
                 slideId = slide.SlideID;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var type = selection.Type;
             string kind = type switch
             {
@@ -253,7 +253,7 @@ public sealed partial class PowerPointFormulaService
                     if (type == PpSelectionType.ppSelectionText && chosen is null)
                     {
                         try { textPreview = OfficeAutomationText.Clean(selection.TextRange.Text); }
-                        catch { }
+                        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         if (textPreview is { Length: > 200 }) textPreview = textPreview.Substring(0, 200) + "…";
                     }
                 }
@@ -348,7 +348,7 @@ public sealed partial class PowerPointFormulaService
                 finally { Release(candidate); }
             }
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally { Release(presentations); }
     }
 
@@ -454,7 +454,7 @@ public sealed partial class PowerPointFormulaService
             {
                 view.GotoSlide((int)slideNumber.Value);
                 selection = window.Selection;
-                try { selection.Unselect(); } catch { }
+                try { selection.Unselect(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             slide = (Slide)view.Slide;
             insertion.SlideId = slide.SlideID;
@@ -603,7 +603,7 @@ public sealed partial class PowerPointFormulaService
                 custom = slide.CustomLayout;
                 layout = custom.Name;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             finally { Release(custom); }
             return new
             {
@@ -806,7 +806,7 @@ public sealed partial class PowerPointFormulaService
             }
             finally
             {
-                try { shape.LockAspectRatio = locked; } catch { }
+                try { shape.LockAspectRatio = locked; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (!textBox)
             {
@@ -876,7 +876,7 @@ public sealed partial class PowerPointFormulaService
             {
                 if (_application.Presentations.Count > 0) return _application.ActivePresentation;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             throw new OfficeAutomationException("document_not_found", "No presentation is open.");
         }
         Presentations? presentations = null;
@@ -952,7 +952,7 @@ public sealed partial class PowerPointFormulaService
         finally
         {
             Release(slides);
-            try { File.Delete(snapshot); } catch { }
+            try { File.Delete(snapshot); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         AssignAutomationIds(result);
         return result;

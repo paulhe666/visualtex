@@ -52,7 +52,7 @@ internal static class WordFormulaMutationTransaction
             {
                 var result = mutationAndValidation();
                 try { WordEquationNumberFormat.RetireLegacyEquationNumberFormat(document); }
-                catch { /* Never fail a completed edit over an obsolete variable. */ }
+                catch (Exception ignored) { /* Never fail a completed edit over an obsolete variable. */ IgnoredErrors.Ignore(ignored); }
                 TraceBoundary(application, "transaction-before-end");
                 undo.EndCustomRecord();
                 ended = true;
@@ -129,7 +129,7 @@ internal static class WordFormulaMutationTransaction
 
             if (started && !ended)
             {
-                try { undo?.EndCustomRecord(); } catch { }
+                try { undo?.EndCustomRecord(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(undo);
         }
@@ -174,6 +174,6 @@ internal static class WordFormulaMutationTransaction
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

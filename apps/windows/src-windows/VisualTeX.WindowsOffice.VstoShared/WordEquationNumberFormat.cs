@@ -249,9 +249,10 @@ internal static partial class WordEquationNumberFormat
                 variable = variables.get_Item(ref index);
                 variable.Delete();
             }
-            catch (COMException)
+            catch (COMException ignored)
             {
                 // Absent: nothing to remove.
+                IgnoredErrors.Ignore(ignored);
             }
         }
         finally
@@ -1305,10 +1306,11 @@ internal static partial class WordEquationNumberFormat
                 var value = key?.GetValue(name);
                 if (value is not null) return value;
             }
-            catch
+            catch (Exception ignored)
             {
                 // Preferences are optional. A locked or unavailable registry
                 // must never block formula insertion or numbering.
+                IgnoredErrors.Ignore(ignored);
             }
         }
         return null;
@@ -1327,10 +1329,11 @@ internal static partial class WordEquationNumberFormat
                 using var key = root.CreateSubKey(UserPreferenceRegistryPath, writable: true);
                 key?.SetValue(name, value, valueKind);
             }
-            catch
+            catch (Exception ignored)
             {
                 // Keep document operations functional even if persistence is
                 // unavailable on a restricted machine.
+                IgnoredErrors.Ignore(ignored);
             }
         }
     }

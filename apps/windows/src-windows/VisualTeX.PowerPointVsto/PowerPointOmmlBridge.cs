@@ -48,7 +48,7 @@ internal static class PowerPointOmmlBridge
         {
             if (shape is not null)
             {
-                try { shape.Delete(); } catch { }
+                try { shape.Delete(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             throw;
         }
@@ -274,8 +274,8 @@ internal static class PowerPointOmmlBridge
 
     private static void ConfigureEquationTextBox(Shape shape, FormulaMetadata metadata)
     {
-        try { shape.Fill.Visible = MsoTriState.msoFalse; } catch { }
-        try { shape.Line.Visible = MsoTriState.msoFalse; } catch { }
+        try { shape.Fill.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+        try { shape.Line.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         try
         {
             var frame = shape.TextFrame2;
@@ -289,7 +289,7 @@ internal static class PowerPointOmmlBridge
             frame.TextRange.ParagraphFormat.Alignment = MsoParagraphAlignment.msoAlignCenter;
             Release(frame);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         ApplyFontSize(shape, FormulaFontSize.ResolveSemanticFontSize(metadata));
     }
 
@@ -395,7 +395,7 @@ internal static class PowerPointOmmlBridge
                 var decoded = DecodeClipboardMathMl(data);
                 if (!string.IsNullOrWhiteSpace(decoded)) return decoded;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         try
         {
@@ -465,6 +465,6 @@ internal static class PowerPointOmmlBridge
     private static void Release(object? value)
     {
         if (value is null || !Marshal.IsComObject(value)) return;
-        try { Marshal.ReleaseComObject(value); } catch { }
+        try { Marshal.ReleaseComObject(value); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

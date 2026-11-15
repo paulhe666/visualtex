@@ -362,13 +362,13 @@ public sealed partial class PowerPointFormulaService
                 font = range.Font;
                 float? size = null;
                 string? rgb = null;
-                try { size = ValidSize(font.Size); } catch { }
+                try { size = ValidSize(font.Size); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 try
                 {
                     color = font.Color;
                     rgb = PowerPointConversionColors.FromOfficeRgb(color.RGB);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 return (size, rgb);
             }
             catch { return (null, null); }
@@ -383,14 +383,14 @@ public sealed partial class PowerPointFormulaService
             characterFont = ((dynamic)character).Font;
             float? size = null;
             string? rgb = null;
-            try { size = ValidSize(Convert.ToDouble(((dynamic)characterFont).Size)); } catch { }
+            try { size = ValidSize(Convert.ToDouble(((dynamic)characterFont).Size)); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 fill = ((dynamic)characterFont).Fill;
                 fore = ((dynamic)fill).ForeColor;
                 rgb = PowerPointConversionColors.FromOfficeRgb(Convert.ToInt32(((dynamic)fore).RGB));
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             return (size, rgb);
         }
         catch { return (null, null); }
@@ -601,7 +601,7 @@ public sealed partial class PowerPointFormulaService
         try
         {
             string? name = null;
-            try { name = font.Name; } catch { }
+            try { name = font.Name; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var mathFont = string.Equals(name, MathFontName, StringComparison.OrdinalIgnoreCase);
             if (mathFont)
             {
@@ -613,7 +613,7 @@ public sealed partial class PowerPointFormulaService
                         : ThemeBodyFont(shape);
                     if (replacement is not null) font.Name = replacement;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             try
             {
@@ -626,12 +626,12 @@ public sealed partial class PowerPointFormulaService
                     font.Italic = MsoTriState.msoFalse;
                 }
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             try
             {
                 if (size is > 0 && Math.Abs(font.Size - size.Value) > 0.01f) font.Size = size.Value;
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
         finally { Release(font); Release(code); Release(all); Release(frame); }
     }
@@ -704,8 +704,8 @@ public sealed partial class PowerPointFormulaService
         var shape = slide.Shapes.AddTextbox(MsoTextOrientation.msoTextOrientationHorizontal, left, top, width, height);
         try
         {
-            try { shape.Fill.Visible = MsoTriState.msoFalse; } catch { }
-            try { shape.Line.Visible = MsoTriState.msoFalse; } catch { }
+            try { shape.Fill.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { shape.Line.Visible = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             PptTextFrame? frame = null;
             PptTextRange? text = null;
             PptFont? font = null;
@@ -715,8 +715,8 @@ public sealed partial class PowerPointFormulaService
                 frame = shape.TextFrame;
                 // One line per line of code, the box hugging it (TextFrame, which
                 // WPS honours; it ignores TextFrame2.WordWrap).
-                try { frame.WordWrap = MsoTriState.msoFalse; } catch { }
-                try { frame.AutoSize = PpAutoSize.ppAutoSizeShapeToFitText; } catch { }
+                try { frame.WordWrap = MsoTriState.msoFalse; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { frame.AutoSize = PpAutoSize.ppAutoSizeShapeToFitText; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 text = frame.TextRange;
                 text.Text = source;
                 font = text.Font;
@@ -726,7 +726,7 @@ public sealed partial class PowerPointFormulaService
                     paragraph = text.ParagraphFormat;
                     paragraph.Alignment = PpParagraphAlignment.ppAlignCenter;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             finally { Release(paragraph); Release(font); Release(text); Release(frame); }
             // Centered where the formula was.

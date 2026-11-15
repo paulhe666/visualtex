@@ -55,8 +55,8 @@ internal static class WordOmmlBatchSources
             }
             finally
             {
-                if (source is not null) { try { source.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { } Release(source); }
-                if (!_preparedGroups.ContainsKey(key)) { try { File.Delete(path); } catch { } }
+                if (source is not null) { try { source.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } Release(source); }
+                if (!_preparedGroups.ContainsKey(key)) { try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); } }
             }
         }
 
@@ -258,7 +258,7 @@ internal static class WordOmmlBatchSources
                 // Range.InsertFile the live target Range expands to the complete
                 // multi-paragraph payload rather than only the first OMath.
                 target.FormattedText = formattedSource;
-                try { targetDocument.Activate(); } catch { }
+                try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 var insertionEnd = target.End;
                 insertedRange = targetDocument.Range(insertionStart, insertionEnd);
                 maths = insertedRange.OMaths;
@@ -534,18 +534,18 @@ internal static class WordOmmlBatchSources
             _document = null;
             if (document is not null)
             {
-                try { document.Saved = true; } catch { }
-                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { document.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(document);
             }
             foreach (var group in _preparedGroups.Values)
             {
-                try { group.Document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { group.Document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(group.Document);
-                try { File.Delete(group.Path); } catch { }
+                try { File.Delete(group.Path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             _preparedGroups.Clear();
-            try { File.Delete(_path); } catch { }
+            try { File.Delete(_path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -633,7 +633,7 @@ internal static class WordOmmlBatchSources
                 if (targetRange.End > targetRange.Start) targetRange.End--;
                 formattedSource = sourceRange.FormattedText;
                 targetRange.FormattedText = formattedSource;
-                try { targetDocument.Activate(); } catch { }
+                try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 WordDoubleClickHook.TraceMessage(
                     $"format-conversion-whole-inline-omml-body-replaced sourceMaths={ReadOmmlCount(sourceDocument)} targetMaths={ReadOmmlCount(targetDocument)} transports={_transportBookmarks.Count}");
 
@@ -714,11 +714,11 @@ internal static class WordOmmlBatchSources
             _document = null;
             if (document is not null)
             {
-                try { document.Saved = true; } catch { }
-                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { document.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(document);
             }
-            try { File.Delete(_path); } catch { }
+            try { File.Delete(_path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -751,9 +751,9 @@ internal static class WordOmmlBatchSources
         {
             if (document is not null)
             {
-                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(document);
-                try { File.Delete(path); } catch { }
+                try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
     }
@@ -838,17 +838,17 @@ internal static class WordOmmlBatchSources
             Release(sourceRange);
             if (scratch is not null)
             {
-                try { scratch.Saved = true; } catch { }
-                try { scratch.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { scratch.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { scratch.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(scratch);
             }
             if (materialized is not null)
             {
-                try { materialized.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { materialized.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(materialized);
             }
             if (!ownershipTransferred)
-                try { File.Delete(path); } catch { }
+                try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1101,9 +1101,9 @@ internal static class WordOmmlBatchSources
         {
             if (document is not null)
             {
-                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { document.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 Release(document);
-                try { File.Delete(path); } catch { }
+                try { File.Delete(path); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
         }
     }
@@ -1135,13 +1135,13 @@ internal static class WordOmmlBatchSources
         {
             if (isolatedDocument is not null)
             {
-                try { isolatedDocument.Saved = true; } catch { }
+                try { isolatedDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 try
                 {
                     isolatedDocument.Close(
                         WdSaveOptions.wdDoNotSaveChanges);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(isolatedDocument);
             if (isolatedApplication is not null)
@@ -1151,7 +1151,7 @@ internal static class WordOmmlBatchSources
                     isolatedApplication.Quit(
                         WdSaveOptions.wdDoNotSaveChanges);
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(isolatedApplication);
         }

@@ -77,10 +77,11 @@ internal static class MathTypeEquationReferences
                         position,
                         EquationReferenceSource.MathType));
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // A malformed legacy MTPlaceRef must not hide other valid
                     // numbered MathType equations from the reference picker.
+                    IgnoredErrors.Ignore(ignored);
                 }
                 finally
                 {
@@ -1246,6 +1247,6 @@ internal static class MathTypeEquationReferences
     {
         if (value is null || !Marshal.IsComObject(value)) return;
         try { Marshal.ReleaseComObject(value); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

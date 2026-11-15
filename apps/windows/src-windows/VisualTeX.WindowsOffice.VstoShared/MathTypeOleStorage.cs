@@ -171,7 +171,7 @@ internal static partial class MathTypeOleStorage
                 // OLE clipboard here. OleSetClipboard does not clone that object;
                 // re-registering a live Word/MathType provider can re-enter Word's
                 // UI thread after the formula operation has already completed.
-                try { OleSetClipboard(null); } catch { }
+                try { OleSetClipboard(null); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (_oleInitializedHere) OleUninitialize();
                 throw;
             }
@@ -219,14 +219,14 @@ internal static partial class MathTypeOleStorage
                         {
                             // Stability is more important than retaining a live proxy.
                             // Detach it explicitly if OLE could not render the formats.
-                            try { OleSetClipboard(null); } catch { }
+                            try { OleSetClipboard(null); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                         }
                     }
                 }
             }
             catch
             {
-                try { OleSetClipboard(null); } catch { }
+                try { OleSetClipboard(null); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             finally
             {
@@ -406,7 +406,7 @@ internal static partial class MathTypeOleStorage
             if (destinationObject is not null && Marshal.IsComObject(destinationObject))
             {
                 try { Marshal.ReleaseComObject(destinationObject); }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             TryDelete(path);
         }
@@ -472,11 +472,12 @@ internal static partial class MathTypeOleStorage
             objInfo[5] = 0x00;
             WriteStream(storage, "\u0003ObjInfo", objInfo);
         }
-        catch (COMException)
+        catch (COMException ignored)
         {
             // Older/foreign MathType-compatible storages can omit ObjInfo. Their
             // Equation Native rewrite remains valid; do not make this metadata
             // normalization a new compatibility requirement.
+            IgnoredErrors.Ignore(ignored);
         }
     }
 
@@ -1105,7 +1106,7 @@ internal static partial class MathTypeOleStorage
     private static void TryDelete(string path)
     {
         try { File.Delete(path); }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
     private static void Release(object? value)
@@ -1113,7 +1114,7 @@ internal static partial class MathTypeOleStorage
         if (value is not null && Marshal.IsComObject(value))
         {
             try { Marshal.FinalReleaseComObject(value); }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 

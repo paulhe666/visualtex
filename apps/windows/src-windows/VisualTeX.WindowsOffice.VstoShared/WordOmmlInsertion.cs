@@ -83,7 +83,7 @@ internal static class WordOmmlInsertion
                         display,
                         replaceTarget);
                 }
-                try { File.Delete(tempPath); } catch { }
+                try { File.Delete(tempPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 return imported;
             }
             catch (Exception error)
@@ -164,10 +164,10 @@ internal static class WordOmmlInsertion
             Release(sourceMaths);
             if (sourceDocument is not null)
             {
-                try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(sourceDocument);
-            try { File.Delete(tempPath); } catch { }
+            try { File.Delete(tempPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -284,8 +284,8 @@ internal static class WordOmmlInsertion
                     throw new InvalidDataException(
                         "The warmed OMML FormattedText transfer did not contain exactly one equation.");
                 _inlineScratchPrimed = true;
-                try { scratch.Saved = true; } catch { }
-                try { transferWarmDocument.Saved = true; } catch { }
+                try { scratch.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                try { transferWarmDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 return true;
             }
             catch
@@ -305,19 +305,19 @@ internal static class WordOmmlInsertion
                 Release(scratchContent);
                 if (transferWarmDocument is not null)
                 {
-                    try { transferWarmDocument.Saved = true; } catch { }
+                    try { transferWarmDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                     try
                     {
                         transferWarmDocument.Close(
                             WdSaveOptions.wdDoNotSaveChanges);
                     }
-                    catch { }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
                 Release(transferWarmDocument);
-                try { targetDocument.Activate(); } catch { }
+                try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 if (!string.IsNullOrWhiteSpace(tempPath))
                 {
-                    try { File.Delete(tempPath); } catch { }
+                    try { File.Delete(tempPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
                 }
             }
         }
@@ -1111,7 +1111,7 @@ internal static class WordOmmlInsertion
                             StringComparison.Ordinal))
                         followingEmptyParagraphGuard.Text = string.Empty;
                 }
-                catch { }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             if (paragraphMarkGuardText is not null)
                 TryDeleteParagraphMarkGuardBestEffort(
@@ -1307,7 +1307,7 @@ internal static class WordOmmlInsertion
             else
                 guard.Text = string.Empty;
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         finally
         {
             Release(removal);
@@ -1815,7 +1815,7 @@ internal static class WordOmmlInsertion
             Release(sourceMaths);
             if (sourceDocument is not null)
             {
-                try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch { }
+                try { sourceDocument.Close(WdSaveOptions.wdDoNotSaveChanges); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             Release(sourceDocument);
             // Opening the temporary prepared-OMML document can make it Word's
@@ -1823,8 +1823,8 @@ internal static class WordOmmlInsertion
             // some Word builds expose no ActiveDocument until the caller manually
             // activates the real document; the next editor Apply then fails before
             // it can resolve its source. Restore the supplied target explicitly.
-            try { targetDocument.Activate(); } catch { }
-            try { File.Delete(tempPath); } catch { }
+            try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            try { File.Delete(tempPath); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1912,7 +1912,7 @@ internal static class WordOmmlInsertion
                 insertedMath.Type = WdOMathType.wdOMathInline;
             result = insertedMath.Range.Duplicate;
             RemoveImportedFormulaBookmark(targetDocument, result);
-            try { scratchDocument.Saved = true; } catch { }
+            try { scratchDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             var returned = result;
             result = null;
             return returned;
@@ -1929,7 +1929,7 @@ internal static class WordOmmlInsertion
             // The hidden scratch document is intentionally cached for the life
             // of this Word process. Reusing it removes Documents.Add/Close from
             // every inline edit; it is marked Saved so Word can quit silently.
-            try { targetDocument.Activate(); } catch { }
+            try { targetDocument.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         }
     }
 
@@ -1949,9 +1949,10 @@ internal static class WordOmmlInsertion
                     return _inlineScratchDocument;
                 }
             }
-            catch
+            catch (Exception ignored)
             {
                 // The previous Word process has exited or invalidated its RCW.
+                IgnoredErrors.Ignore(ignored);
             }
             finally { Release(scratchApplication); }
 
@@ -1960,7 +1961,7 @@ internal static class WordOmmlInsertion
                 _inlineScratchDocument.Saved = true;
                 _inlineScratchDocument.Close(WdSaveOptions.wdDoNotSaveChanges);
             }
-            catch { }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             Release(_inlineScratchDocument);
             _inlineScratchDocument = null;
             _inlineScratchPrimed = false;
@@ -1969,7 +1970,7 @@ internal static class WordOmmlInsertion
         _inlineScratchDocument = application.Documents.Add(Visible: false);
         _inlineScratchPrimed = false;
         ApplyDocumentMathFont(_inlineScratchDocument, mathFontName);
-        try { _inlineScratchDocument.Saved = true; } catch { }
+        try { _inlineScratchDocument.Saved = true; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
         return _inlineScratchDocument;
     }
 
@@ -2046,11 +2047,12 @@ internal static class WordOmmlInsertion
                 && bookmarkRange.End >= insertedRange.Start;
             if (overlapsInsertedEquation) bookmark.Delete();
         }
-        catch
+        catch (Exception ignored)
         {
             // This bookmark exists only to locate the formula inside the temporary
             // DOCX. The native equation remains valid if cleanup is rejected by
             // an older Word build.
+            IgnoredErrors.Ignore(ignored);
         }
         finally
         {

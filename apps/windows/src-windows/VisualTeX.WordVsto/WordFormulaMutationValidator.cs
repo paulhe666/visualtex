@@ -236,6 +236,6 @@ internal static class WordFormulaMutationValidator
         {
             System.Runtime.InteropServices.Marshal.ReleaseComObject(value);
         }
-        catch { }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 }

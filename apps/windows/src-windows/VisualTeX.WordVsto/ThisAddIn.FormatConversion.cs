@@ -673,10 +673,11 @@ public sealed partial class ThisAddIn
                         return true;
                     }).ConfigureAwait(false);
                 }
-                catch
+                catch (Exception ignored)
                 {
                     // Selection/view restoration is best-effort and must never
                     // hide the conversion result or prevent gate release.
+                    IgnoredErrors.Ignore(ignored);
                 }
             }
             foreach (var template in rendered.Values)
