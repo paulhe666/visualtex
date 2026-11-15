@@ -114,12 +114,13 @@ function Preview({ preview }: { preview: CommandPreview }) {
   }
 }
 
-/** The formula editor's candidates for "\fr", for the preview in Settings. */
+/** Some of the formula editor's candidates for "\fr", for the preview in Settings (short ones: the horizontal looks fit a
+ *  narrow Settings page). */
 const PREVIEW_CANDIDATES = [
   { label: "\\frac", latex: "\\frac{a}{b}", zh: "分式", en: "Fraction" },
   { label: "\\frac{d}{dx}", latex: "\\frac{\\mathrm{d}f}{\\mathrm{d}x}", zh: "导数", en: "Derivative" },
-  { label: "\\frac{\\partial}{\\partial x}", latex: "\\frac{\\partial f}{\\partial x}", zh: "偏导数", en: "Partial derivative" },
   { label: "\\frak", latex: "\\mathfrak{ABC}", zh: "哥特体", en: "Fraktur" },
+  { label: "\\frown", latex: "\\frown", zh: "皱眉关系", en: "Frown" },
 ];
 
 /** Settings > Formula editor > Candidates: the candidate box in the chosen look and the theme's colours, drawn as the
