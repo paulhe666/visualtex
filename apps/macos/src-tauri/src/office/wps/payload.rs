@@ -1,6 +1,6 @@
 //! The document state the WPS add-in writes for a VisualTeX formula.
 //!
-//! It is exactly what the Word-for-Mac add-in stores (VTWordAdapter.bas): the
+//! It is exactly what the Word-for-Mac add-in stores (VTWordImages.bas, VTWordFormulaData.bas): the
 //! picture's Title and AlternativeText, the owner bookmark and the formula's
 //! document variables. A document can therefore move between WPS and Word and
 //! stay editable in both. The names and formats are kept here, in one place,

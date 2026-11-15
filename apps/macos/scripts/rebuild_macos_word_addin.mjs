@@ -12,7 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wordAdapterSource } from "./word_vba_source.mjs";
+import { WORD_VBA_MODULES, wordDiagnosticModuleSources } from "./word_vba_source.mjs";
 
 if (process.platform !== "darwin") {
   throw new Error("The Word VBE builder is available only on macOS.");
@@ -50,19 +50,13 @@ const buildLockRoot = resolve(
   argument("--lock") ?? join(scratchRoot, "VisualTeXWordBuild.lock"),
 );
 const buildLockOwnerPath = join(buildLockRoot, "pid");
-const offlineOfficeRoot = join(repositoryRoot, "office", "macos-offline");
-const wordModuleSources = [
-  ["VTProtocol", join(offlineOfficeRoot, "shared", "VTProtocol.bas")],
-  ["VTOfficePaths", join(offlineOfficeRoot, "shared", "VTOfficePaths.bas")],
-  ["VTMetadata", join(offlineOfficeRoot, "shared", "VTMetadata.bas")],
-  ["VTLauncher", join(offlineOfficeRoot, "shared", "VTLauncher.bas")],
-  ["VTErrorHandling", join(offlineOfficeRoot, "shared", "VTErrorHandling.bas")],
-  ["VTWordAdapter", diagnosticsBuild
-    ? join(diagnosticSourceRoot, "VTWordAdapter.bas")
-    : join(offlineOfficeRoot, "word", "VTWordAdapter.bas")],
-  ["VTWordEvents", join(offlineOfficeRoot, "word", "VTWordEvents.cls")],
-  ["VTRibbonCallbacks", join(offlineOfficeRoot, "word", "VTRibbonCallbacks.bas")],
-];
+// A diagnostic build imports VTWordAdapter with the tests composed in, and the other modules with diagnostic
+// hooks with their flag on, from diagnosticSourceRoot.
+const diagnosticModuleSources = diagnosticsBuild ? wordDiagnosticModuleSources() : {};
+const wordModuleSources = WORD_VBA_MODULES.map(([moduleName, path]) => [
+  moduleName,
+  Object.hasOwn(diagnosticModuleSources, moduleName) ? join(diagnosticSourceRoot, `${moduleName}.bas`) : path,
+]);
 const requestedModuleNames = new Set(
   (argument("--modules") ?? "")
     .split(",")
@@ -76,8 +70,9 @@ for (const moduleName of requestedModuleNames) {
   }
 }
 const incrementalBuild = requestedModuleNames.size > 0;
-if (diagnosticsBuild && incrementalBuild && !requestedModuleNames.has("VTWordAdapter")) {
-  throw new Error("--diagnostics requires VTWordAdapter in --modules");
+if (diagnosticsBuild && incrementalBuild) {
+  const missing = Object.keys(diagnosticModuleSources).filter((moduleName) => !requestedModuleNames.has(moduleName));
+  if (missing.length > 0) throw new Error(`--diagnostics requires these modules in --modules: ${missing.join(", ")}`);
 }
 // Preserve mode may use an incremental copy of the reviewed DOTM. The
 // production Startup add-in is temporarily unloaded while that isolated copy is
@@ -1167,7 +1162,9 @@ acquireBuildLock();
 process.on("exit", releaseBuildLock);
 if (diagnosticsBuild) {
   mkdirSync(diagnosticSourceRoot, { recursive: true });
-  writeFileSync(join(diagnosticSourceRoot, "VTWordAdapter.bas"), wordAdapterSource({ diagnostics: true }));
+  for (const [moduleName, source] of Object.entries(diagnosticModuleSources)) {
+    writeFileSync(join(diagnosticSourceRoot, `${moduleName}.bas`), source);
+  }
   process.on("exit", () => rmSync(diagnosticSourceRoot, { recursive: true, force: true }));
 }
 mkdirSync(dirname(outputPath), { recursive: true });

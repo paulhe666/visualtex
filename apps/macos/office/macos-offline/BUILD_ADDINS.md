@@ -12,41 +12,51 @@ python3 -m pip install -r scripts/requirements-office-build.txt
 ## Word: VisualTeX.dotm
 
 1. Open Microsoft Word for Mac and create a blank macro-enabled template.
-2. Open the Visual Basic Editor and import these modules without changing their module names:
-   - `shared/VTProtocol.bas`
-   - `shared/VTOfficePaths.bas`
-   - `shared/VTMetadata.bas`
-   - `shared/VTLauncher.bas`
-   - `shared/VTErrorHandling.bas`
-   - `word/VTWordAdapter.bas`
-   - `word/VTWordEvents.cls`
-   - `word/VTRibbonCallbacks.bas`
+2. Open the Visual Basic Editor and import these modules without changing their module names (the list is
+   `WORD_VBA_MODULES` in `scripts/word_vba_source.mjs`):
+   - `shared/VTProtocol.bas`, `shared/VTOfficePaths.bas`, `shared/VTMetadata.bas`, `shared/VTLauncher.bas`,
+     `shared/VTErrorHandling.bas`
+   - `word/VTWordCore.bas`, `word/VTWordFormulaData.bas`, `word/VTWordSessions.bas`, `word/VTWordImages.bas`,
+     `word/VTWordEquations.bas`, `word/VTWordNumbering.bas`, `word/VTWordNumberFormat.bas`,
+     `word/VTWordImageNumbers.bas`, `word/VTWordDisplayNumbering.bas`, `word/VTWordReferences.bas`,
+     `word/VTWordDocumentImport.bas`, `word/VTWordRedraw.bas`, `word/VTWordConversion.bas`,
+     `word/VTWordOmmlFont.bas`, `word/VTWordAgent.bas`
+   - `word/VTWordAdapter.bas`, `word/VTWordEvents.cls`, `word/VTRibbonCallbacks.bas`
+
+   `VTWordAdapter` holds every macro Word, the Ribbon, the app and AppleScript call; the other `VTWord*` modules
+   hold their code by feature and are private to the project (`Option Private Module`), so nothing in them shows
+   up as a macro.
 3. Run **Debug → Compile VBAProject**. Confirm `VTWordEvents` compiles, `VTWordRibbonOnLoad` initializes the application event sink, the template does not expose an `AutoExec` startup macro, and the compiled project contains `word-structured-document-import-20260730-r61`, `VTWordRibbonDocumentImport`, `VisualTeX_InsertLatexMarkdownDocument`, `VTHandleWordBeforeDoubleClick`, `App_WindowSelectionChange`, `VTWordRibbonApplyImageFontSizePreset`, and `VTRefreshNumberedImageFormulaFontLayout`.
 4. Save the template as exactly `VisualTeX.dotm`.
 5. Quit Word before packaging so Office has flushed `vbaProject.bin`.
 
 ### Word diagnostic builds
 
-`word/VTWordAdapter.bas` contains production code. The acceptance macros and
+The `word/VTWord*.bas` modules contain production code. The acceptance macros and
 their private helpers live in `tests/office/word/VTWordAdapterDiagnostics.bas.inc`
 (relative to `apps/macos`), outside the application's bundled resources.
 
 VBA cannot split one module across files. The diagnostic builder combines the
-test fragment with the adapter and enables its compile-time diagnostic hooks,
-so tests retain access to private functions without making them public:
+test fragment with `VTWordAdapter` and switches on the compile-time diagnostic
+hooks of every module that has them (`VTWordAdapter`, `VTWordCore`,
+`VTWordEquations`, `VTWordImages`). The tests reach `VTWordAdapter`'s private
+procedures and the other modules' project-private ones without widening the
+add-in's macros:
 
 ```bash
 node scripts/rebuild_macos_word_addin.mjs --diagnostics \
-  --preserve-word --keep-startup-files --modules VTWordAdapter \
+  --preserve-word --keep-startup-files \
+  --modules VTWordAdapter,VTWordCore,VTWordEquations,VTWordImages \
   --output /absolute/path/VisualTeXWordBuildDiagnostics.dotm
 ```
 
 The preserve mode requires Word's existing VBA project access setting to be
 enabled. It verifies that the user's open document snapshot is unchanged.
-For manual VBE import, generate the diagnostic module instead:
+For manual VBE import, generate the diagnostic modules instead and import them in place of the
+production ones:
 
 ```bash
-node scripts/word_vba_source.mjs --diagnostics --output /tmp/VTWordAdapter.bas
+node scripts/word_vba_source.mjs --diagnostics --output-dir /tmp/visualtex-word-diagnostics
 ```
 
 Use diagnostic templates only in the owned Word acceptance environment. Existing

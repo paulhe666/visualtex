@@ -14,6 +14,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { WORD_VBA_MODULES } from "./word_vba_source.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const offlineRoot = join(repositoryRoot, "office", "macos-offline");
@@ -117,17 +118,21 @@ function validateMacroContainer(path, kind, options = {}) {
     }
   }
   const vbaProject = run("/usr/bin/unzip", ["-p", path, vbaEntry], { encoding: "buffer" });
-  const expectedModules = [
-    "VTProtocol",
-    "VTOfficePaths",
-    "VTMetadata",
-    "VTLauncher",
-    "VTErrorHandling",
-    "VTRibbonCallbacks",
-    kind === "Word" ? "VTWordAdapter" : "VTPowerPointAdapter",
-    kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents",
-    ...(kind === "PowerPoint" ? ["VTPowerPointNativeTarget", "VTPowerPointNativeMath", "VTPowerPointRedraw"] : []),
-  ];
+  const expectedModules = kind === "Word"
+    ? WORD_VBA_MODULES.map(([moduleName]) => moduleName)
+    : [
+        "VTProtocol",
+        "VTOfficePaths",
+        "VTMetadata",
+        "VTLauncher",
+        "VTErrorHandling",
+        "VTRibbonCallbacks",
+        "VTPowerPointAdapter",
+        "VTPowerPointEvents",
+        "VTPowerPointNativeTarget",
+        "VTPowerPointNativeMath",
+        "VTPowerPointRedraw",
+      ];
   if (requireModules) {
     if (kind === "Word") {
       run("python3", [

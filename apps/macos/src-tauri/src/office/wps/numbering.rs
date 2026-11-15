@@ -1,6 +1,6 @@
 //! Equation numbers for formulas the WPS add-in creates (office::wps).
 //!
-//! The Word add-in decides a new number from the document (VTWordAdapter.bas:
+//! The Word add-in decides a new number from the document (VTWordSessions.bas, VTWordNumberFormat.bas:
 //! VTV2PlanInsertion, VTV2HeadingScope, VTEquationStartsNumberScope, ...,
 //! themselves the port of Windows' WordEquationNumbering). WPS has no such
 //! code, so the add-in reads the same facts from the WPS document (headings,

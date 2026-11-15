@@ -1,7 +1,9 @@
 ' Test-only declarations and procedures. See scripts/word_vba_source.mjs.
+' VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING, VT_WORD_REGRESSION_MUTATION_COUNT and VTNativeParityTrace are Public:
+' the diagnostic hooks of VTWordCore, VTWordEquations and VTWordImages use them.
 Private VT_NATIVE_PARITY_DIAGNOSTIC As Boolean
-Private VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING As Boolean
-Private VT_WORD_REGRESSION_MUTATION_COUNT As Long
+Public VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING As Boolean
+Public VT_WORD_REGRESSION_MUTATION_COUNT As Long
 Private VT_WORD_REGRESSION_ALIGNMENT_BRIDGE_COUNT As Long
 Private VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT As Document
 
@@ -14520,7 +14522,7 @@ RegressionFailed:
         regressionStage & ": " & regressionErrorDescription
 End Sub
 
-Private Sub VTNativeParityTrace(ByVal stage As String, ByVal doc As Document, Optional ByVal exact As Range)
+Public Sub VTNativeParityTrace(ByVal stage As String, ByVal doc As Document, Optional ByVal exact As Range)
     If Not VT_NATIVE_PARITY_DIAGNOSTIC Then Exit Sub
     On Error Resume Next
     Dim value As String

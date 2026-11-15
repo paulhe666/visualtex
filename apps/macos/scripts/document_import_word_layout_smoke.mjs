@@ -1,19 +1,26 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const adapter = readFileSync(
-  new URL("../office/macos-offline/word/VTWordAdapter.bas", import.meta.url),
+const wordModule = (name) => readFileSync(
+  new URL(`../office/macos-offline/word/${name}.bas`, import.meta.url),
   "utf8",
 );
+const documentImport = wordModule("VTWordDocumentImport");
+const equations = wordModule("VTWordEquations");
+// A procedure's start in a module, whichever scope it has (Public when other modules use it).
+const procedureStart = (source, kind, name, from = 0) => {
+  const match = new RegExp(`^(?:Private|Public) ${kind} ${name}\\b`, "m").exec(source.slice(from));
+  return match ? from + match.index : -1;
+};
 const ribbon = readFileSync(
   new URL("../office/macos-offline/word/customUI14.xml", import.meta.url),
   "utf8",
 );
 
-const start = adapter.indexOf("Private Sub VTDocumentImportInsertFormula");
-const end = adapter.indexOf("Private Sub VTCancelWordDocumentImportDispatch", start);
+const start = procedureStart(documentImport, "Sub", "VTDocumentImportInsertFormula");
+const end = procedureStart(documentImport, "Sub", "VTCancelWordDocumentImportDispatch", start);
 assert.ok(start >= 0 && end > start, "Document formula insertion procedure is missing");
-const insertion = adapter.slice(start, end);
+const insertion = documentImport.slice(start, end);
 
 for (const required of [
   "VTPrepareWordCreateInsertionRange",
@@ -37,18 +44,18 @@ for (const required of [
   );
 }
 
-const nativeInsertionStart = adapter.indexOf(
-  "Private Function VTInsertNativeEquationAtRange",
-);
-const nativeInsertionEnd = adapter.indexOf(
-  "Private Function VTFinalizeInlineNativeEquation",
+const nativeInsertionStart = procedureStart(equations, "Function", "VTInsertNativeEquationAtRange");
+const nativeInsertionEnd = procedureStart(
+  equations,
+  "Function",
+  "VTFinalizeInlineNativeEquation",
   nativeInsertionStart,
 );
 assert.ok(
   nativeInsertionStart >= 0 && nativeInsertionEnd > nativeInsertionStart,
   "The shared native-equation insertion routine is missing",
 );
-const nativeInsertion = adapter.slice(
+const nativeInsertion = equations.slice(
   nativeInsertionStart,
   nativeInsertionEnd,
 );
@@ -83,7 +90,7 @@ assert.match(
   "Numbered image formulas must use the normal true-centering number layout",
 );
 assert.match(
-  adapter,
+  documentImport,
   /insertedRange\.Font\.Reset[\s\S]*insertedRange\.Font\.Italic = False/,
   "Imported prose must not inherit italic formatting from the insertion caret",
 );
@@ -97,17 +104,17 @@ for (const required of [
   "paragraphRange.ParagraphFormat.SpaceAfter = 0!",
 ]) {
   assert.ok(
-    adapter.includes(required),
+    documentImport.includes(required),
     `Structured document import is missing Word formatting behavior ${required}`,
   );
 }
 assert.match(
-  adapter,
+  documentImport,
   /VTPlaceCaretAfterInlineNativeEquation formulaRange[\s\S]*Set cursorRange = Selection\.Range\.Duplicate/,
   "Batch OMML insertion must leave the first equation before inserting another inline equation",
 );
 assert.match(
-  adapter,
+  documentImport,
   /replacesInlineMathAnchor[\s\S]*insertionRange\.Text = plainText/,
   "Text after inline OMML must replace the temporary math-boundary anchor",
 );

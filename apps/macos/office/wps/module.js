@@ -1,7 +1,7 @@
 /* VisualTeX for WPS Writer: the add-in's logic, served by the running
  * VisualTeX app (the installed bootstrap main.js loads it).
  *
- * It does for WPS what the Word-for-Mac add-in (VTWordAdapter.bas) does for
+ * It does for WPS what the Word-for-Mac add-in (office/macos-offline/word) does for
  * the Formula group, and writes the same document state (picture Title and
  * AlternativeText, owner bookmark, document variables), so a document stays
  * editable when it moves between WPS and Word.
