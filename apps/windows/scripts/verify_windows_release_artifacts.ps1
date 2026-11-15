@@ -466,7 +466,7 @@ foreach ($forbiddenUninstallPattern in @(
     }
 }
 
-$ocrStorageSource = Get-Content -LiteralPath (Join-Path $root "src-tauri\src\ocr_storage.rs") -Raw -Encoding UTF8
+$ocrStorageSource = Get-Content -LiteralPath (Join-Path $root "src-tauri\src\ocr\storage.rs") -Raw -Encoding UTF8
 foreach ($requiredStorageMarker in @(
     'pub const STORAGE_DIRECTORY_NAME: &str = "VisualTeX-OCR"',
     'pub const STORAGE_CONFIG_FILE: &str = "ocr-storage.json"',
@@ -478,7 +478,11 @@ foreach ($requiredStorageMarker in @(
         throw "OCR independent-storage source is missing a release-safety marker: $requiredStorageMarker"
     }
 }
-$ocrRuntimeSource = Get-Content -LiteralPath (Join-Path $root "src-tauri\src\lib.rs") -Raw -Encoding UTF8
+# lib.rs with the OCR runtime it hands its commands to (src\ocr and the part both backends share)
+$ocrRuntimeFiles = @(Join-Path $root "src-tauri\src\lib.rs") +
+    @(Get-ChildItem -LiteralPath (Join-Path $root "src-tauri\src\ocr") -Filter "*.rs" | Sort-Object Name | ForEach-Object { $_.FullName }) +
+    @(Join-Path $root "..\shared\visualtex-backend\src\ocr_common.rs")
+$ocrRuntimeSource = ($ocrRuntimeFiles | ForEach-Object { Get-Content -LiteralPath $_ -Raw -Encoding UTF8 }) -join "`n"
 foreach ($requiredRuntimeStorageMarker in @(
     '.join("VisualTeXData")',
     '.join("ocr-runtime")',
