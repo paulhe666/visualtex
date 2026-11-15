@@ -5,7 +5,8 @@
 //! * `char` predicates work per UTF-16 code unit; a surrogate unit is never a
 //!   letter/digit/upper/lower, so astral characters fail those predicates.
 //! * Invariant casing is simple (1:1) case mapping, except that .NET keeps
-//!   U+0131 (dotless i) on ToUpper and U+0130 (dotted I) on ToLower.
+//!   U+0131 (dotless i) on ToUpper and U+0130 (dotted I) on ToLower;
+//!   OrdinalIgnoreCase also keeps U+017F (long s).
 
 use super::unicode_tables::{DIGIT_LOW, GREEK_LOWER, GREEK_UPPER, LETTER_LOW, MATH_SYMBOL};
 
@@ -58,15 +59,42 @@ pub fn first_is_math_symbol(value: &str) -> bool {
     value.chars().next().is_some_and(|c| in_ranges(MATH_SYMBOL, c as u32))
 }
 
+/// Simple upper-case mapping (`u_toupper`) as used by ToUpperInvariant. Rust exposes the full mapping; where that
+/// is a single character it is the simple mapping. Where it expands, the simple mapping is the character itself
+/// except for the Greek letters with ypogegrammeni, which map to their prosgegrammeni (title-case) forms.
 fn upper_char(c: char) -> char {
     if c == '\u{0131}' {
         return c;
+    }
+    let code = c as u32;
+    let greek = match code {
+        0x1F80..=0x1F87 | 0x1F90..=0x1F97 | 0x1FA0..=0x1FA7 => Some(code + 8),
+        0x1FB3 => Some(0x1FBC),
+        0x1FC3 => Some(0x1FCC),
+        0x1FF3 => Some(0x1FFC),
+        _ => None,
+    };
+    if let Some(mapped) = greek.and_then(char::from_u32) {
+        return mapped;
     }
     let mut mapped = c.to_uppercase();
     match (mapped.next(), mapped.next()) {
         (Some(single), None) => single,
         _ => c,
     }
+}
+
+/// The upper-case mapping OrdinalIgnoreCase compares with (.NET's OrdinalCasing): ToUpperInvariant's, except that
+/// U+017F (long s) stays itself.
+fn ordinal_upper_char(c: char) -> char {
+    if c == '\u{017F}' {
+        return c;
+    }
+    upper_char(c)
+}
+
+fn ordinal_upper(value: &str) -> String {
+    value.chars().map(ordinal_upper_char).collect()
 }
 
 fn lower_char(c: char) -> char {
@@ -92,13 +120,13 @@ pub fn to_lower_invariant(value: &str) -> String {
 pub fn eq_ignore_case(a: Option<&str>, b: &str) -> bool {
     match a {
         None => false,
-        Some(a) => a.chars().map(upper_char).eq(b.chars().map(upper_char)),
+        Some(a) => a.chars().map(ordinal_upper_char).eq(b.chars().map(ordinal_upper_char)),
     }
 }
 
 /// `value.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0`.
 pub fn contains_ignore_case(value: &str, needle: &str) -> bool {
-    to_upper_invariant(value).contains(&to_upper_invariant(needle))
+    ordinal_upper(value).contains(&ordinal_upper(needle))
 }
 
 /// `string.IsNullOrWhiteSpace`.
@@ -133,4 +161,18 @@ pub fn int_try_parse(value: Option<&str>) -> Option<i32> {
     }
     let result = if negative { -result } else { result };
     i32::try_from(result).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn casing_follows_dotnet() {
+        assert_eq!(to_upper_invariant("\u{1F80}\u{1FB3}\u{017F}\u{0131}"), "\u{1F88}\u{1FBC}S\u{0131}");
+        assert!(eq_ignore_case(Some("\u{1F80}"), "\u{1F88}"));
+        assert!(!eq_ignore_case(Some("\u{017F}"), "S"));
+        assert!(!contains_ignore_case("x\u{017F}y", "s"));
+        assert!(contains_ignore_case("<mtable DATA-MTEF-PILE>", "data-mtef-pile"));
+    }
 }

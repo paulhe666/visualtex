@@ -8,7 +8,7 @@
 //! * Invariant casing (ICU `ChangeCaseInvariant`, .NET 5+ on Windows) and
 //!   OrdinalIgnoreCase (`OrdinalCasing`, ICU `u_toupper`) are simple, one-to-one
 //!   case mappings, except that U+0131 stays U+0131 on upper-casing and U+0130
-//!   stays U+0130 on lower-casing.
+//!   stays U+0130 on lower-casing; OrdinalCasing also keeps U+017F (long s).
 
 use crate::office::omml_write::prep::unicode_letters::LETTER_OR_LETTER_NUMBER;
 
@@ -37,8 +37,7 @@ pub fn is_null_or_empty(value: Option<&str>) -> bool {
     value.is_none_or(str::is_empty)
 }
 
-/// Simple upper-case mapping (`u_toupper`) as used by OrdinalIgnoreCase and
-/// ToUpperInvariant. Rust exposes the full mapping; where that is a single
+/// Simple upper-case mapping (`u_toupper`) as used by ToUpperInvariant. Rust exposes the full mapping; where that is a single
 /// character it is the simple mapping. Where it expands, the simple mapping is
 /// the character itself except for the Greek letters with ypogegrammeni,
 /// which map to their prosgegrammeni (title-case) forms.
@@ -93,7 +92,7 @@ pub fn to_lower_invariant(value: &str) -> String {
 pub fn eq_ignore_case(a: Option<&str>, b: &str) -> bool {
     match a {
         None => false,
-        Some(a) => a.chars().map(upper_char).eq(b.chars().map(upper_char)),
+        Some(a) => a.chars().map(ordinal_upper_char).eq(b.chars().map(ordinal_upper_char)),
     }
 }
 
@@ -101,7 +100,20 @@ pub fn eq_ignore_case(a: Option<&str>, b: &str) -> bool {
 /// Simple case mapping never changes the UTF-16 length, so comparing the
 /// upper-cased strings is the ordinal ignore-case search.
 pub fn contains_ignore_case(value: &str, needle: &str) -> bool {
-    to_upper_invariant(value).contains(&to_upper_invariant(needle))
+    ordinal_upper(value).contains(&ordinal_upper(needle))
+}
+
+/// The upper-case mapping OrdinalIgnoreCase compares with (.NET's OrdinalCasing): ToUpperInvariant's, except that
+/// U+017F (long s) stays itself.
+fn ordinal_upper_char(c: char) -> char {
+    if c == '\u{017F}' {
+        return c;
+    }
+    upper_char(c)
+}
+
+fn ordinal_upper(value: &str) -> String {
+    value.chars().map(ordinal_upper_char).collect()
 }
 
 fn in_ranges(table: &[(u32, u32)], value: u32) -> bool {
@@ -137,7 +149,10 @@ mod tests {
         assert!(!is_null_or_white_space(Some("\u{200B}")));
         assert!(eq_ignore_case(Some("Open"), "OPEN"));
         assert!(!eq_ignore_case(Some("\u{0131}nner"), "INNER"));
-        assert!(eq_ignore_case(Some("\u{017F}"), "S"));
+        assert!(!eq_ignore_case(Some("\u{017F}"), "S"));
+        assert!(!contains_ignore_case("x\u{017F}y", "s"));
+        assert!(eq_ignore_case(Some("\u{1F80}"), "\u{1F88}"));
+        assert_eq!(to_upper_invariant("\u{017F}\u{1FB3}"), "S\u{1FBC}");
         assert_eq!(to_lower_invariant("BOLD-Italic\u{0130}"), "bold-italic\u{0130}");
         assert_eq!(to_upper_invariant("#a1b2c3"), "#A1B2C3");
         assert!(contains_ignore_case("<mtable DATA-MTEF-PILE=\"true\">", "data-mtef-pile"));

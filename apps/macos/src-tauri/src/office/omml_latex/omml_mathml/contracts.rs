@@ -18,13 +18,13 @@ pub fn dotnet_trim(value: &str) -> &str {
     value.trim_matches(char::is_whitespace)
 }
 
-/// ToLowerInvariant: simple (one-to-one) case mapping per character.
+/// ToLowerInvariant: simple (one-to-one) case mapping per character; .NET keeps U+0130 (dotted I).
 pub fn to_lower_invariant(value: &str) -> String {
     value
         .chars()
         .map(|c| {
             if c == '\u{130}' {
-                return 'i';
+                return c;
             }
             let mut lower = c.to_lowercase();
             match (lower.next(), lower.next()) {
@@ -236,4 +236,14 @@ pub fn maximum_omml_space_text_length() -> usize {
 
 pub fn find_omml_space_text(text: &str) -> Option<&'static OmmlSpace> {
     OMML_SPACES.iter().find(|space| space.text == text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_lower_invariant_keeps_dotted_capital_i() {
+        assert_eq!(to_lower_invariant("\u{130}BOLD"), "\u{130}bold");
+    }
 }
