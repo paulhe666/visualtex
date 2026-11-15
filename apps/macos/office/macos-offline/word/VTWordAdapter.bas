@@ -76,15 +76,19 @@ Public Sub VisualTeX_AgentRun()
 
 AgentFailed:
     message = Err.Description
+    ' Nothing below may fail: an error inside this handler is a run-time error dialog that holds Word
+    ' (VBA evaluates every operand of And, so the code is cut off only for a message that has one).
+    On Error Resume Next
     VT_AGENT_MODE = False
     code = "operation_failed"
     separator = InStr(1, message, "|", vbBinaryCompare)
-    If separator > 1 And separator < 40 And InStr(1, Left$(message, separator - 1), " ", vbBinaryCompare) = 0 Then
-        code = Left$(message, separator - 1)
-        message = Mid$(message, separator + 1)
+    If separator > 1 And separator < 40 Then
+        If InStr(1, Left$(message, separator - 1), " ", vbBinaryCompare) = 0 Then
+            code = Left$(message, separator - 1)
+            message = Mid$(message, separator + 1)
+        End If
     End If
     If Len(VT_AGENT_ERRORS) > 0 Then message = message & " " & VT_AGENT_ERRORS
-    On Error Resume Next
     VTAgentWriteResponse "{""id"":" & VTJsonString(requestId) & ",""ok"":false,""error"":{""code"":" & _
         VTJsonString(code) & ",""message"":" & VTJsonString(message) & "}}"
 End Sub
