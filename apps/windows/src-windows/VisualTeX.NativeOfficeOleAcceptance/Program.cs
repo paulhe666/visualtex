@@ -3006,7 +3006,6 @@ internal static class Program
                 ReadParagraphMarkFontPosition(shape.Range),
                 0.1f,
                 "Inline OLE round trip contaminated the paragraph baseline.");
-            service.NormalizeInlineOleParagraphBaselinesBeforeSave(document);
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Close(Word.WdSaveOptions.wdSaveChanges);
             Release(document);
@@ -3741,7 +3740,6 @@ internal static class Program
             var compatibilityInitialPath = Path.Combine(
                 Path.GetDirectoryName(path)!,
                 "VisualTeX-Word-Compatibility-OMML-Initial.docx");
-            service.NormalizeInlineOleParagraphBaselinesBeforeSave(document);
             document.SaveAs2(
                 compatibilityInitialPath,
                 Word.WdSaveFormat.wdFormatXMLDocument);
@@ -3842,7 +3840,6 @@ internal static class Program
             AssertEquationNumberFontSize(document, blockOleFormulaId, 24f,
                 "Word display OLE equation number did not follow the formula font size.");
 
-            service.NormalizeInlineOleParagraphBaselinesBeforeSave(document);
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Close(Word.WdSaveOptions.wdSaveChanges);
             Release(document);

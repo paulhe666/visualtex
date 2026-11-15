@@ -29,7 +29,7 @@
     "test:document-import-compiled-markdown": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/document_import_compiled_markdown_acceptance.mts",
     "test:document-import-file": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/document_import_file_regression.mts",
     "test:document-import-parser": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/document_import_parser_coverage.mts",
-    "test:dotnet": "dotnet test src-windows/VisualTeX.WindowsOffice.Tests/VisualTeX.WindowsOffice.Tests.csproj --configuration Release",
+    "test:dotnet": "dotnet test src-windows/VisualTeX.WindowsOffice.Tests/VisualTeX.WindowsOffice.Tests.csproj --configuration Release && dotnet test src-windows/VisualTeX.NativeRender.Tests/VisualTeX.NativeRender.Tests.csproj --configuration Release",
     "test:editor": "npm run build && npm run test:editor:run",
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:editor-history:run": "node scripts/editor_history_regression.mjs",
