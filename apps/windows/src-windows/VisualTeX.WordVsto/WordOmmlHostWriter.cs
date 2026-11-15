@@ -339,7 +339,8 @@ internal static class WordOmmlHostWriter
     // paragraph. Location preparation and any heading reads belong to preflight.
     internal static WordFormulaHostWriteResult InsertPreparedNative(
         Document document, Range insertion, WordFormulaHostWriteRequest request,
-        string preparedOmml, string? paragraphMarkRunProperties = null)
+        string preparedOmml, string? paragraphMarkRunProperties = null,
+        string? paragraphStyleDefinition = null)
     {
         if (request.Kind != WordFormulaHostKind.Omml)
             throw new InvalidOperationException("Native OMML creation requires a prepared native target.");
@@ -377,7 +378,8 @@ internal static class WordOmmlHostWriter
                 document, insertion, preparedOmml,
                 display: string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
                 mathFontName: document.OMathFontName, allowWordNativeInlinePromotion: true,
-                paragraphMarkRunProperties: paragraphMarkRunProperties);
+                paragraphMarkRunProperties: paragraphMarkRunProperties,
+                paragraphStyleDefinition: paragraphStyleDefinition);
             WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-after-import");
             if (originalCellParagraphs > 0)
             {
@@ -512,14 +514,59 @@ internal static class WordOmmlHostWriter
                     // paragraph for every formula. A caret left in an empty
                     // paragraph keeps that paragraph mark's own formatting.
                     string? markRunProperties;
+                    string? paragraphStyle = null;
+                    var formattedParagraph = false;
                     using (WordOperationMetrics.Measure("FormatConversion.OmmlHostWriter.MarkRunProperties"))
-                        markRunProperties = ReadEmptyParagraphMarkRunProperties(target);
-                    var written = InsertPreparedNative(
-                        document,
-                        target,
-                        request,
-                        preparedOmml,
-                        paragraphMarkRunProperties: markRunProperties);
+                    {
+                        if (!display)
+                        {
+                            (markRunProperties, paragraphStyle) = ReadFormattedParagraphProperties(target);
+                            formattedParagraph = markRunProperties is not null;
+                        }
+                        else
+                            markRunProperties = null;
+                        markRunProperties ??= ReadEmptyParagraphMarkRunProperties(target);
+                    }
+                    // At the end of a formatted paragraph Word merges the package
+                    // paragraph into it and maps a list's numbering to a new list;
+                    // with text to its right the package paragraph mark stays and is
+                    // removed again, keeping the paragraph's own list. A stand-in
+                    // character gives the end of the paragraph that text for the import.
+                    // The export writes the paragraph's spacing as Word lays it out
+                    // between list items; the snapshot puts back the spacing it had.
+                    var snapshot = formattedParagraph
+                        ? WordParagraphSnapshot.TryCapture(target)
+                        : null;
+                    var standInFrom = formattedParagraph
+                        ? InsertImportStandIn(document, target)
+                        : -1;
+                    WordFormulaHostWriteResult written;
+                    try
+                    {
+                        written = InsertPreparedNative(
+                            document,
+                            target,
+                            request,
+                            preparedOmml,
+                            paragraphMarkRunProperties: markRunProperties,
+                            paragraphStyleDefinition: paragraphStyle);
+                    }
+                    catch
+                    {
+                        if (standInFrom >= 0) RemoveImportStandIn(document, standInFrom);
+                        throw;
+                    }
+                    if (standInFrom >= 0) RemoveImportStandIn(document, written.Host.Range.End);
+                    if (snapshot is not null)
+                    {
+                        Range? formula = null;
+                        try
+                        {
+                            formula = document.Range(written.Host.Range.Start, written.Host.Range.End);
+                            snapshot.Restore(formula);
+                        }
+                        finally { Release(formula); }
+                    }
                     WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-complete");
                     return written;
                 }
@@ -569,6 +616,125 @@ internal static class WordOmmlHostWriter
         {
             Release(target);
             Release(inserted);
+        }
+    }
+
+    // An inline equation imported into a paragraph gives it the package paragraph's
+    // properties: a list item lost its bullet or number, a heading its style, a
+    // quote its indent (bulk import, LaTeX redraw). The package then carries the
+    // paragraph's own properties. A paragraph that only has its default style and
+    // its style's layout loses nothing, so it skips the WordOpenXML read.
+    private static (string? Properties, string? Style) ReadFormattedParagraphProperties(Range caret)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? mark = null;
+        ListFormat? list = null;
+        ParagraphFormat? format = null;
+        Style? style = null;
+        ParagraphFormat? styleFormat = null;
+        Document? document = null;
+        Styles? styles = null;
+        Style? normal = null;
+        try
+        {
+            paragraphs = caret.Paragraphs;
+            if (paragraphs.Count != 1) return (null, null);
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            mark = paragraphRange.Duplicate;
+            mark.SetRange(paragraphRange.End - 1, paragraphRange.End);
+            list = paragraphRange.ListFormat;
+            var formatted = list.ListType != WdListType.wdListNoNumbering;
+            if (!formatted)
+            {
+                style = mark.get_Style() as Style;
+                document = paragraphRange.Document;
+                styles = document.Styles;
+                object normalId = WdBuiltinStyle.wdStyleNormal;
+                normal = styles[ref normalId];
+                formatted = style is null
+                    || !string.Equals(style.NameLocal, normal.NameLocal, StringComparison.Ordinal);
+                if (!formatted)
+                {
+                    format = paragraph.Format;
+                    styleFormat = style!.ParagraphFormat;
+                    formatted = format.Alignment != styleFormat.Alignment
+                        || Math.Abs(format.LeftIndent - styleFormat.LeftIndent) > 0.05f
+                        || Math.Abs(format.RightIndent - styleFormat.RightIndent) > 0.05f
+                        || Math.Abs(format.FirstLineIndent - styleFormat.FirstLineIndent) > 0.05f
+                        || Math.Abs(format.SpaceBefore - styleFormat.SpaceBefore) > 0.05f
+                        || Math.Abs(format.SpaceAfter - styleFormat.SpaceAfter) > 0.05f
+                        || format.LineSpacingRule != styleFormat.LineSpacingRule
+                        || Math.Abs(format.LineSpacing - styleFormat.LineSpacing) > 0.05f;
+                }
+            }
+            if (!formatted) return (null, null);
+            var export = mark.WordOpenXML;
+            return (
+                WordOmmlInsertionXml.ParagraphProperties(export),
+                WordOmmlInsertionXml.ParagraphStyleDefinition(export));
+        }
+        catch (COMException) { return (null, null); }
+        finally
+        {
+            Release(normal);
+            Release(styles);
+            Release(document);
+            Release(styleFormat);
+            Release(style);
+            Release(format);
+            Release(list);
+            Release(mark);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    private const string ImportStandIn = "\u200B";
+
+    // A stand-in character right of a caret that ends its paragraph (none in a
+    // table cell, whose end the writer checks itself). Returns where it was
+    // written, or -1 when the caret already has text to its right.
+    private static int InsertImportStandIn(Document document, Range caret)
+    {
+        var position = caret.Start;
+        Range? next = null;
+        Range? standIn = null;
+        try
+        {
+            next = document.Range(position, position + 1);
+            if (next.Text != "\r") return -1;
+            standIn = document.Range(position, position);
+            standIn.InsertAfter(ImportStandIn);
+            caret.SetRange(position, position);
+            return position;
+        }
+        finally
+        {
+            Release(standIn);
+            Release(next);
+        }
+    }
+
+    private static void RemoveImportStandIn(Document document, int from)
+    {
+        Range? window = null;
+        Range? standIn = null;
+        try
+        {
+            window = document.Range(from, Math.Min(document.Content.End, from + 64));
+            var offset = (window.Text ?? string.Empty).IndexOf(ImportStandIn, StringComparison.Ordinal);
+            if (offset < 0) return;
+            standIn = document.Range(from + offset, from + offset + 1);
+            if (standIn.Text == ImportStandIn) standIn.Delete();
+        }
+        finally
+        {
+            Release(standIn);
+            Release(window);
         }
     }
 

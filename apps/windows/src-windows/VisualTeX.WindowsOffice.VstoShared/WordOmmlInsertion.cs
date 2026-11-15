@@ -1543,7 +1543,8 @@ internal static class WordOmmlInsertion
         bool display,
         string? mathFontName,
         bool allowWordNativeInlinePromotion,
-        string? paragraphMarkRunProperties)
+        string? paragraphMarkRunProperties,
+        string? paragraphStyleDefinition = null)
     {
         if (targetDocument is null)
             throw new ArgumentNullException(nameof(targetDocument));
@@ -1571,7 +1572,8 @@ internal static class WordOmmlInsertion
                     entry,
                     NormalizeMathFontName(mathFontName),
                     paragraphMarkRunProperties,
-                    trailingWpsSentinel: wpsInlineSentinel);
+                    trailingWpsSentinel: wpsInlineSentinel,
+                    paragraphStyleDefinition: paragraphStyleDefinition);
 
         Range? target = null;
         Range? content = null;

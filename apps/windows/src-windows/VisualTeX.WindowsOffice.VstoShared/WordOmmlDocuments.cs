@@ -313,7 +313,8 @@ internal static class WordOmmlDocuments
         BatchEntry entry,
         string mathFontName,
         string? paragraphMarkRunProperties = null,
-        bool trailingWpsSentinel = false)
+        bool trailingWpsSentinel = false,
+        string? paragraphStyleDefinition = null)
     {
         XNamespace package =
             "http://schemas.microsoft.com/office/2006/xmlPackage";
@@ -372,6 +373,24 @@ internal static class WordOmmlDocuments
         // transport package deliberately minimal.
         var documentRelationships = new XElement(
             relationships + "Relationships");
+        // The paragraph's own style, when the package carries its properties:
+        // Word resolves the style reference only through a styles part (an
+        // existing style of that name keeps its definition in the document).
+        XElement? styles = null;
+        if (paragraphStyleDefinition is not null)
+        {
+            styles = new XElement(
+                word + "styles",
+                new XAttribute(XNamespace.Xmlns + "w", word),
+                XElement.Parse(paragraphStyleDefinition));
+            documentRelationships.Add(new XElement(
+                relationships + "Relationship",
+                new XAttribute("Id", "rIdStyles"),
+                new XAttribute(
+                    "Type",
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"),
+                new XAttribute("Target", "styles.xml")));
+        }
 
         XElement XmlPart(
             string name,
@@ -397,7 +416,13 @@ internal static class WordOmmlDocuments
             XmlPart(
                 "/word/_rels/document.xml.rels",
                 "application/vnd.openxmlformats-package.relationships+xml",
-                documentRelationships));
+                documentRelationships),
+            styles is null
+                ? null
+                : XmlPart(
+                    "/word/styles.xml",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
+                    styles));
         return "<?xml version=\"1.0\" standalone=\"yes\"?>"
             + flatOpc.ToString(SaveOptions.DisableFormatting);
     }

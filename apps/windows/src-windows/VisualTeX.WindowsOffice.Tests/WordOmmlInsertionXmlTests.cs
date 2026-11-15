@@ -111,6 +111,53 @@ public sealed class WordOmmlInsertionXmlTests
     }
 
     [Fact]
+    public void ParagraphStyleDefinitionIsTheStyleThePropertiesName()
+    {
+        var export =
+            "<pkg:package xmlns:pkg=\"http://schemas.microsoft.com/office/2006/xmlPackage\">"
+            + $"<pkg:part pkg:name=\"/word/document.xml\"><pkg:xmlData><w:document xmlns:w=\"{W}\"><w:body><w:p><w:pPr>"
+            + "<w:pStyle w:val=\"a3\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>"
+            + "</w:pPr></w:p></w:body></w:document></pkg:xmlData></pkg:part>"
+            + $"<pkg:part pkg:name=\"/word/styles.xml\"><pkg:xmlData><w:styles xmlns:w=\"{W}\">"
+            + "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"a\"><w:name w:val=\"Normal\"/></w:style>"
+            + "<w:style w:type=\"paragraph\" w:styleId=\"a3\"><w:name w:val=\"List Paragraph\"/><w:basedOn w:val=\"a\"/>"
+            + "<w:pPr><w:ind w:firstLineChars=\"200\" w:firstLine=\"420\"/></w:pPr></w:style>"
+            + "</w:styles></pkg:xmlData></pkg:part></pkg:package>";
+
+        var style = XElement.Parse(WordOmmlInsertionXml.ParagraphStyleDefinition(export)!);
+
+        Assert.Equal("a3", (string?)style.Attribute(W + "styleId"));
+        Assert.Equal("List Paragraph", (string?)style.Element(W + "name")!.Attribute(W + "val"));
+        Assert.Null(WordOmmlInsertionXml.ParagraphStyleDefinition(
+            export.Replace("<w:pStyle w:val=\"a3\"/>", string.Empty)));
+    }
+
+    [Fact]
+    public void SingleEquationPackageCarriesTheParagraphStyleInAStylesPart()
+    {
+        var entry = new WordOmmlBatchSources.BatchEntry(
+            "VisualTeXDirect0123456789abcdef", "fingerprint",
+            $"<m:oMath xmlns:m=\"{M}\"><m:r><m:t>x</m:t></m:r></m:oMath>", 31902);
+        var style = $"<w:style xmlns:w=\"{W}\" w:type=\"paragraph\" w:styleId=\"a3\"><w:name w:val=\"List Paragraph\"/></w:style>";
+        var properties = $"<w:pPr xmlns:w=\"{W}\"><w:pStyle w:val=\"a3\"/></w:pPr>";
+        XNamespace package = "http://schemas.microsoft.com/office/2006/xmlPackage";
+        XNamespace relationships = "http://schemas.openxmlformats.org/package/2006/relationships";
+
+        var withStyle = XDocument.Parse(WordOmmlDocuments.CreateSingleEquationFlatOpc(
+            entry, "Cambria Math", properties, paragraphStyleDefinition: style));
+        var stylesPart = Assert.Single(withStyle.Descendants(package + "part"),
+            part => (string?)part.Attribute(package + "name") == "/word/styles.xml");
+        Assert.Equal("a3", (string?)stylesPart.Descendants(W + "style").Single().Attribute(W + "styleId"));
+        Assert.Contains(withStyle.Descendants(relationships + "Relationship"),
+            relationship => ((string?)relationship.Attribute("Type"))!.EndsWith("/styles", StringComparison.Ordinal)
+                && (string?)relationship.Attribute("Target") == "styles.xml");
+
+        var plain = XDocument.Parse(WordOmmlDocuments.CreateSingleEquationFlatOpc(entry, "Cambria Math", properties));
+        Assert.DoesNotContain(plain.Descendants(package + "part"),
+            part => (string?)part.Attribute(package + "name") == "/word/styles.xml");
+    }
+
+    [Fact]
     public void OtherContentOfTheMarkerRunIsKeptOnItsSide()
     {
         const string marker = "VTXmarker";

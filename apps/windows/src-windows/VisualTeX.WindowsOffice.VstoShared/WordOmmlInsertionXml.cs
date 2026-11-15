@@ -21,6 +21,23 @@ internal static class WordOmmlInsertionXml
     // properties, so they must be the target paragraph's own, or its style and
     // numbering are lost. Revision marks and a section break are not carried.
     // Null when the paragraph has none.
+    // The definition of the paragraph style that the last paragraph of a WordOpenXML
+    // export names. An import package carries it in a styles part: without one,
+    // Word drops the package paragraph's style reference. Null for the default style.
+    internal static string? ParagraphStyleDefinition(string? wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return null;
+        var package = XDocument.Parse(wordOpenXml!, LoadOptions.PreserveWhitespace);
+        var styleId = package.Descendants(Word + "body").FirstOrDefault()?
+            .Elements(Word + "p").LastOrDefault()?
+            .Element(Word + "pPr")?.Element(Word + "pStyle")?
+            .Attribute(Word + "val")?.Value;
+        if (string.IsNullOrEmpty(styleId)) return null;
+        var style = package.Descendants(Word + "style")
+            .FirstOrDefault(element => (string?)element.Attribute(Word + "styleId") == styleId);
+        return style?.ToString(SaveOptions.DisableFormatting);
+    }
+
     internal static string? ParagraphProperties(string? wordOpenXml)
     {
         if (string.IsNullOrWhiteSpace(wordOpenXml)) return null;
