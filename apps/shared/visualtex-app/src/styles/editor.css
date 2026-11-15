@@ -93,7 +93,6 @@
 
 .formula-color-content {
   display: grid;
-  grid-template-columns: 164px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
 }
@@ -173,12 +172,6 @@
   display: grid;
   grid-template-columns: repeat(5, 28px);
   gap: 6px;
-}
-
-.formula-custom-colors-panel {
-  min-height: 72px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
 }
 
 .formula-custom-colors-heading {
@@ -742,16 +735,6 @@
   color: var(--text);
   font: inherit;
   text-align: right;
-}
-
-.office-font-size-presets {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-}
-
-.office-font-size-presets button {
-  min-width: 0;
-  padding-inline: 4px;
 }
 
 .ocr-model-drop-zone {

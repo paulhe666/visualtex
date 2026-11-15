@@ -55,12 +55,10 @@
 /* Keep the formula-tile collapse control on the same row as Custom/Common.
    The base two-column grid otherwise wraps the third control onto a new row. */
 .formula-tile-tabs.has-collapse {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
   align-items: center;
 }
 
 .formula-tile-tabs.has-collapse .formula-tile-collapse-button {
-  grid-column: 3;
   margin-left: 0;
   width: 28px;
   min-width: 28px;
@@ -439,7 +437,6 @@
 }
 
 .quick-ocr-button,
-.quick-ocr-mode-trigger,
 .silent-ocr-toggle {
   height: 34px;
   display: inline-flex;
@@ -470,30 +467,6 @@
 .quick-ocr-split > .quick-ocr-primary:only-child {
   border-radius: 9px;
   border-right: 1px solid var(--border);
-}
-
-.quick-ocr-mode-trigger {
-  width: 26px;
-  padding: 0;
-  border-radius: 0 9px 9px 0;
-  cursor: pointer;
-}
-
-.quick-ocr-mode-trigger:hover:not(:disabled),
-.quick-ocr-mode-trigger.is-open {
-  border-color: var(--accent-border);
-  background: var(--surface-hover);
-  color: var(--accent);
-}
-
-.quick-ocr-mode-trigger.is-custom-provider {
-  color: var(--accent);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 82%, transparent);
-}
-
-.quick-ocr-mode-trigger:disabled {
-  cursor: wait;
-  opacity: 0.55;
 }
 
 .quick-ocr-mode-menu {
@@ -554,10 +527,6 @@
   color: var(--accent);
 }
 
-.quick-ocr-primary:hover:not(:disabled) + .quick-ocr-mode-trigger {
-  border-color: var(--accent-border);
-}
-
 .quick-ocr-button:disabled {
   cursor: wait;
   opacity: 0.55;
@@ -579,22 +548,9 @@
   pointer-events: none;
 }
 
-.silent-ocr-indicator {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--text-faint);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-faint) 10%, transparent);
-}
-
 .silent-ocr-toggle.is-active {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   color: var(--accent);
-}
-
-.silent-ocr-toggle.is-active .silent-ocr-indicator {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
 }
 
 .silent-ocr-toggle kbd {
@@ -840,10 +796,6 @@
   scrollbar-width: none;
   scroll-behavior: auto;
   overscroll-behavior-inline: contain;
-  contain: layout paint style;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  isolation: isolate;
 }
 
 .formula-toolbar.is-horizontal .toolbar-category-section {
@@ -860,10 +812,6 @@
   align-items: stretch;
   align-content: stretch;
   gap: 0;
-  contain: paint style;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  will-change: transform;
   background: color-mix(in srgb, var(--bg-elevated) 84%, var(--toolbar-category-tint) 16%);
 }
 
@@ -900,7 +848,6 @@
 .formula-toolbar .matrix-builder {
   --toolbar-category-tint: var(--toolbar-category-matrix);
   border-color: color-mix(in srgb, var(--border) 56%, var(--toolbar-category-tint) 44%);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 76%, var(--toolbar-category-tint) 24%), color-mix(in srgb, var(--bg-elevated) 68%, var(--toolbar-category-tint) 32%));
 }
 
 :root[data-theme="beige"] .workspace.has-active-line-highlight .formula-line:hover,
@@ -974,10 +921,6 @@
 .template-button:focus-visible {
   outline-width: 2px;
   outline-offset: -2px;
-}
-
-.template-button > .template-label {
-  display: none;
 }
 
 .template-button .math-preview,
@@ -1186,19 +1129,7 @@
   .ML__mathit.visualtex-formula-letter-glyph,
 .formula-font-live-preview
   .math-preview
-  .ML__mathnormal.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__mathbfit.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__lcGreek.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__ucGreek.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__latin.visualtex-formula-letter-glyph {
+  .ML__mathbfit.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-italic-font-family) !important;
 }
 
@@ -1207,13 +1138,7 @@
   .ML__cmr.visualtex-formula-letter-glyph,
 .formula-font-live-preview
   .math-preview
-  .ML__mathbf.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__mathrm.visualtex-formula-letter-glyph,
-.formula-font-live-preview
-  .math-preview
-  .ML__operator_name.visualtex-formula-letter-glyph {
+  .ML__mathbf.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-upright-font-family) !important;
 }
 
@@ -1241,15 +1166,12 @@
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
   --desktop-top-tools-width: clamp(560px, 47vw, 790px);
   position: relative;
-  grid-template-rows: minmax(0, 1fr) 24px;
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
-  position: absolute;
   top: 0;
   left: 0;
   right: auto;
-  width: calc(100% - var(--desktop-top-tools-width));
   min-height: var(--panel-header-height, 52px);
   grid-template-columns: minmax(155px, 0.75fr) minmax(130px, 0.55fr) minmax(300px, 1.7fr);
   box-shadow: none;
@@ -1261,18 +1183,9 @@
   height: 28px;
 }
 
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-mark {
-  width: 28px;
-  height: 28px;
-}
-
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .visualtex-brand-logo {
   width: 25px;
   height: 25px;
-}
-
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy strong {
-  font-size: 13px;
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area input {
@@ -1286,14 +1199,7 @@
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
-  min-height: 30px;
-  height: 30px;
   padding-block: 0;
-}
-
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .copy-chevron {
-  min-height: 30px;
-  height: 30px;
 }
 
 .editor-pane-header-controls {
@@ -1389,7 +1295,6 @@
 .workspace.is-classic-layout:not(.is-office-workspace)
   .classic-bottom-tabs {
   grid-template-columns: minmax(0, 1fr) auto minmax(30px, max-content);
-  gap: 4px;
 }
 
 /* Latest classic desktop layout: the editor header spans the full workspace,
@@ -1399,10 +1304,6 @@
     minmax(0, 1fr)
     7px
     minmax(220px, var(--classic-tile-width, 300px));
-}
-
-.workspace.is-classic-layout:not(.is-office-workspace) {
-  grid-template-rows: var(--panel-header-height) minmax(0, 1fr);
 }
 
 .workspace.is-classic-layout:not(.is-office-workspace)
@@ -1467,10 +1368,6 @@
   flex: 0 0 auto;
   min-width: 0;
   gap: 5px;
-}
-
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
-  white-space: nowrap;
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
@@ -1566,10 +1463,6 @@
   margin-left: 0;
 }
 
-.desktop-top-tools-mount .quick-ocr-mode-trigger {
-  display: none !important;
-}
-
 .desktop-top-tools-mount .quick-ocr-primary {
   border-radius: 7px !important;
 }
@@ -1635,14 +1528,6 @@
   display: none;
 }
 
-/* The classic header lives in the desktop top toolbar, not in the workspace.
-   Anchor the collapsed tile-rail button to the formula canvas instead of the
-   old in-workspace header row (macOS a4d1ad7a). */
-.workspace.is-classic-layout:not(.is-office-workspace)
-  > .classic-tile-expand-button {
-  top: 8px;
-}
-
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .formula-workspace.editor-pane
   > .classic-editor-pane-body,
@@ -1671,7 +1556,6 @@
   position: absolute;
   inset: 0 auto 0 6px;
   width: auto;
-  max-width: calc(50% - 122px);
   display: flex;
   align-items: center;
   overflow: visible;
@@ -1705,13 +1589,6 @@
   }
 }
 
-@media (max-width: 620px) {
-  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
-    display: none;
-  }
-
-}
-
 @media (max-width: 460px) {
   .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
     --desktop-toolbar-control-size: 28px;
@@ -1720,19 +1597,7 @@
 
 /* Latest compact matrix builder used by the horizontal/classic formula dock. */
 .formula-toolbar.is-horizontal .matrix-builder {
-  height: auto;
-  grid-template-columns:
-    minmax(0, 214px)
-    minmax(40px, var(--matrix-picker-size, 98px));
   justify-content: stretch;
-}
-
-.formula-toolbar.is-horizontal .matrix-options-column {
-  min-width: 0;
-  align-content: stretch;
-  gap: 5px;
-  padding-right: 8px;
-  border-right: 1px solid var(--border);
 }
 
 .formula-toolbar.is-horizontal .matrix-builder-heading {
@@ -1755,28 +1620,16 @@
   font-size: 9px;
 }
 
-.formula-toolbar.is-horizontal .matrix-delimiter-picker {
-  align-content: start;
-  gap: 0;
-}
-
 .formula-toolbar.is-horizontal .matrix-control-label {
   display: none;
 }
 
 .formula-toolbar.is-horizontal .matrix-delimiter-options {
-  width: 100%;
-  min-width: 0;
-  height: 58px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   overflow: hidden;
 }
 
 .formula-toolbar.is-horizontal .matrix-delimiter-options button {
-  width: 100%;
-  min-width: 0;
   max-width: 100%;
-  padding: 2px;
   overflow: hidden;
 }
 
@@ -1786,18 +1639,12 @@
 }
 
 .formula-toolbar.is-horizontal .matrix-size-picker {
-  width: var(--matrix-picker-size, 98px);
-  height: var(--matrix-picker-size, 98px);
-  max-width: 100%;
-  max-height: 100%;
   align-self: center;
   justify-self: center;
   gap: 0;
 }
 
 .formula-toolbar.is-horizontal .matrix-size-grid {
-  width: 100%;
-  height: 100%;
   box-sizing: border-box;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   grid-template-rows: repeat(5, minmax(0, 1fr));
@@ -1816,17 +1663,6 @@
   white-space: nowrap;
 }
 
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-builder {
-  grid-template-columns:
-    minmax(0, 190px)
-    minmax(40px, var(--matrix-picker-size, 64px));
-}
-
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-options-column {
-  gap: 2px;
-  padding-right: 4px;
-}
-
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-builder-heading {
   min-height: 16px;
 }
@@ -1842,26 +1678,8 @@
   font-size: 8px;
 }
 
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options {
-  height: 40px;
-}
-
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options button {
-  padding: 1px;
-}
-
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options .math-preview {
-  height: 16px;
-  max-height: 16px;
-}
-
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-picker {
   gap: 0;
-}
-
-.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-grid {
-  width: 100%;
-  height: 100%;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-insert-button {
@@ -2090,12 +1908,6 @@
     justify-content: center;
   }
 
-  .workspace:not(.is-office-workspace) .quick-ocr-mode-trigger {
-    width: 20px;
-    min-width: 20px;
-    padding: 0;
-  }
-
   .workspace:not(.is-office-workspace) .quick-ocr-button > span,
   .workspace:not(.is-office-workspace)
     .silent-ocr-toggle
@@ -2285,47 +2097,6 @@
   padding-left: 7px;
 }
 
-/* Keypad mode removes the desktop top toolbar, so the editor header becomes
-   the only home for its format selector and exit control. The classic layout
-   normally hides this header because those controls are portalled into the
-   desktop toolbar; restore a compact header while keypad mode is active. */
-.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace) {
-  grid-template-rows: var(--panel-header-height) minmax(0, 1fr);
-}
-
-.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
-  > .formula-workspace.editor-pane
-  > .editor-pane-header {
-  display: flex;
-  grid-column: 1;
-  grid-row: 1;
-  padding-inline: 9px;
-  background: var(--surface);
-  pointer-events: auto;
-}
-
-.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
-  > .formula-workspace.editor-pane
-  > .keypad-editor-pane-body {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.workspace.is-keypad-mode:not(.is-office-workspace)
-  .editor-pane-header-trailing {
-  min-width: 0;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.workspace.is-keypad-mode:not(.is-office-workspace)
-  .editor-pane-header
-  .canvas-tool-group {
-  flex: 0 0 auto;
-}
-
 .keypad-editor-pane-body {
   min-width: 0;
   min-height: 0;
@@ -2348,134 +2119,6 @@
   .workspace .keypad-mode-toggle > span {
     display: none;
   }
-}
-
-/* Windows Office editor: one dedicated Office control bar spans the whole
-   editor above both the formula pane and the Custom/Common tile tabs. The
-   formula-formatting controls live in the Formula tools tab row below instead
-   of competing for horizontal space with Office session controls. */
-.office-dialog-shell {
-  grid-template-rows: auto minmax(0, 1fr) 24px;
-}
-
-.office-workspace-actions.office-control-bar {
-  position: relative;
-  z-index: 90;
-  min-width: 0;
-  min-height: 42px;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  overflow: visible;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  scrollbar-width: none;
-}
-
-.office-workspace-actions.office-control-bar::-webkit-scrollbar {
-  display: none;
-}
-
-.office-workspace-actions.office-control-bar > .office-control-bar-leading,
-.office-workspace-actions.office-control-bar > .office-control-bar-tools,
-.office-workspace-actions.office-control-bar > .office-control-bar-actions {
-  min-width: max-content;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.office-control-bar-leading {
-  flex: 0 0 auto;
-  gap: 5px;
-}
-
-.office-workspace-actions.office-control-bar > .office-control-bar-tools {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.office-workspace-actions.office-control-bar > .office-control-bar-actions {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.office-control-bar .office-display-mode-setting {
-  min-width: max-content;
-  padding: 1px;
-  border-radius: 6px;
-}
-
-.office-control-bar .office-display-mode-setting button {
-  min-width: 40px;
-  min-height: 28px;
-  padding: 2px 8px;
-  border-radius: 5px;
-  font-size: 10px;
-}
-
-.office-control-bar .office-font-size-setting {
-  min-width: max-content;
-  min-height: 30px;
-  gap: 4px;
-  padding: 2px 5px 2px 7px;
-  border-radius: 6px;
-  font-size: 10px;
-}
-
-.office-control-bar .office-font-size-setting select {
-  width: 112px;
-  min-height: 26px;
-  padding: 1px 18px 1px 5px;
-  font-size: 10px;
-}
-
-.office-control-bar .office-auto-commit-setting {
-  min-width: max-content;
-  gap: 4px;
-  font-size: 9px;
-}
-
-.office-control-bar .office-auto-commit-setting input {
-  width: 13px;
-  height: 13px;
-}
-
-.office-control-bar .canvas-tool-group {
-  min-width: max-content;
-  width: 100%;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  overflow: visible;
-}
-
-.office-control-bar .canvas-input-behavior-trigger {
-  min-height: 28px;
-}
-
-.office-control-bar .canvas-ocr-model {
-  height: 28px;
-  padding-left: 6px;
-}
-
-.office-control-bar .canvas-ocr-model select {
-  width: 110px;
-  height: 26px;
-  font-size: 10px;
-}
-
-.office-control-bar .canvas-controls {
-  height: 28px;
-}
-
-.office-control-bar .canvas-controls > span {
-  min-width: 36px;
-  font-size: 10px;
 }
 
 .office-inline-history-actions {
@@ -2522,47 +2165,8 @@
   display: none;
 }
 
-.office-formatting-mount {
-  min-width: max-content;
-  display: flex;
-  align-items: center;
-}
-
-.classic-bottom-formatting {
-  position: relative;
-  z-index: 180;
-  min-width: max-content;
-  align-self: center;
-  justify-self: start;
-  overflow: visible;
-}
-
-.classic-bottom-formatting .formula-alignment-controls,
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
-  margin-left: 0;
-  padding-left: 0;
   gap: 1px;
-}
-
-.classic-bottom-formatting .formula-alignment-button,
-.classic-bottom-formatting .formula-formatting-button,
-.editor-pane-header.is-office-editor-header .formula-alignment-button,
-.editor-pane-header.is-office-editor-header .formula-formatting-button {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-}
-
-.office-dialog-shell .classic-bottom-tabs {
-  z-index: 170;
-}
-
-.classic-bottom-formatting .formula-color-popover {
-  z-index: var(--z-popover, 190);
-  top: auto;
-  right: auto;
-  bottom: calc(100% + 7px);
-  left: 0;
 }
 
 /* Keep the formula color picker compact on Windows. The two-column parity
@@ -2630,25 +2234,12 @@
 }
 
 @media (max-width: 1120px) {
-  .office-inline-history-actions .secondary-button > span,
-  .office-control-bar .canvas-ocr-model > svg {
+  .office-inline-history-actions .secondary-button > span {
     display: none;
-  }
-
-  .office-control-bar .office-font-size-setting select {
-    width: 94px;
   }
 }
 
 @media (max-width: 900px) {
-  .office-workspace-actions.office-control-bar {
-    gap: 4px;
-    padding-inline: 5px;
-  }
-
-  .office-control-bar .canvas-tool-group {
-    gap: 2px;
-  }
 
   .office-inline-history-actions .secondary-button {
     padding-inline: 5px;
@@ -2675,10 +2266,6 @@
 .office-dialog-shell .workspace.is-office-workspace.is-classic-layout {
   grid-template-rows: minmax(0, 1fr);
   padding-top: var(--panel-header-height);
-}
-
-.office-dialog-shell .workspace.is-office-workspace.is-standard-layout.has-sidebar {
-  grid-template-columns: minmax(0, 1fr) 252px;
 }
 
 .office-dialog-shell
@@ -2737,7 +2324,6 @@
   > .formula-toolbar {
   position: relative;
   inset: auto;
-  grid-column: 2;
   grid-row: 1;
   width: auto;
   min-width: 0;
@@ -2776,13 +2362,6 @@
 .office-inline-actions {
   flex: 0 0 auto;
   margin-left: auto;
-}
-
-.editor-pane-header.is-office-editor-header .office-formatting-mount {
-  min-width: max-content;
-  display: flex;
-  align-items: center;
-  overflow: visible;
 }
 
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
@@ -2959,7 +2538,6 @@
 .office-dialog-shell .classic-bottom-tabs {
   position: relative;
   z-index: var(--z-workspace-footer, 50);
-  grid-template-columns: minmax(250px, 1fr) auto minmax(34px, 1fr);
 }
 
 .classic-bottom-formatting-slot {
@@ -3128,7 +2706,6 @@
     grid-template-columns: max-content minmax(72px, 1fr) max-content;
     gap: 2px;
     padding-inline: 4px;
-    overflow: visible;
   }
 
   .office-dialog-shell .classic-bottom-tab-group {
@@ -3546,11 +3123,6 @@
 .workspace.is-standard-layout:not(.is-office-workspace)
   .keypad-mode-toggle
   > span {
-  display: none !important;
-}
-
-.workspace.is-standard-layout:not(.is-office-workspace)
-  .quick-ocr-mode-trigger {
   display: none !important;
 }
 
