@@ -120,7 +120,9 @@ public sealed partial class ThisAddIn
             // formulas. MathType inspection and OMML preparation can themselves
             // touch Word's live Selection, so taking this snapshot inside Apply is
             // already too late for selection-only conversions in long documents.
-            if (!wholeDocument)
+            // In WPS a whole-document conversion moves the selection too: the
+            // replacement keeps it away from equations while WPS imports one.
+            if (!wholeDocument || OfficeHostEnvironment.IsWps)
             {
                 originalViewState = await dispatcher.InvokeAsync(
                         () => service.CaptureFormulaFormatConversionViewState())

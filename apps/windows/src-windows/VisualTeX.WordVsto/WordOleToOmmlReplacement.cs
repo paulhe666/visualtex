@@ -85,6 +85,7 @@ internal static class WordOleToOmmlReplacement
                 WordOmmlMathFontPolicy.ApplyPreferredToDocument(_document);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
                 var wpsInline = OfficeHostEnvironment.IsWps && !_display;
+                if (OfficeHostEnvironment.IsWps) MoveWpsSelectionAwayFromEquations(_document);
                 WpsXmlInsertion.Replace(
                     selected,
                     wpsInline ? WordOmmlDocuments.AppendWpsInlineSentinel(_fragment) : _fragment);
@@ -104,20 +105,23 @@ internal static class WordOleToOmmlReplacement
                     }
                     catch (Exception error) { WordDoubleClickHook.TraceMessage($"exact-ole-trace-failed {error.Message}"); }
                 }
-                maths = component.OMaths;
-                if (maths.Count != 1)
-                    throw new InvalidOperationException("The OLE replacement did not materialize exactly one native OMath.");
-                math = maths[1];
+                if (OfficeHostEnvironment.IsWps)
+                    math = WpsImportedEquation(_document, component,
+                        "The OLE replacement did not materialize exactly one native OMath.");
+                else
+                {
+                    maths = component.OMaths;
+                    if (maths.Count != 1)
+                        throw new InvalidOperationException("The OLE replacement did not materialize exactly one native OMath.");
+                    math = maths[1];
+                }
                 if (wpsInline)
                 {
                     WordOmmlDocuments.RemoveWpsInlineSentinel(math);
                     Release(math); math = null;
-                    Release(maths); maths = null;
                     Release(component); component = locator.Range;
-                    maths = component.OMaths;
-                    if (maths.Count != 1)
-                        throw new InvalidOperationException("The OLE replacement lost its native OMath in WPS.");
-                    math = maths[1];
+                    math = WpsImportedEquation(_document, component,
+                        "The OLE replacement lost its native OMath in WPS.");
                 }
                 // As in ordinary native OMML insertion, a lone paragraph/cell
                 // formula may be promoted to display by Word. Forcing it back
@@ -194,6 +198,70 @@ internal static class WordOleToOmmlReplacement
 
     private static bool IsLayoutWhitespace(string? text) =>
         (text ?? string.Empty).All(character => character is '\t' or ' ');
+
+    // While the selection is in an equation, WPS reports the equations next to it with other
+    // ranges: with the equation right before the converted object selected (or the caret at its
+    // end), the new equation's range also took the character before it and the import separator
+    // after it. During the import the caret waits where no equation touches it, the end of the
+    // document or else its start; the conversion restores the user's selection afterwards.
+    private static void MoveWpsSelectionAwayFromEquations(Document document)
+    {
+        Microsoft.Office.Interop.Word.Application? application = null;
+        Selection? selection = null;
+        Range? content = null;
+        try
+        {
+            content = document.Content;
+            var target = -1;
+            foreach (var candidate in new[] { content.End - 1, content.Start })
+            {
+                Range? probe = null;
+                OMaths? maths = null;
+                try
+                {
+                    probe = document.Range(Math.Max(content.Start, candidate - 1), Math.Min(content.End, candidate + 1));
+                    maths = probe.OMaths;
+                    if (maths.Count != 0) continue;
+                    target = candidate;
+                    break;
+                }
+                finally { Release(maths); Release(probe); }
+            }
+            application = document.Application;
+            selection = application.Selection;
+            WordDoubleClickHook.TraceMessage(
+                $"exact-ole-wps-selection {selection.Start}:{selection.End} -> {target}");
+            if (target >= 0 && (selection.Start != target || selection.End != target))
+                selection.SetRange(target, target);
+        }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+        finally { Release(selection); Release(application); Release(content); }
+    }
+
+    // The equation the WPS import made: the one found at the locator's start (the lookup the
+    // other WPS insertions use), which must lie inside the locator. A range WPS reports past the
+    // locator (see MoveWpsSelectionAwayFromEquations) fails the replacement instead of taking
+    // the neighbouring text or the import separator for the equation.
+    private static OMath WpsImportedEquation(Document document, Range locator, string failure)
+    {
+        var math = WordOmmlInsertion.FindMathAtPosition(document, locator.Start, locator.End)
+            ?? throw new InvalidOperationException(failure);
+        Range? range = null;
+        var inside = false;
+        try
+        {
+            range = math.Range;
+            WordDoubleClickHook.TraceMessage(
+                $"exact-ole-wps-equation locator={locator.Start}:{locator.End} equation={range.Start}:{range.End}");
+            inside = range.Start >= locator.Start && range.End <= locator.End;
+        }
+        finally
+        {
+            Release(range);
+            if (!inside) Release(math);
+        }
+        return inside ? math : throw new InvalidOperationException(failure);
+    }
 
     internal static Prepared? Prepare(Document document, Range selected, string omml, bool display,
         string? retiredIdentityBookmark = null, bool replaceMathTypeNumber = false)
