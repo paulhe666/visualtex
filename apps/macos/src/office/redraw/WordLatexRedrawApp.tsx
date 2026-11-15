@@ -72,8 +72,24 @@ function restoreTargetLatex(target: MacosFormulaRestoreTarget, index: number) {
   return latex;
 }
 
+// A formula's rows written back as code that reads back as one formula: inside $$...$$ a line
+// break is only a space and an alignment point (&) outside an alignment is an error, so several
+// rows, or a row with alignment points, become one aligned block (gathered without alignment
+// points) with the rows joined by \\. Code with its own environment or row breaks stays as it is.
+function displayLatexCode(latex: string) {
+  if (/\\begin\{|\\\\/.test(latex)) return latex;
+  const rows = latex
+    .split(/\r\n?|\n|\u000b/)
+    .map((row) => row.trim())
+    .filter(Boolean);
+  const aligned = rows.some((row) => /(^|[^\\])&/.test(row));
+  if (rows.length < 2 && !aligned) return latex;
+  const environment = aligned ? "aligned" : "gathered";
+  return `\\begin{${environment}}${rows.join(" \\\\ ")}\\end{${environment}}`;
+}
+
 function latexSourceText(latex: string, displayMode: "inline" | "block") {
-  return displayMode === "block" ? `$$${latex}$$` : `$${latex}$`;
+  return displayMode === "block" ? `$$${displayLatexCode(latex)}$$` : `$${latex}$`;
 }
 
 export function WordLatexRedrawApp() {

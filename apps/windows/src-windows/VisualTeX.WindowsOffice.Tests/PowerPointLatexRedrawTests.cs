@@ -223,6 +223,13 @@ public sealed class PowerPointLatexRedrawTests
         // Lines of display code become PowerPoint line breaks, without empty
         // lines; inline code is one line.
         Assert.Equal("$$a\\\\\vb$$", PowerPointLatexText.BuildSource("a\\\\\r\n\r\n  b", display: true));
+        // A formula's rows without their own environment become one aligned
+        // block (gathered without alignment points).
+        Assert.Equal("$$\\begin{aligned}x+y&=1 \\\\ x-y&=0\\end{aligned}$$",
+            PowerPointLatexText.BuildSource("x+y&=1\nx-y&=0", display: true));
+        Assert.Equal("$$\\begin{gathered}a=1 \\\\ b=2\\end{gathered}\\tag{2}$$",
+            PowerPointLatexText.BuildSource("a=1\r\nb=2", display: true, equationTag: "2"));
+        Assert.Equal("$$a\\&b$$", PowerPointLatexText.BuildSource("a\\&b", display: true));
         Assert.Equal("$a b$", PowerPointLatexText.BuildSource("a\n  b", display: false));
         Assert.Throws<InvalidDataException>(() => PowerPointLatexText.BuildSource("  ", display: true));
         Assert.Throws<InvalidDataException>(() => PowerPointLatexText.BuildSource("\\tag{1}", display: false));
@@ -240,6 +247,19 @@ public sealed class PowerPointLatexRedrawTests
         Assert.Equal(source, Code(text, span));
         Assert.Equal(display, span.Display);
         Assert.Equal(latex.Replace("\n", " ").Replace("\\\\ ", "\\\\"), span.Latex.Replace("\\\\ ", "\\\\"));
+    }
+
+    [Fact]
+    public void WrittenRowsAreFoundAgainAsOneAlignedFormula()
+    {
+        var source = PowerPointLatexText.BuildSource("x+y&=1\nx-y&=0", display: true);
+        var text = "Before " + source + " after";
+        var span = Assert.Single(PowerPointLatexText.FindFormulas(text, NoEquations));
+        Assert.Equal(source, Code(text, span));
+        Assert.True(span.Display);
+        Assert.Equal(
+            "\\begin{aligned}x+y&=1\\\\x-y&=0\\end{aligned}",
+            span.Latex.Replace(" \\\\ ", "\\\\"));
     }
 
     [Fact]

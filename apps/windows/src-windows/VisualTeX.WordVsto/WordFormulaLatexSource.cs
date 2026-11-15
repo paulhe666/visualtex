@@ -244,7 +244,10 @@ internal static class WordFormulaLatexSource
                 "block",
                 StringComparison.Ordinal))
         {
-            latex = FormulaEquationTag.Attach(latex, metadata.EquationTag);
+            // Several rows become one aligned block, so the code reads back as one formula.
+            latex = FormulaEquationTag.Attach(
+                FormulaLatexRows.ForDisplayCode(FormulaEquationTag.Extract(latex).Latex),
+                metadata.EquationTag);
             return "$$" + latex + "$$";
         }
         latex = FormulaEquationTag.Extract(latex).Latex

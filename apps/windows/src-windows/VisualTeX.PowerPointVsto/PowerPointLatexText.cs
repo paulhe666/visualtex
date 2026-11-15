@@ -224,9 +224,10 @@ internal static class PowerPointLatexText
     // The LaTeX code that replaces a formula: "$...$" for inline math and
     // "$$...$$" for display math (an equation alone in its paragraph, and every
     // formula object). Display code keeps its line breaks as PowerPoint line
-    // breaks (U+000B) but no empty line, which would end display math; inline
-    // code is one line. An equation tag is kept for display math only, as in
-    // Word's conversion to LaTeX code.
+    // breaks (U+000B) but no empty line, which would end display math; a
+    // formula's rows without their own environment become one aligned block
+    // (FormulaLatexRows); inline code is one line. An equation tag is kept for
+    // display math only, as in Word's conversion to LaTeX code.
     internal static string BuildSource(string? latex, bool display, string? equationTag = null)
     {
         var body = (latex ?? string.Empty)
@@ -236,7 +237,10 @@ internal static class PowerPointLatexText
             .Trim();
         if (display)
         {
-            body = FormulaEquationTag.Attach(body, equationTag);
+            // Several rows become one aligned block, so the code reads back as one formula.
+            body = FormulaEquationTag.Attach(
+                FormulaLatexRows.ForDisplayCode(FormulaEquationTag.Extract(body).Latex),
+                equationTag);
             var lines = body.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0).ToList();
             if (lines.Count == 0) throw EmptySource();
             return "$$" + string.Join("\v", lines) + "$$";
