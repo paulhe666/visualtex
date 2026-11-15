@@ -49,7 +49,7 @@ public sealed class MathTypeMathVariantRoundTripTests
     public void StyledMultiLetterIdentifierSurvivesNativeCharacterRunSplitting(string sourceVariant)
     {
         var source = $"<math><mi mathvariant='{sourceVariant}'>ABC</mi></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: true, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: true, 10.5);
         var read = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(read));
     }
@@ -75,7 +75,7 @@ public sealed class MathTypeMathVariantRoundTripTests
     public void StandaloneEquationNativePreservesSupportedIdentifierSemantics(string sourceVariant)
     {
         var source = $"<math><mi mathvariant='{sourceVariant}'>A</mi></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
         var roundTrip = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
 
         Assert.Equal(
@@ -88,7 +88,7 @@ public sealed class MathTypeMathVariantRoundTripTests
     public void StandaloneEquationNativePreservesExplicitIdentifierVariant(string sourceVariant)
     {
         var source = $"<math><mi mathvariant='{sourceVariant}'>A</mi></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
         var roundTrip = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
         var identifier = XDocument.Parse(roundTrip)
             .Descendants()
@@ -115,7 +115,7 @@ public sealed class MathTypeMathVariantRoundTripTests
         string expectedLatex)
     {
         var mathJaxShape = $"<math><mrow data-mjx-texclass='ORD'><mi mathvariant='{sourceVariant}'>A</mi></mrow></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathJaxShape, inline: false, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathJaxShape, inline: false, 10.5);
         var roundTrip = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
 
         Assert.Equal(expectedLatex, MathMlToLatexConverter.Convert(roundTrip));
@@ -125,7 +125,7 @@ public sealed class MathTypeMathVariantRoundTripTests
     public void ActualMathJaxMathttAShapeRoundTripsWithoutLosingMonospace()
     {
         const string source = "<math xmlns='http://www.w3.org/1998/Math/MathML'><mrow data-mjx-texclass='ORD'><mi mathvariant='monospace'>A</mi></mrow></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: true, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: true, 10.5);
         var roundTrip = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
 
         Assert.Equal(
@@ -143,7 +143,7 @@ public sealed class MathTypeMathVariantRoundTripTests
         string expectedLatex)
     {
         var source = $"<math><mi mathvariant='{variant}'>{token}</mi></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: false, 10.5);
         var roundTrip = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
 
         Assert.Equal(
@@ -179,7 +179,7 @@ public sealed class MathTypeMathVariantRoundTripTests
         {
             var variant = id == "bold-italic-greek" ? "bold-italic" : id;
             var character = id == "bold-italic-greek" ? "&#x3B1;" : "A";
-            var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+            var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
                 $"<math><mi mathvariant='{variant}'>{character}</mi></math>", inline: false, 10.5);
             request.Items.Add(new NativeRenderInput { Id = id, Mtef = generated.Mtef });
         }

@@ -25,7 +25,7 @@ public sealed class MathTypeLiteralTokenTests
     public void NativeNumberTokenPercentPreservesTheFollowingEdit(bool inline)
     {
         const string mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mn>100%</mn><mo>+</mo><mn>2</mn></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, inline, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, inline, 12);
         var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         Assert.Equal(@"100\%+2", MathMlToLatexConverter.Convert(readback));
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(mathMl), MathTypeMtefCodec.SemanticSignature(readback));
@@ -38,7 +38,7 @@ public sealed class MathTypeLiteralTokenTests
             + "<mn>100</mn><mtext>%</mtext>"
             + "<msup><mi mathvariant=\"normal\">e</mi><mrow><mi mathvariant=\"normal\">i</mi><mi>π</mi></mrow></msup>"
             + "<mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, inline: false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, inline: false, 12);
         var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
 
         Assert.Equal(

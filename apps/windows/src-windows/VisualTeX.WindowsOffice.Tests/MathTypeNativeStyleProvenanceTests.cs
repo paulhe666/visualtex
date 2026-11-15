@@ -80,12 +80,11 @@ public sealed class MathTypeNativeStyleProvenanceTests
         var bytes = seed.Mtef.Take(seed.StructureOffset).Concat(new byte[] {
             1, 0, 2, 4, (byte)(face + 128), (byte)scalar, (byte)(scalar >> 8), encoded8, 0, 0 }).ToArray();
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
-        var codec = typeof(MathTypeMtefCodec);
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { bytes })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { bytes })!;
         var records = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(layout)!;
         var cursor = records.Single(r => r.Type == 18).Start + 2;
-        var skip = codec.GetMethod("SkipDimensionArray", flags)!;
+        var skip = typeof(MathTypeMtefPrefix).GetMethod("SkipDimensionArray", flags)!;
         cursor = (int)skip.Invoke(null, new object[] { bytes, cursor })!;
         cursor = (int)skip.Invoke(null, new object[] { bytes, cursor })!;
         var count = bytes[cursor++];

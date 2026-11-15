@@ -181,7 +181,7 @@ internal static partial class Program
             var item = prepared[index];
             if (string.IsNullOrWhiteSpace(item.Export.MathMl))
                 throw new InvalidDataException($"Base MathType corpus '{item.Formula.Name}' lost MathML.");
-            var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+            var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
                 item.Export.MathMl!,
                 string.Equals(item.Formula.DisplayMode, "inline", StringComparison.Ordinal),
                 12d);
@@ -229,7 +229,7 @@ internal static partial class Program
                         $"MathType LaTeX corpus '{item.Name}' produced no MathML. latex='{item.Latex}'.");
 
                 var expectedSignature = MathTypeMtefCodec.SemanticSignature(export.MathMl!);
-                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
                     export.MathMl!,
                     string.Equals(item.DisplayMode, "inline", StringComparison.Ordinal),
                     12d);

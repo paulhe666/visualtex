@@ -7,7 +7,7 @@ public sealed class MathTypeLargeCorpusRegressionTests
 {
     private static string RoundTrip(string source, bool inline = false)
     {
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline, 8);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline, 8);
         return MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
     }
 
@@ -25,8 +25,8 @@ public sealed class MathTypeLargeCorpusRegressionTests
         Assert.Equal("sans-serif", (string?)transpose.Attribute("mathvariant"));
         Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source),
             MathTypeMtefCodec.SemanticSignature(actual.Replace("sans-serif", "normal")));
-        var original = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline, 8);
-        var edited = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(original.EquationNative, source, inline, 8);
+        var original = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline, 8);
+        var edited = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(original.EquationNative, source, inline, 8);
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),
             MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(edited.EquationNative)));
     }

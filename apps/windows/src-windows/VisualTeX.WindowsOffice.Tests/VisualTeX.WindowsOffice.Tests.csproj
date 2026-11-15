@@ -80,8 +80,16 @@
     <Compile Include="..\VisualTeX.WordVsto\MathTypeSourceHost.cs" Link="MathTypeSourceHost.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeLocalFragment.cs" Link="MathTypeLocalFragment.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.cs" Link="MathTypeMtefCodec.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.FontSize.cs" Link="MathTypeMtefCodec.FontSize.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.Canonical.cs" Link="MathTypeMtefCodec.Canonical.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefAssembly.cs" Link="MathTypeMtefAssembly.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCanonicalRoot.cs" Link="MathTypeMtefCanonicalRoot.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCharacters.cs" Link="MathTypeMtefCharacters.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefFences.cs" Link="MathTypeMtefFences.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefFontSize.cs" Link="MathTypeMtefFontSize.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefGlyphs.cs" Link="MathTypeMtefGlyphs.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefPrefix.cs" Link="MathTypeMtefPrefix.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefSignature.cs" Link="MathTypeMtefSignature.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefTemplates.cs" Link="MathTypeMtefTemplates.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MtefStructureReader.cs" Link="MtefStructureReader.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordNativeOmmlSemanticComparer.cs" Link="WordNativeOmmlSemanticComparer.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordFormulaService.MathTypePresentation.cs" Link="WordFormulaService.MathTypePresentation.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />

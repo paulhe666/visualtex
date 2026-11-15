@@ -1,3 +1,8 @@
+using static VisualTeX.WordVsto.MathTypeMtefCodec;
+using static VisualTeX.WordVsto.MathTypeMtefAssembly;
+using static VisualTeX.WordVsto.MathTypeMtefPrefix;
+using static VisualTeX.WordVsto.MathTypeMtefTemplates;
+
 namespace VisualTeX.WordVsto;
 
 // MathType stores the same equation the same way every time. These rules were
@@ -19,7 +24,7 @@ namespace VisualTeX.WordVsto;
 //
 // Both rules keep every object's effective size and every object's place in
 // the tree, so meaning and the reader's MathML are unchanged.
-internal static partial class MathTypeMtefCodec
+internal static class MathTypeMtefCanonicalRoot
 {
     private sealed class MtefNode
     {

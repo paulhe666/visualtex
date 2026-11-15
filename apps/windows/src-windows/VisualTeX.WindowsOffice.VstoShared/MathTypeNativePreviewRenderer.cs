@@ -243,7 +243,7 @@ internal static class MathTypeNativePreviewRenderer
             rendered.Remove(pair.Key);
             pair.Value.Dispose();
             var factor = MaxPreviewPoints * 0.9 / Math.Max(pair.Value.WidthPt, pair.Value.HeightPt);
-            try { scaled[pair.Key] = MathTypeMtefCodec.ScaleMtefPreferenceSizes(mtefs[pair.Key], factor); }
+            try { scaled[pair.Key] = MathTypeMtefFontSize.ScaleMtefPreferenceSizes(mtefs[pair.Key], factor); }
             catch (InvalidDataException error)
             {
                 failures[pair.Key] = T(

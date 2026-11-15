@@ -1237,7 +1237,7 @@ internal sealed partial class WordFormulaService
                         return null;
                     var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
                     return FormulaFontSize.Normalize(
-                        MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(equationNative));
+                        MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(equationNative));
                 }
                 var metadata = WordFormulaMetadataReader.TryRead(shape);
                 if (metadata is not null)
@@ -7655,7 +7655,7 @@ internal sealed partial class WordFormulaService
         string SemanticSignature) PrepareStandaloneMathTypeOleData(
         string mathMl, bool inline, double fontSizePt, string latex)
     {
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, inline, fontSizePt);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, inline, fontSizePt);
         var compoundFile = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
         var actualMathMl = MathTypeOleStorage.ReadMathMl(compoundFile);
         var expected = MathTypeMtefCodec.SemanticSignature(mathMl);

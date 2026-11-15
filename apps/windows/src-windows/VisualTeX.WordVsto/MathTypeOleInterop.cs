@@ -181,7 +181,7 @@ internal static partial class MathTypeOleInterop
     {
         var native = MathTypeOleStorage.ReadEquationNative(
             knownCompoundFile ?? MathTypeOleStorage.CaptureCompoundFile(shape));
-        var fontSizePt = MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(native);
+        var fontSizePt = MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(native);
         string mathMl;
         try
         {

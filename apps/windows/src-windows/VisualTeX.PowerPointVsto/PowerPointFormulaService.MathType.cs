@@ -113,7 +113,7 @@ public sealed partial class PowerPointFormulaService
             var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(native);
             var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The MathType equation is empty or unsupported.");
-            var size = MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(native);
+            var size = MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(native);
             var now = DateTimeOffset.UtcNow.ToString("O");
             var metadata = new FormulaMetadata
             {
@@ -174,7 +174,7 @@ public sealed partial class PowerPointFormulaService
             }
             else
             {
-                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl!, inline: false, session.FontSizePt);
+                var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl!, inline: false, session.FontSizePt);
                 result.CompoundFile = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
                 mtef = generated.Mtef;
             }

@@ -16,24 +16,24 @@ public sealed class MathTypeGroupAccentNativeProbeTests
         var root = Environment.GetEnvironmentVariable("VISUALTEX_CHARACTER_RENDER_ARTIFACT_DIR")
             ?? throw new InvalidOperationException("An owned evidence directory is required.");
         Directory.CreateDirectory(root);
-        var seed = MathTypeMtefCodec.CreateEquationNativeAtFontSize("<math><mi>a</mi><mi>b</mi></math>", false, 12);
-        var mark = MathTypeMtefCodec.CreateEquationNativeAtFontSize("<math><mo>¨</mo></math>", false, 12);
+        var seed = MathTypeMtefFontSize.CreateEquationNativeAtFontSize("<math><mi>a</mi><mi>b</mi></math>", false, 12);
+        var mark = MathTypeMtefFontSize.CreateEquationNativeAtFontSize("<math><mo>¨</mo></math>", false, 12);
         var basisLine = seed.Mtef.Skip(seed.StructureOffset).Take(seed.Mtef.Length - seed.StructureOffset - 1).ToArray();
         var markLine = mark.Mtef.Skip(mark.StructureOffset).Take(mark.Mtef.Length - mark.StructureOffset - 1).ToArray();
         var candidates = new Dictionary<string, byte[]> {
-            ["plain-control"] = MathTypeMtefCodec.CreateEquationNativeAtFontSize("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", false, 12).Mtef
+            ["plain-control"] = MathTypeMtefFontSize.CreateEquationNativeAtFontSize("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", false, 12).Mtef
         };
         byte[] Native(IEnumerable<byte> objects) => seed.Mtef.Take(seed.StructureOffset)
             .Concat(new byte[] { 1, 0 }).Concat(objects).Concat(new byte[] { 0, 0 }).ToArray();
         // LimBoxClass: main, lower, upper, END; tvBO_UPPER|tvBO_SUM.
         candidates.Add("centered-upper-limit", Native(new byte[] { 3, 0, 23, 0x42, 0 }
             .Concat(basisLine).Concat(new byte[] { 1, 1 }).Concat(markLine).Concat(new byte[] { 0, 10 })));
-        candidates.Add("normal-hat-control", MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+        candidates.Add("normal-hat-control", MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
             "<math><mover accent='true'><mrow><mi>a</mi><mi>b</mi></mrow><mo>^</mo></mover></math>", false, 12).Mtef);
         // HatBoxClass may have a serialized mark glyph after the main slot.
         candidates.Add("hat-with-dot-glyph", Native(new byte[] { 3, 0, 33, 0, 0 }
             .Concat(basisLine).Concat(markLine.Skip(2).Take(markLine.Length - 3)).Concat(new byte[] { 0 })));
-        candidates.Add("script-negative-control", MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+        candidates.Add("script-negative-control", MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
             "<math><msup><mrow><mi>a</mi><mi>b</mi></mrow><mo>¨</mo></msup></math>", false, 12).Mtef);
         // Prior batches returned worker-disconnected with no per-item result.
         // That does not identify the failing input. Run precisely one explicitly

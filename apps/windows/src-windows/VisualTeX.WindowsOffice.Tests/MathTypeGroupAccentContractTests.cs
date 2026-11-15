@@ -28,7 +28,7 @@ public sealed class MathTypeGroupAccentContractTests
         var expression = nested ? new XElement("msub", new XElement("mover", new XAttribute("accent", "true"), accent, new XElement("mo", "^")), new XElement("mn", "2")) : accent;
         var source = new XElement("math", expression).ToString();
         var expected = MathTypeMtefCodec.SemanticSignature(source);
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
         var actual = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         Assert.Equal(expected, MathTypeMtefCodec.SemanticSignature(actual));
         var rewrite = MathTypeMtefCodec.RewriteEquationNative(native.EquationNative, actual, false);
@@ -42,7 +42,7 @@ public sealed class MathTypeGroupAccentContractTests
     public void StretchingHatBoxIncludesItsRequiredNativeGlyph(string mark, int expectedGlyph)
     {
         var source = $"<math><mover accent='true'><mrow><mi>a</mi><mi>b</mi></mrow><mo stretchy='true'>{mark}</mo></mover></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
         var bytes = native.Mtef.Skip(native.StructureOffset).ToArray();
         // A real HatBox contains the main LINE followed by the expanding CHAR.
         // The reader and writer cannot make a missing glyph pass by agreeing on

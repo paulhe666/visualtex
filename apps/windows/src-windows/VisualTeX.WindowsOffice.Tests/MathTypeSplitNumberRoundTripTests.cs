@@ -15,10 +15,10 @@ public sealed class MathTypeSplitNumberRoundTripTests
 
     private static void AssertRoundTrip(string mathMl)
     {
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, inline: false, 24);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, inline: false, 24);
         var readBack = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         Assert.Equal(Sig(mathMl), Sig(readBack));
-        var rewritten = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(native.EquationNative, mathMl, false, 24);
+        var rewritten = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(native.EquationNative, mathMl, false, 24);
         Assert.Equal(Sig(mathMl), Sig(MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));
     }
 

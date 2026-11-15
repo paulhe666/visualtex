@@ -394,7 +394,7 @@ internal static partial class Program
                 var nativeMtef = new byte[nativeMtefLength];
                 Buffer.BlockCopy(equationNative, 28, nativeMtef, 0, nativeMtef.Length);
                 Console.WriteLine(
-                    $"  {genuineCase.Name}: genuine MathType root offset={MathTypeMtefCodec.FindRootStructureOffset(nativeMtef)}.");
+                    $"  {genuineCase.Name}: genuine MathType root offset={MathTypeMtefPrefix.FindRootStructureOffset(nativeMtef)}.");
                 var directMathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(equationNative);
                 File.WriteAllText(
                     Path.Combine(artifactRoot, $"genuine-{genuineCase.Name}-visualtex-direct.mathml"),

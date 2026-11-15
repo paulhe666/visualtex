@@ -520,7 +520,7 @@ public sealed partial class PowerPointFormulaService
                 throw new InvalidDataException(Text("MathType 公式为空或无法识别。", "The MathType equation is empty or unsupported."));
             var width = shape.Width;
             var height = shape.Height;
-            var nativeSize = MathTypeMtefCodec.ReadEquationNativeFullFontSizeOrDefault(native);
+            var nativeSize = MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(native);
             unit.EquationNative = native;
             unit.Items.Add(new PowerPointConversionItem
             {

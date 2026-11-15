@@ -1039,7 +1039,7 @@ internal static partial class MathTypeOleInterop
         // same semantic equation rather than failing solely because one version
         // omitted a SET advertisement.
         var failures = new List<string>();
-        var preparedMathMl = MathTypeMtefCodec.PrepareMathMlForMathTypeInterop(mathMl);
+        var preparedMathMl = MathTypeMtefAssembly.PrepareMathMlForMathTypeInterop(mathMl);
         var asciiMathMl = ToAsciiMathMlPayload(preparedMathMl);
         foreach (var name in MathMlFormats)
         {

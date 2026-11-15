@@ -1,8 +1,14 @@
 using System.Globalization;
+using static VisualTeX.WordVsto.MathTypeMtefCodec;
+using static VisualTeX.WordVsto.MathTypeMtefPrefix;
 
 namespace VisualTeX.WordVsto;
 
-internal static partial class MathTypeMtefCodec
+/// <summary>
+/// The font size of an Equation Native stream: the full size in its equation preferences, read, set and scaled, and
+/// streams created or rewritten at a size.
+/// </summary>
+internal static class MathTypeMtefFontSize
 {
     // MathType MTEF v5 EQN_PREFS stores logical sizes as packed decimal
     // dimensions. Full is element zero; the other sizes, spacing, fonts and

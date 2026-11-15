@@ -17,7 +17,7 @@ public sealed class MathTypeTokenStyleIntegrityTests
         var source="<math><mn mathvariant='"+style+"'>123</mn></math>";
         var expected=MathTypeMtefCodec.SemanticSignature(source);
         Assert.NotEqual(expected,MathTypeMtefCodec.SemanticSignature("<math><mn>123</mn></math>"));
-        var native=MathTypeMtefCodec.CreateEquationNativeAtFontSize(source,false,12);
+        var native=MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source,false,12);
         var readback=MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var number=Assert.Single(XElement.Parse(readback).Descendants().Where(n=>n.Name.LocalName=="mn"));
         Assert.Equal(style,(string?)number.Attribute("mathvariant"));

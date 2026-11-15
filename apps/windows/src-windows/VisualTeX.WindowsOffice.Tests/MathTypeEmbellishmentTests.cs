@@ -99,7 +99,7 @@ public sealed class MathTypeEmbellishmentTests
     public void BoldItalicGreekKeepsItsStyleThroughNativeDoubleDotEmbellishment()
     {
         const string source = "<math><mover accent=\"true\"><mi mathvariant=\"bold-italic\">η</mi><mo>¨</mo></mover></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: false, 12);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, inline: false, 12);
         var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
 
         Assert.Equal(

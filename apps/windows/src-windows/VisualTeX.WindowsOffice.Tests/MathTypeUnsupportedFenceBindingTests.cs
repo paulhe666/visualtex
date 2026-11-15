@@ -22,7 +22,7 @@ public sealed class MathTypeUnsupportedFenceBindingTests
         // baseline, not evidence that a growing fence template was supported.
         const string expectedBase64 = "HAAAAAIAQsInAQAAAAAAAPzeVgot39QADACFCQUBAAcIRFNNVDcAABNXaW5BbGxCYXNpY0NvZGVQYWdlcwARBVRpbWVzIE5ldyBSb21hbgARA1N5bWJvbAARBUNvdXJpZXIgTmV3ABEETVQgRXh0cmEAE1dpbkFsbENvZGVQYWdlcwARBsvOzOUAEgAIIS9Fj0QvQVD0EA9HX0FQ8h8eQVD0FQ9BAPRF9CX0j0JfQQD0EA9DX0EA9I9F9CpfSPSPQQD0EA9A9I9Bf0j0EA9BKl9EX0X0X0X0X0EPDAEAAQABAgICAgACAAEBAQADAAEABAAFAAoBABNFdWNsaWRNYXRoMQARB0V1Y2xpZCBNYXRoIE9uZQAIBgACBH8cI4QCAIN4AAIEfx0jhgIEhisAKwIEfx4jhQIAg3kAAgR/HyOHAAA=";
         var source = Source(Row("⌜", "<mi>x</mi>", "⌝") + "<mo>+</mo>" + Row("⌞", "<mi>y</mi>", "⌟"));
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12.0);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12.0);
         Assert.Equal(Convert.FromBase64String(expectedBase64), native.EquationNative);
         var recovered = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var corners = XDocument.Parse(recovered).Descendants(P + "mo")
@@ -47,7 +47,7 @@ public sealed class MathTypeUnsupportedFenceBindingTests
     public void SupportedNativeTemplatesStillMaterializeFences(string open, string close)
     {
         var source = Source(Row(open, "<mi>x</mi>", close));
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12.0);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12.0);
         var recovered = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var fence = Assert.Single(XDocument.Parse(recovered).Descendants(P + "mfenced"));
         Assert.Equal(open, (string?)fence.Attribute("open"));

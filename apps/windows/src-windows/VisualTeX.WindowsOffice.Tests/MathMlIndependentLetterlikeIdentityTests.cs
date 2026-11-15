@@ -36,7 +36,7 @@ public sealed class MathMlIndependentLetterlikeIdentityTests
     public void ExistingNativeScalarAndStyleRemainAnExactRoundTrip(string style)
     {
         var input = $"<math><mi mathvariant='{style}'>ℓ</mi></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(input, false, 12);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(input, false, 12);
         var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
         var token = Assert.Single(XElement.Parse(readback).Descendants(), e => e.Name.LocalName == "mi");
         Assert.Equal("ℓ", token.Value);
@@ -58,7 +58,7 @@ public sealed class MathMlIndependentLetterlikeIdentityTests
     public void EffectiveStyleDoesNotDependOnSerializerAttributeOmission(string body, string expected)
     {
         var input = "<math>" + body + "</math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(input, false, 12);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(input, false, 12);
         var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
         var token = Assert.Single(XElement.Parse(readback).Descendants(), e => e.Name.LocalName == "mi");
         Assert.Equal("ℓ", token.Value);

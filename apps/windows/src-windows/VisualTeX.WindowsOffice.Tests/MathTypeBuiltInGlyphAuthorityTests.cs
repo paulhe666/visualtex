@@ -74,12 +74,11 @@ public sealed class MathTypeBuiltInGlyphAuthorityTests
         mtef.AddRange(new byte[] { 1, 0 }); mtef.AddRange(character); mtef.AddRange(new byte[] { 0, 0 });
         var bytes = mtef.ToArray();
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
-        var codec = typeof(MathTypeMtefCodec);
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { bytes })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { bytes })!;
         var records = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(layout)!;
         var cursor = records.Single(r => r.Type == 18).Start + 2;
-        var skip = codec.GetMethod("SkipDimensionArray", flags)!;
+        var skip = typeof(MathTypeMtefPrefix).GetMethod("SkipDimensionArray", flags)!;
         cursor = (int)skip.Invoke(null, new object[] { bytes, cursor })!;
         cursor = (int)skip.Invoke(null, new object[] { bytes, cursor })!;
         Assert.True(bytes[cursor++] >= 11);

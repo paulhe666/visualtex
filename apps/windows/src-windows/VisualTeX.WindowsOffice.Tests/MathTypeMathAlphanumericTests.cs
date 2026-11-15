@@ -30,7 +30,7 @@ public sealed class MathTypeMathAlphanumericTests
         {
             var character = char.ConvertFromUtf32(scalar);
             if (CharUnicodeInfo.GetUnicodeCategory(character, 0) == UnicodeCategory.OtherNotAssigned) continue;
-            Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(scalar, out var baseScalar, out var variant),
+            Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(scalar, out var baseScalar, out var variant),
                 $"U+{scalar:X} is not decomposed.");
             var kind = baseScalar is >= '0' and <= '9' ? "mn" : "mi";
             var source = Math("<" + kind + ">" + character + "</" + kind + ">");
@@ -64,7 +64,7 @@ public sealed class MathTypeMathAlphanumericTests
     [InlineData(0x1D7D9, '1', "double-struck")]
     public void KnownCharactersDecomposeToTheirAlphabet(int scalar, char baseCharacter, string variant)
     {
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(scalar, out var baseScalar, out var alphabet));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(scalar, out var baseScalar, out var alphabet));
         Assert.Equal(baseCharacter, (char)baseScalar);
         Assert.Equal(variant, alphabet);
     }
@@ -72,17 +72,17 @@ public sealed class MathTypeMathAlphanumericTests
     [Fact]
     public void GreekMathematicalAlphabetsFollowUnicodeOrder()
     {
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(0x1D6A8, out var alpha, out var bold));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(0x1D6A8, out var alpha, out var bold));
         Assert.Equal(0x0391, alpha);
         Assert.Equal("bold", bold);
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(0x1D6B9, out var theta, out _));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(0x1D6B9, out var theta, out _));
         Assert.Equal(0x03F4, theta);
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(0x1D6C1, out var nabla, out _));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(0x1D6C1, out var nabla, out _));
         Assert.Equal(0x2207, nabla);
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(0x1D70B, out var pi, out var italic));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(0x1D70B, out var pi, out var italic));
         Assert.Equal(0x03C0, pi);
         Assert.Equal("italic", italic);
-        Assert.True(MathTypeMtefCodec.TryDecomposeMathAlphanumeric(0x1D7C9, out var varpi, out var sansBoldItalic));
+        Assert.True(MathTypeMtefCharacters.TryDecomposeMathAlphanumeric(0x1D7C9, out var varpi, out var sansBoldItalic));
         Assert.Equal(0x03D6, varpi);
         Assert.Equal("sans-serif-bold-italic", sansBoldItalic);
     }

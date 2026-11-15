@@ -151,14 +151,14 @@ public sealed class MathTypeAlternateGlyphAuthorityTests
         // finding an expected font name anywhere in the stream is insufficient.
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
         var codec = typeof(MathTypeMtefCodec);
-        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)codec
+        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)typeof(MathTypeMtefGlyphs)
             .GetMethod("ReadNativeCharacterStyleBindings", flags)!.Invoke(null, new object[] { mtef })!;
         var face = (int)token.Attribute("data-mtef-explicit-typeface")!;
         var binding = bindings[face];
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
         var prefix = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(layout)!;
-        var root = (IReadOnlyList<(byte Type, int Start, int End)>)codec
+        var root = (IReadOnlyList<(byte Type, int Start, int End)>)typeof(MathTypeMtefAssembly)
             .GetMethod("ReadRootLeadingFormattingRecords", flags)!.Invoke(null, new object[] { mtef })!;
         var records = prefix.Concat(root).ToArray();
         var definition = records.Where(r => r.Type == 17).ElementAt(binding.FontDefinition - 1);

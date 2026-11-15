@@ -8,7 +8,7 @@ public sealed class MathTypeGreekAndLooseFenceRoundTripTests
 {
     private static string RoundTrip(string xml) =>
         MathTypeMtefCodec.ReadEquationNativeMathMl(
-            MathTypeMtefCodec.CreateEquationNativeAtFontSize(xml, true, 12).EquationNative);
+            MathTypeMtefFontSize.CreateEquationNativeAtFontSize(xml, true, 12).EquationNative);
 
     public static IEnumerable<object[]> GreekLetters()
     {
@@ -21,7 +21,7 @@ public sealed class MathTypeGreekAndLooseFenceRoundTripTests
     public void ExplicitUprightGreekOwnsNormalFontStyleAndUnicodeCode(string letter)
     {
         var xml = $"<math><mi mathvariant='normal'>{letter}</mi></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(xml, true, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(xml, true, 12);
         var output = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var token = XDocument.Parse(output).Descendants().Single(e => e.Name.LocalName == "mi");
         Assert.Equal(letter, token.Value);
@@ -36,7 +36,7 @@ public sealed class MathTypeGreekAndLooseFenceRoundTripTests
         else
             Assert.Null(token.Attribute("data-mtef-encoded8"));
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(xml), MathTypeMtefCodec.SemanticSignature(output));
-        var implicitNative = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+        var implicitNative = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
             $"<math><mi>{letter}</mi></math>", true, 12);
         Assert.False(native.EquationNative.SequenceEqual(implicitNative.EquationNative));
     }
@@ -89,7 +89,7 @@ public sealed class MathTypeGreekAndLooseFenceRoundTripTests
     [InlineData("<math><mo>|</mo><mi>x</mi><msup><mo>|</mo><mn>2</mn></msup></math>")]
     public void UnmatchedFixedOrAmbiguousBarsAreNotPromotedToNativeGroups(string xml)
     {
-        var prepared = MathTypeMtefCodec.PrepareMathMlForMathTypeInterop(xml);
+        var prepared = MathTypeMtefAssembly.PrepareMathMlForMathTypeInterop(xml);
         Assert.DoesNotContain(XDocument.Parse(prepared).Descendants(), e => e.Name.LocalName == "mfenced");
     }
 

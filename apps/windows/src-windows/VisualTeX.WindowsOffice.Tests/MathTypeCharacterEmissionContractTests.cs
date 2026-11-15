@@ -76,11 +76,11 @@ public sealed class MathTypeCharacterEmissionContractTests
     }
 
     private static MathTypeMtefCodec.RewriteResult Native(XElement body) =>
-        MathTypeMtefCodec.CreateEquationNativeAtFontSize(new XElement("math",body).ToString(),false,12);
+        MathTypeMtefFontSize.CreateEquationNativeAtFontSize(new XElement("math",body).ToString(),false,12);
 
     private static void RoundTrip(string source)
     {
-        var native=MathTypeMtefCodec.CreateEquationNativeAtFontSize(source,false,12);
+        var native=MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source,false,12);
         var expected=MathTypeMtefCodec.SemanticSignature(source);
         Assert.Equal(expected,MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative)));
         var rewrite=MathTypeMtefCodec.RewriteEquationNative(native.EquationNative,source,false);

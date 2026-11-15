@@ -933,7 +933,7 @@ public sealed partial class ThisAddIn
             }
             try
             {
-                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(formula.MathMl!, inline: false, formula.RenderFontSizePt);
+                var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(formula.MathMl!, inline: false, formula.RenderFontSizePt);
                 var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
                 if (!string.Equals(
                         MathTypeMtefCodec.SemanticSignature(formula.MathMl!),

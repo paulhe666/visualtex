@@ -41,14 +41,14 @@ public sealed class MathTypePrefixCompatibilityTests
     [InlineData(102, 3, true)]
     public void EveryReaderAndWriterTraversesTheSameExtensionAwarePrefix(int type, int length, bool afterInitialSize)
     {
-        var original = MathTypeMtefCodec.CreateEquationNativeAtFontSize(Simple, true, 12);
+        var original = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(Simple, true, 12);
         var offset = afterInitialSize ? original.StructureOffset : Array.IndexOf(original.Mtef, (byte)0, 5) + 2;
         var extended = Insert(original.EquationNative, offset, Extension((byte)type, length));
-        Assert.Equal(12, MathTypeMtefCodec.ReadEquationNativeFullFontSize(extended));
+        Assert.Equal(12, MathTypeMtefFontSize.ReadEquationNativeFullFontSize(extended));
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(Simple),
             MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(extended)));
-        var rewritten = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(extended, Styled, true, 15);
-        Assert.Equal(15, MathTypeMtefCodec.ReadEquationNativeFullFontSize(rewritten.EquationNative));
+        var rewritten = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(extended, Styled, true, 15);
+        Assert.Equal(15, MathTypeMtefFontSize.ReadEquationNativeFullFontSize(rewritten.EquationNative));
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(Styled),
             MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));
         Assert.True(Contains(rewritten.Mtef, Extension((byte)type, length)));

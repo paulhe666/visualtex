@@ -109,7 +109,7 @@ public sealed class MathTypeOwnStorageConformanceTests
     public void WritesMathTypesOwnStructure(string note, string mathMl, string mathTypeMtef)
     {
         var mathType = Convert.FromBase64String(mathTypeMtef);
-        var visualTex = MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, false, 12).Mtef;
+        var visualTex = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, false, 12).Mtef;
         Assert.True(Structure(mathType) == Structure(visualTex), note + "\nMathType:  " + Structure(mathType) + "\nVisualTeX: " + Structure(visualTex));
     }
 
@@ -126,7 +126,7 @@ public sealed class MathTypeOwnStorageConformanceTests
     // neither what MathType draws nor where.
     private static string Structure(byte[] mtef)
     {
-        var position = MathTypeMtefCodec.FindRootStructureOffset(mtef);
+        var position = MathTypeMtefPrefix.FindRootStructureOffset(mtef);
         var tokens = new List<string>();
         int Unsigned()
         {

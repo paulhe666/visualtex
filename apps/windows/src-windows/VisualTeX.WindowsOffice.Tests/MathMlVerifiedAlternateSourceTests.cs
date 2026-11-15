@@ -23,7 +23,7 @@ public sealed class MathMlVerifiedAlternateSourceTests
     public void VerifiedNativeAlternateRetainsSourceCommandRoleAndStyle(string token, string command, string style)
     {
         var source = $"<math><mo data-mjx-alternate='1' mathvariant='{style}'>{token}</mo></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
         var decoded = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var element = XDocument.Parse(decoded).Descendants().Single(e => e.Name.LocalName == "mo");
         Assert.Equal(token, element.Value);
@@ -44,7 +44,7 @@ public sealed class MathMlVerifiedAlternateSourceTests
     public void OrdinaryNativeCounterpartDoesNotAcquireAlternateSource(string token, string command, string style)
     {
         var source = $"<math><mo mathvariant='{style}'>{token}</mo></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
         var decoded = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var element = XDocument.Parse(decoded).Descendants().Single(e => e.Name.LocalName is "mi" or "mo");
         // Both ordinary and alternate relation glyphs now use their verified

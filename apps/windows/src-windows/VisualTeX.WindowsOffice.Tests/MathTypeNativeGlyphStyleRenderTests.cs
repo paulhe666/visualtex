@@ -25,7 +25,7 @@ public sealed class MathTypeNativeGlyphStyleRenderTests
             var token=new XElement("mo",new XAttribute("mathvariant",style),glyph);
             var body=accent ? new XElement("mover",new XAttribute("accent","true"),token,new XElement("mo","¨")) : token;
             var source=new XElement("math",body).ToString();
-            var native=MathTypeMtefCodec.CreateEquationNativeAtFontSize(source,false,12);
+            var native=MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source,false,12);
             request.Items.Add(new NativeRenderInput{Id=id,Mtef=native.Mtef});
             inputs.Add(id,(source,style.Contains("bold"),style.Contains("italic")));
             File.WriteAllBytes(Path.Combine(root,id+".mtef"),native.Mtef);

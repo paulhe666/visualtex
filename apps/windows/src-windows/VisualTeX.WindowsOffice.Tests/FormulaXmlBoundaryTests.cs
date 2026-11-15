@@ -123,7 +123,7 @@ public sealed class FormulaXmlBoundaryTests
                 var seed = MathTypeMtefCodec.CreateEquationNative(Math("<mi>x</mi>"), true);
                 MathTypeMtefCodec.RewriteEquationNative(seed.EquationNative, input, true); break;
             case "mtef-signature": MathTypeMtefCodec.SemanticSignature(input); break;
-            case "mtef-interop": MathTypeMtefCodec.PrepareMathMlForMathTypeInterop(input); break;
+            case "mtef-interop": MathTypeMtefAssembly.PrepareMathMlForMathTypeInterop(input); break;
             default: throw new ArgumentException(route);
         }
     }

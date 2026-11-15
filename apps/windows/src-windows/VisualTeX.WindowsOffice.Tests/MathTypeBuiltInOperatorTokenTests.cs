@@ -42,12 +42,11 @@ public sealed class MathTypeBuiltInOperatorTokenTests
         var seed = MathTypeMtefCodec.CreateEquationNative("<math><mi mathvariant='normal'>℘</mi></math>", false);
         var mtef = seed.Mtef.ToArray();
         const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
-        var codec = typeof(MathTypeMtefCodec);
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
         var records = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(layout)!;
         var cursor = records.Single(r => r.Type == 18).Start + 2;
-        var skip = codec.GetMethod("SkipDimensionArray", flags)!;
+        var skip = typeof(MathTypeMtefPrefix).GetMethod("SkipDimensionArray", flags)!;
         cursor = (int)skip.Invoke(null, new object[] { mtef, cursor })!;
         cursor = (int)skip.Invoke(null, new object[] { mtef, cursor })!;
         var count = mtef[cursor++];

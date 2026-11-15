@@ -41,7 +41,7 @@ internal static partial class Program
                 + "</mn></msub><mo>=</mo><mn>"
                 + index.ToString(CultureInfo.InvariantCulture)
                 + "</mn></math>";
-            var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+            var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
                 mathMl,
                 inline: true,
                 fontSizePt: 12d);

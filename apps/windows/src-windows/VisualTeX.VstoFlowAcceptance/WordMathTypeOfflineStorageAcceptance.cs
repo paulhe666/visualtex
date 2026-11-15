@@ -263,7 +263,7 @@ internal static partial class Program
                     Console.WriteLine(
                         $"[STANDALONE VS GENUINE] inline-mixed genuine={genuinePreview.WidthPt:0.##}x{genuinePreview.HeightPt:0.##} pos={genuinePreview.WordPosition}; "
                         + $"standalone={standalonePreview.WidthPt:0.##}x{standalonePreview.HeightPt:0.##} pos={standalonePreview.WordPosition}; diff={pixelDifference:0.0000}; "
-                        + $"genuineRoot={MathTypeMtefCodec.FindRootStructureOffset(genuineMtef)} standaloneRoot={MathTypeMtefCodec.FindRootStructureOffset(standaloneInline.Mtef)}.");
+                        + $"genuineRoot={MathTypeMtefPrefix.FindRootStructureOffset(genuineMtef)} standaloneRoot={MathTypeMtefPrefix.FindRootStructureOffset(standaloneInline.Mtef)}.");
                     File.WriteAllBytes(
                         Path.Combine(artifactRoot, "visualtex-standalone-inline-mixed-equation-native.bin"),
                         standaloneInline.EquationNative);
@@ -306,7 +306,7 @@ internal static partial class Program
             8,
             sizeof(uint));
         Buffer.BlockCopy(emptyMtef, 0, emptyNative, headerLength, emptyMtef.Length);
-        AssertEqual(217, MathTypeMtefCodec.FindRootStructureOffset(emptyMtef),
+        AssertEqual(217, MathTypeMtefPrefix.FindRootStructureOffset(emptyMtef),
             "Empty MathType 7.x MTEF did not preserve its terminal END boundary.");
         var emptyReadBack = MathTypeMtefCodec.ReadEquationNativeMathMl(emptyNative);
         AssertEqual(string.Empty, MathTypeMtefCodec.SemanticSignature(emptyReadBack),
@@ -346,7 +346,7 @@ internal static partial class Program
             sizeof(uint));
         Buffer.BlockCopy(paddedMtef, 0, paddedNative, headerLength, paddedMtef.Length);
 
-        var recoveredRoot = MathTypeMtefCodec.FindRootStructureOffset(paddedMtef);
+        var recoveredRoot = MathTypeMtefPrefix.FindRootStructureOffset(paddedMtef);
         AssertEqual(218, recoveredRoot,
             "MathType 7.x root recovery did not skip the offset-217 separator safely.");
         var readBack = MathTypeMtefCodec.ReadEquationNativeMathMl(paddedNative);
@@ -857,7 +857,7 @@ internal static partial class Program
                 $"Offline rewrite '{testCase.Name}' moved the MathType root before the canonical 217-byte prefix baseline: {rewritten.StructureOffset}.");
             AssertEqual(
                 rewritten.StructureOffset,
-                MathTypeMtefCodec.FindRootStructureOffset(rewritten.Mtef),
+                MathTypeMtefPrefix.FindRootStructureOffset(rewritten.Mtef),
                 $"Offline rewrite '{testCase.Name}' reported a root offset that does not match the rewritten MTEF."
             );
             AssertTrue(
@@ -1143,7 +1143,7 @@ internal static partial class Program
         var sourceMtefLength = checked((int)BitConverter.ToUInt32(sourceNative, 8));
         var sourceMtef = new byte[sourceMtefLength];
         Buffer.BlockCopy(sourceNative, 28, sourceMtef, 0, sourceMtef.Length);
-        AssertEqual(217, MathTypeMtefCodec.FindRootStructureOffset(sourceMtef),
+        AssertEqual(217, MathTypeMtefPrefix.FindRootStructureOffset(sourceMtef),
             "The synchronized MathType 7 source root structure moved unexpectedly.");
 
         var rewritten = MathTypeOleStorage.RewriteMathTypeCompoundFile(

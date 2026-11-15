@@ -39,9 +39,9 @@ public sealed class MathTypeRewriteIntoPileTests
 
     private static void AssertRewrite(string sourceMathMl, string editedMathMl)
     {
-        var source = MathTypeMtefCodec.CreateEquationNativeAtFontSize(sourceMathMl, inline: false, 24);
+        var source = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(sourceMathMl, inline: false, 24);
         Assert.Equal(Sig(sourceMathMl), Sig(MathTypeMtefCodec.ReadEquationNativeMathMl(source.EquationNative)));
-        var edited = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(source.EquationNative, editedMathMl, false, 24);
+        var edited = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(source.EquationNative, editedMathMl, false, 24);
         Assert.Equal(Sig(editedMathMl), Sig(MathTypeMtefCodec.ReadEquationNativeMathMl(edited.EquationNative)));
     }
 
@@ -64,8 +64,8 @@ public sealed class MathTypeRewriteIntoPileTests
     [Fact]
     public void PileBackToOneLine()
     {
-        var source = MathTypeMtefCodec.CreateEquationNativeAtFontSize(Rows(Units, Discriminant), inline: false, 24);
-        var edited = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(source.EquationNative, Line(Discriminant), false, 24);
+        var source = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(Rows(Units, Discriminant), inline: false, 24);
+        var edited = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(source.EquationNative, Line(Discriminant), false, 24);
         Assert.Equal(Sig(Line(Discriminant)), Sig(MathTypeMtefCodec.ReadEquationNativeMathMl(edited.EquationNative)));
     }
 }

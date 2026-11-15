@@ -32,7 +32,7 @@ public sealed class MathTypeGroupNativeRenderTests
         }
         NativeRenderInput Input(string id,string source)
         {
-            var native=MathTypeMtefCodec.CreateEquationNativeAtFontSize(source,false,12);
+            var native=MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source,false,12);
             File.WriteAllBytes(Path.Combine(root,id+".mtef"),native.Mtef);
             return new NativeRenderInput{Id=id,Mtef=native.Mtef};
         }

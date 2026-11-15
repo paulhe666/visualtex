@@ -8,7 +8,7 @@ public sealed class MathTypeRealDocumentRegressionTests
 {
     private static string RoundTrip(string source)
     {
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, true, 12);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, true, 12);
         return MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
     }
 
@@ -17,8 +17,8 @@ public sealed class MathTypeRealDocumentRegressionTests
         var expected = MathTypeMtefCodec.SemanticSignature(source);
         var actual = RoundTrip(source);
         Assert.Equal(expected, MathTypeMtefCodec.SemanticSignature(actual));
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, true, 12);
-        var rewritten = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, true, 12);
+        var rewritten = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(
             generated.EquationNative, actual, true, 18);
         Assert.Equal(expected, MathTypeMtefCodec.SemanticSignature(
             MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));
@@ -129,7 +129,7 @@ public sealed class MathTypeRealDocumentRegressionTests
             + "</mtext><mo>+</mo><mi>x</mi></math>";
         AssertRoundTrip(source);
 
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
             source, inline: true, 12);
         var structure = generated.Mtef.AsSpan(generated.StructureOffset);
         foreach (var character in literal)
@@ -157,7 +157,7 @@ public sealed class MathTypeRealDocumentRegressionTests
     public void WesternTextRemainsInTheWesternTextTypeface()
     {
         const string source = "<math><mtext>A</mtext></math>";
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(
             source, inline: true, 12);
         var structure = generated.Mtef.AsSpan(generated.StructureOffset);
         Assert.True(structure.IndexOf(new byte[] { 2, 0, 1 + 128, (byte)'A', 0 }) >= 0);

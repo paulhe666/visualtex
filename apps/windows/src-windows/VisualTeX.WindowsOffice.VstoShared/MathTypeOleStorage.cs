@@ -432,7 +432,7 @@ internal static partial class MathTypeOleStorage
                 ValidateMathTypeStorage(storage);
                 var sourceNative = ReadStream(storage, "Equation Native");
                 rewritten = fullFontSizePt.HasValue
-                    ? MathTypeMtefCodec.RewriteEquationNativeAtFontSize(sourceNative, mathMl, inline, fullFontSizePt.Value)
+                    ? MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(sourceNative, mathMl, inline, fullFontSizePt.Value)
                     : MathTypeMtefCodec.RewriteEquationNative(sourceNative, mathMl, inline);
                 WriteStream(storage, "Equation Native", rewritten.EquationNative);
                 NormalizeMathTypeObjInfoForWmfPresentation(storage);

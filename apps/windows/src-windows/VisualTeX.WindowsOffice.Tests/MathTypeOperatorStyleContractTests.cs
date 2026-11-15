@@ -19,7 +19,7 @@ public sealed class MathTypeOperatorStyleContractTests
             var source=new XElement("math",body).ToString();
             var plain=source.Replace("mathvariant=\""+style+"\"","mathvariant=\"normal\"");
             Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source),MathTypeMtefCodec.SemanticSignature(plain));
-            var native=MathTypeMtefCodec.CreateEquationNativeAtFontSize(source,false,12);
+            var native=MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source,false,12);
             var actual=MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
             Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),MathTypeMtefCodec.SemanticSignature(actual));
             var basis=XElement.Parse(actual).Descendants().First(x=>x.Name.LocalName is "mi" or "mo");

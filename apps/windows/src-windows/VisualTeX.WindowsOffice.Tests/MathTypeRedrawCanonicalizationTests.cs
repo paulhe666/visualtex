@@ -7,7 +7,7 @@ public sealed class MathTypeRedrawCanonicalizationTests
 {
     private static string RoundTrip(string source)
     {
-        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, true, 12);
+        var generated = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, true, 12);
         return MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
     }
 
@@ -16,10 +16,10 @@ public sealed class MathTypeRedrawCanonicalizationTests
         var actual = RoundTrip(source);
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),
             MathTypeMtefCodec.SemanticSignature(actual));
-        var original = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, true, 12);
+        var original = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, true, 12);
         foreach (var editSource in new[] { source, actual })
         {
-            var rewritten = MathTypeMtefCodec.RewriteEquationNativeAtFontSize(
+            var rewritten = MathTypeMtefFontSize.RewriteEquationNativeAtFontSize(
                 original.EquationNative, editSource, true, 12);
             Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),
                 MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));

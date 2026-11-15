@@ -105,7 +105,7 @@ public sealed class MathTypeImporterGlyphAuthorityTests
     private static int NativeFace(byte[] mtef)
     {
         // The single CHAR record of the root line: [2][options][typeface+128]...
-        var position = Array.IndexOf(mtef, (byte)2, MathTypeMtefCodec.FindRootStructureOffset(mtef));
+        var position = Array.IndexOf(mtef, (byte)2, MathTypeMtefPrefix.FindRootStructureOffset(mtef));
         return mtef[position + 2] - 128;
     }
 
@@ -127,13 +127,13 @@ public sealed class MathTypeImporterGlyphAuthorityTests
     {
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
         var codec = typeof(MathTypeMtefCodec);
-        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)codec
+        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)typeof(MathTypeMtefGlyphs)
             .GetMethod("ReadNativeCharacterStyleBindings", flags)!.Invoke(null, new object[] { mtef })!;
         var binding = bindings[(int)token.Attribute("data-mtef-explicit-typeface")!];
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
         var prefix = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(layout)!;
-        var root = (IReadOnlyList<(byte Type, int Start, int End)>)codec
+        var root = (IReadOnlyList<(byte Type, int Start, int End)>)typeof(MathTypeMtefAssembly)
             .GetMethod("ReadRootLeadingFormattingRecords", flags)!.Invoke(null, new object[] { mtef })!;
         var definition = prefix.Concat(root).Where(r => r.Type == 17).ElementAt(binding.FontDefinition - 1);
         var args = new object[] { mtef, definition.Start + 1 };

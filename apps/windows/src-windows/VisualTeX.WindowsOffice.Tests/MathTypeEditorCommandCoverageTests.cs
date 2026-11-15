@@ -9,7 +9,7 @@ public sealed class MathTypeEditorCommandCoverageTests
 {
     private static string RoundTrip(string mathMl) =>
         MathTypeMtefCodec.ReadEquationNativeMathMl(
-            MathTypeMtefCodec.CreateEquationNativeAtFontSize(mathMl, false, 12).EquationNative);
+            MathTypeMtefFontSize.CreateEquationNativeAtFontSize(mathMl, false, 12).EquationNative);
 
     private static void AssertRoundTrip(string mathMl) =>
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(mathMl), MathTypeMtefCodec.SemanticSignature(RoundTrip(mathMl)));

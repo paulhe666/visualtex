@@ -19,7 +19,7 @@ public sealed class MathTypeIntegralBoundsTests
     {
         var source = $"<math display=\"{display}\"><{script}><mo data-mjx-texclass=\"OP\">∫</mo><mn>0</mn><mn>1</mn></{script}>"
             + "<msup><mi>x</mi><mn>2</mn></msup></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
 
         // The integral template (selector 15): a single integral with a lower
         // and an upper bound (0x31), above and below the sign only with 0x40.

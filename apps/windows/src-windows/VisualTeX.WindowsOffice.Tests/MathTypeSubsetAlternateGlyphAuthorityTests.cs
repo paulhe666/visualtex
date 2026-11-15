@@ -33,7 +33,7 @@ public sealed class MathTypeSubsetAlternateGlyphAuthorityTests
     private static byte[] Verify(int scalar, int mtCode, int slot, string style, bool alternate)
     {
         var source = $"<math><mo mathvariant='{style}'{(alternate ? " data-mjx-alternate='1'" : "")}>&#x{scalar:X};</mo></math>";
-        var native = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, false, 12);
+        var native = MathTypeMtefFontSize.CreateEquationNativeAtFontSize(source, false, 12);
         var decoded = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
         var token = XDocument.Parse(decoded).Descendants().Single(e => e.Name.LocalName is "mi" or "mo");
         Assert.Equal("mo", token.Name.LocalName);
@@ -55,13 +55,13 @@ public sealed class MathTypeSubsetAlternateGlyphAuthorityTests
         // ENCODING_DEF binding; a matching unrelated stream string is not proof.
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
         var codec = typeof(MathTypeMtefCodec);
-        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)codec
+        var bindings = (Dictionary<int, (int FontDefinition, byte CharacterStyle)>)typeof(MathTypeMtefGlyphs)
             .GetMethod("ReadNativeCharacterStyleBindings", flags)!.Invoke(null, new object[] { mtef })!;
         var binding = bindings[(int)token.Attribute("data-mtef-explicit-typeface")!];
-        var layout = codec.GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
+        var layout = typeof(MathTypeMtefPrefix).GetMethod("ReadPrefixLayout", flags)!.Invoke(null, new object[] { mtef })!;
         var prefix = (IReadOnlyList<(byte Type, int Start, int End)>)layout.GetType()
             .GetProperty("Records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(layout)!;
-        var leading = (IReadOnlyList<(byte Type, int Start, int End)>)codec
+        var leading = (IReadOnlyList<(byte Type, int Start, int End)>)typeof(MathTypeMtefAssembly)
             .GetMethod("ReadRootLeadingFormattingRecords", flags)!.Invoke(null, new object[] { mtef })!;
         var records = prefix.Concat(leading).ToArray();
         var definition = records.Where(r => r.Type == 17).ElementAt(binding.FontDefinition - 1);
