@@ -1,4 +1,4 @@
-import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { EditorState, Prec, type Extension, type Transaction } from "@codemirror/state";
 import { insertNewlineAndIndent } from "@codemirror/commands";
 import {
   indentOnInput,
@@ -256,32 +256,69 @@ function hasMatchingEnvironmentEndAfter(
   return false;
 }
 
-function insertNewlineWithoutDuplicateEnvironmentEnd(view: EditorView) {
-  const selection = view.state.selection.main;
+// Enter right after \begin{name} (nothing after the caret) opens the environment: the caret goes to an indented
+// line and \end{name} follows on its own line, unless that \end is already there.
+export function insertNewlineClosingEnvironment({
+  state,
+  dispatch,
+}: {
+  state: EditorState;
+  dispatch: (transaction: Transaction) => void;
+}) {
+  const selection = state.selection.main;
   if (!selection.empty) return false;
 
-  const line = view.state.doc.lineAt(selection.head);
+  const line = state.doc.lineAt(selection.head);
   const prefix = line.text.slice(0, selection.head - line.from);
   const suffix = line.text.slice(selection.head - line.from);
   if (suffix.trim()) return false;
+  if (sourceBeforeComment(prefix).length !== prefix.length) return false;
 
   const begin = prefix.match(/\\begin\{([^{}\r\n]+)\}[ \t]*$/);
-  if (!begin) return false;
+  if (!begin || isEscaped(prefix, begin.index ?? 0)) return false;
   const environmentName = begin[1].trim();
   if (!environmentName) return false;
 
-  const source = view.state.doc.toString();
-  if (!hasMatchingEnvironmentEndAfter(source, selection.head, environmentName)) {
-    return false;
+  const source = state.doc.toString();
+  if (hasMatchingEnvironmentEndAfter(source, selection.head, environmentName)) {
+    return insertNewlineAndIndent({ state, dispatch });
   }
 
-  return insertNewlineAndIndent(view);
+  const indent = line.text.match(/^[ \t]*/)?.[0] ?? "";
+  const inner = indent + LATEX_SOURCE_INDENT;
+  dispatch(
+    state.update({
+      changes: {
+        from: selection.head,
+        to: line.to,
+        insert: `\n${inner}\n${indent}\\end{${environmentName}}`,
+      },
+      selection: { anchor: selection.head + 1 + inner.length },
+      scrollIntoView: true,
+      userEvent: "input",
+    }),
+  );
+  return true;
 }
 
-const duplicateEnvironmentEndGuard = Prec.highest(
-  keymap.of([
-    { key: "Enter", run: insertNewlineWithoutDuplicateEnvironmentEnd },
-  ]),
+// The closing brace the editor paired with the { of \begin{ while the name is being typed (\begin{matr|}): a
+// completion replaces it together with the name, or the brace would be left after the inserted environment. A brace
+// that closes an outer group (the line's braces only balance without it) stays.
+export function environmentNameCompletionEnd(state: EditorState, from: number, pos: number) {
+  if (state.sliceDoc(pos, pos + 1) !== "}") return pos;
+  if (!/^\\begin\{[A-Za-z*]*$/.test(state.sliceDoc(from, pos))) return pos;
+  const text = sourceBeforeComment(state.doc.lineAt(pos).text);
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (isEscaped(text, index)) continue;
+    if (text[index] === "{") depth += 1;
+    else if (text[index] === "}") depth -= 1;
+  }
+  return depth === 0 ? pos + 1 : pos;
+}
+
+const environmentEnter = Prec.highest(
+  keymap.of([{ key: "Enter", run: insertNewlineClosingEnvironment }]),
 );
 
 export const visualTeXLatexEditingExtensions: Extension = [
@@ -294,6 +331,6 @@ export const visualTeXLatexEditingExtensions: Extension = [
     indentOnInput: /^\s*(?:\\end\{[^}]*\}|\\\]|\$\$|\})/,
   }),
   indentOnInput(),
-  duplicateEnvironmentEndGuard,
+  environmentEnter,
   sourceDecorations,
 ];

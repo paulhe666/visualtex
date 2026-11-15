@@ -36,6 +36,7 @@ import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
 import type { LatexCodeFormat } from "../types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 import {
+  isTypingCommandName,
   latexSourceCompletion,
   latexSourceCompletionTheme,
 } from "./latexSourceCompletion";
@@ -117,6 +118,9 @@ export function LatexSourceEditor({
   const canonicalSourceRef = useRef(latex);
   canonicalSourceRef.current = latex;
   const statusRef = useRef(syncedDraft);
+  // A command name being typed is applied once its completion list closes: half typed, the \b of \begin outside
+  // math would turn the row into text for a moment.
+  const draftHeldRef = useRef(false);
   const [status, setStatus] = useState(syncedDraft);
   const { dirty, error: syncError, hasLivePreview } = status;
   const formatRef = useRef(format);
@@ -137,6 +141,7 @@ export function LatexSourceEditor({
   };
 
   const publishDraft = (value: string) => {
+    draftHeldRef.current = false;
     const result = onLiveChangeRef.current(value, formatRef.current);
     const preview = result.valid || result.values.length > 0 || Boolean(result.previewValues?.length);
     if (preview) acceptedSourceRef.current = value;
@@ -148,6 +153,7 @@ export function LatexSourceEditor({
   };
 
   const syncDocument = (view: EditorView, value: string) => {
+    draftHeldRef.current = false;
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({
@@ -247,10 +253,14 @@ export function LatexSourceEditor({
         keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),
         // The package's own completion is a generic document list (\section,
         // \cite, ...) that inserts bare commands; VisualTeX supplies its own.
+        // Environments are closed by VisualTeX's Enter binding too (visualTeXLatexEditingExtensions): the
+        // package's Enter binding came after the default keymap and never ran, and its } binding left the brace
+        // the editor had paired behind \end{...}.
         latexLanguageSupport({
           enableLinting: false,
           enableTooltips: false,
           enableAutocomplete: false,
+          autoCloseTags: false,
         }),
         latexSourceCompletion,
         latexSourceCompletionTheme,
@@ -294,14 +304,20 @@ export function LatexSourceEditor({
                 focusReleaseFrameRef.current = null;
                 const view = viewRef.current;
                 if (!view || view.hasFocus) return;
+                if (draftHeldRef.current) publishDraft(view.state.doc.toString());
                 onFocusChangeRef.current?.(false);
                 if (statusRef.current.error || !statusRef.current.hasLivePreview) return;
                 syncDocument(view, canonicalSourceRef.current);
               });
             }
           }
-          if (!update.docChanged || update.transactions.some(tr => tr.annotation(externalSourceSync))) return;
-          publishDraft(update.state.doc.toString());
+          if (update.transactions.some(tr => tr.annotation(externalSourceSync))) return;
+          if (update.docChanged) {
+            if (isTypingCommandName(update.state)) draftHeldRef.current = true;
+            else publishDraft(update.state.doc.toString());
+          } else if (draftHeldRef.current && !isTypingCommandName(update.state)) {
+            publishDraft(update.state.doc.toString());
+          }
         }),
       ],
     });

@@ -3,6 +3,8 @@ import {
   autocompletion,
   completionStatus,
   currentCompletions,
+  insertCompletionText,
+  pickedCompletion,
   selectedCompletionIndex,
   setSelectedCompletion,
   snippet,
@@ -19,6 +21,7 @@ import { latestSharedCommands } from "../autocomplete/latestSharedCommands";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { nativeSuggestionPreviewLatex } from "../editor/nativeSuggestionPreviews";
+import { environmentNameCompletionEnd } from "./latexSourceEditorSupport";
 
 // Source-code completion for the LaTeX panel. Same commands and ranking as
 // the visual editor's candidate panel (Overleaf's approach: CodeMirror's
@@ -51,6 +54,23 @@ function snippetTemplate(template: string) {
     .replace(/\\placeholder\{\}/g, "\u0000")
     .replace(/\\([{}])/g, "\\\\$1")
     .replace(/\u0000/g, "#{}");
+}
+
+// An environment completes over the name typed so far and the closing brace the editor paired with \begin{
+// (\begin{matr|}), which the template's own \begin{...} replaces; the list itself is filtered by the name alone.
+function environmentApply(template: string) {
+  const insertSnippet = template.includes("#{") ? snippet(template) : null;
+  return (view: EditorView, completion: Completion, from: number, to: number) => {
+    const end = environmentNameCompletionEnd(view.state, from, to);
+    if (insertSnippet) {
+      insertSnippet(view, completion, from, end);
+      return;
+    }
+    view.dispatch({
+      ...insertCompletionText(view.state, template, from, end),
+      annotations: pickedCompletion.of(completion),
+    });
+  };
 }
 
 function nativeTemplate(name: string, required: number) {
@@ -86,7 +106,11 @@ function completionOptions(): SourceCompletion[] {
       type: "latex",
       boost,
       preview,
-      apply: template.includes("#{") ? snippet(template) : template,
+      apply: label.startsWith("\\begin{")
+        ? environmentApply(template)
+        : template.includes("#{")
+          ? snippet(template)
+          : template,
     });
   };
 
@@ -123,15 +147,29 @@ function completionOptions(): SourceCompletion[] {
   return options;
 }
 
-function latexSourceCompletions(context: CompletionContext): CompletionResult | null {
-  const word = context.matchBefore(COMMAND_PATTERN);
-  if (!word) return null;
-  // The backslash of a row break (\\) does not start a command.
+// The command name before the caret, unless its backslash is the second one of a row break (\\).
+function commandBefore(state: EditorState, pos: number) {
+  const line = state.doc.lineAt(pos);
+  const match = COMMAND_PATTERN.exec(state.sliceDoc(line.from, pos));
+  if (!match) return null;
+  const from = line.from + match.index;
   let slashes = 0;
-  for (let at = word.from - 1; at >= 0 && context.state.sliceDoc(at, at + 1) === "\\"; at--) slashes++;
-  if (slashes % 2 === 1) return null;
+  for (let at = from - 1; at >= 0 && state.sliceDoc(at, at + 1) === "\\"; at--) slashes++;
+  return slashes % 2 === 1 ? null : { from, text: match[0] };
+}
+
+function latexSourceCompletions(context: CompletionContext): CompletionResult | null {
+  const word = commandBefore(context.state, context.pos);
+  if (!word) return null;
   if (word.text.length < 2 && !context.explicit) return null;
   return { from: word.from, options: completionOptions(), validFor: VALID_FOR };
+}
+
+// A command name is being typed: the caret is right after it and its completion list is open or being looked up.
+export function isTypingCommandName(state: EditorState) {
+  if (completionStatus(state) === null || !state.selection.main.empty) return false;
+  const word = commandBefore(state, state.selection.main.head);
+  return Boolean(word && word.text.length >= 2);
 }
 
 const previewMarkup = new Map<string, string>();
