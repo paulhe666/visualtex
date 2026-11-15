@@ -111,23 +111,3 @@ pub(super) fn write_preferred_ocr_model(paths: &RuntimePaths, model: &str) -> Re
     fs::write(paths.root.join(OCR_PREFERRED_MODEL_FILE), model.as_bytes())
         .map_err(|error| format!("Unable to save the preferred OCR model: {error}"))
 }
-
-pub(super) fn worker_script_path(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Ok(path) = app.path().resolve("ocr/worker.py", BaseDirectory::Resource) {
-        if path.exists() {
-            return Ok(path);
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        let development_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("ocr")
-            .join("worker.py");
-        if development_path.exists() {
-            return Ok(development_path);
-        }
-    }
-
-    Err("Unable to locate bundled OCR worker.py".to_string())
-}

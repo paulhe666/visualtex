@@ -33,23 +33,3 @@ pub(super) fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
         temp: root.join("tmp"),
     })
 }
-
-pub(super) fn worker_script_path(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Ok(path) = app.path().resolve("ocr/worker.py", BaseDirectory::Resource) {
-        if path.exists() {
-            return Ok(path);
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        let development_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("ocr")
-            .join("worker.py");
-        if development_path.exists() {
-            return Ok(development_path);
-        }
-    }
-
-    Err("Unable to locate bundled OCR worker.py".to_string())
-}

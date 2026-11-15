@@ -132,23 +132,3 @@ pub(super) fn get_runtime_status_inner(
         }),
     }
 }
-
-pub(super) fn read_cached_runtime_status(
-    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
-) -> Result<Option<OcrRuntimeStatus>, String> {
-    cache
-        .lock()
-        .map(|status| status.clone())
-        .map_err(|_| "OCR runtime status cache is unavailable".to_string())
-}
-
-pub(super) fn write_cached_runtime_status(
-    cache: &Arc<Mutex<Option<OcrRuntimeStatus>>>,
-    status: Option<OcrRuntimeStatus>,
-) -> Result<(), String> {
-    let mut guard = cache
-        .lock()
-        .map_err(|_| "OCR runtime status cache is unavailable".to_string())?;
-    *guard = status;
-    Ok(())
-}

@@ -14,98 +14,24 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod provider;
+#[path = "../../../../shared/visualtex-backend/src/ocr_common.rs"]
+mod common;
 mod paths;
 mod python;
 mod setup;
 mod status;
 mod worker;
 
+pub(crate) use common::*;
 use paths::*;
 use python::*;
 use setup::*;
 use status::*;
 use worker::*;
 
-const PADDLE_VERSION: &str = "3.3.1";
-
-const PADDLEOCR_VERSION: &str = "3.7.0";
-
-pub(crate) const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
-
-const OCR_CANCELLED: &str = "OCR_CANCELLED";
-
-pub(crate) const ALLOWED_MODELS: &[&str] = &[
-    "PP-FormulaNet_plus-S",
-    "PP-FormulaNet_plus-M",
-    "PP-FormulaNet_plus-L",
-    "PP-FormulaNet-S",
-    "PP-FormulaNet-L",
-];
-
-const MAX_OCR_EVENTS: usize = 256;
-
 const OCR_RUNTIME_PROBE_CACHE_SCHEMA: u32 = 1;
 
 const OCR_RUNTIME_PROBE_CACHE_FILE: &str = "runtime-probe-cache.json";
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OcrEventRecord {
-    id: u64,
-    event: String,
-    payload: Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OcrEventEnvelope {
-    cursor: u64,
-    events: Vec<OcrEventRecord>,
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct OcrEventBus {
-    next_id: Arc<AtomicU64>,
-    events: Arc<Mutex<VecDeque<OcrEventRecord>>>,
-}
-
-impl OcrEventBus {
-    fn publish<T: Serialize>(&self, event: &str, payload: &T) {
-        let Ok(payload) = serde_json::to_value(payload) else {
-            return;
-        };
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
-        if let Ok(mut events) = self.events.lock() {
-            events.push_back(OcrEventRecord {
-                id,
-                event: event.to_string(),
-                payload,
-            });
-            while events.len() > MAX_OCR_EVENTS {
-                events.pop_front();
-            }
-        }
-    }
-
-    pub(crate) fn poll(&self, cursor: u64, event: Option<&str>) -> OcrEventEnvelope {
-        let events = self
-            .events
-            .lock()
-            .map(|events| {
-                events
-                    .iter()
-                    .filter(|item| item.id > cursor)
-                    .filter(|item| event.is_none_or(|name| item.event == name))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        OcrEventEnvelope {
-            cursor: self.next_id.load(Ordering::SeqCst),
-            events,
-        }
-    }
-}
 
 #[derive(Clone)]
 struct RuntimePaths {
@@ -138,19 +64,6 @@ impl Default for OcrState {
             events: OcrEventBus::default(),
             providers: provider::OcrProviderState::default(),
         }
-    }
-}
-
-fn is_final_ocr_state_owner(worker: &Arc<Mutex<Option<OcrWorker>>>) -> bool {
-    Arc::strong_count(worker) == 1
-}
-
-async fn wait_for_ocr_cancellation(generation: Arc<AtomicU64>, expected: u64) {
-    loop {
-        if generation.load(Ordering::SeqCst) != expected {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(80)).await;
     }
 }
 
@@ -371,15 +284,6 @@ impl OcrState {
     }
 }
 
-struct OcrWorker {
-    child: Child,
-    stdin: BufWriter<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
-    pid_state: Arc<AtomicU32>,
-    log_path: PathBuf,
-    loaded_model: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OcrInstallProgress {
@@ -402,46 +306,6 @@ pub(crate) struct OcrRuntimeStatus {
     pub(crate) installed_models: Vec<String>,
     pub(crate) default_model: String,
     message: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OcrImageRequest {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) extension: String,
-    pub(crate) model: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct OcrFormulaResult {
-    pub(crate) latex: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OcrRecognitionResult {
-    provider: String,
-    model: String,
-    elapsed_ms: u64,
-    processed_width: u32,
-    processed_height: u32,
-    background_inverted: bool,
-    background_luminance: f64,
-    pub(crate) formulas: Vec<OcrFormulaResult>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkerRecognitionResponse {
-    ok: bool,
-    model: Option<String>,
-    elapsed_ms: Option<u64>,
-    processed_width: Option<u32>,
-    processed_height: Option<u32>,
-    background_inverted: Option<bool>,
-    background_luminance: Option<f64>,
-    formulas: Option<Vec<OcrFormulaResult>>,
-    error: Option<String>,
-    details: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -499,14 +363,6 @@ fn emit_recognition_progress(
     if let Some(state) = app.try_state::<OcrState>() {
         state.events.publish("ocr-recognition-progress", &progress);
     }
-}
-
-fn tail_text(value: &str, max_chars: usize) -> String {
-    let total = value.chars().count();
-    if total <= max_chars {
-        return value.to_string();
-    }
-    value.chars().skip(total - max_chars).collect()
 }
 
 #[tauri::command]

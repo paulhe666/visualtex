@@ -2,67 +2,6 @@
 
 use super::*;
 
-impl Drop for OcrWorker {
-    fn drop(&mut self) {
-        let pid = self.child.id();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = self
-            .pid_state
-            .compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
-    }
-}
-
-pub(super) fn read_worker_json<R: BufRead>(
-    reader: &mut R,
-    closed_message: &str,
-    response_name: &str,
-) -> Result<Value, String> {
-    loop {
-        let mut bytes = Vec::new();
-        let count = reader
-            .read_until(b'\n', &mut bytes)
-            .map_err(|error| format!("Unable to read {response_name}: {error}"))?;
-        if count == 0 {
-            return Err(closed_message.to_string());
-        }
-
-        while bytes
-            .last()
-            .is_some_and(|byte| matches!(*byte, b'\n' | b'\r'))
-        {
-            bytes.pop();
-        }
-        if bytes.iter().all(u8::is_ascii_whitespace) {
-            continue;
-        }
-
-        let first_non_whitespace = bytes
-            .iter()
-            .copied()
-            .find(|byte| !byte.is_ascii_whitespace());
-        if first_non_whitespace != Some(b'{') {
-            // Native dependencies occasionally write diagnostics to stdout.
-            // Ignore those lines so they cannot corrupt the JSON protocol.
-            continue;
-        }
-
-        match serde_json::from_slice(&bytes) {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                // This fallback prevents a legacy Windows code page from
-                // crashing the reader. New workers always emit ASCII-safe JSON.
-                let output = String::from_utf8_lossy(&bytes);
-                return serde_json::from_str(output.trim()).map_err(|lossy_error| {
-                    format!(
-                        "{response_name} returned invalid JSON: {error}; UTF-8-lossy parse: {lossy_error}; output={output:?}"
-                    )
-                });
-            }
-        }
-    }
-}
-
 impl OcrWorker {
     pub(super) fn worker_failure(&mut self, message: impl AsRef<str>) -> String {
         let status = match self.child.try_wait() {
@@ -114,15 +53,6 @@ impl OcrWorker {
     }
 }
 
-pub(super) fn cleanup_worker_temp(paths: &RuntimePaths) -> Result<(), String> {
-    if paths.temp.exists() {
-        fs::remove_dir_all(&paths.temp)
-            .map_err(|error| format!("Unable to clean OCR temporary files: {error}"))?;
-    }
-    fs::create_dir_all(&paths.temp)
-        .map_err(|error| format!("Unable to create OCR temporary directory: {error}"))
-}
-
 pub(super) fn terminate_worker_process(worker_pid: &AtomicU32) -> Result<bool, String> {
     let pid = worker_pid.swap(0, Ordering::SeqCst);
     if pid == 0 {
@@ -156,17 +86,6 @@ pub(super) fn terminate_worker_process(worker_pid: &AtomicU32) -> Result<bool, S
 
     #[allow(unreachable_code)]
     Ok(false)
-}
-
-pub(super) fn stop_worker(
-    worker: &Arc<Mutex<Option<OcrWorker>>>,
-    worker_pid: &Arc<AtomicU32>,
-) -> Result<(), String> {
-    let terminate_result = terminate_worker_process(worker_pid);
-    if let Ok(mut guard) = worker.lock() {
-        guard.take();
-    }
-    terminate_result.map(|_| ())
 }
 
 pub(super) fn spawn_worker(

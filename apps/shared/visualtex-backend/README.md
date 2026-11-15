@@ -7,4 +7,7 @@ them in `generate_handler!`, and a module may use `crate::` items that both appl
 dependencies are the applications' own (`Cargo.toml` of each app). A difference between the systems inside one of
 these files is a `#[cfg(target_os = ...)]` block.
 
+`ocr_common.rs` is included one level down, as `ocr::common` of each backend's `src/ocr` module, which re-exports it;
+there `super::` is that backend's OCR module (its `OcrState`, `RuntimePaths` and imports).
+
 The Office editor and the Office MCP backend (`src-tauri/src/office`) stay in each application.
