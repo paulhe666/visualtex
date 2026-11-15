@@ -143,10 +143,10 @@ internal static class WordNumberedTrueDisplay
             {
                 var activeXml = WordOmmlConverter.ReadLocalEquationXml(activeRange);
                 semanticOmml = metadata is not null
-                    ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(
+                    ? WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumberForManagedRepair(
                         activeXml)
-                    : WordOmmlConverter.StripVisualTeXNativeEquationNumber(activeXml);
-                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
+                    : WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(activeXml);
+                if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(activeXml))
                     traceStage("strip-legacy-or-stale-number-wrapper");
             }
 
@@ -166,7 +166,7 @@ internal static class WordNumberedTrueDisplay
                         "VisualTeX could not safely migrate this managed numbered OMML table to Word's native #(SEQ) display host.");
                 Release(activeRange);
                 activeRange = ResolveSingleNativeOmmlRange(migratedRange);
-                semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(
+                semanticOmml = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(activeRange));
                 traceStage("migrate-omml-table-to-hash-seq");
             }
@@ -208,7 +208,7 @@ internal static class WordNumberedTrueDisplay
             }
 
             application = document.Application;
-            replacementRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+            replacementRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 activeRange,
@@ -419,7 +419,7 @@ internal static class WordNumberedTrueDisplay
         EquationNumberFormat format,
         string prefix)
     {
-        return WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+        return WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
             semanticOmml,
             LegacyEquationSequenceName,
             NativeNumberBookmarkName(formulaId),
@@ -811,7 +811,7 @@ internal static class WordNumberedTrueDisplay
                     document,
                     formulaId,
                     metadata);
-            if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 return false;
 
@@ -882,7 +882,7 @@ internal static class WordNumberedTrueDisplay
                     document,
                     formulaId,
                     metadata);
-            return WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            return WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                 WordOmmlConverter.ReadLocalEquationXml(formulaRange));
         }
         catch
@@ -958,14 +958,14 @@ internal static class WordNumberedTrueDisplay
                     ?? WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(document, formulaId, metadata);
                 var formulaXml = WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                     document, formulaRange, formulaId);
-                var directSequence = WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(formulaXml);
+                var directSequence = WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(formulaXml);
                 var semantic = directSequence
-                    ? WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(formulaXml)
+                    ? WordOmmlEquationNumbers.StripManagedVisualTeXNativeEquationNumber(formulaXml)
                     : formulaXml;
                 // Logical counts must share one content model even when old and
                 // new versions coexist. Project ONLY verified live owners; a hash
                 // alone cannot be converted, nor can a missing owner prove surplus.
-                var canonical = WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(
+                var canonical = WordOmmlFingerprints.UpgradeVerifiedOmmlFingerprint(
                     semantic, metadata.NativeOmmlFingerprint!);
                 storedFingerprintCounts.TryGetValue(canonical, out var count);
                 storedFingerprintCounts[canonical] = count + 1;
@@ -1008,13 +1008,13 @@ internal static class WordNumberedTrueDisplay
                             WdInformation.wdWithInTable))
                         continue;
                     var mathXml = WordOmmlConverter.ReadLocalEquationXml(mathRange);
-                    if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                             mathXml))
                         continue;
-                    var semantic = WordOmmlConverter
+                    var semantic = WordOmmlEquationNumbers
                         .StripManagedVisualTeXNativeEquationNumber(mathXml);
                     var fingerprint =
-                        WordOmmlConverter.ComputeOmmlFingerprint(semantic);
+                        WordOmmlFingerprints.ComputeOmmlFingerprint(semantic);
                     physicalFingerprintCounts.TryGetValue(
                         fingerprint,
                         out var physicalCount);
@@ -1110,13 +1110,13 @@ internal static class WordNumberedTrueDisplay
                 if (math.Type != WdOMathType.wdOMathDisplay) continue;
                 formulaRange = math.Range.Duplicate;
                 var liveXml = WordOmmlConverter.ReadLocalEquationXml(formulaRange);
-                if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         liveXml))
                     continue;
-                var liveSemantic = WordOmmlConverter
+                var liveSemantic = WordOmmlEquationNumbers
                     .StripManagedVisualTeXNativeEquationNumber(liveXml);
                 var liveFingerprint =
-                    WordOmmlConverter.ComputeOmmlFingerprint(liveSemantic);
+                    WordOmmlFingerprints.ComputeOmmlFingerprint(liveSemantic);
                 if (!string.Equals(
                         liveFingerprint,
                         candidate.Fingerprint,
@@ -1215,7 +1215,7 @@ internal static class WordNumberedTrueDisplay
                 string candidateXml;
                 try { candidateXml = WordOmmlConverter.ReadLocalEquationXml(candidateRange); }
                 catch { continue; }
-                if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         candidateXml))
                     continue;
 
@@ -1224,10 +1224,10 @@ internal static class WordNumberedTrueDisplay
                 {
                     try
                     {
-                        var semanticOmml = WordOmmlConverter
+                        var semanticOmml = WordOmmlEquationNumbers
                             .StripManagedVisualTeXNativeEquationNumber(candidateXml);
                         var candidateFingerprint =
-                            WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(semanticOmml, expectedFingerprint);
+                            WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(semanticOmml, expectedFingerprint);
                         fingerprintMatches = string.Equals(
                             candidateFingerprint,
                             expectedFingerprint,
@@ -1327,7 +1327,7 @@ internal static class WordNumberedTrueDisplay
                     // structure-only probe intentionally does not require VTEqNum
                     // to still be inside the delimiter, because that missing alias
                     // is exactly what this repair path exists to recover.
-                    if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                             WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                         continue;
                     hosts.Add((formulaId, formulaRange.Start, formulaRange.End));
@@ -1471,7 +1471,7 @@ internal static class WordNumberedTrueDisplay
             math = maths[1];
             if (math.Type != WdOMathType.wdOMathDisplay) return null;
             mathRange = math.Range.Duplicate;
-            if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(mathRange),
                     formulaId))
                 return null;
@@ -1712,7 +1712,7 @@ internal static class WordNumberedTrueDisplay
                 || mathRange.End + paragraphTerminatorLength != paragraphRange.End)
                 return false;
             if (!skipWordOpenXmlSequenceProof
-                && !WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                && !WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(mathRange)))
                 return false;
 
@@ -1893,7 +1893,7 @@ internal static class WordNumberedTrueDisplay
             }
             try
             {
-                direct = WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                direct = WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     xml,
                     formulaId);
             }
@@ -2097,10 +2097,10 @@ internal static class WordNumberedTrueDisplay
             if (legacyShapeHostDetected)
                 traceStage("migrate-legacy-true-display-shape");
 
-            var semanticOmml = WordOmmlConverter
+            var semanticOmml = WordOmmlEquationNumbers
                 .StripManagedVisualTeXNativeEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(activeRange));
-            if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(WordOmmlConverter.ReadLocalEquationXml(activeRange)))
+            if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(WordOmmlConverter.ReadLocalEquationXml(activeRange)))
                 traceStage("strip-native-number-wrapper");
 
             if (IsNumberedEquationTable(activeRange))
@@ -2715,7 +2715,7 @@ internal static class WordNumberedTrueDisplay
             string mathFontName;
             try { mathFontName = document.OMathFontName ?? string.Empty; }
             catch { mathFontName = string.Empty; }
-            replacement = WordOmmlConverter.ReplaceWithPreparedOmml(
+            replacement = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 temporaryRange,
@@ -5796,7 +5796,7 @@ internal static class WordNumberedTrueDisplay
             if (formulaBookmark is null) return null;
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
             var openXml = WordOmmlConverter.ReadLocalEquationXml(formulaRange);
-            if (!WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml)
+            if (!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(openXml)
                 || openXml.IndexOf("SEQ VisualTeXEquation", StringComparison.OrdinalIgnoreCase) < 0
                 || openXml.IndexOf("<m:eqArr", StringComparison.OrdinalIgnoreCase) < 0)
                 return null;

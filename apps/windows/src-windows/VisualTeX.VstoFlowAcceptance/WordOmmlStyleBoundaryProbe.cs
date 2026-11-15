@@ -140,7 +140,7 @@ internal static partial class Program
                     insertion = host.Document.Content;
                     var package = XDocument.Parse(insertion.WordOpenXML);
                     XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-                    var inputDocument = XDocument.Parse(WordOmmlConverter.BuildDocumentXml(omml));
+                    var inputDocument = XDocument.Parse(WordOmmlDocuments.BuildDocumentXml(omml));
                     package.Descendants(word + "body").Single().ReplaceNodes(
                         inputDocument.Descendants(word + "body").Single().Elements().Select(element => new XElement(element)));
                     var inputPackage = package.ToString(SaveOptions.DisableFormatting);

@@ -267,11 +267,11 @@ internal static partial class Program
                             || !seen.Add(exact.Start))
                             continue;
                         var xml = exact.WordOpenXML;
-                        if (!WordOmmlConverter.HasWordNativeEquationNumberHost(xml))
+                        if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml))
                             continue;
                         labels.Add((
                             exact.Start,
-                            WordOmmlConverter.ReadWordNativeEquationNumberText(xml)));
+                            WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml)));
                     }
                     finally
                     {

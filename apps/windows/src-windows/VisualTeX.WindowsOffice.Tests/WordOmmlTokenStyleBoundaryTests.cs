@@ -47,7 +47,7 @@ public sealed class WordOmmlTokenStyleBoundaryTests
             + "<mstyle mathvariant=\"normal\"><mstyle mathvariant=\"italic\">"
             + "<mi>ABC</mi><mo>∥</mo><mn>3</mn><mo mathvariant=\"bold-italic\">∦</mo>"
             + "</mstyle><mo>∥</mo></mstyle>");
-        var projected = XDocument.Parse(WordOmmlConverter.NormalizeMathMlTokenStyleAuthority(source));
+        var projected = XDocument.Parse(WordOmmlFromMathMl.NormalizeMathMlTokenStyleAuthority(source));
         var tokens = projected.Descendants().Where(token =>
             token.Name.Namespace == P && token.Name.LocalName is "mi" or "mo" or "mn" or "mtext" or "ms").ToArray();
         Assert.Equal(new[] { "italic", "normal", "normal", "normal", "normal",

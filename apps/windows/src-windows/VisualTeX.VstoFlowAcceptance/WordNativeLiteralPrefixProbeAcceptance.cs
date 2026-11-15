@@ -40,7 +40,7 @@ internal static partial class Program
                             XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
                             var normal = XElement.Parse(WordOmmlConverter.ExtractSingleOMath(xml)).Descendants(m + "nor").Count();
                             var number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
-                            try { observations.Add(new { Strategy = strategy, Stage = stage, NormalRuns = normal, Live = number.Text, XmlLabel = WordOmmlConverter.ReadWordNativeEquationNumberText(xml) }); }
+                            try { observations.Add(new { Strategy = strategy, Stage = stage, NormalRuns = normal, Live = number.Text, XmlLabel = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml) }); }
                             finally { Release(number); }
                             File.WriteAllText(Path.Combine(root, strategy + "-" + stage + ".xml"), xml);
                             Console.WriteLine(strategy + " " + stage + " normal=" + normal);

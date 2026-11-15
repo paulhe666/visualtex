@@ -133,7 +133,7 @@ internal static partial class Program
         Word.Range? number = null; Word.Bookmark? bookmark = null; Word.Range? alias = null;
         try
         {
-            AssertEqual(expected, WordOmmlConverter.ReadWordNativeEquationNumberText(range.WordOpenXML), "The literal prefix changed mathematical representation.");
+            AssertEqual(expected, WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(range.WordOpenXML), "The literal prefix changed mathematical representation.");
             number = WordNativeOmmlNumbering.ResolveNumberContentRange(range);
             AssertEqual(expected, number.Text, "Live native number differs from literal display.");
             bookmark = document.Bookmarks["_RefLiteralLifecycle"]; alias = bookmark.Range;

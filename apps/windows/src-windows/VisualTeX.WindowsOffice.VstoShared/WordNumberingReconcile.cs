@@ -695,7 +695,7 @@ internal static class WordNumberingReconcile
                             formulaRange,
                             metadata.FormulaId)
                         || (!verifiedFreshBareOmml
-                            && WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+                            && WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                                 WordOmmlConverter.ReadLocalEquationXml(formulaRange)));
                 }
                 catch
@@ -1224,7 +1224,7 @@ internal static class WordNumberingReconcile
             formulaBookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
             if (formulaBookmark is null) return null;
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
-            if (!WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+            if (!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 return null;
             nativeNumberField = FindNativeOmmlNumberReferenceField(

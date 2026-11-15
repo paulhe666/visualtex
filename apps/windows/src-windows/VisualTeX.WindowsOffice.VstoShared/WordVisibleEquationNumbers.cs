@@ -71,7 +71,7 @@ internal static class WordVisibleEquationNumbers
                     }
                     finally { Release(tableRange); Release(table); Release(tables); }
                 }
-                if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                if (WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 {
                     // VTEqCap_/VTEqNum_ live inside the professional OMath in the
@@ -1457,7 +1457,7 @@ internal static class WordVisibleEquationNumbers
                 try
                 {
                     containingRange = containingMath.Range;
-                    if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+                    if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                             WordOmmlConverter.ReadLocalEquationXml(containingRange))
                         || HasManagedNativeOmmlHashSequenceHost(
                             document,

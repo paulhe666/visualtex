@@ -26,7 +26,7 @@ public sealed class WordOmmlCoreContractTests
             + "<m:nary><m:naryPr>" + Flag("subHide", value) + Flag("supHide", value)
             + "</m:naryPr><m:sub/><m:sup/><m:e>" + Run("y") + "</m:e></m:nary>"
             + "<m:m><m:mPr>" + Flag("plcHide", value) + "</m:mPr><m:mr><m:e/><m:e>" + Run("z") + "</m:e></m:mr></m:m>");
-        WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml));
+        WordOmmlFromMathMl.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml));
         WordOmmlConverter.ValidateMaterializedOmml(xml);
     }
 
@@ -37,7 +37,7 @@ public sealed class WordOmmlCoreContractTests
     public void BothValidationStagesRejectVisibleEmptyRadicalDegree(string value)
     {
         var xml = Math("<m:rad><m:radPr>" + Flag("degHide", value) + "</m:radPr><m:deg/><m:e>" + Run("x") + "</m:e></m:rad>");
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
+        Assert.Throws<InvalidDataException>(() => WordOmmlFromMathMl.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
         Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateMaterializedOmml(xml));
     }
 
@@ -48,7 +48,7 @@ public sealed class WordOmmlCoreContractTests
     public void MissingHidePropertyDoesNotEnableHiding(string owner, string slot, string property)
     {
         var xml = Math($"<m:{owner}><m:{owner}Pr/><m:{slot}/><m:e>" + Run("x") + $"</m:e></m:{owner}>");
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
+        Assert.Throws<InvalidDataException>(() => WordOmmlFromMathMl.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
         Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateMaterializedOmml(xml));
         Assert.DoesNotContain(property, xml, StringComparison.Ordinal);
     }
@@ -88,7 +88,7 @@ public sealed class WordOmmlCoreContractTests
     {
         var declaration = prefix.Length == 0 ? $"xmlns=\"{P}\"" : $"xmlns:p=\"{P}\"";
         var xml = $"<{prefix}math {declaration}><{errorName}><{prefix}mtext>bad</{prefix}mtext></{errorName}></{prefix}math>";
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateMathMlForOmml(xml));
+        Assert.Throws<InvalidDataException>(() => WordOmmlFromMathMl.ValidateMathMlForOmml(xml));
         Assert.Throws<InvalidDataException>(() => WordOmmlConverter.TransformMathMlToOmml(xml));
     }
 
@@ -136,7 +136,7 @@ public sealed class WordOmmlCoreContractTests
     {
         var a = Math("<m:d><m:dPr>" + properties + "</m:dPr><m:e>" + Run("x") + "</m:e></m:d>");
         var b = Math("<m:d><m:e>" + Run("x") + "</m:e></m:d>");
-        Assert.Equal(WordOmmlConverter.ComputeImportedOmmlContentSignature(a), WordOmmlConverter.ComputeImportedOmmlContentSignature(b));
+        Assert.Equal(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(a), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(b));
     }
 
     [Theory]
@@ -147,8 +147,8 @@ public sealed class WordOmmlCoreContractTests
         var omitted = Math("<m:d><m:e>" + Run("x") + "</m:e></m:d>");
         var noValue = Math("<m:d><m:dPr><m:" + name + "/></m:dPr><m:e>" + Run("x") + "</m:e></m:d>");
         var emptyValue = noValue.Replace("<m:" + name + "/>", "<m:" + name + " m:val=\"\"/>");
-        Assert.NotEqual(WordOmmlConverter.ComputeImportedOmmlContentSignature(omitted), WordOmmlConverter.ComputeImportedOmmlContentSignature(noValue));
-        Assert.Equal(WordOmmlConverter.ComputeImportedOmmlContentSignature(noValue), WordOmmlConverter.ComputeImportedOmmlContentSignature(emptyValue));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(omitted), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(noValue));
+        Assert.Equal(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(noValue), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(emptyValue));
     }
 
     [Theory]
@@ -156,8 +156,8 @@ public sealed class WordOmmlCoreContractTests
     [InlineData("<m:sty/>")]
     public void DefaultItalicStyleIsAnEquivalentEncoding(string style)
     {
-        Assert.Equal(WordOmmlConverter.ComputeImportedOmmlContentSignature(Math(Run("x"))),
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(Math("<m:r><m:rPr>" + style + "</m:rPr><m:t>x</m:t></m:r>")));
+        Assert.Equal(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(Math(Run("x"))),
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(Math("<m:r><m:rPr>" + style + "</m:rPr><m:t>x</m:t></m:r>")));
     }
 
     [Theory]
@@ -166,8 +166,8 @@ public sealed class WordOmmlCoreContractTests
     [InlineData("bi")]
     public void NonDefaultLetterStylesStillChangeContent(string style)
     {
-        Assert.NotEqual(WordOmmlConverter.ComputeImportedOmmlContentSignature(Math(Run("x"))),
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(Math("<m:r><m:rPr><m:sty m:val=\"" + style + "\"/></m:rPr><m:t>x</m:t></m:r>")));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(Math(Run("x"))),
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(Math("<m:r><m:rPr><m:sty m:val=\"" + style + "\"/></m:rPr><m:t>x</m:t></m:r>")));
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class WordOmmlCoreContractTests
         var plain = Math(Run("x"));
         var annotated = Math("<m:r><m:t xml:space=\"preserve\">x</m:t></m:r>");
         var spaced = Math("<m:r><m:t xml:space=\"preserve\"> x</m:t></m:r>");
-        Assert.Equal(WordOmmlConverter.ComputeImportedOmmlContentSignature(plain), WordOmmlConverter.ComputeImportedOmmlContentSignature(annotated));
-        Assert.NotEqual(WordOmmlConverter.ComputeImportedOmmlContentSignature(plain), WordOmmlConverter.ComputeImportedOmmlContentSignature(spaced));
+        Assert.Equal(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(plain), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(annotated));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(plain), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(spaced));
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class WordOmmlCoreContractTests
         prefixed = System.Text.RegularExpressions.Regex.Replace(prefixed, @"<(\/?)([A-Za-z][A-Za-z0-9]*)(?=[\s/>])", "<$1p:$2");
         var a = WordOmmlConverter.TransformMathMlToOmml(source);
         var b = WordOmmlConverter.TransformMathMlToOmml(prefixed);
-        Assert.Equal(WordOmmlConverter.ComputeImportedOmmlContentSignature(a), WordOmmlConverter.ComputeImportedOmmlContentSignature(b));
+        Assert.Equal(WordOmmlFingerprints.ComputeImportedOmmlContentSignature(a), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(b));
         Assert.Single(XDocument.Parse(b).Descendants(XName.Get("d", M)));
         WordOmmlConverter.ValidateMaterializedOmml(b);
     }
@@ -345,7 +345,7 @@ public sealed class WordOmmlCoreContractTests
         // equality does not prove that Word will hide this bare editor slot.
         var xml = WordOmmlConverter.TransformMathMlToOmml(Mml(source));
         var error = Assert.Throws<InvalidDataException>(() =>
-            WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
+            WordOmmlFromMathMl.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
         Assert.Equal("Office OMML contains a visible empty e slot inside sSup.", error.Message);
     }
 
@@ -358,7 +358,7 @@ public sealed class WordOmmlCoreContractTests
     [InlineData("<m:degHide m:val=\"On\"/>")]
     public void InvalidBooleanCannotBeSilentlyNormalizedToFalse(string property)
     {
-        string Signature(string switchXml) => WordOmmlConverter.ComputeImportedOmmlContentSignature(
+        string Signature(string switchXml) => WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
             Math("<m:rad><m:radPr>" + switchXml + "</m:radPr><m:deg/><m:e>" + Run("x") + "</m:e></m:rad>"));
         Assert.Equal(Signature("<m:degHide m:val=\"1\"/>"), Signature(property));
         Assert.NotEqual(Signature("<m:degHide m:val=\"0\"/>"), Signature(property));

@@ -229,7 +229,7 @@ internal static partial class Program
                     math=maths[i];exact=math.Range;
                     if(!exact.InStory(alias)||exact.Start>alias.Start||exact.End<alias.End)continue;
                     var xml=exact.WordOpenXML;
-                    if(!WordOmmlConverter.HasWordNativeEquationNumberHost(xml))continue;
+                    if(!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml))continue;
                     if(found is not null)throw new InvalidDataException("Native root alias resolves multiple numbered OMath owners.");
                     found=exact.Duplicate;
                 }
@@ -255,7 +255,7 @@ internal static partial class Program
             try
             {
                 exact=RootNativeOwnerRange(doc,i);
-                labels.Add(WordOmmlConverter.ReadWordNativeEquationNumberText(exact.WordOpenXML));
+                labels.Add(WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(exact.WordOpenXML));
             }
             finally{Release(exact);}
         }
@@ -336,7 +336,7 @@ internal static partial class Program
                 try
                 {
                     range=RootNativeOwnerRange(doc,i);
-                    values.Add(WordOmmlConverter.StripWordNativeEquationNumberHost(range.WordOpenXML));
+                    values.Add(WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(range.WordOpenXML));
                 }
                 finally{Release(range);}
             }

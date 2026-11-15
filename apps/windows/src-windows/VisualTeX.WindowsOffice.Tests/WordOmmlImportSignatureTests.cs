@@ -7,7 +7,7 @@ public sealed class WordOmmlImportSignatureTests
 {
     private static string Math(string content) =>
         "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" + content + "</m:oMath>";
-    private static string Signature(string content) => WordOmmlConverter.ComputeImportedOmmlContentSignature(Math(content));
+    private static string Signature(string content) => WordOmmlFingerprints.ComputeImportedOmmlContentSignature(Math(content));
     private const string Sup = "<m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>";
 
     [Fact]
@@ -15,7 +15,7 @@ public sealed class WordOmmlImportSignatureTests
     {
         var word = Sup.Replace("<m:sSup>", "<m:sSup><m:sSupPr><m:ctrlPr><w:rPr><w:szCs w:val=\"21\"/></w:rPr></m:ctrlPr></m:sSupPr>");
         Assert.Equal(Signature(Sup), Signature(word));
-        Assert.Equal(Signature(Sup), WordOmmlConverter.ComputeImportedOmmlContentSignature(
+        Assert.Equal(Signature(Sup), WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
             Math(word).Replace("xmlns:m=", "xmlns:q=").Replace("m:", "q:")));
     }
 
@@ -53,11 +53,11 @@ public sealed class WordOmmlImportSignatureTests
         var actual = Math(Sup.Replace("<m:sSup>", "<m:sSup><m:sSupPr/>"));
         // v1 encoded this harmless Word property-container rewrite differently.
         // v2 deliberately uses the import content model for persistent identity.
-        Assert.NotEqual(WordOmmlConverter.ComputeLegacyOmmlFingerprint(prepared),
-            WordOmmlConverter.ComputeLegacyOmmlFingerprint(actual));
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(prepared),
-            WordOmmlConverter.ComputeOmmlFingerprint(actual));
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(actual),
+        Assert.NotEqual(WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(prepared),
+            WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(actual));
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(prepared),
+            WordOmmlFingerprints.ComputeOmmlFingerprint(actual));
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(actual),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(prepared, actual));
     }
 
@@ -125,7 +125,7 @@ public sealed class WordOmmlImportSignatureTests
 
         Assert.Equal(Signature(prepared), Signature(materialized));
         Assert.Equal(
-            WordOmmlConverter.ComputeOmmlFingerprint(Math(materialized)),
+            WordOmmlFingerprints.ComputeOmmlFingerprint(Math(materialized)),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(
                 Math(prepared),
                 Math(materialized)));
@@ -149,13 +149,13 @@ public sealed class WordOmmlImportSignatureTests
     [Fact]
     public void InsertedMathLocatorPrefersNearestEquationBeforeLargestSpan()
     {
-        Assert.True(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+        Assert.True(WordOmmlInsertion.ShouldPreferInsertedMathCandidate(
             distance: 1, span: 12, bestDistance: 4, bestSpan: 80));
-        Assert.False(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+        Assert.False(WordOmmlInsertion.ShouldPreferInsertedMathCandidate(
             distance: 4, span: 80, bestDistance: 1, bestSpan: 12));
-        Assert.True(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+        Assert.True(WordOmmlInsertion.ShouldPreferInsertedMathCandidate(
             distance: 1, span: 80, bestDistance: 1, bestSpan: 12));
-        Assert.False(WordOmmlConverter.ShouldPreferInsertedMathCandidate(
+        Assert.False(WordOmmlInsertion.ShouldPreferInsertedMathCandidate(
             distance: 17, span: 800, bestDistance: int.MaxValue, bestSpan: -1));
     }
 
@@ -168,7 +168,7 @@ public sealed class WordOmmlImportSignatureTests
         var actual = prepared.Replace("<m:argPr><m:scrLvl m:val=\"0\"/></m:argPr>", "")
             .Replace("<m:fPr><m:type m:val=\"bar\"/></m:fPr>", "<m:fPr/>").Replace("x−2", "x-2");
         Assert.Equal(Signature(prepared), Signature(actual));
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Math(actual)),
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(Math(actual)),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(actual)));
         Assert.NotEqual(Signature(prepared), Signature(actual.Replace("x-2", "x-3")));
         Assert.NotEqual(Signature(prepared), Signature(actual.Replace("<m:t>1</m:t>", "<m:t>2</m:t>")));
@@ -196,7 +196,7 @@ public sealed class WordOmmlImportSignatureTests
         var prepared = prefix + empty + suffix + Sup;
         var actual = "<m:r><m:t>f(x)=|x|,g(x)=</m:t></m:r>" + Sup;
         Assert.Equal(Signature(prepared), Signature(actual));
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Math(actual)),
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(Math(actual)),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(actual)));
         Assert.NotEqual(Signature(prepared), Signature(actual.Replace("g(x)", "h(x)")));
         Assert.NotEqual(Signature(prepared), Signature(prepared.Replace("<m:t/>", "<m:t xml:space=\"preserve\"> </m:t>")));
@@ -279,7 +279,7 @@ public sealed class WordOmmlImportSignatureTests
 
         Assert.Equal(Signature(prepared), Signature(materialized));
         Assert.Equal(
-            WordOmmlConverter.ComputeOmmlFingerprint(Math(materialized)),
+            WordOmmlFingerprints.ComputeOmmlFingerprint(Math(materialized)),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(Math(prepared), Math(materialized)));
     }
 

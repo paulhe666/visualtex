@@ -61,7 +61,7 @@ internal static class WordFormulaHostSemanticReader
             // or a literal number typed by Word itself. Editor/conversion
             // semantics always expose only the mathematical body.
             var semanticXml = display
-                ? WordOmmlConverter.StripWordNativeEquationNumberHost(
+                ? WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                     hostXml)
                 : hostXml;
 

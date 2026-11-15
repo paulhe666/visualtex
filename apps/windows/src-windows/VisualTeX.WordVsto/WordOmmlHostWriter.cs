@@ -106,7 +106,7 @@ internal static class WordOmmlHostWriter
                 document,
                 source.Range);
             var sourceXml = WordOmmlConverter.ReadLocalEquationXml(exact);
-            if (!WordOmmlConverter.HasWordNativeEquationNumberHost(sourceXml))
+            if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(sourceXml))
             {
                 throw new InvalidDataException(
                     "The source OMML no longer contains one Word-native equation-number host.");
@@ -123,12 +123,12 @@ internal static class WordOmmlHostWriter
             // mathematical prefix of m:eqArr/m:e is replaced. VisualTeX does
             // not regenerate, renumber, or reinterpret the native suffix.
             var preservedHostOmml =
-                WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+                WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(
                     sourceXml,
                     semanticOmml);
 
             replacement =
-                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                     document,
                     exact,
                     preservedHostOmml,
@@ -218,7 +218,7 @@ internal static class WordOmmlHostWriter
                     request.FontSizePoints);
 
             replacement =
-                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                     document,
                     exact,
                     preparedOmml,
@@ -373,7 +373,7 @@ internal static class WordOmmlHostWriter
             }
             WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-before-import");
             using (WordOperationMetrics.Measure("FormatConversion.OmmlNative.Import"))
-            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document, insertion, preparedOmml,
                 display: string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
                 mathFontName: document.OMathFontName, allowWordNativeInlinePromotion: true,
@@ -527,7 +527,7 @@ internal static class WordOmmlHostWriter
                 // New OMML is materialized in the actual target paragraph. No
                 // durable VisualTeX identity, scratch document or layout table
                 // participates in the final Word structure.
-                inserted = WordOmmlConverter.ReplaceWithPreparedOmmlInParagraph(
+                inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlInParagraph(
                     document,
                     target,
                     preparedOmml,

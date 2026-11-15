@@ -912,7 +912,7 @@ internal static partial class Program
                         $"{context}: formula {formulaId} has no VTOMML bookmark.");
                 range = WordOmmlFormulaStore.GetEquationRange(bookmark);
                 var xml = range.WordOpenXML;
-                var liveFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(xml);
+                var liveFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(xml);
                 AssertEqual(
                     metadata.NativeOmmlFingerprint ?? string.Empty,
                     liveFingerprint,

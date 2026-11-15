@@ -995,7 +995,7 @@ internal static partial class Program
             var expectedStart = equationRange.Start;
             var expectedFingerprint = stored.NativeOmmlFingerprint
                 ?? throw new InvalidDataException("Anchor recovery acceptance has no native OMML fingerprint.");
-            var liveFingerprintBeforeDrift = WordOmmlConverter.ComputeOmmlFingerprint(
+            var liveFingerprintBeforeDrift = WordOmmlFingerprints.ComputeOmmlFingerprint(
                 equationRange.WordOpenXML);
             var initiallySynchronized = string.Equals(
                 expectedFingerprint,
@@ -1105,7 +1105,7 @@ internal static partial class Program
             equationRange = WordOmmlFormulaStore.GetEquationRange(repairedBookmark);
             var committedMetadata = WordOmmlFormulaStore.TryRead(host.Document, repairedBookmark)
                 ?? throw new InvalidDataException("Commit-time OMML recovery lost metadata.");
-            var committedFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+            var committedFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                 equationRange.WordOpenXML);
             if (!string.Equals(
                     committedMetadata.NativeOmmlFingerprint,
@@ -1137,7 +1137,7 @@ internal static partial class Program
             movedBookmark = null;
             Release(equationRange);
             equationRange = WordOmmlFormulaStore.GetEquationRange(repairedBookmark);
-            var recoveredFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(equationRange.WordOpenXML);
+            var recoveredFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(equationRange.WordOpenXML);
             if (!string.Equals(
                     recoveredFingerprint,
                     committedFingerprint,

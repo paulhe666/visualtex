@@ -58,14 +58,14 @@ internal static partial class Program
             const string mn = "http://schemas.openxmlformats.org/officeDocument/2006/math";
             const string wn = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
             XNamespace m = mn; XNamespace w = wn;
-            var math = XElement.Parse(WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var math = XElement.Parse(WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
                 "Equation", null, 1, "-", "7", "1"));
             // The input is a genuine Word #(literal) host, not a VT numbered ID.
             // Preserve structural proof but replace its number argument with text.
             var argument = math.Element(m + "eqArr")!.Element(m + "e")!.Element(m + "d")!.Element(m + "e")!;
             argument.ReplaceNodes(new XElement(m + "r", new XElement(m + "rPr", new XElement(m + "nor")), new XElement(m + "t", "1-7")));
-            var seeded = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(document, insert, math.ToString(), display: true);
+            var seeded = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(document, insert, math.ToString(), display: true);
             Release(seeded);
             var candidates = document.OMaths;
             try { AssertEqual(1, candidates.Count, "Fixture must own exactly one native OMath."); formula = candidates[1]; }
@@ -216,14 +216,14 @@ internal static partial class Program
             insertion = document.Paragraphs[2].Range;
             insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
             const string mn = "http://schemas.openxmlformats.org/officeDocument/2006/math";
-            var prepared = WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var prepared = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
                 "Equation",
                 numberBookmarkName: null,
                 restartHeadingLevel: 0,
                 headingSeparator: string.Empty,
                 initialSequenceResult: "1");
-            var inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            var inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document,
                 insertion,
                 prepared,
@@ -289,7 +289,7 @@ internal static partial class Program
     private static string ReadAdoptionLabel(Word.OMath formula)
     {
         Word.Range? range = null;
-        try { range = formula.Range; return WordOmmlConverter.ReadWordNativeEquationNumberText(range.WordOpenXML); }
+        try { range = formula.Range; return WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(range.WordOpenXML); }
         finally { Release(range); }
     }
 }

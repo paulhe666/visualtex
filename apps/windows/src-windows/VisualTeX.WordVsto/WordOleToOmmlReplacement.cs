@@ -87,7 +87,7 @@ internal static class WordOleToOmmlReplacement
                 var wpsInline = OfficeHostEnvironment.IsWps && !_display;
                 WpsXmlInsertion.Replace(
                     selected,
-                    wpsInline ? WordOmmlConverter.AppendWpsInlineSentinel(_fragment) : _fragment);
+                    wpsInline ? WordOmmlDocuments.AppendWpsInlineSentinel(_fragment) : _fragment);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-import");
                 bookmarks = _document.Bookmarks;
                 if (!bookmarks.Exists(_owner.LocatorName))
@@ -110,7 +110,7 @@ internal static class WordOleToOmmlReplacement
                 math = maths[1];
                 if (wpsInline)
                 {
-                    WordOmmlConverter.RemoveWpsInlineSentinel(math);
+                    WordOmmlDocuments.RemoveWpsInlineSentinel(math);
                     Release(math); math = null;
                     Release(maths); maths = null;
                     Release(component); component = locator.Range;

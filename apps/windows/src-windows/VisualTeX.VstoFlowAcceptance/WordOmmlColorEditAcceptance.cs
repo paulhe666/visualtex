@@ -42,7 +42,7 @@ internal static partial class Program
                 {
                     host.Document.Content.Text = "LEFT RIGHT\r";
                     insertion = host.Document.Range(5, 5);
-                    inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(host.Document, insertion,
+                    inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(host.Document, insertion,
                         WordOmmlConverter.TransformMathMlToOmml(item.GetProperty("sourceMathMl").GetString()!),
                         display: false, mathFontName: host.Document.OMathFontName);
                     var before = CaptureOmmlColorState(host.Document, artifactRoot, name, "before");

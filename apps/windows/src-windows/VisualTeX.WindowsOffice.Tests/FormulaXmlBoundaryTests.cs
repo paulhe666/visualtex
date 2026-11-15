@@ -61,7 +61,7 @@ public sealed class FormulaXmlBoundaryTests
         Assert.Throws<InvalidDataException>(() => FormulaXml.Parse("<root>" + string.Concat(Enumerable.Repeat("<e>", 256))
             + string.Concat(Enumerable.Repeat("</e>", 256)) + "</root>", "fixture"));
         FormulaXml.Parse("<root>" + string.Concat(Enumerable.Repeat("<e/>", 249_999)) + "</root>", "fixture");
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateMathMlForOmml(
+        Assert.Throws<InvalidDataException>(() => WordOmmlFromMathMl.ValidateMathMlForOmml(
             Math(string.Concat(Enumerable.Repeat("<mi/>", 250_000)))));
         Assert.Throws<InvalidDataException>(() => MathMlToLatexConverter.Convert(Math("<mtext>" + new string('x', 4_000_000) + "</mtext>")));
     }
@@ -115,7 +115,7 @@ public sealed class FormulaXmlBoundaryTests
     {
         switch (route)
         {
-            case "validate": WordOmmlConverter.ValidateMathMlForOmml(input); break;
+            case "validate": WordOmmlFromMathMl.ValidateMathMlForOmml(input); break;
             case "omml": WordOmmlConverter.TransformMathMlToOmml(input); break;
             case "latex": MathMlToLatexConverter.Convert(input); break;
             case "mtef-create": MathTypeMtefCodec.CreateEquationNative(input, true); break;

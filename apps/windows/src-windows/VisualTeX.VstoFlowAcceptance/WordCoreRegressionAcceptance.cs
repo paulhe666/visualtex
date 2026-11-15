@@ -184,7 +184,7 @@ internal static partial class Program
                     liveXml.IndexOf("y", StringComparison.OrdinalIgnoreCase) >= 0,
                     "The Word-native x→y edit did not survive BuildUp.");
                 AssertTrue(
-                    !WordOmmlConverter.MatchesStoredOmmlFingerprint(
+                    !WordOmmlFingerprints.MatchesStoredOmmlFingerprint(
                         liveXml,
                         stored.NativeOmmlFingerprint),
                     "Native edit did not change the stored OMML fingerprint.");
@@ -242,7 +242,7 @@ internal static partial class Program
                         siblingRange,
                         siblingFormulaId);
                     AssertTrue(
-                        WordOmmlConverter.MatchesStoredOmmlFingerprint(
+                        WordOmmlFingerprints.MatchesStoredOmmlFingerprint(
                             siblingXml,
                             stored.NativeOmmlFingerprint),
                         "The identical sibling no longer provides the required stale-fingerprint decoy.");

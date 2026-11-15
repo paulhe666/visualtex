@@ -170,7 +170,7 @@ internal static partial class Program
             bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
                 ?? throw new InvalidDataException(context + ": VTOMML bookmark is missing.");
             formulaRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
-            var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(
+            var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(
                 formulaRange.WordOpenXML ?? string.Empty);
             var xml = XElement.Parse(semantic, LoadOptions.PreserveWhitespace);
             XNamespace math =

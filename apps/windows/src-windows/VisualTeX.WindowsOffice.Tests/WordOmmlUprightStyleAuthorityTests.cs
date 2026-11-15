@@ -120,7 +120,7 @@ public sealed class WordOmmlUprightStyleAuthorityTests
     public void SourceProjectionMaterializesNearestVariantAndTokenDefaults()
     {
         var source = Source("<mstyle mathvariant=\"normal\"><mstyle mathvariant=\"bold-italic\"><mi>ABC</mi><mo>+</mo><mn>2</mn><mi mathvariant=\"normal\">d</mi></mstyle></mstyle><mi>x</mi><mo>+</mo><mn>3</mn><mi>sin</mi>");
-        var projected = XDocument.Parse(WordOmmlConverter.NormalizeMathMlTokenStyleAuthority(source));
+        var projected = XDocument.Parse(WordOmmlFromMathMl.NormalizeMathMlTokenStyleAuthority(source));
         var tokens = projected.Descendants().Where(e => e.Name.LocalName is "mi" or "mo" or "mn").ToArray();
         Assert.Equal(new[] { "bold-italic", "bold-italic", "bold-italic", "normal", "italic", "normal", "normal", "normal" }, tokens.Select(t => (string?)t.Attribute("mathvariant")));
     }
@@ -155,7 +155,7 @@ public sealed class WordOmmlUprightStyleAuthorityTests
     public void ExplicitItalicOperatorStyleRemainsDistinctFromPlainOperatorDefault()
     {
         var xml = Source("<mo mathvariant=\"italic\">∥</mo><mo>+</mo><mo>∥</mo>");
-        var projected = XDocument.Parse(WordOmmlConverter.NormalizeMathMlTokenStyleAuthority(xml));
+        var projected = XDocument.Parse(WordOmmlFromMathMl.NormalizeMathMlTokenStyleAuthority(xml));
         Assert.Equal(new[] { "italic", "normal", "normal" }, projected.Descendants(P + "mo").Select(t => (string?)t.Attribute("mathvariant")));
         var actual = WordOmmlConverter.TransformMathMlToOmml(xml);
         output.WriteLine("F02 FORWARD PROBE " + actual);

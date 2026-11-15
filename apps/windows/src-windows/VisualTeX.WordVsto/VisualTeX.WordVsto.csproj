@@ -55,6 +55,13 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordVisibleEquationNumbers.cs" Link="WordVisibleEquationNumbers.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlBatchSources.cs" Link="WordOmmlBatchSources.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlDocuments.cs" Link="WordOmmlDocuments.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlEquationNumbers.cs" Link="WordOmmlEquationNumbers.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFingerprints.cs" Link="WordOmmlFingerprints.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFromMathMl.cs" Link="WordOmmlFromMathMl.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertion.cs" Link="WordOmmlInsertion.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlToMathMl.cs" Link="WordOmmlToMathMl.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlMathFontPolicy.cs" Link="WordOmmlMathFontPolicy.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OmmlMathMlProjection.cs" Link="OmmlMathMlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />

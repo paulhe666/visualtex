@@ -303,7 +303,10 @@ internal static class Program
         {
             "sin", "cos", "log", "ln", "exp", "lim", "max", "min", "e", "i",
         };
-        var insert = FindStaticMethod(converterType, "Insert", 10);
+        var insertionType = converterType.Assembly.GetType(
+            "VisualTeX.WordVsto.WordOmmlInsertion",
+            throwOnError: true)!;
+        var insert = FindStaticMethod(insertionType, "Insert", 10);
         Word.Application? application = null;
         Word.Document? document = null;
         Word.Document? reopened = null;
@@ -604,7 +607,10 @@ internal static class Program
             var insertion = GetCenterCellInsertionRange(table);
             try
             {
-                var insertOmml = FindStaticMethod(converterType, "Insert", 7);
+                var insertionType = converterType.Assembly.GetType(
+                    "VisualTeX.WordVsto.WordOmmlInsertion",
+                    throwOnError: true)!;
+                var insertOmml = FindStaticMethod(insertionType, "Insert", 7);
                 ommlRange = (WordRange)(Invoke(
                     insertOmml,
                     null,

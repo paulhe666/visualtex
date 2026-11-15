@@ -104,7 +104,7 @@ internal static partial class Program
             AssertEqual(0, formulaRange.Fields.Count,
                 "Numbered→unnumbered OMML retained a mathematical SEQ field.");
             AssertTrue(
-                !WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+                !WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                     formulaRange.WordOpenXML ?? string.Empty),
                 "Numbered→unnumbered OMML retained the generated #(...) wrapper.");
             AssertEqual(0, document.Shapes.Count,

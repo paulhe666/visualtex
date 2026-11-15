@@ -48,7 +48,7 @@ internal static partial class Program
             // not a VisualTeX field or identifier.
             firstInsertion = document.Paragraphs[3].Range.Duplicate;
             firstInsertion.End = firstInsertion.Start;
-            var firstPrepared = XElement.Parse(WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var firstPrepared = XElement.Parse(WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
                 "Equation",
                 numberBookmarkName: null,
@@ -67,7 +67,7 @@ internal static partial class Program
                     m + "r",
                     new XElement(m + "rPr", new XElement(m + "nor")),
                     new XElement(m + "t", "1.1-1")));
-            firstInserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            firstInserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document,
                 firstInsertion,
                 firstPrepared.ToString(),
@@ -76,7 +76,7 @@ internal static partial class Program
 
             secondInsertion = document.Paragraphs[4].Range.Duplicate;
             secondInsertion.End = secondInsertion.Start;
-            secondInserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            secondInserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document,
                 secondInsertion,
                 "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>y+2</m:t></m:r></m:oMath>",
@@ -201,9 +201,9 @@ internal static partial class Program
                     exact = math.Range;
                     if (!IsCurrentNativeEditRange(exact))
                         continue;
-                    if (!WordOmmlConverter.HasWordNativeEquationNumberHost(exact.WordOpenXML))
+                    if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(exact.WordOpenXML))
                         continue;
-                    labels.Add(WordOmmlConverter.ReadWordNativeEquationNumberText(exact.WordOpenXML));
+                    labels.Add(WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(exact.WordOpenXML));
                     number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
                     fields = number.Fields;
                     for (var fieldIndex = 1; fieldIndex <= fields.Count; fieldIndex++)

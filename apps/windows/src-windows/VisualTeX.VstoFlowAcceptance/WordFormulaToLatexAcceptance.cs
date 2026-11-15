@@ -373,7 +373,7 @@ internal static partial class Program
             selection = host.Application.Selection;
             insertion = selection.Range.Duplicate;
             insertion.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-            equationRange = WordOmmlConverter.Insert(
+            equationRange = WordOmmlInsertion.Insert(
                 host.Application,
                 host.Document,
                 insertion,

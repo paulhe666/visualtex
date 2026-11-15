@@ -325,7 +325,7 @@ internal static partial class Program
                 // identical to an ordinary display equation and contain no field.
                 AssertEqual(0, equationRange.Fields.Count,
                     context + ": direct-SEQ table leaked a field into m:oMath.");
-                AssertTrue(!WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml),
+                AssertTrue(!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(openXml),
                     context + ": direct-SEQ table formula still contains a mathematical number wrapper.");
                 AssertTrue(openXml.IndexOf("VTEqNum_", StringComparison.OrdinalIgnoreCase) < 0,
                     context + ": VTEqNum leaked from the right table cell into formula OMML.");
@@ -354,7 +354,7 @@ internal static partial class Program
                     Release(sequenceField);
                 }
 
-                AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(openXml),
+                AssertTrue(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(openXml),
                     context + ": native #(SEQ) equation-number wrapper is missing.");
                 AssertTrue(openXml.IndexOf("VTEqNum_", StringComparison.OrdinalIgnoreCase) >= 0,
                     context + ": VTEqNum bookmark is missing from native formula OMML.");
@@ -363,7 +363,7 @@ internal static partial class Program
                 var numberedXml = XDocument.Parse(openXml, LoadOptions.PreserveWhitespace);
                 AssertEqual(1, numberedXml.Descendants(mathNs + "eqArr").Count(),
                     context + ": Word native #() did not retain its one legal m:eqArr.");
-                semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(openXml);
+                semanticOmml = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(openXml);
             }
             var semanticXml = XDocument.Parse(semanticOmml, LoadOptions.PreserveWhitespace);
             AssertTrue(semanticXml.Descendants(mathNs + "f").Any(),
@@ -500,7 +500,7 @@ internal static partial class Program
         {
             body = ResolveNumberedOmmlFormulaBodyRange(document, equationRange);
             visibleBody = TrimToVisibleMathContent(document, body);
-            var semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(
+            var semanticOmml = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(
                 equationRange.WordOpenXML ?? string.Empty);
             return ReadWordOmmlLayoutMetric(
                 application,

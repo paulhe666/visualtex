@@ -571,14 +571,14 @@ internal sealed partial class WordFormulaService
             exact = math.Range.Duplicate;
             var display = math.Type == WdOMathType.wdOMathDisplay;
             var hostXml = WordOmmlConverter.ReadLocalEquationXml(exact);
-            var numbered = display && WordOmmlConverter.HasWordNativeEquationNumberHost(hostXml);
+            var numbered = display && WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(hostXml);
             string? number = null;
             if (numbered)
             {
-                try { number = WordOmmlConverter.ReadWordNativeEquationNumberText(hostXml); }
+                try { number = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(hostXml); }
                 catch { }
             }
-            var semanticXml = numbered ? WordOmmlConverter.StripWordNativeEquationNumberHost(hostXml) : hostXml;
+            var semanticXml = numbered ? WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(hostXml) : hostXml;
             var mathMl = WordOmmlConverter.TransformOmmlToMathMl(semanticXml, display);
             var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl);
             double? size = null;

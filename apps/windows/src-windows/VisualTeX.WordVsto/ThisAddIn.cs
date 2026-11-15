@@ -2928,7 +2928,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
             var ommlReadPrewarm = Task.Run(
-                WordOmmlConverter.PrewarmOmmlReadPipeline,
+                WordOmmlDocuments.PrewarmOmmlReadPipeline,
                 cancellationToken);
             // Pay the reusable Office editor WebView cold-start cost while Word
             // itself is starting, not on the user's first Edit Formula click.

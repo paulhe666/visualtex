@@ -129,7 +129,7 @@ public sealed class WordOmmlMonospaceProjectionTests
     [InlineData("+")]
     public void OutsideAsciiAlphabetCoverageIsNotClaimedFromVariantAlone(string text)
     {
-        var projected = XDocument.Parse(WordOmmlConverter.NormalizeMathMlTokenStyleAuthority(
+        var projected = XDocument.Parse(WordOmmlFromMathMl.NormalizeMathMlTokenStyleAuthority(
             Math("<mi mathvariant=\"monospace\">" + text + "</mi>")));
         var token = Assert.Single(projected.Descendants(P + "mi"));
         Assert.Equal("monospace", (string?)token.Attribute("mathvariant"));

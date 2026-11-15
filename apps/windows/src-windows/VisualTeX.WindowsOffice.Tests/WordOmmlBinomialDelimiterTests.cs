@@ -42,7 +42,7 @@ public sealed class WordOmmlBinomialDelimiterTests
     public void RuledFractionBetweenFixedDelimitersIsNotTreatedAsABinomial()
     {
         var source = Binomial().Replace(" linethickness='0'", string.Empty);
-        var normalized = WordOmmlConverter.NormalizeMathJaxBinomialDelimiters(source);
+        var normalized = WordOmmlFromMathMl.NormalizeMathJaxBinomialDelimiters(source);
         Assert.Equal(source, normalized);
     }
 
@@ -54,6 +54,6 @@ public sealed class WordOmmlBinomialDelimiterTests
             + "<mi>x</mi>"
             + "<mrow data-mjx-texclass='CLOSE'><mo minsize='1.2em' maxsize='1.2em'>)</mo></mrow>"
             + "</mrow></math>";
-        Assert.Equal(source, WordOmmlConverter.NormalizeMathJaxBinomialDelimiters(source));
+        Assert.Equal(source, WordOmmlFromMathMl.NormalizeMathJaxBinomialDelimiters(source));
     }
 }

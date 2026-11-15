@@ -20,11 +20,11 @@ public sealed class WordOmmlRevisionNumberingTests
     {
         var source = Fixture(revision, merged);
         var text = source.ToString(SaveOptions.DisableFormatting);
-        Assert.True(WordOmmlConverter.HasWordNativeEquationNumberHost(text));
-        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(text, null));
+        Assert.True(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(text));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(text, null));
         foreach (var semantic in new[] {
-            WordOmmlConverter.StripWordNativeEquationNumberHost(text),
-            WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(text) })
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(text),
+            WordOmmlEquationNumbers.StripManagedVisualTeXNativeEquationNumber(text) })
         {
             var body = XElement.Parse(semantic);
             Assert.Empty(body.Descendants(M + "eqArr"));
@@ -47,7 +47,7 @@ public sealed class WordOmmlRevisionNumberingTests
         var suffix = source.Descendants(M + "d").Single();
         var separatorProperties = source.Element(M + "eqArr")!.Element(M + "e")!
             .Elements(M + "r").Last().Element(W + "rPr")!;
-        var replacement = WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+        var replacement = WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(
             source.ToString(SaveOptions.DisableFormatting),
             new XElement(M + "oMath", new XElement(M + "r", new XElement(M + "t", "z"))).ToString());
         var after = XElement.Parse(replacement);
@@ -60,7 +60,7 @@ public sealed class WordOmmlRevisionNumberingTests
             WithoutNamespaceDeclarations(separator.Element(W + "rPr")!)));
         if (revision.Length != 0)
             Assert.Equal("number-author", (string?)separator.Element(W + revision)?.Attribute(W + "author"));
-        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(replacement, null));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(replacement, null));
     }
 
     [Theory]
@@ -69,8 +69,8 @@ public sealed class WordOmmlRevisionNumberingTests
     public void DeletedOrMovedFromSeparatorIsNotCurrentNumbering(string revision)
     {
         var source = Fixture(revision, true).ToString();
-        Assert.False(WordOmmlConverter.HasWordNativeEquationNumberHost(source));
-        Assert.False(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(source, null));
+        Assert.False(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(source));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(source, null));
     }
 
     [Theory]
@@ -81,8 +81,8 @@ public sealed class WordOmmlRevisionNumberingTests
         var source = Fixture("", false);
         var instruction = source.Descendants(M + "t").Single(t => t.Value.Contains("SEQ "));
         instruction.ReplaceWith(new XElement(W + revision, new XAttribute(W + "id", "80"), new XElement(instruction)));
-        Assert.True(WordOmmlConverter.HasWordNativeEquationNumberHost(source.ToString()));
-        Assert.False(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(source.ToString(), null));
+        Assert.True(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(source.ToString()));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(source.ToString(), null));
     }
 
     [Fact]
@@ -94,10 +94,10 @@ public sealed class WordOmmlRevisionNumberingTests
         separator.Add(new XElement(W + "del", new XAttribute(W + "id", "90"), new XElement(M + "t", "old")));
         separator.Add(new XElement(W + "ins", new XAttribute(W + "id", "91"),
             new XAttribute(W + "author", "separator-author"), new XElement(M + "t", "#")));
-        var semantic = XElement.Parse(WordOmmlConverter.StripWordNativeEquationNumberHost(source.ToString()));
+        var semantic = XElement.Parse(WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(source.ToString()));
         Assert.DoesNotContain(semantic.Descendants(M + "t"), t => t.Value == "#");
         Assert.Equal("number-author", (string?)semantic.Descendants(W + "ins").First().Attribute(W + "author"));
-        var after = XElement.Parse(WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(source.ToString(),
+        var after = XElement.Parse(WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(source.ToString(),
             new XElement(M + "oMath", new XElement(M + "r", new XElement(M + "t", "z"))).ToString()));
         var hash = after.Descendants(M + "t").Single(t => t.Value == "#");
         Assert.Equal("separator-author", (string?)hash.Parent!.Attribute(W + "author"));
@@ -111,7 +111,7 @@ public sealed class WordOmmlRevisionNumberingTests
     public void LiteralHeadingIsNativeTextAndOneLiveSequence(string prefix, int level, string separator)
     {
         var semantic = new XElement(M + "oMath", new XElement(M + "r", new XElement(M + "t", "x"))).ToString();
-        var xml = WordOmmlConverter.BuildWordNativeNumberedOmml(semantic, "UserEquation", null,
+        var xml = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(semantic, "UserEquation", null,
             level, separator, literalHeadingPrefix: prefix);
         var equation = XElement.Parse(xml);
         var instructions = equation.Descendants(W + "instrText").Select(e => e.Value).ToArray();
@@ -120,9 +120,9 @@ public sealed class WordOmmlRevisionNumberingTests
         Assert.Contains("\\s " + level, instructions[0]);
         Assert.DoesNotContain("STYLEREF", xml);
         Assert.Contains(equation.Descendants(M + "t"), t => t.Value == prefix);
-        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(xml, null));
-        Assert.True(WordOmmlConverter.HasWordNativeEquationNumberHost(xml));
-        Assert.DoesNotContain("UserEquation", WordOmmlConverter.StripWordNativeEquationNumberHost(xml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(xml, null));
+        Assert.True(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml));
+        Assert.DoesNotContain("UserEquation", WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(xml));
         Assert.Empty(equation.Descendants(W + "bookmarkStart"));
     }
 
@@ -130,7 +130,7 @@ public sealed class WordOmmlRevisionNumberingTests
     public void AutomaticHeadingKeepsStyleRefAndSequenceAndQuotedIdentifier()
     {
         var semantic = new XElement(M + "oMath", new XElement(M + "r", new XElement(M + "t", "x"))).ToString();
-        var xml = WordOmmlConverter.BuildWordNativeNumberedOmml(semantic, "User Equation", null, 2, ".");
+        var xml = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(semantic, "User Equation", null, 2, ".");
         var instructions = XElement.Parse(xml).Descendants(W + "instrText").Select(e => e.Value).ToArray();
         Assert.Equal(2, instructions.Length);
         Assert.Contains("STYLEREF 2", instructions[0]);
@@ -145,7 +145,7 @@ public sealed class WordOmmlRevisionNumberingTests
     public void InvalidLiteralPrefixCannotEnterANativeNumber(int level, string prefix)
     {
         var semantic = new XElement(M + "oMath", new XElement(M + "r", new XElement(M + "t", "x"))).ToString();
-        Assert.Throws<ArgumentException>(() => WordOmmlConverter.BuildWordNativeNumberedOmml(
+        Assert.Throws<ArgumentException>(() => WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             semantic, "Equation", null, level, ".", literalHeadingPrefix: prefix));
     }
 

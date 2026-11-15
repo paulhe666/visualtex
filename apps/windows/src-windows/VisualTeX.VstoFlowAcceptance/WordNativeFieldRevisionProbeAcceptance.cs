@@ -43,9 +43,9 @@ internal static partial class Program
             insertion.End = insertion.Start;
             const string mn = "http://schemas.openxmlformats.org/officeDocument/2006/math";
             var semantic = "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>";
-            var prepared = WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var prepared = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 semantic, "Equation", null, 1, "-", "1", null, 1);
-            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document, insertion, prepared, display: true, mathFontName: document.OMathFontName);
             maths = inserted.OMaths;
             math = maths[1];

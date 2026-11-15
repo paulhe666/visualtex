@@ -49,7 +49,7 @@ internal static partial class Program
                 exact.Fields.Count,
                 "The Word-native #(2) fixture unexpectedly contains fields.");
             AssertTrue(
-                WordOmmlConverter.HasWordNativeEquationNumberHost(
+                WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(
                     exact.WordOpenXML ?? string.Empty),
                 "Word did not normalize #(2) to its native equation-number host.");
 
@@ -115,7 +115,7 @@ internal static partial class Program
                 exact.Fields.Count,
                 "Editing field-free numbered OMML introduced a field.");
             AssertTrue(
-                WordOmmlConverter.HasWordNativeEquationNumberHost(
+                WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(
                     exact.WordOpenXML ?? string.Empty),
                 "Editing field-free numbered OMML removed the native #(2) host.");
             AssertEqual(
@@ -230,7 +230,7 @@ internal static partial class Program
         string stage)
     {
         var semanticOmml =
-            WordOmmlConverter.StripWordNativeEquationNumberHost(
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                 wordOpenXml);
         var actualMathMl =
             WordOmmlConverter.TransformOmmlToMathMl(

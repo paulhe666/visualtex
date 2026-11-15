@@ -370,7 +370,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                     {
                         exact = source.Range;
                         if (!captured.Add(exact.Start)) continue;
-                        if (!exact.InStory(scope) || !WordOmmlConverter.HasWordNativeEquationNumberHost(
+                        if (!exact.InStory(scope) || !WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(
                                 WordOmmlConverter.ReadLocalEquationXml(exact)))
                             throw new InvalidDataException("A prepared native number lost its structural ownership.");
                         owners = exact.OMaths;

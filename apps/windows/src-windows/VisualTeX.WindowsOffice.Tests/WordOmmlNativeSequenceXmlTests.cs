@@ -17,9 +17,9 @@ public sealed class WordOmmlNativeSequenceXmlTests
         var formulaId = "00112233445566778899aabbccddeeff";
         var omml = BuildDirectSequenceOmml(formulaId, includeVisualTeXAliases: true);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
 
-        var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml);
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml);
         var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         var math = (XNamespace)MathNamespace;
         var word = (XNamespace)WordNamespace;
@@ -47,8 +47,8 @@ public sealed class WordOmmlNativeSequenceXmlTests
                 instruction.Value));
         var normalized = document.Root!.ToString(SaveOptions.DisableFormatting);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(normalized));
-        var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(normalized);
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(normalized));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(normalized);
         var semanticDocument = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         Assert.Empty(semanticDocument.Descendants(math + "eqArr"));
         Assert.Equal(
@@ -75,8 +75,8 @@ public sealed class WordOmmlNativeSequenceXmlTests
             FieldRun(math, word, new XElement(math + "t", "\\* ARABIC ")));
         var split = document.Root!.ToString(SaveOptions.DisableFormatting);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(split));
-        var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(split);
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(split));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(split);
         var semanticDocument = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         Assert.Empty(semanticDocument.Descendants(math + "eqArr"));
         Assert.Equal(
@@ -91,10 +91,10 @@ public sealed class WordOmmlNativeSequenceXmlTests
             "00112233445566778899aabbccddeeff",
             includeVisualTeXAliases: false);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
-        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(omml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(omml));
         var semantic = XDocument.Parse(
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml));
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml));
         XNamespace math = MathNamespace;
         XNamespace word = WordNamespace;
         Assert.Empty(semantic.Descendants(math + "eqArr"));
@@ -130,12 +130,12 @@ public sealed class WordOmmlNativeSequenceXmlTests
         var source = equation.ToString(SaveOptions.DisableFormatting);
         var unchanged = WordOmmlConverter.ExtractSingleOMath(source);
 
-        Assert.False(WordOmmlConverter.HasWordNativeEquationNumberHost(source));
-        Assert.False(WordOmmlConverter.HasVisualTeXNativeEquationNumber(source));
-        Assert.False(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(source));
-        Assert.Equal(unchanged, WordOmmlConverter.StripWordNativeEquationNumberHost(source));
-        Assert.Equal(unchanged, WordOmmlConverter.StripVisualTeXNativeEquationNumber(source));
-        Assert.Equal(unchanged, WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(source));
+        Assert.False(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(source));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(source));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripManagedVisualTeXNativeEquationNumber(source));
     }
 
     [Fact]
@@ -145,12 +145,12 @@ public sealed class WordOmmlNativeSequenceXmlTests
             appendMathematicsAfterNumber: false);
 
         Assert.False(
-            WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
+            WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
         Assert.True(
-            WordOmmlConverter.HasWordNativeEquationNumberHost(omml));
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(omml));
 
         var semantic =
-            WordOmmlConverter.StripWordNativeEquationNumberHost(omml);
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(omml);
         var document =
             XDocument.Parse(
                 semantic,
@@ -173,10 +173,10 @@ public sealed class WordOmmlNativeSequenceXmlTests
             appendMathematicsAfterNumber: true);
 
         Assert.False(
-            WordOmmlConverter.HasWordNativeEquationNumberHost(omml));
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(omml));
         Assert.Equal(
             WordOmmlConverter.ExtractSingleOMath(omml),
-            WordOmmlConverter.StripWordNativeEquationNumberHost(omml));
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(omml));
     }
 
     [Fact]
@@ -194,15 +194,15 @@ public sealed class WordOmmlNativeSequenceXmlTests
             .ToString(SaveOptions.DisableFormatting);
 
         var merged =
-            WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+            WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(
                 original,
                 replacement);
 
         Assert.True(
-            WordOmmlConverter.HasWordNativeEquationNumberHost(merged));
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(merged));
         var semantic =
             XDocument.Parse(
-                WordOmmlConverter.StripWordNativeEquationNumberHost(merged),
+                WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(merged),
                 LoadOptions.PreserveWhitespace);
         Assert.Equal(
             "y+2",
@@ -229,11 +229,11 @@ public sealed class WordOmmlNativeSequenceXmlTests
             includeVisualTeXAliases: false);
 
         // Alias loss does not change the current native host's topology.
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
-        var semantic = WordOmmlConverter
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        var semantic = WordOmmlEquationNumbers
             .StripManagedVisualTeXNativeEquationNumber(omml);
         Assert.Equal(
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml),
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml),
             semantic);
         var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         var math = (XNamespace)MathNamespace;
@@ -396,8 +396,8 @@ public sealed class WordOmmlNativeSequenceXmlTests
         var formulaId = "00112233445566778899aabbccddeeff";
         var omml = BuildRetiredReferenceOmml(formulaId);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
-        var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml);
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml);
         var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         var math = (XNamespace)MathNamespace;
         var word = (XNamespace)WordNamespace;

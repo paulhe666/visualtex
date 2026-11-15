@@ -587,7 +587,7 @@ internal static partial class Program
                 math = maths[index];
                 range = math.Range.Duplicate;
                 var openXml = range.WordOpenXML ?? string.Empty;
-                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml))
+                if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(openXml))
                     count++;
             }
             return count;

@@ -58,7 +58,7 @@ internal static partial class Program
                 ?? throw new InvalidDataException("Hash-migration fixture lost VTOMML identity.");
             equationRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
             var semanticOmml = equationRange.WordOpenXML ?? string.Empty;
-            var retiredHashOmml = WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+            var retiredHashOmml = WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
                 semanticOmml,
                 "VisualTeXEquation",
                 WordNumberingFields.NativeNumberBookmarkName(formulaId),
@@ -70,7 +70,7 @@ internal static partial class Program
 
             Release(formulaBookmark); formulaBookmark = null;
             application = document.Application;
-            hashRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+            hashRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 equationRange,
@@ -206,7 +206,7 @@ internal static partial class Program
             code = field.Code;
             AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(code.Text),
                 "The retired #(SEQ) fixture mathematical field is not SEQ VisualTeXEquation.");
-            AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            AssertTrue(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     equationRange.WordOpenXML,
                     formulaId),
                 "The retired fixture is missing the managed #(SEQ) wrapper/aliases.");
@@ -244,7 +244,7 @@ internal static partial class Program
                 metadata);
             AssertEqual(0, equationRange.Fields.Count,
                 context + ": a retired mathematical SEQ still remains inside m:oMath.");
-            AssertTrue(!WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+            AssertTrue(!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                     equationRange.WordOpenXML ?? string.Empty),
                 context + ": the retired m:eqArr/#(...) wrapper still remains in m:oMath.");
             AssertTrue((equationRange.WordOpenXML ?? string.Empty).IndexOf(

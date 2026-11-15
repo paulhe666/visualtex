@@ -19,7 +19,7 @@ public sealed class WordOmmlHashSequenceNumberingTests
         var visibleName = "VTEq_" + formulaId.ToString("N");
         var captionName = "VTEqCap_" + formulaId.ToString("N");
 
-        var numbered = WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+        var numbered = WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
             SimpleFormula("x"),
             "VisualTeXEquation",
             numberName,
@@ -72,9 +72,9 @@ public sealed class WordOmmlHashSequenceNumberingTests
         Assert.Contains(captionName, bookmarkNames);
         Assert.Equal(3, bookmarkNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(numbered));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(numbered));
         var semantic = XElement.Parse(
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(numbered));
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(numbered));
         Assert.Equal(Math + "oMath", semantic.Name);
         Assert.Empty(semantic.Elements(Math + "eqArr"));
         Assert.Equal("x", string.Concat(semantic.Descendants(Math + "t").Select(node => node.Value)));
@@ -90,7 +90,7 @@ public sealed class WordOmmlHashSequenceNumberingTests
         var visibleName = "VTEq_" + formulaId.ToString("N");
         var captionName = "VTEqCap_" + formulaId.ToString("N");
         var numbered = XElement.Parse(
-            WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+            WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
                 SimpleFormula("x"),
                 "VisualTeXEquation",
                 numberName,
@@ -108,9 +108,9 @@ public sealed class WordOmmlHashSequenceNumberingTests
         hashRun.Remove();
         var wordNormalized = numbered.ToString(SaveOptions.DisableFormatting);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(wordNormalized));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(wordNormalized));
         var semantic = XElement.Parse(
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(wordNormalized));
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(wordNormalized));
         Assert.Equal("x", string.Concat(semantic.Descendants(Math + "t").Select(node => node.Value)));
     }
 
@@ -122,7 +122,7 @@ public sealed class WordOmmlHashSequenceNumberingTests
         var visibleName = "VTEq_" + formulaId.ToString("N");
         var captionName = "VTEqCap_" + formulaId.ToString("N");
 
-        var numbered = WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+        var numbered = WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
             SimpleFormula("y"),
             "VisualTeXEquation",
             numberName,
@@ -171,17 +171,17 @@ public sealed class WordOmmlHashSequenceNumberingTests
                     new XElement(Math + "r", new XElement(Math + "t", "x=y")))))
             .ToString(SaveOptions.DisableFormatting);
 
-        Assert.False(WordOmmlConverter.HasVisualTeXNativeEquationNumber(arbitrary));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(arbitrary));
         Assert.Equal(
             arbitrary,
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(arbitrary));
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(arbitrary));
     }
 
     [Fact]
     public void BuildImmutableHashSequenceNumberedOmml_RejectsInvalidBookmarkName()
     {
         Assert.Throws<ArgumentException>(() =>
-            WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
+            WordOmmlEquationNumbers.BuildImmutableHashSequenceNumberedOmml(
                 SimpleFormula("z"),
                 "VisualTeXEquation",
                 "VTEqNum-invalid-name",

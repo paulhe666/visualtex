@@ -76,14 +76,14 @@ public sealed class WordNativeNumberingContextTests
     {
         XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        var xml = WordOmmlConverter.BuildWordNativeNumberedOmml(
+        var xml = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             "<m:oMath xmlns:m=\"" + m + "\"><m:r><m:t>x</m:t></m:r></m:oMath>",
             "User Counter", null, 1, "-", "3", "2");
         var equation = XElement.Parse(xml);
         var argument = equation.Element(m + "eqArr")!.Element(m + "e")!.Element(m + "d")!.Element(m + "e")!;
         argument.Add(new XElement(m + "r", new XElement(w + "del", new XElement(m + "t", "99"))));
         argument.Add(new XElement(w + "moveFrom", new XElement(m + "r", new XElement(m + "t", "88"))));
-        Assert.Equal("2-3", WordOmmlConverter.ReadWordNativeEquationNumberText(equation.ToString()));
+        Assert.Equal("2-3", WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(equation.ToString()));
     }
 
     [Fact]
@@ -91,24 +91,24 @@ public sealed class WordNativeNumberingContextTests
     {
         XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        var xml = WordOmmlConverter.BuildWordNativeNumberedOmml(
+        var xml = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             "<m:oMath xmlns:m=\"" + m + "\"><m:r><m:t>x</m:t></m:r></m:oMath>",
             "Equation", null, 1, "-", "2", "2");
         var equation = XElement.Parse(xml);
         foreach (var instruction in equation.Descendants(w + "instrText").ToArray())
             instruction.ReplaceWith(new XElement(m + "t", instruction.Value));
-        Assert.Equal("2-2", WordOmmlConverter.ReadWordNativeEquationNumberText(equation.ToString()));
+        Assert.Equal("2-2", WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(equation.ToString()));
     }
 
     [Fact]
     public void NativeResetIsFieldSyntaxNotAnOwnedIdOrLiteralCacheHack()
     {
-        var xml = WordOmmlConverter.BuildWordNativeNumberedOmml(
+        var xml = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:r><m:t>x</m:t></m:r></m:oMath>",
             "Equation", null, 0, "", "17", null, 17);
         Assert.Contains("SEQ Equation \\r 17", xml);
-        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(xml));
-        Assert.Equal("17", WordOmmlConverter.ReadWordNativeEquationNumberText(xml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(xml));
+        Assert.Equal("17", WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml));
         Assert.DoesNotContain("bookmark", xml);
         Assert.DoesNotContain("VTOMML", xml);
     }

@@ -103,7 +103,7 @@ public sealed class WordOmmlBracketPairTests
     {
         var source = $"<math xmlns='{Ns}'><mrow data-mjx-texclass='REL'><mo>(</mo></mrow>"
             + "<mi>x</mi><mrow data-mjx-texclass='REL'><mo>)</mo></mrow></math>";
-        Assert.Equal(source, WordOmmlConverter.NormalizePlainBracketPairs(source));
+        Assert.Equal(source, WordOmmlFromMathMl.NormalizePlainBracketPairs(source));
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class WordOmmlBracketPairTests
     {
         var source = $"<math xmlns='{Ns}'><mo fence='false' stretchy='false'>(</mo>"
             + "<mi data-mtef-mtcode='120'>x</mi><mo fence='false' stretchy='false'>)</mo></math>";
-        Assert.Equal(source, WordOmmlConverter.NormalizePlainBracketPairs(source));
+        Assert.Equal(source, WordOmmlFromMathMl.NormalizePlainBracketPairs(source));
     }
 
     [Fact]
@@ -129,13 +129,13 @@ public sealed class WordOmmlBracketPairTests
     {
         var source = $"<math xmlns='{Ns}'><mo stretchy='false' mathvariant='normal'>(</mo><mi>x</mi>"
             + "<mo stretchy='false' mathvariant='normal'>)</mo></math>";
-        Assert.Equal(source, WordOmmlConverter.NormalizePlainBracketPairs(source));
+        Assert.Equal(source, WordOmmlFromMathMl.NormalizePlainBracketPairs(source));
     }
 
     [Fact]
     public void VerticalBarsAreNotPaired()
     {
         var source = $"<math xmlns='{Ns}'><mo>|</mo><mi>x</mi><mo>|</mo></math>";
-        Assert.Equal(source, WordOmmlConverter.NormalizePlainBracketPairs(source));
+        Assert.Equal(source, WordOmmlFromMathMl.NormalizePlainBracketPairs(source));
     }
 }

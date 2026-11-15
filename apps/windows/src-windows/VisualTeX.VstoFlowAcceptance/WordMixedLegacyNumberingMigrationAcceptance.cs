@@ -400,7 +400,7 @@ internal static partial class Program
             string mathFontName;
             try { mathFontName = document.OMathFontName ?? string.Empty; }
             catch { mathFontName = string.Empty; }
-            badRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+            badRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 equationRange,
@@ -419,7 +419,7 @@ internal static partial class Program
             AssertTrue(!(bool)badRange.get_Information(Word.WdInformation.wdWithInTable),
                 "The mixed bad-eqArr fixture unexpectedly remained inside a table.");
             AssertTrue(
-                WordOmmlConverter.HasVisualTeXNativeEquationNumber(badRange.WordOpenXML),
+                WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(badRange.WordOpenXML),
                 "The mixed fixture did not materialize the historical m:eqArr/# numbering wrapper.");
         }
         finally

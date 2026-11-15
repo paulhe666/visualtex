@@ -1,4 +1,6 @@
 using System.Xml.Linq;
+using static VisualTeX.WordVsto.WordOmmlFingerprints;
+using static VisualTeX.WordVsto.WordOmmlFromMathMl;
 
 namespace VisualTeX.WordVsto;
 

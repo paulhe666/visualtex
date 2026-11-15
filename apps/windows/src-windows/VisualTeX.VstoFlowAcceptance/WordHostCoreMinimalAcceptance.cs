@@ -1127,7 +1127,7 @@ internal static partial class Program
                 pastedMath.Type,
                 "Native Word paste changed numbered OMath display mode.");
             AssertTrue(
-                WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     pastedRange.WordOpenXML,
                     formulaId: null),
                 "Native Word paste lost the m:eqArr + #(SEQ) structure.");

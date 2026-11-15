@@ -450,7 +450,7 @@ internal static partial class Program
             paragraph = document.Paragraphs.Add();
             paragraphRange = paragraph.Range;
             insertion = document.Range(paragraphRange.Start, paragraphRange.Start);
-            baseRange = WordOmmlConverter.Insert(
+            baseRange = WordOmmlInsertion.Insert(
                 application,
                 document,
                 insertion,
@@ -466,7 +466,7 @@ internal static partial class Program
                 kind,
                 sequenceName,
                 targetBookmarkName);
-            taggedRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+            taggedRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 baseRange,

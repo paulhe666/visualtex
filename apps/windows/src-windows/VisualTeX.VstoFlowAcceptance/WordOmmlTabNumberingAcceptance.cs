@@ -438,7 +438,7 @@ internal static partial class Program
                 context + ": SEQ field has no visible result.");
 
             var openXml = equationRange.WordOpenXML ?? string.Empty;
-            AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(openXml),
+            AssertTrue(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(openXml),
                 context + ": OMath is not the accepted native #(SEQ) structure.");
             AssertTrue(openXml.IndexOf(
                     "REF VTEqNum_",
@@ -930,7 +930,7 @@ internal static partial class Program
             if (formulaBookmark is null) return false;
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
             var openXml = formulaRange.WordOpenXML ?? string.Empty;
-            if (!WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml)
+            if (!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(openXml)
                 || openXml.IndexOf("SEQ VisualTeXEquation",
                     StringComparison.OrdinalIgnoreCase) < 0)
                 return false;
@@ -1114,7 +1114,7 @@ internal static partial class Program
                     healthy++;
                     continue;
                 }
-                if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         equationRange.WordOpenXML,
                         formulaId))
                     continue;

@@ -41,7 +41,7 @@ internal static partial class Program
                     var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow"
                         + (colored ? " mathcolor=\"#0070C0\"" : "")
                         + "><mi>" + (scenario == "unicode" ? "\U00020000" : "x") + "</mi><mo>+</mo><mi>y</mi></mrow></math>";
-                    equation = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(doc, insertion,
+                    equation = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(doc, insertion,
                         WordOmmlConverter.TransformMathMlToOmml(mathMl), display, doc.OMathFontName);
                     var host = WordFormulaHostLookup.ResolveLocal(doc, equation, WordFormulaHostKind.Omml)
                         ?? throw new InvalidDataException("No exact native source.");

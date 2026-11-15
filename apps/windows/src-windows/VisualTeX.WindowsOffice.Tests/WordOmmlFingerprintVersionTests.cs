@@ -28,10 +28,10 @@ public sealed class WordOmmlFingerprintVersionTests
     public void LegacyDigestsRemainByteCompatible(string body, string golden)
     {
         var xml = Math(body);
-        Assert.Equal(golden, WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml));
-        Assert.Equal(golden, WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(xml, golden));
-        Assert.True(WordOmmlConverter.MatchesStoredOmmlFingerprint(xml, golden));
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(xml), WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(xml, golden));
+        Assert.Equal(golden, WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml));
+        Assert.Equal(golden, WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(xml, golden));
+        Assert.True(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(xml, golden));
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(xml), WordOmmlFingerprints.UpgradeVerifiedOmmlFingerprint(xml, golden));
     }
 
     [Theory]
@@ -65,7 +65,7 @@ public sealed class WordOmmlFingerprintVersionTests
                      "omml2:" + new string('a', 63), "omml3:" + new string('a', 64), " " + new string('a', 64) })
         {
             Assert.False(OmmlFingerprintFormat.IsSupported(value));
-            Assert.Throws<InvalidOperationException>(() => WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(Equation("x"), value));
+            Assert.Throws<InvalidOperationException>(() => WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(Equation("x"), value));
         }
     }
 
@@ -74,11 +74,11 @@ public sealed class WordOmmlFingerprintVersionTests
     {
         var xml = Equation("x");
         var alias = xml.Replace("xmlns:m=", "xmlns:q=").Replace("m:", "q:");
-        var expected = WordOmmlConverter.ComputeOmmlFingerprint(xml);
-        Assert.Equal("omml2:" + WordOmmlConverter.ComputeImportedOmmlContentSignature(xml), expected);
-        Assert.True(WordOmmlConverter.MatchesStoredOmmlFingerprint(alias, expected));
+        var expected = WordOmmlFingerprints.ComputeOmmlFingerprint(xml);
+        Assert.Equal("omml2:" + WordOmmlFingerprints.ComputeImportedOmmlContentSignature(xml), expected);
+        Assert.True(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(alias, expected));
         Assert.Equal(expected, WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(xml, alias));
-        Assert.NotEqual(WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml), WordOmmlConverter.ComputeLegacyOmmlFingerprint(alias));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml), WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(alias));
     }
 
     [Theory]
@@ -91,23 +91,23 @@ public sealed class WordOmmlFingerprintVersionTests
         string Root(string? flag) => Math("<m:rad><m:radPr><m:degHide"
             + (flag is null ? "" : " m:val=\"" + flag + "\"")
             + "/></m:radPr><m:deg/><m:e>" + Run("x") + "</m:e></m:rad>");
-        var expected = WordOmmlConverter.ComputeOmmlFingerprint(Root("1"));
-        Assert.True(WordOmmlConverter.MatchesStoredOmmlFingerprint(Root(value), expected));
-        Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Root("0"), expected));
+        var expected = WordOmmlFingerprints.ComputeOmmlFingerprint(Root("1"));
+        Assert.True(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(Root(value), expected));
+        Assert.False(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(Root("0"), expected));
     }
 
     [Fact]
     public void CapturedOwnerRefreshesLegacyFingerprintWithoutClaimingContentEquality()
     {
-        var legacy = WordOmmlConverter.ComputeLegacyOmmlFingerprint(Equation("x"));
+        var legacy = WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(Equation("x"));
         // A stale hash still detects different content. Identity resolution is
         // separately governed by the captured physical owner, whose current
         // content is used when refreshing the persisted fingerprint.
-        Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Equation("y"), legacy));
-        var refreshed = WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(Equation("y"), legacy);
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Equation("y")), refreshed);
-        Assert.NotEqual(WordOmmlConverter.ComputeOmmlFingerprint(Equation("x")), refreshed);
-        Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Equation("x"), null));
+        Assert.False(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(Equation("y"), legacy));
+        var refreshed = WordOmmlFingerprints.UpgradeVerifiedOmmlFingerprint(Equation("y"), legacy);
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(Equation("y")), refreshed);
+        Assert.NotEqual(WordOmmlFingerprints.ComputeOmmlFingerprint(Equation("x")), refreshed);
+        Assert.False(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(Equation("x"), null));
     }
 
     [Theory]
@@ -116,16 +116,16 @@ public sealed class WordOmmlFingerprintVersionTests
     [InlineData("x", "xx")]
     public void NewVersionStillRejectsRealContentChanges(string from, string to)
     {
-        Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Equation(to), WordOmmlConverter.ComputeOmmlFingerprint(Equation(from))));
+        Assert.False(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(Equation(to), WordOmmlFingerprints.ComputeOmmlFingerprint(Equation(from))));
     }
 
     [Fact]
     public void LegacyAndNewCopiesShareOneVerifiedLogicalCountKey()
     {
         var xml = Equation("x");
-        var old = WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml);
-        var current = WordOmmlConverter.ComputeOmmlFingerprint(xml);
-        var identities = new[] { old, current, old }.Select(value => WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(xml, value)).ToArray();
+        var old = WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml);
+        var current = WordOmmlFingerprints.ComputeOmmlFingerprint(xml);
+        var identities = new[] { old, current, old }.Select(value => WordOmmlFingerprints.UpgradeVerifiedOmmlFingerprint(xml, value)).ToArray();
         Assert.Single(identities.Distinct());
         Assert.Equal(3, identities.Count(value => value == current));
     }
@@ -137,8 +137,8 @@ public sealed class WordOmmlFingerprintVersionTests
         var body = new XElement(W + "body", Paragraph(First, "1", xml), Paragraph(Second, "2", xml));
         var expected = new Dictionary<string, string>
         {
-            [First] = WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml),
-            [Second] = WordOmmlConverter.ComputeOmmlFingerprint(xml),
+            [First] = WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml),
+            [Second] = WordOmmlFingerprints.ComputeOmmlFingerprint(xml),
         };
         var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body, expected);
         Assert.Equal((0, true), result[First]);
@@ -153,8 +153,8 @@ public sealed class WordOmmlFingerprintVersionTests
         Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
             new Dictionary<string, string>
             {
-                [First] = WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml),
-                [Second] = WordOmmlConverter.ComputeOmmlFingerprint(xml),
+                [First] = WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml),
+                [Second] = WordOmmlFingerprints.ComputeOmmlFingerprint(xml),
             }, liveInsertedOwners: new Dictionary<string, int> { [First] = 0, [Second] = 0 }));
     }
 
@@ -163,7 +163,7 @@ public sealed class WordOmmlFingerprintVersionTests
     {
         var body = new XElement(W + "body", Paragraph(First, "1", Equation("y")), Paragraph(Second, "2", Equation("x")));
         var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
-            new Dictionary<string, string> { [First] = WordOmmlConverter.ComputeLegacyOmmlFingerprint(Equation("x")) },
+            new Dictionary<string, string> { [First] = WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(Equation("x")) },
             exactAnchorOwners: new Dictionary<string, int> { [First] = 0 });
 
         Assert.Equal((0, true), result[First]);
@@ -179,7 +179,7 @@ public sealed class WordOmmlFingerprintVersionTests
             var id = Guid.NewGuid().ToString();
             var xml = Equation("x" + (i % 7)); // Many identical contents, distinct anchors.
             body.Add(Paragraph(id, i.ToString(), xml));
-            expected[id] = i % 2 == 0 ? WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml) : WordOmmlConverter.ComputeOmmlFingerprint(xml);
+            expected[id] = i % 2 == 0 ? WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml) : WordOmmlFingerprints.ComputeOmmlFingerprint(xml);
         }
         var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body, expected);
         Assert.Equal(1000, result.Count);
@@ -190,7 +190,7 @@ public sealed class WordOmmlFingerprintVersionTests
     public void MerelyReadingALegacyEquationPreservesOriginalLatexAndStoredIdentity()
     {
         var xml = Equation("x");
-        var metadata = Metadata(WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml));
+        var metadata = Metadata(WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml));
         var before = FormulaMetadataCodec.Encode(metadata);
         var refreshed = WordOmmlNativeSource.RefreshForVisualTeXFromCapturedWordOpenXml(metadata, xml);
         Assert.NotSame(metadata, refreshed);
@@ -205,12 +205,12 @@ public sealed class WordOmmlFingerprintVersionTests
     public void MetadataSerializationPreservesBothVersions(bool legacy)
     {
         var xml = Equation("x");
-        var expected = legacy ? WordOmmlConverter.ComputeLegacyOmmlFingerprint(xml) : WordOmmlConverter.ComputeOmmlFingerprint(xml);
+        var expected = legacy ? WordOmmlFingerprints.ComputeLegacyOmmlFingerprint(xml) : WordOmmlFingerprints.ComputeOmmlFingerprint(xml);
         var metadata = Metadata(expected);
         var roundTrip = FormulaMetadataCodec.Decode(FormulaMetadataCodec.Encode(metadata));
         Assert.NotNull(roundTrip);
         Assert.Equal(expected, roundTrip.NativeOmmlFingerprint);
-        Assert.True(WordOmmlConverter.MatchesStoredOmmlFingerprint(xml, roundTrip.NativeOmmlFingerprint));
+        Assert.True(WordOmmlFingerprints.MatchesStoredOmmlFingerprint(xml, roundTrip.NativeOmmlFingerprint));
     }
 
     [Fact]
@@ -220,28 +220,28 @@ public sealed class WordOmmlFingerprintVersionTests
         const string q = "<q:rPr xmlns:q=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><q:sty q:val=\"b\"/></q:rPr>";
         var split = Math("<m:r>" + p + "<m:t>x</m:t></m:r><m:r>" + q + "<m:t>y</m:t></m:r>");
         var joined = Math("<m:r>" + p + "<m:t>xy</m:t></m:r>");
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(joined), WordOmmlConverter.ComputeOmmlFingerprint(split));
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(joined), WordOmmlFingerprints.ComputeOmmlFingerprint(split));
     }
 
     [Fact]
     public void EmptyNamespaceOnlyPropertiesAreNotMathematicalContent()
     {
         var properties = Equation("x").Replace("<m:r>", "<m:r><q:rPr xmlns:q=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"/>");
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Equation("x")), WordOmmlConverter.ComputeOmmlFingerprint(properties));
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(Equation("x")), WordOmmlFingerprints.ComputeOmmlFingerprint(properties));
     }
 
     [Fact]
     public void RunGroupingCannotSilentlyDiscardWordControlChildren()
     {
         var withControl = Math(Run("x") + "<m:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:br/><m:t>y</m:t></m:r>");
-        Assert.NotEqual(WordOmmlConverter.ComputeOmmlFingerprint(Equation("xy")), WordOmmlConverter.ComputeOmmlFingerprint(withControl));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeOmmlFingerprint(Equation("xy")), WordOmmlFingerprints.ComputeOmmlFingerprint(withControl));
     }
 
     [Fact]
     public void RunGroupingCannotSilentlyDiscardUnknownTextAttributes()
     {
         var annotated = Math(Run("x") + "<m:r><m:t xmlns:test=\"urn:visualtex:audit\" test:token=\"retained\">y</m:t></m:r>");
-        Assert.NotEqual(WordOmmlConverter.ComputeOmmlFingerprint(Equation("xy")), WordOmmlConverter.ComputeOmmlFingerprint(annotated));
+        Assert.NotEqual(WordOmmlFingerprints.ComputeOmmlFingerprint(Equation("xy")), WordOmmlFingerprints.ComputeOmmlFingerprint(annotated));
     }
 
     [Theory]
@@ -250,7 +250,7 @@ public sealed class WordOmmlFingerprintVersionTests
     [InlineData("<m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>", "07ba310dfd9aa321bca9ff1a245ac24653ce24122ada67bc800d9ff432a5e7fb")]
     [InlineData("<m:rad><m:radPr><m:degHide m:val=\"on\"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad>", "d6c1b3110cfbdcd5f1afa06558624004a31eb29afec21ba77ed2332f86de8f99")]
     public void VersionTwoDigestValuesCannotChangeWithoutVersionReview(string body, string digest)
-        => Assert.Equal("omml2:" + digest, WordOmmlConverter.ComputeOmmlFingerprint(Math(body)));
+        => Assert.Equal("omml2:" + digest, WordOmmlFingerprints.ComputeOmmlFingerprint(Math(body)));
 
     private static FormulaMetadata Metadata(string fingerprint) => new()
     {

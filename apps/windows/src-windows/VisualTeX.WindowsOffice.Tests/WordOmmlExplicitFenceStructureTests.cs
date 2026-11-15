@@ -16,7 +16,7 @@ public sealed class WordOmmlExplicitFenceStructureTests
         + $"<mo data-mjx-texclass=\"OPEN\" {openAttributes}>{open}</mo>"
         + body + $"<mo data-mjx-texclass=\"CLOSE\" {closeAttributes}>{close}</mo></mrow>";
     private static XDocument Normalize(string source) =>
-        XDocument.Parse(WordOmmlConverter.NormalizeFencedMathMlTables(source));
+        XDocument.Parse(WordOmmlFromMathMl.NormalizeFencedMathMlTables(source));
     private static XDocument Forward(string source) =>
         XDocument.Parse(WordOmmlConverter.TransformMathMlToOmml(source));
     private static string NativeText(XContainer root) =>

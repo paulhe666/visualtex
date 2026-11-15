@@ -207,7 +207,7 @@ internal static class WordOmmlFormulaStore
                     "The selected OMML identity changed structural metadata before rebinding.");
 
             refreshedMetadata.NativeOmmlFingerprint =
-                WordOmmlConverter.ComputeOmmlFingerprint(
+                WordOmmlFingerprints.ComputeOmmlFingerprint(
                     WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                         document,
                         exactEquationRange,
@@ -1451,7 +1451,7 @@ internal static class WordOmmlFormulaStore
             // only after the common row identity; use the same COM/XML capture
             // as editing, since Word can return an empty scratch serialization
             // immediately after a structural replacement.
-            if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            if (WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                     WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                         document, equationRange, formulaId)))
                 return numberRange.StoryType == WdStoryType.wdMainTextStory
@@ -1756,7 +1756,7 @@ internal static class WordOmmlFormulaStore
                 localMathRange = localMath.Range.Duplicate;
                 if (numberRange.Start >= localMathRange.Start
                     && numberRange.End <= localMathRange.End
-                    && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    && WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         localMathRange.WordOpenXML))
                 {
                     var result = localMathRange;
@@ -1780,7 +1780,7 @@ internal static class WordOmmlFormulaStore
                     if (numberRange.Start < candidateRange.Start
                         || numberRange.End > candidateRange.End)
                         continue;
-                    if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    if (!WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                             candidateRange.WordOpenXML))
                         continue;
                     var result = candidateRange;
@@ -1930,7 +1930,7 @@ internal static class WordOmmlFormulaStore
         try
         {
             document = equationRange.Document;
-            fingerprint = WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+            fingerprint = WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(
                 WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                     document, equationRange, string.Empty), expectedFingerprint);
         }

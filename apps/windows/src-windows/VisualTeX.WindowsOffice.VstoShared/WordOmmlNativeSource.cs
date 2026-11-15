@@ -698,7 +698,7 @@ internal static class WordOmmlNativeSource
                 }
 
                 finalRange = math.Range.Duplicate;
-                metadata.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                metadata.NativeOmmlFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                     ReadCompleteEquationWordOpenXml(
                         document,
                         finalRange,
@@ -896,10 +896,10 @@ internal static class WordOmmlNativeSource
                 displayMode,
                 "block",
                 StringComparison.Ordinal)
-            && WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+            && WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                 wordOpenXml);
         var semanticWordOpenXml = numbered
-            ? WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(
+            ? WordOmmlEquationNumbers.StripManagedVisualTeXNativeEquationNumber(
                 wordOpenXml)
             : wordOpenXml;
         var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
@@ -927,7 +927,7 @@ internal static class WordOmmlNativeSource
             Numbered = numbered,
             FontSizePt = fontSize,
             RenderFontSizePt = fontSize,
-            NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+            NativeOmmlFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                 semanticWordOpenXml),
             CreatedWithVersion = "1.2.7",
             UpdatedWithVersion = "1.2.7",
@@ -972,10 +972,10 @@ internal static class WordOmmlNativeSource
 
         var sanitizedStored = Clone(stored);
         SanitizeMetadataBoundaryArtifacts(sanitizedStored);
-        if (WordOmmlConverter.MatchesStoredOmmlFingerprint(wordOpenXml, stored.NativeOmmlFingerprint))
+        if (WordOmmlFingerprints.MatchesStoredOmmlFingerprint(wordOpenXml, stored.NativeOmmlFingerprint))
             return sanitizedStored; // Preserve original LaTeX and v1 on read/cancel; commit stamps v2.
 
-        var fingerprint = WordOmmlConverter.ComputeOmmlFingerprint(wordOpenXml);
+        var fingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(wordOpenXml);
         var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
             wordOpenXml,
             display: string.Equals(
@@ -1011,7 +1011,7 @@ internal static class WordOmmlNativeSource
         try
         {
             document = equationRange.Document;
-            metadata.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+            metadata.NativeOmmlFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                 ReadCompleteEquationWordOpenXml(
                     document,
                     equationRange,
@@ -1290,7 +1290,7 @@ internal static class WordOmmlNativeSource
                     {
                         var actual = ReadCompleteEquationWordOpenXml(document, local, id);
                         item.NativeOmmlFingerprint =
-                            WordOmmlConverter.ComputeOmmlFingerprint(actual);
+                            WordOmmlFingerprints.ComputeOmmlFingerprint(actual);
                         anchor = WordOmmlFormulaStore.FindByFormulaId(document, id);
                         if (!WordOmmlFormulaStore.IsCanonicalAnchor(anchor, local))
                         {
@@ -1318,7 +1318,7 @@ internal static class WordOmmlNativeSource
                         ?? WordOmmlFormulaStore.GetEquationRangeVerifiedForStructuralEdit(document, id, item);
                     var actual = ReadCompleteEquationWordOpenXml(document, local, id);
                     item.NativeOmmlFingerprint =
-                        WordOmmlConverter.ComputeOmmlFingerprint(actual);
+                        WordOmmlFingerprints.ComputeOmmlFingerprint(actual);
                     if (finalizedMetadata is not null)
                     {
                         anchor = WordOmmlFormulaStore.Wrap(document, local, item);
@@ -1427,7 +1427,7 @@ internal static class WordOmmlNativeSource
             {
                 var item = metadata[identity.Key];
                 if (freshSourceOmml is not null)
-                    item.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                    item.NativeOmmlFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                         xmlEquations[identity.Value.Index].ToString(SaveOptions.DisableFormatting));
                 if (identity.Value.Canonical)
                 {
@@ -1458,7 +1458,7 @@ internal static class WordOmmlNativeSource
                     // are refreshed from Word's actual OMath but never used to
                     // reject an otherwise valid OMML identity.
                     item.NativeOmmlFingerprint =
-                        WordOmmlConverter.ComputeOmmlFingerprint(actualXml);
+                        WordOmmlFingerprints.ComputeOmmlFingerprint(actualXml);
                     rebound = WordOmmlFormulaStore.Wrap(document, range, item);
                     if (!WordOmmlFormulaStore.IsCanonicalAnchor(rebound, range))
                         throw new InvalidDataException($"Word did not retain the repaired OMML anchor {identity.Key}.");
@@ -1592,7 +1592,7 @@ internal static class WordOmmlNativeSource
             foreach (var identity in identities)
             {
                 var item = metadata[identity.Key];
-                item.NativeOmmlFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                item.NativeOmmlFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                     xmlEquations[identity.Value.Index].ToString(SaveOptions.DisableFormatting));
 
                 OMath? math = null;
@@ -1607,7 +1607,7 @@ internal static class WordOmmlNativeSource
                     // cache fingerprint and persist metadata, but never compare
                     // its mathematics against a prepared/source signature.
                     item.NativeOmmlFingerprint =
-                        WordOmmlConverter.ComputeOmmlFingerprint(
+                        WordOmmlFingerprints.ComputeOmmlFingerprint(
                             range.WordOpenXML);
 
                     if (!identity.Value.Canonical)
@@ -1832,7 +1832,7 @@ internal static class WordOmmlNativeSource
                 if (!fingerprintsByVersion.TryGetValue(version, out var fingerprints))
                 {
                     fingerprints = equationXml
-                        .Select(xml => WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+                        .Select(xml => WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(
                             xml,
                             entry.Value))
                         .ToArray();
@@ -1980,7 +1980,7 @@ internal static class WordOmmlNativeSource
                     fingerprints = fingerprint is not null
                         ? equationXml.Select(fingerprint).ToArray()
                         : equationXml.Select(xml =>
-                            WordOmmlConverter.ComputeOmmlFingerprintForExpectedVersion(
+                            WordOmmlFingerprints.ComputeOmmlFingerprintForExpectedVersion(
                                 xml,
                                 entry.Value)).ToArray();
                     fingerprintsByVersion[version] = fingerprints;

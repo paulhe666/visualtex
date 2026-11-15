@@ -177,7 +177,7 @@ internal static partial class Program
                 phase + " " + testCase.Name + ": plain formula is not Display.");
             AssertEqual(0, numberedRange.Fields.Count,
                 phase + " " + testCase.Name + ": a number field entered the complex OMath.");
-            AssertTrue(!WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+            AssertTrue(!WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                     numberedRange.WordOpenXML ?? string.Empty),
                 phase + " " + testCase.Name + ": retired #()/eqArr numbering entered the complex OMath.");
 

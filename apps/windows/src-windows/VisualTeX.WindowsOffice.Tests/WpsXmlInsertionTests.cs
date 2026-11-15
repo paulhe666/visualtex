@@ -119,7 +119,7 @@ public sealed class WpsXmlInsertionTests
         var flatOpc = Package(
             "<w:p><w:bookmarkStart w:id=\"1\" w:name=\"b\"/><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath><w:bookmarkEnd w:id=\"1\"/></w:p>");
 
-        var paragraph = LastParagraph(WordOmmlConverter.AppendWpsInlineSentinel(flatOpc));
+        var paragraph = LastParagraph(WordOmmlDocuments.AppendWpsInlineSentinel(flatOpc));
 
         var afterMath = paragraph.Element(M + "oMath")!.ElementsAfterSelf().First();
         Assert.Equal(W + "r", afterMath.Name);
@@ -129,7 +129,7 @@ public sealed class WpsXmlInsertionTests
     [Fact]
     public void NumberedEquationFieldInstructionsBecomeNormalTextMathWithPrefixes()
     {
-        var numbered = WordOmmlConverter.BuildWordNativeNumberedOmml(
+        var numbered = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             $"<m:oMath xmlns:m=\"{M}\"><m:r><m:t>x</m:t></m:r></m:oMath>", "Equation", null, 2, ".",
             restartSequenceValue: 1);
         // The builder spells its new elements with default-namespace declarations.
@@ -188,7 +188,7 @@ public sealed class WpsXmlInsertionTests
     [InlineData(null, "Cambria Math")]
     [InlineData("Latin Modern Math", "Latin Modern Math")]
     public void WpsDefaultMathFontPlaceholderIsNotWrittenAsAFont(string? reported, string written) =>
-        Assert.Equal(written, WordOmmlConverter.NormalizeMathFontName(reported));
+        Assert.Equal(written, WordOmmlDocuments.NormalizeMathFontName(reported));
 
     [Theory]
     [InlineData(" SEQ MTEqn \\h \\* MERGEFORMAT ", true)]

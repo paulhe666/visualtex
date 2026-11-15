@@ -426,15 +426,15 @@ internal static class WordNumberedTableDisplay
                 // is placed in the center cell. The center cell owns formula semantics
                 // only; every number field remains ordinary Word content in cell (1,3).
                 var activeXml = WordOmmlConverter.ReadLocalEquationXml(activeRange);
-                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
+                if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(activeXml))
                 {
                     var semanticOmml = metadata is not null
-                        ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(activeXml)
-                        : WordOmmlConverter.StripVisualTeXNativeEquationNumber(activeXml);
+                        ? WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumberForManagedRepair(activeXml)
+                        : WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(activeXml);
                     RemoveVisibleEquationNumber(document, formulaId);
                     RemoveNativeCaption(document, formulaId);
                     application = document.Application;
-                    replacementRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                    replacementRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                         application,
                         document,
                         activeRange,

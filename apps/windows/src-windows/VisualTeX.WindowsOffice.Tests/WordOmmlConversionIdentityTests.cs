@@ -11,7 +11,7 @@ public sealed class WordOmmlConversionIdentityTests
     private const string First = "11111111-1111-4111-8111-111111111111";
     private const string Second = "22222222-2222-4222-8222-222222222222";
     private static XElement Math(string text) => new(M + "oMath", new XElement(M + "r", new XElement(M + "t", text)));
-    private static string Fingerprint(string text) => WordOmmlConverter.ComputeOmmlFingerprint(Math(text).ToString());
+    private static string Fingerprint(string text) => WordOmmlFingerprints.ComputeOmmlFingerprint(Math(text).ToString());
     private static XElement Start(string id, string name) => new(W + "bookmarkStart", new XAttribute(W + "id", id), new XAttribute(W + "name", name));
     private static XElement End(string id) => new(W + "bookmarkEnd", new XAttribute(W + "id", id));
     private static object[] Anchor(string formula, string id) => new object[] { Start(id, WordOmmlFormulaStore.BookmarkName(formula)), End(id) };

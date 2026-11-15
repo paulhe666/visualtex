@@ -130,9 +130,9 @@ internal static partial class Program
         var differentSeparatorOmml =
             WordOmmlConverter.TransformMathMlToOmml(differentSeparator);
         var preparedRawSignature =
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(preparedSeparatorOmml);
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(preparedSeparatorOmml);
         var materializedRawSignature =
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(wordMaterializedSeparatorOmml);
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(wordMaterializedSeparatorOmml);
         AssertTrue(
             !string.Equals(preparedRawSignature, materializedRawSignature, StringComparison.Ordinal),
             "The regression fixture must preserve the raw OMML shape difference that Word introduces for delimiter separators.");
@@ -181,7 +181,7 @@ internal static partial class Program
         var resolvedIdentity = WordOmmlNativeSource.IndexConversionEquationIdentities(
             identityBody,
             expectedSignatures,
-            WordOmmlConverter.ComputeImportedOmmlContentSignature,
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature,
             liveInsertedOwners: liveOwners,
             allowFreshOwnerFingerprintRecovery: true,
             freshSourceOmml: freshSources);
@@ -531,12 +531,12 @@ internal static partial class Program
             var rawWordOpenXml =
                 range.WordOpenXML;
             AssertTrue(
-                WordOmmlConverter.HasWordNativeEquationNumberHost(
+                WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(
                     rawWordOpenXml),
                 "The selected active Word OMath is not a native '#(...)' numbered host.");
 
             var expectedSemanticOmml =
-                WordOmmlConverter.StripWordNativeEquationNumberHost(
+                WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                     rawWordOpenXml);
             var resolved =
                 WordFormulaHostResolver.ResolveLocal(
@@ -557,15 +557,15 @@ internal static partial class Program
             }
 
             AssertTrue(
-                !WordOmmlConverter.HasWordNativeEquationNumberHost(
+                !WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(
                     payload.WordOpenXml!),
                 "The semantic reader leaked the Word-native number host into editor content.");
 
             var expectedSignature =
-                WordOmmlConverter.ComputeImportedOmmlContentSignature(
+                WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
                     expectedSemanticOmml);
             var actualSignature =
-                WordOmmlConverter.ComputeImportedOmmlContentSignature(
+                WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
                     payload.WordOpenXml!);
             AssertEqual(
                 expectedSignature,

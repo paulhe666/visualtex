@@ -321,7 +321,7 @@ internal static partial class Program
                 $"{phase} {pair.TestCase.Name}: a REF field leaked inside the mathematical label.");
 
             var numberedEquation = XElement.Parse(
-                WordOmmlConverter.StripVisualTeXNativeEquationNumber(
+                WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(
                     numberedRange.WordOpenXML),
                 LoadOptions.PreserveWhitespace);
             var plainEquation = XElement.Parse(

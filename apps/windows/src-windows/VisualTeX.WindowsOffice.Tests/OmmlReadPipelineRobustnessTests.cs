@@ -36,7 +36,7 @@ public sealed class OmmlReadPipelineRobustnessTests
             catch (Exception error) { Record("MathML", error, seed, omml); continue; }
             try { MathMlToLatexConverter.Convert(mathMl); }
             catch (Exception error) { Record("LaTeX", error, seed, omml); }
-            try { WordOmmlConverter.ComputeOmmlFingerprint(omml); }
+            try { WordOmmlFingerprints.ComputeOmmlFingerprint(omml); }
             catch (Exception error) { Record("Fingerprint", error, seed, omml); }
             try { MathTypeMtefCodec.CreateEquationNative(mathMl, inline: !display); }
             catch (Exception error) { Record("MathType", error, seed, omml); }

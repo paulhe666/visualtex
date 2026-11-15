@@ -62,7 +62,7 @@ public sealed class WordOmmlExplicitSpaceTests
     public void UnmappedWidthsRemainExplicitLimitsAndNeverRound(string width)
     {
         var source = Source($"<mi>a</mi><mspace width=\"{width}\"/><mi>b</mi>");
-        var projection = WordOmmlConverter.ProjectMathMlSpacesForOmml(source);
+        var projection = WordOmmlFromMathMl.ProjectMathMlSpacesForOmml(source);
         var capability = Assert.Single(projection.Capabilities);
         Assert.False(capability.CanProject);
         Assert.False(capability.WidthSupported);
@@ -98,7 +98,7 @@ public sealed class WordOmmlExplicitSpaceTests
     [InlineData("linebreak", "nobreak")]
     public void NonWidthDimensionsHaveIndependentAuditLimits(string name, string value)
     {
-        var projection = WordOmmlConverter.ProjectMathMlSpacesForOmml(
+        var projection = WordOmmlFromMathMl.ProjectMathMlSpacesForOmml(
             Source($"<mspace width=\"1em\" {name}=\"{value}\"/>"));
         var capability = Assert.Single(projection.Capabilities);
         Assert.True(capability.WidthSupported);
@@ -113,7 +113,7 @@ public sealed class WordOmmlExplicitSpaceTests
     [Fact]
     public void ExplicitZeroExtentsAndDefaultLinebreakPermitWidthProjection()
     {
-        var projection = WordOmmlConverter.ProjectMathMlSpacesForOmml(
+        var projection = WordOmmlFromMathMl.ProjectMathMlSpacesForOmml(
             Source("<mspace width=\"1em\" height=\"-0.00pt\" depth=\"0px\" linebreak=\"auto\"/>"));
         Assert.True(Assert.Single(projection.Capabilities).CanProject);
         Assert.Equal("\u2003", NativeText(Forward(
@@ -187,7 +187,7 @@ public sealed class WordOmmlExplicitSpaceTests
         var source = $"<p:math xmlns:p=\"{P}\"><p:mi>a</p:mi>"
             + "<p:mspace width=\"1em\" data-visualtex-omml-space=\"wrong\"/><p:mi>b</p:mi>"
             + "<p:mspace width=\"1.1em\" data-visualtex-omml-space=\"wrong\"/><p:mi>c</p:mi></p:math>";
-        var projection = WordOmmlConverter.ProjectMathMlSpacesForOmml(source);
+        var projection = WordOmmlFromMathMl.ProjectMathMlSpacesForOmml(source);
         Assert.True(projection.Capabilities[0].CanProject);
         Assert.False(projection.Capabilities[1].CanProject);
         var forward = XDocument.Parse(WordOmmlConverter.TransformMathMlToOmml(source));

@@ -78,7 +78,7 @@ internal static partial class Program
             string mathFontName;
             try { mathFontName = document.OMathFontName ?? string.Empty; }
             catch { mathFontName = string.Empty; }
-            badRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+            badRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                 application,
                 document,
                 equationRange,
@@ -95,7 +95,7 @@ internal static partial class Program
             WordOmmlNativeSource.StampFingerprintFromResolvedRange(metadata, badRange);
             WordOmmlFormulaStore.Save(document, metadata);
             AssertTrue(
-                WordOmmlConverter.HasVisualTeXNativeEquationNumber(badRange.WordOpenXML),
+                WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(badRange.WordOpenXML),
                 "The regression fixture did not materialize the old generated m:eqArr number wrapper.");
 
             Release(badRange); badRange = null;

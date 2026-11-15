@@ -10,7 +10,7 @@ internal static partial class Program
     {
         Directory.CreateDirectory(root);
         XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
-        var template = XElement.Parse(WordOmmlConverter.BuildWordNativeNumberedOmml(
+        var template = XElement.Parse(WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             "<m:oMath xmlns:m=\"" + m + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
             "Equation", null, 1, "-", "1", "0"));
         XElement Row(XElement xml) => xml.Element(m + "eqArr")!.Element(m + "e")!;
@@ -47,7 +47,7 @@ internal static partial class Program
                     document = app.Documents.Add();
                     var xml = new XElement(template); test.Change(xml);
                     point = document.Range(0, 0);
-                    inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(document, point,
+                    inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(document, point,
                         xml.ToString(SaveOptions.DisableFormatting), display: true, mathFontName: document.OMathFontName);
                     math = document.OMaths[1]; exact = math.Range;
                     File.WriteAllText(Path.Combine(root, test.Name + ".xml"), exact.WordOpenXML);

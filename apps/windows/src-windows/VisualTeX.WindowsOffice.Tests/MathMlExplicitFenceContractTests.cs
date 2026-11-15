@@ -70,7 +70,7 @@ public sealed class MathMlExplicitFenceContractTests
         Assert.Equal(open, actualOpen);
         Assert.Equal(close, actualClose);
         Assert.Same(row.Elements().ElementAt(1), Assert.Single(body));
-        var projected = XDocument.Parse(WordOmmlConverter.NormalizeFencedMathMlTables(source));
+        var projected = XDocument.Parse(WordOmmlFromMathMl.NormalizeFencedMathMlTables(source));
         var fence = Assert.Single(projected.Descendants(P + "mfenced"));
         Assert.Equal(open, (string?)fence.Attribute("open"));
         Assert.Equal(close, (string?)fence.Attribute("close"));

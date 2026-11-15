@@ -347,7 +347,7 @@ internal static partial class Program
                     document,
                     editedRange,
                     "converted-integral-before-visualtex-reedit");
-                originalLiveFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                originalLiveFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                     WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                         document,
                         editedRange,
@@ -419,7 +419,7 @@ internal static partial class Program
                             document,
                             editedFormulaId,
                             restoredMetadata);
-                    var restoredFingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                    var restoredFingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                         WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
                             document,
                             restoredRange,

@@ -114,7 +114,7 @@ internal static partial class Program
             insertion.End = insertion.Start;
             const string mn = "http://schemas.openxmlformats.org/officeDocument/2006/math";
             var semantic = "<m:oMath xmlns:m=\"" + mn + "\"><m:r><m:t>" + body + "</m:t></m:r></m:oMath>";
-            var prepared = WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var prepared = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 semantic,
                 "Equation",
                 numberBookmarkName: null,
@@ -123,7 +123,7 @@ internal static partial class Program
                 initialSequenceResult: initialResult,
                 literalHeadingPrefix: null,
                 restartSequenceValue: restart);
-            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document,
                 insertion,
                 prepared,
@@ -177,9 +177,9 @@ internal static partial class Program
                 {
                     math = maths[index];
                     range = math.Range;
-                    if (!WordOmmlConverter.HasWordNativeEquationNumberHost(range.WordOpenXML))
+                    if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(range.WordOpenXML))
                         continue;
-                    var xmlLabel = WordOmmlConverter.ReadWordNativeEquationNumberText(range.WordOpenXML);
+                    var xmlLabel = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(range.WordOpenXML);
                     Word.Range? number = null;
                     Word.Fields? fields = null;
                     try

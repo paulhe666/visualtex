@@ -822,7 +822,7 @@ internal static class WordFormulaHostResolver
             // Numbering managed by VisualTeX must have Word's native sequence
             // field topology. A field-free Word '#(2)' host is intentionally
             // not part of the VisualTeX numbering system.
-            return WordOmmlConverter
+            return WordOmmlEquationNumbers
                 .HasVisualTeXDirectSequenceEquationNumber(
                     WordOmmlConverter.ReadLocalEquationXml(equationRange),
                     formulaId: null);

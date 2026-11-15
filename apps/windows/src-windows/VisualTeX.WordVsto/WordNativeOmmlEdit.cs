@@ -107,7 +107,7 @@ internal sealed class WordNativeOmmlEdit : IDisposable
             var xml = WordOmmlConverter.ReadLocalEquationXml(exact);
             var semantic = WordOmmlHostWriter.ApplySemanticOmmlTypography(
                 WordOmmlConverter.TransformMathMlToOmml(request.MathMl!), request.FontSizePoints);
-            var hasNumberHost = WordOmmlConverter.HasWordNativeEquationNumberHost(xml);
+            var hasNumberHost = WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml);
             fields = exact.Fields;
             var preserve = source.Display && hasNumberHost
                 && (request.Numbered || fields.Count == 0);
@@ -122,7 +122,7 @@ internal sealed class WordNativeOmmlEdit : IDisposable
                     ?? throw new InvalidDataException(
                         "The native number-attachment edit lost its prepared target.")
                 : preserve
-                    ? WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(xml, semantic)
+                    ? WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(xml, semantic)
                     : semantic;
             plan = new WordNativeOmmlEdit(
                 document,

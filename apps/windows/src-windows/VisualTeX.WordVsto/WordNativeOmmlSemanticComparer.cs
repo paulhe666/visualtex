@@ -41,20 +41,20 @@ internal static class WordNativeOmmlSemanticComparer
         // instead of maintaining its own SEQ/bookmark-specific stripping rule.
         var expectedSemanticOmml =
             display
-                ? WordOmmlConverter.StripWordNativeEquationNumberHost(
+                ? WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                     expectedWordOpenXml)
                 : expectedWordOpenXml;
         var actualSemanticOmml =
             display
-                ? WordOmmlConverter.StripWordNativeEquationNumberHost(
+                ? WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                     actualWordOpenXml)
                 : actualWordOpenXml;
 
         var expectedOmmlSignature =
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
                 expectedSemanticOmml);
         var actualOmmlSignature =
-            WordOmmlConverter.ComputeImportedOmmlContentSignature(
+            WordOmmlFingerprints.ComputeImportedOmmlContentSignature(
                 actualSemanticOmml);
         var exactOmmlMatch =
             string.Equals(

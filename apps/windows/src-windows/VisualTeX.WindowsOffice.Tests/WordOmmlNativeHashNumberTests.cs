@@ -15,9 +15,9 @@ public sealed class WordOmmlNativeHashNumberTests
             sequenceCode: @" SEQ VisualTeXEquation \s 1 \* ARABIC ",
             includeVisualTeXBookmarks: true);
 
-        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(numbered));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(numbered));
 
-        var semantic = WordOmmlConverter.StripVisualTeXNativeEquationNumber(numbered);
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(numbered);
         var xml = XElement.Parse(semantic, LoadOptions.PreserveWhitespace);
         XNamespace math =
             "http://schemas.openxmlformats.org/officeDocument/2006/math";
@@ -40,11 +40,11 @@ public sealed class WordOmmlNativeHashNumberTests
             includeVisualTeXBookmarks: false);
 
         Assert.True(
-            WordOmmlConverter.HasVisualTeXNativeEquationNumber(userEquationArray));
+            WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(userEquationArray));
         Assert.True(
-            WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(userEquationArray));
+            WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(userEquationArray));
         var semantic = XElement.Parse(
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(userEquationArray));
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(userEquationArray));
         XNamespace math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
         XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         Assert.Equal("x", string.Concat(semantic.Descendants(math + "t").Select(node => node.Value)));

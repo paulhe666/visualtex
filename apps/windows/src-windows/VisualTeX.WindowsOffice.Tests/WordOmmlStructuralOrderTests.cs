@@ -30,7 +30,7 @@ public sealed class WordOmmlStructuralOrderTests
         WordOmmlConverter.ValidateMaterializedOmml(xml);
         var reverse=WordOmmlConverter.TransformOmmlToMathMl(xml,false);
         Assert.DoesNotContain("mphantom",reverse,StringComparison.Ordinal);
-        Assert.Equal(xml,WordOmmlConverter.NormalizeOptionalPrescriptSlots(xml));
+        Assert.Equal(xml,WordOmmlFromMathMl.NormalizeOptionalPrescriptSlots(xml));
     }
 
     [Fact]
@@ -51,8 +51,8 @@ public sealed class WordOmmlStructuralOrderTests
         // Recorded from normal Ribbon redraw, Word 16.0.14334.20848, 2026-09-19.
         var prepared = Wrap(Pre(Run("C")));
         var actual = Wrap("<m:sPre><m:sPrePr/><m:sub>"+Run("6")+"</m:sub><m:sup>"+Run("14")+"</m:sup><m:e>"+Run("C")+"</m:e></m:sPre>");
-        var normalized = WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(prepared);
-        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(actual),
+        var normalized = WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(prepared);
+        Assert.Equal(WordOmmlFingerprints.ComputeOmmlFingerprint(actual),
             WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(normalized,actual));
         Assert.Throws<InvalidDataException>(()=>WordOmmlConverter.ComputeVerifiedMaterializedOmmlFingerprint(normalized,actual.Replace(">6<",">7<")));
     }
@@ -65,7 +65,7 @@ public sealed class WordOmmlStructuralOrderTests
     public void ArgumentGrammarDoesNotChangeRoleValues(string owner,string first,string second)
     {
         var xml=Wrap($"<m:{owner}><m:{second}>{Run("y")}</m:{second}><m:{first}>{Run("x")}</m:{first}></m:{owner}>");
-        var result=XDocument.Parse(WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(xml));
+        var result=XDocument.Parse(WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(xml));
         var element=result.Descendants(M+owner).Single();
         Assert.Equal(new[]{first,second},element.Elements().Select(x=>x.Name.LocalName));
         Assert.Equal("x",element.Element(M+first)!.Value);Assert.Equal("y",element.Element(M+second)!.Value);
@@ -74,18 +74,18 @@ public sealed class WordOmmlStructuralOrderTests
     [Fact]
     public void NestedPrescriptsAreNormalizedBottomUp()
     {
-        var output=WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(Wrap(Pre(Pre(Run("C")))));
+        var output=WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(Wrap(Pre(Pre(Run("C")))));
         var document=XDocument.Parse(output);
         Assert.Equal(2,document.Descendants(M+"sPre").Count());
         Assert.All(document.Descendants(M+"sPre"),p=>Assert.Equal(new[]{"sub","sup","e"},p.Elements().Select(x=>x.Name.LocalName)));
-        Assert.Equal(output,WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(output));
+        Assert.Equal(output,WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(output));
     }
 
     [Fact]
     public void DuplicateArgumentsAreNotCollapsedToMakeTheEquationPass()
     {
         var input=Wrap(Pre(Run("C")).Replace("</m:sPre>","<m:sub>"+Run("7")+"</m:sub></m:sPre>"));
-        var output=WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(input);
+        var output=WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(input);
         Assert.Equal(2,XDocument.Parse(output).Descendants(M+"sPre").Single().Elements(M+"sub").Count());
         Assert.Throws<InvalidDataException>(()=>WordOmmlConverter.ValidateMaterializedOmml(output));
     }
@@ -94,7 +94,7 @@ public sealed class WordOmmlStructuralOrderTests
     public void UnknownChildCannotBeDiscardedDuringArgumentOrdering()
     {
         var input=Wrap(Pre(Run("C")).Replace("</m:sPre>","<x:extension xmlns:x=\"urn:test\">retain</x:extension></m:sPre>"));
-        var output=WordOmmlConverter.NormalizeGeneratedOmmlArgumentOrder(input);
+        var output=WordOmmlFromMathMl.NormalizeGeneratedOmmlArgumentOrder(input);
         Assert.Contains("retain",output,StringComparison.Ordinal);
         Assert.Equal("e",XDocument.Parse(output).Descendants(M+"sPre").Single().Elements().First().Name.LocalName);
     }

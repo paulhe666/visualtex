@@ -54,9 +54,9 @@ internal sealed class WordNativeOmmlLiteralTextStaging : IDisposable
             // creation. The private SEQ only gives the literal an exact right
             // boundary; neither that field nor the dummy body is transferred.
             const string body = "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:r><m:t>x</m:t></m:r></m:oMath>";
-            var prepared = WordOmmlConverter.BuildWordNativeNumberedOmml(
+            var prepared = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 body, "Equation", null, 1, string.Empty, "1", value);
-            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 _staging, slot, prepared, display: true, mathFontName: _staging.OMathFontName);
             maths = inserted.OMaths;
             if (maths.Count != 1)

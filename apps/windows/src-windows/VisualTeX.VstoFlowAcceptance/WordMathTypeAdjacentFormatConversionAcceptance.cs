@@ -40,7 +40,7 @@ internal static partial class Program
             Word.Application? application = null;
             Word.Document? document = null;
             Word.Range? target = null;
-            WordOmmlConverter.BatchSource? source = null;
+            WordOmmlBatchSources.BatchSource? source = null;
             IReadOnlyList<Word.Range>? inserted = null;
             try
             {
@@ -49,7 +49,7 @@ internal static partial class Program
                 document.Content.Text = "AB";
                 var firstId = Guid.NewGuid().ToString("D");
                 var secondId = Guid.NewGuid().ToString("D");
-                source = WordOmmlConverter.CreateBatchSource(
+                source = WordOmmlBatchSources.CreateBatchSource(
                     application,
                     new[]
                     {

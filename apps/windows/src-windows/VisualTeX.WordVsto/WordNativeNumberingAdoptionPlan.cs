@@ -185,7 +185,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         throw new InvalidDataException("Prepared native-number slot lost its exact boundary.");
                     var change = changes[index];
                     var style = change.Style;
-                    var prepared = WordOmmlConverter.BuildWordNativeNumberedOmml(
+                    var prepared = WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                         semantic,
                         style.SequenceName,
                         numberBookmarkName: null,
@@ -194,7 +194,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         style.Ordinal.ToString(CultureInfo.InvariantCulture),
                         style.HeadingLevel > 0 && !style.AutomaticHeading ? style.Prefix : null,
                         change.Restart);
-                    inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                    inserted = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                         _formatStaging,
                         slot,
                         prepared,
@@ -438,7 +438,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         if (_insertionStyle is null)
             return WordNativeOmmlNumbering.PrepareNumberedOmml(_document, _insertionPosition.Value, semanticOmml);
         var s = _insertionStyle;
-        return WordOmmlConverter.BuildWordNativeNumberedOmml(semanticOmml, s.SequenceName, null,
+        return WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(semanticOmml, s.SequenceName, null,
             s.HeadingLevel, s.Separator, (_insertionRestart ?? checked(s.Ordinal + 1)).ToString(CultureInfo.InvariantCulture),
             s.HeadingLevel > 0 && !s.AutomaticHeading ? s.Prefix : null, _insertionRestart);
     }
@@ -595,11 +595,11 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         try
         {
             var size = exact.Font.Size;
-            var rewritten = WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+            var rewritten = WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(
                 prepared,
-                WordOmmlConverter.StripWordNativeEquationNumberHost(
+                WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(
                     WordOmmlConverter.ReadLocalEquationXml(exact)));
-            replacement = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            replacement = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 _document,
                 exact,
                 rewritten,
@@ -756,9 +756,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         string xml;
                         using (WordOperationMetrics.Measure("NativeNumbering.Capture.WordOpenXml"))
                             xml = WordOmmlConverter.ReadLocalEquationXml(exact);
-                        if (!WordOmmlConverter.HasWordNativeEquationNumberHost(xml)) continue;
+                        if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml)) continue;
                         number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
-                        var label = WordOmmlConverter.ReadWordNativeEquationNumberText(xml);
+                        var label = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml);
                         if (!TryParseLabel(label, out var style)) continue;
                         fields = number.Fields; string? sequenceCode = null; var supported = true;
                         for (var child = 1; child <= fields.Count; child++)

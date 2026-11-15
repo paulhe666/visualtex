@@ -333,7 +333,7 @@ internal static partial class Program
             const string mn =
                 "http://schemas.openxmlformats.org/officeDocument/2006/math";
             var prepared =
-                WordOmmlConverter.BuildWordNativeNumberedOmml(
+                WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                     "<m:oMath xmlns:m=\"" + mn
                     + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
                     "Equation",
@@ -342,7 +342,7 @@ internal static partial class Program
                     headingSeparator: string.Empty,
                     initialSequenceResult: "1");
             var inserted =
-                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                     document,
                     insertion,
                     prepared,

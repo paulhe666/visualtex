@@ -434,13 +434,13 @@ internal static partial class Program
             + "xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\">"
             + "<w:body>" + body + "</w:body></w:document>";
 
-        WordOmmlConverter.WholeDocumentSource? source = null;
+        WordOmmlBatchSources.WholeDocumentSource? source = null;
         Word.Range? anchor = null;
         Word.Range? inserted = null;
         Word.OMaths? maths = null;
         try
         {
-            source = WordOmmlConverter.CreateWholeDocumentSource(
+            source = WordOmmlBatchSources.CreateWholeDocumentSource(
                 application,
                 documentXml);
             anchor = document.Range(document.Content.Start, document.Content.Start);

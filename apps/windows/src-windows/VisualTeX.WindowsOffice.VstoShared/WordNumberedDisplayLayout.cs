@@ -1350,7 +1350,7 @@ internal static class WordNumberedDisplayLayout
                     string mathFontName;
                     try { mathFontName = document.OMathFontName ?? string.Empty; }
                     catch { mathFontName = string.Empty; }
-                    preparedRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                    preparedRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                         application,
                         document,
                         placeholderRange,
@@ -1697,14 +1697,14 @@ internal static class WordNumberedDisplayLayout
                     try { document.Activate(); } catch { }
                     return;
                 }
-                if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(
+                if (WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(
                         WordOmmlConverter.ReadLocalEquationXml(activeRange))
                     || HasManagedNativeOmmlHashSequenceHost(
                         document,
                         formulaId))
                 {
                     RemoveVisibleEquationNumber(document, formulaId);
-                    var semanticOmml = WordOmmlConverter
+                    var semanticOmml = WordOmmlEquationNumbers
                         .StripManagedVisualTeXNativeEquationNumber(
                             WordOmmlConverter.ReadLocalEquationXml(activeRange));
                     Microsoft.Office.Interop.Word.Application? application = null;
@@ -1715,7 +1715,7 @@ internal static class WordNumberedDisplayLayout
                         string mathFontName;
                         try { mathFontName = document.OMathFontName ?? string.Empty; }
                         catch { mathFontName = string.Empty; }
-                        replacementRange = WordOmmlConverter.ReplaceWithPreparedOmml(
+                        replacementRange = WordOmmlInsertion.ReplaceWithPreparedOmml(
                             application,
                             document,
                             activeRange,

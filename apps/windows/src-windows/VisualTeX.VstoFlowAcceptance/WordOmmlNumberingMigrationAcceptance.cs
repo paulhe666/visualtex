@@ -231,7 +231,7 @@ internal static partial class Program
                     string fingerprint;
                     try
                     {
-                        fingerprint = WordOmmlConverter.ComputeOmmlFingerprint(
+                        fingerprint = WordOmmlFingerprints.ComputeOmmlFingerprint(
                             range.WordOpenXML);
                     }
                     catch (Exception error)

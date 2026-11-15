@@ -320,7 +320,7 @@ internal static class WordNativeOmmlNumbering
             literalHeadingPrefix = ResolveLiteralHeadingPrefix(document, scope);
         }
 
-        return WordOmmlConverter.BuildWordNativeNumberedOmml(
+        return WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
             semanticOmml,
             ResolveEquationSequenceName(document),
             numberBookmarkName: null,
@@ -392,7 +392,7 @@ internal static class WordNativeOmmlNumbering
                     if (key != int.MinValue) _literalPrefixes[key] = literalHeadingPrefix;
                 }
             }
-            return WordOmmlConverter.BuildWordNativeNumberedOmml(
+            return WordOmmlEquationNumbers.BuildWordNativeNumberedOmml(
                 semanticOmml,
                 sequenceName ?? _sequenceName,
                 numberBookmarkName: null,
@@ -884,7 +884,7 @@ internal static class WordNativeOmmlNumbering
                     : semanticOmml;
 
             replacement =
-                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                     document,
                     exact,
                     prepared,
@@ -963,7 +963,7 @@ internal static class WordNativeOmmlNumbering
                     "Word-native equation numbering requires wdOMathDisplay.");
 
             RemoveLegacyOmmlBookmarks(document, exact);
-            replacement = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+            replacement = WordOmmlInsertion.ReplaceWithPreparedOmmlDirect(
                 document,
                 exact,
                 preparedNumberedOmml,
@@ -1002,10 +1002,10 @@ internal static class WordNativeOmmlNumbering
         Range exact)
     {
         var xml = WordOmmlConverter.ReadLocalEquationXml(exact);
-        if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+        if (WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                 xml,
                 formulaId: null))
-            return WordOmmlConverter
+            return WordOmmlEquationNumbers
                 .StripManagedVisualTeXNativeEquationNumber(
                     xml);
 
@@ -1241,7 +1241,7 @@ internal static class WordNativeOmmlNumbering
             try
             {
                 direct =
-                    WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
+                    WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(
                         xml,
                         formulaId: null);
             }
