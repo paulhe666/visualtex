@@ -443,9 +443,20 @@ internal static partial class WordVisualTeXParagraphNumbering
                     result.End)
                 == '\u0015')
             return result.End + 1;
+        // WPS reads a field's separator as nothing (its end mark reads normally), and an
+        // updated MACROBUTTON there has a separator and an empty result: an unreadable mark
+        // right before the result, which ends at the end mark, is that separator.
+        if (codeBoundary == '\0'
+            && OfficeHostEnvironment.IsWps
+            && result.Start == code.End + 1
+            && ReadCharacter(
+                    document,
+                    result.End)
+                == '\u0015')
+            return result.End + 1;
         throw new InvalidDataException(
             $"VisualTeXPlaceRef has an invalid outer field boundary at code={code.Start}-{code.End}, result={result.Start}-{result.End} "
-            + $"(characters {DescribeCharacters(document, code.Start - 1, result.End + 3)}).");
+            + $"(characters {DescribeCharacters(document, code.Start - 1, code.Start + 3)} ... {DescribeCharacters(document, code.End - 4, result.End + 4)}).");
     }
 
     private static string DescribeCharacters(Document document, int start, int end)
