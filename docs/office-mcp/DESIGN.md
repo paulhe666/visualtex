@@ -323,10 +323,11 @@ always ask, even in "Allow changes", unless the user ticked "don't ask again for
   `AutomationUi` collecting what `InteractiveUi` would show.
 - Companion (Rust tests): registry expiry, queue timeouts and cancellation, policy decisions, MCP conformance
   (initialize, tools/list schemas, structured results) — plus a run of the MCP Inspector against the launcher.
-- Acceptance (`VstoFlowAcceptance` new "automation" modes): manually hosted Word and in-process PowerPoint
-  (`tools/ppt-inproc-test.ps1`, because WPS Pro broke out-of-process PowerPoint automation on the dev PC), driven
-  through the real companion: insert/update/delete in each format, a stale id, a busy host, a modal dialog open
-  (`host_unresponsive`), consent declined, MathType without the NativeRender service.
+- Acceptance: manually hosted Word and in-process PowerPoint (`tools/ppt-inproc-test.ps1`, because WPS Pro broke
+  out-of-process PowerPoint automation on the dev PC), driven through the real companion: insert/update/delete in
+  each format, a stale id, a busy host, a modal dialog open (`host_unresponsive`), consent declined, MathType
+  without the NativeRender service. (The `VstoFlowAcceptance` program that once held such modes was removed on
+  2026-11-15: no script ran any of its modes.)
 - WPS: the user's WPS kit for Writer and Presentation, same scenarios.
 - End to end: Claude Code on the dev PC through `visualtex-mcp.exe` ("insert the quadratic formula as a numbered
   equation after the cursor", "convert all formulas to MathType", "write a derivation of E = mc² into this

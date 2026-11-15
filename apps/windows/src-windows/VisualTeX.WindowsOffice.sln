@@ -20,15 +20,11 @@ Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "VisualTeX.FormulaOleServer.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.NativeOfficeOleAcceptance", "VisualTeX.NativeOfficeOleAcceptance\VisualTeX.NativeOfficeOleAcceptance.csproj", "{05878076-3A5E-42C8-BA63-A405EA1315DD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.VstoFlowAcceptance", "VisualTeX.VstoFlowAcceptance\VisualTeX.VstoFlowAcceptance.csproj", "{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.NativeRenderService", "VisualTeX.NativeRenderService\VisualTeX.NativeRenderService.csproj", "{59FC5FCD-A560-4730-8351-57D8C99D5499}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.NativeRenderWorker", "VisualTeX.NativeRenderWorker\VisualTeX.NativeRenderWorker.csproj", "{92EB3138-7AF1-4431-B34A-341F0FA8A669}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.NativeRender.Tests", "VisualTeX.NativeRender.Tests\VisualTeX.NativeRender.Tests.csproj", "{CA6754BF-09A2-4A62-BF3C-E525CAC11CFA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VisualTeX.TargetedTypographyCrossReferenceAcceptance", "VisualTeX.TargetedTypographyCrossReferenceAcceptance\VisualTeX.TargetedTypographyCrossReferenceAcceptance.csproj", "{3A5C8F49-9E19-4645-86CB-62091C13DFF0}"
 EndProject
 Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "VisualTeX.NativeRender.Installer", "VisualTeX.NativeRender.Installer\VisualTeX.NativeRender.Installer.wixproj", "{D8490CAF-EAFA-4041-A393-CF0EFEDF2651}"
 EndProject
@@ -131,16 +127,6 @@ Global
 		{05878076-3A5E-42C8-BA63-A405EA1315DD}.Debug|x86.Build.0 = Debug|x86
 		{05878076-3A5E-42C8-BA63-A405EA1315DD}.Release|x86.ActiveCfg = Release|x86
 		{05878076-3A5E-42C8-BA63-A405EA1315DD}.Release|x86.Build.0 = Release|x86
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Debug|Any CPU.Build.0 = Debug|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|Any CPU.ActiveCfg = Release|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|Any CPU.Build.0 = Release|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|x64.ActiveCfg = Release|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|x64.Build.0 = Release|x64
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Debug|x86.ActiveCfg = Debug|x86
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Debug|x86.Build.0 = Debug|x86
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|x86.ActiveCfg = Release|x86
-		{C8A6E4D2-1F35-4B7A-9C20-6E8D3F5A7B91}.Release|x86.Build.0 = Release|x86
 		{59FC5FCD-A560-4730-8351-57D8C99D5499}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{59FC5FCD-A560-4730-8351-57D8C99D5499}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{59FC5FCD-A560-4730-8351-57D8C99D5499}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -171,14 +157,6 @@ Global
 		{CA6754BF-09A2-4A62-BF3C-E525CAC11CFA}.Debug|x86.Build.0 = Debug|Any CPU
 		{CA6754BF-09A2-4A62-BF3C-E525CAC11CFA}.Release|x86.ActiveCfg = Release|Any CPU
 		{CA6754BF-09A2-4A62-BF3C-E525CAC11CFA}.Release|x86.Build.0 = Release|Any CPU
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Debug|Any CPU.Build.0 = Debug|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Release|Any CPU.ActiveCfg = Release|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Release|Any CPU.Build.0 = Release|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Release|x64.ActiveCfg = Release|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Release|x64.Build.0 = Release|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Debug|x86.ActiveCfg = Debug|x64
-		{3A5C8F49-9E19-4645-86CB-62091C13DFF0}.Release|x86.ActiveCfg = Release|x64
 		{D8490CAF-EAFA-4041-A393-CF0EFEDF2651}.Debug|Any CPU.ActiveCfg = Debug|x64
 		{D8490CAF-EAFA-4041-A393-CF0EFEDF2651}.Release|Any CPU.ActiveCfg = Release|x64
 		{D8490CAF-EAFA-4041-A393-CF0EFEDF2651}.Release|x64.ActiveCfg = Release|x64
