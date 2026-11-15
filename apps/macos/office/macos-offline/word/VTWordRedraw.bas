@@ -1717,9 +1717,11 @@ End Sub
 ' A display formula stands in a paragraph of its own, as on Windows: text that shared the
 ' paragraph with its LaTeX code goes to the paragraph before or after it. Left in the
 ' paragraph, the equation joined an equation next to it (Word merges adjacent equations)
-' or became inline. The marks are written next to the code's first and last characters,
-' before the code is replaced: written at a math zone's edge, Word refuses them ("Math
-' objects can't include paragraph marks"). Table cells keep their paragraph as it is.
+' or became inline. Each mark is written between two characters of the code, which then
+' loses the character outside the mark, all before the code is replaced: a mark written at
+' the code's edge touched an equation that ends or starts there (in "$$...$$$...$" the
+' inline formula after it is converted first), and Word refuses a mark at a math zone's
+' edge ("Math objects can't include paragraph marks"). Table cells keep their paragraph.
 Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef sourceRange As Range)
     Dim documentObject As Document
     Dim paragraphRange As Range
@@ -1729,18 +1731,20 @@ Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef sourceRange As Range)
     Set documentObject = sourceRange.Document
     sourceStart = sourceRange.Start
     sourceEnd = sourceRange.End
-    If sourceEnd <= sourceStart Then Exit Sub
+    If sourceEnd - sourceStart < 3 Then Exit Sub
     Set paragraphRange = sourceRange.Paragraphs(1).Range.Duplicate
     If paragraphRange.Information(wdWithInTable) Then Exit Sub
     If VTContainsVisibleWordBodyText(documentObject.Range( _
        Start:=sourceEnd, End:=paragraphRange.End - 1).Text) Then
-        documentObject.Range(Start:=sourceEnd - 1, End:=sourceEnd).InsertAfter vbCr
+        documentObject.Range(Start:=sourceEnd - 1, End:=sourceEnd - 1).InsertAfter vbCr
+        documentObject.Range(Start:=sourceEnd, End:=sourceEnd + 1).Delete
+        sourceEnd = sourceEnd - 1
     End If
     If VTContainsVisibleWordBodyText(documentObject.Range( _
        Start:=paragraphRange.Start, End:=sourceStart).Text) Then
-        documentObject.Range(Start:=sourceStart, End:=sourceStart + 1).InsertBefore vbCr
+        documentObject.Range(Start:=sourceStart + 1, End:=sourceStart + 1).InsertAfter vbCr
+        documentObject.Range(Start:=sourceStart, End:=sourceStart + 1).Delete
         sourceStart = sourceStart + 1
-        sourceEnd = sourceEnd + 1
     End If
     Set sourceRange = documentObject.Range(Start:=sourceStart, End:=sourceEnd)
 End Sub
