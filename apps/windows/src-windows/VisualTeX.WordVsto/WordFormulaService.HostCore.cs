@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordMathTypeOleLookup;
 
 namespace VisualTeX.WordVsto;
 

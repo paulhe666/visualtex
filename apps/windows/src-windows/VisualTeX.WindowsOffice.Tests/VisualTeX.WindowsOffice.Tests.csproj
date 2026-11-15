@@ -91,7 +91,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefTemplates.cs" Link="MathTypeMtefTemplates.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MtefStructureReader.cs" Link="MtefStructureReader.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordNativeOmmlSemanticComparer.cs" Link="WordNativeOmmlSemanticComparer.cs" />
-    <Compile Include="..\VisualTeX.WordVsto\WordFormulaService.MathTypePresentation.cs" Link="WordFormulaService.MathTypePresentation.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordMathTypePresentation.cs" Link="WordMathTypePresentation.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordRecoveryXmlEquivalence.cs" Link="WordRecoveryXmlEquivalence.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordLocalEditSnapshot.cs" Link="WordLocalEditSnapshot.cs" />

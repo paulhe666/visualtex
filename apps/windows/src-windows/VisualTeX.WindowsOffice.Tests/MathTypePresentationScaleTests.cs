@@ -15,7 +15,7 @@ public sealed class MathTypePresentationScaleTests
         float sourceDisplayedExtent,
         float targetDisplayedExtent)
     {
-        var actual = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+        var actual = WordMathTypePresentation.CalculateMathTypePreservedOriginalExtent(
             sourceOriginalExtent,
             sourceDisplayedExtent,
             targetDisplayedExtent);
@@ -37,7 +37,7 @@ public sealed class MathTypePresentationScaleTests
     {
         Assert.Equal(
             targetDisplayedExtent,
-            WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+            WordMathTypePresentation.CalculateMathTypePreservedOriginalExtent(
                 sourceOriginalExtent,
                 sourceDisplayedExtent,
                 targetDisplayedExtent));
@@ -46,8 +46,8 @@ public sealed class MathTypePresentationScaleTests
     [Fact]
     public void PreservesLegacyInlineMathTypeHorizontalAndVerticalScale()
     {
-        var widthScale = WordFormulaService.CalculateMathTypeNativePresentationScale(28.95f, 33f);
-        var heightScale = WordFormulaService.CalculateMathTypeNativePresentationScale(12.4f, 14f);
+        var widthScale = WordMathTypePresentation.CalculateMathTypeNativePresentationScale(28.95f, 33f);
+        var heightScale = WordMathTypePresentation.CalculateMathTypeNativePresentationScale(12.4f, 14f);
 
         Assert.Equal(28.95f / 33f, widthScale, 4);
         Assert.Equal(12.4f / 14f, heightScale, 4);
@@ -64,24 +64,24 @@ public sealed class MathTypePresentationScaleTests
         const float sourceDisplayedHeight = 12.4f;
         const float sourceOriginalWidth = 36f;
         const float sourceOriginalHeight = 11.25f;
-        var widthScale = WordFormulaService.CalculateMathTypeNativePresentationScale(
+        var widthScale = WordMathTypePresentation.CalculateMathTypeNativePresentationScale(
             sourceDisplayedWidth,
             33f);
-        var heightScale = WordFormulaService.CalculateMathTypeNativePresentationScale(
+        var heightScale = WordMathTypePresentation.CalculateMathTypeNativePresentationScale(
             sourceDisplayedHeight,
             14f);
 
         var displayedWidth = nativeWidth * widthScale;
         var displayedHeight = nativeHeight * heightScale;
-        var originalWidth = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+        var originalWidth = WordMathTypePresentation.CalculateMathTypePreservedOriginalExtent(
             sourceOriginalWidth,
             sourceDisplayedWidth,
             displayedWidth);
-        var originalHeight = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+        var originalHeight = WordMathTypePresentation.CalculateMathTypePreservedOriginalExtent(
             sourceOriginalHeight,
             sourceDisplayedHeight,
             displayedHeight);
-        var geometry = WordFormulaService.CalculateMathTypeWordPresentationGeometry(
+        var geometry = WordMathTypePresentation.CalculateMathTypeWordPresentationGeometry(
             "width:28.95pt;height:12.4pt",
             displayedWidth,
             displayedHeight,
@@ -97,7 +97,7 @@ public sealed class MathTypePresentationScaleTests
     [Fact]
     public void PreservesFractionalPointPrecisionInWordOriginalExtent()
     {
-        var geometry = WordFormulaService.CalculateMathTypeWordPresentationGeometry(
+        var geometry = WordMathTypePresentation.CalculateMathTypeWordPresentationGeometry(
             "width:28.95pt;height:12.4pt",
             widthPt: 63.3f,
             heightPt: 13.85f,
@@ -114,7 +114,7 @@ public sealed class MathTypePresentationScaleTests
     {
         var source = CreateMinimalPlaceableWmf();
 
-        var normalized = WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(source);
+        var normalized = WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(source);
 
         Assert.Equal(source.Length + 20, normalized.Length);
         Assert.Equal(22u, BitConverter.ToUInt32(normalized, 28));
@@ -127,7 +127,7 @@ public sealed class MathTypePresentationScaleTests
         Assert.Equal(0, BitConverter.ToUInt16(normalized, 64));
         Assert.Same(
             normalized,
-            WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(normalized));
+            WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(normalized));
     }
 
     [Theory]
@@ -136,7 +136,7 @@ public sealed class MathTypePresentationScaleTests
     [InlineData(28.95f, -1f)]
     public void FallsBackToUnitScaleForInvalidSourceGeometry(float wordExtent, float nativeExtent)
     {
-        Assert.Equal(1f, WordFormulaService.CalculateMathTypeNativePresentationScale(wordExtent, nativeExtent));
+        Assert.Equal(1f, WordMathTypePresentation.CalculateMathTypeNativePresentationScale(wordExtent, nativeExtent));
     }
 
     [Fact]
@@ -149,23 +149,23 @@ public sealed class MathTypePresentationScaleTests
 
         Assert.NotEqual(first, second);
         Assert.Equal(
-            WordFormulaService.MathTypePictureDrawing(first),
-            WordFormulaService.MathTypePictureDrawing(second));
+            WordMathTypePresentation.MathTypePictureDrawing(first),
+            WordMathTypePresentation.MathTypePictureDrawing(second));
         Assert.Equal(
-            WordFormulaService.MathTypePictureDrawing(first),
-            WordFormulaService.MathTypePictureDrawing(
-                WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(first)));
+            WordMathTypePresentation.MathTypePictureDrawing(first),
+            WordMathTypePresentation.MathTypePictureDrawing(
+                WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(first)));
     }
 
     [Fact]
     public void PictureDrawingSeesADifferentGlyphOrFont()
     {
-        var expected = WordFormulaService.MathTypePictureDrawing(
+        var expected = WordMathTypePresentation.MathTypePictureDrawing(
             CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0));
 
-        Assert.NotEqual(expected, WordFormulaService.MathTypePictureDrawing(
+        Assert.NotEqual(expected, WordMathTypePresentation.MathTypePictureDrawing(
             CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0, glyph: 0x6E)));
-        Assert.NotEqual(expected, WordFormulaService.MathTypePictureDrawing(
+        Assert.NotEqual(expected, WordMathTypePresentation.MathTypePictureDrawing(
             CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0, face: "Arial")));
     }
 

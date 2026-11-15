@@ -102,7 +102,7 @@ internal static class WordOmmlMathFontSetting
     internal static void Install() =>
         WordOmmlMathFontPolicy.Configure(
             () => EffectiveFont,
-            (document, font) => WordFormulaService.ApplyDocumentOmmlMathFont(
+            (document, font) => WordOmmlMathFont.ApplyDocumentOmmlMathFont(
                 (Microsoft.Office.Interop.Word.Document)document, font));
 
     internal static void Uninstall() => WordOmmlMathFontPolicy.Configure(null, null);

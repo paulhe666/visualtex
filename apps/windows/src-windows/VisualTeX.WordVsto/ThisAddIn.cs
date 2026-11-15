@@ -4222,7 +4222,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                         try
                                         {
                                             mathTypePreflightPrepared[preflightKey] =
-                                                WordFormulaService.PrepareStandaloneMathTypeOleData(
+                                                WordFormulaOle.PrepareStandaloneMathTypeOleData(
                                                     preflightMathMl,
                                                     preflightInline,
                                                     preflightFontSizePt,
@@ -5228,7 +5228,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     foreach (var item in rendered)
                     {
                         var standalone =
-                            WordFormulaService.PrepareStandaloneMathTypeOleData(
+                            WordFormulaOle.PrepareStandaloneMathTypeOleData(
                                 item.Value.MathMl,
                                 string.Equals(
                                     item.Value.Session.DisplayMode,
@@ -6278,7 +6278,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     == System.Windows.Forms.DialogResult.Yes;
             }).ConfigureAwait(false);
             if (!proceed) return;
-            WordFormulaService.OmmlMathFontAlignmentResult? fontResult = null;
+            WordOmmlMathFont.OmmlMathFontAlignmentResult? fontResult = null;
             var count = await dispatcher.InvokeAsync(() =>
                 {
                     var numbers = service.UpgradeEquationFormat(out var font);

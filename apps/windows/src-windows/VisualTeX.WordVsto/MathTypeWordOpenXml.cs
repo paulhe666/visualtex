@@ -520,7 +520,7 @@ internal static class MathTypeWordOpenXml
         // Equation.DSMT4 presentation here, at the single Flat OPC creation
         // boundary, rather than patching individual insertion/conversion callers.
         previewWmf =
-            WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(
+            WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(
                 previewWmf);
 
         var storageIdentity = MathTypeOleStorage.ReadCompoundFileIdentity(compoundFile);
@@ -1011,7 +1011,7 @@ internal static class MathTypeWordOpenXml
         if (!(widthPt > 0) || !(heightPt > 0))
             throw new InvalidDataException(
                 $"Invalid MathType preview size {widthPt}x{heightPt} pt.");
-        previewWmf = WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(previewWmf);
+        previewWmf = WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(previewWmf);
 
         var document = XDocument.Parse(sourceWordOpenXml, LoadOptions.PreserveWhitespace);
         var references = ResolveObjectReferences(document);
@@ -1414,7 +1414,7 @@ internal static class MathTypeWordOpenXml
             element.Attribute(OfficeNamespace + "ole") is not null)
             ?? document.Descendants(VmlNamespace + "shape").LastOrDefault()
             ?? throw new InvalidDataException("Flat OPC MathType object has no VML shape.");
-        var geometry = WordFormulaService.CalculateMathTypeWordPresentationGeometry(
+        var geometry = WordMathTypePresentation.CalculateMathTypeWordPresentationGeometry(
             (string?)shape.Attribute("style") ?? string.Empty,
             widthPt,
             heightPt,

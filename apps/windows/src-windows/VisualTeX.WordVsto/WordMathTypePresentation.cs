@@ -2,7 +2,11 @@ using System.Security.Cryptography;
 
 namespace VisualTeX.WordVsto;
 
-internal sealed partial class WordFormulaService
+/// <summary>
+/// MathType's presentation in Word: the geometry and scale of a MathType picture and the WMF records it is drawn
+/// with.
+/// </summary>
+internal static class WordMathTypePresentation
 {
     internal readonly struct MathTypeWordPresentationGeometry
     {

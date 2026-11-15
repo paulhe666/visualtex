@@ -4,6 +4,10 @@ using System.Security.Cryptography;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordFormulaOle;
+using static VisualTeX.WordVsto.WordInlineOlePosition;
+using static VisualTeX.WordVsto.WordMathTypeDisplayLayout;
+using static VisualTeX.WordVsto.WordMathTypePresentation;
 
 namespace VisualTeX.WordVsto;
 

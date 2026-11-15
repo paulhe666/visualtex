@@ -3,6 +3,8 @@ using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordBulkInsertion;
+using static VisualTeX.WordVsto.WordFormulaHostSetup;
 
 namespace VisualTeX.WordVsto;
 

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.VstoShared;
+using static VisualTeX.WordVsto.WordMathTypeNumbering;
 
 namespace VisualTeX.WordVsto;
 

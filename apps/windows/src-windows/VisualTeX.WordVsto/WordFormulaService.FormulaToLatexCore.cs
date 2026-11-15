@@ -3,6 +3,7 @@ using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordFormulaLatexSource;
 
 namespace VisualTeX.WordVsto;
 

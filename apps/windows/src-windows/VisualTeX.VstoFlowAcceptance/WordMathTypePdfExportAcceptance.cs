@@ -105,7 +105,7 @@ internal static partial class Program
                 128);
 
         var prepared =
-            WordFormulaService
+            WordFormulaOle
                 .PrepareStandaloneMathTypeOleData(
                     mathMl,
                     inline: true,
@@ -121,7 +121,7 @@ internal static partial class Program
             RemoveLogicalWindowRecords(
                 sourceWmf);
         var expectedFixedWmf =
-            WordFormulaService
+            WordMathTypePresentation
                 .EnsureMathTypePlaceableWmfWindowRecords(
                     rawWmf);
 
@@ -148,7 +148,7 @@ internal static partial class Program
                 expectedFixedWmf),
             "CreateWithPlaceableWmf did not persist SETWINDOWORG + SETWINDOWEXT.");
         AssertTrue(
-            WordFormulaService
+            WordMathTypePresentation
                 .EnsureMathTypePlaceableWmfWindowRecords(
                     fragment.PreviewWmf)
                 .SequenceEqual(

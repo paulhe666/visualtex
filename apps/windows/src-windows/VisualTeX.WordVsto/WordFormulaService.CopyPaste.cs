@@ -1,6 +1,9 @@
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
+using static VisualTeX.WordVsto.WordInlineOlePosition;
+using static VisualTeX.WordVsto.WordMathTypeDisplayLayout;
+using static VisualTeX.WordVsto.WordMathTypeNumbering;
 
 namespace VisualTeX.WordVsto;
 

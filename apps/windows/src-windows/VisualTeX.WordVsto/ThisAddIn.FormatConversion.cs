@@ -462,7 +462,7 @@ public sealed partial class ThisAddIn
                                 target.WriteDisplayMode,
                                 "inline",
                                 StringComparison.OrdinalIgnoreCase);
-                            var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
+                            var standalone = WordFormulaOle.PrepareStandaloneMathTypeOleData(
                                 mathMl, inline, formula.Session.FontSizePt, target.Latex);
                             formula.MathTypeStandaloneGenerated = standalone.Generated;
                             formula.MathTypeStandaloneCompoundFile = standalone.CompoundFile;

@@ -4,6 +4,10 @@ using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
+using static VisualTeX.WordVsto.WordBulkInsertion;
+using static VisualTeX.WordVsto.WordDisplayInsertion;
+using static VisualTeX.WordVsto.WordFormulaOle;
+using static VisualTeX.WordVsto.WordMathTypeNumbering;
 
 namespace VisualTeX.WordVsto;
 
@@ -381,7 +385,7 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private static void RetargetPreparedMathTypeSection(
+    internal static void RetargetPreparedMathTypeSection(
         Document document, Field sectionField, int chapter, int section)
     {
         // A prepared field tree is immutable and reusable. Its copy now belongs

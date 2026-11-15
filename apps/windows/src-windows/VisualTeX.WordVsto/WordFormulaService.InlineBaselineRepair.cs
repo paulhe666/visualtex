@@ -1,6 +1,8 @@
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordFormulaHostSetup;
+using static VisualTeX.WordVsto.WordInlineOlePosition;
 
 namespace VisualTeX.WordVsto;
 

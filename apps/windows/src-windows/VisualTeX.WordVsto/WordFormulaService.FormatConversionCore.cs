@@ -3,6 +3,9 @@ using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordFormulaHostSetup;
+using static VisualTeX.WordVsto.WordMathTypeNumbering;
+using static VisualTeX.WordVsto.WordMathTypeOleLookup;
 
 namespace VisualTeX.WordVsto;
 

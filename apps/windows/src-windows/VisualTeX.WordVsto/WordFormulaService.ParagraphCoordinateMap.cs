@@ -1,5 +1,6 @@
 using Microsoft.Office.Interop.Word;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordSourceFontSize;
 
 namespace VisualTeX.WordVsto;
 

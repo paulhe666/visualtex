@@ -22,7 +22,7 @@ internal static partial class Program
         File.WriteAllText(svg,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"96\" viewBox=\"0 0 260 96\"><text x=\"6\" y=\"66\" font-size=\"48\">x+1</text></svg>");
         var emf = OfficeOlePreview.CreateVectorEmfFromSvg(svg, 260, 96);
-        var method = typeof(WordFormulaService).GetMethod(
+        var method = typeof(WordFormulaOle).GetMethod(
             "TryRecoverMaterializedOleAfterCommandFailure", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new MissingMethodException("OLE recovery predicate not found.");
         Word.Application? application = null;

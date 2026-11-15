@@ -44,7 +44,7 @@ internal static partial class Program
         foreach (var inline in new[] { false, true })
         {
             var expected = MathTypeMtefCodec.SemanticSignature(item.MathMl);
-            var prepared = WordFormulaService.PrepareStandaloneMathTypeOleData(
+            var prepared = WordFormulaOle.PrepareStandaloneMathTypeOleData(
                 item.MathMl,
                 inline,
                 fontSizePt: 12,

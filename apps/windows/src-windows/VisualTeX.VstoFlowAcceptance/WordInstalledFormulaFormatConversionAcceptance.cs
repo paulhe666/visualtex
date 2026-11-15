@@ -820,7 +820,7 @@ internal static partial class Program
         // Reuse the product's strict placeable-WMF validator first. It verifies
         // the Aldus header, declared payload length, record bounds and logical
         // window geometry without touching OLE activation or the clipboard.
-        var validated = WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(
+        var validated = WordMathTypePresentation.EnsureMathTypePlaceableWmfWindowRecords(
             previewWmf);
         const int firstRecordOffset = 40; // 22-byte placeable + 18-byte METAHEADER.
         var recordCount = 0;

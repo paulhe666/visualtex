@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordOmmlMathFont;
 
 namespace VisualTeX.WordVsto;
 
@@ -205,7 +206,7 @@ internal sealed partial class WordFormulaService
 
     // Visits every story range, including linked header/footer and text-box
     // stories; stops early when visit returns true.
-    private static bool AnyStory(Document document, Func<Range, bool> visit)
+    internal static bool AnyStory(Document document, Func<Range, bool> visit)
     {
         StoryRanges? stories = null;
         try
@@ -232,7 +233,7 @@ internal sealed partial class WordFormulaService
     }
 
     // replacement null: report whether the story holds the font at all.
-    private static bool ReplaceFont(Range story, string fontName, string? replacement)
+    internal static bool ReplaceFont(Range story, string fontName, string? replacement)
     {
         Range? search = null;
         Find? find = null;
