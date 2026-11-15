@@ -233,10 +233,11 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
   display: block;
 }
 
+/* Each select is as wide as its widest option, so the chosen one is never cut; step 5 narrows them. */
 .editor-pane-header.is-office-editor-header[data-vt-collapse]
   .office-font-size-setting
   select {
-  width: 104px;
+  width: auto;
   padding-right: 0;
 }
 
@@ -261,12 +262,12 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
 
 .editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-ocr-model {
   display: flex;
-  width: 136px;
-  min-width: 136px;
+  width: auto;
+  min-width: max-content;
 }
 
 .editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-ocr-model select {
-  width: 112px;
+  width: auto;
 }
 
 .editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-controls {
@@ -292,17 +293,17 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
   > svg:last-child,
 /* 2: zoom keeps its two buttons, without the percentage. */
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="2"] .canvas-controls > span,
-/* 3: the font size keeps its value, without the caption. */
+/* 3: the selects keep their values, without the captions. */
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="3"]
   .office-font-size-setting
   > span,
-/* 4: the OCR model selector leaves; 5: undo and redo leave (⌘Z still works). Level 6 compacts a platform's own
-   header controls (src/platform/styles.css). */
+/* 4: the OCR model selector leaves (5 narrows the selects); 6: undo and redo leave (⌘Z still works). Level 7
+   compacts a platform's own header controls (src/platform/styles.css). */
 .editor-pane-header.is-office-editor-header[data-vt-collapse~="4"] .canvas-ocr-model,
-.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="6"]
   .office-inline-actions
   > .icon-button,
-.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="6"]
   .office-dialog-action-divider {
   display: none;
 }
@@ -312,12 +313,13 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
   min-width: 56px;
 }
 
-.editor-pane-header.is-office-editor-header[data-vt-collapse~="3"] .office-font-size-setting {
+/* 5: the selects narrow (their values may be cut). */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"] .office-font-size-setting {
   min-width: 72px;
   padding-inline: 3px;
 }
 
-.editor-pane-header.is-office-editor-header[data-vt-collapse~="3"]
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
   .office-font-size-setting
   select {
   width: 64px;

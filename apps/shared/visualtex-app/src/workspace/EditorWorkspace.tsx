@@ -172,8 +172,8 @@ function readStandardPanelWidth(mode: string) {
 
 // Office editor header (font size | tools | undo, cancel, apply). Its groups
 // stretch, so the needed width is the sum of the individual controls.
-// levels 1-5: responsive.css; 6: a platform's own header controls (src/platform/styles.css)
-const OFFICE_HEADER_COLLAPSE_LEVELS = 6;
+// levels 1-6: responsive.css; 7: a platform's own header controls (src/platform/styles.css)
+const OFFICE_HEADER_COLLAPSE_LEVELS = 7;
 const officeHeaderItems =
   ".pane-title-group > *, .canvas-tool-group > *, .office-inline-actions";
 
