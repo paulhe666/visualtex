@@ -39,6 +39,8 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result.value;
   };
+  // the app's page first (its storage is not reachable before)
+  for (let tries = 0; tries < 300 && !String(await evaluate("location.href")).startsWith(baseUrl); tries += 1) await sleep(50);
   const key = async (value, code, vk, modifiers = 0) => {
     const common = { key: value, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers };
     const text = value.length === 1 && !modifiers ? { text: value, unmodifiedText: value } : {};
