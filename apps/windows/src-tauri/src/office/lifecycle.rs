@@ -13,7 +13,7 @@ use crate::office::state::{
     append_office_log, OfficeCompanionState, OfficeCompanionStatus, OfficePaths, OFFICE_PORT,
     OFFICE_PROTOCOL_VERSION,
 };
-use crate::OcrState;
+use crate::ocr::OcrState;
 #[cfg(target_os = "macos")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -763,7 +763,7 @@ fn run_windows_script(
         ));
     }
     let powershell_script = powershell_compatible_path(&script);
-    let powershell = crate::ocr_install::windows_powershell_executable()?;
+    let powershell = crate::ocr::install::windows_powershell_executable()?;
     let output = hidden_windows_command(&powershell)
         .args([
             "-NoProfile",
@@ -778,10 +778,10 @@ fn run_windows_script(
         .args(arguments)
         .output()
         .map_err(|error| format!("Unable to start Windows Office script: {error}"))?;
-    let stdout = crate::ocr_install::decode_process_output(&output.stdout)
+    let stdout = crate::ocr::install::decode_process_output(&output.stdout)
         .trim()
         .to_string();
-    let stderr = crate::ocr_install::decode_process_output(&output.stderr)
+    let stderr = crate::ocr::install::decode_process_output(&output.stderr)
         .trim()
         .to_string();
     if output.status.success() {

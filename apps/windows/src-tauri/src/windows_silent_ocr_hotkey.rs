@@ -1,6 +1,6 @@
 #![cfg(target_os = "windows")]
 
-use crate::{OcrImageRequest, OcrState};
+use crate::ocr::{OcrImageRequest, OcrState};
 use serde::{Deserialize, Serialize};
 use std::ffi::c_void;
 use std::fs;
@@ -201,7 +201,7 @@ fn load_configuration(app: &AppHandle) -> SilentOcrConfiguration {
     let Ok(mut configuration) = serde_json::from_slice::<SilentOcrConfiguration>(&bytes) else {
         return SilentOcrConfiguration::default();
     };
-    if !crate::ALLOWED_MODELS.contains(&configuration.model.as_str()) {
+    if !crate::ocr::ALLOWED_MODELS.contains(&configuration.model.as_str()) {
         configuration.model = DEFAULT_SILENT_OCR_MODEL.to_string();
     }
     if !ALLOWED_SILENT_OCR_COPY_FORMATS.contains(&configuration.copy_format.as_str()) {
@@ -704,7 +704,7 @@ async fn run_silent_ocr(app: AppHandle, configuration: SilentOcrConfiguration) -
     emit_hud(
         &app,
         "running",
-        if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
+        if active_provider == crate::ocr::provider::LOCAL_PROVIDER {
             "正在启动本地公式识别…"
         } else {
             "正在通过已配置的 OCR API 识别公式…"
@@ -885,7 +885,7 @@ pub(crate) fn configure(
     capture_mode: &str,
 ) -> Result<String, String> {
     let normalized_model = model.trim();
-    if !crate::ALLOWED_MODELS.contains(&normalized_model) {
+    if !crate::ocr::ALLOWED_MODELS.contains(&normalized_model) {
         return Err("Unsupported silent OCR model".to_string());
     }
     let normalized_copy_format = copy_format.trim();

@@ -360,7 +360,7 @@ pub fn start_native_render() -> Result<NativeRenderStatus, String> {
 
 fn start_elevated() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    let powershell = crate::ocr_install::windows_powershell_executable()?;
+    let powershell = crate::ocr::install::windows_powershell_executable()?;
     let command = format!(
         "$p = Start-Process -FilePath (Join-Path $env:WINDIR 'System32\\sc.exe') -ArgumentList 'start','{NATIVE_RENDER_SERVICE}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode"
     );
@@ -374,7 +374,7 @@ fn start_elevated() -> Result<(), String> {
         Some(0) | Some(1056) => Ok(()),
         _ => Err(format!(
             "The VisualTeX renderer service was not started{}",
-            crate::ocr_install::decode_process_output(&output.stderr)
+            crate::ocr::install::decode_process_output(&output.stderr)
                 .lines()
                 .find(|line| !line.trim().is_empty())
                 .map(|line| format!(": {}", line.trim()))

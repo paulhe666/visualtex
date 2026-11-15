@@ -638,7 +638,7 @@ fn install_model_pack_with_cancel(
         .len()
         .saturating_mul(2)
         .saturating_add(512 * 1024 * 1024);
-    crate::ocr_storage::ensure_available_space(
+    crate::ocr::storage::ensure_available_space(
         runtime_root,
         required_space,
         "Staging, verifying, and installing the selected OCR model package",
@@ -1013,7 +1013,7 @@ pub async fn download_and_install_model(
         .size
         .saturating_mul(2)
         .saturating_add(512 * 1024 * 1024);
-    crate::ocr_storage::ensure_available_space(
+    crate::ocr::storage::ensure_available_space(
         runtime_root,
         required_space,
         &format!("Downloading, staging, and installing the {} OCR model", entry.model),

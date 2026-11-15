@@ -2002,7 +2002,7 @@ async fn get_ocr_provider_configuration(
 
 async fn put_ocr_provider_configuration(
     State(context): State<ServerContext>,
-    Json(configuration): Json<crate::ocr_provider::OcrProviderConfigurationUpdate>,
+    Json(configuration): Json<crate::ocr::provider::OcrProviderConfigurationUpdate>,
 ) -> Response {
     let app = match ocr_app(&context) {
         Ok(app) => app,
@@ -2052,7 +2052,7 @@ async fn open_ocr_install_logs(State(context): State<ServerContext>) -> Response
         Ok(app) => app,
         Err(response) => return *response,
     };
-    match crate::open_ocr_install_logs(app) {
+    match crate::ocr::open_ocr_install_logs(app) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => ocr_error_response(error),
     }
@@ -2095,7 +2095,7 @@ async fn recognize_ocr(
         )
             .into_response();
     }
-    if body.len() > crate::MAX_IMAGE_BYTES {
+    if body.len() > crate::ocr::MAX_IMAGE_BYTES {
         return (
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(serde_json::json!({
@@ -2121,7 +2121,7 @@ async fn recognize_ocr(
         Ok(app) => app,
         Err(response) => return *response,
     };
-    let request = crate::OcrImageRequest {
+    let request = crate::ocr::OcrImageRequest {
         bytes: body.to_vec(),
         extension,
         model,
@@ -3475,7 +3475,7 @@ mod tests {
             .expect("formula metadata cache");
         OfficeCompanionState::new(
             None,
-            crate::OcrState::default(),
+            crate::ocr::OcrState::default(),
             paths,
             "a".repeat(64),
             session_store,
@@ -4359,7 +4359,7 @@ mod tests {
                     .uri("/api/v1/ocr/recognize")
                     .header(INSTALL_TOKEN_HEADER, &token)
                     .header(header::CONTENT_TYPE, "application/octet-stream")
-                    .body(Body::from(vec![0_u8; crate::MAX_IMAGE_BYTES + 1]))
+                    .body(Body::from(vec![0_u8; crate::ocr::MAX_IMAGE_BYTES + 1]))
                     .unwrap(),
             )
             .await

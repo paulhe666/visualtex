@@ -4,7 +4,7 @@ use crate::office::powerpoint_native::{
     PowerPointInteractionBus, PowerPointNativeSelection,
 };
 use crate::office::sessions::SessionStore;
-use crate::OcrState;
+use crate::ocr::OcrState;
 use axum_server::Handle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
