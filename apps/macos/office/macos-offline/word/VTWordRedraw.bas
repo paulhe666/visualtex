@@ -1043,6 +1043,49 @@ Failed:
         errorNumber, errorDescription
 End Sub
 
+' A formula's rows written back as code that reads back as one formula, by the rule of the app's
+' displayLatexCode (WordLatexRedrawApp): inside $$...$$ a line break is only a space and an alignment
+' point (&) outside an alignment is an error, so several rows, or a row with alignment points, become
+' one aligned block (gathered without alignment points) with the rows joined by \\. Code with its own
+' environment or row breaks stays as it is.
+Private Function VTDisplayLatexCode(ByVal latexText As String) As String
+    Dim rows() As String
+    Dim joined As String
+    Dim rowText As String
+    Dim rowCount As Long
+    Dim rowIndex As Long
+    Dim ampersand As Long
+    Dim aligned As Boolean
+
+    VTDisplayLatexCode = latexText
+    If InStr(1, latexText, "\begin{", vbBinaryCompare) > 0 Then Exit Function
+    If InStr(1, latexText, "\\", vbBinaryCompare) > 0 Then Exit Function
+    rows = Split(Replace(Replace(Replace(latexText, vbCrLf, vbLf), vbCr, vbLf), Chr$(11), vbLf), vbLf)
+    For rowIndex = LBound(rows) To UBound(rows)
+        rowText = Trim$(Replace(rows(rowIndex), vbTab, " "))
+        If Len(rowText) > 0 Then
+            If rowCount > 0 Then joined = joined & " \\ "
+            joined = joined & rowText
+            rowCount = rowCount + 1
+            ampersand = InStr(1, rowText, "&", vbBinaryCompare)
+            Do While ampersand > 0 And Not aligned
+                If ampersand = 1 Then
+                    aligned = True
+                ElseIf Mid$(rowText, ampersand - 1, 1) <> "\" Then
+                    aligned = True
+                End If
+                ampersand = InStr(ampersand + 1, rowText, "&", vbBinaryCompare)
+            Loop
+        End If
+    Next rowIndex
+    If rowCount < 2 And Not aligned Then Exit Function
+    If aligned Then
+        VTDisplayLatexCode = "\begin{aligned}" & joined & "\end{aligned}"
+    Else
+        VTDisplayLatexCode = "\begin{gathered}" & joined & "\end{gathered}"
+    End If
+End Function
+
 Public Function VTRestoreCachedImageFormulasToLatex( _
     ByVal targetRange As Range) As Boolean
 
@@ -1107,7 +1150,7 @@ Public Function VTRestoreCachedImageFormulasToLatex( _
                 sourceEnds(formulaCount) = containerRange.End
                 If displayMode = "block" Then
                     replacementTexts(formulaCount) = _
-                        "$$" & latexText & "$$"
+                        "$$" & VTDisplayLatexCode(latexText) & "$$"
                 Else
                     replacementTexts(formulaCount) = _
                         "$" & latexText & "$"
@@ -1217,7 +1260,7 @@ Public Function VTRestoreCachedNativeFormulasToLatex( _
         sourceStarts(formulaCount) = formulaMath.Range.Start
         sourceEnds(formulaCount) = formulaMath.Range.End
         If displayMode = "block" Then
-            replacementTexts(formulaCount) = "$$" & latexText & "$$"
+            replacementTexts(formulaCount) = "$$" & VTDisplayLatexCode(latexText) & "$$"
         Else
             replacementTexts(formulaCount) = "$" & latexText & "$"
         End If
