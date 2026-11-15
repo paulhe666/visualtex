@@ -11,6 +11,9 @@ Private Const VT_WORD_FORMULA_RESTORE_SOURCE_FILE As String = _
 Private Const VT_WORD_LATEX_REDRAW_CHUNK_SIZE As Long = 16000
 Private Const VT_WORD_FORMULA_RESTORE_COMBINED_MAX_BYTES As Long = 2097152
 
+' Where the Find fallback of VTResolveLatexRedrawWordOffsets gave up (VT_WORD_FAILURE_DETAIL)
+Private VT_LATEX_REDRAW_FIND_NOTE As String
+
 Private Function VTLatexRedrawRequestJson( _
     ByVal sessionId As String, _
     ByVal sourceDocumentId As String, _
@@ -1500,6 +1503,8 @@ Private Function VTFindLatexRedrawWordOffsetsByVisibleText( _
     ByVal documentObject As Document, _
     ByVal targetStart As Long, _
     ByVal targetEnd As Long, _
+    ByRef sourceStarts() As Long, _
+    ByRef sourceEnds() As Long, _
     ByRef sourceTexts() As String, _
     ByVal itemCount As Long, _
     ByRef candidateStarts() As Long, _
@@ -1515,6 +1520,7 @@ Private Function VTFindLatexRedrawWordOffsetsByVisibleText( _
     Dim itemIndex As Long
     Dim foundItem As Boolean
 
+    VT_LATEX_REDRAW_FIND_NOTE = ""
     If documentObject Is Nothing Or itemCount < 1 Or _
        targetEnd <= targetStart Then Exit Function
 
@@ -1533,7 +1539,22 @@ Private Function VTFindLatexRedrawWordOffsetsByVisibleText( _
         searchPrefix = Replace$(searchPrefix, "^", "^^")
         foundItem = False
 
-        Do While searchStart < targetEnd
+        ' The code right after the item found before it stands as far from it in Word as in the
+        ' source when only plain text lies between them; checked there first, it needs no Find.
+        If itemIndex > 0 Then
+            Set exactRange = VTExactLatexTextRangeAt( _
+                documentObject, _
+                searchStart + sourceStarts(itemIndex) - sourceEnds(itemIndex - 1), _
+                targetEnd, searchText)
+            If Not exactRange Is Nothing Then
+                candidateStarts(itemIndex) = exactRange.Start - targetStart
+                candidateEnds(itemIndex) = exactRange.End - targetStart
+                searchStart = exactRange.End
+                foundItem = True
+            End If
+        End If
+
+        Do While searchStart < targetEnd And Not foundItem
             Set searchRange = documentObject.Range( _
                 Start:=searchStart, End:=targetEnd)
             With searchRange.Find
@@ -1558,14 +1579,48 @@ Private Function VTFindLatexRedrawWordOffsetsByVisibleText( _
             End If
             searchStart = searchRange.Start + 1
         Loop
-        If Not foundItem Then Exit Function
+        If Not foundItem Then
+            VT_LATEX_REDRAW_FIND_NOTE = "item " & CStr(itemIndex) & _
+                " not found after " & CStr(searchStart - targetStart)
+            Exit Function
+        End If
     Next itemIndex
 
     VTFindLatexRedrawWordOffsetsByVisibleText = True
     Exit Function
 
 NotFound:
+    VT_LATEX_REDRAW_FIND_NOTE = "item " & CStr(itemIndex) & ": " & Err.Description
     VTFindLatexRedrawWordOffsetsByVisibleText = False
+End Function
+
+' The first item a set of candidate positions reads wrong, for word-failure.log.
+Private Function VTLatexRedrawOffsetsMismatch( _
+    ByVal documentObject As Document, _
+    ByVal targetStart As Long, _
+    ByRef sourceTexts() As String, _
+    ByVal itemCount As Long, _
+    ByRef candidateStarts() As Long, _
+    ByRef candidateEnds() As Long) As String
+
+    Dim itemIndex As Long
+    Dim candidateText As String
+
+    On Error Resume Next
+    For itemIndex = 0 To itemCount - 1
+        candidateText = "?"
+        candidateText = documentObject.Range( _
+            Start:=targetStart + candidateStarts(itemIndex), _
+            End:=targetStart + candidateEnds(itemIndex)).Text
+        If StrComp(candidateText, sourceTexts(itemIndex), vbBinaryCompare) <> 0 Then
+            VTLatexRedrawOffsetsMismatch = "item " & CStr(itemIndex) & " " & _
+                CStr(candidateStarts(itemIndex)) & "-" & CStr(candidateEnds(itemIndex)) & _
+                " reads [" & Left$(candidateText, 24) & "] for [" & _
+                Left$(sourceTexts(itemIndex), 24) & "]"
+            Exit Function
+        End If
+    Next itemIndex
+    VTLatexRedrawOffsetsMismatch = "all read right"
 End Function
 
 Private Sub VTResolveLatexRedrawWordOffsets( _
@@ -1581,7 +1636,11 @@ Private Sub VTResolveLatexRedrawWordOffsets( _
     ByRef wordEnds() As Long)
 
     Dim itemIndex As Long
+    Dim utf16Detail As String
+    Dim pairDetail As String
+    Dim findDetail As String
 
+    VT_WORD_FAILURE_DETAIL = ""
     ReDim wordStarts(0 To itemCount - 1)
     ReDim wordEnds(0 To itemCount - 1)
     For itemIndex = 0 To itemCount - 1
@@ -1593,6 +1652,8 @@ Private Sub VTResolveLatexRedrawWordOffsets( _
        wordStarts, wordEnds) Then
         Exit Sub
     End If
+    utf16Detail = VTLatexRedrawOffsetsMismatch( _
+        documentObject, targetStart, sourceTexts, itemCount, wordStarts, wordEnds)
 
     VTBuildWordOffsetsFromUtf16 _
         sourceSnapshot, sourceStarts, sourceEnds, itemCount, _
@@ -1602,6 +1663,8 @@ Private Sub VTResolveLatexRedrawWordOffsets( _
        wordStarts, wordEnds) Then
         Exit Sub
     End If
+    pairDetail = VTLatexRedrawOffsetsMismatch( _
+        documentObject, targetStart, sourceTexts, itemCount, wordStarts, wordEnds)
 
     ' Word Range coordinates include hidden Field instructions even though
     ' Range.Text exposes only their visible result. Numbered formulas before a
@@ -1609,15 +1672,22 @@ Private Sub VTResolveLatexRedrawWordOffsets( _
     ' positions. Resolve the literal LaTeX spans through Word Find as the final,
     ' exact fallback instead of misreporting that the document text changed.
     If VTFindLatexRedrawWordOffsetsByVisibleText( _
-       documentObject, targetStart, targetEnd, sourceTexts, itemCount, _
-       wordStarts, wordEnds) Then
+       documentObject, targetStart, targetEnd, sourceStarts, sourceEnds, _
+       sourceTexts, itemCount, wordStarts, wordEnds) Then
         If VTLatexRedrawWordOffsetsMatch( _
            documentObject, targetStart, targetEnd, sourceTexts, itemCount, _
            wordStarts, wordEnds) Then
             Exit Sub
         End If
+        findDetail = VTLatexRedrawOffsetsMismatch( _
+            documentObject, targetStart, sourceTexts, itemCount, wordStarts, wordEnds)
+    Else
+        findDetail = VT_LATEX_REDRAW_FIND_NOTE
     End If
 
+    VT_WORD_FAILURE_DETAIL = "LaTeX source ranges in " & CStr(targetStart) & "-" & _
+        CStr(targetEnd) & " (" & CStr(itemCount) & " items): text offsets: " & utf16Detail & _
+        "; surrogate pairs as one: " & pairDetail & "; Find: " & findDetail
     Err.Raise vbObjectError + 7594, "VisualTeX", _
         "Word could not resolve the current LaTeX source ranges. " & _
         "Reopen redraw from the current document."

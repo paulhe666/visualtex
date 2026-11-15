@@ -10,6 +10,9 @@ Option Private Module
 ' AI agents (VisualTeX_AgentRun in VTWordAdapter, the agent code in VTWordAgent)
 Public VT_AGENT_REQUEST As Collection
 
+' What the code that failed knows about why, for the next word-failure.log (VTWriteWordFailureTrace)
+Public VT_WORD_FAILURE_DETAIL As String
+
 Public Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Public Const VT_WORD_SOURCE_REVISION As String = _
@@ -1049,6 +1052,11 @@ Public Sub VTWriteWordFailureTrace( _
         "errorDescription=" & Replace$(Replace$( _
             errorDescription, vbCr, " "), vbLf, " ") & vbLf & _
         "documentId=" & VTWordDocumentIdentity() & vbLf
+    If Len(VT_WORD_FAILURE_DETAIL) > 0 Then
+        traceText = traceText & "detail=" & Replace$(Replace$( _
+            VT_WORD_FAILURE_DETAIL, vbCr, " "), vbLf, " ") & vbLf
+        VT_WORD_FAILURE_DETAIL = ""
+    End If
     VTWriteTextAtomic tracePath, traceText
     Err.Clear
     On Error GoTo 0
