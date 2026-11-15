@@ -1921,7 +1921,16 @@ internal static class WordNumberingReconcile
                     var metadata = ReadMetadata(shape);
                     if (metadata is null || metadata.DisplayMode != "block") continue;
                     formulaRange = shape.Range;
-                    if (metadata.Numbered)
+                    if (metadata.Numbered
+                        && HasSingleParagraphNumber(document, metadata.FormulaId))
+                    {
+                        // The single-paragraph number of a VisualTeX OLE (TAB, object, TAB,
+                        // MACROBUTTON VisualTeXPlaceRef) is complete by itself. The caption
+                        // paragraph and visible REF of the older layout do not belong to it:
+                        // built here, they added a second, broken number under the equation.
+                        numberedFormulaIds.Add(metadata.FormulaId);
+                    }
+                    else if (metadata.Numbered)
                     {
                         ConfigureNumberedDisplayFormula(
                             document,
@@ -2061,6 +2070,15 @@ internal static class WordNumberingReconcile
         finally { Release(inlineShapes); }
 
         return numberedFormulaIds.Count;
+    }
+
+    // A VisualTeX OLE numbered the current way: TAB, object, TAB and MACROBUTTON
+    // VisualTeXPlaceRef in one paragraph.
+    private static bool HasSingleParagraphNumber(Document document, string formulaId)
+    {
+        var owner = WordVisualTeXParagraphNumbering.FindOwnerParagraphRange(document, formulaId);
+        Release(owner);
+        return owner is not null;
     }
 
     private sealed class OmmlStructuralFormulaEntry
