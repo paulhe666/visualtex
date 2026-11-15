@@ -300,7 +300,7 @@ internal static partial class Program
                                 + convertedFormulaId);
                         range = WordOmmlFormulaStore.GetEquationRange(bookmark);
                         var insideTable =
-                            WordEquationNumbering.RangeIsWhollyWithinTable(range);
+                            WordNumberedDisplayLayout.RangeIsWhollyWithinTable(range);
                         if (target.SourceWithinTable)
                         {
                             AssertTrue(insideTable,

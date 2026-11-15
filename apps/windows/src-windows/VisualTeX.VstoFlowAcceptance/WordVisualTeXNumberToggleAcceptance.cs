@@ -75,7 +75,7 @@ internal static partial class Program
             AssertTrue(!originalMetadata.Numbered,
                 "The number-toggle fixture was unexpectedly numbered before editing.");
             AssertTrue(
-                !document.Bookmarks.Exists(WordEquationNumbering.EquationBookmarkName(formulaId)),
+                !document.Bookmarks.Exists(WordNumberingFields.EquationBookmarkName(formulaId)),
                 "The unnumbered VisualTeX source unexpectedly owns a visible equation number.");
             AssertVisualTeXUnnumberedDisplayBaseline(
                 document,

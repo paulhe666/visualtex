@@ -100,7 +100,7 @@ internal static partial class Program
             AssertEqual(3, legacyTable.Columns.Count,
                 "The legacy-numbering migration fixture changed the table column count.");
 
-            WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+            WordNumberingReconcile.BuildFormulaNumberingScaffoldForConversion(
                 document,
                 shapeRange,
                 shape.Height,

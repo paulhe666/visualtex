@@ -1,10 +1,25 @@
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordEquationNumbering;
+using static VisualTeX.WordVsto.WordEquationHeadings;
+using static VisualTeX.WordVsto.WordEquationNumberFormat;
+using static VisualTeX.WordVsto.WordEquationNumberReferences;
+using static VisualTeX.WordVsto.WordEquationSequenceFields;
+using static VisualTeX.WordVsto.WordNumberedDisplayLayout;
+using static VisualTeX.WordVsto.WordNumberedTrueDisplay;
+using static VisualTeX.WordVsto.WordNumberedTypingParagraphs;
+using static VisualTeX.WordVsto.WordNumberingFields;
+using static VisualTeX.WordVsto.WordNumberingReconcile;
+using static VisualTeX.WordVsto.WordNumberingState;
+using static VisualTeX.WordVsto.WordVisibleEquationNumbers;
 
 namespace VisualTeX.WordVsto;
 
-internal static partial class WordEquationNumbering
+/// <summary>
+/// Numbered native OMML display formulas laid out in a borderless table: the table host, its cells and separators.
+/// </summary>
+internal static class WordNumberedTableDisplay
 {
     private const float NativeOmmlTableSideWidthPoints = 60f;
     private const float NativeOmmlTableHeightSafetyPoints = 0.9f;
@@ -293,7 +308,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool ConfigureNumberedNativeOmmlDisplay(
+    internal static bool ConfigureNumberedNativeOmmlDisplay(
         Document document,
         Range formulaRange,
         float formulaHeightPoints,
@@ -759,7 +774,7 @@ internal static partial class WordEquationNumbering
             plannedPrefix: null);
     }
 
-    private static (int Ordinal, string Prefix) ResolveDirectTableNumberPlan(
+    internal static (int Ordinal, string Prefix) ResolveDirectTableNumberPlan(
         Document document,
         Range formulaRange,
         string formulaId,
@@ -1790,7 +1805,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool CleanupNativeOmmlTablePrecedingParagraph(
+    internal static bool CleanupNativeOmmlTablePrecedingParagraph(
         Document document,
         string formulaId)
     {
@@ -1831,7 +1846,7 @@ internal static partial class WordEquationNumbering
         => contentStart == contentEnd && mathStart == contentStart
             && mathEnd == contentStart && string.IsNullOrEmpty(text);
 
-    private static void RemoveEmptyBodyParagraphImmediatelyBeforeTable(
+    internal static void RemoveEmptyBodyParagraphImmediatelyBeforeTable(
         Document document,
         Table table,
         string formulaId,
@@ -2243,7 +2258,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static void CleanupGeneratedNativeOmmlTypingTailBeforeFollowingTable(
+    internal static void CleanupGeneratedNativeOmmlTypingTailBeforeFollowingTable(
         Document document,
         string formulaId,
         Table? knownDirectTable = null)
@@ -2918,7 +2933,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool CanReplaceNativeOmmlSourceParagraphFromTemplate(
+    internal static bool CanReplaceNativeOmmlSourceParagraphFromTemplate(
         Document document,
         Range formulaRange)
     {
@@ -3155,7 +3170,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range CreateCleanNativeOmmlNumberTableTemplate(
+    internal static Range CreateCleanNativeOmmlNumberTableTemplate(
         Document targetDocument,
         Table sourceTable,
         out Document templateDocument)
@@ -3565,7 +3580,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool TryUpdateDirectTableSequenceNumber(
+    internal static bool TryUpdateDirectTableSequenceNumber(
         Document document,
         string formulaId,
         string nativeSequenceName,
@@ -3891,7 +3906,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool IsHealthyNativeOmmlDirectTableHost(
+    internal static bool IsHealthyNativeOmmlDirectTableHost(
         Document document,
         Range formulaRange,
         string formulaId,
@@ -4306,7 +4321,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range? EnsureDeletableTypingParagraphAfterNativeOmmlTable(
+    internal static Range? EnsureDeletableTypingParagraphAfterNativeOmmlTable(
         Document document,
         Table table,
         WordCharacterFormatting bodyFormatting)
@@ -4720,7 +4735,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range NormalizeBodyTypingParagraph(
+    internal static Range NormalizeBodyTypingParagraph(
         Document document,
         Range paragraphRange,
         WordCharacterFormatting bodyFormatting,
@@ -4780,7 +4795,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range? EnsureNormalTypingParagraphAfterNativeOmmlTable(
+    internal static Range? EnsureNormalTypingParagraphAfterNativeOmmlTable(
         Document document,
         string formulaId,
         WordCharacterFormatting bodyFormatting,

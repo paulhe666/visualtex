@@ -304,7 +304,7 @@ public sealed class WordOmmlNativeSequenceXmlTests
                     word + "fldChar",
                     new XAttribute(word + "fldCharType", "end"))));
 
-        var method = typeof(WordEquationNumbering).GetMethod(
+        var method = typeof(WordNumberingState).GetMethod(
             "ExtractFieldCodesFromWordOpenXml",
             System.Reflection.BindingFlags.NonPublic
             | System.Reflection.BindingFlags.Static)
@@ -379,7 +379,7 @@ public sealed class WordOmmlNativeSequenceXmlTests
                     new XAttribute(word + "fldCharType", "end")))
                 .ToString(SaveOptions.DisableFormatting));
 
-        var method = typeof(WordEquationNumbering).GetMethod(
+        var method = typeof(WordNumberingState).GetMethod(
             "ExtractVisibleEquationNumberTextFromOpenXmlSegment",
             System.Reflection.BindingFlags.NonPublic
             | System.Reflection.BindingFlags.Static)

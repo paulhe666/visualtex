@@ -18,23 +18,23 @@ internal static partial class Program
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"240\" height=\"96\" viewBox=\"0 0 240 96\"><text x=\"4\" y=\"64\" font-family=\"Times New Roman\" font-size=\"48\">x+1</text></svg>");
         var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 240, 96);
 
-        var previousCreateObjectMode = WordEquationNumbering.GetDefaultCreateObjectMode();
+        var previousCreateObjectMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
         try
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
             AssertEqual(
                 FormulaOleContract.MathTypeOleMode,
-                WordEquationNumbering.GetDefaultCreateObjectMode(),
+                WordEquationNumberFormat.GetDefaultCreateObjectMode(),
                 "Word did not remember MathType OLE as the create object format.");
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
             AssertEqual(
                 FormulaOleContract.NativeOleMode,
-                WordEquationNumbering.GetDefaultCreateObjectMode(),
+                WordEquationNumberFormat.GetDefaultCreateObjectMode(),
                 "Word did not remember VisualTeX OLE as the create object format.");
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateObjectMode);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateObjectMode);
         }
 
         RunWordMathTypeInlineCreateAcceptance(artifactRoot, emfPath);
@@ -971,7 +971,7 @@ internal static partial class Program
             // This scenario explicitly validates MathType's native heading-scope
             // state. Pin the format instead of inheriting the machine's current
             // continuous/heading default from HKCU.
-            WordEquationNumbering.SetEquationNumberFormat(
+            WordEquationNumberFormat.SetEquationNumberFormat(
                 document,
                 EquationNumberFormat.Heading1DotId);
             range = document.Range(document.Content.End - 1, document.Content.End - 1);

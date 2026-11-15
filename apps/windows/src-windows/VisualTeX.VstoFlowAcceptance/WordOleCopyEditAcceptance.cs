@@ -258,7 +258,7 @@ internal static partial class Program
             }
 
             sourceRange = sourceShape.Range;
-            sourceOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+            sourceOwnerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                     sourceDocument,
                     sourceMetadata.FormulaId)
                 ?? throw new InvalidOperationException(
@@ -287,7 +287,7 @@ internal static partial class Program
                     "The first pasted numbered VisualTeX OLE formula was not recognized.");
             var firstFormulaId = firstSelection.FormulaId!;
 
-            firstOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+            firstOwnerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                     temporaryDocument,
                     firstFormulaId)
                 ?? throw new InvalidOperationException(
@@ -320,12 +320,12 @@ internal static partial class Program
                     "The copied numbered VisualTeX OLE formula kept the original FormulaId.");
             var secondFormulaId = secondSelection.FormulaId!;
 
-            if (!WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(
+            if (!WordNumberingReconcile.HasCompleteFormulaNumberingArtifacts(
                     temporaryDocument,
                     firstFormulaId))
                 throw new InvalidOperationException(
                     "The first numbered formula lost its numbering bookmarks after copying.");
-            if (!WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(
+            if (!WordNumberingReconcile.HasCompleteFormulaNumberingArtifacts(
                     temporaryDocument,
                     secondSelection.FormulaId!))
                 throw new InvalidOperationException(
@@ -345,13 +345,13 @@ internal static partial class Program
                 secondFormulaId);
             secondRange = secondShape.Range;
 
-            if (!WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
+            if (!WordNumberingReconcile.FormulaRangeOwnsNumberingArtifacts(
                     temporaryDocument,
                     firstRange,
                     firstFormulaId))
                 throw new InvalidOperationException(
                     "The original numbered formula no longer owns its numbering artifacts.");
-            if (!WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
+            if (!WordNumberingReconcile.FormulaRangeOwnsNumberingArtifacts(
                     temporaryDocument,
                     secondRange,
                     secondFormulaId))

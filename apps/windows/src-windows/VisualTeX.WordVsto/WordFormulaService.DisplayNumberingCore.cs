@@ -232,7 +232,7 @@ internal sealed partial class WordFormulaService
                     plan.AlreadyNumbered++;
                     continue;
                 }
-                if (WordEquationNumbering.RangeIsWhollyWithinTable(range))
+                if (WordNumberedDisplayLayout.RangeIsWhollyWithinTable(range))
                 {
                     plan.SkippedInTable++;
                     continue;
@@ -512,7 +512,7 @@ internal sealed partial class WordFormulaService
                 throw new InvalidDataException("The VisualTeX OLE to number moved before it was numbered.");
             shape = shapes[1];
             var section = sectionTabs.FirstOrDefault(item => item.Start <= host.Range.Start && item.End > host.Range.Start);
-            WordEquationNumbering.PrepareVisualTeXDisplayHostLayout(
+            WordEquationParagraphLayout.PrepareVisualTeXDisplayHostLayout(
                 document,
                 range,
                 section.End > section.Start ? section.Center : null,

@@ -37,9 +37,22 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeDoubleClickGesture.cs" Link="OfficeDoubleClickGesture.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.Performance.cs" Link="WordEquationNumbering.Performance.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TrueDisplay.cs" Link="WordEquationNumbering.TrueDisplay.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationHeadings.cs" Link="WordEquationHeadings.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberFormat.cs" Link="WordEquationNumberFormat.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberReferences.cs" Link="WordEquationNumberReferences.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationParagraphLayout.cs" Link="WordEquationParagraphLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationSequenceFields.cs" Link="WordEquationSequenceFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNativeCaptions.cs" Link="WordNativeCaptions.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedDisplayLayout.cs" Link="WordNumberedDisplayLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTableDisplay.cs" Link="WordNumberedTableDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTrueDisplay.cs" Link="WordNumberedTrueDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTypingParagraphs.cs" Link="WordNumberedTypingParagraphs.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingCleanup.cs" Link="WordNumberingCleanup.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingFields.cs" Link="WordNumberingFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingPerformance.cs" Link="WordNumberingPerformance.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingReconcile.cs" Link="WordNumberingReconcile.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingState.cs" Link="WordNumberingState.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordVisibleEquationNumbers.cs" Link="WordVisibleEquationNumbers.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlMathFontPolicy.cs" Link="WordOmmlMathFontPolicy.cs" />

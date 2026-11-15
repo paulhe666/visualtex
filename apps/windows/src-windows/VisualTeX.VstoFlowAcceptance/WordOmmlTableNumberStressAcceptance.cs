@@ -37,7 +37,7 @@ internal static partial class Program
             }
             finally { Release(heading); }
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -104,18 +104,18 @@ internal static partial class Program
 
             // Format switch: no table or bookmark reconstruction should be needed;
             // only prefix/SEQ results in the right cells change.
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
-            AssertTrue(WordEquationNumbering.UpdateEquationNumbers(document) >= 3,
+            AssertTrue(WordEquationNumberFormat.UpdateEquationNumbers(document) >= 3,
                 "Heading-number format update did not process the three formulas.");
             AssertVisibleNumbers(document, formulaIds, "(1.1)", "(1.2)", "(1.3)");
             AssertEqual(3, document.Tables.Count,
                 "Heading-number format update changed the 1x3 table count.");
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
-            AssertTrue(WordEquationNumbering.UpdateEquationNumbers(document) >= 3,
+            AssertTrue(WordEquationNumberFormat.UpdateEquationNumbers(document) >= 3,
                 "Continuous-number format restore did not process the three formulas.");
             AssertVisibleNumbers(document, formulaIds, "(1)", "(2)", "(3)");
 
@@ -183,7 +183,7 @@ internal static partial class Program
                 // signature without requiring the user to edit the formula again.
                 unnumberedParagraphFormat.LineSpacingRule = Word.WdLineSpacing.wdLineSpaceExactly;
                 unnumberedParagraphFormat.LineSpacing = 1f;
-                AssertTrue(WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document) >= 1,
+                AssertTrue(WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document) >= 1,
                     "Document-open OMML refresh did not detect the legacy 1pt standalone formula.");
                 Release(unnumberedParagraphFormat); unnumberedParagraphFormat = null;
                 Release(unnumberedParagraph); unnumberedParagraph = null;
@@ -217,7 +217,7 @@ internal static partial class Program
                 Release(unnumberedRange);
                 Release(middleBookmark);
             }
-            WordEquationNumbering.UpdateEquationNumbers(document);
+            WordEquationNumberFormat.UpdateEquationNumbers(document);
             AssertEqual(3, document.Tables.Count,
                 "Unnumbered→numbered did not restore exactly one 1x3 table.");
             AssertVisibleNumbers(document, formulaIds, "(1)", "(2)", "(3)");
@@ -273,7 +273,7 @@ internal static partial class Program
             document.Activate();
             ConfigureOmmlTableNumberPage(document);
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -292,7 +292,7 @@ internal static partial class Program
             }
             AssertEqual(20, document.Tables.Count,
                 "Twenty numbered OMML formulas did not create exactly twenty tables.");
-            WordEquationNumbering.UpdateEquationNumbers(document);
+            WordEquationNumberFormat.UpdateEquationNumbers(document);
             for (var index = 0; index < ids.Count; index++)
             {
                 AssertEqual(
@@ -435,9 +435,9 @@ internal static partial class Program
             bookmarks = document.Bookmarks;
             foreach (var name in new[]
                      {
-                         WordEquationNumbering.EquationBookmarkName(formulaId),
-                         WordEquationNumbering.NativeCaptionBookmarkName(formulaId),
-                         WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                         WordNumberingFields.EquationBookmarkName(formulaId),
+                         WordNumberingFields.NativeCaptionBookmarkName(formulaId),
+                         WordNumberingFields.NativeNumberBookmarkName(formulaId),
                      })
             {
                 AssertTrue(bookmarks.Exists(name), context + $": bookmark {name} missing.");

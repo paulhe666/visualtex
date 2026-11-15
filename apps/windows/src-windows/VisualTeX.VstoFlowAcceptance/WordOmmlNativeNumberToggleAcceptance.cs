@@ -28,7 +28,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -80,15 +80,15 @@ internal static partial class Program
                 "Numbered→unnumbered OMML did not persist Numbered=false.");
             AssertTrue(
                 !document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeNumberBookmarkName(formulaId)),
+                    WordNumberingFields.NativeNumberBookmarkName(formulaId)),
                 "Numbered→unnumbered OMML retained VTEqNum inside the formula.");
             AssertTrue(
                 !document.Bookmarks.Exists(
-                    WordEquationNumbering.EquationBookmarkName(formulaId)),
+                    WordNumberingFields.EquationBookmarkName(formulaId)),
                 "Numbered→unnumbered OMML retained the visible-number alias.");
             AssertTrue(
                 !document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeCaptionBookmarkName(formulaId)),
+                    WordNumberingFields.NativeCaptionBookmarkName(formulaId)),
                 "Numbered→unnumbered OMML retained the caption alias.");
 
             formulaBookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)

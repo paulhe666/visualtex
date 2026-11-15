@@ -99,7 +99,7 @@ internal static partial class Program
             bookmark = bookmarks.Add("VTNumberedTypingTail", tail);
 
             stage = "resolve-heading-scope";
-            var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(
+            var scope = WordEquationHeadings.ResolveHeadingScopeAtPosition(
                 document,
                 following.Start,
                 EquationNumberFormat.Heading2DotId);
@@ -111,7 +111,7 @@ internal static partial class Program
             stage = "expand-legacy-tail";
             application.Selection.SetRange(tail.Start, tail.Start);
             AssertTrue(
-                WordEquationNumbering.ExpandCompactTrailingTypingParagraph(
+                WordNumberedTypingParagraphs.ExpandCompactTrailingTypingParagraph(
                     application.Selection),
                 "The legacy 1 pt typing tail was not upgraded to an ordinary paragraph.");
 
@@ -173,7 +173,7 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -274,7 +274,7 @@ internal static partial class Program
                         firstTable.Rows.Count,
                         $"{scenarioName}: persisted legacy row did not survive reopen.");
 
-                    WordEquationNumbering.UpdateEquationNumbers(document);
+                    WordEquationNumberFormat.UpdateEquationNumbers(document);
                     AssertEqual(
                         1,
                         firstTable.Rows.Count,
@@ -318,7 +318,7 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -401,11 +401,11 @@ internal static partial class Program
                 "Middle-insert acceptance lost a native OMML formula.");
 
             bookmarks = document.Bookmarks;
-            firstBookmark = bookmarks[WordEquationNumbering.EquationBookmarkName(
+            firstBookmark = bookmarks[WordNumberingFields.EquationBookmarkName(
                 firstSession.FormulaId)];
-            middleBookmark = bookmarks[WordEquationNumbering.EquationBookmarkName(
+            middleBookmark = bookmarks[WordNumberingFields.EquationBookmarkName(
                 middleSession.FormulaId)];
-            secondBookmark = bookmarks[WordEquationNumbering.EquationBookmarkName(
+            secondBookmark = bookmarks[WordNumberingFields.EquationBookmarkName(
                 secondSession.FormulaId)];
             firstBookmarkRange = firstBookmark.Range;
             middleBookmarkRange = middleBookmark.Range;
@@ -493,12 +493,12 @@ internal static partial class Program
         Word.Range? typingRange = null;
         try
         {
-            middleTable = WordEquationNumbering.FindNumberedEquationTable(
+            middleTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     middleFormulaId)
                 ?? throw new InvalidDataException(
                     "Middle-insert acceptance lost the newly inserted 1x3 table.");
-            followingTable = WordEquationNumbering.FindNumberedEquationTable(
+            followingTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     followingFormulaId)
                 ?? throw new InvalidDataException(
@@ -778,12 +778,12 @@ internal static partial class Program
         Word.Range? secondNumberRange = null;
         try
         {
-            firstTable = WordEquationNumbering.FindNumberedEquationTable(
+            firstTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     firstFormulaId)
                 ?? throw new InvalidDataException(
                     $"{scenarioName}: the first FormulaId lost its 1x3 host.");
-            secondTable = WordEquationNumbering.FindNumberedEquationTable(
+            secondTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     secondFormulaId)
                 ?? throw new InvalidDataException(
@@ -795,12 +795,12 @@ internal static partial class Program
             AssertTrue(firstTableRange.End < secondTableRange.Start,
                 $"{scenarioName}: the two 1x3 hosts overlap or were merged.");
 
-            firstNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            firstNumberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     firstFormulaId)
                 ?? throw new InvalidDataException(
                     $"{scenarioName}: the first right-cell number is missing.");
-            secondNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            secondNumberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     secondFormulaId)
                 ?? throw new InvalidDataException(

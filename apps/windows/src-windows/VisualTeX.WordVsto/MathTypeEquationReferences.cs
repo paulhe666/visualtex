@@ -333,16 +333,16 @@ internal static class MathTypeEquationReferences
         Range? bookmarkRange = null;
         try
         {
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId);
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId);
             TraceAlias("owner");
-            visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            visibleNumberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                 document,
                 formulaId);
             if (ownerRange is null || visibleNumberRange is null)
                 return Array.Empty<EquationReferenceBookmarkAlias>();
 
             bookmarks = document.Bookmarks;
-            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var nativeName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             if (!bookmarks.Exists(nativeName))
                 throw new InvalidDataException($"The numbered formula {formulaId} has no number identity.");
             bookmark = bookmarks[nativeName];
@@ -432,14 +432,14 @@ internal static class MathTypeEquationReferences
         try
         {
             bookmarks = document.Bookmarks;
-            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var nativeName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             if (!bookmarks.Exists(nativeName))
                 throw new InvalidDataException(
                     $"Converted VisualTeX formula {formulaId} has no durable number bookmark {nativeName}.");
             nativeBookmark = bookmarks[nativeName];
             numberOnlyRange = nativeBookmark.Range.Duplicate;
 
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            visibleRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
@@ -659,7 +659,7 @@ internal static class MathTypeEquationReferences
                 Range? ownerRange = null;
                 try
                 {
-                    ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                         document,
                         formulaGuid.ToString("D"));
                     if (ownerRange is null) continue;

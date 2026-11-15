@@ -50,7 +50,7 @@ public sealed partial class ThisAddIn
         // subscribed to DocumentChange/DocumentOpen and is never a fallback from
         // a local operation.
         var migrated =
-            WordEquationNumbering.UpdateEquationNumbers(
+            WordEquationNumberFormat.UpdateEquationNumbers(
                 document);
 
         // Re-prove the result from current local Word structure. A legacy importer

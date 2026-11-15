@@ -50,7 +50,7 @@ internal static partial class Program
             application = (Word.Application)Marshal.GetActiveObject("Word.Application");
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading2DotId);
 

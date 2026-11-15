@@ -17,8 +17,8 @@ internal static partial class Program
         var previousPreferencesPath = Environment.GetEnvironmentVariable("VISUALTEX_OFFICE_PREFERENCES_PATH");
         var previousFormatAcceptance = Environment.GetEnvironmentVariable(
             "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         var tracePath = Path.Combine(artifactRoot, "installed-mathtype-reedit.trace.log");
         var preferencesPath = Path.Combine(artifactRoot, "office-preferences-mathtype-reedit.json");
         File.WriteAllText(
@@ -61,8 +61,8 @@ internal static partial class Program
                     "Installed VisualTeX.WordVsto automation object was unavailable for MathType re-edit acceptance.");
             dynamic callbacks = callbacksObject;
 
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
 
             const string latex = @"\lim_{x\to 0}\frac{\sin x}{x}";
             var export = CreateInstalledMathTypeProductExport(
@@ -357,8 +357,8 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
             Release(range);
             Release(shape);
             Release(window);
@@ -398,8 +398,8 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
 
             var sourceExport = CreateInstalledMathTypeProductExport(
                 client,
@@ -425,7 +425,7 @@ internal static partial class Program
             AssertEqual(0, CountMathTypeOleShapes(document),
                 "Document1 round-trip setup unexpectedly created MathType before conversion.");
 
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
             ResetInstalledFormatConversionTrace(tracePath);
             callbacks.OnConvertVisualTeXToMathTypeDocument(null);
             WaitForInstalledOmmlMathTypeConversion(

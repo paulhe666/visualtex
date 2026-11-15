@@ -536,7 +536,10 @@ internal static class Program
             AssertHiddenSequenceRemainsOnePoint(document, "initial numbered formula insertion");
             Log("  PASS hidden native SEQ target is still 1 pt and white.");
 
-            var getTargets = FindStaticMethod(numberingType, "GetEquationReferenceTargets", 1);
+            var referencesType = numberingType.Assembly.GetType(
+                "VisualTeX.WordVsto.WordEquationNumberReferences",
+                throwOnError: true)!;
+            var getTargets = FindStaticMethod(referencesType, "GetEquationReferenceTargets", 1);
             var targets = (IEnumerable)(Invoke(getTargets, null, document)
                 ?? throw new InvalidDataException("No equation-reference target collection was returned."));
             var target = targets.Cast<object>().SingleOrDefault()
@@ -557,7 +560,7 @@ internal static class Program
                 "VisualTeX.WordVsto.EquationReferenceStyle",
                 throwOnError: true)!;
             var parenthesizedStyle = Enum.Parse(styleType, "Parenthesized");
-            var insertReference = FindStaticMethod(numberingType, "InsertEquationReference", 4);
+            var insertReference = FindStaticMethod(referencesType, "InsertEquationReference", 4);
             Invoke(
                 insertReference,
                 null,
@@ -580,7 +583,7 @@ internal static class Program
             DegradeReferenceToHiddenSequenceAppearance(bodyReference);
             Release(bodyReference);
             bodyReference = null;
-            var updateReferences = FindStaticMethod(numberingType, "UpdateNativeCrossReferences", 1);
+            var updateReferences = FindStaticMethod(referencesType, "UpdateNativeCrossReferences", 1);
             Invoke(updateReferences, null, document);
             bodyReference = FindBodyReferenceField(document, referenceStart);
             AssertVisibleReference(

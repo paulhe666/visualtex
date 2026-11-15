@@ -41,7 +41,7 @@ internal static partial class Program
                 documentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument,
                 AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -95,7 +95,7 @@ internal static partial class Program
                     AssertTrue(metadata.Numbered,
                         $"Deferred converted VisualTeX formula {formulaId} lost Numbered=true.");
                     range = shape.Range;
-                    WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+                    WordNumberingReconcile.BuildFormulaNumberingScaffoldForConversion(
                         document,
                         range,
                         shape.Height,
@@ -118,7 +118,7 @@ internal static partial class Program
             }
             finally { Release(content); }
 
-            var finalized = WordEquationNumbering.TryFinalizeHealthyConversionNumbering(
+            var finalized = WordEquationNumberFormat.TryFinalizeHealthyConversionNumbering(
                 document,
                 out var updated);
             Console.WriteLine(
@@ -143,7 +143,7 @@ internal static partial class Program
             AssertEqual(2, CountInstalledVisualTeXNumberedFormulaHosts(document),
                 "Save/reopen changed the two converted VisualTeX numbered hosts.");
             AssertTrue(
-                WordEquationNumbering.TryFinalizeHealthyConversionNumbering(document, out updated),
+                WordEquationNumberFormat.TryFinalizeHealthyConversionNumbering(document, out updated),
                 "Save/reopen converted VisualTeX numbering failed the shared finalizer.");
             AssertEqual(2, updated,
                 "Save/reopen converted VisualTeX numbering finalizer did not update two formulas.");

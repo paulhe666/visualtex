@@ -38,7 +38,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -603,7 +603,7 @@ internal static partial class Program
                 return null;
 
             result =
-                WordEquationNumbering.FindVisibleEquationNumberRange(
+                WordNumberingReconcile.FindVisibleEquationNumberRange(
                     document,
                     formulaId);
             if (result is null
@@ -680,7 +680,7 @@ internal static partial class Program
         try
         {
             document.Repaginate();
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": VisualTeX numbering owner is missing.");
             AssertTrue(
                 !(bool)ownerRange.get_Information(Word.WdInformation.wdWithInTable),
@@ -725,7 +725,7 @@ internal static partial class Program
             AssertTrue(sections.Count > 0, context + ": paragraph has no Word section.");
             section = sections[1];
             pageSetup = section.PageSetup;
-            var expected = WordEquationNumbering.CalculateEquationTabStops(
+            var expected = WordEquationParagraphLayout.CalculateEquationTabStops(
                 pageSetup.PageWidth,
                 pageSetup.LeftMargin,
                 pageSetup.RightMargin,
@@ -911,7 +911,7 @@ internal static partial class Program
                     candidate = fields[index];
                     Release(candidateCode); candidateCode = candidate.Code;
                     if ((candidateCode.Text ?? string.Empty).IndexOf(
-                            "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                            "REF " + WordNumberingFields.NativeNumberBookmarkName(formulaId),
                             StringComparison.OrdinalIgnoreCase) < 0)
                         continue;
                     reference = candidate;
@@ -929,9 +929,9 @@ internal static partial class Program
                 if (requireNativeOle)
                 {
                     AssertTrue(
-                        WordEquationNumbering.UpdateEquationNumbers(document) >= 1,
+                        WordEquationNumberFormat.UpdateEquationNumbers(document) >= 1,
                         context + ": explicit equation-number refresh did not see the numbered VisualTeX formula.");
-                    WordEquationNumbering.UpdateNativeCrossReferences(document);
+                    WordEquationNumberReferences.UpdateNativeCrossReferences(document);
                 }
             }
             Release(visibleRange); visibleRange = null;
@@ -1117,7 +1117,7 @@ internal static partial class Program
 
             var expectedFormat =
                 EquationNumberFormat.Resolve(
-                    WordEquationNumbering
+                    WordEquationNumberFormat
                         .GetEquationNumberFormatId(
                             document));
             AssertEqual(
@@ -1257,7 +1257,7 @@ internal static partial class Program
                 + ": VisualTeXPlaceRef lost its single visible current-value SEQ.");
             var format =
                 EquationNumberFormat.Resolve(
-                    WordEquationNumbering
+                    WordEquationNumberFormat
                         .GetEquationNumberFormatId(
                             document));
             AssertEqual(

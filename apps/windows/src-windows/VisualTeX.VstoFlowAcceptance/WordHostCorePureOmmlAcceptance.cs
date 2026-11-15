@@ -226,7 +226,7 @@ internal static partial class Program
             // 3. Numbered OMML is exactly Word-native #(SEQ Equation) structure.
             // No VTOMML/VTEqNum/VisualTeXEquation namespace is allowed.
             document.Content.Text = string.Empty;
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             application.Selection.SetRange(0, 0);
@@ -757,7 +757,7 @@ internal static partial class Program
         Word.ListFormat? listFormat = null;
         try
         {
-            WordEquationNumbering
+            WordEquationNumberFormat
                 .SetEquationNumberFormatPreference(
                     document,
                     EquationNumberFormat.Heading1DotId);
@@ -1003,7 +1003,7 @@ internal static partial class Program
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mrow><mi>x</mi><mo>=</mo><mn>1</mn></mrow></math>";
 
         var previousDefault =
-            WordEquationNumbering.GetDefaultEquationNumberFormatId();
+            WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
 
         using var host =
             new WordPerformanceHost(
@@ -1022,14 +1022,14 @@ internal static partial class Program
         Word.Range? code = null;
         try
         {
-            WordEquationNumbering
+            WordEquationNumberFormat
                 .SetEquationNumberFormatPreference(
                     document,
                     EquationNumberFormat.Heading1DashId);
 
             AssertEqual(
                 previousDefault,
-                WordEquationNumbering.GetDefaultEquationNumberFormatId(),
+                WordEquationNumberFormat.GetDefaultEquationNumberFormatId(),
                 "Acceptance changed the real user default equation-number format.");
 
             application.Selection.SetRange(0, 0);
@@ -2352,7 +2352,7 @@ internal static partial class Program
                 new WordFormulaService(
                     application);
 
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -3491,7 +3491,7 @@ internal static partial class Program
         var selection =
             application.Selection;
 
-        WordEquationNumbering.SetEquationNumberFormatPreference(
+        WordEquationNumberFormat.SetEquationNumberFormatPreference(
             document,
             EquationNumberFormat.ContinuousId);
 
@@ -3772,7 +3772,7 @@ internal static partial class Program
         var selection =
             application.Selection;
 
-        WordEquationNumbering.SetEquationNumberFormatPreference(
+        WordEquationNumberFormat.SetEquationNumberFormatPreference(
             document,
             EquationNumberFormat.ContinuousId);
         selection.SetRange(
@@ -3940,7 +3940,7 @@ internal static partial class Program
         var selection =
             application.Selection;
 
-        WordEquationNumbering.SetEquationNumberFormatPreference(
+        WordEquationNumberFormat.SetEquationNumberFormatPreference(
             document,
             EquationNumberFormat.ContinuousId);
         selection.SetRange(

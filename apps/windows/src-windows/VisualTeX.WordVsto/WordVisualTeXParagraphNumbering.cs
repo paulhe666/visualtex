@@ -139,7 +139,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                         "A VisualTeX numbered display host must occupy one Word paragraph.");
                 paragraph = paragraphs[1];
                 paragraphRange = paragraph.Range.Duplicate;
-                if (WordEquationNumbering.IsWithinTableLayoutFree(paragraphRange))
+                if (WordNumberedDisplayLayout.IsWithinTableLayoutFree(paragraphRange))
                     throw new InvalidDataException(
                         "Body paragraph numbering cannot be attached inside a user table.");
                 ValidateDisplayParagraphGeometry(document, hostRange, paragraph, paragraphRange);
@@ -454,7 +454,7 @@ internal static partial class WordVisualTeXParagraphNumbering
         Range? visibleNumber = null;
         try
         {
-            if (WordEquationNumbering.IsWithinTableLayoutFree(hostRange))
+            if (WordNumberedDisplayLayout.IsWithinTableLayoutFree(hostRange))
                 return false;
             paragraphs = hostRange.Paragraphs;
             if (paragraphs.Count != 1)
@@ -1028,7 +1028,7 @@ internal static partial class WordVisualTeXParagraphNumbering
         string numberText;
         using (WordOperationMetrics.Measure("Numbering.Attach.HeadingScope"))
             numberText =
-                WordEquationNumbering
+                WordEquationHeadings
                     .ResolveHeadingScopeAtPosition(
                         document,
                         formulaPosition,

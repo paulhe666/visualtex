@@ -11,14 +11,14 @@ public sealed class WordNativeCaptionFlowTailTests
     [Fact]
     public void BookmarkNameFitsWordLimit()
     {
-        var name = WordEquationNumbering.NativeCaptionFlowTailBookmarkName(FormulaId);
+        var name = WordNumberingFields.NativeCaptionFlowTailBookmarkName(FormulaId);
         Assert.Equal("VTEqFT_11111111222233334444555555555555", name);
         Assert.True(name.Length <= 40);
     }
 
     [Fact]
     public void ExactOneCharacterEmptyBodyParagraphIsOwned()
-        => Assert.True(WordEquationNumbering.IsExactOwnedNativeCaptionFlowTail(
+        => Assert.True(WordNativeCaptions.IsExactOwnedNativeCaptionFlowTail(
             40, 40, 41, "\r", 40, 41, false, 0, 0, 0, 0, 0));
 
     [Theory]
@@ -45,7 +45,7 @@ public sealed class WordNativeCaptionFlowTailTests
         int maths,
         int fields,
         int frames)
-        => Assert.False(WordEquationNumbering.IsExactOwnedNativeCaptionFlowTail(
+        => Assert.False(WordNativeCaptions.IsExactOwnedNativeCaptionFlowTail(
             expectedStart, start, end, text, paragraphStart, paragraphEnd,
             withinTable, tables, shapes, maths, fields, frames));
 

@@ -273,7 +273,7 @@ internal sealed partial class WordFormulaService
             {
                 Release(localBookmark);
                 localBookmark = localBookmarks[index];
-                if (!WordEquationNumbering.TryFormulaIdFromEquationBookmark(
+                if (!WordNumberingFields.TryFormulaIdFromEquationBookmark(
                         localBookmark.Name,
                         out var candidateId))
                     continue;
@@ -283,10 +283,10 @@ internal sealed partial class WordFormulaService
                 formulaId = candidateId;
             }
             if (string.IsNullOrWhiteSpace(formulaId)
-                || !WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(
+                || !WordNumberingReconcile.HasCompleteFormulaNumberingArtifacts(
                     document,
                     formulaId!)
-                || !WordEquationNumbering.FormulaRangeOwnsNumberingArtifacts(
+                || !WordNumberingReconcile.FormulaRangeOwnsNumberingArtifacts(
                     document,
                     shapeRange,
                     formulaId!))

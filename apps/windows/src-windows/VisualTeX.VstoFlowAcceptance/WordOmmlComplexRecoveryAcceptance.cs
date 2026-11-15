@@ -125,7 +125,7 @@ internal static partial class Program
         AppendRecoveryProse(host, "FORMAT-END 正文段落");
         DeleteOnlyManagedOmmlEquation(host.Document, damagedFormulaId);
         AssertTrue(
-            WordEquationNumbering.TryCaptureDeletedNumberedOmmlResidue(
+            WordNumberedTableDisplay.TryCaptureDeletedNumberedOmmlResidue(
                 host.Document,
                 damagedFormulaId,
                 out _,
@@ -195,7 +195,7 @@ internal static partial class Program
                 RecoveryMathMlA);
             DeleteOnlyManagedOmmlEquation(host.Document, damagedFormulaId);
             AssertTrue(
-                WordEquationNumbering.TryCaptureDeletedNumberedOmmlResidue(
+                WordNumberedTableDisplay.TryCaptureDeletedNumberedOmmlResidue(
                     host.Document,
                     damagedFormulaId,
                     out _,
@@ -402,9 +402,9 @@ internal static partial class Program
             "The deleted OMML CustomXML metadata survived residue cleanup.");
         var names = new[]
         {
-            WordEquationNumbering.EquationBookmarkName(formulaId),
-            WordEquationNumbering.NativeCaptionBookmarkName(formulaId),
-            WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+            WordNumberingFields.EquationBookmarkName(formulaId),
+            WordNumberingFields.NativeCaptionBookmarkName(formulaId),
+            WordNumberingFields.NativeNumberBookmarkName(formulaId),
         };
         foreach (var name in names)
             AssertTrue(!document.Bookmarks.Exists(name),

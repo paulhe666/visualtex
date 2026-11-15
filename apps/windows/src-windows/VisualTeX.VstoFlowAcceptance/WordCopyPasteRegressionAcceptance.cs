@@ -253,7 +253,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add(Visible: false);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);

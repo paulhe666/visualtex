@@ -17,14 +17,14 @@ public sealed class WordOwnedOmmlSeparatorTests
     [InlineData(20, 20, 21, null, false, false)]
     public void OnlyTheExactMarkedBodyParagraphCanBeReused(
         int tableEnd, int start, int end, string? text, bool withinTable, bool expected)
-        => Assert.Equal(expected, WordEquationNumbering.IsExactOwnedNativeOmmlSeparator(
+        => Assert.Equal(expected, WordNumberedTableDisplay.IsExactOwnedNativeOmmlSeparator(
             tableEnd, start, end, text, withinTable));
 
     [Fact]
     public void SeparatorIdentityFitsWordAndParticipatesInOwnedRollback()
     {
         const string id = "11111111-2222-3333-4444-555555555555";
-        var name = WordEquationNumbering.NativeOmmlOwnedSeparatorBookmarkName(id);
+        var name = WordNumberedTableDisplay.NativeOmmlOwnedSeparatorBookmarkName(id);
         Assert.Equal("VTEqSep_11111111222233334444555555555555", name);
         Assert.Equal(40, name.Length);
         Assert.Contains(name, WordBookmarkRecoverySnapshot.NamesForFormula(id));

@@ -20,7 +20,7 @@ internal static partial class Program
             document.Activate();
             ConfigureOmmlTableNumberPage(document);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(document, EquationNumberFormat.ContinuousId);
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(document, EquationNumberFormat.ContinuousId);
 
             var formulaId = Guid.NewGuid().ToString("D");
             var service = new WordFormulaService(application);
@@ -36,7 +36,7 @@ internal static partial class Program
             service.InsertOmml(session, QuadraticFormulaMathMl());
             AssertOmmlTableNumberLifecyclePhase(application, document, formulaId, "01-before-navigable-reference");
 
-            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             var target = targets.Single(item => string.Equals(
                 item.FormulaId,
                 formulaId,
@@ -45,7 +45,7 @@ internal static partial class Program
             selection.EndKey(Word.WdUnits.wdStory);
             selection.TypeParagraph();
             selection.TypeText("Reference: ");
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 selection,
                 target,
@@ -67,10 +67,10 @@ internal static partial class Program
             // reference must recover the surrounding body-text formatting rather
             // than preserving the deliberately injected bold result above. The outer
             // GOTOBUTTON must survive while the nested REF follows VTEqNum_.
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
-            AssertTrue(WordEquationNumbering.UpdateEquationNumbers(document) >= 1,
+            AssertTrue(WordEquationNumberFormat.UpdateEquationNumbers(document) >= 1,
                 "The navigable-reference acceptance could not refresh the numbered OMML formula.");
             AssertTrue(WordEquationReferenceFields.UpdateNavigableReferences(document) >= 1,
                 "The navigable-reference acceptance did not update its nested REF field.");
@@ -131,7 +131,7 @@ internal static partial class Program
         Word.Font? font = null;
         try
         {
-            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var targetName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             fields = document.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {
@@ -202,7 +202,7 @@ internal static partial class Program
         Word.Selection? selection = null;
         try
         {
-            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var targetName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             fields = document.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {

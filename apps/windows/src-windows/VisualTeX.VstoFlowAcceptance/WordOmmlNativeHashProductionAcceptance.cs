@@ -43,7 +43,7 @@ internal static partial class Program
                 Release(referenceParagraph);
                 Release(heading);
             }
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -93,7 +93,7 @@ internal static partial class Program
             // survive the replacement.
             AssertEqual(
                 3,
-                WordEquationNumbering.SetEquationNumberFormat(
+                WordEquationNumberFormat.SetEquationNumberFormat(
                     document,
                     EquationNumberFormat.ContinuousId),
                 "Continuous format switch did not update all three numbered OMML formulas.");
@@ -121,7 +121,7 @@ internal static partial class Program
             // Insert a fourth formula immediately before the old second formula.
             // Word's SEQ engine must reflow 1,2,3,4 in document order without any
             // mathematical field-code rewrite.
-            var oldSecondOwner = WordEquationNumbering.FindNumberingOwnerRange(
+            var oldSecondOwner = WordNumberingReconcile.FindNumberingOwnerRange(
                     document,
                     originalFormulaIds[1])
                 ?? throw new InvalidDataException(
@@ -204,7 +204,7 @@ internal static partial class Program
 
             AssertEqual(
                 3,
-                WordEquationNumbering.SetEquationNumberFormat(
+                WordEquationNumberFormat.SetEquationNumberFormat(
                     document,
                     EquationNumberFormat.Heading1DotId),
                 "Heading format restoration did not update all three numbered OMML formulas.");
@@ -333,7 +333,7 @@ internal static partial class Program
                          Word.Range? owner = null;
                          try
                          {
-                             owner = WordEquationNumbering.FindNumberingOwnerRange(document, id);
+                             owner = WordNumberingReconcile.FindNumberingOwnerRange(document, id);
                              return owner?.Start ?? int.MaxValue;
                          }
                          finally { Release(owner); }
@@ -366,7 +366,7 @@ internal static partial class Program
                 Release(bookmark);
             }
         }
-        WordEquationNumbering.UpdateEquationNumbers(document);
+        WordEquationNumberFormat.UpdateEquationNumbers(document);
         Word.Fields? bodyFields = null;
         try
         {
@@ -428,14 +428,14 @@ internal static partial class Program
                 code = field.Code;
                 var instruction = code.Text ?? string.Empty;
                 AssertTrue(
-                    WordEquationNumbering.IsVisualTeXSequenceFieldCode(instruction),
+                    WordNumberingFields.IsVisualTeXSequenceFieldCode(instruction),
                     context + $": {formulaId} field is not SEQ VisualTeXEquation: '{instruction}'.");
                 AssertTrue(
                     instruction.IndexOf("REF ", StringComparison.OrdinalIgnoreCase) < 0,
                     context + $": {formulaId} incorrectly contains REF inside #().");
 
                 bookmarks = document.Bookmarks;
-                var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+                var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
                 AssertTrue(bookmarks.Exists(numberName),
                     context + $": {formulaId} lost {numberName}.");
                 numberBookmark = bookmarks[numberName];
@@ -494,7 +494,7 @@ internal static partial class Program
                     numberInsideMath,
                     context + $": formula #{index + 1} {formulaId} VTEqNum bookmark is outside OMath.");
 
-                ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+                ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                     ?? throw new InvalidDataException(context + $": {formulaId} owner is missing.");
                 AssertEqual(mathRange.End + 1, ownerRange.End,
                     context + $": {formulaId} does not end immediately before the normal paragraph mark.");
@@ -554,7 +554,7 @@ internal static partial class Program
                 // especially in long documents. This helper either reuses a proven
                 // ordinary paragraph or inserts one immediately after this exact
                 // FormulaId without touching the mathematical #(SEQ) host.
-                insertion = WordEquationNumbering
+                insertion = WordNumberedTypingParagraphs
                     .EnsureNormalTypingParagraphAfterNumberedDisplay(
                         document,
                         formulaId)
@@ -564,7 +564,7 @@ internal static partial class Program
                 insertion.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 fields = insertion.Fields;
                 object fieldType = Word.WdFieldType.wdFieldRef;
-                var target = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+                var target = WordNumberingFields.NativeNumberBookmarkName(formulaId);
                 object fieldCode = target + " \\h";
                 object preserveFormatting = true;
                 field = fields.Add(insertion, ref fieldType, ref fieldCode, ref preserveFormatting);
@@ -684,7 +684,7 @@ internal static partial class Program
         Word.Selection? selection = null;
         try
         {
-            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var targetName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             fields = document.Fields;
             for (var index = 1; index <= fields.Count; index++)
             {

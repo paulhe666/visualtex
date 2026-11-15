@@ -51,7 +51,7 @@ internal static class WordFormulaMutationTransaction
             try
             {
                 var result = mutationAndValidation();
-                try { WordEquationNumbering.RetireLegacyEquationNumberFormat(document); }
+                try { WordEquationNumberFormat.RetireLegacyEquationNumberFormat(document); }
                 catch { /* Never fail a completed edit over an obsolete variable. */ }
                 TraceBoundary(application, "transaction-before-end");
                 undo.EndCustomRecord();

@@ -281,7 +281,7 @@ internal static class WordVisualTeXHostWriter
             // the height, so it is recalculated here as insertion does; the
             // paragraph's tab stops are left as they are.
             if (display)
-                WordEquationNumbering.AlignVisualTeXDisplayHostBaseline(
+                WordEquationParagraphLayout.AlignVisualTeXDisplayHostBaseline(
                     document,
                     shapeRange,
                     size.Height,

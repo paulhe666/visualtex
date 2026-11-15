@@ -223,7 +223,7 @@ internal static partial class Program
                         if (metadata?.Numbered == true)
                         {
                             AssertTrue(
-                                WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                                WordNumberedTableDisplay.HasReusableNumberedNativeOmmlDirectTableHost(
                                     document,
                                     range,
                                     entry.Key),

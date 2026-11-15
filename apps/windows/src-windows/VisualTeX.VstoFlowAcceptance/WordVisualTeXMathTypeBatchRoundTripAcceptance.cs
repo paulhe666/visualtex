@@ -53,7 +53,7 @@ internal static partial class Program
             application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DashId);
             var service = new WordFormulaService(application);

@@ -18,7 +18,7 @@ public sealed class WordOmmlGeneratedSourceShellTests
     public void OnlyAnEmptyShellAtTheExactGeneratedSourcePointIsDiscardable(
         int contentStart, int contentEnd, int mathStart, int mathEnd, string? text, bool expected)
     {
-        Assert.Equal(expected, WordEquationNumbering.IsEmptyGeneratedNativeMathShell(
+        Assert.Equal(expected, WordNumberedTableDisplay.IsEmptyGeneratedNativeMathShell(
             contentStart, contentEnd, mathStart, mathEnd, text));
     }
 }

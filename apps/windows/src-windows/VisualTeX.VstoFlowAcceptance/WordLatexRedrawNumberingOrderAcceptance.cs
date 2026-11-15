@@ -108,7 +108,7 @@ internal static partial class Program
             document.Activate();
             document.Content.Text =
                 "$$a+b$$\r$$c+d$$\r$$x+y$$\r";
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 

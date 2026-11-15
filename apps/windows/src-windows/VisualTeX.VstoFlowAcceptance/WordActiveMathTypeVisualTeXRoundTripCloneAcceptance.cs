@@ -39,13 +39,13 @@ internal static partial class Program
             sourceDocument = application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document is available.");
             var sourceName = sourceDocument.Name;
-            var sourceFormatId = WordEquationNumbering.GetEquationNumberFormatId(sourceDocument);
+            var sourceFormatId = WordEquationNumberFormat.GetEquationNumberFormatId(sourceDocument);
             Console.WriteLine(
                 $"[ACTIVE MT→VT CLONE] source='{sourceName}' shapes={sourceDocument.InlineShapes.Count} fields={sourceDocument.Fields.Count} bookmarks={sourceDocument.Bookmarks.Count} format={sourceFormatId}.");
 
             clone = application.Documents.Add(Visible: false);
             clone.Content.FormattedText = sourceDocument.Content.FormattedText;
-            WordEquationNumbering.SetEquationNumberFormat(clone, sourceFormatId);
+            WordEquationNumberFormat.SetEquationNumberFormat(clone, sourceFormatId);
             clone.Activate();
             var service = new WordFormulaService(application);
             Console.WriteLine(

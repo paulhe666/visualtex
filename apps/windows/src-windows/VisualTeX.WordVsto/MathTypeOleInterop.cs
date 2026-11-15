@@ -602,7 +602,7 @@ internal static partial class MathTypeOleInterop
             paragraphShapes = paragraphRange.InlineShapes;
             if (paragraphShapes.Count != 1) return "inline";
 
-            if (WordEquationNumbering.RangeIsWhollyWithinTable(range))
+            if (WordNumberedDisplayLayout.RangeIsWhollyWithinTable(range))
             {
                 // A table cell is itself a paragraph-sized host, so "one OLE and no
                 // prose" does not prove display math. VisualTeX/MathType display OLE
@@ -623,7 +623,7 @@ internal static partial class MathTypeOleInterop
                     hasCenterTab |= tabStop.Alignment == WdTabAlignment.wdAlignTabCenter;
                     hasRightTab |= tabStop.Alignment == WdTabAlignment.wdAlignTabRight;
                 }
-                return WordEquationNumbering.IsTableMathTypeDisplayLayout(
+                return WordNumberedDisplayLayout.IsTableMathTypeDisplayLayout(
                         shapePrefix.Text,
                         hasCenterTab,
                         hasRightTab)

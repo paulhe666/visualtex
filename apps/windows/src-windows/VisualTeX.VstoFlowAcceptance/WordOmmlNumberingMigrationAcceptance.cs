@@ -28,7 +28,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -71,7 +71,7 @@ internal static partial class Program
                 "The legacy OMML migration fixture changed the table column count.");
             TraceLegacyOmmlCenterParagraphs(legacyTable);
 
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 equationRange,
                 WordOmmlFormulaStore.EstimateHeightPoints(equationRange),

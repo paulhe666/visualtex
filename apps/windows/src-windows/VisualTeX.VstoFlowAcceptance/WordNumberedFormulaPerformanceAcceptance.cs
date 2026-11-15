@@ -27,7 +27,7 @@ internal static partial class Program
         Word.Application? application = null;
         Word.Document? document = null;
         Word.Document? copyDocument = null;
-        var originalNumberFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var originalNumberFormat = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         try
         {
             File.WriteAllText(
@@ -40,7 +40,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(document, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(document, "continuous");
             var service = new WordFormulaService(application);
             var formulaIds = new List<string>();
             var insertTimings = new List<long>();
@@ -228,7 +228,7 @@ internal static partial class Program
             try
             {
                 sourceShape = FindNumberedOleByFormulaId(document, formulaIds[0]);
-                sourceOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                sourceOwnerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                         document,
                         formulaIds[0])
                     ?? throw new InvalidOperationException(
@@ -237,7 +237,7 @@ internal static partial class Program
 
                 copyDocument = application.Documents.Add();
                 copyDocument.Activate();
-                WordEquationNumbering.SetEquationNumberFormatPreference(copyDocument, "continuous");
+                WordEquationNumberFormat.SetEquationNumberFormatPreference(copyDocument, "continuous");
                 application.Selection.Paste();
                 AssertEqual(0, copyDocument.Tables.Count,
                     "Numbered OLE copy performance fixture created a legacy table host.");
@@ -264,7 +264,7 @@ internal static partial class Program
                 {
                     Release(copySourceRange);
                     copySourceRange = null;
-                    copySourceRange = WordEquationNumbering.FindNumberingOwnerRange(
+                    copySourceRange = WordNumberingReconcile.FindNumberingOwnerRange(
                             copyDocument,
                             copiedFormulaIds[copyIndex - 2])
                         ?? throw new InvalidOperationException(
@@ -390,7 +390,7 @@ internal static partial class Program
             Release(document);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(originalNumberFormat);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(originalNumberFormat);
             ForceComCleanup();
             foreach (var path in new[] { svgPath, pngPath, emfPath })
             {
@@ -507,7 +507,7 @@ internal static partial class Program
                     $"Explicit equation-number refresh lost formulas: expected at least {formulaIds.Length}, actual {updatedFormulaCount}.");
 
             var targetWatch = Stopwatch.StartNew();
-            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             targetWatch.Stop();
             Console.WriteLine(
                 $"    [perf] equation reference target inventory at {targets.Count} formulas: {targetWatch.ElapsedMilliseconds}ms");
@@ -529,7 +529,7 @@ internal static partial class Program
             var localRepairWatch = Stopwatch.StartNew();
             service.UpdateEquationNumbers();
             localRepairWatch.Stop();
-            var locallyRepairedTarget = WordEquationNumbering.GetEquationReferenceTargets(document)
+            var locallyRepairedTarget = WordEquationNumberReferences.GetEquationReferenceTargets(document)
                 .First(item => string.Equals(
                     item.FormulaId,
                     target.FormulaId,
@@ -550,7 +550,7 @@ internal static partial class Program
             application.Selection.TypeParagraph();
             application.Selection.TypeText("See ");
             var referenceWatch = Stopwatch.StartNew();
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 application.Selection,
                 target,
@@ -565,7 +565,7 @@ internal static partial class Program
             // the target and every generated reference without structural rebuild.
             CorruptNativeEquationNumberForAcceptance(document, target.FormulaId, 999);
             RefreshEquationReferencesForAcceptance(document, target.FormulaId);
-            var corruptedTarget = WordEquationNumbering.GetEquationReferenceTargets(document)
+            var corruptedTarget = WordEquationNumberReferences.GetEquationReferenceTargets(document)
                 .First(item => string.Equals(
                     item.FormulaId,
                     target.FormulaId,
@@ -580,7 +580,7 @@ internal static partial class Program
             var repairWatch = Stopwatch.StartNew();
             service.UpdateEquationNumbers();
             repairWatch.Stop();
-            var repairedTarget = WordEquationNumbering.GetEquationReferenceTargets(document)
+            var repairedTarget = WordEquationNumberReferences.GetEquationReferenceTargets(document)
                 .First(item => string.Equals(
                     item.FormulaId,
                     target.FormulaId,
@@ -682,10 +682,10 @@ internal static partial class Program
                         : $"1{separator}{index - 19}";
                     var visible = ReadEquationNumberBookmarkText(
                         document,
-                        WordEquationNumbering.EquationBookmarkName(formulaIds[index]));
+                        WordNumberingFields.EquationBookmarkName(formulaIds[index]));
                     var native = ReadEquationNumberBookmarkText(
                         document,
-                        WordEquationNumbering.NativeNumberBookmarkName(formulaIds[index]));
+                        WordNumberingFields.NativeNumberBookmarkName(formulaIds[index]));
                     AssertEqual(expected, visible,
                         $"Visible formula #{index + 1} is stale after heading-format switch.");
                     AssertEqual(expected, native,
@@ -694,7 +694,7 @@ internal static partial class Program
             }
 
             var dotWatch = Stopwatch.StartNew();
-            var dotUpdated = WordEquationNumbering.SetEquationNumberFormat(
+            var dotUpdated = WordEquationNumberFormat.SetEquationNumberFormat(
                 document,
                 EquationNumberFormat.Heading1DotId);
             dotWatch.Stop();
@@ -705,7 +705,7 @@ internal static partial class Program
                 $"    [perf] 100-formula heading1-dot format switch: {dotWatch.ElapsedMilliseconds}ms");
 
             var dashWatch = Stopwatch.StartNew();
-            var dashUpdated = WordEquationNumbering.SetEquationNumberFormat(
+            var dashUpdated = WordEquationNumberFormat.SetEquationNumberFormat(
                 document,
                 EquationNumberFormat.Heading1DashId);
             dashWatch.Stop();
@@ -1070,7 +1070,7 @@ internal static partial class Program
             document.Activate();
             var service = new WordFormulaService(application);
             sourceShape = FindNumberedOleByFormulaId(document, formulaIds[49]);
-            sourceRange = WordEquationNumbering.FindNumberingOwnerRange(
+            sourceRange = WordNumberingReconcile.FindNumberingOwnerRange(
                     document,
                     formulaIds[49])
                 ?? throw new InvalidOperationException(
@@ -1129,7 +1129,7 @@ internal static partial class Program
     {
         Directory.CreateDirectory(artifactRoot);
         Word.Application? application = null;
-        var originalNumberFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var originalNumberFormat = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         try
         {
             var targetFormulaCount = int.TryParse(
@@ -1149,7 +1149,7 @@ internal static partial class Program
         {
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(originalNumberFormat);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(originalNumberFormat);
             ForceComCleanup();
         }
     }
@@ -1166,7 +1166,7 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(document, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(document, "continuous");
             var service = new WordFormulaService(application);
             var insertTimings = new List<long>(targetFormulaCount);
             for (var index = 1; index <= targetFormulaCount; index++)
@@ -1388,7 +1388,7 @@ internal static partial class Program
         try
         {
             bookmarks = document.Bookmarks;
-            captionBookmark = bookmarks[WordEquationNumbering.NativeCaptionBookmarkName(formulaId)];
+            captionBookmark = bookmarks[WordNumberingFields.NativeCaptionBookmarkName(formulaId)];
             captionRange = captionBookmark.Range;
             fields = captionRange.Fields;
             for (var index = 1; index <= fields.Count; index++)
@@ -1430,7 +1430,7 @@ internal static partial class Program
         Word.Document document,
         string formulaId)
     {
-        var targetBookmark = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+        var targetBookmark = WordNumberingFields.NativeNumberBookmarkName(formulaId);
         Word.Fields? fields = null;
         Word.Field? field = null;
         Word.Range? code = null;
@@ -1464,7 +1464,7 @@ internal static partial class Program
         string expectedNumber,
         int minimumMatches = 2)
     {
-        var targetBookmark = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+        var targetBookmark = WordNumberingFields.NativeNumberBookmarkName(formulaId);
         Word.Fields? fields = null;
         Word.Field? field = null;
         Word.Range? code = null;
@@ -1625,7 +1625,7 @@ internal static partial class Program
                     AssertEqual(0, equationFields.Count,
                         $"Numbered OMML scale formula {formulaId} contains a field inside math.");
 
-                    table = WordEquationNumbering.FindNumberedEquationTable(
+                    table = WordNumberingReconcile.FindNumberedEquationTable(
                             document,
                             formulaId)
                         ?? throw new InvalidOperationException(
@@ -1637,7 +1637,7 @@ internal static partial class Program
                     AssertEqual(3, columns.Count,
                         $"Numbered OMML scale formula {formulaId} table is not three columns.");
                     AssertTrue(
-                        WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                        WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                             table,
                             equationRange,
                             expectedColumnIndex: 2,
@@ -1653,7 +1653,7 @@ internal static partial class Program
                         $"Numbered OMML scale formula {formulaId} number cell does not own exactly one SEQ field.");
                     sequenceField = numberFields[1];
                     sequenceCode = sequenceField.Code;
-                    AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(
+                    AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(
                             sequenceCode.Text),
                         $"Numbered OMML scale formula {formulaId} field is not SEQ VisualTeXEquation.");
                     AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
@@ -1661,7 +1661,7 @@ internal static partial class Program
                             StringComparison.OrdinalIgnoreCase) < 0,
                         $"Numbered OMML scale formula {formulaId} number cell contains generated REF indirection.");
 
-                    visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(
+                    visibleRange = WordNumberingReconcile.FindVisibleEquationNumberRange(
                         document,
                         formulaId)
                         ?? throw new InvalidOperationException(
@@ -1708,7 +1708,7 @@ internal static partial class Program
         foreach (var formulaId in formulaIds)
         {
             AssertTrue(
-                WordEquationNumbering.HasCompleteFormulaNumberingArtifacts(document, formulaId),
+                WordNumberingReconcile.HasCompleteFormulaNumberingArtifacts(document, formulaId),
                 $"Numbered formula {formulaId} lost its numbering artifacts"
                 + (string.IsNullOrWhiteSpace(context) ? "." : $" in {context}."));
         }
@@ -1725,7 +1725,7 @@ internal static partial class Program
             for (var index = 0; index < formulaIds.Count; index++)
             {
                 Release(visibleRange);
-                visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                visibleRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                         document,
                         formulaIds[index])
                     ?? throw new InvalidOperationException(

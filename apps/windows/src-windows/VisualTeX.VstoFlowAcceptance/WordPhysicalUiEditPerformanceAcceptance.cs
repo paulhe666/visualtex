@@ -80,9 +80,9 @@ internal static partial class Program
         string format,
         string artifactRoot)
     {
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
-        var previousNumberPosition = WordEquationNumbering.GetDefaultMathTypeNumberPosition();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
+        var previousNumberPosition = WordEquationNumberFormat.GetDefaultMathTypeNumberPosition();
         Word.Application? application = null;
         var assetRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -182,9 +182,9 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition(previousNumberPosition);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition(previousNumberPosition);
             try { QuitWordApplicationIfOwned(application); } catch { }
             Release(application);
             ForceComCleanup();
@@ -206,11 +206,11 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
-            WordEquationNumbering.SetDefaultCreateObjectMode(
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(
                 PhysicalUiPerfObjectMode(format));
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(numberedDisplays);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(numberedDisplays);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             var formulaCount = numberedDisplays
                 ? PhysicalUiPerfDisplayCount
@@ -277,11 +277,11 @@ internal static partial class Program
             try { application.ScreenUpdating = false; } catch { }
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
-            WordEquationNumbering.SetDefaultCreateObjectMode(
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(
                 FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             InsertPhysicalUiEditPerformanceFormulaRange(
                 application,
@@ -324,11 +324,11 @@ internal static partial class Program
                 AddToRecentFiles: false,
                 Visible: false);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
-            WordEquationNumbering.SetDefaultCreateObjectMode(
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(
                 FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             AssertEqual(
                 PhysicalUiPerfInlineCount,
@@ -875,9 +875,9 @@ internal static partial class Program
         var threshold = numbered
             ? PhysicalUiPerfNumberedLimitMs
             : PhysicalUiPerfUnnumberedLimitMs;
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
-        var previousNumberPosition = WordEquationNumbering.GetDefaultMathTypeNumberPosition();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
+        var previousNumberPosition = WordEquationNumberFormat.GetDefaultMathTypeNumberPosition();
         var previousAcceptance =
             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
         var previousTracePath =
@@ -906,15 +906,15 @@ internal static partial class Program
                 tracePath);
 
             if (format != "omml")
-                WordEquationNumbering.SetDefaultCreateObjectMode(
+                WordEquationNumberFormat.SetDefaultCreateObjectMode(
                     PhysicalUiPerfObjectMode(format));
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(numbered);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(numbered);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             application = CreateWordApplication(visible: true);
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
             try
             {
                 application.ActiveWindow.WindowState =
@@ -1052,9 +1052,9 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition(previousNumberPosition);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition(previousNumberPosition);
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_ACCEPTANCE",
                 previousAcceptance);

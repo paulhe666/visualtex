@@ -21,7 +21,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -85,7 +85,7 @@ internal static partial class Program
                 Visible: false,
                 OpenAndRepair: false);
             document.Activate();
-            WordEquationNumbering.UpdateEquationNumbers(document);
+            WordEquationNumberFormat.UpdateEquationNumbers(document);
             AssertNativeHashComplexFontState(
                 document,
                 formulaId,

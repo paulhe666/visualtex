@@ -715,7 +715,7 @@ internal sealed partial class WordFormulaService
                         // New self-contained VisualTeXPlaceRef paragraphs fall
                         // through to the ordinary next-paragraph caret path below.
                         typingRange =
-                            WordEquationNumbering
+                            WordNumberedTypingParagraphs
                                 .EnsureNormalTypingParagraphAfterNumberedDisplay(
                                     document,
                                     host.FormulaId!);

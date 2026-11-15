@@ -42,13 +42,13 @@ internal static partial class Program
         Word.ListTemplate? headingListTemplate = null;
         VisualTeX.WordVsto.ThisAddIn? addIn = null;
         Array custom = Array.Empty<object>();
-        var previousDefaultFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
-        var previousDefaultNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousDefaultFormat = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
+        var previousDefaultNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         try
         {
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(
                 EquationNumberFormat.ContinuousId);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             addIn = new VisualTeX.WordVsto.ThisAddIn();
@@ -225,7 +225,7 @@ internal static partial class Program
             AssertReferenceText(reopened, legacyReferenceBookmark, "(1-1)");
             AssertEqual(
                 EquationNumberFormat.Heading1DashId,
-                WordEquationNumbering.GetDefaultEquationNumberFormatId(),
+                WordEquationNumberFormat.GetDefaultEquationNumberFormatId(),
                 "The user-level equation-number format did not remember the last Ribbon selection.");
 
             freshDocument = application.Documents.Add();
@@ -233,17 +233,17 @@ internal static partial class Program
                 addIn.GetEquationNumberFormatPressed(
                     new EquationNumberRibbonControl(EquationNumberFormat.Heading1DashId)),
                 "A fresh Word document did not inherit the remembered user-level number format.");
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
             AssertTrue(
-                WordEquationNumbering.GetDefaultDisplayEquationNumbered(),
+                WordEquationNumberFormat.GetDefaultDisplayEquationNumbered(),
                 "The remembered display-equation numbering checkbox did not persist true.");
             AssertNewDisplaySessionNumberedPreference(
                 client,
                 addIn,
                 expectedNumbered: true);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
             AssertTrue(
-                !WordEquationNumbering.GetDefaultDisplayEquationNumbered(),
+                !WordEquationNumberFormat.GetDefaultDisplayEquationNumbered(),
                 "The remembered display-equation numbering checkbox did not persist false.");
             AssertNewDisplaySessionNumberedPreference(
                 client,
@@ -275,8 +275,8 @@ internal static partial class Program
             Release(reopened);
             Release(document);
             Release(application);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousDefaultNumbered);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousDefaultNumbered);
             ForceComCleanup();
         }
     }
@@ -580,7 +580,7 @@ internal static partial class Program
             reference = document.Fields.Add(
                 fieldInsertion,
                 Word.WdFieldType.wdFieldEmpty,
-                $"REF {WordEquationNumbering.NativeNumberBookmarkName(formulaId)} \\h",
+                $"REF {WordNumberingFields.NativeNumberBookmarkName(formulaId)} \\h",
                 PreserveFormatting: true);
             reference.Update();
             referenceResult = reference.Result;

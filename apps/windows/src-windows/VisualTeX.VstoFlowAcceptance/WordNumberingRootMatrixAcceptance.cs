@@ -14,7 +14,7 @@ internal static partial class Program
         var svg=Path.Combine(root,"numbering-fixture.svg");
         File.WriteAllText(svg,"<svg xmlns='http://www.w3.org/2000/svg' width='80' height='24' viewBox='0 0 80 24'><text x='1' y='18'>a+b</text></svg>");
         var emf=OfficeOlePreview.CreateVectorEmfFromSvg(svg,80,24);
-        var previous=WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previous=WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var results=new List<object>();
         Word.Application? app=null;
         try
@@ -34,7 +34,7 @@ internal static partial class Program
         finally
         {
             try{QuitWordApplicationIfOwned(app);}catch{} Release(app);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previous);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previous);
             ForceComCleanup();
         }
     }
@@ -49,7 +49,7 @@ internal static partial class Program
             doc.SaveAs2(Path.Combine(output,"owned-fixture.docx"),Word.WdSaveFormat.wdFormatXMLDocument);
             template=CreateEquationNumberFormatHeadingTemplate(doc);
             var service=new WordFormulaService(app);
-            WordEquationNumbering.RestoreEquationNumberFormatForConversion(doc,EquationNumberFormat.ContinuousId);
+            WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(doc,EquationNumberFormat.ContinuousId);
             var scopes=manual ? new[]{"4.2","4.3","5.1"} : new[]{"1.1","1.2","2.1"};
             for(var i=0;i<3;i++)
             {

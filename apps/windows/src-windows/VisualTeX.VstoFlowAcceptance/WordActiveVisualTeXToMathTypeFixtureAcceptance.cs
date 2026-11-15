@@ -49,11 +49,11 @@ internal static partial class Program
                     || !string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
                     continue;
                 sourceFormulaId = metadata.FormulaId;
-                ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                     sourceDocument, sourceFormulaId)
                     ?? throw new InvalidDataException("Active VisualTeX formula has no numbered owner range.");
                 var hostEnd = ownerRange.End;
-                var captionName = WordEquationNumbering.NativeCaptionBookmarkName(sourceFormulaId);
+                var captionName = WordNumberingFields.NativeCaptionBookmarkName(sourceFormulaId);
                 if (sourceDocument.Bookmarks.Exists(captionName))
                 {
                     captionBookmark = sourceDocument.Bookmarks[captionName];
@@ -67,9 +67,9 @@ internal static partial class Program
                 throw new InvalidOperationException("Active Word document has no complete numbered VisualTeX OLE fixture.");
 
             document = application.Documents.Add();
-            WordEquationNumbering.SetEquationNumberFormat(
+            WordEquationNumberFormat.SetEquationNumberFormat(
                 document,
-                WordEquationNumbering.GetEquationNumberFormatId(sourceDocument));
+                WordEquationNumberFormat.GetEquationNumberFormatId(sourceDocument));
             insertion = document.Range(document.Content.Start, document.Content.Start);
             sourceHost.Copy();
             insertion.Paste();
@@ -87,7 +87,7 @@ internal static partial class Program
             var repairedMetadata = WordFormulaMetadataReader.TryRead(pastedShape)
                 ?? throw new InvalidDataException("Copied VisualTeX source lost metadata after identity repair.");
             Console.WriteLine(
-                $"[ACTIVE VT→MT FIXTURE] formulaId={repairedMetadata.FormulaId} owner={WordEquationNumbering.FindNumberingOwnerRange(document, repairedMetadata.FormulaId)?.Start}:{WordEquationNumbering.FindNumberingOwnerRange(document, repairedMetadata.FormulaId)?.End} fields={document.Fields.Count} bookmarks={document.Bookmarks.Count}.");
+                $"[ACTIVE VT→MT FIXTURE] formulaId={repairedMetadata.FormulaId} owner={WordNumberingReconcile.FindNumberingOwnerRange(document, repairedMetadata.FormulaId)?.Start}:{WordNumberingReconcile.FindNumberingOwnerRange(document, repairedMetadata.FormulaId)?.End} fields={document.Fields.Count} bookmarks={document.Bookmarks.Count}.");
 
             var plan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,

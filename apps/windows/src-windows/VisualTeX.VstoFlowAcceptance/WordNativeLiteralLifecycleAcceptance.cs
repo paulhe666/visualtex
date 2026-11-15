@@ -9,7 +9,7 @@ internal static partial class Program
     private static void RunNativeLiteralLifecycle(string root)
     {
         Directory.CreateDirectory(root);
-        var previous = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previous = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var observations = new List<object>();
         Word.Application? app = null;
         try
@@ -124,7 +124,7 @@ internal static partial class Program
             AssertEqual(16, observations.Count, "Literal lifecycle matrix is incomplete.");
             File.WriteAllText(Path.Combine(root, "summary.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true }));
         }
-        finally { try { QuitWordApplicationIfOwned(app); } catch { } Release(app); WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previous); ForceComCleanup(); }
+        finally { try { QuitWordApplicationIfOwned(app); } catch { } Release(app); WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previous); ForceComCleanup(); }
     }
 
     private static void AssertLiteralLifecycleState(Word.Document document, string expected)

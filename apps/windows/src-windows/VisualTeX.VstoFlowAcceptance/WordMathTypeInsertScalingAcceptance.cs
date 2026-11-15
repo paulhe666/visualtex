@@ -68,7 +68,7 @@ internal static partial class Program
 
             numberedDocument = application.Documents.Add();
             numberedDocument.Content.Text = "MathType numbered insertion scaling\r";
-            WordEquationNumbering.SetEquationNumberFormat(numberedDocument, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormat(numberedDocument, "continuous");
             var numberedService = new WordFormulaService(application);
             var numberedMetrics = InsertMathTypeScalingSeries(
                 application,
@@ -97,7 +97,7 @@ internal static partial class Program
             distantNumberedDocument = application.Documents.Add();
             distantNumberedDocument.Content.Text =
                 "MathType distant numbered insertion scaling\r";
-            WordEquationNumbering.SetEquationNumberFormat(
+            WordEquationNumberFormat.SetEquationNumberFormat(
                 distantNumberedDocument,
                 "continuous");
             var distantNumberedService = new WordFormulaService(application);
@@ -250,7 +250,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             document.Content.Text = "MathType preview fallback acceptance\r";
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
             var service = new WordFormulaService(application);
 
             insertion = document.Range(document.Content.End - 1, document.Content.End - 1);

@@ -44,7 +44,7 @@ internal static partial class Program
             document.ActiveWindow.View.ShowFieldCodes = true;
             Console.WriteLine("[USER REPORT FIXTURE] Word field-code view forced ON for MathType/OMML regression.");
             ConfigureOmmlTableNumberPage(document);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -507,7 +507,7 @@ internal static partial class Program
                 document,
                 formulaIds);
             var refreshedAfterOpen =
-                WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document);
+                WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document);
             AssertEqual(formulaIds.Length, refreshedAfterOpen,
                 "Document-open OMML layout refresh did not visit every converted 1x3 formula.");
             AssertManagedNativeOmmlInterTableSeparatorsCompact(
@@ -572,7 +572,7 @@ internal static partial class Program
         host.Document.ActiveWindow.View.ShowFieldCodes = true;
         AssertTrue(host.Document.ActiveWindow.View.ShowFieldCodes,
             "The fresh first-insert fixture could not enter Word field-code view.");
-        WordEquationNumbering.SetEquationNumberFormatPreference(
+        WordEquationNumberFormat.SetEquationNumberFormatPreference(
             host.Document,
             EquationNumberFormat.ContinuousId);
         host.Application.Selection.SetRange(
@@ -814,7 +814,7 @@ internal static partial class Program
             view = document.ActiveWindow.View;
             AssertTrue(!view.ShowFieldCodes,
                 stage + ": VisualTeX left the Word window in field-code view.");
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+            table = WordNumberingReconcile.FindNumberedEquationTable(document, formulaId)
                 ?? throw new InvalidDataException(stage + ": numbered 1x3 host is missing.");
             numberCell = table.Cell(1, 3);
             numberRange = numberCell.Range.Duplicate;
@@ -940,7 +940,7 @@ internal static partial class Program
             Array startupCustom = Array.Empty<object>();
             host.AddIn.OnStartupComplete(ref startupCustom);
             host.Document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 host.Document,
                 EquationNumberFormat.ContinuousId);
             host.Application.Selection.SetRange(
@@ -1054,7 +1054,7 @@ internal static partial class Program
             Word.Range? tableRange = null;
             try
             {
-                table = WordEquationNumbering.FindNumberedEquationTable(
+                table = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         formulaId)
                     ?? throw new InvalidDataException(
@@ -1110,7 +1110,7 @@ internal static partial class Program
             Word.Range? tableRange = null;
             try
             {
-                table = WordEquationNumbering.FindNumberedEquationTable(
+                table = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         formulaId)
                     ?? throw new InvalidDataException(
@@ -1238,7 +1238,7 @@ internal static partial class Program
             DumpNumberedOmmlBodyParagraphs(document, "after-native-number-end-enter");
 
             var redirected =
-                WordEquationNumbering.TryRedirectManagedNativeOmmlNumberEndEnter(
+                WordNumberedTableDisplay.TryRedirectManagedNativeOmmlNumberEndEnter(
                     selection);
             System.Windows.Forms.Application.DoEvents();
             Thread.Sleep(100);
@@ -1339,7 +1339,7 @@ internal static partial class Program
         Word.ParagraphFormat? retainedSeparatorFormat = null;
         try
         {
-            table = WordEquationNumbering.FindNumberedEquationTable(
+            table = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     precedingFormulaId)
                 ?? throw new InvalidDataException(
@@ -1410,7 +1410,7 @@ internal static partial class Program
             AssertEqual(mathCount, document.OMaths.Count,
                 "Deleting the ordinary number-end Enter line removed a formula.");
 
-            refreshedTable = WordEquationNumbering.FindNumberedEquationTable(
+            refreshedTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     precedingFormulaId)
                 ?? throw new InvalidDataException(
@@ -1560,7 +1560,7 @@ internal static partial class Program
                 formulaIds,
                 "expanded fixture save/reopen");
 
-            var refreshed = WordEquationNumbering.RefreshNumberedOmmlTabLayouts(
+            var refreshed = WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(
                 document);
             AssertEqual(formulaIds.Length, refreshed,
                 "Document-open OMML layout refresh did not process every managed formula.");
@@ -1632,7 +1632,7 @@ internal static partial class Program
             Word.Range? range = null;
             try
             {
-                table = WordEquationNumbering.FindNumberedEquationTable(
+                table = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         formulaId)
                     ?? throw new InvalidDataException(
@@ -1696,7 +1696,7 @@ internal static partial class Program
             Word.Range? range = null;
             try
             {
-                table = WordEquationNumbering.FindNumberedEquationTable(
+                table = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         formulaId)
                     ?? throw new InvalidDataException(
@@ -1900,7 +1900,7 @@ internal static partial class Program
             var service = new WordFormulaService(application);
             service.InsertOmml(session, QuadraticFormulaMathMl());
 
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+            table = WordNumberingReconcile.FindNumberedEquationTable(document, formulaId)
                 ?? throw new InvalidDataException(
                     $"Empty-line case '{caseName}' did not create a managed 1x3 table.");
             tableRange = table.Range;
@@ -2100,7 +2100,7 @@ internal static partial class Program
                 bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
                 if (bookmark is not null)
                     equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
-                table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId);
+                table = WordNumberingReconcile.FindNumberedEquationTable(document, formulaId);
                 if (table is not null)
                 {
                     tableRange = table.Range;

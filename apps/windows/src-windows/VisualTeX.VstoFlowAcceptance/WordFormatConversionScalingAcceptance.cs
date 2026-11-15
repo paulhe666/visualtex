@@ -280,7 +280,7 @@ internal static partial class Program
             document.Activate();
             document.Content.Text =
                 "VisualTeX format conversion scaling source\r";
-            WordEquationNumbering
+            WordEquationNumberFormat
                 .SetEquationNumberFormatPreference(
                     document,
                     EquationNumberFormat.ContinuousId);
@@ -713,7 +713,7 @@ internal static partial class Program
             document = application.Documents.Add();
             document.Activate();
             document.Content.Text = "multi-body OMML source\r";
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -884,7 +884,7 @@ internal static partial class Program
                 + "body-before-display\rBODY_DISPLAY\rbody-after-display\r"
                 + "table-follows\r";
             var service = new WordFormulaService(application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 

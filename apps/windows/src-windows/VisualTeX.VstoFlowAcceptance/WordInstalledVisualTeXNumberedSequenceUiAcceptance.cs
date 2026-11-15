@@ -120,7 +120,7 @@ internal static partial class Program
                         ?? throw new InvalidDataException($"Insertion #{insertionIndex} lost VisualTeX metadata.");
                     AssertTrue(metadata.Numbered && string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
                         $"Insertion #{insertionIndex} is not a numbered display formula.");
-                    visible = WordEquationNumbering.FindVisibleEquationNumberRange(document, metadata.FormulaId)
+                    visible = WordNumberingReconcile.FindVisibleEquationNumberRange(document, metadata.FormulaId)
                         ?? throw new InvalidDataException($"Insertion #{insertionIndex} has no visible equation number.");
                     var visibleText = (visible.Text ?? string.Empty).Trim('\t', '\r', '\a', ' ', '(', ')');
                     var lastPart = visibleText.Split(new[] { '.', '-' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();

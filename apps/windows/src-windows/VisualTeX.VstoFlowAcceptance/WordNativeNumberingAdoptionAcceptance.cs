@@ -13,7 +13,7 @@ internal static partial class Program
     {
         Directory.CreateDirectory(artifactRoot);
         var rows = new List<object>();
-        var oldPreference = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var oldPreference = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         try
         {
             foreach (var table in new[] { false, true })
@@ -23,7 +23,7 @@ internal static partial class Program
             File.WriteAllText(Path.Combine(artifactRoot, "summary.json"), JsonSerializer.Serialize(
                 new { Time = DateTimeOffset.Now, Passed = rows.Count, Rows = rows }, new JsonSerializerOptions { WriteIndented = true }));
         }
-        finally { WordEquationNumbering.SetDefaultEquationNumberFormatPreference(oldPreference); }
+        finally { WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(oldPreference); }
     }
 
     private static void RunNativeNumberAdoptionCase(string root, bool table, bool tracking, List<object> rows)

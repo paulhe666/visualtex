@@ -32,7 +32,7 @@ internal static partial class Program
                 documentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument,
                 AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 

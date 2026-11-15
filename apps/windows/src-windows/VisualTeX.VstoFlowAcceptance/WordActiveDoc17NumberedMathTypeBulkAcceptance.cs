@@ -85,7 +85,7 @@ internal static partial class Program
 
             targetDocument = application.Documents.Add();
             targetDocument.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 targetDocument,
                 EquationNumberFormat.Heading2DotId);
 

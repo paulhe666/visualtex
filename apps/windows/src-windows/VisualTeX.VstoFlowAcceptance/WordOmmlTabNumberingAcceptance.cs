@@ -29,7 +29,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.Activate();
             application.Selection.SetRange(0, 0);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -62,7 +62,7 @@ internal static partial class Program
             // before any edit. For native #(SEQ), this only refreshes the unchanged
             // mathematical field and verifies the FormulaId-bound number aliases.
             var finalizedBeforeImmediateSave =
-                WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(
+                WordNumberedDisplayLayout.FinalizeNumberedOmmlDisplayShapeLayouts(
                     document);
             AssertEqual(1, finalizedBeforeImmediateSave,
                 "The save-boundary native-number finalizer did not settle the fresh numbered OMML formula.");
@@ -81,7 +81,7 @@ internal static partial class Program
                 context: "fresh numbered OMML immediate save/reopen",
                 updateReference: true);
 
-            var refreshedCount = WordEquationNumbering.UpdateEquationNumbers(document);
+            var refreshedCount = WordEquationNumberFormat.UpdateEquationNumbers(document);
             AssertEqual(1, refreshedCount,
                 "The explicit numbering refresh did not recognize exactly one healthy true-display OMML formula.");
             AssertOmmlTabNumberingHost(
@@ -287,7 +287,7 @@ internal static partial class Program
         Word.ShapeRange? shapes = null;
         try
         {
-            owner = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            owner = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(
                     context + ": native #(SEQ) owner range is missing.");
             frames = owner.Frames;
@@ -385,11 +385,11 @@ internal static partial class Program
             var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
                 ?? throw new InvalidDataException(context + ": OMML metadata is missing.");
             equationRange = ResolveOmmlRange(document, formulaId, metadata);
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": numbering owner is missing.");
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(document, formulaId)
+            visibleRange = WordNumberingReconcile.FindVisibleEquationNumberRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": VTEq_ number alias is missing.");
-            visibleTextRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(document, formulaId)
+            visibleTextRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": visible number text is missing.");
 
             if (requireDocumentTableFree)
@@ -425,7 +425,7 @@ internal static partial class Program
                 context + ": native #SEQ OMath must own exactly one SEQ field.");
             sequenceField = fields[1];
             sequenceCode = sequenceField.Code;
-            AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
+            AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
                 context + ": mathematical field is not SEQ VisualTeXEquation.");
             AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
                     "REF VTEqNum_",
@@ -471,7 +471,7 @@ internal static partial class Program
                 context + ": legacy VTEqShape_ survived in the document.");
 
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(numberName),
                 context + ": VTEqNum_<FormulaId> bookmark is missing.");
             numberBookmark = bookmarks[numberName];
@@ -563,11 +563,11 @@ internal static partial class Program
             var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
                 ?? throw new InvalidDataException(context + ": OMML metadata is missing.");
             equationRange = ResolveOmmlRange(document, formulaId, metadata);
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": numbering owner is missing.");
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberRange(document, formulaId)
+            visibleRange = WordNumberingReconcile.FindVisibleEquationNumberRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": visible equation number is missing.");
-            visibleTextRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(document, formulaId)
+            visibleTextRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": visible equation-number text range is missing.");
 
             if (requireDocumentTableFree)
@@ -666,7 +666,7 @@ internal static partial class Program
             shapeLine = numberShape.Line;
             shapeFill = numberShape.Fill;
             var serializedDecorationHealthy =
-                WordEquationNumbering.IsSerializedNativeDisplayNumberShapeHealthy(
+                WordNumberedTrueDisplay.IsSerializedNativeDisplayNumberShapeHealthy(
                     document,
                     formulaId);
             Console.WriteLine(
@@ -754,7 +754,7 @@ internal static partial class Program
             reference = visibleFields[1];
             fieldCode = reference.Code;
             AssertTrue((fieldCode.Text ?? string.Empty).IndexOf(
-                    "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                    "REF " + WordNumberingFields.NativeNumberBookmarkName(formulaId),
                     StringComparison.OrdinalIgnoreCase) >= 0,
                 context + ": the visible field is not the expected dynamic REF.");
             AssertEqual(0, fieldCode.OMaths.Count,
@@ -954,7 +954,7 @@ internal static partial class Program
             code = sequenceField.Code;
             var instruction = code.Text ?? string.Empty;
             AssertTrue(
-                WordEquationNumbering.IsVisualTeXSequenceFieldCode(instruction),
+                WordNumberingFields.IsVisualTeXSequenceFieldCode(instruction),
                 context + $": native #() field is not SEQ VisualTeXEquation: '{instruction}'.");
             AssertTrue(instruction.IndexOf(
                     "REF ",
@@ -969,7 +969,7 @@ internal static partial class Program
             if (updateReference) sequenceField.Update();
 
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(numberName),
                 context + ": VTEqNum bookmark is missing from native #().");
             numberBookmark = bookmarks[numberName];
@@ -977,7 +977,7 @@ internal static partial class Program
             AssertTrue(numberRange.Start >= mathRange.Start
                 && numberRange.End <= mathRange.End,
                 context + ": VTEqNum bookmark lies outside the mathematical SEQ result.");
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(context + ": native #() owner is missing.");
             paragraphs = ownerRange.Paragraphs;
             AssertEqual(1, paragraphs.Count,
@@ -1062,7 +1062,7 @@ internal static partial class Program
             System.Windows.Forms.Application.DoEvents();
             Thread.Sleep(120);
             System.Windows.Forms.Application.DoEvents();
-            finalized = WordEquationNumbering
+            finalized = WordNumberedDisplayLayout
                 .FinalizeNumberedOmmlDisplayShapeLayouts(document);
             numberedOmmlHealthy = CountHealthyNativeHashSequenceOmml(document);
             Console.WriteLine(

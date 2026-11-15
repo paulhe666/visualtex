@@ -83,7 +83,7 @@ internal static partial class Program
                 display: true,
                 mathFontName: document.OMathFontName);
 
-            WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+            WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(
                 document,
                 EquationNumberFormat.Heading2DashId);
             // The user's large source document has Track Changes enabled.

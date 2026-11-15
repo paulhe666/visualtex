@@ -11,8 +11,8 @@ public sealed class WordOmmlInkClearanceTests
     [Fact]
     public void OrdinarySingleLineDoesNotAcquireTallFormulaSpacing()
     {
-        Assert.False(WordEquationNumbering.HasTallNativeOmmlStructure(Math("<m:r><m:t>x+y</m:t></m:r>")));
-        Assert.False(WordEquationNumbering.HasTallNativeOmmlStructure(Math("<m:m><m:mr><m:e/></m:mr></m:m>")));
+        Assert.False(WordNumberedTableDisplay.HasTallNativeOmmlStructure(Math("<m:r><m:t>x+y</m:t></m:r>")));
+        Assert.False(WordNumberedTableDisplay.HasTallNativeOmmlStructure(Math("<m:m><m:mr><m:e/></m:mr></m:m>")));
     }
 
     [Theory]
@@ -21,5 +21,5 @@ public sealed class WordOmmlInkClearanceTests
     [InlineData("<m:f><m:num/><m:den/></m:f>")]
     [InlineData("<m:nary><m:sub/><m:sup/><m:e/></m:nary>")]
     public void TallStructuresKeepDescentOnEditAndNumberRefresh(string formula)
-        => Assert.True(WordEquationNumbering.HasTallNativeOmmlStructure(Math(formula)));
+        => Assert.True(WordNumberedTableDisplay.HasTallNativeOmmlStructure(Math(formula)));
 }

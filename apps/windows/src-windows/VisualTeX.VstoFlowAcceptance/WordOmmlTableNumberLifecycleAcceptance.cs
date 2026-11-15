@@ -22,7 +22,7 @@ internal static partial class Program
             document.Activate();
             ConfigureOmmlTableNumberPage(document);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -227,7 +227,7 @@ internal static partial class Program
                 phase + ": number cell must contain exactly one direct SEQ field.");
             sequenceField = numberFields[1];
             sequenceCode = sequenceField.Code;
-            AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
+            AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
                 phase + ": number-cell field is not SEQ VisualTeXEquation.");
             AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
                     "REF VTEqNum_",

@@ -1017,7 +1017,7 @@ internal static class WordFormulaHostMutationKernel
                             WordFormulaHostSemanticReader.CreateRange(
                                 document,
                                 validated.Range);
-                        WordEquationNumbering
+                        WordEquationParagraphLayout
                             .NormalizePreservedVisualTeXNumberedTabParagraph(
                                 document,
                                 preservedRange,

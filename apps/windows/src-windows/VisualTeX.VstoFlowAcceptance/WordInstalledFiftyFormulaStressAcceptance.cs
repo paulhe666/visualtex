@@ -312,13 +312,13 @@ internal static partial class Program
         var documentPath = Path.Combine(artifactRoot, "MathType-50-Current-Redraw.docx");
         var previousRedrawLog = Environment.GetEnvironmentVariable(
             "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG");
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         try
         {
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
                 redrawLog);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
             client.PrewarmConverterAsync(CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
@@ -390,7 +390,7 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
                 previousRedrawLog);
@@ -479,9 +479,9 @@ internal static partial class Program
         var previousAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
         var previousFormatAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
         var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
-        var previousNumberPosition = WordEquationNumbering.GetDefaultMathTypeNumberPosition();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
+        var previousNumberPosition = WordEquationNumberFormat.GetDefaultMathTypeNumberPosition();
         var tracePath = Path.Combine(artifactRoot, "mathtype-50-edit-stress.trace.log");
         Word.Application? application = null;
         Word.Document? document = null;
@@ -501,9 +501,9 @@ internal static partial class Program
             application = CreateWordApplication(visible: true);
             callbacksObject = GetInstalledStressCallbacks(application, out addIns, out installedAddIn);
             dynamic callbacks = callbacksObject;
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             document = application.Documents.Add();
             document.Activate();
@@ -658,9 +658,9 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition(previousNumberPosition);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition(previousNumberPosition);
             Release(callbacksObject);
             Release(installedAddIn);
             Release(addIns);
@@ -686,8 +686,8 @@ internal static partial class Program
         var previousAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
         var previousFormatAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
         var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         var tracePath = Path.Combine(artifactRoot, "format-50-batch-stress.trace.log");
         Word.Application? application = null;
         Word.Document? document = null;
@@ -706,7 +706,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: true);
             callbacksObject = GetInstalledStressCallbacks(application, out addIns, out installedAddIn);
             dynamic callbacks = callbacksObject;
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
 
             // Diagnostic fast path for the expensive fourth direction. It still
             // uses the installed Word Ribbon callback, all 50 real MathType OLEs,
@@ -926,8 +926,8 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
             Release(callbacksObject);
             Release(installedAddIn);
             Release(addIns);
@@ -953,8 +953,8 @@ internal static partial class Program
         var previousAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE");
         var previousFormatAcceptance = Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
         var previousTracePath = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         var tracePath = Path.Combine(artifactRoot, "vt-omml-50-direct-stress.trace.log");
         Word.Application? application = null;
         Word.Document? document = null;
@@ -973,7 +973,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: true);
             callbacksObject = GetInstalledStressCallbacks(application, out addIns, out installedAddIn);
             dynamic callbacks = callbacksObject;
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
 
             var suppliedFixture = Environment.GetEnvironmentVariable("VISUALTEX_STRESS_VT_FIXTURE");
             var sourcePath = Path.Combine(artifactRoot, "Stress-VisualTeX-50-Direct-Source.docx");
@@ -1071,8 +1071,8 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
             Release(callbacksObject);
             Release(installedAddIn);
             Release(addIns);
@@ -1119,7 +1119,7 @@ internal static partial class Program
     {
         var document = application.Documents.Add();
         document.Activate();
-        WordEquationNumbering.SetDefaultCreateObjectMode(objectMode);
+        WordEquationNumberFormat.SetDefaultCreateObjectMode(objectMode);
         for (var index = 0; index < prepared.Count; index++)
         {
             EnsureStressIndependentFormulaHost(document, index);

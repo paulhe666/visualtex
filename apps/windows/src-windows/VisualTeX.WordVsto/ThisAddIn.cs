@@ -1223,7 +1223,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // once when entering this managed equation host.
             // Ribbon owner discovery is structural. Information() requests a
             // full layout pass after an edit even for an ordinary prose caret.
-            if (WordEquationNumbering.RangeIsWhollyWithinTable(selectionRange))
+            if (WordNumberedDisplayLayout.RangeIsWhollyWithinTable(selectionRange))
             {
                 tables = selectionRange.Tables;
                 if (tables.Count == 1)
@@ -1387,7 +1387,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     // right-cell paragraph/field boundary is fully materialized.
                     // Reuse this existing single deferred caret pass as a targeted
                     // retry; it never enumerates documents or sibling formulas.
-                    var redirected = WordEquationNumbering
+                    var redirected = WordNumberedTableDisplay
                         .TryRedirectManagedNativeOmmlNumberEndEnter(currentSelection);
                     if (!redirected)
                         service.NormalizeTypingCaretAfterInlineFormula(currentSelection);
@@ -2374,7 +2374,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     // no OMML metadata is touched unless the right cell has already
                     // acquired an extra empty paragraph.
                     redirectedNumberEndEnter =
-                        WordEquationNumbering
+                        WordNumberedTableDisplay
                             .TryRedirectManagedNativeOmmlNumberEndEnter(selection);
                     if (!redirectedNumberEndEnter)
                         service.NormalizeTypingCaretAfterInlineFormula(selection);
@@ -3216,7 +3216,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 : null;
             var targetObjectMode = requestedObjectMode
                 ?? (mode == "create"
-                    ? WordEquationNumbering.GetDefaultCreateObjectMode()
+                    ? WordEquationNumberFormat.GetDefaultCreateObjectMode()
                     : selection.ObjectMode)
                 ?? FormulaOleContract.NativeOleMode;
             var requiresObjectModeChange = mode == "edit"
@@ -3268,7 +3268,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Numbered = effectiveDisplayMode == "block"
                     && (automation?.Numbered
                         ?? (mode == "create"
-                            ? WordEquationNumbering.GetDefaultDisplayEquationNumbered()
+                            ? WordEquationNumberFormat.GetDefaultDisplayEquationNumbered()
                             : metadata?.Numbered ?? false)),
                 MathTypeNumberPosition = mathTypeNumberPosition,
                 FontSizePt = FormulaFontSize.Normalize(fontSizePt),
@@ -3300,7 +3300,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 cancellationToken).ConfigureAwait(false);
             // an agent's choices do not become the user's defaults
             if (automation is null && session.Mode == "create" && session.DisplayMode == "block")
-                WordEquationNumbering.SetDefaultDisplayEquationNumbered(session.Numbered);
+                WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(session.Numbered);
             if (automation is null
                 && session.Mode == "create"
                 && (string.Equals(
@@ -3311,7 +3311,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         session.ObjectMode,
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal)))
-                WordEquationNumbering.SetDefaultCreateObjectMode(session.ObjectMode);
+                WordEquationNumberFormat.SetDefaultCreateObjectMode(session.ObjectMode);
             if (automation is null
                 && session.Mode == "create"
                 && session.Numbered
@@ -3320,7 +3320,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     session.ObjectMode,
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
-                WordEquationNumbering.SetDefaultMathTypeNumberPosition(
+                WordEquationNumberFormat.SetDefaultMathTypeNumberPosition(
                     session.MathTypeNumberPosition);
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
@@ -5483,7 +5483,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 "latex" => WordBulkSourceFormat.Latex,
                 _ => WordBulkSourceFormat.Auto,
             };
-            var agentMode = agentRun.BulkObjectMode ?? WordEquationNumbering.GetDefaultCreateObjectMode();
+            var agentMode = agentRun.BulkObjectMode ?? WordEquationNumberFormat.GetDefaultCreateObjectMode();
             var agentObjectMode = agentMode == FormulaOleContract.NativeOleMode
                 ? WordBulkFormulaObjectMode.Ole
                 : agentMode == FormulaOleContract.MathTypeOleMode
@@ -6327,7 +6327,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .ConfigureAwait(false);
             // Publish the future-document default only after the actual document
             // edit has committed. A failed rewrite must leave both unchanged.
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(format.Id);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(format.Id);
             _cachedEquationNumberFormatId = format.Id;
             SetStatus($"公式编号格式已设置为“{format.DisplayName}”，并同步更新了 {count} 个 VisualTeX / MathType 带编号公式。");
         }

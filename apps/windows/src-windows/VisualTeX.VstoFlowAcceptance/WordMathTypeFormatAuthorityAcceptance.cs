@@ -13,7 +13,7 @@ internal static partial class Program
         Word.Application? application=null;
         Word.Document? document=null;
         var rows=new List<object>();
-        var previous=WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previous=WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         try
         {
             application=CreateWordApplication(visible:false);
@@ -25,7 +25,7 @@ internal static partial class Program
                 document.Content.Text="PROTECTED TEXT\r";
                 var service=new WordFormulaService(application);
                 var oldFormat=format==EquationNumberFormat.ContinuousId ? EquationNumberFormat.Heading1DashId : EquationNumberFormat.ContinuousId;
-                WordEquationNumbering.RestoreEquationNumberFormatForConversion(document,oldFormat);
+                WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(document,oldFormat);
                 void Insert()
                 {
                     Word.Range? end=null;
@@ -43,7 +43,7 @@ internal static partial class Program
                 // Model an older numbered formula pasted into a document with
                 // an explicit policy. Changing only the document variable is
                 // fixture construction, NOT the product's format-change API.
-                WordEquationNumbering.RestoreEquationNumberFormatForConversion(document,format);
+                WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(document,format);
                 document.TrackRevisions=tracking;
                 Insert();
                 var prefix=format==EquationNumberFormat.ContinuousId ? "" : format==EquationNumberFormat.Heading1DotId ? "0." :
@@ -99,7 +99,7 @@ internal static partial class Program
         {
             try{document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges);}catch{}
             Release(document);try{QuitWordApplicationIfOwned(application);}catch{}Release(application);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previous);ForceComCleanup();
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previous);ForceComCleanup();
         }
     }
 }

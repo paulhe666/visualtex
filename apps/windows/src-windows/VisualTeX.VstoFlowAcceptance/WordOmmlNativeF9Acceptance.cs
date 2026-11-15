@@ -21,7 +21,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -53,7 +53,7 @@ internal static partial class Program
                 // main-story affinity; recreating it from bare integer coordinates
                 // at a 1-character table separator is ambiguous in Word and can
                 // target either neighboring table.
-                middleInsertion = WordEquationNumbering
+                middleInsertion = WordNumberedTypingParagraphs
                     .EnsureNormalTypingParagraphAfterNumberedDisplay(
                         document,
                         firstId)
@@ -71,7 +71,7 @@ internal static partial class Program
             AssertEqual(3, document.Tables.Count,
                 "Inserting a numbered formula between two 1x3 hosts merged or nested a table.");
             externalReference = InsertExternalEquationReference(document, lastId);
-            AssertEqual(3, WordEquationNumbering.UpdateEquationNumbers(document),
+            AssertEqual(3, WordEquationNumberFormat.UpdateEquationNumbers(document),
                 "VisualTeX did not finalize all three direct-table numbers after middle insertion.");
             var firstSequenceCode = ReadNativeF9SequenceCode(document, firstId);
             var middleSequenceCode = ReadNativeF9SequenceCode(document, middleId);
@@ -99,12 +99,12 @@ internal static partial class Program
                 "Select-all F9 did not update the body REF to the third formula.");
             AssertExternalEquationReferenceHyperlink(
                 externalReference,
-                WordEquationNumbering.NativeNumberBookmarkName(lastId));
+                WordNumberingFields.NativeNumberBookmarkName(lastId));
 
             Word.Table? middleTable = null;
             try
             {
-                middleTable = WordEquationNumbering.FindNumberedEquationTable(
+                middleTable = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         middleId)
                     ?? throw new InvalidDataException(
@@ -116,7 +116,7 @@ internal static partial class Program
             AssertEqual(2, document.Tables.Count,
                 "Deleting the middle numbered formula left an empty 1x3 table behind.");
 
-            AssertEqual(2, WordEquationNumbering.UpdateEquationNumbers(document),
+            AssertEqual(2, WordEquationNumberFormat.UpdateEquationNumbers(document),
                 "VisualTeX did not renumber both remaining direct-table formulas after middle deletion.");
             var firstSequenceCodeAfterDeletion =
                 ReadNativeF9SequenceCode(document, firstId);
@@ -139,7 +139,7 @@ internal static partial class Program
                 "Select-all F9 did not update the existing body REF after middle deletion.");
             AssertExternalEquationReferenceHyperlink(
                 externalReference,
-                WordEquationNumbering.NativeNumberBookmarkName(lastId));
+                WordNumberingFields.NativeNumberBookmarkName(lastId));
             AssertEqual(0, document.Shapes.Count,
                 "Native F9 lifecycle created a floating Shape.");
             AssertEqual(2, document.Tables.Count,
@@ -178,7 +178,7 @@ internal static partial class Program
                 "Save/reopen did not retain the F9-renumbered body REF.");
             AssertExternalEquationReferenceHyperlink(
                 externalReference,
-                WordEquationNumbering.NativeNumberBookmarkName(lastId));
+                WordNumberingFields.NativeNumberBookmarkName(lastId));
 
             AssertEqual(2, document.Tables.Count,
                 "Save/reopen/F9 did not retain the two remaining direct-SEQ 1x3 tables.");
@@ -288,7 +288,7 @@ internal static partial class Program
         Word.Range? code = null;
         try
         {
-            numberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            numberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(

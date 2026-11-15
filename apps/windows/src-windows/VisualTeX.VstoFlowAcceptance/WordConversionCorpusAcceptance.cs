@@ -125,7 +125,7 @@ internal static partial class Program
             document = application.Documents.Add();
             document.Activate();
             document.Content.Text = "VisualTeX format conversion scaling source\r";
-            WordEquationNumbering.SetEquationNumberFormatPreference(document, EquationNumberFormat.ContinuousId);
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(document, EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
             foreach (var formula in corpus)
             {
@@ -154,7 +154,7 @@ internal static partial class Program
         {
             Environment.SetEnvironmentVariable("VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS", "1");
             using var host = new WordPerformanceHost(null);
-            WordEquationNumbering.SetEquationNumberFormatPreference(host.Document, EquationNumberFormat.ContinuousId);
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(host.Document, EquationNumberFormat.ContinuousId);
             host.Document.Content.Text = "VisualTeX format conversion scaling source\r"
                 + string.Join("\r", corpus.Select(item => item.DisplayMode == "inline"
                     ? "INLINE before $" + item.Latex + "$ after END-INLINE"

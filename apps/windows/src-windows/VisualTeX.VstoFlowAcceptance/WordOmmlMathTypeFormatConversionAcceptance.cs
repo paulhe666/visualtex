@@ -1173,18 +1173,18 @@ internal static partial class Program
                 secondOmmlFormulaId,
                 "save/reopen");
 
-            var visualTeXReferenceTargets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var visualTeXReferenceTargets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             var visualTeXReferenceTarget = visualTeXReferenceTargets.Single(target =>
                 string.Equals(target.FormulaId, secondOmmlFormulaId, StringComparison.Ordinal));
             SelectDocumentEnd(document);
             var visualTeXReferenceSelection = application.Selection;
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 visualTeXReferenceSelection,
                 visualTeXReferenceTarget,
                 EquationReferenceStyle.NumberOnly);
             Release(visualTeXReferenceSelection);
-            var visualTeXReferenceAlias = WordEquationNumbering.NativeNumberBookmarkName(secondOmmlFormulaId);
+            var visualTeXReferenceAlias = WordNumberingFields.NativeNumberBookmarkName(secondOmmlFormulaId);
             var visualTeXReferenceTextBefore = ReadMathTypeReferenceResultForAcceptance(
                 document,
                 visualTeXReferenceAlias);
@@ -1409,7 +1409,7 @@ internal static partial class Program
         var orderedIdSet = ordered
             .Select(item => item.FormulaId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var targetByFormulaId = WordEquationNumbering
+        var targetByFormulaId = WordEquationNumberReferences
             .GetEquationReferenceTargets(document)
             .Where(target => orderedIdSet.Contains(target.FormulaId))
             .ToDictionary(
@@ -1434,7 +1434,7 @@ internal static partial class Program
                         formulaId,
                         metadata);
                 AssertTrue(
-                    WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                    WordNumberedTableDisplay.HasReusableNumberedNativeOmmlDirectTableHost(
                         document,
                         equationOwner,
                         formulaId),
@@ -1453,7 +1453,7 @@ internal static partial class Program
             Word.Range? prefixRange = null;
             try
             {
-                visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                visibleRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     formulaId)
                     ?? throw new InvalidDataException(
@@ -1582,7 +1582,7 @@ internal static partial class Program
             AssertTrue(ownerXml.IndexOf("<w:drawing", StringComparison.OrdinalIgnoreCase) < 0,
                 context + ": the external number Shape leaked into the formula paragraph.");
 
-            visibleRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            visibleRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                 document,
                 formulaId)
                 ?? throw new InvalidDataException(
@@ -1595,7 +1595,7 @@ internal static partial class Program
             reference = visibleFields[1];
             fieldCode = reference.Code;
             AssertTrue((fieldCode.Text ?? string.Empty).IndexOf(
-                    "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                    "REF " + WordNumberingFields.NativeNumberBookmarkName(formulaId),
                     StringComparison.OrdinalIgnoreCase) >= 0,
                 context + ": the external field targets the wrong equation-number bookmark.");
             AssertEqual(0, fieldCode.OMaths.Count,
@@ -1778,7 +1778,7 @@ internal static partial class Program
         try
         {
             bookmarks = document.Bookmarks;
-            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var nativeName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(alias),
                 $"MathType→OMML {stage} lost reference compatibility bookmark {alias}.");
             AssertTrue(bookmarks.Exists(nativeName),
@@ -1787,7 +1787,7 @@ internal static partial class Program
             nativeBookmark = bookmarks[nativeName];
             aliasRange = aliasBookmark.Range;
             nativeRange = nativeBookmark.Range;
-            visibleNumberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+            visibleNumberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
@@ -2110,7 +2110,7 @@ internal static partial class Program
         try
         {
             bookmarks = document.Bookmarks;
-            var nativeName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var nativeName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(alias),
                 $"{stage} lost VisualTeX reference compatibility bookmark {alias}.");
             AssertTrue(bookmarks.Exists(nativeName),
@@ -3071,7 +3071,7 @@ internal static partial class Program
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup><mo>=</mo><msup><mi>z</mi><mn>2</mn></msup></math>";
         var previousDefaultFormat =
-            WordEquationNumbering.GetDefaultEquationNumberFormatId();
+            WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var previewRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "VisualTeX",
@@ -3281,7 +3281,7 @@ internal static partial class Program
                 try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(probe);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
             try { Directory.Delete(previewRoot, recursive: true); } catch { }
             try { returnDocument.Activate(); } catch { }
         }
@@ -3307,7 +3307,7 @@ internal static partial class Program
             throw new FileNotFoundException(
                 "The saved numbered VisualTeX OLE fixture is required for number-format conversion acceptance.",
                 fixturePath);
-        var previousDefaultFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previousDefaultFormat = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var workingPath = Path.Combine(
             artifactRoot,
             "VisualTeX-OLE-To-OMML-Heading2-Number-Format.docx");
@@ -3413,7 +3413,7 @@ internal static partial class Program
                 EquationNumberFormat.Heading2DotId,
                 service.GetEquationNumberFormatId(),
                 "VisualTeX OLE→OMML fell back from section numbering to continuous numbering.");
-            var visibleTarget = WordEquationNumbering.GetEquationReferenceTargets(probe)
+            var visibleTarget = WordEquationNumberReferences.GetEquationReferenceTargets(probe)
                 .Single(item => string.Equals(
                     item.FormulaId,
                     convertedFormulaId,
@@ -3435,7 +3435,7 @@ internal static partial class Program
                 EquationNumberFormat.Heading2DotId,
                 reopenedService.GetEquationNumberFormatId(),
                 "Saved/reopened converted OMML lost the section-numbering format.");
-            var reopenedTarget = WordEquationNumbering.GetEquationReferenceTargets(reopened)
+            var reopenedTarget = WordEquationNumberReferences.GetEquationReferenceTargets(reopened)
                 .Single(item => string.Equals(
                     item.FormulaId,
                     convertedFormulaId,
@@ -3459,7 +3459,7 @@ internal static partial class Program
                 try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(probe);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
             try { returnDocument.Activate(); } catch { }
         }
     }

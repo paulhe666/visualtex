@@ -17,10 +17,10 @@ internal static partial class Program
             "VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE");
         var previousTracePath = Environment.GetEnvironmentVariable(
             "VISUALTEX_WORD_HOOK_TRACE_PATH");
-        var previousCreateMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
-        var previousNumberPosition = WordEquationNumbering.GetDefaultMathTypeNumberPosition();
-        var previousNumberFormat = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previousCreateMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
+        var previousNumberPosition = WordEquationNumberFormat.GetDefaultMathTypeNumberPosition();
+        var previousNumberFormat = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var tracePath = Path.Combine(artifactRoot, "installed-mathtype-native-regression.trace.log");
 
         Word.Application? application = null;
@@ -67,9 +67,9 @@ internal static partial class Program
                     "Installed VisualTeX.WordVsto automation object was unavailable. This acceptance refuses to construct ThisAddIn locally.");
             dynamic callbacks = callbacksObject;
 
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(
                 EquationNumberFormat.Heading1DotId);
 
             if (firstLeftOnly)
@@ -147,10 +147,10 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition(previousNumberPosition);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousNumberFormat);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousNumbered);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition(previousNumberPosition);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previousNumberFormat);
             Release(callbacksObject);
             Release(installedAddIn);
             Release(addIns);
@@ -182,10 +182,10 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("left");
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("left");
 
             var export = CreateInstalledMathTypeProductExport(
                 client,
@@ -262,12 +262,12 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
             AppendInstalledAcceptanceHeading(document, "Installed Chapter One");
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
             var firstExport = CreateInstalledMathTypeProductExport(
                 client,
                 @"x^2+1",
@@ -285,7 +285,7 @@ internal static partial class Program
                 mathTypeBaseline);
 
             AppendInstalledAcceptanceHeading(document, "Installed Chapter Two");
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("left");
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("left");
             var secondExport = CreateInstalledMathTypeProductExport(
                 client,
                 @"\frac{a}{b}",
@@ -436,7 +436,7 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
             SetMathTypeDocumentNumberPosition(document, numberOnRight: true);
@@ -524,12 +524,12 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
             SetMathTypeDocumentNumberPosition(document, numberOnRight: false);
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.NativeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
 
             AppendInstalledAcceptanceHeading(document, "VisualTeX Chapter One");
             var firstExport = CreateInstalledMathTypeProductExport(
@@ -562,7 +562,7 @@ internal static partial class Program
             // The two sources above were created by the same installed Ribbon and
             // companion Session path a user actually invokes. Switch only the
             // document's MathType number-side preference before converting them.
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
             ResetInstalledFormatConversionTrace(tracePath);
             callbacks.OnConvertVisualTeXToMathTypeDocument(null);
             WaitForInstalledOmmlMathTypeConversion(
@@ -633,12 +633,12 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
-            WordEquationNumbering.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
-            WordEquationNumbering.SetDefaultMathTypeNumberPosition("right");
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(FormulaOleContract.MathTypeOleMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultMathTypeNumberPosition("right");
 
             AppendInstalledAcceptanceHeading(document, "Reverse Chapter One");
             var firstExport = CreateInstalledMathTypeProductExport(
@@ -720,7 +720,7 @@ internal static partial class Program
         {
             document = application.Documents.Add();
             document.Activate();
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
 
             const string rankLatex = @"\operatorname{rank}";
             var displayExport = CreateInstalledMathTypeProductExport(
@@ -836,7 +836,7 @@ internal static partial class Program
         }
         finally
         {
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(true);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(true);
             Release(shape);
             if (document is not null)
             {

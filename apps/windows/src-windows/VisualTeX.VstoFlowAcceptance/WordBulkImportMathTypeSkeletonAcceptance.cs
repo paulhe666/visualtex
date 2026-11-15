@@ -102,7 +102,7 @@ internal static partial class Program
                 SelectSkeletonReplaceToken(app, doc);
                 doc.TrackRevisions = test.Track;
                 if (test.Numbered)
-                    WordEquationNumbering.SetEquationNumberFormatPreference(doc, EquationNumberFormat.Heading1DotId);
+                    WordEquationNumberFormat.SetEquationNumberFormatPreference(doc, EquationNumberFormat.Heading1DotId);
                 addIn = new ThisAddIn();
                 addIn.OnConnection(app, ext_ConnectMode.ext_cm_AfterStartup, addIn, ref custom);
                 var baseline = CaptureSkeletonFullSignature(doc, Path.Combine(output, "before.xml"));

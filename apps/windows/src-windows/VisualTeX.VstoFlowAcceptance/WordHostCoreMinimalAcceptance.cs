@@ -787,7 +787,7 @@ internal static partial class Program
         var undoStarted = false;
         try
         {
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -1065,7 +1065,7 @@ internal static partial class Program
         Word.Range? code = null;
         try
         {
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -1253,7 +1253,7 @@ internal static partial class Program
         Word.UndoRecord? undoRecord = null;
         try
         {
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -1529,7 +1529,7 @@ internal static partial class Program
         Word.Range? adoptedIdentityRange = null;
         try
         {
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -1750,7 +1750,7 @@ internal static partial class Program
         Word.Range? pastedRange = null;
         try
         {
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -2050,7 +2050,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -2306,7 +2306,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             selection = application.Selection;
@@ -2540,7 +2540,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             selection = application.Selection;
@@ -2770,7 +2770,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             selection = application.Selection;
@@ -3018,7 +3018,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             selection = application.Selection;
@@ -3193,7 +3193,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -3373,7 +3373,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -3772,7 +3772,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             selection = application.Selection;
@@ -4183,7 +4183,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -4443,7 +4443,7 @@ internal static partial class Program
             var service =
                 new WordFormulaService(
                     application);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 

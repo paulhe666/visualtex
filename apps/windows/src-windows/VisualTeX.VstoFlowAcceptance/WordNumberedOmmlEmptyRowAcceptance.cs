@@ -39,7 +39,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -76,7 +76,7 @@ internal static partial class Program
                 document,
                 formulaId,
                 sourceMetadata);
-            legacyTable = WordEquationNumbering.FindNumberedEquationTable(
+            legacyTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
@@ -125,7 +125,7 @@ internal static partial class Program
                 "Editing the benign 2x3 host recreated a retired Shape/TextBox number.");
             AssertEqual(0, document.Frames.Count,
                 "Editing the benign 2x3 host recreated a retired caption Frame.");
-            repairedTable = WordEquationNumbering.FindNumberedEquationTable(
+            repairedTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
@@ -166,7 +166,7 @@ internal static partial class Program
                 "Save/reopen after empty-row repair recreated a Shape/TextBox.");
             AssertEqual(0, document.Frames.Count,
                 "Save/reopen after empty-row repair recreated a caption Frame.");
-            repairedTable = WordEquationNumbering.FindNumberedEquationTable(
+            repairedTable = WordNumberingReconcile.FindNumberedEquationTable(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(

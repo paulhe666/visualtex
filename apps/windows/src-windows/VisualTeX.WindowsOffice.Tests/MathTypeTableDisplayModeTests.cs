@@ -20,7 +20,7 @@ public sealed class MathTypeTableDisplayModeTests
     {
         Assert.Equal(
             expected,
-            WordEquationNumbering.IsTableMathTypeDisplayLayout(
+            WordNumberedDisplayLayout.IsTableMathTypeDisplayLayout(
                 prefix,
                 hasCenterTab,
                 hasRightTab));

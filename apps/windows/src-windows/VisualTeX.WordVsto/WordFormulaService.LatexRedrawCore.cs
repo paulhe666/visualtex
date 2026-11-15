@@ -1928,7 +1928,7 @@ internal sealed partial class WordFormulaService
                 return null;
             section = sections[sectionNumber];
             pageSetup = section.PageSetup;
-            return WordEquationNumbering.CalculateEquationTabStops(
+            return WordEquationParagraphLayout.CalculateEquationTabStops(
                 pageSetup.PageWidth,
                 pageSetup.LeftMargin,
                 pageSetup.RightMargin,

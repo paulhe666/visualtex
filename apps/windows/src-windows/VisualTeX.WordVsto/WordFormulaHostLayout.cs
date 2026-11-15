@@ -123,7 +123,7 @@ internal static class WordFormulaHostLayout
         float? knownCenterTabPoints = null,
         float? knownRightTabPoints = null)
     {
-        WordEquationNumbering.ConfigureVisualTeXDisplayHostLayout(
+        WordEquationParagraphLayout.ConfigureVisualTeXDisplayHostLayout(
             document,
             formulaRange,
             formulaHeightPoints,

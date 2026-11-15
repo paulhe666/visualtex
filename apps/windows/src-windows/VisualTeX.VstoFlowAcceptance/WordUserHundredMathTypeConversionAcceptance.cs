@@ -1281,7 +1281,7 @@ internal static partial class Program
                                 $"Converted OMML formula {entry.Key} changed semantics. expected={entry.Value.Signature}; actual={actualSignature}; latex={entry.Value.Target.Latex}");
                         if (entry.Value.Target.Numbered)
                         {
-                            if (!WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                            if (!WordNumberedTableDisplay.HasReusableNumberedNativeOmmlDirectTableHost(
                                     cloneDocument,
                                     range,
                                     entry.Key))
@@ -2495,7 +2495,7 @@ internal static partial class Program
                     metadata.DisplayMode = "block";
                     WordFormulaMetadataReader.CacheMetadata(shape, metadata);
                     formulaRange = shape.Range.Duplicate;
-                    WordEquationNumbering.ReconcileFormula(
+                    WordNumberingReconcile.ReconcileFormula(
                         document,
                         formulaRange,
                         shape.Height,

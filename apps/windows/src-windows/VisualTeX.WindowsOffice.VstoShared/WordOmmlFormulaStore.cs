@@ -1253,7 +1253,7 @@ internal static class WordOmmlFormulaStore
                 if (equationTables.Count > 0)
                 {
                     equationTable = equationTables[1];
-                    managedNumberTable = WordEquationNumbering.FindNumberedEquationTable(
+                    managedNumberTable = WordNumberingReconcile.FindNumberedEquationTable(
                         document,
                         metadata.FormulaId);
                     if (managedNumberTable is not null)
@@ -1270,7 +1270,7 @@ internal static class WordOmmlFormulaStore
                             equationColumns = equationTable.Columns;
                             if (equationRows.Count >= 1
                                 && equationColumns.Count == 3
-                                && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                                && WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                                     equationTable,
                                     equationRange,
                                     expectedColumnIndex: 2,
@@ -1383,7 +1383,7 @@ internal static class WordOmmlFormulaStore
         try
         {
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             if (!bookmarks.Exists(numberName)) return false;
             numberBookmark = bookmarks[numberName];
             numberRange = numberBookmark.Range;
@@ -1416,12 +1416,12 @@ internal static class WordOmmlFormulaStore
                             && equationTable.Rows.Count >= 1
                             && numberTable.Columns.Count == 3
                             && numberTable.Rows.Count >= 1
-                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                            && WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                                 equationTable,
                                 equationRange,
                                 expectedColumnIndex: 2,
                                 out var equationRowIndex)
-                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                            && WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                                 numberTable,
                                 numberRange,
                                 expectedColumnIndex: 3,
@@ -1641,8 +1641,8 @@ internal static class WordOmmlFormulaStore
         try
         {
             bookmarks = document.Bookmarks;
-            if (bookmarks.Exists(WordEquationNumbering.NativeNumberBookmarkName(formulaId))
-                || WordEquationNumbering.RangeIsWhollyWithinTable(equation)) return false;
+            if (bookmarks.Exists(WordNumberingFields.NativeNumberBookmarkName(formulaId))
+                || WordNumberedDisplayLayout.RangeIsWhollyWithinTable(equation)) return false;
             paragraphs = equation.Paragraphs;
             if (paragraphs.Count != 1) return false;
             paragraph = paragraphs[1];
@@ -1679,7 +1679,7 @@ internal static class WordOmmlFormulaStore
         try
         {
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             if (!bookmarks.Exists(numberName)) return null;
             numberBookmark = bookmarks[numberName];
             numberRange = numberBookmark.Range;
@@ -1707,7 +1707,7 @@ internal static class WordOmmlFormulaStore
                         numberTable = numberTables[1];
                         if (numberTable.Rows.Count >= 1
                             && numberTable.Columns.Count == 3
-                            && WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                            && WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                                 numberTable,
                                 numberRange,
                                 expectedColumnIndex: 3,
@@ -1723,7 +1723,7 @@ internal static class WordOmmlFormulaStore
                                 tableMath = tableMaths[1];
                                 tableMathRange = tableMath.Range.Duplicate;
                                 if (tableMath.Type == WdOMathType.wdOMathDisplay
-                                    && WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                                    && WordNumberedTableDisplay.HasReusableNumberedNativeOmmlDirectTableHost(
                                         document, tableMathRange, formulaId))
                                 {
                                     var tableResult = tableMathRange;

@@ -24,8 +24,8 @@ internal static partial class Program
         var outputPath = Path.Combine(artifactRoot, "word-display-spacing.docx");
         DeleteBulkPerformanceArtifact(outputPath);
 
-        var previousCreateObjectMode = WordEquationNumbering.GetDefaultCreateObjectMode();
-        var previousDisplayNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        var previousCreateObjectMode = WordEquationNumberFormat.GetDefaultCreateObjectMode();
+        var previousDisplayNumbered = WordEquationNumberFormat.GetDefaultDisplayEquationNumbered();
         Word.Application? application = null;
         Word.Document? document = null;
         Word.Document? reopened = null;
@@ -35,9 +35,9 @@ internal static partial class Program
         {
             // This acceptance validates explicit VisualTeX OLE and OMML spacing.
             // It must not inherit or overwrite the user's persisted create mode.
-            WordEquationNumbering.SetDefaultCreateObjectMode(
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(
                 FormulaOleContract.NativeOleMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(false);
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             addIn = new VisualTeX.WordVsto.ThisAddIn();
@@ -131,8 +131,8 @@ internal static partial class Program
             Release(reopened);
             Release(document);
             Release(application);
-            WordEquationNumbering.SetDefaultCreateObjectMode(previousCreateObjectMode);
-            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousDisplayNumbered);
+            WordEquationNumberFormat.SetDefaultCreateObjectMode(previousCreateObjectMode);
+            WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(previousDisplayNumbered);
             ForceComCleanup();
         }
     }

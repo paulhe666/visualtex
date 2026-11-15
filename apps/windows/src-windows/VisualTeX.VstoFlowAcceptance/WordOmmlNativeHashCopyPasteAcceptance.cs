@@ -22,7 +22,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -116,7 +116,7 @@ internal static partial class Program
             // reconciliation path must prove that this is a physical surplus copy of
             // an existing managed native #(SEQ) formula, allocate a fresh FormulaId,
             // and rebuild only the copy's aliases without user interaction.
-            WordEquationNumbering.Reconcile(document);
+            WordNumberingReconcile.Reconcile(document);
 
             var formulaIds = WordOmmlFormulaStore.BookmarkedFormulaIds(document)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -160,7 +160,7 @@ internal static partial class Program
                     Word.Range? owner = null;
                     try
                     {
-                        owner = WordEquationNumbering.FindNumberingOwnerRange(document, id)
+                        owner = WordNumberingReconcile.FindNumberingOwnerRange(document, id)
                             ?? throw new InvalidDataException(
                                 $"Copy/paste formula {id} has no numbering owner.");
                         return (FormulaId: id, Position: owner.Start);

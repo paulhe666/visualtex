@@ -31,7 +31,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
             var service = new WordFormulaService(application);
@@ -135,7 +135,7 @@ internal static partial class Program
                 Visible: false);
             AssertEqual(
                 formulaCount,
-                WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document),
+                WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document),
                 "Document-open OMML tab refresh did not process every numbered native equation.");
             AssertEqual(0, document.Tables.Count,
                 "Numbered OMML scale save/reopen recreated a legacy table.");

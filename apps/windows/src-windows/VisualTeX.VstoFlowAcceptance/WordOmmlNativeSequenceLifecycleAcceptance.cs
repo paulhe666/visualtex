@@ -58,7 +58,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -159,7 +159,7 @@ internal static partial class Program
                 externalReference,
                 "4",
                 "body REF after middle insertion");
-            WordEquationNumbering.UpdateNativeCrossReferences(document);
+            WordEquationNumberReferences.UpdateNativeCrossReferences(document);
             Release(navigableReference);
             navigableReference = FindNavigableEquationReference(
                     document,
@@ -211,7 +211,7 @@ internal static partial class Program
                 externalReference,
                 "3",
                 "body REF after middle deletion");
-            WordEquationNumbering.UpdateNativeCrossReferences(document);
+            WordEquationNumberReferences.UpdateNativeCrossReferences(document);
             Release(navigableReference);
             navigableReference = FindNavigableEquationReference(
                     document,
@@ -230,7 +230,7 @@ internal static partial class Program
                 "Deleted middle formula metadata survived.");
             AssertTrue(
                 !document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeNumberBookmarkName(
+                    WordNumberingFields.NativeNumberBookmarkName(
                         insertedFormulaId)),
                 "Deleted middle formula VTEqNum bookmark survived.");
             AssertEqual(0, document.Shapes.Count,
@@ -274,7 +274,7 @@ internal static partial class Program
                     formulaIds[2])
                 ?? throw new InvalidDataException(
                     "Continuous sequence save/reopen lost the double-clickable body reference.");
-            WordEquationNumbering.UpdateNativeCrossReferences(document);
+            WordEquationNumberReferences.UpdateNativeCrossReferences(document);
             AssertNavigableEquationReference(
                 application,
                 document,
@@ -325,7 +325,7 @@ internal static partial class Program
             headingRange = heading.Range;
             object headingStyle = Word.WdBuiltinStyle.wdStyleHeading1;
             headingRange.set_Style(ref headingStyle);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -428,7 +428,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -511,10 +511,10 @@ internal static partial class Program
                 new[] { "1", "2", "3" },
                 "numbered copy after FormulaId rekey");
             AssertTrue(document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeNumberBookmarkName(sourceFormulaId)),
+                    WordNumberingFields.NativeNumberBookmarkName(sourceFormulaId)),
                 "Rekeying the copy removed the source VTEqNum bookmark.");
             AssertTrue(document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeNumberBookmarkName(copyFormulaId)),
+                    WordNumberingFields.NativeNumberBookmarkName(copyFormulaId)),
                 "Rekeying the copy did not create an independent VTEqNum bookmark.");
 
             sourceReference = InsertExternalEquationReference(
@@ -699,7 +699,7 @@ internal static partial class Program
             WordEquationReferenceFields.InsertNavigableReference(
                 document,
                 selection,
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                WordNumberingFields.NativeNumberBookmarkName(formulaId),
                 prefix: "(",
                 suffix: ")");
             return FindNavigableEquationReference(document, formulaId)
@@ -713,7 +713,7 @@ internal static partial class Program
         Word.Document document,
         string formulaId)
     {
-        var targetBookmark = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+        var targetBookmark = WordNumberingFields.NativeNumberBookmarkName(formulaId);
         Word.Fields? fields = null;
         try
         {
@@ -800,7 +800,7 @@ internal static partial class Program
         Word.Range? selectedRange = null;
         try
         {
-            var targetName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var targetName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertEqual(Word.WdFieldType.wdFieldGoToButton, outerField.Type,
                 context + ": outer field is not GOTOBUTTON.");
             outerCode = outerField.Code;
@@ -906,7 +906,7 @@ internal static partial class Program
             Word.Range? numberRange = null;
             try
             {
-                numberRange = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                numberRange = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                         document,
                         formulaIds[index])
                     ?? throw new InvalidDataException(
@@ -948,7 +948,7 @@ internal static partial class Program
                     code.Text ?? string.Empty,
                     @"\s+",
                     " ").Trim();
-                AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(normalized),
+                AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(normalized),
                     $"Formula {formulaId} field is not SEQ VisualTeXEquation.");
                 result[formulaId] = normalized;
             }

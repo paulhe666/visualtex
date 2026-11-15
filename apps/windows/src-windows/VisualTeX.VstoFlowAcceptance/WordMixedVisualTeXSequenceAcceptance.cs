@@ -46,7 +46,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -492,7 +492,7 @@ internal static partial class Program
         try
         {
             bookmarks = document.Bookmarks;
-            var name = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var name = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(name),
                 $"Mixed sequence formula {formulaId} lost its VTEqNum bookmark.");
             bookmark = bookmarks[name];

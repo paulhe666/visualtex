@@ -19,7 +19,7 @@ public sealed class WordOmmlConversionIdentityTests
         new XElement(W + "tc", new XElement(W + "p")),
         new XElement(W + "tc", new XElement(W + "p", Math(text))),
         new XElement(W + "tc", new XElement(W + "p",
-            Start(id, WordEquationNumbering.NativeNumberBookmarkName(formula)),
+            Start(id, WordNumberingFields.NativeNumberBookmarkName(formula)),
             new XElement(W + "r", new XElement(W + "t", "1")), End(id))));
 
     [Theory]
@@ -39,7 +39,7 @@ public sealed class WordOmmlConversionIdentityTests
             if (column == ownerColumn)
             {
                 paragraph.Add(Anchor(First, "1"));
-                math.AddFirst(Start("2", WordEquationNumbering.NativeNumberBookmarkName(First)));
+                math.AddFirst(Start("2", WordNumberingFields.NativeNumberBookmarkName(First)));
                 math.Add(End("2"));
             }
             paragraph.Add(math);

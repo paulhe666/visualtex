@@ -160,7 +160,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                 ? separator == "." ? EquationNumberFormat.Heading1DotId : EquationNumberFormat.Heading1DashId
                 : separator == "." ? EquationNumberFormat.Heading2DotId : EquationNumberFormat.Heading2DashId;
             exact = host.Range;
-            var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(document, exact.Start, formatId);
+            var scope = WordEquationHeadings.ResolveHeadingScopeAtPosition(document, exact.Start, formatId);
             // Without a matching heading there is no chapter text to invent.
             // Preserve the current prefix rather than silently changing it to0.
             if (scope.ScopeStart == int.MinValue) return null;

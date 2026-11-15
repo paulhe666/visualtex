@@ -316,7 +316,7 @@ internal static class WordNativeOmmlNumbering
         string? literalHeadingPrefix = null;
         if (format.UsesHeading)
         {
-            var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(document, position, format.Id);
+            var scope = WordEquationHeadings.ResolveHeadingScopeAtPosition(document, position, format.Id);
             literalHeadingPrefix = ResolveLiteralHeadingPrefix(document, scope);
         }
 
@@ -362,7 +362,7 @@ internal static class WordNativeOmmlNumbering
             var format = EquationNumberFormat.Resolve(
                 WordEquationNumberFormatAuthority.Resolve(document));
             var scopes = format.UsesHeading
-                ? WordEquationNumbering.CaptureHeadingScopesAtPositions(document, format.Id, positions)
+                ? WordEquationHeadings.CaptureHeadingScopesAtPositions(document, format.Id, positions)
                 : new Dictionary<int, ResolvedEquationHeadingScope>();
             return new NumberedOmmlBatch(
                 document, format, ResolveEquationSequenceName(document), scopes);
@@ -383,7 +383,7 @@ internal static class WordNativeOmmlNumbering
             {
                 var scope = _scopes.TryGetValue(position, out var captured)
                     ? (captured.ScopeStart, captured.ScopeEnd, captured.NumberText)
-                    : WordEquationNumbering.ResolveHeadingScopeAtPosition(_document, position, _format.Id);
+                    : WordEquationHeadings.ResolveHeadingScopeAtPosition(_document, position, _format.Id);
                 var key = scope.ScopeStart;
                 if (!_literalPrefixes.TryGetValue(key, out literalHeadingPrefix)
                     || key == int.MinValue)

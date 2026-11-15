@@ -6,10 +6,16 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using WordRange = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordEquationNumberFormat;
+using static VisualTeX.WordVsto.WordNumberedDisplayLayout;
+using static VisualTeX.WordVsto.WordNumberingFields;
 
 namespace VisualTeX.WordVsto;
 
-internal static partial class WordEquationNumbering
+/// <summary>
+/// Keeping numbering fast: targeted mutation scopes, screen updating, field updates and COM object release.
+/// </summary>
+internal static class WordNumberingPerformance
 {
     [ThreadStatic]
     private static int _targetedNumberingMutationDepth;

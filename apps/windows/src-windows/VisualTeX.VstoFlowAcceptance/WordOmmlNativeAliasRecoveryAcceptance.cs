@@ -22,7 +22,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -51,13 +51,13 @@ internal static partial class Program
 
             DeleteEquationNumberAlias(
                 document,
-                WordEquationNumbering.EquationBookmarkName(formulaId));
+                WordNumberingFields.EquationBookmarkName(formulaId));
             DeleteEquationNumberAlias(
                 document,
-                WordEquationNumbering.NativeCaptionBookmarkName(formulaId));
+                WordNumberingFields.NativeCaptionBookmarkName(formulaId));
             DeleteEquationNumberAlias(
                 document,
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId));
+                WordNumberingFields.NativeNumberBookmarkName(formulaId));
 
             AssertTrue(
                 WordOmmlFormulaStore.BookmarkedFormulaIds(document).Contains(
@@ -70,14 +70,14 @@ internal static partial class Program
             AssertTrue(retainedMetadata.Numbered,
                 "Alias-loss injection unexpectedly changed Numbered metadata.");
             AssertTrue(
-                WordEquationNumbering.NeedsLegacyManagedNumberingMigration(document),
+                WordEquationNumberFormat.NeedsLegacyManagedNumberingMigration(document),
                 "A numbered VTOMML formula with all three number aliases missing was not detected for recovery.");
 
             AssertEqual(
                 1,
-                WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document),
+                WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document),
                 "Alias recovery did not rebuild exactly one managed numbered OMML formula.");
-            WordEquationNumbering.UpdateEquationNumbers(document);
+            WordEquationNumberFormat.UpdateEquationNumbers(document);
             AssertOmmlTabNumberingHost(
                 document,
                 formulaId,
@@ -91,9 +91,9 @@ internal static partial class Program
                 "The existing body REF did not reconnect after VTEqNum was rebuilt.");
             AssertExternalEquationReferenceHyperlink(
                 externalReference,
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId));
+                WordNumberingFields.NativeNumberBookmarkName(formulaId));
             AssertTrue(
-                !WordEquationNumbering.NeedsLegacyManagedNumberingMigration(document),
+                !WordEquationNumberFormat.NeedsLegacyManagedNumberingMigration(document),
                 "The rebuilt native alias host is still classified as legacy or malformed.");
 
             document.Save();

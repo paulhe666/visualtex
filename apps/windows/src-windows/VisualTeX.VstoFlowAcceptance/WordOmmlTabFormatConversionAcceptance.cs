@@ -50,7 +50,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
             var service = new WordFormulaService(application);
@@ -79,7 +79,7 @@ internal static partial class Program
             referenceFields = referenceInsertion.Fields;
             object referenceType = Word.WdFieldType.wdFieldEmpty;
             object referenceCode =
-                $"REF {WordEquationNumbering.NativeNumberBookmarkName(formulaId)} \\h";
+                $"REF {WordNumberingFields.NativeNumberBookmarkName(formulaId)} \\h";
             object preserveFormatting = true;
             externalReference = referenceFields.Add(
                 referenceInsertion,
@@ -256,12 +256,12 @@ internal static partial class Program
         try
         {
             content = document.Content;
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(
                     $"Numbering owner disappeared before checking the external reference after {context}.");
             fields = content.Fields;
             var expectedCode =
-                "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+                "REF " + WordNumberingFields.NativeNumberBookmarkName(formulaId);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(result); result = null;

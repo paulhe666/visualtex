@@ -104,7 +104,7 @@ internal static partial class Program
         var mathWatch = Stopwatch.StartNew();
         try
         {
-            table = WordEquationNumbering.FindNumberedEquationTable(document, formulaId)
+            table = WordNumberingReconcile.FindNumberedEquationTable(document, formulaId)
                 ?? throw new InvalidDataException("SelectionChange fixture lost its numbered OMML table.");
             centerCell = table.Cell(1, 2);
             centerRange = centerCell.Range;

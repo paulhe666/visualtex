@@ -43,7 +43,7 @@ internal static partial class Program
         };
 
         var previousDefaultNumberFormat =
-            WordEquationNumbering.GetDefaultEquationNumberFormatId();
+            WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         Word.Application? application = null;
         Word.Document? sourceDocument = null;
         Word.Range? sourceHostRange = null;
@@ -82,13 +82,13 @@ internal static partial class Program
                             || !string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
                             continue;
                         Release(seedOwnerRange);
-                        seedOwnerRange = WordEquationNumbering.FindNumberingOwnerRange(
+                        seedOwnerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                             sourceDocument,
                             metadata.FormulaId);
                         if (seedOwnerRange is null) continue;
                         var hostStart = seedOwnerRange.Start;
                         var hostEnd = seedOwnerRange.End;
-                        var captionName = WordEquationNumbering.NativeCaptionBookmarkName(metadata.FormulaId);
+                        var captionName = WordNumberingFields.NativeCaptionBookmarkName(metadata.FormulaId);
                         if (sourceDocument.Bookmarks.Exists(captionName))
                         {
                             seedCaptionBookmark = sourceDocument.Bookmarks[captionName];
@@ -119,8 +119,8 @@ internal static partial class Program
             document.Content.Text = "VisualTeX simple format conversion numbering acceptance\r";
             if (useActiveWord && sourceDocument is not null)
             {
-                var sourceNumberFormat = WordEquationNumbering.GetEquationNumberFormatId(sourceDocument);
-                WordEquationNumbering.SetEquationNumberFormat(document, sourceNumberFormat);
+                var sourceNumberFormat = WordEquationNumberFormat.GetEquationNumberFormatId(sourceDocument);
+                WordEquationNumberFormat.SetEquationNumberFormat(document, sourceNumberFormat);
                 Console.WriteLine($"[CONSECUTIVE NUMBERED] inherited equation-number format '{sourceNumberFormat}'.");
             }
             else
@@ -129,7 +129,7 @@ internal static partial class Program
                 // default. Its expected 0.1/0.2/0.3 captions deliberately exercise
                 // heading-aware conversion even on a clean or differently configured
                 // machine.
-                WordEquationNumbering.SetEquationNumberFormat(
+                WordEquationNumberFormat.SetEquationNumberFormat(
                     document,
                     EquationNumberFormat.Heading1DotId);
             }
@@ -353,7 +353,7 @@ internal static partial class Program
                 try { QuitWordApplicationIfOwned(application); } catch { }
             }
             Release(application);
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(
                 previousDefaultNumberFormat);
             ForceComCleanup();
             try { Directory.Delete(olePreviewRoot, recursive: true); } catch { }
@@ -676,7 +676,7 @@ internal static partial class Program
             application = CreateWordApplication(visible: false);
             document = application.Documents.Add();
             var service = new WordFormulaService(application);
-            WordEquationNumbering.SetEquationNumberFormat(document, "continuous");
+            WordEquationNumberFormat.SetEquationNumberFormat(document, "continuous");
 
             var sourceFormulaId = Guid.NewGuid().ToString("D");
             var sourceSession = new OfficeSessionDocument
@@ -776,12 +776,12 @@ internal static partial class Program
                 updateReference: true,
                 context: "single numbered OMML→VisualTeX");
 
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(document, convertedFormulaId)
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(document, convertedFormulaId)
                 ?? throw new InvalidDataException(
                     "Single numbered OMML→VisualTeX conversion lost its owner paragraph after validation.");
             bookmarks = document.Bookmarks;
-            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(convertedFormulaId);
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(convertedFormulaId);
+            var captionName = WordNumberingFields.NativeCaptionBookmarkName(convertedFormulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(convertedFormulaId);
             AssertTrue(bookmarks.Exists(captionName) && bookmarks.Exists(numberName),
                 "Single numbered OMML→VisualTeX conversion lost its hidden caption identities.");
             captionBookmark = bookmarks[captionName];
@@ -850,7 +850,7 @@ internal static partial class Program
             service.InsertOmml(secondSession, secondMathMl);
             Release(selection);
             selection = null;
-            AssertTrue(WordEquationNumbering.UpdateEquationNumbers(document) >= 2,
+            AssertTrue(WordEquationNumberFormat.UpdateEquationNumbers(document) >= 2,
                 "Updating numbers after inserting the second OMML did not see both legitimate numbered formulas.");
 
             Release(bookmarks);
@@ -859,7 +859,7 @@ internal static partial class Program
             firstNumberBookmark = bookmarks[numberName];
             Release(firstNumberRange);
             firstNumberRange = firstNumberBookmark.Range;
-            var secondNumberName = WordEquationNumbering.NativeNumberBookmarkName(secondFormulaId);
+            var secondNumberName = WordNumberingFields.NativeNumberBookmarkName(secondFormulaId);
             AssertTrue(bookmarks.Exists(secondNumberName),
                 "Second numbered OMML lost its VTEqNum identity.");
             secondNumberBookmark = bookmarks[secondNumberName];

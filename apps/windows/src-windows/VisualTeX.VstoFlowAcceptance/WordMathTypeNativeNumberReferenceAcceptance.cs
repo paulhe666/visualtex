@@ -57,7 +57,7 @@ internal static partial class Program
                 .Trim();
             AssertTrue(!string.IsNullOrWhiteSpace(genuineLatex),
                 "Genuine MathType fixture has no readable MTEF source.");
-            AssertEqual(0, WordEquationNumbering.GetEquationReferenceTargets(document).Count,
+            AssertEqual(0, WordEquationNumberReferences.GetEquationReferenceTargets(document).Count,
                 "Genuine MathType fixture unexpectedly starts with VisualTeX equation-number metadata.");
 
             // Remove only the fixture's trailing explanatory prose.  The original
@@ -129,7 +129,7 @@ internal static partial class Program
             var genuineCompoundAfterNumbering = MathTypeOleStorage.CaptureCompoundFile(shape);
             AssertTrue(genuineCompoundBefore.SequenceEqual(genuineCompoundAfterNumbering),
                 "Adding native MathType numbering rewrote the genuine MathType OLE payload.");
-            AssertEqual(0, WordEquationNumbering.GetEquationReferenceTargets(document).Count,
+            AssertEqual(0, WordEquationNumberReferences.GetEquationReferenceTargets(document).Count,
                 "A genuine MathType numbered equation was incorrectly classified as a VisualTeX reference target.");
 
             var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
@@ -179,7 +179,7 @@ internal static partial class Program
             var reopenedCompound = MathTypeOleStorage.CaptureCompoundFile(shape);
             AssertTrue(genuineCompoundBefore.SequenceEqual(reopenedCompound),
                 "Genuine MathType OLE payload changed after save + reopen.");
-            AssertEqual(0, WordEquationNumbering.GetEquationReferenceTargets(document).Count,
+            AssertEqual(0, WordEquationNumberReferences.GetEquationReferenceTargets(document).Count,
                 "Reopened genuine MathType equation became a VisualTeX reference target unexpectedly.");
             var reopenedTargets = MathTypeEquationReferences.GetTargets(document);
             AssertEqual(1, reopenedTargets.Count,

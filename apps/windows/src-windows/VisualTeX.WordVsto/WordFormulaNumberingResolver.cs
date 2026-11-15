@@ -549,7 +549,7 @@ internal static class WordFormulaNumberingResolver
         try
         {
             var targetName =
-                WordEquationNumbering.NativeNumberBookmarkName(
+                WordNumberingFields.NativeNumberBookmarkName(
                     formulaId);
             fields = paragraphRange.Fields;
             for (var index = 1;

@@ -4279,19 +4279,19 @@ internal static class Program
 
             AssertEqual(
                 "1",
-                WordEquationNumbering.Reconcile(document).ToString(),
+                WordNumberingReconcile.Reconcile(document).ToString(),
                 "OMML formula did not participate in Word equation numbering.");
             Assert(
                 CountFieldCodes(document, "SEQ ") >= 1,
                 "OMML numbering did not create a native Word SEQ field.");
             AssertWordEquationNumberOutsideOmml(document, formulaId);
-            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             Assert(targets.Count == 1, "OMML formula was not exposed as a Word cross-reference target.");
             Release(selection);
             selection = application.Selection;
             selection.SetRange(document.Content.End - 1, document.Content.End - 1);
             selection.TypeParagraph();
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 selection,
                 targets[0],
@@ -4391,7 +4391,7 @@ internal static class Program
                 "OLE to OMML conversion did not restore Word-native double-click editing.");
             Release(equationRange);
             equationRange = null;
-            WordEquationNumbering.Reconcile(document);
+            WordNumberingReconcile.Reconcile(document);
             AssertWordEquationNumberOutsideOmml(document, formulaId);
             document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
 
@@ -4492,7 +4492,7 @@ internal static class Program
                     numbered: true,
                     originalMetadata: null),
                 initialMathMl);
-            WordEquationNumbering.Reconcile(document);
+            WordNumberingReconcile.Reconcile(document);
             bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId)
                 ?? throw new InvalidOperationException("Repeated-conversion OMML bookmark was not created.");
             equationRange = WordOmmlFormulaStore.GetEquationRange(bookmark);
@@ -4659,9 +4659,9 @@ internal static class Program
                     context: $"OMML cycle {cycle}");
                 AssertEqual(
                     "1",
-                    WordEquationNumbering.Reconcile(document).ToString(),
+                    WordNumberingReconcile.Reconcile(document).ToString(),
                     $"Cycle {cycle}: numbered formula count changed.");
-                var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+                var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
                 AssertTargetNumbers(targets, (formulaId, "1"));
             }
 
@@ -4765,7 +4765,7 @@ internal static class Program
                 $"{context}: numbered formula paragraph inherited a list marker/black square.");
 
             bookmarks = document.Bookmarks;
-            var visibleName = WordEquationNumbering.EquationBookmarkName(formulaId);
+            var visibleName = WordNumberingFields.EquationBookmarkName(formulaId);
             Assert(bookmarks.Exists(visibleName), $"{context}: visible equation number bookmark is missing.");
             numberBookmark = bookmarks[visibleName];
             numberRange = numberBookmark.Range;
@@ -4979,9 +4979,9 @@ internal static class Program
 
             AssertEqual(
                 "2",
-                WordEquationNumbering.Reconcile(document).ToString(),
+                WordNumberingReconcile.Reconcile(document).ToString(),
                 "Mixed OMML/OLE document did not expose two numbered formulas.");
-            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             AssertTargetNumbers(
                 targets,
                 (firstId, "1"),
@@ -5017,13 +5017,13 @@ internal static class Program
             selection!.TypeParagraph();
             var firstTarget = targets.Single(target => target.FormulaId == firstId);
             var secondTarget = targets.Single(target => target.FormulaId == secondId);
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 selection!,
                 firstTarget,
                 EquationReferenceStyle.Parenthesized);
             selection!.TypeText(" ");
-            WordEquationNumbering.InsertEquationReference(
+            WordEquationNumberReferences.InsertEquationReference(
                 document,
                 selection!,
                 secondTarget,
@@ -5045,8 +5045,8 @@ internal static class Program
                     numbered: true,
                     originalMetadata: null),
                 insertedMathMl);
-            WordEquationNumbering.Reconcile(document);
-            targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            WordNumberingReconcile.Reconcile(document);
+            targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             AssertTargetNumbers(
                 targets,
                 (insertedId, "1"),
@@ -5067,8 +5067,8 @@ internal static class Program
             range = null;
             Release(bookmark);
             bookmark = null;
-            WordEquationNumbering.Reconcile(document);
-            targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            WordNumberingReconcile.Reconcile(document);
+            targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             AssertTargetNumbers(
                 targets,
                 (firstId, "1"),
@@ -5181,7 +5181,7 @@ internal static class Program
                 initial.EmfPath);
             AssertEqual(
                 "2",
-                WordEquationNumbering.Reconcile(document).ToString(),
+                WordNumberingReconcile.Reconcile(document).ToString(),
                 "The unnumbered OLE fixture unexpectedly participated in numbering.");
 
             shape = FindWordFormula(document, promotedOleId)
@@ -5229,9 +5229,9 @@ internal static class Program
                 "Editing an unnumbered OLE to numbered did not persist Numbered=true.");
             AssertEqual(
                 "3",
-                WordEquationNumbering.Reconcile(document).ToString(),
+                WordNumberingReconcile.Reconcile(document).ToString(),
                 "OLE numbering promotion did not expose three numbered formulas.");
-            var targets = WordEquationNumbering.GetEquationReferenceTargets(document);
+            var targets = WordEquationNumberReferences.GetEquationReferenceTargets(document);
             AssertTargetNumbers(
                 targets,
                 (firstId, "1"),
@@ -5290,7 +5290,7 @@ internal static class Program
         string formulaId,
         string expectedNumber)
     {
-        var bookmarkName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+        var bookmarkName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
         Word.Fields? fields = null;
         var matching = 0;
         try
@@ -5473,7 +5473,7 @@ internal static class Program
         try
         {
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.EquationBookmarkName(formulaId);
+            var numberName = WordNumberingFields.EquationBookmarkName(formulaId);
             Assert(bookmarks.Exists(numberName), "Visible Word equation number bookmark is missing.");
             numberBookmark = bookmarks[numberName];
             numberRange = numberBookmark.Range;
@@ -6550,7 +6550,7 @@ internal static class Program
         try
         {
             bookmarks = document.Bookmarks;
-            var name = WordEquationNumbering.EquationBookmarkName(formulaId);
+            var name = WordNumberingFields.EquationBookmarkName(formulaId);
             if (!bookmarks.Exists(name))
                 throw new InvalidOperationException($"ACCEPTANCE FAILURE: {message} Number bookmark '{name}' is missing.");
             bookmark = bookmarks[name];

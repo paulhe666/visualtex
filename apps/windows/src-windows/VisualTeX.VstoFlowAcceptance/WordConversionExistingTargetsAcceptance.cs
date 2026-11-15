@@ -36,7 +36,7 @@ internal static partial class Program
                         finally { Release(heading); }
                     }
                 }
-                WordEquationNumbering.SetEquationNumberFormatPreference(doc, formatId);
+                WordEquationNumberFormat.SetEquationNumberFormatPreference(doc, formatId);
                 var sourceTargets = service.CaptureFormulaFormatConversionPlan(true, FormulaOleContract.WordOmmlMode, FormulaOleContract.NativeOleMode).Targets;
                 expectedLatex = sourceTargets.Select(item => item.Latex).ToArray();
                 AssertEqual(20, expectedLatex.Length, "Existing-target daily seed count");

@@ -92,7 +92,7 @@ internal sealed partial class WordFormulaService
             originalSelection =
                 selection.Range.Duplicate;
             var formatVariable =
-                WordEquationNumbering
+                WordEquationNumberFormat
                     .CaptureEquationNumberFormatVariable(
                         document);
 
@@ -126,7 +126,7 @@ internal sealed partial class WordFormulaService
                             trackingName,
                             originalSelection);
 
-                        WordEquationNumbering.RestoreEquationNumberFormatForConversion(document, resolvedFormat);
+                        WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(document, resolvedFormat);
                         nativeNumbers.Apply();
                         count += nativeNumbers.Count;
                         // Native number ownership/serialization was prepared
@@ -156,13 +156,13 @@ internal sealed partial class WordFormulaService
                         return count;
                     },
                     restoreNonUndoState: () =>
-                        WordEquationNumbering
+                        WordEquationNumberFormat
                             .RestoreEquationNumberFormatVariable(
                                 document,
                                 formatVariable),
                     verifyRollback: nativeNumbers.VerifyRollback);
 
-            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(resolvedFormat);
+            WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(resolvedFormat);
             return result;
         }
         finally

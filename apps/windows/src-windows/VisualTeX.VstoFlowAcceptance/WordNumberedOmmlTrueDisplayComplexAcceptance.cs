@@ -61,7 +61,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -266,7 +266,7 @@ internal static partial class Program
             {
                 sequenceField = numberedRange.Fields[1];
                 sequenceCode = sequenceField.Code;
-                AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
+                AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
                     $"{phase} {pair.TestCase.Name}: the numbered formula field is not SEQ VisualTeXEquation.");
                 AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
                         "REF VTEqNum_",

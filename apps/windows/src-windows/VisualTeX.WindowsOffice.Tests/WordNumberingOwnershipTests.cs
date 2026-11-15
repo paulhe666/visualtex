@@ -10,7 +10,7 @@ public sealed class WordNumberingOwnershipTests
     {
         const string xml = "<document><body><p><OLEObject ProgID=\"Equation.DSMT4\"/>"
             + "<instrText>MACROBUTTON MTPlaceRef SEQ MTEqn</instrText></p></body></document>";
-        Assert.True(WordEquationNumbering.IsUnmanagedEquationDocumentXml(xml));
+        Assert.True(WordNumberingState.IsUnmanagedEquationDocumentXml(xml));
     }
 
     [Theory]
@@ -22,7 +22,7 @@ public sealed class WordNumberingOwnershipTests
     [InlineData("<instrText>SEQ VisualTeXEquation</instrText>")]
     [InlineData("<picture alt=\"visualtex:v1:deflate:cache\"/>")]
     public void MissingNumberAliasesNeverHideManagedContent(string content)
-        => Assert.False(WordEquationNumbering.IsUnmanagedEquationDocumentXml(
+        => Assert.False(WordNumberingState.IsUnmanagedEquationDocumentXml(
             "<document><body>" + content + "</body></document>"));
 
     [Theory]
@@ -30,5 +30,5 @@ public sealed class WordNumberingOwnershipTests
     [InlineData("<broken>")]
     [InlineData("<document/>")]
     public void UnknownInventoryCannotSkipMaintenance(string xml)
-        => Assert.False(WordEquationNumbering.IsUnmanagedEquationDocumentXml(xml));
+        => Assert.False(WordNumberingState.IsUnmanagedEquationDocumentXml(xml));
 }

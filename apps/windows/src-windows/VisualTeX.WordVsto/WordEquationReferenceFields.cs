@@ -707,11 +707,11 @@ internal static partial class WordEquationReferenceFields
                     if (candidateRange.StoryType != numberRange.StoryType
                         || candidateRange.Start != numberRange.Start || candidateRange.End != numberRange.End)
                         continue;
-                    var visibleName = WordEquationNumbering.EquationBookmarkName(formulaId.ToString("D"));
+                    var visibleName = WordNumberingFields.EquationBookmarkName(formulaId.ToString("D"));
                     if (!bookmarks.Exists(visibleName)) continue;
                     visible = bookmarks[visibleName];
                     visibleRange = visible.Range;
-                    visibleNumberText = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                    visibleNumberText = WordNumberingReconcile.FindVisibleEquationNumberTextRange(
                         document, formulaId.ToString("D"));
                     visibleFrames = visibleRange.Frames;
                     if (visibleFrames.Count != 0 || visibleRange.StoryType != WdStoryType.wdMainTextStory
@@ -843,7 +843,7 @@ internal static partial class WordEquationReferenceFields
 
     private static bool IsGeneratedNumberReference(Document document, Field field, string name) =>
         name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
-        && WordEquationNumbering.IsGeneratedEquationNumberReference(document, field, name.Substring(8));
+        && WordEquationNumberReferences.IsGeneratedEquationNumberReference(document, field, name.Substring(8));
 
 
     internal static int MigrateReferenceTargets(

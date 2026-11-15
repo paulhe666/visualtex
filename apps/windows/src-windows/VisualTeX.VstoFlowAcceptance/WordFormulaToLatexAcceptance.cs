@@ -42,7 +42,7 @@ internal static partial class Program
             RunMixedOmmlThenOleToLatexAcceptance(client);
             using (var host = new WordPerformanceHost(documentPath: null))
             {
-                WordEquationNumbering.SetEquationNumberFormatPreference(
+                WordEquationNumberFormat.SetEquationNumberFormatPreference(
                     host.Document,
                     EquationNumberFormat.ContinuousId);
                 var formulas = PopulateFormulaToLatexDocument(client, host);

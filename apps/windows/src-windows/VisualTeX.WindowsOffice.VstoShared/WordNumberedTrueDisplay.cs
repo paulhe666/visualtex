@@ -4,14 +4,37 @@ using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordEquationNumbering;
+using static VisualTeX.WordVsto.WordEquationHeadings;
+using static VisualTeX.WordVsto.WordEquationNumberFormat;
+using static VisualTeX.WordVsto.WordEquationNumberReferences;
+using static VisualTeX.WordVsto.WordEquationParagraphLayout;
+using static VisualTeX.WordVsto.WordEquationSequenceFields;
+using static VisualTeX.WordVsto.WordNativeCaptions;
+using static VisualTeX.WordVsto.WordNumberedDisplayLayout;
+using static VisualTeX.WordVsto.WordNumberedTableDisplay;
+using static VisualTeX.WordVsto.WordNumberingFields;
+using static VisualTeX.WordVsto.WordNumberingReconcile;
+using static VisualTeX.WordVsto.WordNumberingState;
+using static VisualTeX.WordVsto.WordVisibleEquationNumbers;
 
 namespace VisualTeX.WordVsto;
 
-internal static partial class WordEquationNumbering
+/// <summary>
+/// Numbered native OMML display formulas laid out on their own: the display anchor, the number shape and the
+/// hash-sequence host.
+/// </summary>
+internal static class WordNumberedTrueDisplay
 {
+    private const float NativeDisplayAnchorLineSpacingPoints = 1f;
+    private const float NativeDisplayNumberShapeWidthPoints = 72f;
+    private const float NativeDisplayNumberShapeDefaultHeightPoints = 30f;
+    private static readonly object NativeDisplayGeometryCacheSync = new();
+    private static readonly Dictionary<string, float> NativeDisplayGeometryTopCache =
+        new(StringComparer.Ordinal);
     private const string NativeHashSequenceMigrationPlaceholder = "\uE00A";
 
-    private static bool ConfigureNumberedNativeOmmlDisplayHashRetired(
+    internal static bool ConfigureNumberedNativeOmmlDisplayHashRetired(
         Document document,
         Range formulaRange,
         float formulaHeightPoints,
@@ -359,7 +382,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static int GetWordParagraphStructuralTerminatorLength(Range paragraphRange)
+    internal static int GetWordParagraphStructuralTerminatorLength(Range paragraphRange)
     {
         // Word serializes the one cell-end story position as two UTF-16
         // characters (CR+BEL). Its Text.Length must not be subtracted from End.
@@ -766,7 +789,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool TryRefreshNumberedNativeOmmlHashSequence(
+    internal static bool TryRefreshNumberedNativeOmmlHashSequence(
         Document document,
         string formulaId,
         string? plannedPrefix = null)
@@ -816,7 +839,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool TryRefreshOrAtomicallyRebuildNativeHashSequenceV2(
+    internal static bool TryRefreshOrAtomicallyRebuildNativeHashSequenceV2(
         Document document,
         string formulaId,
         int ordinal,
@@ -839,7 +862,7 @@ internal static partial class WordEquationNumbering
         return true;
     }
 
-    private static bool IsNumberedNativeOmmlHashSequenceFormula(
+    internal static bool IsNumberedNativeOmmlHashSequenceFormula(
         Document document,
         string formulaId)
     {
@@ -869,7 +892,7 @@ internal static partial class WordEquationNumbering
         finally { Release(formulaRange); }
     }
 
-    private static int AdoptUnownedCopiesOfManagedNativeHashSequenceHosts(
+    internal static int AdoptUnownedCopiesOfManagedNativeHashSequenceHosts(
         Document document)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
@@ -1261,7 +1284,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool TryRepairDriftedManagedNativeHashSequenceHosts(
+    internal static bool TryRepairDriftedManagedNativeHashSequenceHosts(
         Document document,
         out int repaired)
     {
@@ -1414,7 +1437,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static Range? EnsureNormalTypingParagraphAfterNativeOmmlHashSequence(
+    internal static Range? EnsureNormalTypingParagraphAfterNativeOmmlHashSequence(
         Document document,
         string formulaId)
     {
@@ -1647,7 +1670,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool IsHealthyNumberedNativeOmmlHashSequenceHost(
+    internal static bool IsHealthyNumberedNativeOmmlHashSequenceHost(
         Document document,
         Range formulaRange,
         string formulaId,
@@ -3683,7 +3706,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool NativeDisplayNumberShapeBelongsToFormula(
+    internal static bool NativeDisplayNumberShapeBelongsToFormula(
         Document document,
         Range formulaRange,
         string formulaId)
@@ -4929,7 +4952,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool RemoveNativeDisplayNumberShapeAndAnchor(
+    internal static bool RemoveNativeDisplayNumberShapeAndAnchor(
         Document document,
         string formulaId,
         bool removeAnchorParagraph = true)
@@ -5315,7 +5338,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool EnsureRetiredNativeDisplayAnchorParagraphRemoved(
+    internal static bool EnsureRetiredNativeDisplayAnchorParagraphRemoved(
         Document document,
         Range formulaRange,
         string formulaId)
@@ -5617,7 +5640,7 @@ internal static partial class WordEquationNumbering
         finally { Release(bookmarks); }
     }
 
-    private static Range? TryResolveNativeDisplayFormulaOwnerRange(
+    internal static Range? TryResolveNativeDisplayFormulaOwnerRange(
         Document document,
         string formulaId)
     {
@@ -5663,7 +5686,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool HasVisibleEquationNumberBookmark(
+    internal static bool HasVisibleEquationNumberBookmark(
         Document document,
         string formulaId)
     {
@@ -5723,21 +5746,21 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static void ClearNativeDisplayAnchorCommitMarker(
+    internal static void ClearNativeDisplayAnchorCommitMarker(
         Document document,
         string formulaId) =>
         DeleteBookmarkOnly(
             document,
             NativeDisplayAnchorCommitBookmarkName(formulaId));
 
-    private static string NativeDisplayAnchorBookmarkName(string formulaId) =>
+    internal static string NativeDisplayAnchorBookmarkName(string formulaId) =>
         NativeDisplayAnchorBookmarkPrefix + NormalizeFormulaIdForBookmark(formulaId);
 
     private static string NativeDisplayAnchorCommitBookmarkName(string formulaId) =>
         NativeDisplayAnchorCommitBookmarkPrefix
         + NormalizeFormulaIdForBookmark(formulaId);
 
-    private static string NativeDisplayNumberShapeName(string formulaId) =>
+    internal static string NativeDisplayNumberShapeName(string formulaId) =>
         NativeDisplayNumberShapeNamePrefix + NormalizeFormulaIdForBookmark(formulaId);
 
     private static string NativeDisplayNumberShapeAlternativeText(string formulaId) =>
@@ -5839,7 +5862,7 @@ internal static partial class WordEquationNumbering
         }
     }
 
-    private static bool TryRemoveNativeHashSequenceCaptionBookmarks(
+    internal static bool TryRemoveNativeHashSequenceCaptionBookmarks(
         Document document,
         string formulaId)
     {
@@ -5995,7 +6018,7 @@ internal static partial class WordEquationNumbering
             requireCurrentFieldResult: true);
     }
 
-    private static bool IsNativeHashSequenceHostForFinalizationV2(
+    internal static bool IsNativeHashSequenceHostForFinalizationV2(
         Document document,
         Range formulaRange,
         string formulaId,

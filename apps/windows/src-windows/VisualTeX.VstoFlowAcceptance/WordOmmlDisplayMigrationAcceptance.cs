@@ -26,7 +26,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -63,7 +63,7 @@ internal static partial class Program
             // Reproduce the broken 22:09 build without touching a user document:
             // it embedded '#(number)' into m:eqArr and therefore turned numbering
             // into mathematical content/full-width Word equation-array UI.
-            WordEquationNumbering.RemoveVisibleEquationNumberForFormula(
+            WordVisibleEquationNumbers.RemoveVisibleEquationNumberForFormula(
                 document,
                 formulaId);
             shapeInventory = document.Shapes;
@@ -100,7 +100,7 @@ internal static partial class Program
 
             Release(badRange); badRange = null;
             Release(bookmark); bookmark = null;
-            var refreshed = WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document);
+            var refreshed = WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document);
             AssertEqual(1, refreshed,
                 "Opening/reconciling the broken generated m:eqArr formula did not repair it.");
             shapeInventory = document.Shapes;
@@ -115,7 +115,7 @@ internal static partial class Program
             // update and must never create a drawing or anchor paragraph.
             AssertEqual(
                 1,
-                WordEquationNumbering.FinalizeNumberedOmmlDisplayShapeLayouts(document),
+                WordNumberedDisplayLayout.FinalizeNumberedOmmlDisplayShapeLayouts(document),
                 "The repaired m:eqArr formula was not recognized as one healthy native #(SEQ) host.");
             shapeInventory = document.Shapes;
             Console.WriteLine(

@@ -7,7 +7,7 @@ public sealed class WordEquationNumberingVstoTests
     [Fact]
     public void TabStopsUseTheAvailableTextWidth()
     {
-        var positions = WordEquationNumbering.CalculateEquationTabStops(
+        var positions = WordEquationParagraphLayout.CalculateEquationTabStops(
             pageWidth: 612f,
             leftMargin: 72f,
             rightMargin: 72f,
@@ -29,7 +29,7 @@ public sealed class WordEquationNumberingVstoTests
     {
         Assert.Equal(
             expected,
-            WordEquationNumbering.CalculateEquationNumberFontPosition(
+            WordEquationParagraphLayout.CalculateEquationNumberFontPosition(
                 formulaHeight,
                 fontSize));
     }
@@ -37,7 +37,7 @@ public sealed class WordEquationNumberingVstoTests
     [Fact]
     public void NumberScaffoldKeepsClosingParenthesisOutsideTheField()
     {
-        var scaffold = WordEquationNumbering.EquationNumberScaffold();
+        var scaffold = WordEquationParagraphLayout.EquationNumberScaffold();
 
         Assert.Equal("\t()", scaffold.Text);
         Assert.Equal(2, scaffold.FieldOffset);
@@ -47,10 +47,10 @@ public sealed class WordEquationNumberingVstoTests
     public void EquationBookmarkRoundTripsThePersistentFormulaId()
     {
         var formulaId = Guid.NewGuid().ToString();
-        var bookmark = WordEquationNumbering.EquationBookmarkName(formulaId);
+        var bookmark = WordNumberingFields.EquationBookmarkName(formulaId);
 
         Assert.StartsWith("VTEq_", bookmark, StringComparison.Ordinal);
-        Assert.True(WordEquationNumbering.TryFormulaIdFromEquationBookmark(
+        Assert.True(WordNumberingFields.TryFormulaIdFromEquationBookmark(
             bookmark,
             out var roundTrip));
         Assert.Equal(Guid.Parse(formulaId), Guid.Parse(roundTrip));
@@ -62,7 +62,7 @@ public sealed class WordEquationNumberingVstoTests
     [InlineData(null, false)]
     public void OnlyVisualTeXSequenceFieldsAreUpdated(string? code, bool expected)
     {
-        Assert.Equal(expected, WordEquationNumbering.IsVisualTeXSequenceFieldCode(code));
+        Assert.Equal(expected, WordNumberingFields.IsVisualTeXSequenceFieldCode(code));
     }
 
     [Theory]
@@ -77,6 +77,6 @@ public sealed class WordEquationNumberingVstoTests
     {
         Assert.Equal(
             expected,
-            WordEquationNumbering.IsNativeEquationSequenceFieldCode(code, label));
+            WordNumberingFields.IsNativeEquationSequenceFieldCode(code, label));
     }
 }

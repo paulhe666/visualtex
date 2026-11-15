@@ -1340,7 +1340,7 @@ internal sealed partial class WordFormulaService
         {
             document = _application.ActiveDocument
                 ?? throw new InvalidOperationException("No active Word document.");
-            return WordEquationNumbering.GetEquationNumberFormatDisplayName(document);
+            return WordEquationNumberFormat.GetEquationNumberFormatDisplayName(document);
         }
         finally { Release(document); }
     }
@@ -1692,7 +1692,7 @@ internal sealed partial class WordFormulaService
                     shapeRange = shape.Range;
                     if (session.Numbered)
                     {
-                        WordEquationNumbering.CleanupNumberedDisplayInsertionSpacing(
+                        WordNumberedTypingParagraphs.CleanupNumberedDisplayInsertionSpacing(
                             document,
                             metadata.FormulaId);
                         MoveSelectionAfterNumberedDisplayFormula(
@@ -1792,7 +1792,7 @@ internal sealed partial class WordFormulaService
 
     internal string GetMathTypeNumberPositionPreference()
     {
-        var saved = WordEquationNumbering.TryGetDefaultMathTypeNumberPosition();
+        var saved = WordEquationNumberFormat.TryGetDefaultMathTypeNumberPosition();
         if (saved is not null) return saved;
 
         Document? document = null;
@@ -2403,7 +2403,7 @@ internal sealed partial class WordFormulaService
                             ? batchHostRange.Duplicate
                             : shape!.Range;
                         repairParagraphSplit =
-                            WordEquationNumbering.RangeIsWhollyWithinTable(
+                            WordNumberedDisplayLayout.RangeIsWhollyWithinTable(
                                 insertedShapeRange);
                     }
                     finally { Release(insertedShapeRange); }
@@ -2697,7 +2697,7 @@ internal sealed partial class WordFormulaService
                         selection.SetRange(shapeRange.End, shapeRange.End);
                     else
                     {
-                        var typing = WordEquationNumbering.EnsureBodyTypingParagraphAfterDisplay(
+                        var typing = WordNumberedTableDisplay.EnsureBodyTypingParagraphAfterDisplay(
                             document, shapeRange, bodyFormatting!);
                         try { selection.SetRange(typing.Start, typing.End); }
                         finally { Release(typing); }
@@ -3181,7 +3181,7 @@ internal sealed partial class WordFormulaService
                     coordinateShifts.Add(target.End, ReadMainStoryEnd(document) - storyEndBefore);
                     convertedIds.Add(target.Metadata.FormulaId);
                 }
-                WordEquationNumbering.TryReconcile(document);
+                WordNumberingReconcile.TryReconcile(document);
                 converted = true;
                 return new WordFormulaToLatexResult
                 {
@@ -3797,7 +3797,7 @@ internal sealed partial class WordFormulaService
             // visible-number bookmark, and conservatively recovers only when the
             // formula's own identity plus the generated VTEqn field prove the exact
             // same row after Word has drifted that bookmark into column 2.
-            table = WordEquationNumbering.FindNumberedEquationTableByFormulaOwner(
+            table = WordNumberingReconcile.FindNumberedEquationTableByFormulaOwner(
                 document,
                 formulaRange,
                 metadata.FormulaId);
@@ -3808,7 +3808,7 @@ internal sealed partial class WordFormulaService
                 || owner.StoryType != formulaRange.StoryType
                 || formulaRange.Start < owner.Start
                 || formulaRange.End > owner.End
-                || !WordEquationNumbering.TryGetManagedNumberTableRowIndex(
+                || !WordNumberedDisplayLayout.TryGetManagedNumberTableRowIndex(
                     table,
                     formulaRange,
                     expectedColumnIndex: 2,
@@ -6777,7 +6777,7 @@ internal sealed partial class WordFormulaService
         try
         {
             typingRange =
-                WordEquationNumbering.EnsureNormalTypingParagraphAfterNumberedDisplay(
+                WordNumberedTypingParagraphs.EnsureNormalTypingParagraphAfterNumberedDisplay(
                     document,
                     formulaId,
                     knownDirectTable);
@@ -6788,10 +6788,10 @@ internal sealed partial class WordFormulaService
                 return;
             }
 
-            ownerRange = WordEquationNumbering.FindNumberingOwnerRange(
+            ownerRange = WordNumberingReconcile.FindNumberingOwnerRange(
                 document,
                 formulaId);
-            captionRange = WordEquationNumbering.FindNativeEquationCaptionRange(
+            captionRange = WordNumberingReconcile.FindNativeEquationCaptionRange(
                 document,
                 formulaId);
             content = document.Content;
@@ -8927,7 +8927,7 @@ internal sealed partial class WordFormulaService
             }
             if (numberingScaffoldOnly && metadata.Numbered)
             {
-                WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+                WordNumberingReconcile.BuildFormulaNumberingScaffoldForConversion(
                     document,
                     range,
                     shape.Height,
@@ -8936,7 +8936,7 @@ internal sealed partial class WordFormulaService
             }
             else
             {
-                WordEquationNumbering.ReconcileFormula(
+                WordNumberingReconcile.ReconcileFormula(
                     document,
                     range,
                     shape.Height,
@@ -11022,7 +11022,7 @@ internal sealed partial class WordFormulaService
     {
         var format = EquationNumberFormat.Resolve(formatId);
         if (!format.UsesHeading || numberedParagraphStarts.Count == 0) return;
-        var scopes = WordEquationNumbering.CaptureHeadingScopesAtPositions(
+        var scopes = WordEquationHeadings.CaptureHeadingScopesAtPositions(
             document, formatId, numberedParagraphStarts);
         // Insert once per actual heading, from the end of the document. Lower
         // captured positions then stay valid, including when several equations
@@ -11057,7 +11057,7 @@ internal sealed partial class WordFormulaService
         (int ScopeStart, int ScopeEnd, string NumberText) scope;
         using (WordOperationMetrics.Measure("MathType.Numbering.ResolveHeading"))
             scope = preResolvedHeadingScope is null
-                ? WordEquationNumbering.ResolveHeadingScopeAtPosition(document, formulaPosition, format.Id)
+                ? WordEquationHeadings.ResolveHeadingScopeAtPosition(document, formulaPosition, format.Id)
                 : (preResolvedHeadingScope.ScopeStart, preResolvedHeadingScope.ScopeEnd, preResolvedHeadingScope.NumberText);
         // No heading means the established zero prefix, never manufactured chapter1.
         if (scope.ScopeStart == int.MinValue || scope.ScopeEnd == int.MinValue
@@ -13747,7 +13747,7 @@ internal sealed partial class WordFormulaService
         Range? content = null;
         try
         {
-            if (!WordEquationNumbering.RangeIsWhollyWithinTable(sourceRange))
+            if (!WordNumberedDisplayLayout.RangeIsWhollyWithinTable(sourceRange))
                 return sourceRange.Duplicate;
             tables = sourceRange.Tables;
             if (tables.Count == 0) return sourceRange.Duplicate;
@@ -13762,7 +13762,7 @@ internal sealed partial class WordFormulaService
             // insert new content between the old table and caption, reordering the
             // old number and corrupting adjacent cells.
             safeTypingRange =
-                WordEquationNumbering.EnsureNormalTypingParagraphAfterNumberedDisplay(
+                WordNumberedTypingParagraphs.EnsureNormalTypingParagraphAfterNumberedDisplay(
                     document,
                     formulaId!);
             if (safeTypingRange is not null)
@@ -13773,7 +13773,7 @@ internal sealed partial class WordFormulaService
             }
 
             bookmarks = document.Bookmarks;
-            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(
+            var captionName = WordNumberingFields.NativeCaptionBookmarkName(
                 formulaId!);
             if (!bookmarks.Exists(captionName))
                 return sourceRange.Duplicate;
@@ -14087,7 +14087,7 @@ internal sealed partial class WordFormulaService
             columns = table.Columns;
             if (columns.Count != 3) return;
             centerCell = table.Cell(
-                WordEquationNumbering.GetManagedNumberTableRowIndex(table, formulaRange, 2), 2);
+                WordNumberedDisplayLayout.GetManagedNumberTableRowIndex(table, formulaRange, 2), 2);
             cellRange = centerCell.Range;
 
             // A display OMath inserted next to the source OLE can leave one

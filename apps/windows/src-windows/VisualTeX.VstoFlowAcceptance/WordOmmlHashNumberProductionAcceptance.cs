@@ -35,7 +35,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -290,7 +290,7 @@ internal static partial class Program
                 context + ": mathematical SEQ result is stale.");
 
             bookmarks = document.Bookmarks;
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             AssertTrue(bookmarks.Exists(numberName),
                 context + ": VTEqNum bookmark is missing.");
             numberBookmark = bookmarks[numberName];
@@ -404,7 +404,7 @@ internal static partial class Program
             fields = insertion.Fields;
             object fieldType = Word.WdFieldType.wdFieldRef;
             object fieldCode =
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId) + " \\h";
+                WordNumberingFields.NativeNumberBookmarkName(formulaId) + " \\h";
             object preserveFormatting = true;
             field = fields.Add(
                 insertion,

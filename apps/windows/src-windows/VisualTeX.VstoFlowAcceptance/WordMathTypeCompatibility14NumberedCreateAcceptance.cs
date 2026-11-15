@@ -161,7 +161,7 @@ internal static partial class Program
                     compatibilityMode,
                     document.CompatibilityMode,
                     $"{modeName} redraw fixture did not reopen in compatibility mode {compatibilityMode}.");
-                WordEquationNumbering
+                WordEquationNumberFormat
                     .SetEquationNumberFormatPreference(
                         document,
                         EquationNumberFormat.ContinuousId);

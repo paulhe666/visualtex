@@ -44,7 +44,7 @@ internal static partial class Program
                 documentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument,
                 AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
             var service = new WordFormulaService(application);
@@ -383,7 +383,7 @@ internal static partial class Program
                 row.HeightRule,
                 "The legacy auto-height fixture did not reproduce the old row rule.");
 
-            var refreshed = WordEquationNumbering.RefreshNumberedOmmlTabLayouts(document);
+            var refreshed = WordNumberedDisplayLayout.RefreshNumberedOmmlTabLayouts(document);
             AssertTrue(refreshed > 0,
                 "Document-open layout refresh did not visit the legacy auto-height fixture.");
 
@@ -461,9 +461,9 @@ internal static partial class Program
             AssertTrue(row.Height > 0f && row.Height < 1000000f,
                 formulaName + ": numbered OMML row minimum height is invalid.");
             var numberedMeasuredHeight =
-                WordEquationNumbering.TryMeasureNativeDisplayHeightPoints(document, numberedRange);
+                WordNumberedTableDisplay.TryMeasureNativeDisplayHeightPoints(document, numberedRange);
             var plainMeasuredHeight =
-                WordEquationNumbering.TryMeasureNativeDisplayHeightPoints(document, plainRange);
+                WordNumberedTableDisplay.TryMeasureNativeDisplayHeightPoints(document, plainRange);
             Console.WriteLine(
                 $"    height-source {formulaName}: rowMin={row.Height:0.###}pt numberedMeasure={numberedMeasuredHeight:0.###}pt plainMeasure={plainMeasuredHeight:0.###}pt.");
             tableRange = table.Range;

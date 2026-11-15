@@ -42,7 +42,7 @@ internal static class WordOmmlNativeSource
                 // Pin only table-owned fresh equations with a temporary non-collapsed
                 // bookmark spanning the complete OMath. The bookmark tracks content
                 // through cell-local mutations and is removed before commit.
-                if (WordEquationNumbering.RangeIsWhollyWithinTable(range))
+                if (WordNumberedDisplayLayout.RangeIsWhollyWithinTable(range))
                 {
                     if (!Guid.TryParse(formulaId, out var parsed))
                         throw new InvalidDataException("Fresh OMML table owner formulaId is invalid.");
@@ -265,7 +265,7 @@ internal static class WordOmmlNativeSource
             Range? replacementRange = null;
             try
             {
-                if (!WordEquationNumbering.RangeIsWhollyWithinTable(currentOwner))
+                if (!WordNumberedDisplayLayout.RangeIsWhollyWithinTable(currentOwner))
                     throw new InvalidDataException(
                         $"Fresh OMML table owner {formulaId} structural fallback escaped its user cell.");
                 document = currentOwner.Document;
@@ -322,7 +322,7 @@ internal static class WordOmmlNativeSource
                     if (range is null)
                         throw new InvalidDataException(
                             $"Fresh OMML table owner {formulaId} could not be structurally resolved after numbering.");
-                    if (!WordEquationNumbering.RangeIsWhollyWithinTable(range))
+                    if (!WordNumberedDisplayLayout.RangeIsWhollyWithinTable(range))
                         throw new InvalidDataException(
                             $"Fresh OMML table owner {formulaId} escaped every valid table host before transport verification.");
                     maths = range.OMaths;
@@ -1753,7 +1753,7 @@ internal static class WordOmmlNativeSource
             var canonical = false;
             var numberHostVerified = false;
             if (bookmarks.TryGetValue(
-                    WordEquationNumbering.NativeNumberBookmarkName(entry.Key),
+                    WordNumberingFields.NativeNumberBookmarkName(entry.Key),
                     out var numbers))
             {
                 if (numbers.Length != 1)
@@ -1936,7 +1936,7 @@ internal static class WordOmmlNativeSource
                     throw new InvalidDataException($"COM and XML disagree on OMML anchor {entry.Key}.");
                 candidate = equations[owner];
             }
-            if (bookmarks.TryGetValue(WordEquationNumbering.NativeNumberBookmarkName(entry.Key), out var numbers))
+            if (bookmarks.TryGetValue(WordNumberingFields.NativeNumberBookmarkName(entry.Key), out var numbers))
             {
                 if (numbers.Length != 1) throw new InvalidDataException($"OMML number identity {entry.Key} is duplicated.");
                 // The nearest mathematical ancestor is stronger ownership

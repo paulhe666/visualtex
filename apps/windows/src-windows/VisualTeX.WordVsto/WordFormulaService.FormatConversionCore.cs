@@ -790,7 +790,7 @@ internal sealed partial class WordFormulaService
                     section = sections[index];
                     range = section.Range;
                     setup = section.PageSetup;
-                    var tabs = WordEquationNumbering.CalculateEquationTabStops(
+                    var tabs = WordEquationParagraphLayout.CalculateEquationTabStops(
                         setup.PageWidth, setup.LeftMargin, setup.RightMargin, 0, 0);
                     result.Add((range.Start, range.End, tabs.Center, tabs.Right));
                 }

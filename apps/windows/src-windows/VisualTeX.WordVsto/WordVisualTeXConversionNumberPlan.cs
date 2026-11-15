@@ -57,7 +57,7 @@ internal static partial class WordFormulaNumberingKernel
                 }
                 var format = EquationNumberFormat.Resolve(formatId);
                 var scopes = format.UsesHeading
-                    ? WordEquationNumbering.CaptureHeadingScopesAtPositions(document, formatId, final.Select(item => item.Position).ToArray())
+                    ? WordEquationHeadings.CaptureHeadingScopesAtPositions(document, formatId, final.Select(item => item.Position).ToArray())
                     : new Dictionary<int, ResolvedEquationHeadingScope>();
                 var ordinals = new Dictionary<int, int>();
                 foreach (var item in final.OrderBy(item => item.Position))

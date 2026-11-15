@@ -11,25 +11,25 @@ public sealed class WordCellNumberingClassificationTests
 
     [Fact]
     public void UserCellOleWithOwnReferenceIsNotAManagedOmmlTable()
-        => Assert.True(WordEquationNumbering.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", Id));
+        => Assert.True(WordNumberingState.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", Id));
 
     [Fact]
     public void AnotherEquationsNumberCannotClaimTheOle()
-        => Assert.False(WordEquationNumbering.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", "11111111-2222-3333-4444-555555555555"));
+        => Assert.False(WordNumberingState.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", "11111111-2222-3333-4444-555555555555"));
 
     [Fact]
     public void NativeMathNumberCellDoesNotTakeTheOlePath()
-        => Assert.False(WordEquationNumbering.IsOleNumberingParagraphXml("<w:p><m:oMath/>" + Ref + "</w:p>", Id));
+        => Assert.False(WordNumberingState.IsOleNumberingParagraphXml("<w:p><m:oMath/>" + Ref + "</w:p>", Id));
 
     [Fact]
     public void TwoOleObjectsCannotShareOneNumberParagraph()
-        => Assert.False(WordEquationNumbering.IsOleNumberingParagraphXml(Prefix + Prefix + Ref + "</w:p>", Id));
+        => Assert.False(WordNumberingState.IsOleNumberingParagraphXml(Prefix + Prefix + Ref + "</w:p>", Id));
 
     [Fact]
     public void SimilarProgIdIsNotNativeVisualTeX()
-        => Assert.False(WordEquationNumbering.IsOleNumberingParagraphXml((Prefix + Ref + "</w:p>").Replace("VisualTeX.Formula.1", "VisualTeXxFormulax1"), Id));
+        => Assert.False(WordNumberingState.IsOleNumberingParagraphXml((Prefix + Ref + "</w:p>").Replace("VisualTeX.Formula.1", "VisualTeXxFormulax1"), Id));
 
     [Fact]
     public void MalformedFormulaIdentityIsRejected()
-        => Assert.False(WordEquationNumbering.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", "not-an-id"));
+        => Assert.False(WordNumberingState.IsOleNumberingParagraphXml(Prefix + Ref + "</w:p>", "not-an-id"));
 }

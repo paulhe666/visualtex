@@ -43,7 +43,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
             var service = new WordFormulaService(application);
@@ -98,7 +98,7 @@ internal static partial class Program
             AssertEqual(2, document.Tables.Count,
                 "The mixed legacy fixture does not contain exactly two historical numbering tables before migration.");
             AssertTrue(
-                WordEquationNumbering.NeedsLegacyManagedNumberingMigration(document),
+                WordEquationNumberFormat.NeedsLegacyManagedNumberingMigration(document),
                 "The document-level legacy-numbering pre-pass did not recognize the mixed historical fixture.");
 
             var migrated = ThisAddIn.MigrateManagedOmmlDisplayTypes(document);
@@ -139,7 +139,7 @@ internal static partial class Program
                 badEqArrFormulaId,
                 "mixed migration bad-eqArr OMML external REF");
             AssertTrue(
-                !WordEquationNumbering.NeedsLegacyManagedNumberingMigration(document),
+                !WordEquationNumberFormat.NeedsLegacyManagedNumberingMigration(document),
                 "The mixed document is still classified as a legacy numbering document after one migration pass.");
 
             document.Save();
@@ -283,7 +283,7 @@ internal static partial class Program
         Word.Row? emptyRow = null;
         try
         {
-            owner = WordEquationNumbering.FindNumberingOwnerRange(document, formulaId)
+            owner = WordNumberingReconcile.FindNumberingOwnerRange(document, formulaId)
                 ?? throw new InvalidDataException(
                     "The mixed fixture could not resolve the healthy VisualTeX OLE numbering paragraph before legacy degradation.");
             object separator = Word.WdTableFieldSeparator.wdSeparateByTabs;
@@ -381,7 +381,7 @@ internal static partial class Program
             // historical bad-eqArr aliases below are materialized.
             metadata.Numbered = false;
             WordOmmlFormulaStore.Save(document, metadata);
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 equationRange,
                 WordOmmlFormulaStore.EstimateHeightPoints(equationRange),

@@ -2,7 +2,7 @@ using Microsoft.Office.Interop.Word;
 
 namespace VisualTeX.WordVsto;
 
-internal static partial class WordEquationNumbering
+internal static partial class WordEquationNumberFormat
 {
     static partial void InferDocumentEquationNumberFormat(
         Document document,

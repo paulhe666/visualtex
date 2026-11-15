@@ -34,7 +34,7 @@ internal static partial class Program
             {
                 host.Document.Content.Font.Name = "宋体";
                 host.Document.Content.Font.Size = 10.5f;
-                WordEquationNumbering.SetEquationNumberFormatPreference(host.Document, EquationNumberFormat.ContinuousId);
+                WordEquationNumberFormat.SetEquationNumberFormatPreference(host.Document, EquationNumberFormat.ContinuousId);
                 host.Document.Content.Text = "LARGE-REDRAW-BEGIN\r";
 
                 string FormulaText()

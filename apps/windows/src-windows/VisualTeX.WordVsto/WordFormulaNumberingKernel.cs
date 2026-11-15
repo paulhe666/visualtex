@@ -154,7 +154,7 @@ internal static partial class WordFormulaNumberingKernel
             // ordered field-stream pass is sufficient to finalize all numbers.
             // Avoid rebuilding a document-wide VisualTeX host index and
             // re-opening every OLE paragraph several times.
-            WordEquationNumbering
+            WordEquationNumberFormat
                 .RestoreEquationNumberFormatForConversion(
                     document,
                     formatId);
@@ -203,7 +203,7 @@ internal static partial class WordFormulaNumberingKernel
             if (!HasAnyCanonicalEquationSequenceField(
                     document))
             {
-                WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+                WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(
                     document,
                     formatId);
                 return 0;
@@ -238,7 +238,7 @@ internal static partial class WordFormulaNumberingKernel
 
         if (numbered.Count == 0)
         {
-            WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+            WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(
                 document,
                 formatId);
             return 0;
@@ -248,7 +248,7 @@ internal static partial class WordFormulaNumberingKernel
             .Select(item => item.Host.Range.Start)
             .ToArray();
         var scopes = format.UsesHeading
-            ? WordEquationNumbering.CaptureHeadingScopesAtPositions(
+            ? WordEquationHeadings.CaptureHeadingScopesAtPositions(
                 document,
                 formatId,
                 positions)
@@ -290,7 +290,7 @@ internal static partial class WordFormulaNumberingKernel
                 prefix));
         }
 
-        WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+        WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(
             document,
             formatId);
 
@@ -390,7 +390,7 @@ internal static partial class WordFormulaNumberingKernel
             RefreshCanonicalNumbers(
                 document,
                 resolved);
-        WordEquationNumbering.SetDefaultEquationNumberFormatPreference(
+        WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(
             resolved);
         return count;
     }
@@ -750,14 +750,14 @@ internal static partial class WordFormulaNumberingKernel
             // VTEqNum remains attached to the actual hidden SEQ result. Repair
             // only that ownership alias before invoking the mature legacy
             // ReconcileFormula path; this never deletes or rewrites user content.
-            WordEquationNumbering
+            WordNumberingCleanup
                 .RebindExternalCaptionToNativeNumberParagraph(
                     document,
                     metadata.FormulaId);
 
             shapeRange =
                 shape.Range.Duplicate;
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 shapeRange,
                 shape.Height,
@@ -967,7 +967,7 @@ internal static partial class WordFormulaNumberingKernel
             metadata.Validate();
 
             shapeRange = shape.Range.Duplicate;
-            WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+            WordNumberingReconcile.BuildFormulaNumberingScaffoldForConversion(
                 document,
                 shapeRange,
                 shape.Height,
@@ -1024,7 +1024,7 @@ internal static partial class WordFormulaNumberingKernel
             metadata.Validate();
 
             shapeRange = shape.Range.Duplicate;
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 shapeRange,
                 shape.Height,
@@ -2106,11 +2106,11 @@ internal static partial class WordFormulaNumberingKernel
             metadata.Numbered = true;
             metadata.Validate();
 
-            WordEquationNumbering.RemoveFormulaNumberingArtifacts(
+            WordVisibleEquationNumbers.RemoveFormulaNumberingArtifacts(
                 document,
                 parsed.ToString("D"));
             shapeRange = shape.Range.Duplicate;
-            WordEquationNumbering.BuildFormulaNumberingScaffoldForConversion(
+            WordNumberingReconcile.BuildFormulaNumberingScaffoldForConversion(
                 document,
                 shapeRange,
                 shape.Height,
@@ -2373,7 +2373,7 @@ internal static partial class WordFormulaNumberingKernel
         if (format.UsesHeading)
         {
             var scopes =
-                WordEquationNumbering.CaptureHeadingScopesAtPositions(
+                WordEquationHeadings.CaptureHeadingScopesAtPositions(
                     document,
                     formatId,
                     new[] { insertionPosition });

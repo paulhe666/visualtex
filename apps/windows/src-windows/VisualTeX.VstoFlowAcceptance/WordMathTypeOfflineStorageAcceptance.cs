@@ -1213,8 +1213,8 @@ internal static partial class Program
             captionRange = paragraph.Range.Duplicate;
 
             var formulaId = Guid.NewGuid().ToString("D");
-            var numberName = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
-            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(formulaId);
+            var numberName = WordNumberingFields.NativeNumberBookmarkName(formulaId);
+            var captionName = WordNumberingFields.NativeCaptionBookmarkName(formulaId);
             bookmarks = document.Bookmarks;
             numberBookmark = bookmarks.Add(numberName, numberRange);
             captionBookmark = bookmarks.Add(captionName, captionRange);
@@ -1269,7 +1269,7 @@ internal static partial class Program
             Release(insertion);
             insertion = null;
 
-            var repaired = WordEquationNumbering.RepairLeakedNativeCaptionFrames(document);
+            var repaired = WordNumberedTypingParagraphs.RepairLeakedNativeCaptionFrames(document);
             AssertEqual(1, repaired,
                 "VisualTeX did not repair exactly one leaked native caption Frame.");
 
@@ -1481,7 +1481,7 @@ internal static partial class Program
             firstMetadata.Numbered = true;
             firstMetadata.DisplayMode = "block";
             firstRange = firstShape.Range.Duplicate;
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 firstRange,
                 firstShape.Height,
@@ -1507,7 +1507,7 @@ internal static partial class Program
                 "New numbered-caption creation still leaks its hidden Frame into the following inline formula.");
 
             bookmarks = document.Bookmarks;
-            var captionName = WordEquationNumbering.NativeCaptionBookmarkName(firstMetadata.FormulaId);
+            var captionName = WordNumberingFields.NativeCaptionBookmarkName(firstMetadata.FormulaId);
             AssertTrue(bookmarks.Exists(captionName),
                 "Numbered display fixture did not create its native caption bookmark.");
             captionBookmark = bookmarks[captionName];

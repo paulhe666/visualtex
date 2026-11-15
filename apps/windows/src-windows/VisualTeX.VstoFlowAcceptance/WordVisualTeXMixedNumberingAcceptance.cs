@@ -13,7 +13,7 @@ internal static partial class Program
     {
         var source = Environment.GetEnvironmentVariable("VISUALTEX_MIXED_NUMBERING_SOURCE")!;
         var output = Path.Combine(artifactRoot, "mixed-number-formats.docx");
-        var previousDefault = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previousDefault = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         var formats = new[] { EquationNumberFormat.Heading1DotId, EquationNumberFormat.Heading2DotId,
             EquationNumberFormat.Heading1DashId, EquationNumberFormat.Heading2DashId, EquationNumberFormat.ContinuousId };
         var results = new List<object>();
@@ -74,7 +74,7 @@ internal static partial class Program
             using (var host = new WordPerformanceHost(output)) AssertVisualTeXMixedNumbers(host, expected);
             Console.WriteLine("[MIXED NUMBER SAVE/REOPEN PASS]");
         }
-        finally { WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefault); }
+        finally { WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previousDefault); }
     }
 
     private static void AssertVisualTeXMixedNumbers(WordPerformanceHost host, string[] expected)

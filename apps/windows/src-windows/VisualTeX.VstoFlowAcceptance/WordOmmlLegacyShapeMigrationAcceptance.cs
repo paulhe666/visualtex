@@ -24,7 +24,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -54,7 +54,7 @@ internal static partial class Program
                 ?? throw new InvalidDataException(
                     "Legacy Shape migration fixture lost its VTOMML bookmark before setup.");
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
-            WordEquationNumbering.CreateLegacyNumberedNativeOmmlShapeFixtureForAcceptance(
+            WordNumberedTrueDisplay.CreateLegacyNumberedNativeOmmlShapeFixtureForAcceptance(
                 document,
                 formulaRange,
                 metadata);
@@ -84,7 +84,7 @@ internal static partial class Program
             // The OpenXML health probe must classify a structurally valid
             // VTEqShape_ host as migration input, not as a healthy fast-path host.
             // A single normal update therefore performs the one-time conversion.
-            var updated = WordEquationNumbering.UpdateEquationNumbers(document);
+            var updated = WordEquationNumberFormat.UpdateEquationNumbers(document);
             AssertEqual(1, updated,
                 "The legacy VTEqShape_ document did not reconcile exactly one numbered formula.");
             FinalizeNumberedOmmlShapesAcrossOfficeTurns(
@@ -198,13 +198,13 @@ internal static partial class Program
             AssertTrue(document.Bookmarks.Exists("VTEqAnc_" + normalizedId),
                 context + ": the legacy Shape anchor bookmark is missing.");
             AssertTrue(document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeCaptionBookmarkName(formulaId)),
+                    WordNumberingFields.NativeCaptionBookmarkName(formulaId)),
                 context + ": the legacy hidden caption bookmark is missing.");
             AssertTrue(document.Bookmarks.Exists(
-                    WordEquationNumbering.NativeNumberBookmarkName(formulaId)),
+                    WordNumberingFields.NativeNumberBookmarkName(formulaId)),
                 context + ": the legacy hidden number bookmark is missing.");
             AssertTrue(document.Bookmarks.Exists(
-                    WordEquationNumbering.EquationBookmarkName(formulaId)),
+                    WordNumberingFields.EquationBookmarkName(formulaId)),
                 context + ": the legacy visible-number bookmark is missing.");
             content = document.Content;
             var xml = content.WordOpenXML ?? string.Empty;
@@ -215,7 +215,7 @@ internal static partial class Program
             AssertTrue(xml.IndexOf("<w:txbxContent", StringComparison.OrdinalIgnoreCase) >= 0,
                 context + ": the legacy visible REF is not serialized in a TextBox story.");
             AssertTrue(xml.IndexOf(
-                    "REF " + WordEquationNumbering.NativeNumberBookmarkName(formulaId),
+                    "REF " + WordNumberingFields.NativeNumberBookmarkName(formulaId),
                     StringComparison.OrdinalIgnoreCase) >= 0,
                 context + ": the legacy TextBox does not REF its hidden number target.");
         }

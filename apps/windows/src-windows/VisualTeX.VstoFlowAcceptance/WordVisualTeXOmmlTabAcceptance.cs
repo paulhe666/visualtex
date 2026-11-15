@@ -28,7 +28,7 @@ internal static partial class Program
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.Heading1DotId);
 
@@ -341,7 +341,7 @@ internal static partial class Program
                 {
                     sequenceField = equationRange.Fields[1];
                     sequenceCode = sequenceField.Code;
-                    AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
+                    AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(sequenceCode.Text),
                         context + ": the OMath field is not SEQ VisualTeXEquation.");
                     AssertTrue((sequenceCode.Text ?? string.Empty).IndexOf(
                             "REF VTEqNum_",
@@ -463,7 +463,7 @@ internal static partial class Program
                         "The numbered OMML body bookmark does not contain a valid FormulaId.");
             }
             finally { Release(formulaBookmark); }
-            visibleNumber = WordEquationNumbering.FindVisibleEquationNumberRange(
+            visibleNumber = WordNumberingReconcile.FindVisibleEquationNumberRange(
                 document,
                 formulaId)
                 ?? throw new InvalidDataException(
@@ -643,7 +643,7 @@ internal static partial class Program
             // helper verifies or creates an ordinary main-story paragraph adjacent
             // to this numbered display before returning its collapsed insertion
             // point.
-            insertion = WordEquationNumbering.EnsureNormalTypingParagraphAfterNumberedDisplay(
+            insertion = WordNumberedTypingParagraphs.EnsureNormalTypingParagraphAfterNumberedDisplay(
                     document,
                     formulaId)
                 ?? throw new InvalidDataException(
@@ -655,13 +655,13 @@ internal static partial class Program
 
             fields = insertion.Fields;
             object fieldType = Word.WdFieldType.wdFieldRef;
-            object fieldCode = WordEquationNumbering.NativeNumberBookmarkName(formulaId) + " \\h";
+            object fieldCode = WordNumberingFields.NativeNumberBookmarkName(formulaId) + " \\h";
             object preserveFormatting = true;
             field = fields.Add(insertion, ref fieldType, ref fieldCode, ref preserveFormatting);
             field.Update();
             AssertExternalEquationReferenceHyperlink(
                 field,
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId));
+                WordNumberingFields.NativeNumberBookmarkName(formulaId));
             var result = field;
             field = null;
             return result;
@@ -725,7 +725,7 @@ internal static partial class Program
         try
         {
             fields = document.Fields;
-            var target = WordEquationNumbering.NativeNumberBookmarkName(formulaId);
+            var target = WordNumberingFields.NativeNumberBookmarkName(formulaId);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Word.Field? field = null;
@@ -773,7 +773,7 @@ internal static partial class Program
         var restoreFieldCodes = false;
         try
         {
-            range = WordEquationNumbering.FindVisibleEquationNumberTextRange(document, formulaId)
+            range = WordNumberingReconcile.FindVisibleEquationNumberTextRange(document, formulaId)
                 ?? throw new InvalidDataException("Visible equation-number range is missing.");
             view = document.ActiveWindow.View;
             restoreFieldCodes = view.ShowFieldCodes;

@@ -11,7 +11,7 @@ internal static partial class Program
         Directory.CreateDirectory(root);
         var observations = new List<object>();
         Word.Application? app = null;
-        var previous = WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previous = WordEquationNumberFormat.GetDefaultEquationNumberFormatId();
         try
         {
             app = CreateWordApplication(visible: false);
@@ -93,6 +93,6 @@ internal static partial class Program
             }
             File.WriteAllText(Path.Combine(root, "observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true }));
         }
-        finally { try { QuitWordApplicationIfOwned(app); } catch { } Release(app); WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previous); ForceComCleanup(); }
+        finally { try { QuitWordApplicationIfOwned(app); } catch { } Release(app); WordEquationNumberFormat.SetDefaultEquationNumberFormatPreference(previous); ForceComCleanup(); }
     }
 }

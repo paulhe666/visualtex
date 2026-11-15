@@ -65,7 +65,7 @@ internal sealed partial class WordFormulaService
             RetiredLayouts = CountRetiredNumberingLayouts(document),
             NonCanonicalNumbers = WordNativeNumberingAdoptionPlan.CountNonCanonicalNumbers(
                 document, WordEquationNumberFormatAuthority.Resolve(document)),
-            LegacyFormatVariable = WordEquationNumbering.HasLegacyEquationNumberFormat(document),
+            LegacyFormatVariable = WordEquationNumberFormat.HasLegacyEquationNumberFormat(document),
             LegacyMathFont = UsesLegacyLatinModernMath(document),
             MathFont = includeMathFont ? ScanOmmlMathFont(document) : new OmmlMathFontScan(),
         };
@@ -115,7 +115,7 @@ internal sealed partial class WordFormulaService
                     undoSteps++;
                 }
 
-                WordEquationNumbering.RetireLegacyEquationNumberFormat(document);
+                WordEquationNumberFormat.RetireLegacyEquationNumberFormat(document);
 
                 if (UsesLegacyLatinModernMath(document))
                 {

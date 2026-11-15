@@ -130,7 +130,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         var format = EquationNumberFormat.Resolve(formatId);
         var level = format.UsesHeading ? format.HeadingLevel : 0;
         var separator = format.Separator;
-        var scopes = WordEquationNumbering.CaptureHeadingScopesAtPositions(
+        var scopes = WordEquationHeadings.CaptureHeadingScopesAtPositions(
             _document, format.Id, _entries.Select(e => e.Start).ToArray());
         var counters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in _entries)
@@ -301,7 +301,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         if (format.UsesHeading)
         {
             var scope =
-                WordEquationNumbering
+                WordEquationHeadings
                     .ResolveHeadingScopeAtPosition(
                         _document,
                         position,
@@ -333,8 +333,8 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         var style = _entries[nearest].Style.Copy();
         if (style.HeadingLevel > 0)
         {
-            var current = WordEquationNumbering.ResolveHeadingScopeAtPosition(_document, position, style.FormatId);
-            var source = WordEquationNumbering.ResolveHeadingScopeAtPosition(_document, _entries[nearest].Start, style.FormatId);
+            var current = WordEquationHeadings.ResolveHeadingScopeAtPosition(_document, position, style.FormatId);
+            var source = WordEquationHeadings.ResolveHeadingScopeAtPosition(_document, _entries[nearest].Start, style.FormatId);
             if (current.ScopeStart != int.MinValue && current.ScopeStart != source.ScopeStart)
             {
                 // Carry the series' punctuation across a chapter boundary, not

@@ -26,7 +26,7 @@ public sealed class HeadingNumberNormalizationTests
         int outlineLevel,
         string expected)
     {
-        var actual = WordEquationNumbering.NormalizeHeadingNumberText(
+        var actual = WordEquationHeadings.NormalizeHeadingNumberText(
             value,
             outlineLevel);
 
@@ -51,6 +51,6 @@ public sealed class HeadingNumberNormalizationTests
     {
         Assert.Equal(
             string.Empty,
-            WordEquationNumbering.NormalizeHeadingNumberText(value, outlineLevel));
+            WordEquationHeadings.NormalizeHeadingNumberText(value, outlineLevel));
     }
 }

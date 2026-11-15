@@ -40,7 +40,7 @@ internal static partial class Program
             document.TrackRevisions = Environment.GetEnvironmentVariable("VISUALTEX_NATIVE_EDIT_TRACKING") == "1";
             var format = Environment.GetEnvironmentVariable("VISUALTEX_NATIVE_EDIT_FORMAT");
             if (!string.IsNullOrEmpty(format))
-                WordEquationNumbering.RestoreEquationNumberFormatForConversion(document, format);
+                WordEquationNumberFormat.RestoreEquationNumberFormatForConversion(document, format);
             var service = new WordFormulaService(application);
             var selection = service.ReadCreateSelection();
             var session = new OfficeSessionDocument

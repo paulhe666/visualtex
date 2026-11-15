@@ -31,7 +31,7 @@ internal static partial class Program
                 documentPath,
                 Word.WdSaveFormat.wdFormatXMLDocument,
                 AddToRecentFiles: false);
-            WordEquationNumbering.SetEquationNumberFormatPreference(
+            WordEquationNumberFormat.SetEquationNumberFormatPreference(
                 document,
                 EquationNumberFormat.ContinuousId);
 
@@ -61,9 +61,9 @@ internal static partial class Program
             var retiredHashOmml = WordOmmlConverter.BuildImmutableHashSequenceNumberedOmml(
                 semanticOmml,
                 "VisualTeXEquation",
-                WordEquationNumbering.NativeNumberBookmarkName(formulaId),
-                WordEquationNumbering.EquationBookmarkName(formulaId),
-                WordEquationNumbering.NativeCaptionBookmarkName(formulaId),
+                WordNumberingFields.NativeNumberBookmarkName(formulaId),
+                WordNumberingFields.EquationBookmarkName(formulaId),
+                WordNumberingFields.NativeCaptionBookmarkName(formulaId),
                 prefix: string.Empty,
                 restartHeadingLevel: 0,
                 initialSequenceResult: "1");
@@ -102,7 +102,7 @@ internal static partial class Program
             // and eqArr must be stripped atomically before the semantic OMath is
             // placed in cell (1,2); only a new ordinary Word SEQ may survive in
             // cell (1,3).
-            WordEquationNumbering.ReconcileFormula(
+            WordNumberingReconcile.ReconcileFormula(
                 document,
                 equationRange,
                 WordOmmlFormulaStore.EstimateHeightPoints(equationRange),
@@ -204,7 +204,7 @@ internal static partial class Program
                 "The retired #(SEQ) fixture must contain exactly one mathematical SEQ field.");
             field = fields[1];
             code = field.Code;
-            AssertTrue(WordEquationNumbering.IsVisualTeXSequenceFieldCode(code.Text),
+            AssertTrue(WordNumberingFields.IsVisualTeXSequenceFieldCode(code.Text),
                 "The retired #(SEQ) fixture mathematical field is not SEQ VisualTeXEquation.");
             AssertTrue(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                     equationRange.WordOpenXML,
@@ -267,7 +267,7 @@ internal static partial class Program
                 try
                 {
                     fieldCode = field.Code;
-                    return WordEquationNumbering.IsVisualTeXSequenceFieldCode(fieldCode.Text);
+                    return WordNumberingFields.IsVisualTeXSequenceFieldCode(fieldCode.Text);
                 }
                 finally { Release(fieldCode); }
             }), context + ": more than one VisualTeXEquation SEQ survives after migration.");

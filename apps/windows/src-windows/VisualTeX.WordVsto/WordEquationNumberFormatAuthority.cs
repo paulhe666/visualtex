@@ -86,7 +86,7 @@ internal static class WordEquationNumberFormatAuthority
     private static string ResolveUncached(Document document)
     {
         var stored =
-            WordEquationNumbering.CaptureEquationNumberFormatVariable(
+            WordEquationNumberFormat.CaptureEquationNumberFormatVariable(
                 document);
         if (stored.Exists)
             return EquationNumberFormat.Resolve(stored.Value).Id;
@@ -99,7 +99,7 @@ internal static class WordEquationNumberFormatAuthority
             return inferred;
 
         return EquationNumberFormat.Resolve(
-            WordEquationNumbering
+            WordEquationNumberFormat
                 .GetDefaultEquationNumberFormatId()).Id;
     }
 

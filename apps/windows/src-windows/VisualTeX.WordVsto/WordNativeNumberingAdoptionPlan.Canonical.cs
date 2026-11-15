@@ -25,7 +25,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan
 
         var format = EquationNumberFormat.Resolve(formatId);
         var level = format.UsesHeading ? format.HeadingLevel : 0;
-        var scopes = WordEquationNumbering.CaptureHeadingScopesAtPositions(
+        var scopes = WordEquationHeadings.CaptureHeadingScopesAtPositions(
             document, format.Id, plan._entries.Select(e => e.Start).ToArray());
         var counters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var count = 0;
