@@ -94,6 +94,8 @@
     "verify:embedded-frontend": "node scripts/verify_embedded_frontend_assets.mjs",
     "verify:frontend-dist": "node scripts/verify_frontend_dist.mjs",
     "verify:office-native": "npm run build:office:windows-native && node scripts/windows_office_architecture_smoke.mjs",
+    "release:install-silently": "node scripts/run_windows_powershell.mjs scripts/install_current_windows_release_silently.ps1",
+    "verify:installed-release": "node scripts/run_windows_powershell.mjs scripts/verify_installed_windows_release.ps1",
     "verify:windows-release": "node scripts/run_windows_powershell.mjs scripts/verify_windows_release_artifacts.ps1"
   },
   "checks": {
@@ -111,6 +113,7 @@
       "test:ocr-install": "installs and warms up the OCR runtime",
       "test:ocr-models": "needs the OCR model packs",
       "verify:windows-release": "checks the artifacts of a release build (npm run tauri:build)",
+      "verify:installed-release": "checks the installed release (npm run release:install-silently)",
       "verify:embedded-frontend": "checks the frontend inside a release executable (npm run tauri:build)",
       "verify:office-native": "the same check as test:windows-office-architecture"
     }

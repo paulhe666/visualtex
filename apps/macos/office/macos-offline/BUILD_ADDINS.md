@@ -104,6 +104,11 @@ PowerPoint for Mac loads `.ppam` files as add-ins and does not provide a reliabl
 4. Save the editable build input as a `.pptm` file and quit PowerPoint so Office flushes `ppt/vbaProject.bin`.
 5. Keep a known-good `VisualTeX.ppam` as the package shell. Do not attempt to open or edit the PPAM directly on macOS.
 
+Steps 2 to 4 are what `npm run compile:powerpoint-addin -- <steps>` does in the VBE of the build presentation
+`build-logs/powerpoint-native-omml/NativeOmmlRelease.pptm` (`--vbe` opens the editor, `--replace <modules>` imports
+changed modules, `--compile` compiles and saves, `--verify` compares the saved project with the sources after
+PowerPoint has quit). It types into PowerPoint: run it only while nobody uses the Mac.
+
 ## Inject and verify Ribbon XML
 
 Run:

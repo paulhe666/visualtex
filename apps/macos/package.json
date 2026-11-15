@@ -83,10 +83,12 @@
     "test:word-omml": "node scripts/word_omml_regression.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh",
     "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh",
+    "verify:mac-clean-install": "bash scripts/macos_clean_install_acceptance.sh",
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
     "verify:ocr-offline": "python3 scripts/verify_offline_ocr_bundle.py",
     "verify:ocr-offline:full": "python3 scripts/verify_offline_ocr_bundle.py --full",
     "verify:office-performance-budget": "node scripts/verify_office_performance_budget.mjs",
+    "compile:powerpoint-addin": "node scripts/compile_powerpoint_native_math.mjs --project NativeOmmlRelease",
     "package:macos-offline-office": "node scripts/package_macos_offline_addins.mjs"
   },
   "checks": {
@@ -108,6 +110,7 @@
       "verify:ocr-model-packs": "checks the built OCR model packs",
       "verify:mac-dmg": "checks a built DMG",
       "verify:mac-dmg:no-ocr": "checks a built DMG",
+      "verify:mac-clean-install": "installs a built DMG into /Applications and checks the installed app",
       "verify:office-performance-budget": "checks a performance record taken in the installed Office apps"
     }
   },
