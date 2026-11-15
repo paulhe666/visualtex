@@ -109,65 +109,6 @@
 .ML__content .ML__frac-line {
   box-shadow: var(--text-shadow);
 }
-/* Container for the virtual keyboard toggle and menu toggle buttons */
-.ML__toggles {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 0;
-  align-self: flex-start;
-}
-/* Vertical layout modifier */
-.ML__toggles--vertical {
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.ML__toggles--vertical .ML__virtual-keyboard-toggle,
-.ML__toggles--vertical .ML__menu-toggle {
-  margin-right: 0;
-}
-.ML__virtual-keyboard-toggle,
-.ML__menu-toggle {
-  box-sizing: border-box;
-  display: flex;
-  align-self: center;
-  align-items: center;
-  flex-shrink: 0;
-  flex-direction: column;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  margin-right: 4px;
-  cursor: pointer;
-  /* Avoid some weird blinking with :hover */
-  border-radius: 8px;
-  border: 1px solid transparent;
-  transition: background 0.2s cubic-bezier(0.64, 0.09, 0.08, 1);
-  color: hsl(var(--_hue), 40%, 50%);
-  fill: currentColor;
-  background: transparent;
-}
-.ML__virtual-keyboard-toggle:hover,
-.ML__menu-toggle:hover {
-  background: hsla(0, 0%, 70%, 0.3);
-  color: #333;
-  fill: currentColor;
-}
-.ML__virtual-keyboard-toggle > span,
-.ML__menu-toggle > span {
-  display: flex;
-  align-self: center;
-  align-items: center;
-}
-@media (pointer: coarse) {
-  .ML__virtual-keyboard-toggle,
-  .ML__menu-toggle {
-    min-width: 60px;
-    min-height: 60px;
-  }
-}
 /* The invisible element used to capture keyboard events. We're just trying
  really hard to make sure it doesn't show. */
 .ML__keyboard-sink {
@@ -189,11 +130,6 @@
 }
 [part='placeholder'] {
   color: var(--neutral-400);
-}
-.ML__composition {
-  background: var(--_composition-background-color);
-  color: var(--_composition-text-color);
-  text-decoration: underline var(--_composition-underline-color);
 }
 /* VisualTeX editing core: the layout engine places and sizes the caret element
    (position, height, font size = its slot's scale); the bar is centred on the
@@ -257,28 +193,10 @@ the glyph's own colour, the caret highlight included. */
   );
 }
 .ML__focused .ML__selected,
-.ML__focused .ML__selected .ML__contains-caret,
 .ML__focused .ML__selected .ML__smart-fence__close,
 .ML__focused .ML__selected .ML__placeholder {
   color: var(--_selection-color);
   -webkit-text-fill-color: currentColor;
-  opacity: 1;
-}
-.ML__empty-line-anchor::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 8px;
-  height: 20px;
-  border-radius: 2px;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
-}
-.ML__focused .ML__empty-line-anchor.ML__selected::after {
-  background: var(--_selection-background-color);
   opacity: 1;
 }
 .ML__selection {
@@ -287,14 +205,6 @@ the glyph's own colour, the caret highlight included. */
 }
 :host(:focus) .ML__selection {
   background: var(--_selection-background-color) !important;
-}
-.ML__contains-caret.ML__close,
-.ML__contains-caret.ML__open,
-.ML__contains-caret > .ML__close,
-.ML__contains-caret > .ML__open,
-.ML__contains-caret .ML__sqrt-sign,
-.ML__contains-caret .ML__sqrt-line {
-  color: var(--_contains-highlight-color);
 }
 .ML__contains-highlight {
   box-sizing: border-box;
@@ -312,18 +222,6 @@ the glyph's own colour, the caret highlight included. */
 }
 .ML__suggestion {
   color: var(--neutral-500);
-}
-.ML__virtual-keyboard-toggle.is-visible.is-pressed:hover {
-  background: hsl(var(--_hue), 25%, 35%);
-  color: #fafafa;
-  fill: currentColor;
-}
-.ML__virtual-keyboard-toggle.is-pressed,
-.ML__virtual-keyboard-toggle.is-active:hover,
-.ML__virtual-keyboard-toggle.is-active {
-  background: hsl(var(--_hue), 25%, 35%);
-  color: #fafafa;
-  fill: currentColor;
 }
 /* Add an attribute 'data-tooltip' to automatically show a
    tooltip over a element on hover.
@@ -384,42 +282,6 @@ menu .ML__base {
   transition-delay: 1s;
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
 }
-.ML__prompt {
-  border-radius: 2px;
-}
-.ML__editablePromptBox {
-  outline: 1px solid #acacac;
-  border-radius: 2px;
-  z-index: -1;
-}
-.ML__focused .ML__focusedPromptBox {
-  outline: highlight auto 1px;
-}
-.ML__lockedPromptBox {
-  background-color: rgba(142, 142, 141, 0.4);
-  z-index: -1;
-}
-.ML__correctPromptBox {
-  outline: 1px solid var(--_correct-color);
-  box-shadow: 0 0 5px var(--_correct-color);
-}
-.ML__incorrectPromptBox {
-  outline: 1px solid var(--_incorrect-color);
-  box-shadow: 0 0 5px var(--_incorrect-color);
-}
-.variant-submenu {
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-}
-.variant-submenu [part='menu-item'].ML__xl {
-  font-size: 2rem;
-  text-align: center;
-  margin: 0;
-}
-.ML__center-menu .label {
-  text-align: center;
-}
 .insert-matrix-submenu {
   /* Grid doesn't work on Safari */
   --_menu-item-size: 25px;
@@ -445,62 +307,4 @@ menu .ML__base {
   font-size: 2rem;
   line-height: 1.2;
   text-align: center;
-}
-.swatches-submenu {
-  --_swatch-size: 2rem;
-  --_columns: 4;
-  display: flex;
-  flex-flow: wrap;
-  padding: 8px;
-  max-width: calc(var(--_columns) * (var(--_swatch-size) + 18px) + 16px);
-  box-sizing: border-box;
-}
-.menu-swatch {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: fit-content;
-  height: fit-content;
-  margin: 2px;
-  padding: 0;
-  background: var(--neutral-200);
-}
-.menu-swatch > .label {
-  padding: 0;
-  margin: 0;
-  line-height: 0;
-}
-.menu-swatch > .label > span {
-  display: inline-block;
-  margin: 6px;
-  min-width: var(--_swatch-size);
-  min-height: var(--_swatch-size);
-  border-radius: 50%;
-}
-.menu-swatch.active {
-  background: var(--neutral-100);
-  z-index: 1;
-  scale: 1.4;
-}
-.menu-swatch.active > .label > span {
-  border-radius: 2px;
-}
-.menu-swatch .ui-checkmark,
-.menu-swatch .ui-mixedmark {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  color: white;
-}
-.menu-swatch.dark-contrast .ui-checkmark,
-.menu-swatch.dark-contrast .ui-mixedmark {
-  color: #000;
-}
-.ML__insert-template {
-  font-size: 1em;
-}
-.ML__insert-label {
-  opacity: 0.5;
-  margin-left: 2ex;
 }

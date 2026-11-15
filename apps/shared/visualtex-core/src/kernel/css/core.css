@@ -89,36 +89,3 @@
   padding-right: 0.4ex;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 }
-/* This class is used to implement the `\mathtip` and `\texttip` commands
-   For UI elements, see `[data-ML__tooltip]`
-*/
-.ML__tooltip-container {
-  position: relative;
-  transform: scale(0);
-}
-.ML__tooltip-container .ML__tooltip-content {
-  position: fixed;
-  display: inline-table;
-  visibility: hidden;
-  z-index: 2;
-  width: max-content;
-  max-width: 400px;
-  padding: 12px 12px;
-  border: var(--_tooltip-border);
-  border-radius: var(--_tooltip-border-radius);
-  background: var(--_tooltip-background-color);
-  --_selection-color: var(--_tooltip-color);
-  color: var(--_tooltip-color);
-  box-shadow: var(--_tooltip-box-shadow);
-  opacity: 0;
-  transition: opacity 0.15s cubic-bezier(0.4, 0, 1, 1);
-}
-.ML__tooltip-container .ML__tooltip-content .ML__base {
-  display: contents;
-}
-.ML__tooltip-container:hover .ML__tooltip-content {
-  visibility: visible;
-  opacity: 1;
-  font-size: 0.75em;
-  transform: scale(1) translate(0, 3em);
-}

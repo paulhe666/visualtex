@@ -491,36 +491,6 @@
   background: var(--accent-soft);
   color: var(--text);
 }
-.document-swatches {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.document-swatch-none {
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.document-swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 22px);
-  gap: 5px;
-}
-.document-swatch {
-  width: 22px;
-  height: 22px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 5px;
-  cursor: pointer;
-}
-.document-swatch:hover {
-  outline: 2px solid var(--accent-border);
-}
 .document-table-picker {
   padding: 2px;
 }
@@ -3103,10 +3073,6 @@
 }
 .vtx-sheet[data-class="ctexart"] .vtx-document h2 {
   font-size: calc(12.045em / 10.539);
-}
-/* at the document's top (after page commands only): no skip before, as at any page's top */
-.vtx-sheet[data-class] .vtx-document > :is(h1, h2, h3):not(:not(.vtx-page-command) ~ *) {
-  margin-top: 0;
 }
 .vtx-sheet[data-class] .vtx-document :is(h1, h2, h3)[data-number]::before {
   content: attr(data-number);
