@@ -1696,7 +1696,7 @@ Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef cursorRange As Range)
     Set cursorRange = documentObject.Range(Start:=position, End:=position)
 End Sub
 
-Private Function VTContainsVisibleWordBodyText( _
+Public Function VTContainsVisibleWordBodyText( _
     ByVal value As String) As Boolean
 
     Dim characterIndex As Long

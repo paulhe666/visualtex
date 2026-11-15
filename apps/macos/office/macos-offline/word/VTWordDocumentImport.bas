@@ -1127,7 +1127,9 @@ Public Sub VTCommitWordDocumentImportDispatch( _
     Dim internalMutationStarted As Boolean
     Dim previousScreenUpdating As Boolean
     Dim screenUpdatingChanged As Boolean
+    Dim addedParagraphMark As Long
 
+    addedParagraphMark = -1
     On Error GoTo Failed
     transactionStage = "commit-enter"
     VTTraceDocumentImportStage sessionId, "commit-enter", -1
@@ -1315,6 +1317,20 @@ Public Sub VTCommitWordDocumentImportDispatch( _
     End If
     VTBeginWordInternalMutation
     internalMutationStarted = True
+
+    ' Imported paragraphs do not join the paragraph the caret ends, as on Windows: at the
+    ' end of a paragraph with text, the first one starts a new paragraph.
+    If VTDocumentImportParagraphFlag(manifest, 0, "paragraphStart") Then
+        transactionStage = "import-start-paragraph"
+        Set rollbackRange = cursorRange.Paragraphs(1).Range.Duplicate
+        If cursorRange.Start >= rollbackRange.End - 1 And _
+           VTContainsVisibleWordBodyText(rollbackRange.Text) Then
+            addedParagraphMark = cursorRange.Start
+            cursorRange.InsertAfter vbCr
+            cursorRange.Collapse wdCollapseEnd
+        End If
+        Set rollbackRange = Nothing
+    End If
 
     For itemIndex = 0 To itemCount - 1
         VTTraceDocumentImportStage sessionId, "item-start", itemIndex
@@ -1525,6 +1541,13 @@ Failed:
                 Start:=itemInsertionStart, End:=cursorRange.Start)
             rollbackRange.Delete
         End If
+    End If
+    ' The paragraph started for the import goes again when its first item failed.
+    If Not targetDocument Is Nothing And addedParagraphMark >= 0 And itemIndex = 0 Then
+        Set rollbackRange = targetDocument.Range( _
+            Start:=addedParagraphMark, End:=addedParagraphMark + 1)
+        If rollbackRange.Text = vbCr Then rollbackRange.Delete
+        itemInsertionStart = addedParagraphMark
     End If
     If Not targetDocument Is Nothing And _
        VTIsCanonicalUuid(activeFormulaId) Then
