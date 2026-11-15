@@ -1671,6 +1671,31 @@ Failed:
         errorNumber, errorDescription
 End Sub
 
+' A display formula stands in a paragraph of its own, as on Windows: text that shared the
+' paragraph with its LaTeX code goes to the paragraph before or after it. Left in the
+' paragraph, the equation joined an equation next to it (Word merges adjacent equations)
+' or became inline. Table cells keep their paragraph as it is.
+Private Sub VTSeparateLatexRedrawDisplayParagraph(ByRef cursorRange As Range)
+    Dim documentObject As Document
+    Dim paragraphRange As Range
+    Dim position As Long
+
+    Set documentObject = cursorRange.Document
+    position = cursorRange.Start
+    Set paragraphRange = cursorRange.Paragraphs(1).Range.Duplicate
+    If paragraphRange.Information(wdWithInTable) Then Exit Sub
+    If VTContainsVisibleWordBodyText(documentObject.Range( _
+       Start:=position, End:=paragraphRange.End - 1).Text) Then
+        documentObject.Range(Start:=position, End:=position).InsertBefore vbCr
+    End If
+    If VTContainsVisibleWordBodyText(documentObject.Range( _
+       Start:=paragraphRange.Start, End:=position).Text) Then
+        documentObject.Range(Start:=position, End:=position).InsertBefore vbCr
+        position = position + 1
+    End If
+    Set cursorRange = documentObject.Range(Start:=position, End:=position)
+End Sub
+
 Private Function VTContainsVisibleWordBodyText( _
     ByVal value As String) As Boolean
 
@@ -2492,6 +2517,11 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
             If numberParagraphCleared Then
                 VTNormalizePlainWordParagraph _
                     cursorRange.Paragraphs(1).Range.Duplicate
+            End If
+            If operationName = "latexRedraw" And _
+               VTDispatchOptional(manifest, VTDocumentImportItemKey( _
+                   itemIndex, "displayMode")) = "block" Then
+                VTSeparateLatexRedrawDisplayParagraph cursorRange
             End If
             formulaFailureDescription = ""
             If Not sharedVectorDocument Is Nothing Then
