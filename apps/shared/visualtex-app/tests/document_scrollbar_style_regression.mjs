@@ -96,6 +96,16 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     await evaluate(`document.querySelector(".mc-canvas").scrollTop = 1600`);
     await sleep(600);
 
+    // a browser that draws only overlay bars (macOS' headless Chrome) gets a classic one, 15 px as macOS's
+    if (await evaluate(`(() => { const c = document.querySelector(".mc-canvas"); return c.offsetWidth - c.clientWidth === 0; })()`)) {
+      await evaluate(`(() => {
+        const style = document.createElement("style");
+        style.id = "classic-scroll-bar";
+        style.textContent = ".mc-canvas::-webkit-scrollbar { width: 15px; background: #eee; } .mc-canvas::-webkit-scrollbar-thumb { background: #999; }";
+        document.head.append(style);
+      })()`);
+      await sleep(900);
+    }
     const classic = await measure();
     assert.ok(classic.paragraph && classic.inline && classic.formula, `a paragraph with formulas and a display formula are in view (${mode})`);
     await evaluate(`(() => {
