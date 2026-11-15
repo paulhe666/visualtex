@@ -404,6 +404,25 @@ impl Writer<'_> {
         position: Option<Value>,
     ) -> Result<Value, CommandError> {
         let old_id = current.get("formula_id").and_then(Value::as_str).unwrap_or_default().to_string();
+        // A picture cannot sit in a line of text: an equation that shares its text box with
+        // other text stays as it is (as on Windows, and as the LaTeX redraw to pictures does)
+        // unless the call says where the picture goes. Placed at the box's position, the
+        // picture covered the remaining text.
+        let placed = position
+            .as_ref()
+            .is_some_and(|position| position.get("left_pt").is_some() || position.get("top_pt").is_some());
+        if format == "picture"
+            && !placed
+            && current.get("frame_of").and_then(Value::as_str) == Some("text_box")
+            && ["context_before", "context_after"]
+                .iter()
+                .any(|key| current.get(*key).and_then(Value::as_str).is_some_and(|text| !text.trim().is_empty()))
+        {
+            return Err(CommandError::new(
+                "operation_failed",
+                "This equation shares its text box with other text and was left as it is: a picture cannot sit in a line of text (give a position to place the picture elsewhere)",
+            ));
+        }
         let lines = match lines {
             Some(lines) => lines,
             None => current
