@@ -200,6 +200,10 @@ function placeCovers(
   end: [number, number] | null,
   keep: { y: number; right: number } | null,
   caretLine: [number, number] | null,
+  /** An empty formula: where it starts in the panel (its caret) and where the field's held space
+   *  ends from there, as far as known (the input method's estimate will do: one blank). */
+  emptyStart: number | null,
+  emptyEnd: [number, number] | null,
 ): { right: number; bottom: number; last: { y: number; right: number } | null } | null {
   if (!layer) return null;
   const box = formulaBox();
@@ -213,9 +217,13 @@ function placeCovers(
     // formula's own caret until something was typed): the formula's line from the anchor, at least
     // a filler's width, to where the held space ends when the field tells.
     const baseline = box.baseline;
-    let right = box.left + Math.max(box.width, line.height * 0.75) + 3;
-    if (end && Math.abs(end[1]) < 2) right = Math.max(right, box.left + end[0] + 3);
-    const left = box.left + Math.min(0, start?.[0] ?? 0) - 3;
+    // (an empty formula's box is not where it starts: its caret is)
+    const origin = box.left;
+    void emptyStart;
+    let right = origin + Math.max(empty ? 0 : box.width, line.height * 0.75) + 3;
+    const held = end ?? (empty ? emptyEnd : null);
+    if (held && Math.abs(held[1]) < 2) right = Math.max(right, origin + held[0] + 3);
+    const left = origin + Math.min(0, start?.[0] ?? 0) - 3;
     const over = Math.max(3, line.height * 0.2);
     // (taller than the line by what a field's caret may be)
     covers.push({ left, right, top: baseline - (line.height - line.descent) - over, bottom: baseline + line.descent + over * 0.7 });
@@ -277,6 +285,7 @@ function placeCovers(
       if (last && end && Math.abs(end[1] - y) < 2) caretCover(box.left + end[0]);
     });
   }
+  void logAnywhere(`DEBUG covers empty=${empty} places=${places.length} bg=${background} line=${JSON.stringify(line)} box=${JSON.stringify(box)} covers=${JSON.stringify(covers)}`);
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();
   while (layer.children.length < covers.length) layer.appendChild(document.createElement("div"));
   // the panel holds the covers too (one may reach past the formula, to the end of the held space)
@@ -656,6 +665,8 @@ export function AnywhereApp() {
   const piecePlacesRef = useRef<[number, number][]>([]);
   const pieceStartRef = useRef<[number, number] | null>(null);
   const pieceEndRef = useRef<[number, number] | null>(null);
+  /** (the same, an estimated one too) */
+  const pieceEndAnyRef = useRef<[number, number] | null>(null);
   const pieceCaretRef = useRef<[number, number] | null>(null);
   /** The last line's cover widths of the last moments (placeCovers keeps the widest of them for
    *  SHRINK_COVER_MS), the timer that lets it shrink after, and the frame the field is told in
@@ -934,6 +945,8 @@ export function AnywhereApp() {
       pieceEndRef.current,
       keep,
       pieceCaretRef.current,
+      formulaStartRef.current,
+      pieceEndAnyRef.current,
     );
     if (covers?.last) {
       widths.push({ at: now, ...covers.last });
@@ -1031,6 +1044,7 @@ export function AnywhereApp() {
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
+      pieceEndAnyRef.current = null;
       pieceCaretRef.current = null;
       coverWidthsRef.current = [];
       inputMethodRef.current = Boolean(activation.inputMethod);
@@ -1192,6 +1206,7 @@ export function AnywhereApp() {
         pieceStartRef.current = pieces.start ?? null;
         // an estimated end is no place to cover to (it may lie past the held space, over the field's text)
         pieceEndRef.current = pieces.endEstimated ? null : pieces.end ?? null;
+        pieceEndAnyRef.current = pieces.end ?? null;
         pieceCaretRef.current = pieces.caretLine ?? null;
         if (same) {
           measureRef.current();
