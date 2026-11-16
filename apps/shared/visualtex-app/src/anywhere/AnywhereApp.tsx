@@ -207,12 +207,19 @@ function placeCovers(
   const lines = formulaLines();
   const covers: { left: number; right: number; top: number; bottom: number }[] = [];
   let lastLine: { y: number; right: number } | null = null;
-  if (box && background && line && !places.length) {
-    // the field holds a space before it has told where: the formula's line from the anchor, at
-    // least a filler's width (its underline and caret are there)
+  const empty = !lines || !lines.pieces.length;
+  if (box && background && line && (!places.length || empty)) {
+    // The field holds a space before it has told where, or for a formula that is still empty (a
+    // filler, with the field's underline under it and its caret before it: they showed beside the
+    // formula's own caret until something was typed): the formula's line from the anchor, at least
+    // a filler's width, to where the held space ends when the field tells.
     const baseline = box.baseline;
-    const right = box.left + Math.max(box.width, line.height * 0.75) + 3;
-    covers.push({ left: box.left - 3, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
+    let right = box.left + Math.max(box.width, line.height * 0.75) + 3;
+    if (end && Math.abs(end[1]) < 2) right = Math.max(right, box.left + end[0] + 3);
+    const left = box.left + Math.min(0, start?.[0] ?? 0) - 3;
+    const over = Math.max(3, line.height * 0.2);
+    // (taller than the line by what a field's caret may be)
+    covers.push({ left, right, top: baseline - (line.height - line.descent) - over, bottom: baseline + line.descent + over * 0.7 });
   } else if (box && lines && background && line && places.length) {
     const px = box.fontPx / SP_PER_EM;
     const byLine = new Map<number, { left: number; right: number }>();

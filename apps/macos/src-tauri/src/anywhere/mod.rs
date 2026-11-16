@@ -924,7 +924,29 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
         log(&line);
     }
     match next {
-        Next::Open(activation, ready) => {
+        Next::Open(mut activation, ready) => {
+            // The field's colours now, before the field shows anything for the formula: an editor
+            // that draws what is being composed on a background of its own (VS Code) gave the cover
+            // that colour when the screen was read afterwards, and the cover showed as a band.
+            let colors = geometry.as_ref().and_then(|geometry| {
+                let number = app.get_webview_window(WINDOW_LABEL).and_then(|window| panel::window_number(&window))?;
+                screen_colors::field_colors(geometry.caret, number)
+            });
+            if let Some(colors) = colors {
+                if let Ok(mut session) = session() {
+                    if Some(session.generation) == activation.as_ref().map(|activation| activation.generation) {
+                        session.color_read = session.generation;
+                        session.color_from_screen = session.generation;
+                        session.field_text.text_color = Some(colors.text.clone());
+                        session.field_text.background_color = Some(colors.background.clone());
+                    }
+                }
+                log(&format!("field colour text={} background={} (before the formula)", colors.text, colors.background));
+                if let Some(activation) = activation.as_mut() {
+                    activation.text_color = Some(colors.text);
+                    activation.background_color = Some(colors.background);
+                }
+            }
             // (the formula's keys are the input method's to take, but VisualTeX's own shortcuts)
             ime::send(serde_json::json!({ "t": "session", "on": true, "skip": hotkey::registered_chords() }));
             log(&format!(
