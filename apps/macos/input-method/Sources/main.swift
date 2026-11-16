@@ -8,6 +8,7 @@ let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionName"] as
     ?? "com.visualtex.inputmethod.Formula_Connection"
 let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier)
 InputLog.write("server started \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") server=\(server != nil)")
+SourceState.ensureSelected()
 AppLink.shared.onMessage = { message in VTFormulaController.receive(message) }
 AppLink.shared.keepConnected()
 HostProbe.install()

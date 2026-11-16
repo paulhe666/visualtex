@@ -95,8 +95,6 @@ unsafe extern "C" {
 #[link(name = "Carbon", kind = "framework")]
 unsafe extern "C" {
     static kTISPropertyInputSourceID: CFTypeRef;
-    static kTISPropertyInputSourceIsEnabled: CFTypeRef;
-    static kTISPropertyInputSourceIsSelected: CFTypeRef;
     fn TISCreateInputSourceList(properties: CFTypeRef, include_all_installed: u8) -> CFTypeRef;
     fn TISGetInputSourceProperty(source: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
     fn TISSelectInputSource(source: CFTypeRef) -> i32;
@@ -225,19 +223,17 @@ fn input_source(id: &str, include_all_installed: bool) -> Option<Owned> {
     Owned::new(unsafe { CFRetain(first) })
 }
 
-fn source_flag(source: &Owned, key: CFTypeRef) -> bool {
-    number_value(unsafe { TISGetInputSourceProperty(source.0, key) }) == Some(1)
+/// The input method's process says it is one of the selected input sources (its "hello"): the field
+/// that has the keyboard is its field too. (Asked of Text Input Sources in this process, the answer
+/// would be the one from before VisualTeX enabled it: each process keeps its own copy of the list.)
+static SELECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn is_selected() -> bool {
+    is_linked() && SELECTED.load(Ordering::Relaxed)
 }
 
-/// The input method is one of the selected input sources: the field that has the keyboard is its
-/// field too.
-pub(super) fn is_enabled(app: &AppHandle) -> bool {
-    on_main(app, || {
-        input_source(SOURCE_ID, true)
-            .map(|source| unsafe { source_flag(&source, kTISPropertyInputSourceIsEnabled) && source_flag(&source, kTISPropertyInputSourceIsSelected) })
-            .unwrap_or(false)
-    })
-    .unwrap_or(false)
+pub(super) fn note_selected(selected: bool) {
+    SELECTED.store(selected, Ordering::Relaxed);
 }
 
 /// The third-party input sources macOS has as enabled, with `add` among them (as System Settings
@@ -278,38 +274,6 @@ fn write_enabled_sources(add: Option<&str>, remove: Option<&str>) -> bool {
         CFPreferencesSetAppValue(key.0, list.0, domain.0);
         CFPreferencesAppSynchronize(domain.0) != 0
     }
-}
-
-/// Makes the input method one of the selected input sources (enabled first, see the module
-/// comment); selecting a palette leaves the keyboard input source as it is. (enabled, selected)
-fn enable_and_select(app: &AppHandle) -> (bool, bool) {
-    let state = |app: &AppHandle| {
-        on_main(app, || {
-            input_source(SOURCE_ID, true)
-                .map(|source| unsafe { (source_flag(&source, kTISPropertyInputSourceIsEnabled), source_flag(&source, kTISPropertyInputSourceIsSelected)) })
-        })
-        .flatten()
-        .unwrap_or((false, false))
-    };
-    let (mut enabled, mut selected) = state(app);
-    if !enabled {
-        let written = write_enabled_sources(Some(SOURCE_ID), None);
-        // (Text Input Sources reads the list again a moment later)
-        for _ in 0..20 {
-            (enabled, selected) = state(app);
-            if enabled {
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-        super::log(&format!("input method enabled: written={written} enabled={enabled}"));
-    }
-    if enabled && !selected {
-        let status = on_main(app, || input_source(SOURCE_ID, true).map(|source| unsafe { TISSelectInputSource(source.0) })).flatten();
-        (enabled, selected) = state(app);
-        super::log(&format!("input method selected: status={status:?} selected={selected}"));
-    }
-    (enabled, selected)
 }
 
 /// The earlier input method goes: off the selected and the enabled input sources, its process and
@@ -439,9 +403,11 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     }
     let registered = on_main(app, move || register(&installed)).unwrap_or(false);
     retire_old(app);
-    let (enabled, selected) = enable_and_select(app);
-    super::log(&format!("input method installed changed={changed} registered={registered} enabled={enabled} selected={selected}"));
-    if changed {
+    // Enabled here (see the module comment); the input method's own process, started after that,
+    // selects itself and says so.
+    let enabled = write_enabled_sources(Some(SOURCE_ID), None);
+    super::log(&format!("input method installed changed={changed} registered={registered} newly_enabled={enabled}"));
+    if changed || enabled {
         thread::sleep(Duration::from_millis(300));
     }
     if !is_linked() {
@@ -554,6 +520,7 @@ fn read_messages(app: &AppHandle, id: u64, stream: UnixStream) {
         })
         .unwrap_or(false);
     if current {
+        note_selected(false);
         super::log(&format!("input method link closed ({id})"));
         super::input_method_message(app, &serde_json::json!({ "t": "disconnected" }));
     }

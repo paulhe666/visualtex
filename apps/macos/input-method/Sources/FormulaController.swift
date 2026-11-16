@@ -666,10 +666,11 @@ final class VTFormulaController: IMKInputController {
         AppLink.shared.send(message)
     }
 
-    /// The selection in the held space: none, at its start. The field's own caret then stands at the
-    /// formula's start and stays there whatever is typed (set after the space, it moved with every
-    /// key and showed beside the formula's caret until VisualTeX had covered it again).
-    static var heldSelection = NSRange(location: 0, length: 0)
+    /// The selection in the held space: none, right after its anchor. The field's own caret then
+    /// stands at the formula's start, inside the space (VisualTeX covers it there), and stays there
+    /// whatever is typed (set after the space, it moved with every key and showed beside the
+    /// formula's caret until VisualTeX had covered it again).
+    static var heldSelection = NSRange(location: (FormulaSpace.anchor as NSString).length, length: 0)
 
     /// The held space as marked text: with the thin underline. (Given no
     /// attribute the field draws a thick one. Its colour is the system's,

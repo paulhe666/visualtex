@@ -88,7 +88,7 @@ final class AppLink {
         let reader = Thread { [weak self] in self?.read(candidate) }
         reader.name = "VisualTeX link"
         reader.start()
-        writeLine(["t": "hello", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?"], to: candidate)
+        writeLine(["t": "hello", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?", "selected": SourceState.selected], to: candidate)
         return true
     }
 

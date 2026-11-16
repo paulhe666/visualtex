@@ -251,23 +251,26 @@ function placeCovers(
       const baseline = box.baseline + y;
       // (a field's caret is drawn a pixel taller than its line: Chrome)
       covers.push({ left, right, top: baseline - (line.height - line.descent) - 1.5, bottom: baseline + line.descent + 1 });
-      // The field's own caret stands where the held space ends, under the formula, and may be a few
-      // points taller than its line (WeChat's showed above the cover as a green dash, 2026-11-11):
-      // a cover of its own, a caret wide, taller than the line's.
-      if (last && end && Math.abs(end[1] - y) < 2) {
-        const at = box.left + end[0];
+      // The field's own caret may be a few points taller than its line (WeChat's showed above the
+      // cover as a green dash, 2026-11-11): a cover of its own, a caret wide, taller than the line's,
+      // where it stands. That is where the held space starts, right after its anchor (the input
+      // method keeps the field's caret there: it does not move as the formula is typed), and, for a
+      // field that puts its caret after what is being composed whatever it is told, where it ends.
+      const caretCover = (at: number) => {
         const over = Math.max(3, line.height * 0.2);
         let top = baseline - (line.height - line.descent) - over;
         let bottom = baseline + line.descent + over * 0.7;
         // (as tall as the field has the space's last character: its caret is; WebKit sets the blanks
         // in a taller font than the text, and its caret showed above the cover as a dot)
         if (caretLine) {
-            const low = baseline + line.descent + caretLine[0];
-            top = Math.min(top, low - caretLine[1] - 2);
-            bottom = Math.max(bottom, low + 1.5);
+          const low = baseline + line.descent + caretLine[0];
+          top = Math.min(top, low - caretLine[1] - 2);
+          bottom = Math.max(bottom, low + 1.5);
         }
         covers.push({ left: at - 2, right: at + 3, top, bottom });
-      }
+      };
+      if (index === 0) caretCover(Math.min(span.left, box.left + (start?.[0] ?? 0)) + 1.5);
+      if (last && end && Math.abs(end[1] - y) < 2) caretCover(box.left + end[0]);
     });
   }
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();

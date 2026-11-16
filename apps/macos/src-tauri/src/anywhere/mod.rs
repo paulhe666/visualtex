@@ -392,7 +392,7 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
                 // The formula takes the field's colour from the screen when
                 // the field does not tell it (screen_colors): with the input
                 // method in use, macOS is asked once for Screen Recording.
-                if ime::is_enabled(&installer) && !screen_colors::can_read_screen() {
+                if ime::installed() && !screen_colors::can_read_screen() {
                     let _ = installer.run_on_main_thread(|| {
                         let asked = screen_colors::request_access();
                         log(&format!("screen recording requested granted={asked}"));
@@ -423,7 +423,7 @@ fn toggle(app: &AppHandle, display: bool) {
     let spawned = std::thread::Builder::new()
         .name("visualtex-anywhere-activate".to_string())
         .spawn(move || {
-            if ime::is_enabled(&app) {
+            if ime::installed() {
                 begin_input_method(&app, display);
             } else {
                 activate(&app, display);
@@ -544,11 +544,18 @@ fn begin_input_method(app: &AppHandle, display: bool) {
             std::thread::sleep(Duration::from_millis(40));
         }
     }
-    let asked = ime::is_linked() && ime::send(serde_json::json!({ "t": "caret", "app": field_app }));
+    // (linked a moment ago: it says whether it is a selected input source right after)
+    let deadline = std::time::Instant::now() + Duration::from_millis(400);
+    while ime::is_linked() && !ime::is_selected() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let asked = ime::is_selected() && ime::send(serde_json::json!({ "t": "caret", "app": field_app }));
     log(&format!(
-        "input method asked gen={generation} field={} ime_field={} asked={asked} ms={}",
+        "input method asked gen={generation} field={} ime_field={} linked={} selected={} asked={asked} ms={}",
         field_app.as_deref().unwrap_or("?"),
         known_field.as_deref().unwrap_or("-"),
+        ime::is_linked(),
+        ime::is_selected(),
         started.elapsed().as_millis()
     ));
     if !asked {
@@ -755,10 +762,14 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
     let kind = message.get("t").and_then(|value| value.as_str()).unwrap_or("");
     note_ime_field(kind, message.get("client").and_then(|value| value.as_str()));
     match kind {
-        "hello" => log(&format!(
-            "input method {}",
-            message.get("version").and_then(|value| value.as_str()).unwrap_or("?")
-        )),
+        "hello" | "selected" => {
+            let selected = message.get("selected").and_then(|value| value.as_bool()).unwrap_or(false);
+            ime::note_selected(selected);
+            log(&format!(
+                "input method {} selected={selected}",
+                message.get("version").and_then(|value| value.as_str()).unwrap_or("")
+            ));
+        }
         "geometry" => input_method_caret_reported(app, message),
         "nofield" => {
             // the shortcut's question: no field of the input method's has the keyboard
