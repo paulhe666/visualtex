@@ -165,7 +165,7 @@ final class VTFormulaController: IMKInputController {
                     }
                 }
             } else if !text.isEmpty {
-                client.insertText(text, replacementRange: Self.noRange)
+                insertReplacingMarked(text, client: client)
             } else if !marked.isEmpty {
                 clearMarked(client)
             }
@@ -712,10 +712,21 @@ final class VTFormulaController: IMKInputController {
         if characterRect(client, length) == nil { Self.lateClients.insert(id) }
     }
 
+    /// `text` where the held space is: marked text, replaced as such. Text with line breaks (a display
+    /// formula) goes in once the space is cleared: a rich editor (Gemini, ChatGPT, Claude: Quill,
+    /// ProseMirror) that has a composition replaced by it splits its paragraphs first and puts its caret
+    /// one character short, so the formula's last character (its closing brace) went after the closing
+    /// $$ (2026-11-16: reproduced with both editors in Chromium at the field's start, end and middle;
+    /// cleared first the text is exact in them and in a plain text field too).
+    private func insertReplacingMarked(_ text: String, client: IMKTextInput) {
+        if text.contains("\n"), !marked.isEmpty { clearMarked(client) }
+        client.insertText(text, replacementRange: Self.noRange)
+    }
+
     private func commit(_ text: String, client: IMKTextInput) {
         KeyGrab.shared.stop()
         notePastEnd(client)
-        client.insertText(text, replacementRange: Self.noRange)
+        insertReplacingMarked(text, client: client)
         InputLog.write("commit length=\((text as NSString).length)")
         marked = ""
         formulaText = ""
