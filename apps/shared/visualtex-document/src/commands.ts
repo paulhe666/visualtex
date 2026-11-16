@@ -110,9 +110,8 @@ function displayFormula(
     pos = tr.mapping.map($at.pos) - 1;
     tr.insert(pos, node);
   }
-  // As in Mathcha, a line always follows a display formula, so the text can go on below it.
-  const after = pos + node.nodeSize;
-  if (!tr.doc.resolve(after).nodeAfter?.isTextblock) tr.insert(after, state.schema.nodes.paragraph.create());
+  // No empty line is added after it (it showed as a blank line under the formula, above the next block): Enter at
+  // the formula's end makes a line below it, and a click under the document's last block makes one there.
   dispatch(openFormula(tr, pos, { kind: initial ? "start" : "end" }).scrollIntoView());
   return true;
 }
