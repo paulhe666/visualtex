@@ -963,7 +963,22 @@ kbd {
     var(--accent) 10%,
     transparent
   );
+  /* every other colour of the field from the theme too: the formula engine's own defaults follow the system's light or
+     dark appearance (macOS dark under a light theme drew selected symbols white on the light selection, a dark theme
+     drew them black) */
+  --selection-color: currentColor;
+  --smart-fence-color: currentColor;
+  --contains-highlight-color: var(--formula-caret);
+  --highlight-text: color-mix(in srgb, var(--accent) 10%, transparent);
+  --text-highlight-background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  --placeholder-color: var(--text-faint);
+  --composition-background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  --composition-text-color: currentColor;
   transition: font-size 160ms ease;
+}
+
+.visual-mathfield::part(placeholder) {
+  color: var(--text-faint);
 }
 
 .visual-mathfield::part(menu-toggle),

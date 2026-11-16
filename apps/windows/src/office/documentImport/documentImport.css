@@ -1,10 +1,12 @@
 .doc-import-shell {
   --doc-import-radius: 12px;
-  --doc-import-page: #fffefb;
-  --doc-import-page-ink: #24272c;
-  --doc-import-page-muted: #68707c;
-  --doc-import-page-rule: #dfe3e8;
-  --doc-import-page-soft: #f5f7f9;
+  /* the preview page in the theme's colours (as the main window's document page): a fixed warm white page with dark
+     text ignored a dark or coloured theme */
+  --doc-import-page: var(--formula-surface);
+  --doc-import-page-ink: var(--text-primary, var(--text));
+  --doc-import-page-muted: var(--text-secondary, var(--text-muted));
+  --doc-import-page-rule: var(--border-default, var(--border));
+  --doc-import-page-soft: color-mix(in srgb, var(--doc-import-page-ink) 4%, var(--doc-import-page));
   width: 100vw;
   height: 100vh;
   display: grid;
@@ -446,7 +448,7 @@
   margin-top: 38px;
   padding-top: 11px;
   border-top: 1px solid var(--doc-import-page-rule);
-  color: #8a919c;
+  color: var(--doc-import-page-muted);
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 9px;
   letter-spacing: 0.3px;
@@ -465,7 +467,7 @@
 
 .doc-import-paper-empty > svg {
   margin-bottom: 4px;
-  color: #9ba3ae;
+  color: color-mix(in srgb, var(--doc-import-page-muted) 72%, var(--doc-import-page));
 }
 
 .doc-import-paper-empty strong {
@@ -482,7 +484,7 @@
 }
 
 .doc-import-heading {
-  color: #1f2329;
+  color: var(--doc-import-page-ink);
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   line-height: 1.34;
   letter-spacing: -0.2px;
@@ -529,20 +531,20 @@ h6.doc-import-heading {
 .doc-import-quote {
   margin: 1.1em 0;
   padding: 0.72em 1em 0.72em 1.08em;
-  border-left: 3px solid #73a3c7;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--doc-import-page));
   border-radius: 0 6px 6px 0;
-  background: #f3f7fa;
-  color: #59626e;
+  background: color-mix(in srgb, var(--accent) 5%, var(--doc-import-page));
+  color: var(--doc-import-page-muted);
 }
 
 .doc-import-code-block {
   margin: 1.15em 0;
   padding: 15px 17px;
   overflow: auto;
-  border: 1px solid #dfe4e9;
+  border: 1px solid var(--doc-import-page-rule);
   border-radius: 8px;
   background: var(--doc-import-page-soft);
-  color: #303741;
+  color: var(--doc-import-page-ink);
   font: 9px/1.55 "Cascadia Code", "Consolas", monospace;
   white-space: pre-wrap;
 }
@@ -558,7 +560,7 @@ h6.doc-import-heading {
 .doc-import-list-marker {
   width: 1.45em;
   flex: 0 0 1.45em;
-  color: #3f7ca8;
+  color: var(--accent);
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   font-weight: 700;
   text-align: right;
@@ -573,9 +575,9 @@ h6.doc-import-heading {
   padding: 7px 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid #e7eaee;
+  border: 1px solid var(--doc-import-page-rule);
   border-radius: 8px;
-  background: #fbfcfd;
+  background: var(--doc-import-page-soft);
 }
 
 .doc-import-formula {
@@ -605,10 +607,10 @@ h6.doc-import-heading {
   display: inline-grid;
   gap: 2px;
   padding: 2px 5px;
-  border: 1px solid #df9fa4;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--doc-import-page));
   border-radius: 5px;
-  background: #fff2f3;
-  color: #b23c48;
+  background: color-mix(in srgb, var(--danger) 7%, var(--doc-import-page));
+  color: var(--danger);
   font-family: "Cascadia Code", "Consolas", monospace;
 }
 
@@ -639,10 +641,10 @@ h6.doc-import-heading {
 
 .doc-import-preview-document .code {
   padding: 0.12em 0.34em;
-  border: 1px solid #e3e6ea;
+  border: 1px solid var(--doc-import-page-rule);
   border-radius: 4px;
   background: var(--doc-import-page-soft);
-  color: #37404a;
+  color: var(--doc-import-page-ink);
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 0.88em;
 }

@@ -223,9 +223,9 @@
 
 .formula-custom-color-delete:hover,
 .formula-custom-color-delete:focus-visible {
-  border-color: color-mix(in srgb, #dc2626 58%, var(--border));
-  background: color-mix(in srgb, #dc2626 10%, var(--surface));
-  color: #dc2626;
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
   outline: none;
 }
 

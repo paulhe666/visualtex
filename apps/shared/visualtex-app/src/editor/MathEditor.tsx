@@ -188,10 +188,11 @@ function FormulaFieldRenderFallback({
         display: "flex",
         alignItems: "center",
         padding: "8px 12px",
-        border: "1px solid rgba(190, 18, 60, 0.28)",
+        // the theme's danger colour (a fixed pink box with dark red text stood out on every other theme)
+        border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
         borderRadius: 6,
-        color: "#9f1239",
-        background: "rgba(255, 241, 242, 0.72)",
+        color: "var(--danger)",
+        background: "color-mix(in srgb, var(--danger) 8%, transparent)",
         fontSize: 12,
       }}
     >

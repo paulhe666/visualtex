@@ -1,6 +1,7 @@
-// Code block highlighting as VS Code does it: Shiki runs VS Code's own TextMate grammars with its Dark+ theme
-// (docs/document-editor/DESIGN.md §6.5). Shiki and each grammar load on first use, each in its own chunk; until a
-// grammar is in, its blocks show plain text, then the document draws them again (onReady).
+// Code block highlighting as VS Code does it: Shiki runs VS Code's own TextMate grammars with its Light+ and Dark+
+// themes (docs/document-editor/DESIGN.md §6.5): each token carries both colours, the block (document.css) shows the one
+// of the theme's light or dark mode, so a code block follows the theme. Shiki and each grammar load on first use, each
+// in its own chunk; until a grammar is in, its blocks show plain text, then the document draws them again (onReady).
 import type { HighlighterCore, LanguageRegistration } from "shiki/core";
 import type { CodeHighlighter, CodeToken } from "../../../visualtex-document/src/index.ts";
 
@@ -43,7 +44,8 @@ const GRAMMARS: Record<string, { name: string; load: Grammar }> = {
   ini: { name: "ini", load: () => import("shiki/langs/ini.mjs") },
 };
 
-const THEME = "dark-plus";
+const LIGHT = "light-plus";
+const DARK = "dark-plus";
 const CACHE_LIMIT = 300;
 
 let core: Promise<HighlighterCore> | null = null;
@@ -55,12 +57,17 @@ const cache = new Map<string, CodeToken[][]>();
 
 function shiki(): Promise<HighlighterCore> {
   core ??= (async () => {
-    const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, theme] = await Promise.all([
+    const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, light, dark] = await Promise.all([
       import("shiki/core"),
       import("shiki/engine/javascript"),
+      import("shiki/themes/light-plus.mjs"),
       import("shiki/themes/dark-plus.mjs"),
     ]);
-    return createHighlighterCore({ themes: [theme.default], langs: [], engine: createJavaScriptRegexEngine({ forgiving: true }) });
+    return createHighlighterCore({
+      themes: [light.default, dark.default],
+      langs: [],
+      engine: createJavaScriptRegexEngine({ forgiving: true }),
+    });
   })();
   return core;
 }
@@ -96,8 +103,23 @@ export const codeHighlighter: CodeHighlighter = {
     const key = `${language}\u0000${code}`;
     const cached = cache.get(key);
     if (cached) return cached;
-    const lines = ready.codeToTokensBase(code, { lang: grammar.name, theme: THEME });
-    const tokens = lines.map((line) => line.map((token) => ({ content: token.content, color: token.color, fontStyle: token.fontStyle })));
+    const lines = ready.codeToTokensWithThemes(code, { lang: grammar.name, themes: { light: LIGHT, dark: DARK } });
+    // a token in a theme's own text colour takes the page's ink (no colour of its own)
+    const lightText = ready.getTheme(LIGHT).fg?.toLowerCase();
+    const darkText = ready.getTheme(DARK).fg?.toLowerCase();
+    const tokens = lines.map((line) =>
+      line.map((token) => {
+        const light = token.variants.light;
+        const dark = token.variants.dark;
+        const plain = light?.color?.toLowerCase() === lightText && dark?.color?.toLowerCase() === darkText;
+        return {
+          content: token.content,
+          color: plain ? undefined : light?.color,
+          colorDark: plain ? undefined : dark?.color,
+          fontStyle: light?.fontStyle ?? dark?.fontStyle,
+        };
+      }),
+    );
     cache.set(key, tokens);
     if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
     return tokens;

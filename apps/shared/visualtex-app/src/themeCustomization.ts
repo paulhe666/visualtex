@@ -1292,7 +1292,9 @@ function applyColors(colors: ThemePaletteColors, mode: ThemePaletteMode) {
     "--bg-overlay": colors.elevated,
     "--bg-modal": colors.surface,
     "--bg-disabled": colors.elevated,
-    "--bg-scrim": rgba(colors.foreground, mode === "dark" ? 0.54 : 0.18),
+    // the dimming behind dialogs: the text colour's in a light theme, black in a dark one (a custom dark theme's light
+    // text colour dimmed it to a milky wash)
+    "--bg-scrim": mode === "dark" ? "rgba(0, 0, 0, 0.5)" : rgba(colors.foreground, 0.18),
     "--bg-hover": colors.hover,
     "--bg-active": colors.active,
     "--bg-selected-subtle": colors.accentSoft,
@@ -1427,6 +1429,8 @@ export function applyThemePalette(theme: Theme) {
   if (typeof document === "undefined") return;
   clearInlineThemePalette();
   const root = document.documentElement;
+  // the theme's light or dark mode, for what has a colour of each (code blocks, callouts and highlights on the page)
+  root.dataset.themeMode = theme === "custom" ? readCustomTheme().mode : getThemeDefinition(theme).mode;
   if (theme === "custom") {
     const custom = readCustomTheme();
     root.dataset.themePalette = "custom";

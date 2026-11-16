@@ -10,7 +10,10 @@ import { newNodeId } from "./ids.ts";
 /** A piece of a line in one colour. */
 export interface CodeToken {
   content: string;
+  /** its colour on a light page (and in print) */
   color?: string;
+  /** its colour on a dark page */
+  colorDark?: string;
   /** 1 italic, 2 bold, 4 underline (VS Code's font style bits) */
   fontStyle?: number;
 }
@@ -233,9 +236,12 @@ export const codeBlockKeys: Record<string, Command> = {
 
 const codeKey = new PluginKey<DecorationSet>("visualtex-document-code");
 
+/** A token's style: its two colours as variables, which document.css applies by the theme's light or dark mode (class
+ *  vtx-code-token), and its font style. */
 function styleOf(token: CodeToken): string | null {
   const parts: string[] = [];
-  if (token.color) parts.push(`color:${token.color}`);
+  if (token.color) parts.push(`--vtx-code-light:${token.color}`);
+  if (token.colorDark ?? token.color) parts.push(`--vtx-code-dark:${token.colorDark ?? token.color}`);
   if (token.fontStyle && token.fontStyle & 1) parts.push("font-style:italic");
   if (token.fontStyle && token.fontStyle & 2) parts.push("font-weight:bold");
   if (token.fontStyle && token.fontStyle & 4) parts.push("text-decoration:underline");
@@ -254,7 +260,9 @@ function highlight(doc: Node, highlighter: CodeHighlighter): DecorationSet {
     for (const line of lines) {
       for (const token of line) {
         const style = styleOf(token);
-        if (style && token.content) decorations.push(Decoration.inline(at, at + token.content.length, { style }));
+        if (style && token.content) {
+          decorations.push(Decoration.inline(at, at + token.content.length, { class: "vtx-code-token", style }));
+        }
         at += token.content.length;
       }
       at += 1; // the newline

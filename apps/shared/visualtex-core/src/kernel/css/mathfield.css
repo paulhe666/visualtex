@@ -62,9 +62,10 @@
     --_text-highlight-background-color: var(--text-highlight-background-color, hsla(var(--_hue), 40%, 50%, 0.6));
     --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 5%, 34%));
     --_latex-color: var(--latex-color, var(--primary, hsl(var(--_hue), 40%, 50%)));
-    --_composition-background-color: #69571c;
-    --_composition-text-color: white;
-    --_placeholder-color: hsl(var(--_hue), 60%, 69%);
+    /* (the host's own colours win here too: VisualTeX gives every one from its theme, whatever the system's appearance) */
+    --_composition-background-color: var(--composition-background-color, #69571c);
+    --_composition-text-color: var(--composition-text-color, white);
+    --_placeholder-color: var(--placeholder-color, hsl(var(--_hue), 60%, 69%));
     --_smart-fence-color: var(--smart-fence-color, #fff);
     --_smart-fence-opacity: var(--smart-fence-opacity, 0.7);
   }
