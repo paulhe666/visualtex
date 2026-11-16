@@ -38,7 +38,7 @@ const LIST_ON_SCREEN: u32 = (1 << 0) | (1 << 4);
 const LIST_INCLUDING_WINDOW: u32 = 1 << 3;
 /// kCGWindowImageBoundsIgnoreFraming | kCGWindowImageBestResolution
 const IMAGE_OPTIONS: u32 = (1 << 0) | (1 << 3);
-const CF_NUMBER_SINT64: i32 = 4;
+const CF_NUMBER_SINT64: isize = 4;
 const ALPHA_INFO_MASK: u32 = 0x1f;
 const BYTE_ORDER_MASK: u32 = 0x7000;
 const BYTE_ORDER_32_LITTLE: u32 = 2 << 12;
@@ -76,7 +76,7 @@ unsafe extern "C" {
     fn CFArrayGetCount(array: CFTypeRef) -> isize;
     fn CFArrayGetValueAtIndex(array: CFTypeRef, index: isize) -> *const c_void;
     fn CFDictionaryGetValue(dictionary: CFTypeRef, key: *const c_void) -> *const c_void;
-    fn CFNumberGetValue(number: CFTypeRef, kind: i32, value: *mut c_void) -> bool;
+    fn CFNumberGetValue(number: CFTypeRef, kind: isize, value: *mut c_void) -> u8;
     fn CFDataGetBytePtr(data: CFTypeRef) -> *const u8;
     fn CFDataGetLength(data: CFTypeRef) -> isize;
 }
@@ -122,7 +122,7 @@ pub(super) fn front_window(pid: i32) -> Option<Window> {
                     return None;
                 }
                 let mut out: i64 = 0;
-                CFNumberGetValue(value, CF_NUMBER_SINT64, (&mut out as *mut i64).cast()).then_some(out)
+                (CFNumberGetValue(value, CF_NUMBER_SINT64, (&mut out as *mut i64).cast()) != 0).then_some(out)
             };
             if number(kCGWindowOwnerPID) != Some(pid as i64) || number(kCGWindowLayer) != Some(0) {
                 continue;
