@@ -27,6 +27,8 @@ mod screen_colors;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 #[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(target_os = "macos")]
 use std::sync::Mutex;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
@@ -63,6 +65,9 @@ const IME_RELINK_WAIT: Duration = Duration::from_millis(1500);
 /// Keys typed before the card is up wait for it, up to this many.
 #[cfg(target_os = "macos")]
 const MAX_PENDING_KEYS: usize = 256;
+/// How long a paste waits for the input method to say it gave the keys back.
+#[cfg(target_os = "macos")]
+const KEYS_RELEASE_WAIT: Duration = Duration::from_millis(300);
 /// A session shows the panel when the strip reports its layout, which the
 /// page does once it has rendered the activation. A page that has not
 /// answered after this long is broken (a render error that unmounted it, a
@@ -273,9 +278,10 @@ struct Session {
     /// The strip's activation: the field's application to reopen (see
     /// Activation::reopen_app).
     reopen_app: Option<String>,
-    /// The generation whose pasting strip has the input method take the keys
-    /// until it is up (the caret is looked for meanwhile): they wait for it,
-    /// and go to it (with any the input method sent before it gave them back).
+    /// The generation whose pasting strip has its keys taken by the input
+    /// method, as the in-line formula has (before the strip is up they wait
+    /// for it): typed so, the formula needs no English input source and the
+    /// user's input source is never switched.
     grab_keys: u64,
 }
 
@@ -482,12 +488,19 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         session.generation
     };
     // (VisualTeX's own shortcuts excepted)
-    if ime::is_linked() && ime::send(serde_json::json!({ "t": "grab", "on": true, "skip": hotkey::registered_chords() })) {
-        if let Ok(mut session) = session() {
-            if session.generation == generation {
-                session.grab_keys = generation;
-            }
-        }
+    let grabbed = ime::is_linked()
+        && ime::send(serde_json::json!({ "t": "grab", "on": true, "skip": hotkey::registered_chords() }))
+        && session()
+            .map(|mut session| {
+                let current = session.generation == generation;
+                if current {
+                    session.grab_keys = generation;
+                }
+                current
+            })
+            .unwrap_or(false);
+    if grabbed {
+        keep_keys(generation);
     }
     let search = screen_caret::Search::start(ax::frontmost_pid());
     let mut target = ax::capture_target(trusted);
@@ -535,12 +548,18 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         Ok(window) => window,
         Err(error) => {
             eprintln!("VisualTeX Anywhere panel is unavailable: {error}");
+            hide_with(app, false, "no panel", false);
             return;
         }
     };
-    // the strip's formula is typed in English: the app's own input source an
-    // ASCII-capable layout while it is up (the one it had, back when it hides)
-    let strip_source = ime::select_ascii(app);
+    // The card takes the field's light or dark look (QQ's dark theme on a light system: a dark card).
+    let colors = panel::window_number(&window).and_then(|number| screen_colors::field_colors(target.anchor, number));
+    if let Some(colors) = colors.as_ref() {
+        log(&format!("card colour gen={generation} background={} (screen)", colors.background));
+    }
+    // Without the input method to take its keys, the strip's formula is typed in English: the
+    // input source an ASCII-capable layout while it is up (the one it had, back when it ends).
+    let strip_source = if grabbed { None } else { ime::select_ascii(app) };
     let (activation, ready) = {
         let Ok(mut session) = session() else { return };
         if !current(&*session) {
@@ -553,6 +572,10 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         session.target = Some(target);
         if strip_source.is_some() {
             session.strip_source = strip_source;
+        }
+        if let Some(colors) = colors {
+            session.field_text.text_color = Some(colors.text);
+            session.field_text.background_color = Some(colors.background);
         }
         (pending_activation(&session, trusted), session.ready)
     };
@@ -600,6 +623,72 @@ fn low_in(window: ScreenRect) -> ScreenRect {
         y: window.y + (window.height - 110.0).max(window.height * 0.6),
         width: 0.0,
         height: 18.0,
+    }
+}
+
+/// The input method's "grab" requests that want an answer, and the last one answered.
+#[cfg(target_os = "macos")]
+static GRAB_REQUESTS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
+static GRAB_ANSWERED: AtomicU64 = AtomicU64::new(0);
+
+/// The input method gives the strip's keys back. `wait`: until it says it has (at most
+/// KEYS_RELEASE_WAIT), for a paste that follows: the ⌘V it holds would take the paste's ⌘V.
+#[cfg(target_os = "macos")]
+fn release_keys(wait: bool) {
+    let id = GRAB_REQUESTS.fetch_add(1, Ordering::SeqCst) + 1;
+    if !ime::send(serde_json::json!({ "t": "grab", "on": false, "id": id })) || !wait {
+        return;
+    }
+    let deadline = std::time::Instant::now() + KEYS_RELEASE_WAIT;
+    while GRAB_ANSWERED.load(Ordering::SeqCst) < id && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(4));
+    }
+    if GRAB_ANSWERED.load(Ordering::SeqCst) < id {
+        log("input method did not confirm it gave the keys back");
+    }
+}
+
+/// While a pasting strip has its keys taken, the input method is told so every second: it gives
+/// them back by itself three seconds after the last word (a VisualTeX that hangs keeps no keys).
+/// A strip that never comes up keeps them at most a few seconds.
+#[cfg(target_os = "macos")]
+fn keep_keys(generation: u64) {
+    let spawned = std::thread::Builder::new()
+        .name("visualtex-keys-kept".to_string())
+        .spawn(move || {
+            let started = std::time::Instant::now();
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let holding = session()
+                    .map(|session| {
+                        session.generation == generation
+                            && session.grab_keys == generation
+                            && (session.phase == Phase::Presented
+                                || (session.phase == Phase::Activating && started.elapsed() < Duration::from_secs(4)))
+                    })
+                    .unwrap_or(false);
+                if !holding {
+                    break;
+                }
+                ime::send(serde_json::json!({ "t": "grab", "on": true, "keep": true, "skip": hotkey::registered_chords() }));
+            }
+        });
+    if let Err(error) = spawned {
+        log(&format!("keys kept: no thread: {error}"));
+    }
+}
+
+/// A pasting strip's commit: its keys are given back (and confirmed) before the paste, and an input
+/// source it switched to (without the input method) is given back while it still has the keyboard.
+#[cfg(target_os = "macos")]
+async fn end_pasting_strip(app: &AppHandle, grabbed: bool, strip_source: Option<String>) {
+    if grabbed {
+        let _ = tauri::async_runtime::spawn_blocking(|| release_keys(true)).await;
+    }
+    if let Some(source) = strip_source {
+        let worker = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || ime::restore(&worker, &source)).await;
     }
 }
 
@@ -905,6 +994,12 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             fall_back_to_paste(app, generation, display);
         }
         "key" => input_method_key(app, message),
+        "grab" => {
+            // its answer to release_keys
+            if let Some(id) = message.get("id").and_then(|value| value.as_u64()) {
+                GRAB_ANSWERED.fetch_max(id, Ordering::SeqCst);
+            }
+        }
         "pieces" => input_method_pieces(app, message),
         "deactivate" | "disconnected" => {
             let open = session()
@@ -1252,20 +1347,30 @@ fn send_activation(app: &AppHandle, window: &tauri::WebviewWindow, activation: A
 /// sent again when it reports ready), or give the session up.
 #[cfg(target_os = "macos")]
 fn recover_unanswered(app: &AppHandle, generation: u64) {
-    let reload = {
+    let (reload, dropped) = {
         let Ok(mut session) = session() else { return };
         if session.generation != generation || session.phase != Phase::Activating {
             return;
         }
         if session.reloaded_for == generation {
             session.phase = Phase::Hidden;
-            false
+            let grabbed = session.grab_keys == generation;
+            session.grab_keys = 0;
+            (false, Some((grabbed, session.strip_source.take())))
         } else {
             session.reloaded_for = generation;
             session.ready = false;
-            true
+            (true, None)
         }
     };
+    if let Some((grabbed, strip_source)) = dropped {
+        if grabbed {
+            release_keys(false);
+        }
+        if let Some(source) = strip_source {
+            ime::restore(app, &source);
+        }
+    }
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else { return };
     if reload {
         log(&format!("page did not answer gen={generation}: reloading it"));
@@ -1310,13 +1415,11 @@ fn present(app: &AppHandle, generation: u64) {
         }
     }
     if delivery == Delivery::Paste {
-        // The strip has the keyboard now: the input method gives the keys back; the keys typed
-        // before, then any it took meanwhile, go to the strip (grab_keys stays for those).
+        // the keys typed before the strip was up (the input method keeps taking them while it is)
         let grabbed = session()
             .map(|session| session.generation == generation && session.grab_keys == generation)
             .unwrap_or(false);
         if grabbed {
-            ime::send(serde_json::json!({ "t": "grab", "on": false }));
             flush_pending_keys(app, generation);
         }
     }
@@ -1351,7 +1454,7 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
         (session.generation, session.delivery, session.strip_source.take(), grabbed)
     };
     if grabbed {
-        ime::send(serde_json::json!({ "t": "grab", "on": false }));
+        release_keys(false);
     }
     if let Some(source) = strip_source {
         ime::restore(app, &source);
@@ -1460,7 +1563,7 @@ pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_
     }
     #[cfg(target_os = "macos")]
     {
-        let input_method = {
+        let (input_method, grabbed, strip_source) = {
             let mut session = session()?;
             if session.generation != generation || session.phase != Phase::Presented {
                 log(&format!("commit image gen={generation} stale (current {} {:?})", session.generation, session.phase));
@@ -1469,8 +1572,11 @@ pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_
             session.phase = Phase::Hidden;
             session.draft = false;
             session.pending_keys.clear();
-            session.delivery == Delivery::InputMethod
+            let grabbed = session.grab_keys == session.generation;
+            session.grab_keys = 0;
+            (session.delivery == Delivery::InputMethod, grabbed, session.strip_source.take())
         };
+        end_pasting_strip(&app, grabbed, strip_source).await;
         let window = app
             .get_webview_window(WINDOW_LABEL)
             .ok_or_else(|| "VisualTeX Anywhere panel is unavailable".to_string())?;
@@ -1543,14 +1649,19 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
             copied?;
             return Ok(CommitOutcome::Copied);
         }
-        {
+        let (grabbed, strip_source) = {
             let mut session = session()?;
             if session.generation != generation || session.phase != Phase::Presented {
                 return Ok(CommitOutcome::Stale);
             }
             session.phase = Phase::Hidden;
             session.draft = false;
-        }
+            session.pending_keys.clear();
+            let grabbed = session.grab_keys == session.generation;
+            session.grab_keys = 0;
+            (grabbed, session.strip_source.take())
+        };
+        end_pasting_strip(&app, grabbed, strip_source).await;
         let window = app
             .get_webview_window(WINDOW_LABEL)
             .ok_or_else(|| "VisualTeX Anywhere panel is unavailable".to_string())?;

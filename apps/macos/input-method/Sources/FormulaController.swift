@@ -365,13 +365,20 @@ final class VTFormulaController: IMKInputController {
         if let application = message["app"] as? String, !application.isEmpty { shortcutApplication = application }
         if type == "grab" {
             // VisualTeX's pasting strip, for a field this input method does not reach (an app that
-            // never gets it: Notes, WeChat, QQ): until the strip is up (its caret is looked for on the
-            // screen meanwhile) the keys typed are taken here and sent to VisualTeX, never the field's.
+            // never gets it: Notes, WeChat, QQ): while the strip is open (and before it is up, while
+            // its caret is looked for on the screen) its keys are taken here and sent to VisualTeX, as
+            // an in-line formula's are: never the field's, never the user's input source's, which
+            // stays as it is. "keep": VisualTeX still wants them (every second); "id": answer when done.
             grabs += 1
             let grab = grabs
-            if message["on"] as? Bool == true {
-                KeyGrab.shared.start(skipping: message["skip"] as? [[Int]] ?? [])
-                // whatever happens to VisualTeX, the keys are given back
+            let on = message["on"] as? Bool == true
+            let keep = message["keep"] as? Bool == true
+            if on {
+                // (a "keep" never takes keys again: one sent just before the strip gave them back
+                // would hold them after it, and its paste's ⌘V with them)
+                if !keep { KeyGrab.shared.start(skipping: message["skip"] as? [[Int]] ?? []) }
+                guard KeyGrab.shared.isOn else { return }
+                // given back by itself three seconds after VisualTeX's last word (a VisualTeX that hangs)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     if grab == Self.grabs, Self.active?.composing != true, KeyGrab.shared.isOn {
                         InputLog.write("grab timed out")
@@ -381,7 +388,8 @@ final class VTFormulaController: IMKInputController {
             } else if active?.composing != true {
                 KeyGrab.shared.stop()
             }
-            InputLog.write("grab on=\(KeyGrab.shared.isOn)")
+            if let id = message["id"] { AppLink.shared.send(["t": "grab", "on": KeyGrab.shared.isOn, "id": id]) }
+            if !keep { InputLog.write("grab on=\(KeyGrab.shared.isOn)") }
             return
         }
         guard let controller = active, let client = controller.client() else {

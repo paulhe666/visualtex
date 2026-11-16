@@ -416,22 +416,30 @@ impl Search {
                     && caret.y + caret.height <= field.y + field.height + 2.0
             })
         };
-        let bar = match outcome.early {
-            Some(bar) if inside(&bar) => Some(bar),
-            _ => choose(&outcome.seen, &inside).filter(|bar| inside(bar)),
-        };
+        // The only bar that changed in a capture is the caret, also outside the field Accessibility
+        // reports (QQ's frame for its box missed its caret once); of several, the one inside it.
+        let bar = outcome.early.or_else(|| choose(&outcome.seen, &inside));
         let Some(bar) = bar else {
-            return Err(format!("no caret (bars seen: {}) {summary}", outcome.seen.len()));
+            let seen: Vec<String> = outcome
+                .seen
+                .iter()
+                .map(|(bar, count)| {
+                    let at = to_screen(bar);
+                    format!("{:.0},{:.0} h{:.0} x{count}", at.x, at.y, at.height)
+                })
+                .collect();
+            return Err(format!("no caret (bars seen: [{}]) {summary}", seen.join("; ")));
         };
         let caret = to_screen(&bar);
         Ok(Found {
             caret,
             report: format!(
-                "{:.0},{:.0} {:.1}x{:.1}pt {summary}",
+                "{:.0},{:.0} {:.1}x{:.1}pt{} {summary}",
                 caret.x,
                 caret.y,
                 (bar.x1 + 1 - bar.x0) as f64 / scale,
-                caret.height
+                caret.height,
+                if field.is_some() && !inside(&bar) { " (outside the reported field)" } else { "" }
             ),
         })
     }

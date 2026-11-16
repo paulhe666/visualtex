@@ -361,6 +361,20 @@ function applySystemAppearance() {
   applyDocumentTheme(dark ? "dark" : "light");
 }
 
+/** On the caret line (pasting) the card takes the field's light or dark look,
+ * from the field's background as read off the screen (QQ in its dark theme on a
+ * light system: a dark card); else, or without that colour, the system's. */
+function applyStripAppearance(activation: AnywhereActivation) {
+  const background = activation.inputMethod ? null : activation.backgroundColor;
+  const match = background ? /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(background) : null;
+  if (!match) {
+    applySystemAppearance();
+    return;
+  }
+  const [red, green, blue] = [match[1], match[2], match[3]].map((hex) => parseInt(hex, 16) / 255);
+  applyDocumentTheme(0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.5 ? "dark" : "light");
+}
+
 function stripFields(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(".anywhere-strip math-field"));
 }
@@ -1049,7 +1063,7 @@ export function AnywhereApp() {
       setInputMethod(Boolean(activation.inputMethod));
       // set on several lines only in the field's line (input method)
       redrawOpenFormulas();
-      applySystemAppearance();
+      applyStripAppearance(activation);
       const kept = activation.resume && hasFormula() ? currentDocument() : null;
       // The size first: a size the field reports while the settings are read
       // (the anchor's) comes after this one and must stay.
