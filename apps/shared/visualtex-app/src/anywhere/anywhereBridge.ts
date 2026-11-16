@@ -6,7 +6,6 @@ export const ANYWHERE_ACTIVATE_EVENT = "visualtex-anywhere-activate";
 export const ANYWHERE_SUSPEND_EVENT = "visualtex-anywhere-suspend";
 export const ANYWHERE_KEY_EVENT = "visualtex-anywhere-key";
 export const ANYWHERE_STYLE_EVENT = "visualtex-anywhere-style";
-export const ANYWHERE_COMPOSE_EVENT = "visualtex-anywhere-compose";
 export const ANYWHERE_SHORTCUT_EVENT = "visualtex-anywhere-shortcut";
 export const ANYWHERE_PIECES_EVENT = "visualtex-anywhere-pieces";
 
@@ -19,9 +18,8 @@ export interface AnywhereActivation {
   anchorSource: AnywhereAnchorSource;
   appName: string;
   accessibilityTrusted: boolean;
-  /** macOS: VisualTeX's input method is installed but not among the input sources */
-  inputMethodMissing?: boolean;
-  /** macOS: the field's application selected the input method without starting it: to be reopened */
+  /** macOS: the field's application has been running since before VisualTeX's input method was an
+   *  input source (macOS gives an application its input methods when it starts): to be reopened */
   reopenApp?: string | null;
   /** The previous session hid without a commit or cancel: keep its formula. */
   resume: boolean;
@@ -59,25 +57,6 @@ export interface AnywhereStyle {
   lineHeight?: number | null;
   lineDescent?: number | null;
   backgroundColor?: string | null;
-}
-
-/** Pinyin spelled in the formula's text by the input method: the editor's
- * composition ("update" with the spelling, "end" with the chosen text or
- * nothing). */
-export interface AnywhereCompose {
-  generation: number;
-  phase: "update" | "end";
-  text: string;
-}
-
-export function isAnywhereCompose(value: unknown): value is AnywhereCompose {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<AnywhereCompose>;
-  return (
-    typeof candidate.generation === "number" &&
-    (candidate.phase === "update" || candidate.phase === "end") &&
-    typeof candidate.text === "string"
-  );
 }
 
 /**

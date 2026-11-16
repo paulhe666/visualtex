@@ -35,7 +35,6 @@ import {
 } from "./outputModes";
 import {
   ANYWHERE_ACTIVATE_EVENT,
-  ANYWHERE_COMPOSE_EVENT,
   ANYWHERE_KEY_EVENT,
   ANYWHERE_PIECES_EVENT,
   ANYWHERE_SHORTCUT_EVENT,
@@ -47,7 +46,6 @@ import {
   commitAnywhereImage,
   dismissAnywhere,
   isAnywhereActivation,
-  isAnywhereCompose,
   isAnywhereKey,
   isAnywherePieces,
   isAnywhereShortcut,
@@ -587,29 +585,6 @@ function typeKey(key: AnywhereKey) {
   sink.dispatchEvent(new KeyboardEvent("keyup", init));
 }
 
-/**
- * The input method's pinyin in the formula's text, as the keyboard's input
- * method would give it to the field: compositionstart once, compositionupdate
- * with the spelling, compositionend with the chosen characters (or nothing).
- */
-function compose(phase: "update" | "end", text: string, composing: { current: boolean }) {
-  const field = stripField();
-  const sink = field?.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ?? field;
-  if (!sink) return;
-  const event = (type: string, data: string) =>
-    sink.dispatchEvent(new CompositionEvent(type, { data, bubbles: true, cancelable: true, composed: true }));
-  if (!composing.current && (phase === "update" || text)) {
-    event("compositionstart", "");
-    composing.current = true;
-  }
-  if (phase === "update") {
-    event("compositionupdate", text);
-  } else if (composing.current) {
-    event("compositionend", text);
-    composing.current = false;
-  }
-}
-
 /** The editor's caret is in text (\text{}), not in math. */
 function caretInText() {
   const field = stripField() as unknown as { mode?: unknown } | null;
@@ -692,7 +667,6 @@ export function AnywhereApp() {
   const layoutReportRef = useRef<Promise<unknown> | null>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const lastModeRef = useRef<boolean | null>(null);
-  const composingRef = useRef(false);
   const generationRef = useRef(0);
   const committingRef = useRef(false);
   const lastLayoutRef = useRef<AnywhereLayout | null>(null);
@@ -1061,7 +1035,6 @@ export function AnywhereApp() {
       lastLayoutRef.current = null;
       lastMarkedRef.current = null;
       lastModeRef.current = null;
-      composingRef.current = false;
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
@@ -1213,11 +1186,6 @@ export function AnywhereApp() {
       listenAnywhere(ANYWHERE_SHORTCUT_EVENT, isAnywhereShortcut, (pressed) => {
         if (pressed.generation === generationRef.current && isAnywhereHotkeyAction(pressed.action)) {
           runFormulaShortcut(pressed.action);
-        }
-      }),
-      listenAnywhere(ANYWHERE_COMPOSE_EVENT, isAnywhereCompose, (message) => {
-        if (message.generation === generationRef.current && inputMethodRef.current) {
-          compose(message.phase, message.text, composingRef);
         }
       }),
       listenAnywhere(ANYWHERE_PIECES_EVENT, isAnywherePieces, (pieces) => {

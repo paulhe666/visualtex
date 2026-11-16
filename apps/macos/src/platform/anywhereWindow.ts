@@ -9,9 +9,7 @@ export const anywhereWindow = {
       ? "未授权辅助功能 · ↩ 复制"
       : activation.reopenApp
         ? `${activation.reopenApp} 需重新打开 · 之后公式写在输入框里`
-        : activation.inputMethodMissing
-          ? "输入源中没有 VisualTeX · 系统设置 › 键盘 › 输入法"
-          : null,
+        : null,
   copiedNotice: "已复制 · ⌘V 粘贴",
   /** the input method gives the open formula its keys itself */
   sharesFormulaShortcuts: false,
