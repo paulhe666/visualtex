@@ -200,10 +200,9 @@ function placeCovers(
   end: [number, number] | null,
   keep: { y: number; right: number } | null,
   caretLine: [number, number] | null,
-  /** An empty formula: where it starts in the panel (its caret) and where the field's held space
-   *  ends from there, as far as known (the input method's estimate will do: one blank). */
-  emptyStart: number | null,
-  emptyEnd: [number, number] | null,
+  /** Where the held space ends, an estimate of the input method's too: the space is never less
+   *  than one blank, which a formula still empty (or one thin letter) does not cover by itself. */
+  endAny: [number, number] | null,
 ): { right: number; bottom: number; last: { y: number; right: number } | null } | null {
   if (!layer) return null;
   const box = formulaBox();
@@ -217,11 +216,9 @@ function placeCovers(
     // formula's own caret until something was typed): the formula's line from the anchor, at least
     // a filler's width, to where the held space ends when the field tells.
     const baseline = box.baseline;
-    // (an empty formula's box is not where it starts: its caret is)
     const origin = box.left;
-    void emptyStart;
     let right = origin + Math.max(empty ? 0 : box.width, line.height * 0.75) + 3;
-    const held = end ?? (empty ? emptyEnd : null);
+    const held = end ?? endAny;
     if (held && Math.abs(held[1]) < 2) right = Math.max(right, origin + held[0] + 3);
     const left = origin + Math.min(0, start?.[0] ?? 0) - 3;
     const over = Math.max(3, line.height * 0.2);
@@ -255,6 +252,9 @@ function placeCovers(
       // formula's on its last line, FormulaSpace)
       let right = span.right + (last ? 3 : Math.max(4, line.height * 0.6));
       if (last && end && Math.abs(end[1] - y) < 2) right = Math.max(right, box.left + end[0] + 3);
+      // (the field's underline under the one blank it holds for a formula still empty showed past a
+      // cover as wide as the formula: an estimated end is taken while the formula is narrower than it)
+      else if (last && endAny && Math.abs(endAny[1] - y) < 2) right = Math.max(right, box.left + endAny[0] + 1.5);
       if (last) {
         lastLine = { y, right: right - box.left };
         // a width just lost stays covered until the field has taken the narrower space
@@ -285,7 +285,6 @@ function placeCovers(
       if (last && end && Math.abs(end[1] - y) < 2) caretCover(box.left + end[0]);
     });
   }
-  void logAnywhere(`DEBUG covers empty=${empty} places=${places.length} bg=${background} line=${JSON.stringify(line)} box=${JSON.stringify(box)} covers=${JSON.stringify(covers)}`);
   while (layer.children.length > covers.length) layer.lastElementChild?.remove();
   while (layer.children.length < covers.length) layer.appendChild(document.createElement("div"));
   // the panel holds the covers too (one may reach past the formula, to the end of the held space)
@@ -945,7 +944,6 @@ export function AnywhereApp() {
       pieceEndRef.current,
       keep,
       pieceCaretRef.current,
-      formulaStartRef.current,
       pieceEndAnyRef.current,
     );
     if (covers?.last) {
