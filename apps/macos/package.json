@@ -19,6 +19,7 @@
     "prepare:ocr-model-packs": "python3 scripts/prepare_offline_ocr_runtime.py --with-optional-model-packs",
     "register:macos-dev-url": "node scripts/register_macos_dev_url_handler.mjs",
     "test:align-cases": "npm run build:desktop && node scripts/align_cases_regression.mjs",
+    "test:accent-reopen": "npm run build:desktop && node ../shared/visualtex-app/tests/accent_reopen_regression.mjs",
     "test:anywhere-unicode": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/anywhere_unicode_regression.mts",
     "test:candidate-panel": "npm run build:desktop && node ../shared/visualtex-app/tests/candidate_panel_audit.mjs --digits",
     "test:candidate-theme-colors": "npm run build:desktop && node ../shared/visualtex-app/tests/candidate_theme_colors_regression.mjs",

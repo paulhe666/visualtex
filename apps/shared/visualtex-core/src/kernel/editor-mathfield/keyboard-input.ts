@@ -1050,6 +1050,45 @@ export function visualTexStartSourceWrapper(
   requestUpdate(mathfield);
   return true;
 }
+/**
+ * A typed accent (\hat{a}, \overline{x}, \vec{v}...) whose body a deletion emptied goes back to the source shell it
+ * was typed as: \hat{} with the caret between its braces, exactly as right after typing \hat, not an empty accent
+ * with a placeholder. (One with scripts keeps its placeholder: the shell has no place for them.)
+ */
+export function visualTexReopenEmptiedSourceWrapper(model: _Model): boolean {
+  const mathfield = model.mathfield;
+  if (mathfield.visualTexSourceWrapper) return false;
+  const at = model.at(model.position);
+  const owner = at?.parent;
+  if (!owner?.parent || at.parentBranch !== "body" || !owner.command) return false;
+  if (!visualTexIsAccentSourceCommand(owner.command)) return false;
+  const body = owner.branch("body") ?? [];
+  if (body.some((atom) => atom.type !== "first" && atom.type !== "placeholder")) return false;
+  if (!owner.hasEmptyBranch("superscript") || !owner.hasEmptyBranch("subscript")) return false;
+  const shell = owner.command + "{}";
+  const group = new LatexGroupAtom(shell);
+  const parent = owner.parent;
+  const left = owner.leftSibling;
+  const structuralSlot = visualTexLiveStructuralSlot(owner);
+  parent.removeChild(owner);
+  parent.addChildAfter(group, left);
+  const latexAtoms = (group.body || []).filter((atom) => atom.type === "latex");
+  const beforeClose = latexAtoms[latexAtoms.length - 1]?.leftSibling;
+  if (!beforeClose) return false;
+  const state = { command: owner.command, kind: "accent", group, structuralSlot };
+  group.visualTexSourceWrapper = state;
+  if (structuralSlot) group.visualTexStructuralSlot = structuralSlot;
+  mathfield.visualTexSourceWrapper = state;
+  const savedSilence = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.mode = "latex";
+  model.position = model.offsetOf(beforeClose);
+  model.silenceNotifications = savedSilence;
+  visualTexSyncSourceWrapper(mathfield);
+  model.contentDidChange({ data: shell, inputType: "deleteContentBackward" });
+  requestUpdate(mathfield);
+  return true;
+}
 export function visualTexClearSourceWrapper(mathfield: _Mathfield): void {
   if (!mathfield.visualTexSourceWrapper) return;
   mathfield.visualTexSourceWrapper = null;

@@ -8,7 +8,14 @@ import { MathfieldElement } from '../public/mathfield-element';
 import type { Branch } from '../core/types';
 import type { Range } from '../public/core-types';
 import { ArrayAtom } from '../atoms/array';
-import { visualTexSyncSourceWrapper } from '../editor-mathfield/keyboard-input';
+import {
+  visualTexCancelSourceWrapper,
+  visualTexIsAccentSourceCommand,
+  visualTexReopenEmptiedSourceWrapper,
+  visualTexSourceWrapperCaretIsInside,
+  visualTexSourceWrapperContent,
+  visualTexSyncSourceWrapper,
+} from '../editor-mathfield/keyboard-input';
 import { PlaceholderAtom } from '../atoms/placeholder';
 import { visualTexEditingCore } from '../editor-mathfield/visualtex-hooks';
 import {
@@ -489,7 +496,9 @@ export function visualTexShouldRetainStructuralPlaceholder(parent: Atom | undefi
   if (Array.isArray(branch)) return parent.type === "array";
   if (branch === "superscript" || branch === "subscript") return true;
   if (branch === "body")
-    return parent.type === "surd" || parent.type === "accent" || parent.type === "box" || parent.type === "enclose" || parent.type === "leftright" || parent.type === "overunder" || parent.type === "macro-argument";
+    return parent.type === "surd" || parent.type === "accent" || parent.type === "box" || parent.type === "enclose" || parent.type === "leftright" || parent.type === "overunder" || parent.type === "macro-argument" ||
+      // the accents typed as a source shell, whatever atom draws them (\overline is a plain atom with a body)
+      (parent.command !== undefined && visualTexIsAccentSourceCommand(parent.command));
   if (branch === "above" || branch === "below")
     return parent.type === "genfrac" || parent.type === "overunder" || parent.type === "surd";
   return false;
@@ -550,10 +559,45 @@ export function visualTexRestoreStructuralPlaceholder(
 }
 
 /**
+ * VisualTeX: a typed accent's own structure (\hat{a}, \overline{x}: an accent command of the source-first list with a
+ * body), without scripts, whose body has content.
+ */
+function visualTexFilledAccent(atom: Atom | undefined | null): boolean {
+  if (!atom?.command || !visualTexIsAccentSourceCommand(atom.command)) return false;
+  if (!atom.hasEmptyBranch('superscript') || !atom.hasEmptyBranch('subscript')) return false;
+  const body = atom.branch('body');
+  return Boolean(body?.some((item) => item.type !== 'first' && item.type !== 'placeholder'));
+}
+
+/**
+ * VisualTeX: Backspace right after a typed accent (Delete right before it) takes back its content's last (first)
+ * item, as typing it did; emptied, the accent becomes its source shell again (visualTexReopenEmptiedSourceWrapper).
+ */
+function visualTexTakeBackAccentContent(model: _Model, accent: Atom, direction: 'backward' | 'forward'): void {
+  const items = accent.branch('body')!.filter((item) => item.type !== 'first');
+  const item = direction === 'backward' ? items[items.length - 1] : items[0];
+  accent.removeChild(item);
+  model.announce('delete', undefined, [item]);
+  // emptied: the caret into its body, where the shell opens; else it stays beside the accent
+  model.position = items.length === 1 ? model.offsetOf(accent.branch('body')![0]) : direction === 'backward' ? model.offsetOf(accent) : model.offsetOf(accent.leftSibling!);
+}
+
+/** VisualTeX: an empty source shell (\hat{} with the caret between its braces) goes whole, by Backspace or Delete. */
+function visualTexDeleteEmptySourceShell(model: _Model): boolean {
+  const state = model.mathfield.visualTexSourceWrapper;
+  if (!state || !model.selectionIsCollapsed || !visualTexSourceWrapperCaretIsInside(model.mathfield, state)) return false;
+  if (visualTexSourceWrapperContent(state) !== '') return false;
+  visualTexCancelSourceWrapper(model.mathfield);
+  model.mathfield.snapshot('delete-source-wrapper');
+  return true;
+}
+
+/**
  * Delete the item at the current position
  */
 export function deleteBackward(model: _Model): boolean {
   if (!model.mathfield.isSelectionEditable) return false;
+  if (visualTexDeleteEmptySourceShell(model)) return true;
 
   if (!model.contentWillChange({ inputType: 'deleteContentBackward' }))
     return false;
@@ -585,6 +629,11 @@ export function deleteBackward(model: _Model): boolean {
         return;
       }
       let target: Atom | null = model.at(model.position);
+
+      if (target && visualTexFilledAccent(target)) {
+        visualTexTakeBackAccentContent(model, target, 'backward');
+        return;
+      }
 
       if (target && onDelete(model, 'backward', target)) return;
 
@@ -637,6 +686,8 @@ export function deleteBackward(model: _Model): boolean {
     }
   );
   if (model.mathfield.visualTexSourceWrapper) visualTexSyncSourceWrapper(model.mathfield);
+  // a typed accent emptied by the deletion goes back to its source shell (\hat{})
+  if (visualTexDeleteResult) visualTexReopenEmptiedSourceWrapper(model);
   return visualTexDeleteResult;
 }
 
@@ -646,6 +697,7 @@ export function deleteBackward(model: _Model): boolean {
  */
 export function deleteForward(model: _Model): boolean {
   if (!model.mathfield.isSelectionEditable) return false;
+  if (visualTexDeleteEmptySourceShell(model)) return true;
 
   if (!model.contentWillChange({ inputType: 'deleteContentForward' }))
     return false;
@@ -670,6 +722,11 @@ export function deleteForward(model: _Model): boolean {
     { content: true, selection: true, type: 'deleteContentForward' },
     () => {
       let target: Atom | undefined = model.at(model.position).rightSibling;
+
+      if (target && visualTexFilledAccent(target)) {
+        visualTexTakeBackAccentContent(model, target, 'forward');
+        return;
+      }
 
       if (target && onDelete(model, 'forward', target)) return;
 
@@ -732,6 +789,8 @@ export function deleteForward(model: _Model): boolean {
     }
   );
   if (model.mathfield.visualTexSourceWrapper) visualTexSyncSourceWrapper(model.mathfield);
+  // a typed accent emptied by the deletion goes back to its source shell (\hat{})
+  if (visualTexDeleteResult) visualTexReopenEmptiedSourceWrapper(model);
   return visualTexDeleteResult;
 }
 
@@ -745,6 +804,17 @@ export function deleteForward(model: _Model): boolean {
  */
 
 export function deleteRange(
+  model: _Model,
+  range: Range,
+  type: ContentChangeType
+): boolean {
+  const deleted = deleteRangeOnce(model, range, type);
+  // a typed accent emptied by the deletion (its content selected and deleted or cut) goes back to its source shell
+  if (deleted && type.startsWith('delete')) visualTexReopenEmptiedSourceWrapper(model);
+  return deleted;
+}
+
+function deleteRangeOnce(
   model: _Model,
   range: Range,
   type: ContentChangeType

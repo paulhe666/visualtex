@@ -20,6 +20,7 @@
     "clean:windows-release": "node scripts/clean_windows_release_outputs.mjs",
     "clean:windows-local:dry-run": "node scripts/clean_windows_release_outputs.mjs --acceptance --dry-run",
     "clean:windows-local": "node scripts/clean_windows_release_outputs.mjs --acceptance",
+    "test:accent-reopen": "npm run build:desktop && node ../shared/visualtex-app/tests/accent_reopen_regression.mjs",
     "test:anywhere-unicode": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/anywhere_unicode_regression.mts",
     "test:application-configuration": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts scripts/application_configuration_regression.mts",
     "test:application-data": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts scripts/application_data_regression.mts",
