@@ -35,6 +35,7 @@ import {
 } from "./outputModes";
 import {
   ANYWHERE_ACTIVATE_EVENT,
+  ANYWHERE_FRAME_EVENT,
   ANYWHERE_KEY_EVENT,
   ANYWHERE_PIECES_EVENT,
   ANYWHERE_SHORTCUT_EVENT,
@@ -46,6 +47,7 @@ import {
   commitAnywhereImage,
   dismissAnywhere,
   isAnywhereActivation,
+  isAnywhereFrame,
   isAnywhereKey,
   isAnywherePieces,
   isAnywhereShortcut,
@@ -58,6 +60,7 @@ import {
   reportAnywhereMarked,
   reportAnywhereReady,
   type AnywhereActivation,
+  type AnywhereFrame,
   type AnywhereKey,
   type AnywhereLayout,
 } from "./anywhereBridge";
@@ -424,6 +427,30 @@ function setStripTop(strip: HTMLElement, top: number) {
   }
 }
 
+/** macOS: where the panel stands on the screen, as the native side last set it (ANYWHERE_FRAME_EVENT). */
+let nativeFrame: AnywhereFrame | null = null;
+
+/** Where the panel and the visible area of its screen are, in CSS pixels from the screen's top left: the native side's
+ * report where there is one (macOS: WebKit gives a panel's window.screenX/Y as 0 and the screen's height, so a page that
+ * asked its window put every candidate list above the line), else the window's own. */
+function screenGeometry() {
+  if (nativeFrame) {
+    return {
+      x: nativeFrame.x,
+      y: nativeFrame.y,
+      left: nativeFrame.visibleLeft,
+      top: nativeFrame.visibleTop,
+      right: nativeFrame.visibleRight,
+      bottom: nativeFrame.visibleBottom,
+      native: true,
+    };
+  }
+  const screen = window.screen as Screen & { availTop?: number; availLeft?: number };
+  const left = screen.availLeft ?? 0;
+  const top = screen.availTop ?? 0;
+  return { x: window.screenX, y: window.screenY, left, top, right: left + screen.availWidth, bottom: top + screen.availHeight, native: false };
+}
+
 /** The side the candidate bar was last placed on, for anywhere.log (logged when it changes). */
 let candidateSideLogged = "";
 
@@ -449,24 +476,21 @@ function placeCandidateBar(stripElement: HTMLElement) {
   };
   let ink = inkOf();
   let left = Math.max(0, Math.round((typed && typed.height > 0 ? typed.left : ink.left) - CANDIDATE_INSET));
-  const screenWithOrigin = window.screen as Screen & { availTop?: number; availLeft?: number };
-  const screenTop = screenWithOrigin.availTop ?? 0;
-  const screenLeft = screenWithOrigin.availLeft ?? 0;
+  const where = screenGeometry();
   // The width the bar's looks measure against: from the window's left edge to the screen's right edge.
-  popover.style.setProperty("--anywhere-candidates-viewport", `${Math.max(0, screenLeft + window.screen.availWidth - window.screenX)}px`);
+  popover.style.setProperty("--anywhere-candidates-viewport", `${Math.max(0, where.right - where.x)}px`);
   popover.style.setProperty("--anywhere-candidates-max-height", `${CANDIDATE_LIST_HEIGHT}px`);
   popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
   let box = popover.getBoundingClientRect();
   // The bar's room under the line, on the screen: the same whichever side
   // the bar is on (the panel moves with the strip).
-  const screenBottom = screenTop + window.screen.availHeight;
-  const roomBelow = screenBottom - (window.screenY + ink.bottom + CANDIDATE_GAP);
+  const roomBelow = where.bottom - (where.y + ink.bottom + CANDIDATE_GAP);
   const stripTop = parseFloat(stripElement.style.getPropertyValue("--anywhere-strip-top")) || PANEL_MARGIN;
   // Over the formula: the bar from the panel's margin, the formula's ink
   // (the strip's box, when it has one) under it.
   const boxed = !stripElement.classList.contains("is-input-method");
   const upperEdge = () => (boxed ? stripElement.getBoundingClientRect().top : ink.top);
-  const roomAbove = window.screenY + upperEdge() - screenTop - CANDIDATE_GAP;
+  const roomAbove = where.y + upperEdge() - where.top - CANDIDATE_GAP;
   const fits = (room: number) => box.height + CANDIDATE_MARGIN <= room;
   // Under the line when the bar fits there, else over it when it fits there, else on the side with more room.
   const above = !fits(roomBelow) && (fits(roomAbove) || roomAbove > roomBelow);
@@ -476,7 +500,8 @@ function placeCandidateBar(stripElement: HTMLElement) {
     candidateSideLogged = side;
     void logAnywhere(
       `candidates ${side}: list=${Math.round(box.height)} roomBelow=${Math.round(roomBelow)} roomAbove=${Math.round(roomAbove)} ` +
-        `screenY=${Math.round(window.screenY)} ink.bottom=${Math.round(ink.bottom)} availTop=${screenTop} availHeight=${window.screen.availHeight} screenHeight=${window.screen.height}`,
+        `panelY=${Math.round(where.y)} ink.bottom=${Math.round(ink.bottom)} visible=${Math.round(where.top)}..${Math.round(where.bottom)} ` +
+        `from=${where.native ? "native frame" : "window"}`,
     );
   }
   if (!fits(room)) {
@@ -498,7 +523,7 @@ function placeCandidateBar(stripElement: HTMLElement) {
     : Math.round(ink.bottom + CANDIDATE_GAP);
   popover.style.setProperty("--anywhere-candidates-top", `${top}px`);
   // Kept on the screen when the formula is near its right edge.
-  const roomRight = screenLeft + window.screen.availWidth - window.screenX - CANDIDATE_MARGIN;
+  const roomRight = where.right - where.x - CANDIDATE_MARGIN;
   if (left + box.width > roomRight && roomRight > box.width) {
     left = Math.round(roomRight - box.width);
     popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
@@ -1240,6 +1265,9 @@ export function AnywhereApp() {
         if (pressed.generation === generationRef.current && isAnywhereHotkeyAction(pressed.action)) {
           runFormulaShortcut(pressed.action);
         }
+      }),
+      listenAnywhere(ANYWHERE_FRAME_EVENT, isAnywhereFrame, (frame) => {
+        nativeFrame = frame;
       }),
       listenAnywhere(ANYWHERE_PIECES_EVENT, isAnywherePieces, (pieces) => {
         if (pieces.generation !== generationRef.current || !inputMethodRef.current) return;

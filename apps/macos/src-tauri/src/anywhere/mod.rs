@@ -51,6 +51,9 @@ const STYLE_EVENT: &str = "visualtex-anywhere-style";
 /// Where the field put the formula's pieces (it wraps them as its text).
 #[cfg(target_os = "macos")]
 const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
+/// Where the panel stands on the screen, each time its frame is set (panel.rs): the page cannot read it from its window.
+#[cfg(target_os = "macos")]
+const FRAME_EVENT: &str = "visualtex-anywhere-frame";
 /// The most pieces a formula is cut into for the field (a longer formula's
 /// last piece holds the rest).
 const MAX_PIECES: usize = 512;

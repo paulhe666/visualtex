@@ -4,13 +4,13 @@
 //! a near-zero alpha and ignores the mouse, so WebKit keeps the page running
 //! and the next activation only moves it.
 
-use super::{PanelLayout, ScreenRect, PANEL_TITLE, WINDOW_LABEL};
+use super::{PanelLayout, ScreenRect, FRAME_EVENT, PANEL_TITLE, WINDOW_LABEL};
 use objc2_app_kit::{NSScreen, NSWindow, NSWindowCollectionBehavior};
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use std::sync::mpsc;
 use std::time::Duration;
 use tauri::utils::config::BackgroundThrottlingPolicy;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 /// Above other applications' floating panels and full-screen windows, like
 /// an input method's candidate window.
@@ -144,9 +144,12 @@ pub(super) fn park_and_wait(window: &WebviewWindow) -> Result<(), String> {
 }
 
 pub(super) fn present(window: &WebviewWindow, anchor: ScreenRect, layout: PanelLayout) {
+    let emitter = window.clone();
     let presented = window.with_webview(move |webview| unsafe {
         let native_window: &NSWindow = &*webview.ns_window().cast();
-        native_window.setFrame_display(frame_for(anchor, layout, Placement::OnLine), true);
+        let (frame, report) = frame_for(anchor, layout, Placement::OnLine);
+        native_window.setFrame_display(frame, true);
+        let _ = emitter.emit(FRAME_EVENT, report);
         native_window.setIgnoresMouseEvents(false);
         native_window.setAlphaValue(1.0);
         native_window.setLevel(PRESENTED_LEVEL);
@@ -163,8 +166,11 @@ pub(super) fn present(window: &WebviewWindow, anchor: ScreenRect, layout: PanelL
 /// The input method's formula: shown without taking the keyboard (the field
 /// keeps it; the input method hands the keys over) and without the mouse.
 pub(super) fn present_passive(window: &WebviewWindow, anchor: ScreenRect, layout: PanelLayout, placement: Placement) {
+    let emitter = window.clone();
     let presented = with_native_window(window, move |native_window| {
-        native_window.setFrame_display(frame_for(anchor, layout, placement), true);
+        let (frame, report) = frame_for(anchor, layout, placement);
+        native_window.setFrame_display(frame, true);
+        let _ = emitter.emit(FRAME_EVENT, report);
         native_window.setIgnoresMouseEvents(true);
         native_window.setAlphaValue(1.0);
         native_window.setLevel(PRESENTED_LEVEL);
@@ -178,19 +184,39 @@ pub(super) fn present_passive(window: &WebviewWindow, anchor: ScreenRect, layout
 /// The strip changed size (the formula grew, candidates opened) or the caret
 /// moved: keep it at its place.
 pub(super) fn reframe(window: &WebviewWindow, anchor: ScreenRect, layout: PanelLayout, placement: Placement) {
+    let emitter = window.clone();
     let reframed = with_native_window(window, move |native_window| {
-        native_window.setFrame_display(frame_for(anchor, layout, placement), true);
+        let (frame, report) = frame_for(anchor, layout, placement);
+        native_window.setFrame_display(frame, true);
+        let _ = emitter.emit(FRAME_EVENT, report);
     });
     if let Err(error) = reframed {
         eprintln!("{error}");
     }
 }
 
+/// Where the panel stands, for the page, in points from the main display's top left (as a window's screenX and
+/// screenY would tell): WebKit gives a panel's window.screenX/Y as 0 and the screen's height, so the page cannot
+/// tell where it is on the screen (and put every candidate list above the line). `visible_*` is the visible area of
+/// the caret's display (menu bar and Dock left out).
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FrameReport {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    visible_left: f64,
+    visible_top: f64,
+    visible_right: f64,
+    visible_bottom: f64,
+}
+
 /// The panel frame (AppKit coordinates: origin at the bottom left of the main
 /// display, y up) that puts the strip's anchor on the caret's vertical
 /// centre (OnLine) or its top edge under the caret line (BelowLine), kept on
-/// the caret's display.
-fn frame_for(anchor: ScreenRect, layout: PanelLayout, placement: Placement) -> NSRect {
+/// the caret's display, and where that is, for the page.
+fn frame_for(anchor: ScreenRect, layout: PanelLayout, placement: Placement) -> (NSRect, FrameReport) {
     let main_height = main_display_height();
     let left = anchor.x - layout.anchor_x;
     let top = match placement {
@@ -203,7 +229,8 @@ fn frame_for(anchor: ScreenRect, layout: PanelLayout, placement: Placement) -> N
         NSSize::new(layout.width, layout.height),
     );
     let caret_point = NSPoint::new(anchor.x, main_height - anchor.y - anchor.height / 2.0);
-    if let Some(visible) = visible_frame_containing(caret_point) {
+    let visible_area = visible_frame_containing(caret_point);
+    if let Some(visible) = visible_area {
         if placement != Placement::InLine {
             let max_x = visible.origin.x + visible.size.width - frame.size.width;
             frame.origin.x = frame.origin.x.min(max_x).max(visible.origin.x);
@@ -221,7 +248,28 @@ fn frame_for(anchor: ScreenRect, layout: PanelLayout, placement: Placement) -> N
             frame.origin.y = frame.origin.y.max(visible.origin.y).min(max_y.max(visible.origin.y));
         }
     }
-    frame
+    // no display found (cannot happen with a caret on a screen): a visible area that holds everything
+    const UNBOUNDED: f64 = 100_000.0;
+    let (visible_left, visible_top, visible_right, visible_bottom) = match visible_area {
+        Some(visible) => (
+            visible.origin.x,
+            main_height - (visible.origin.y + visible.size.height),
+            visible.origin.x + visible.size.width,
+            main_height - visible.origin.y,
+        ),
+        None => (-UNBOUNDED, -UNBOUNDED, UNBOUNDED, UNBOUNDED),
+    };
+    let report = FrameReport {
+        x: frame.origin.x,
+        y: main_height - (frame.origin.y + frame.size.height),
+        width: frame.size.width,
+        height: frame.size.height,
+        visible_left,
+        visible_top,
+        visible_right,
+        visible_bottom,
+    };
+    (frame, report)
 }
 
 pub(super) fn main_display_height() -> f64 {

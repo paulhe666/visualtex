@@ -8,6 +8,8 @@ export const ANYWHERE_KEY_EVENT = "visualtex-anywhere-key";
 export const ANYWHERE_STYLE_EVENT = "visualtex-anywhere-style";
 export const ANYWHERE_SHORTCUT_EVENT = "visualtex-anywhere-shortcut";
 export const ANYWHERE_PIECES_EVENT = "visualtex-anywhere-pieces";
+/** macOS: where the panel stands on the screen (the native side's report each time it sets the panel's frame). */
+export const ANYWHERE_FRAME_EVENT = "visualtex-anywhere-frame";
 
 export type AnywhereAnchorSource = "caret" | "field" | "pointer";
 
@@ -88,6 +90,30 @@ export function isAnywherePieces(value: unknown): value is AnywherePieces {
     candidate.places.every(
       (place) => Array.isArray(place) && place.length === 2 && place.every((n) => typeof n === "number" && Number.isFinite(n)),
     )
+  );
+}
+
+/**
+ * macOS: where the panel stands, and the visible area of its display (menu bar and Dock left out), in CSS pixels (points) from
+ * the main display's top left, as a window's screenX/screenY would be. The page cannot read this from its window: WebKit gives
+ * a panel's window.screenX/Y as 0 and the screen's height, whatever the panel's place.
+ */
+export interface AnywhereFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visibleLeft: number;
+  visibleTop: number;
+  visibleRight: number;
+  visibleBottom: number;
+}
+
+export function isAnywhereFrame(value: unknown): value is AnywhereFrame {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return ["x", "y", "width", "height", "visibleLeft", "visibleTop", "visibleRight", "visibleBottom"].every(
+    (key) => typeof candidate[key] === "number" && Number.isFinite(candidate[key]),
   );
 }
 
