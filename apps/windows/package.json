@@ -28,6 +28,7 @@
     "test:candidate-theme-colors": "npm run build:desktop && node ../shared/visualtex-app/tests/candidate_theme_colors_regression.mjs",
     "test:custom-symbol-designer": "npm run build:desktop && tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/custom-symbol-designer/tests/tex_export.test.mts && tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/custom-symbol-designer/tests/tex_native_compare.test.mts && node ../shared/visualtex-app/tests/custom_symbol_designer_regression.mjs",
     "test:caret-underline": "npm run build:desktop && node ../shared/visualtex-app/tests/caret_underline_regression.mjs",
+    "test:anywhere-candidates": "npm run build:desktop && node ../shared/visualtex-app/tests/anywhere_candidates_regression.mjs",
     "test:document-display-formula-insert": "npm run build:desktop && node ../shared/visualtex-app/tests/document_display_formula_insert_regression.mjs",
     "test:document-formula-residency": "npm run build:desktop && node ../shared/visualtex-app/tests/document_formula_residency_regression.mjs",
     "test:document-import-compiled-latex": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/document_import_compiled_latex_acceptance.mts",

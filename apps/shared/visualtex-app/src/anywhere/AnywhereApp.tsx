@@ -75,6 +75,10 @@ const PANEL_MARGIN = 8;
 const CANDIDATE_GAP = 5;
 const CANDIDATE_INSET = 1;
 const CANDIDATE_MARGIN = 14;
+/** The list's height: the kernel's own cap (updateSuggestionPopoverPosition), cut to the room the screen has on the side
+ * of the line it opens on, but never under two rows. */
+const CANDIDATE_LIST_HEIGHT = 320;
+const CANDIDATE_LIST_MIN_HEIGHT = 112;
 const COPIED_NOTICE_MS = 1800;
 /** How long the output mode shows under the formula when it opens or changes. */
 const MODE_TAG_MS = 1600;
@@ -424,7 +428,11 @@ function setStripTop(strip: HTMLElement, top: number) {
  * position; the kernel's own, centred on the caret, is for a list), or over
  * it when the screen has no room below the line (the strip then moves down
  * by the bar, and the panel up, so the formula stays on its line), and
- * returns where its far edges are, for the panel's size. */
+ * returns where its far edges are, for the panel's size.
+ * The bar is sized from the screen, never from this window (which is only as
+ * large as the bar asks): the kernel cuts its list to its window's height and
+ * the Settings' looks cap the bar's width at the viewport's, so a card window
+ * of 129 x 69 px showed a list one row high. */
 function placeCandidateBar(stripElement: HTMLElement) {
   const popover = document.getElementById("mathlive-suggestion-popover");
   if (!popover) return null;
@@ -438,19 +446,34 @@ function placeCandidateBar(stripElement: HTMLElement) {
   };
   let ink = inkOf();
   let left = Math.max(0, Math.round((typed && typed.height > 0 ? typed.left : ink.left) - CANDIDATE_INSET));
+  const screenWithOrigin = window.screen as Screen & { availTop?: number; availLeft?: number };
+  const screenTop = screenWithOrigin.availTop ?? 0;
+  const screenLeft = screenWithOrigin.availLeft ?? 0;
+  // The width the bar's looks measure against: from the window's left edge to the screen's right edge.
+  popover.style.setProperty("--anywhere-candidates-viewport", `${Math.max(0, screenLeft + window.screen.availWidth - window.screenX)}px`);
+  popover.style.setProperty("--anywhere-candidates-max-height", `${CANDIDATE_LIST_HEIGHT}px`);
   popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
-  const box = popover.getBoundingClientRect();
+  let box = popover.getBoundingClientRect();
   // The bar's room under the line, on the screen: the same whichever side
   // the bar is on (the panel moves with the strip).
-  const screenWithTop = window.screen as Screen & { availTop?: number };
-  const screenBottom = (screenWithTop.availTop ?? 0) + window.screen.availHeight;
+  const screenBottom = screenTop + window.screen.availHeight;
   const roomBelow = screenBottom - (window.screenY + ink.bottom + CANDIDATE_GAP);
-  const above = box.height + CANDIDATE_MARGIN > roomBelow;
   const stripTop = parseFloat(stripElement.style.getPropertyValue("--anywhere-strip-top")) || PANEL_MARGIN;
   // Over the formula: the bar from the panel's margin, the formula's ink
   // (the strip's box, when it has one) under it.
   const boxed = !stripElement.classList.contains("is-input-method");
   const upperEdge = () => (boxed ? stripElement.getBoundingClientRect().top : ink.top);
+  const roomAbove = window.screenY + upperEdge() - screenTop - CANDIDATE_GAP;
+  const fits = (room: number) => box.height + CANDIDATE_MARGIN <= room;
+  // Under the line when the bar fits there, else over it when it fits there, else on the side with more room.
+  const above = !fits(roomBelow) && (fits(roomAbove) || roomAbove > roomBelow);
+  const room = above ? roomAbove : roomBelow;
+  if (!fits(room)) {
+    // neither side holds the whole list: it is cut to the room and scrolls
+    const cap = Math.max(CANDIDATE_LIST_MIN_HEIGHT, Math.min(CANDIDATE_LIST_HEIGHT, Math.floor(room - CANDIDATE_MARGIN)));
+    popover.style.setProperty("--anywhere-candidates-max-height", `${cap}px`);
+    box = popover.getBoundingClientRect();
+  }
   const edgeFromStrip = upperEdge() - stripElement.getBoundingClientRect().top;
   const wantedStripTop = above
     ? Math.max(PANEL_MARGIN, Math.ceil(PANEL_MARGIN + box.height + CANDIDATE_GAP - edgeFromStrip))
@@ -464,7 +487,6 @@ function placeCandidateBar(stripElement: HTMLElement) {
     : Math.round(ink.bottom + CANDIDATE_GAP);
   popover.style.setProperty("--anywhere-candidates-top", `${top}px`);
   // Kept on the screen when the formula is near its right edge.
-  const screenLeft = (window.screen as Screen & { availLeft?: number }).availLeft ?? 0;
   const roomRight = screenLeft + window.screen.availWidth - window.screenX - CANDIDATE_MARGIN;
   if (left + box.width > roomRight && roomRight > box.width) {
     left = Math.round(roomRight - box.width);

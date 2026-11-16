@@ -120,6 +120,13 @@ html:root body.anywhere-page #mathlive-suggestion-popover[data-visualtex-input-p
 html:root body.anywhere-page #mathlive-suggestion-popover {
   left: var(--anywhere-candidates-left, 0px) !important;
   top: var(--anywhere-candidates-top, 0px) !important;
+  /* The list's size never comes from this window: it is only as large as the list asks (a card window of 129 x 69 px gave
+     a list one row high and a row of candidates 113 px wide, because the kernel takes the list's height from its window
+     and the Settings' looks take the width cap from the viewport). The page gives the room the screen has instead
+     (placeCandidateBar); the list is as wide as its candidates are. */
+  --visualtex-suggestion-max-height: var(--anywhere-candidates-max-height, 320px) !important;
+  --vtx-popover-viewport: var(--anywhere-candidates-viewport, 100vw);
+  width: max-content !important;
 }
 
 html:root body.anywhere-page #mathlive-suggestion-popover.top-tip::after,
