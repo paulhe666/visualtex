@@ -1,13 +1,15 @@
 //! VisualTeX's Windows input method from the app's side (apps/windows/input-method):
-//! - the link: a pipe the TIP in every application connects to (\\.\pipe\VisualTeXAnywhere-<user>,
-//!   newline-delimited JSON both ways). Messages go to the TIP whose field has the keyboard (the
-//!   last one to report it), or while a formula is open to the TIP of its field (pinned: another
-//!   application's TIP that reports itself meanwhile, reconnecting or getting a focus of its own,
-//!   must not take the formula's messages, which left the formula's field without its anchor and
-//!   the card without its keys);
-//! - its TSF profile: whether it is installed, which input method the field has, switching the
-//!   field to VisualTeX (the shortcut) and back;
-//! - VisualTeX Input (the per-user RIME server beside the TIP), started with VisualTeX.
+//! - opening a formula in the field that has the keyboard: the input method's DLL is put into
+//!   that field's thread (a hook on that one thread, taken off again at once), where it makes a
+//!   window; the app posts the request to that window, and everything else happens there, in the
+//!   field's own thread (its input method written down, VisualTeX's activated for that thread
+//!   alone, and handed back when the formula ends). The app switches no input method itself;
+//! - the link: a pipe the input method connects to when a formula opens
+//!   (\\.\pipe\VisualTeXAnywhere-<user>, newline-delimited JSON both ways). Messages go to the
+//!   input method of the open formula's field (pinned);
+//! - its registration: where it is installed, and that its profile is disabled while no formula
+//!   is open (the input switcher lists enabled profiles; the input method disables it itself when
+//!   a formula ends, this is for a field's application that went away with a formula open).
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -15,29 +17,37 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
-use windows::core::{GUID, HSTRING, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE, HLOCAL, LocalFree, WAIT_OBJECT_0};
+use windows::core::{s, w, GUID, HSTRING, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{
+    CloseHandle, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE, HLOCAL, HMODULE, HWND, LPARAM, LRESULT, LocalFree, WAIT_OBJECT_0, WPARAM,
+};
 use windows::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows::Win32::Security::{GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
 use windows::Win32::Storage::FileSystem::{ReadFile, WriteFile, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT};
 use windows::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
 use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcess, OpenProcessToken, WaitForSingleObject, INFINITE};
 use windows::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
-use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
-use windows::Win32::UI::TextServices::{
-    CLSID_TF_InputProcessorProfiles, ITfInputProcessorProfileMgr, GUID_TFCAT_TIP_KEYBOARD, TF_INPUTPROCESSORPROFILE,
-    TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE, TF_IPPMF_FORSESSION, TF_IPP_FLAG_ACTIVE, TF_IPP_FLAG_ENABLED,
-    TF_PROFILETYPE_INPUTPROCESSOR, TF_PROFILETYPE_KEYBOARDLAYOUT,
+use windows::Win32::UI::TextServices::{CLSID_TF_InputProcessorProfiles, ITfInputProcessorProfiles};
+use windows::Win32::UI::WindowsAndMessaging::{
+    FindWindowExW, GetGUIThreadInfo, GetWindowThreadProcessId, PostMessageW, PostThreadMessageW, SetWindowsHookExW,
+    UnhookWindowsHookEx, GUITHREADINFO, HWND_MESSAGE, WH_GETMESSAGE, WM_APP, WM_NULL,
 };
 
 /// The TIP's CLSID and profile (input-method/tip/src/lib.rs).
 pub(super) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xb6e0a6c4_6f52_4c7e_9b7a_2f1e5a3d9c41);
 pub(super) const GUID_PROFILE: GUID = GUID::from_u128(0xd3a1f7b2_8c4e_4e2a_a5d6_6b9e0c1f2a73);
 const LANGID_ZH_CN: u16 = 0x0804;
+/// The window the input method makes in a field's thread, and the request to open a formula there
+/// (input-method/tip/src/host.rs).
+const HOST_WINDOW_CLASS: PCWSTR = w!("VisualTeXFormulaHost.2");
+const WM_OPEN: u32 = WM_APP + 0x60;
+/// A thread that pumps messages makes the window within this.
+const HOST_WINDOW_WAIT: std::time::Duration = std::time::Duration::from_millis(400);
 
 // MARK: The link
 
@@ -60,7 +70,7 @@ impl Drop for Client {
 #[derive(Default)]
 struct Clients {
     all: HashMap<u64, Arc<Client>>,
-    /// The client whose field has the keyboard.
+    /// The client that reported last.
     active: Option<u64>,
     /// The client of the open formula's field.
     pinned: Option<u64>,
@@ -228,7 +238,7 @@ fn read_client(app: AppHandle, id: u64, client: Arc<Client>) {
                 let Ok(mut clients) = clients().lock() else { return };
                 match kind {
                     // The field this client serves has the keyboard.
-                    "activate" | "geometry" | "key" | "compose" => {
+                    "activate" | "geometry" | "key" => {
                         clients.active = Some(id);
                         true
                     }
@@ -301,129 +311,123 @@ pub(super) fn from_other_field(message: &Value) -> bool {
     clients().lock().map(|clients| matches!((clients.pinned, link), (Some(pinned), Some(link)) if pinned != link)).unwrap_or(false)
 }
 
-pub(super) fn is_linked() -> bool {
-    clients().lock().map(|clients| clients.active.is_some()).unwrap_or(false)
+// MARK: Opening a formula in a field
+
+type HookProcedure = unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT;
+
+struct Tip {
+    module: HMODULE,
+    hook: HookProcedure,
 }
 
-/// Some TIP is connected (whether or not its field has the keyboard).
-pub(super) fn has_clients() -> bool {
-    clients().lock().map(|clients| !clients.all.is_empty()).unwrap_or(false)
-}
+unsafe impl Send for Tip {}
+unsafe impl Sync for Tip {}
 
-// MARK: Profiles (a COM apartment of its own)
-
-fn with_profiles<T>(work: impl FnOnce(&ITfInputProcessorProfileMgr) -> T + Send + 'static) -> Option<T>
-where
-    T: Send + 'static,
-{
-    std::thread::spawn(move || {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
-        let manager: windows::core::Result<ITfInputProcessorProfileMgr> =
-            unsafe { CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER) };
-        manager.ok().map(|manager| work(&manager))
+/// The registered input method's DLL, loaded here once: its hook procedure is what Windows runs in
+/// the field's thread.
+fn tip() -> Option<&'static Tip> {
+    static TIP: OnceLock<Option<Tip>> = OnceLock::new();
+    TIP.get_or_init(|| {
+        let path = tip_path()?;
+        let module = unsafe { LoadLibraryW(&HSTRING::from(path.as_os_str())) }.ok()?;
+        let hook = unsafe { GetProcAddress(module, s!("VisualTeXHook")) }?;
+        // (an earlier build's DLL, a whole input method with pinyin, has no such procedure)
+        Some(Tip { module, hook: unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, HookProcedure>(hook) } })
     })
-    .join()
-    .ok()
-    .flatten()
+    .as_ref()
 }
+
+/// The input method is installed: registered, and this build's kind (one that opens formulas in a
+/// field's thread).
+pub(super) fn is_installed() -> bool {
+    tip().is_some()
+}
+
+/// The thread of the control that has the keyboard in `field_window`'s application.
+fn focus_thread(field_window: isize) -> u32 {
+    let thread = unsafe { GetWindowThreadProcessId(HWND(field_window as *mut _), None) };
+    let mut info = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
+    if thread != 0 && unsafe { GetGUIThreadInfo(thread, &mut info) }.is_ok() && !info.hwndFocus.is_invalid() {
+        let focus = unsafe { GetWindowThreadProcessId(info.hwndFocus, None) };
+        if focus != 0 {
+            return focus;
+        }
+    }
+    thread
+}
+
+/// The input method's window in `thread` (None: it has none yet).
+fn host_window(thread: u32) -> Option<HWND> {
+    let mut after: Option<HWND> = None;
+    loop {
+        let window = unsafe { FindWindowExW(Some(HWND_MESSAGE), after, HOST_WINDOW_CLASS, PCWSTR::null()) }.ok()?;
+        if window.is_invalid() {
+            return None;
+        }
+        if unsafe { GetWindowThreadProcessId(window, None) } == thread {
+            return Some(window);
+        }
+        after = Some(window);
+    }
+}
+
+/// Opens formula `generation` in the field that has the keyboard in `field_window`: asks the input
+/// method's window in that field's thread, putting the input method there first when the thread has
+/// none. Its "activate" message (the caret) follows over the link. Err: the thread does not take it
+/// (a 32-bit or elevated application, one that pumps no messages).
+pub(super) fn open_in_field(field_window: isize, generation: u64) -> Result<(), String> {
+    let tip = tip().ok_or("the input method is not installed")?;
+    let thread = focus_thread(field_window);
+    if thread == 0 {
+        return Err("no window has the keyboard".to_string());
+    }
+    let window = match host_window(thread) {
+        Some(window) => window,
+        None => {
+            let hook = unsafe { SetWindowsHookExW(WH_GETMESSAGE, Some(tip.hook), Some(tip.module.into()), thread) }
+                .map_err(|error| format!("the field's thread does not take the input method: {error}"))?;
+            // the thread runs the hook when it next takes a message: one is posted for that
+            let _ = unsafe { PostThreadMessageW(thread, WM_NULL, WPARAM(0), LPARAM(0)) };
+            let deadline = std::time::Instant::now() + HOST_WINDOW_WAIT;
+            let mut window = None;
+            while window.is_none() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(4));
+                window = host_window(thread);
+            }
+            let _ = unsafe { UnhookWindowsHookEx(hook) };
+            window.ok_or("the field's thread did not start the input method")?
+        }
+    };
+    unsafe { PostMessageW(Some(window), WM_OPEN, WPARAM(generation as usize), LPARAM(0)) }
+        .map_err(|error| format!("the input method's window did not take the request: {error}"))
+}
+
+/// VisualTeX's profile is disabled (no input switcher offers it). The input method does this itself
+/// when a formula ends; here for one whose application went away meanwhile.
+pub(super) fn disable_profile() {
+    let _ = std::thread::spawn(|| unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let profiles: windows::core::Result<ITfInputProcessorProfiles> =
+            CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER);
+        if let Ok(profiles) = profiles {
+            let enabled = profiles.IsEnabledLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_ZH_CN, &GUID_PROFILE).map(|enabled| enabled.as_bool()).unwrap_or(false);
+            if enabled {
+                let result = profiles.EnableLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_ZH_CN, &GUID_PROFILE, false);
+                super::log(&format!("input method profile was enabled: disabled {:?}", result.map_err(|error| error.code())));
+            }
+        }
+    })
+    .join();
+}
+
+// MARK: Registration
 
 fn guid_text(guid: &GUID) -> String {
     format!("{{{guid:?}}}")
 }
 
-/// VisualTeX's input method is installed (registered) and enabled for the user.
-pub(super) fn is_enabled() -> bool {
-    with_profiles(|manager| {
-        let mut profile = TF_INPUTPROCESSORPROFILE::default();
-        let found = unsafe {
-            manager.GetProfile(
-                TF_PROFILETYPE_INPUTPROCESSOR,
-                LANGID_ZH_CN,
-                &CLSID_TEXT_SERVICE,
-                &GUID_PROFILE,
-                HKL::default(),
-                &mut profile,
-            )
-        };
-        found.is_ok() && profile.dwFlags & TF_IPP_FLAG_ENABLED != 0
-    })
-    .unwrap_or(false)
-}
-
-/// The keyboard input method the user types with now, as the TIP can activate it again
-/// ({type, langid, clsid, profile, hkl}); None when it cannot be read.
-pub(super) fn current_profile() -> Option<Value> {
-    with_profiles(|manager| {
-        let mut profile = TF_INPUTPROCESSORPROFILE::default();
-        unsafe { manager.GetActiveProfile(&GUID_TFCAT_TIP_KEYBOARD, &mut profile) }.ok()?;
-        Some(json!({
-            "type": profile.dwProfileType,
-            "langid": profile.langid,
-            "clsid": guid_text(&profile.clsid),
-            "profile": guid_text(&profile.guidProfile),
-            "hkl": profile.hkl.0 as i64,
-            "active": profile.dwFlags & TF_IPP_FLAG_ACTIVE != 0,
-        }))
-    })
-    .flatten()
-}
-
-pub(super) fn is_visualtex(profile: &Value) -> bool {
-    profile.get("type").and_then(Value::as_u64) == Some(TF_PROFILETYPE_INPUTPROCESSOR as u64)
-        && profile.get("clsid").and_then(Value::as_str).map(|clsid| clsid.eq_ignore_ascii_case(&guid_text(&CLSID_TEXT_SERVICE))).unwrap_or(false)
-}
-
-/// Switches the user's input method to VisualTeX: the foreground field's thread activates the
-/// TIP, which reports "activate" with the caret.
-pub(super) fn switch_in() -> Result<(), String> {
-    with_profiles(|manager| unsafe {
-        manager
-            .ActivateProfile(
-                TF_PROFILETYPE_INPUTPROCESSOR,
-                LANGID_ZH_CN,
-                &CLSID_TEXT_SERVICE,
-                &GUID_PROFILE,
-                HKL::default(),
-                TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE,
-            )
-            .map_err(|error| error.to_string())
-    })
-    .unwrap_or_else(|| Err("The Windows input method settings are unavailable".to_string()))
-}
-
-/// Switches back to `profile` (the field did not take VisualTeX).
-pub(super) fn switch_to(profile: &Value) {
-    let profile = profile.clone();
-    let _ = with_profiles(move |manager| {
-        let kind = profile.get("type").and_then(Value::as_u64).unwrap_or(0) as u32;
-        let langid = profile.get("langid").and_then(Value::as_u64).unwrap_or(0) as u16;
-        let parse = |key: &str| {
-            profile
-                .get(key)
-                .and_then(Value::as_str)
-                .map(|text| text.trim_matches(|ch| ch == '{' || ch == '}').replace('-', ""))
-                .and_then(|hex| u128::from_str_radix(&hex, 16).ok())
-                .map(GUID::from_u128)
-                .unwrap_or_default()
-        };
-        let hkl = HKL(profile.get("hkl").and_then(Value::as_i64).unwrap_or(0) as isize as *mut _);
-        let flags = TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE;
-        unsafe {
-            if kind == TF_PROFILETYPE_KEYBOARDLAYOUT {
-                let _ = manager.ActivateProfile(TF_PROFILETYPE_KEYBOARDLAYOUT, langid, &GUID::zeroed(), &GUID::zeroed(), hkl, flags);
-            } else {
-                let _ = manager.ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, langid, &parse("clsid"), &parse("profile"), HKL::default(), flags);
-            }
-        }
-    });
-}
-
-// MARK: VisualTeX Input
-
-/// Where the input method is installed: the TIP's folder, from its COM registration.
-pub(super) fn install_directory() -> Option<PathBuf> {
+/// The input method's DLL, from its COM registration.
+fn tip_path() -> Option<PathBuf> {
     let key = HSTRING::from(format!("SOFTWARE\\Classes\\CLSID\\{}\\InprocServer32", guid_text(&CLSID_TEXT_SERVICE)));
     let mut buffer = vec![0u16; 1024];
     let mut size = (buffer.len() * 2) as u32;
@@ -434,21 +438,6 @@ pub(super) fn install_directory() -> Option<PathBuf> {
         return None;
     }
     let length = buffer.iter().position(|unit| *unit == 0).unwrap_or(buffer.len());
-    PathBuf::from(String::from_utf16_lossy(&buffer[..length])).parent().map(PathBuf::from)
-}
-
-/// Starts VisualTeX Input when it is installed and not running (it keeps itself to one per
-/// session), so pinyin is ready before the first application asks for it.
-pub(super) fn start_input_server() {
-    let Some(directory) = install_directory() else { return };
-    let program = directory.join("VisualTeXInput.exe");
-    if !program.exists() {
-        return;
-    }
-    use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    match std::process::Command::new(&program).creation_flags(DETACHED_PROCESS).spawn() {
-        Ok(_) => super::log("VisualTeX Input started"),
-        Err(error) => super::log(&format!("VisualTeX Input not started: {error}")),
-    }
+    let path = PathBuf::from(String::from_utf16_lossy(&buffer[..length]));
+    path.is_file().then_some(path)
 }

@@ -5,14 +5,17 @@ param(
     [switch]$Elevated
 )
 
-# Installs VisualTeX's Windows input method (pinyin, English and formulas in any application,
+# Installs VisualTeX's Windows input method (formulas in any application,
 # apps/windows/input-method) from the VisualTeX installation:
-# - machine-wide, elevated (Windows lists only machine-wide text services): the files go to
+# - machine-wide, elevated (Windows loads only machine-wide text services): the files go to
 #   %ProgramFiles%\VisualTeX Input\<build id> (a new folder per build, since applications keep
 #   the previous DLL loaded) and the TIP is registered (regsvr32);
-# - for the user: the input method is added to the Chinese (Simplified) language's keyboards
-#   and VisualTeX Input (its RIME server) is started.
-# -Uninstall reverses both, except when the VisualTeX installer is replacing this installation
+# - for the user: it is NOT one of the user's input methods. It is taken off the Chinese
+#   (Simplified) language's keyboards (earlier builds were added there) and its profile is
+#   disabled, so no input switcher offers it; VisualTeX's shortcut is the only way into it (the
+#   input method enables its profile for the time of a formula). The earlier builds' pinyin
+#   server is stopped.
+# -Uninstall removes it, except when the VisualTeX installer is replacing this installation
 # (it sets VISUALTEX_REINSTALL for the previous uninstaller): the input method stays, and the
 # new installation's step keeps it or brings its new build. An input method that is already
 # current is left alone (no UAC).
@@ -97,21 +100,20 @@ function Stop-InputServer {
     }
 }
 
-function Set-UserKeyboard([bool]$Present) {
+# VisualTeX is none of the user's input methods: off the language's keyboards (where earlier
+# builds put it), and its profile disabled for the user (the input switcher lists enabled
+# profiles; Windows keeps the user's choice under HKCU).
+function Remove-UserKeyboard {
     $list = Get-WinUserLanguageList
     $chinese = $list | Where-Object { $_.LanguageTag -eq "zh-Hans-CN" } | Select-Object -First 1
-    if ($Present) {
-        if ($null -eq $chinese) {
-            $list.Add("zh-Hans-CN")
-            $chinese = $list | Where-Object { $_.LanguageTag -eq "zh-Hans-CN" } | Select-Object -First 1
-        }
-        if ($chinese.InputMethodTips -contains $tipId) { return }
-        $chinese.InputMethodTips.Add($tipId)
-    } else {
-        if ($null -eq $chinese -or $chinese.InputMethodTips -notcontains $tipId) { return }
+    if ($null -ne $chinese -and $chinese.InputMethodTips -contains $tipId) {
         [void]$chinese.InputMethodTips.Remove($tipId)
+        Set-WinUserLanguageList -LanguageList $list -Force
+        Write-Log "taken off the user's keyboards"
     }
-    Set-WinUserLanguageList -LanguageList $list -Force
+    $profileKey = "HKCU:\Software\Microsoft\CTF\TIP\$clsid\LanguageProfile\0x00000804\$profileGuid"
+    if (-not (Test-Path $profileKey)) { New-Item -Path $profileKey -Force | Out-Null }
+    Set-ItemProperty -Path $profileKey -Name "Enable" -Value 0 -Type DWord
 }
 
 # The elevated part: files and registration.
@@ -173,7 +175,7 @@ try {
             exit 0
         }
         Stop-InputServer
-        Set-UserKeyboard $false
+        Remove-UserKeyboard
         if (Get-RegisteredDll) {
             $code = Invoke-Elevated
             Write-Log "uninstall elevated exit $code"
@@ -194,29 +196,13 @@ try {
     } else {
         Write-Log "input method $buildId is current"
     }
-    Set-UserKeyboard $true
+    Stop-InputServer
+    Remove-UserKeyboard
     $registered = Get-RegisteredDll
-    $server = Join-Path (Split-Path -Parent $registered) "VisualTeXInput.exe"
-    if (-not (Get-Process -Name "VisualTeXInput" -ErrorAction SilentlyContinue) -and (Test-Path $server)) {
-        Start-Process -FilePath $server
-    }
     Write-Log "input method ready ($registered)"
     exit 0
 } catch {
     Write-Log "failed: $($_.Exception.Message)"
     Write-Output $_.Exception.Message
-    # A registered input method from an earlier install still works: keep it on the user's
-    # keyboards (the uninstall step of a reinstall took it off) rather than leave none.
-    if (-not $Uninstall) {
-        try {
-            $registered = Get-RegisteredDll
-            if ($registered -and (Test-Path $registered)) {
-                Set-UserKeyboard $true
-                Write-Log "kept the registered input method on the keyboards ($registered)"
-            }
-        } catch {
-            Write-Log "could not keep the registered input method: $($_.Exception.Message)"
-        }
-    }
     exit 1
 }
