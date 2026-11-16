@@ -53,13 +53,14 @@ const FAST_POLLS: u32 = 30;
 /// VisualTeX did not open the formula it asked for (it went away, the request was stale).
 const OPEN_TIMER: usize = 5;
 const OPEN_WAIT_MS: u32 = 2500;
-/// A field typing through IMM32 (the standard edit controls) ends whatever is being composed when
-/// its thread's input method changes, and it hears of the change a moment after the text service is
-/// up: a formula's composition it ends within this of the formula's opening, with no key or click
-/// of the user's, is started again a moment later.
+/// A field ends whatever is being composed when its thread's input method changes (the standard
+/// edit controls, Chrome), and it hears of the change a moment after the text service is up. So the
+/// formula's composition starts this long after the text service came up, and one the field ends
+/// within RESTART_WITHIN of the formula's opening all the same is started again a moment later.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(60);
 const RESTART_TIMER: usize = 6;
 const RESTART_DELAY_MS: u32 = 30;
-const RESTART_WITHIN: std::time::Duration = std::time::Duration::from_millis(700);
+const RESTART_WITHIN: std::time::Duration = std::time::Duration::from_millis(900);
 const MAX_RESTARTS: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -578,7 +579,15 @@ fn receive(shared: &Rc<Shared>, message: &Value) {
             if on && shared.phase.get() == Phase::Opening {
                 kill_timer(OPEN_TIMER);
                 shared.phase.set(Phase::Composing);
-                start_formula(shared);
+                // (once the field has heard of its thread's new input method: see SETTLE)
+                let since = shared.opened_at.get().map(|at| at.elapsed()).unwrap_or(SETTLE);
+                if since < SETTLE {
+                    unsafe {
+                        SetTimer(Some(host::window()), RESTART_TIMER, (SETTLE - since).as_millis() as u32, None);
+                    }
+                } else {
+                    start_formula(shared);
+                }
             } else if !on && shared.phase.get() != Phase::Idle {
                 finish_formula(shared, String::new(), None, true);
             }
@@ -897,7 +906,7 @@ impl ITfCompositionSink_Impl for CompositionSink_Impl {
         // The field heard of its thread's new input method and dropped what was being composed (see
         // RESTART_TIMER): the formula's space is taken out and held again in a moment.
         let just_opened = shared.opened_at.get().map(|at| at.elapsed() < RESTART_WITHIN).unwrap_or(false);
-        if just_opened && shared.formula_transitory.get() && shared.restarts.get() < MAX_RESTARTS {
+        if just_opened && shared.restarts.get() < MAX_RESTARTS {
             shared.restarts.set(shared.restarts.get() + 1);
             stop_polling();
             if let Some(range) = composition.as_ref().and_then(|composition| unsafe { composition.GetRange() }.ok()) {
