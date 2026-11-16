@@ -149,7 +149,7 @@ pub(super) fn present(window: &WebviewWindow, anchor: ScreenRect, layout: PanelL
         let native_window: &NSWindow = &*webview.ns_window().cast();
         let (frame, report) = frame_for(anchor, layout, Placement::OnLine);
         native_window.setFrame_display(frame, true);
-        let _ = emitter.emit(FRAME_EVENT, report);
+        tell_page(emitter, report);
         native_window.setIgnoresMouseEvents(false);
         native_window.setAlphaValue(1.0);
         native_window.setLevel(PRESENTED_LEVEL);
@@ -170,7 +170,7 @@ pub(super) fn present_passive(window: &WebviewWindow, anchor: ScreenRect, layout
     let presented = with_native_window(window, move |native_window| {
         let (frame, report) = frame_for(anchor, layout, placement);
         native_window.setFrame_display(frame, true);
-        let _ = emitter.emit(FRAME_EVENT, report);
+        tell_page(emitter, report);
         native_window.setIgnoresMouseEvents(true);
         native_window.setAlphaValue(1.0);
         native_window.setLevel(PRESENTED_LEVEL);
@@ -188,7 +188,7 @@ pub(super) fn reframe(window: &WebviewWindow, anchor: ScreenRect, layout: PanelL
     let reframed = with_native_window(window, move |native_window| {
         let (frame, report) = frame_for(anchor, layout, placement);
         native_window.setFrame_display(frame, true);
-        let _ = emitter.emit(FRAME_EVENT, report);
+        tell_page(emitter, report);
     });
     if let Err(error) = reframed {
         eprintln!("{error}");
@@ -210,6 +210,17 @@ pub(super) struct FrameReport {
     visible_top: f64,
     visible_right: f64,
     visible_bottom: f64,
+}
+
+/// Tells the page where the panel stands. From a thread of its own, never inside the main thread's closure that sets the
+/// frame: emitting evaluates script on the webview through a lock that closure's own dispatch holds, so the main thread
+/// waited for itself (the app hung at the first card).
+fn tell_page(window: WebviewWindow, report: FrameReport) {
+    let _ = std::thread::Builder::new()
+        .name("visualtex-anywhere-frame".to_string())
+        .spawn(move || {
+            let _ = window.emit(FRAME_EVENT, report);
+        });
 }
 
 /// The panel frame (AppKit coordinates: origin at the bottom left of the main
