@@ -124,8 +124,7 @@ fn frame_for(anchor: ScreenRect, layout: PanelLayout, placement: Placement) -> (
 fn place(window: &WebviewWindow, anchor: ScreenRect, layout: PanelLayout, placement: Placement, show: bool) {
     let Some(hwnd) = hwnd(window) else { return };
     let (x, y, width, height) = frame_for(anchor, layout, placement);
-    // Raised when it shows; following the formula keeps its place in the stack, so the input
-    // method's pinyin list (also topmost, raised as it shows) stays over it.
+    // Raised when it shows; following the formula keeps its place in the stack.
     let order = if show { SWP_NOACTIVATE } else { SWP_NOACTIVATE | SWP_NOZORDER };
     unsafe {
         let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), x, y, width, height, order);

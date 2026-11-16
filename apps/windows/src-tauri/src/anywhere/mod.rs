@@ -1430,10 +1430,9 @@ pub(crate) fn anywhere_dismiss(app: AppHandle, generation: u64, keep_draft: bool
     Ok(())
 }
 
-/// The formula's text for the field (if the field ends the composition itself), its caret (CSS
-/// pixels from the formula's start, x and down to the caret's line: the input method places pinyin
-/// candidates and the 中/英 indicator there) and the widths of the pieces TeX may break it into
-/// (CSS pixels: the field holds each in its text and wraps them as its own text).
+/// The formula's text for the field (if the field ends the composition itself) and the widths of
+/// the pieces TeX may break it into (CSS pixels: the field holds each in its text and wraps them as
+/// its own text). (The caret's place is told too; nothing uses it now.)
 #[tauri::command]
 pub(crate) fn anywhere_marked(
     generation: u64,
@@ -1468,14 +1467,6 @@ pub(crate) fn anywhere_marked(
             "pieces": pieces,
         }));
     }
-    Ok(())
-}
-
-/// The formula's caret entered or left text (\text{}). (The input method types formulas only: it
-/// has nothing to do there; the page still tells.)
-#[tauri::command]
-pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
-    let _ = (generation, text);
     Ok(())
 }
 

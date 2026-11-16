@@ -380,8 +380,7 @@ html:root body.anywhere-page #mathlive-suggestion-popover .visualtex-native-prev
    field's): the main window's caret, placed and sized for the structure that
    holds it, in the field's text colour. Empty slots are
    a faint tint of that colour, not the accent; no highlight box around the
-   slot that holds the caret; pinyin's spelling underlined like any input
-   method's. (On the field itself: the main window's .visual-mathfield sets
+   slot that holds the caret. (On the field itself: the main window's .visual-mathfield sets
    some of these there.) */
 .anywhere-strip.is-input-method math-field {
   --caret-color: var(--anywhere-text-color, currentColor);

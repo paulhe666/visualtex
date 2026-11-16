@@ -410,7 +410,6 @@ pub fn run() {
             anywhere::anywhere_commit_image,
             anywhere::anywhere_dismiss,
             anywhere::anywhere_marked,
-            anywhere::anywhere_mode,
             anywhere::anywhere_log,
             anywhere::anywhere_capture_screenshot,
             anywhere::anywhere_read_clipboard,

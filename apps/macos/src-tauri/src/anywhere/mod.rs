@@ -1512,14 +1512,6 @@ pub(crate) fn anywhere_marked(
     }
 }
 
-/// The formula's caret entered or left text (\text{}). (The input method types formulas only: it
-/// has nothing to do there; the page still tells.)
-#[tauri::command]
-pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
-    let _ = (generation, text);
-    Ok(())
-}
-
 /// The page's own diagnostics (commit outcomes, errors), into anywhere.log.
 #[tauri::command]
 pub(crate) fn anywhere_log(line: String) {

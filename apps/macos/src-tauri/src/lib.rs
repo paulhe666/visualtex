@@ -829,7 +829,6 @@ pub fn run() {
             anywhere::anywhere_read_clipboard,
             anywhere::anywhere_dismiss,
             anywhere::anywhere_marked,
-            anywhere::anywhere_mode,
             anywhere::anywhere_status,
             anywhere::anywhere_log,
             set_app_theme,

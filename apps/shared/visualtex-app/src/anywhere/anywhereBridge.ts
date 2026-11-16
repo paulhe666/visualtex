@@ -220,10 +220,6 @@ export const reportAnywhereMarked = (
   pieces: number[],
 ) => invoke<void>("anywhere_marked", { generation, text, width, caretX, caretY, pieces });
 
-/** The formula's caret is in text (\text{}): the input method spells pinyin there. */
-export const reportAnywhereMode = (generation: number, text: boolean) =>
-  invoke<void>("anywhere_mode", { generation, text });
-
 /** Windows: the shortcuts that act while a formula is open, for Windows to give them
  * to this page whatever the host application does with modifier chords. */
 export const reportAnywhereFormulaShortcuts = (

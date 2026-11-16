@@ -56,7 +56,6 @@ import {
   reportAnywhereFormulaShortcuts,
   reportAnywhereLayout,
   reportAnywhereMarked,
-  reportAnywhereMode,
   reportAnywhereReady,
   type AnywhereActivation,
   type AnywhereKey,
@@ -592,12 +591,6 @@ function typeKey(key: AnywhereKey) {
   sink.dispatchEvent(new KeyboardEvent("keyup", init));
 }
 
-/** The editor's caret is in text (\text{}), not in math. */
-function caretInText() {
-  const field = stripField() as unknown as { mode?: unknown } | null;
-  return field?.mode === "text";
-}
-
 /** The editor's caret from the drawn formula's start, in CSS pixels. */
 function caretOffset(box: { left: number } | null) {
   const field = stripField();
@@ -673,7 +666,6 @@ export function AnywhereApp() {
   /** The panel's last layout report (its window is set to the new size when it has been answered). */
   const layoutReportRef = useRef<Promise<unknown> | null>(null);
   const coverRef = useRef<HTMLDivElement>(null);
-  const lastModeRef = useRef<boolean | null>(null);
   const generationRef = useRef(0);
   const committingRef = useRef(false);
   const lastLayoutRef = useRef<AnywhereLayout | null>(null);
@@ -860,7 +852,7 @@ export function AnywhereApp() {
   }, [historyManager]);
 
   /** The input method keeps the formula's text (for a field that ends the
-   *  composition itself) and its caret (pinyin candidates go under it). */
+   *  composition itself). */
   const reportInline = useCallback(() => {
     const generation = generationRef.current;
     if (!generation || !inputMethodRef.current) return;
@@ -876,11 +868,6 @@ export function AnywhereApp() {
       void reportAnywhereMarked(generation, text, width, caretX, caretY, pieces).catch((error) =>
         console.error("Unable to hold the formula's space in the field", error),
       );
-    }
-    const inText = caretInText();
-    if (inText !== lastModeRef.current) {
-      lastModeRef.current = inText;
-      void reportAnywhereMode(generation, inText).catch(() => undefined);
     }
   }, []);
 
@@ -1041,7 +1028,6 @@ export function AnywhereApp() {
       committingRef.current = false;
       lastLayoutRef.current = null;
       lastMarkedRef.current = null;
-      lastModeRef.current = null;
       piecePlacesRef.current = [];
       pieceStartRef.current = null;
       pieceEndRef.current = null;
@@ -1326,8 +1312,7 @@ export function AnywhereApp() {
   }, [measure]);
 
   // The field holds the formula's width as it changes (the formula is
-  // drawn over that space); the input method follows the caret (its
-  // candidates, pinyin in text).
+  // drawn over that space).
   useEffect(() => {
     if (!session || !inputMethod) return;
     reportInline();
