@@ -357,9 +357,33 @@ final class VTFormulaController: IMKInputController {
 
     // MARK: VisualTeX's messages (main thread)
 
+    /// Counts VisualTeX's "grab" requests (the newest one's safety stop is the one that counts).
+    private static var grabs = 0
+
     static func receive(_ message: [String: Any]) {
         guard let type = message["t"] as? String else { return }
         if let application = message["app"] as? String, !application.isEmpty { shortcutApplication = application }
+        if type == "grab" {
+            // VisualTeX's pasting strip, for a field this input method does not reach (an app that
+            // never gets it: Notes, WeChat, QQ): until the strip is up (its caret is looked for on the
+            // screen meanwhile) the keys typed are taken here and sent to VisualTeX, never the field's.
+            grabs += 1
+            let grab = grabs
+            if message["on"] as? Bool == true {
+                KeyGrab.shared.start(skipping: message["skip"] as? [[Int]] ?? [])
+                // whatever happens to VisualTeX, the keys are given back
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    if grab == Self.grabs, Self.active?.composing != true, KeyGrab.shared.isOn {
+                        InputLog.write("grab timed out")
+                        KeyGrab.shared.stop()
+                    }
+                }
+            } else if active?.composing != true {
+                KeyGrab.shared.stop()
+            }
+            InputLog.write("grab on=\(KeyGrab.shared.isOn)")
+            return
+        }
         guard let controller = active, let client = controller.client() else {
             InputLog.write("message \(type) without an active field")
             // (the shortcut asks where the caret is: no field of this input method has the keyboard)

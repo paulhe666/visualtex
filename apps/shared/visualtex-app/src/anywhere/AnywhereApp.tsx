@@ -1178,8 +1178,9 @@ export function AnywhereApp() {
           startNewFormula();
         }
       }),
+      // (the input method's keys; with the pasting strip, only those typed before it was up)
       listenAnywhere(ANYWHERE_KEY_EVENT, isAnywhereKey, (key) => {
-        if (key.generation !== generationRef.current || !inputMethodRef.current) return;
+        if (key.generation !== generationRef.current) return;
         if (primaryModifierOnly({ ctrlKey: key.ctrl, metaKey: key.meta }) && key.code === "KeyV" && !key.alt) {
           void pasteIntoFormula();
           return;

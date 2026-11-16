@@ -20,6 +20,8 @@ mod ime;
 #[cfg(target_os = "macos")]
 mod panel;
 #[cfg(target_os = "macos")]
+mod screen_caret;
+#[cfg(target_os = "macos")]
 mod screen_colors;
 
 use serde::{Deserialize, Serialize};
@@ -115,6 +117,8 @@ pub(crate) struct Target {
     pub(crate) app_name: String,
     pub(crate) anchor: ScreenRect,
     pub(crate) source: AnchorSource,
+    /// The focused field's frame, as Accessibility reports it.
+    pub(crate) field: Option<ScreenRect>,
 }
 
 /// The strip's size and the point of it that sits on the caret line (where
@@ -269,6 +273,10 @@ struct Session {
     /// The strip's activation: the field's application to reopen (see
     /// Activation::reopen_app).
     reopen_app: Option<String>,
+    /// The generation whose pasting strip has the input method take the keys
+    /// until it is up (the caret is looked for meanwhile): they wait for it,
+    /// and go to it (with any the input method sent before it gave them back).
+    grab_keys: u64,
 }
 
 /// How the formula reaches the application. Paste: the strip sits on the
@@ -323,6 +331,7 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     strip_source: None,
     field_app: None,
     reopen_app: None,
+    grab_keys: 0,
 });
 
 /// The application whose field has VisualTeX's input method now (its bundle
@@ -444,6 +453,11 @@ fn toggle(app: &AppHandle, display: bool) {
 
 /// The pasting strip: what has the keyboard is no text field the input method reaches
 /// (`reopen_app`: because its application must be opened again first, see Activation::reopen_app).
+/// The strip stands on the caret Accessibility reports; where it reports none (WeChat draws its own
+/// text, QQ's Chromium reports the box but no place in it), on the caret found blinking on the
+/// screen (screen_caret), looked for alongside; else on the field, or where that application's
+/// caret was found last, or low in its window. Until the strip is up, the input method takes the
+/// keys typed (they wait for the strip, nothing reaches the field).
 #[cfg(target_os = "macos")]
 fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     let started = std::time::Instant::now();
@@ -451,9 +465,60 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     if !trusted {
         ax::request_trust();
     }
-    let target = ax::capture_target(trusted);
+    let generation = {
+        let Ok(mut session) = session() else { return };
+        session.generation += 1;
+        session.phase = Phase::Activating;
+        session.target = None;
+        session.delivery = Delivery::Paste;
+        session.reopen_app = reopen_app;
+        session.display = display;
+        session.awaiting_input_method = 0;
+        session.pending_keys.clear();
+        session.field_text = FieldText::default();
+        session.reference_height = None;
+        session.inline_anchor = None;
+        session.grab_keys = 0;
+        session.generation
+    };
+    // (VisualTeX's own shortcuts excepted)
+    if ime::is_linked() && ime::send(serde_json::json!({ "t": "grab", "on": true, "skip": hotkey::registered_chords() })) {
+        if let Ok(mut session) = session() {
+            if session.generation == generation {
+                session.grab_keys = generation;
+            }
+        }
+    }
+    let search = screen_caret::Search::start(ax::frontmost_pid());
+    let mut target = ax::capture_target(trusted);
+    let mut screen = String::new();
+    if target.source == AnchorSource::Caret {
+        search.cancel();
+    } else {
+        let window = search.window();
+        let field = if target.source == AnchorSource::Field { target.field } else { None };
+        match search.finish(field) {
+            Ok(found) => {
+                target.anchor = found.caret;
+                target.source = AnchorSource::Caret;
+                if let Some(window) = window {
+                    remember_caret(&target.app_name, window.frame(), found.caret);
+                }
+                screen = format!(" screen caret {}", found.report);
+            }
+            Err(why) => {
+                screen = format!(" screen caret: {why}");
+                if target.source == AnchorSource::Pointer {
+                    if let Some(window) = window {
+                        target.anchor = recalled_caret(&target.app_name, window.frame()).unwrap_or_else(|| low_in(window.frame()));
+                        target.source = AnchorSource::Field;
+                    }
+                }
+            }
+        }
+    }
     log(&format!(
-        "activate trusted={trusted} source={:?} anchor={:.0},{:.0},{:.0} app={:?} capture_ms={}",
+        "activate trusted={trusted} source={:?} anchor={:.0},{:.0},{:.0} app={:?} capture_ms={}{screen}",
         target.source,
         target.anchor.x,
         target.anchor.y,
@@ -461,6 +526,11 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         target.app_name,
         started.elapsed().as_millis()
     ));
+    let current = |session: &Session| session.generation == generation && session.phase == Phase::Activating;
+    // (the shortcut pressed again while the caret was looked for: the strip is not wanted)
+    if !session().map(|session| current(&*session)).unwrap_or(false) {
+        return;
+    }
     let window = match panel::ensure(app) {
         Ok(window) => window,
         Err(error) => {
@@ -473,26 +543,63 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     let strip_source = ime::select_ascii(app);
     let (activation, ready) = {
         let Ok(mut session) = session() else { return };
-        session.generation += 1;
-        session.phase = Phase::Activating;
-        session.target = Some(target.clone());
-        session.delivery = Delivery::Paste;
-        session.reopen_app = reopen_app;
+        if !current(&*session) {
+            drop(session);
+            if let Some(source) = strip_source {
+                ime::restore(app, &source);
+            }
+            return;
+        }
+        session.target = Some(target);
         if strip_source.is_some() {
             session.strip_source = strip_source;
         }
-        session.display = display;
-        session.awaiting_input_method = 0;
-        session.pending_keys.clear();
-        session.field_text = FieldText::default();
-        session.reference_height = None;
-        session.inline_anchor = None;
         (pending_activation(&session, trusted), session.ready)
     };
     // A cold (or reloading) panel takes the activation when its page reports
     // ready.
     if let (Some(activation), true) = (activation, ready) {
         send_activation(app, &window, activation);
+    }
+}
+
+/// Where each application's caret was found on the screen last, within its
+/// window: (window size, offset from the window's top left, caret height).
+#[cfg(target_os = "macos")]
+static FOUND_CARETS: Mutex<Vec<(String, (f64, f64), ScreenRect)>> = Mutex::new(Vec::new());
+
+#[cfg(target_os = "macos")]
+fn remember_caret(app_name: &str, window: ScreenRect, caret: ScreenRect) {
+    let Ok(mut carets) = FOUND_CARETS.lock() else { return };
+    carets.retain(|(name, _, _)| name != app_name);
+    carets.push((
+        app_name.to_string(),
+        (window.width, window.height),
+        ScreenRect { x: caret.x - window.x, y: caret.y - window.y, width: 0.0, height: caret.height },
+    ));
+}
+
+/// The application's caret where it was found last, if its window has kept its size.
+#[cfg(target_os = "macos")]
+fn recalled_caret(app_name: &str, window: ScreenRect) -> Option<ScreenRect> {
+    let carets = FOUND_CARETS.lock().ok()?;
+    let (_, size, offset) = carets.iter().find(|(name, _, _)| name == app_name)?;
+    ((size.0 - window.width).abs() < 2.0 && (size.1 - window.height).abs() < 2.0).then(|| ScreenRect {
+        x: window.x + offset.x,
+        y: window.y + offset.y,
+        width: 0.0,
+        height: offset.height,
+    })
+}
+
+/// Low in the window, where a chat's message box is.
+#[cfg(target_os = "macos")]
+fn low_in(window: ScreenRect) -> ScreenRect {
+    ScreenRect {
+        x: window.x + window.width * 0.5,
+        y: window.y + (window.height - 110.0).max(window.height * 0.6),
+        width: 0.0,
+        height: 18.0,
     }
 }
 
@@ -600,9 +707,10 @@ fn fall_back_to_paste(app: &AppHandle, generation: u64, display: bool) {
         session.phase = Phase::Hidden;
         session.delivery = Delivery::Paste;
     }
-    // An application running since before the input method was an input source has not got it.
+    // An application running since before the input method was an input source has not got it
+    // (a sandboxed one never gets it: reopening it changes nothing).
     let reopen = match (ax::frontmost_started(), ime::selected_since(app)) {
-        (Some((name, started)), Some(since)) if started < since => Some(name),
+        (Some((name, started)), Some(since)) if started < since && !ax::frontmost_sandboxed() => Some(name),
         _ => None,
     };
     if let Some(name) = reopen.as_ref() {
@@ -862,6 +970,7 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
                 app_name: client.clone(),
                 anchor,
                 source: if geometry.is_some() { AnchorSource::Caret } else { AnchorSource::Field },
+                field: None,
             });
             Next::Open(pending_activation(&session, true), session.ready)
         } else if let (Phase::Presented | Phase::Activating, Some(geometry)) = (session.phase, geometry.as_ref()) {
@@ -1075,7 +1184,8 @@ fn input_method_key(app: &AppHandle, message: &serde_json::Value) {
     let mut key = message.clone();
     let deliver_now = {
         let Ok(mut session) = session() else { return };
-        if session.delivery != Delivery::InputMethod || session.phase == Phase::Hidden {
+        let grabbed = session.delivery == Delivery::Paste && session.grab_keys == session.generation;
+        if (session.delivery != Delivery::InputMethod && !grabbed) || session.phase == Phase::Hidden {
             return;
         }
         if let Some(object) = key.as_object_mut() {
@@ -1199,6 +1309,17 @@ fn present(app: &AppHandle, generation: u64) {
             },
         }
     }
+    if delivery == Delivery::Paste {
+        // The strip has the keyboard now: the input method gives the keys back; the keys typed
+        // before, then any it took meanwhile, go to the strip (grab_keys stays for those).
+        let grabbed = session()
+            .map(|session| session.generation == generation && session.grab_keys == generation)
+            .unwrap_or(false);
+        if grabbed {
+            ime::send(serde_json::json!({ "t": "grab", "on": false }));
+            flush_pending_keys(app, generation);
+        }
+    }
     if delivery == Delivery::InputMethod {
         flush_pending_keys(app, generation);
     }
@@ -1216,7 +1337,7 @@ fn hide(app: &AppHandle, keep_draft: bool, reason: &str) {
 /// field's marked text (not when the input method itself ended the session).
 #[cfg(target_os = "macos")]
 fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method: bool) {
-    let (generation, delivery, strip_source) = {
+    let (generation, delivery, strip_source, grabbed) = {
         let Ok(mut session) = session() else { return };
         if session.phase == Phase::Hidden {
             return;
@@ -1225,8 +1346,13 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
         session.draft = keep_draft;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
-        (session.generation, session.delivery, session.strip_source.take())
+        let grabbed = session.grab_keys == session.generation;
+        session.grab_keys = 0;
+        (session.generation, session.delivery, session.strip_source.take(), grabbed)
     };
+    if grabbed {
+        ime::send(serde_json::json!({ "t": "grab", "on": false }));
+    }
     if let Some(source) = strip_source {
         ime::restore(app, &source);
     }

@@ -167,15 +167,33 @@ pub(super) fn request_trust() {
 pub(super) fn capture_target(trusted: bool) -> Target {
     let (pid, app_name) = frontmost_application();
     if trusted && pid > 0 {
-        if let Some((anchor, source)) = focused_text_anchor(pid) {
-            return Target { app_name, anchor, source };
+        if let Some((anchor, source, field)) = focused_text_anchor(pid) {
+            return Target { app_name, anchor, source, field };
         }
     }
     Target {
         app_name,
         anchor: pointer_anchor(),
         source: AnchorSource::Pointer,
+        field: None,
     }
+}
+
+/// The frontmost application's process (0: none).
+pub(super) fn frontmost_pid() -> i32 {
+    frontmost_application().0
+}
+
+/// Whether the frontmost application runs in the App Sandbox. macOS gives
+/// such an application (Notes, the App Store's WeChat and QQ) no input method
+/// of VisualTeX's (a palette enabled by VisualTeX itself), whenever it was
+/// started: reopening it changes nothing.
+pub(super) fn frontmost_sandboxed() -> bool {
+    unsafe extern "C" {
+        fn sandbox_check(pid: i32, operation: *const std::ffi::c_char, filter: i32, ...) -> i32;
+    }
+    let pid = frontmost_pid();
+    pid > 0 && unsafe { sandbox_check(pid, ptr::null(), 0) } > 0
 }
 
 /// The frontmost application's bundle identifier: the input method names the
@@ -378,7 +396,9 @@ fn focused_element(application: &Owned) -> Option<Owned> {
     None
 }
 
-fn focused_text_anchor(pid: i32) -> Option<(ScreenRect, AnchorSource)> {
+/// The caret (or the start of the focused field's first line, Field) and the
+/// focused field's frame.
+fn focused_text_anchor(pid: i32) -> Option<(ScreenRect, AnchorSource, Option<ScreenRect>)> {
     let application = Owned::new(unsafe { AXUIElementCreateApplication(pid) })?;
     unsafe {
         AXUIElementSetMessagingTimeout(application.0, AX_TIMEOUT_SECONDS);
@@ -390,14 +410,15 @@ fn focused_text_anchor(pid: i32) -> Option<(ScreenRect, AnchorSource)> {
     let range = copy_attribute(&focused, "AXSelectedTextRange")
         .and_then(|value| ax_value::<CFRange>(&value, AX_VALUE_CF_RANGE));
     log_geometry(&focused, range);
+    let frame = element_frame(&focused);
     if let Some(range) = range {
         if let Some(caret) = caret_rect(&focused, range) {
-            return Some((caret, AnchorSource::Caret));
+            return Some((caret, AnchorSource::Caret, frame));
         }
     }
     // No caret: stand at the start of the field's first line, where an input
     // method's composition window goes when the field reports nothing.
-    let frame = element_frame(&focused)?;
+    let frame = frame?;
     let line = frame.height.clamp(14.0, 24.0);
     Some((
         ScreenRect {
@@ -407,6 +428,7 @@ fn focused_text_anchor(pid: i32) -> Option<(ScreenRect, AnchorSource)> {
             height: line,
         },
         AnchorSource::Field,
+        Some(frame),
     ))
 }
 
