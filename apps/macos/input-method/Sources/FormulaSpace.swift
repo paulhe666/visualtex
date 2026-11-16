@@ -14,8 +14,9 @@ import Cocoa
 ///
 /// The marked text starts with one hair space: it lets the field break the
 /// line before the formula, and where the field has it is where the space
-/// starts. (It is set selected. Fields show their caret at the space's end
-/// all the same, measured 2026-11-11: VisualTeX covers it there.)
+/// starts. (The selection is set right after it, with no length: the field's
+/// own caret then stands at the formula's start whatever is typed, and
+/// VisualTeX covers it there. FormulaController.heldSelection.)
 enum FormulaSpace {
     static let anchor = "\u{200A}"
     /// Braille pattern blank: drawn as nothing, and a letter to line breaking

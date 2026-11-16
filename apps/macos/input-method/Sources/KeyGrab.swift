@@ -151,6 +151,11 @@ final class KeyGrab {
     }
 
     private func send(_ key: (code: Int, modifiers: Int), isRepeat: Bool) {
+        // VisualTeX is gone (the link closed between two keys): the keys are nobody's to take.
+        guard AppLink.shared.isConnected else {
+            stop()
+            return
+        }
         AppLink.shared.send(KeyMapping.message(
             keyCode: UInt16(key.code),
             shift: key.modifiers & Self.shift != 0,
