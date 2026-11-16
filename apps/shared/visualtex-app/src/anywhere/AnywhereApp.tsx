@@ -69,9 +69,9 @@ import { anywhereWindow } from "@platform/anywhereWindow";
 const EDITOR_BASE_FONT_PX = 54;
 /** Room around the strip for its shadow (anywhere.css: .anywhere-strip). */
 const PANEL_MARGIN = 8;
-/** The candidate table: under the formula, its left edge where the command
- * being typed starts (anywhere.css lays it out, at the formula's size); the
- * panel grows to hold it and its shadow. */
+/** The candidate list (the Settings' look): under the formula, its left edge
+ * where the command being typed starts; the panel grows to hold it and its
+ * shadow. */
 const CANDIDATE_GAP = 5;
 const CANDIDATE_INSET = 1;
 const CANDIDATE_MARGIN = 14;
@@ -1298,11 +1298,6 @@ export function AnywhereApp() {
   // hidden page gets no animation frames until it is shown.
   useLayoutEffect(() => {
     if (!session) return;
-    // The candidate table is drawn at the formula's size.
-    document.documentElement.style.setProperty(
-      "--anywhere-candidate-size",
-      `${(EDITOR_BASE_FONT_PX * zoom).toFixed(2)}px`,
-    );
     editorRef.current?.focus({ target: "first", moveToEnd: true });
     measure();
     const frame = window.requestAnimationFrame(() => {

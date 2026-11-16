@@ -102,16 +102,12 @@ body.anywhere-page #root {
   opacity: 0.6;
 }
 
-/* Candidates as a table under the formula, after AxMath: a column per
-   candidate, its number and command in a dark header cell, its formula below
-   at the formula's own size (AnywhereApp sets --anywhere-candidate-size), 1 px
-   lines between the columns. Only the page of nine that holds the highlighted
-   candidate; the panel grows to the table, so nothing scrolls or is cut.
-   (html:root: above the main window's popover rules in styles.css.) */
-/* The main window shows a copy of the kernel's list (mathLiveKernelCommands:
-   #visualtex-native-input-suggestion-popover) and hides the kernel's own; here
-   the kernel's own list is the table (the panel is sized from it), the copy
-   never shows. */
+/* The candidates are the main window's: the page only stands the list under the formula (AnywhereApp
+   placeCandidateBar sets where; the panel grows to its box), and the look, the colours and the number of candidates are
+   the Settings' (Formula editor > Candidates: default, cards, horizontal or AxMath style; app.css). The main window
+   shows a copy of the kernel's list (mathLiveKernelCommands: #visualtex-native-input-suggestion-popover) and hides the
+   kernel's own; here the kernel's own list is the one shown (the panel is sized from it), the copy never shows.
+   (html:root: above the main window's popover rules in styles.css, for the place only.) */
 html:root body.anywhere-page #visualtex-native-input-suggestion-popover {
   display: none !important;
 }
@@ -122,140 +118,13 @@ html:root body.anywhere-page #mathlive-suggestion-popover[data-visualtex-input-p
 }
 
 html:root body.anywhere-page #mathlive-suggestion-popover {
-  --candidate-head: #62390f;
-  --candidate-head-current: #b0661d;
-  --candidate-head-text: #ffffff;
-  --candidate-cell: #efe4e4;
-  --candidate-cell-current: #f8ecd8;
-  --candidate-line: #ffffff;
   left: var(--anywhere-candidates-left, 0px) !important;
   top: var(--anywhere-candidates-top, 0px) !important;
-  width: max-content !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: var(--candidate-line) !important;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2) !important;
-  font-size: var(--anywhere-candidate-size, 19px);
-}
-
-:root[data-theme="dark"] body.anywhere-page #mathlive-suggestion-popover {
-  --candidate-head: #6e4318;
-  --candidate-head-current: #c07a2e;
-  --candidate-cell: #3a3131;
-  --candidate-cell-current: #4f4032;
-  --candidate-line: #1e1a1a;
 }
 
 html:root body.anywhere-page #mathlive-suggestion-popover.top-tip::after,
 html:root body.anywhere-page #mathlive-suggestion-popover.bottom-tip::after {
   display: none !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover ul {
-  flex-flow: row nowrap;
-  align-items: stretch;
-  gap: 1px;
-  max-height: none !important;
-  overflow: visible !important;
-  padding: 0 !important;
-  background: var(--candidate-line) !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover li {
-  display: grid !important;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto 1fr;
-  width: auto !important;
-  min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  gap: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  background: var(--candidate-cell) !important;
-  color: var(--text) !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover li + li {
-  margin-top: 0 !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover li:hover,
-html:root body.anywhere-page #mathlive-suggestion-popover li.is-pressed,
-html:root body.anywhere-page #mathlive-suggestion-popover li.is-active,
-html:root body.anywhere-page #mathlive-suggestion-popover li.ML__popover__current {
-  border: 0 !important;
-  box-shadow: none !important;
-  background: var(--candidate-cell-current) !important;
-}
-
-/* Candidates on other pages are not numbered: not shown. */
-html:root body.anywhere-page #mathlive-suggestion-popover li:has(> .ML__popover__index:empty) {
-  display: none !important;
-}
-
-/* The header cell: "1.\in" */
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__index,
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__latex {
-  display: block !important;
-  min-width: 0;
-  align-self: stretch;
-  padding: 0.12em 0 0.1em;
-  overflow: visible;
-  background: var(--candidate-head);
-  color: var(--candidate-head-text) !important;
-  font: 500 max(11px, 0.56em)/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  text-align: left;
-  text-overflow: clip;
-  white-space: nowrap;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__index {
-  grid-area: 1 / 1;
-  padding-left: 0.45em;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__index::after {
-  content: ".";
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__latex {
-  grid-area: 1 / 2;
-  padding-right: 0.5em;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover li.ML__popover__current .ML__popover__index,
-html:root body.anywhere-page #mathlive-suggestion-popover li.ML__popover__current .ML__popover__latex {
-  background: var(--candidate-head-current);
-  color: var(--candidate-head-text) !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__label,
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__keybinding {
-  display: none !important;
-}
-
-/* The formula cell, under the whole header. */
-html:root body.anywhere-page #mathlive-suggestion-popover .ML__popover__command,
-html:root body.anywhere-page #mathlive-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
-  grid-area: 2 / 1 / 3 / 3;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  min-width: 0 !important;
-  min-height: 1.75em;
-  padding: 0.12em 0.45em !important;
-  overflow: visible;
-  color: var(--text) !important;
-  font-size: 1em !important;
-}
-
-html:root body.anywhere-page #mathlive-suggestion-popover .visualtex-native-preview-placeholder {
-  background: color-mix(in srgb, currentColor 25%, transparent);
 }
 
 /* The output mode, under the formula for a moment when it opens or the mode
