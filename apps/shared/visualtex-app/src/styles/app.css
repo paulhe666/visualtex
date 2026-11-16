@@ -956,6 +956,8 @@ kbd {
   text-align: center;
   --caret-color: var(--formula-caret);
   --selection-background-color: var(--formula-selection);
+  /* a command being typed (\alpha before it becomes α): the theme's LaTeX command colour, as in the source panel */
+  --latex-color: var(--syntax-command);
   --contains-highlight-background-color: color-mix(
     in srgb,
     var(--accent) 10%,

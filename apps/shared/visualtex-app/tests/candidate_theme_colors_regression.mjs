@@ -157,6 +157,31 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     await sleep(300);
   }
 
+  // the command being typed (\fr before it becomes a formula) is in the theme's LaTeX command colour, readable
+  for (const theme of THEMES) {
+    await open({ theme });
+    await openPanel();
+    const typed = await evaluate(`(() => {
+      // (the engine's .ML__raw-latex spans are transparent stops; the glyphs are painted in --_latex-color)
+      const field = document.querySelector("math-field.visual-mathfield");
+      const root = field?.shadowRoot;
+      if (!root?.querySelector(".ML__raw-latex")) return null;
+      const probe = document.createElement("span");
+      probe.style.color = "var(--_latex-color)";
+      (root.querySelector(".ML__container") ?? root).append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      const painted = [...root.querySelectorAll("span")].some((n) => n.textContent.trim() && getComputedStyle(n).color === color);
+      let node = field, background = "rgba(0, 0, 0, 0)";
+      while (node && /rgba\\(0, 0, 0, 0\\)|transparent/.test(background)) { background = getComputedStyle(node).backgroundColor; node = node.parentElement; }
+      return { color: painted ? color : "rgba(0, 0, 0, 0)", background, command: getComputedStyle(document.documentElement).getPropertyValue("--syntax-command").trim() };
+    })()`);
+    assert.ok(typed, `${theme}: the command being typed is drawn`);
+    assert.ok(same(typed.color, await resolve(typed.command)), `${theme}: the command being typed is the theme's command colour (${typed.color} vs ${typed.command})`);
+    assert.ok(contrast(typed.color, typed.background) >= 4.5, `${theme}: the command being typed is readable (${contrast(typed.color, typed.background).toFixed(2)} on ${typed.background})`);
+    await key("Escape", "Escape", 27);
+  }
+
   // a custom theme's candidate colours follow its own accent
   const codex = seen.get("codex");
   await open({ theme: "custom", custom: { version: 1, mode: "light", colors: { accent: "#C2410C", accentHover: "#9A3412", accentSoft: "#FFEDD5", background: "#FFFFFF", surface: "#FFFFFF", foreground: "#1F2937" } } });

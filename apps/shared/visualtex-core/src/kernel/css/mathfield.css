@@ -61,7 +61,7 @@
     --_selection-background-color: var(--selection-background-color, hsl(var(--_hue), 65%, 55%));
     --_text-highlight-background-color: var(--text-highlight-background-color, hsla(var(--_hue), 40%, 50%, 0.6));
     --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 5%, 34%));
-    --_latex-color: var(--primary, hsl(var(--_hue), 40%, 50%));
+    --_latex-color: var(--latex-color, var(--primary, hsl(var(--_hue), 40%, 50%)));
     --_composition-background-color: #69571c;
     --_composition-text-color: white;
     --_placeholder-color: hsl(var(--_hue), 60%, 69%);
