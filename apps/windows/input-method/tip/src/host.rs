@@ -10,11 +10,17 @@
 //! activated for this thread alone, and when the formula ends, however it ends, the field gets the
 //! input method it had back and the profile is disabled again.
 //!
+//! Windows keeps one keyboard input method for the whole session (unless the user chose one for each
+//! application window): about half a second after the thread took VisualTeX's, Windows gives it to
+//! the session's other threads too, where its text service comes up with no formula to open and
+//! does nothing; when the formula's thread goes back to its own input method and the profile is
+//! disabled, they go back with it.
+//!
 //! The window also receives the text service's messages (the app's link, its timers).
 
-use crate::{log, service, CLSID_TEXT_SERVICE, GUID_PROFILE, LANGID_ZH_CN};
-use std::cell::{Cell, RefCell};
-use windows::core::{w, GUID};
+use crate::{log, service, thread, CLSID_TEXT_SERVICE, GUID_PROFILE, LANGID_ZH_CN};
+use std::cell::Cell;
+use windows::core::{w, GUID, PCWSTR};
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{
@@ -58,12 +64,49 @@ impl Profile {
 
 thread_local! {
     static WINDOW: Cell<isize> = const { Cell::new(0) };
-    /// The formula the app asked for, until the text service takes it.
-    static PENDING: Cell<u64> = const { Cell::new(0) };
-    /// The input method the field had before the formula.
-    static PREVIOUS: RefCell<Option<Profile>> = const { RefCell::new(None) };
-    /// VisualTeX's profile is activated in this thread (by WM_OPEN) and not yet handed back.
-    static HELD: Cell<bool> = const { Cell::new(false) };
+}
+
+// What is kept for the thread, for every build of the input method in it (thread.rs):
+/// the formula the app asked for, until the text service takes it;
+const PENDING: PCWSTR = w!("VisualTeX.Pending");
+/// VisualTeX's profile is activated in this thread (by WM_OPEN) and not yet handed back;
+const HELD: PCWSTR = w!("VisualTeX.Held");
+/// the input method the field had before the formula.
+const PREVIOUS_KIND: PCWSTR = w!("VisualTeX.Previous.Kind");
+const PREVIOUS_LANGUAGE: PCWSTR = w!("VisualTeX.Previous.Language");
+const PREVIOUS_CLASS: [PCWSTR; 2] = [w!("VisualTeX.Previous.Class.High"), w!("VisualTeX.Previous.Class.Low")];
+const PREVIOUS_PROFILE: [PCWSTR; 2] = [w!("VisualTeX.Previous.Profile.High"), w!("VisualTeX.Previous.Profile.Low")];
+const PREVIOUS_LAYOUT: PCWSTR = w!("VisualTeX.Previous.Layout");
+
+fn keep_guid(names: [PCWSTR; 2], guid: &GUID) {
+    let value = guid.to_u128();
+    thread::set(names[0], (value >> 64) as u64 as isize);
+    thread::set(names[1], value as u64 as isize);
+}
+
+fn kept_guid(names: [PCWSTR; 2]) -> GUID {
+    GUID::from_u128(((thread::get(names[0]) as u64 as u128) << 64) | thread::get(names[1]) as u64 as u128)
+}
+
+fn keep_previous(previous: Option<&Profile>) {
+    let empty = Profile { kind: 0, langid: 0, clsid: GUID::zeroed(), profile: GUID::zeroed(), hkl: 0 };
+    let profile = previous.unwrap_or(&empty);
+    thread::set(PREVIOUS_KIND, profile.kind as isize);
+    thread::set(PREVIOUS_LANGUAGE, profile.langid as isize);
+    keep_guid(PREVIOUS_CLASS, &profile.clsid);
+    keep_guid(PREVIOUS_PROFILE, &profile.profile);
+    thread::set(PREVIOUS_LAYOUT, profile.hkl);
+}
+
+fn kept_previous() -> Option<Profile> {
+    let kind = thread::get(PREVIOUS_KIND) as u32;
+    (kind != 0).then(|| Profile {
+        kind,
+        langid: thread::get(PREVIOUS_LANGUAGE) as u16,
+        clsid: kept_guid(PREVIOUS_CLASS),
+        profile: kept_guid(PREVIOUS_PROFILE),
+        hkl: thread::get(PREVIOUS_LAYOUT),
+    })
 }
 
 /// This thread's window (0: none yet).
@@ -73,7 +116,7 @@ pub(crate) fn window() -> HWND {
 
 /// The formula the app asked for in this thread, taken by the text service when it comes up.
 pub(crate) fn take_pending() -> u64 {
-    PENDING.with(|pending| pending.replace(0))
+    thread::take(PENDING) as u64
 }
 
 fn profiles() -> Option<ITfInputProcessorProfileMgr> {
@@ -160,14 +203,12 @@ fn open(generation: u64) {
         return;
     };
     let previous = active_profile(&manager).filter(|profile| !profile.is_visualtex());
-    PREVIOUS.with(|slot| {
-        // (a formula opened over one whose hand-back has not run keeps the first one's input method)
-        if previous.is_some() || !HELD.with(Cell::get) {
-            *slot.borrow_mut() = previous.clone();
-        }
-    });
-    PENDING.with(|pending| pending.set(generation));
-    HELD.with(|held| held.set(true));
+    // (a formula opened over one whose hand-back has not run keeps the first one's input method)
+    if previous.is_some() || thread::get(HELD) == 0 {
+        keep_previous(previous.as_ref());
+    }
+    thread::set(PENDING, generation as isize);
+    thread::set(HELD, 1);
     let result = unsafe {
         manager.ActivateProfile(
             TF_PROFILETYPE_INPUTPROCESSOR,
@@ -207,21 +248,21 @@ pub(crate) fn hand_back() {
 }
 
 fn hand_back_now() {
-    PENDING.with(|pending| pending.set(0));
+    thread::set(PENDING, 0);
     unsafe {
         let _ = KillTimer(Some(window()), ACTIVATE_TIMER);
     }
-    let held = HELD.with(|held| held.replace(false));
+    // (a thread no formula was opened in has nothing to give back: Windows put VisualTeX there as
+    // the session's input method while a formula was open elsewhere, and takes it off again)
+    if thread::take(HELD) == 0 {
+        return;
+    }
     let Some(manager) = profiles() else { return };
-    let previous = PREVIOUS.with(|slot| slot.borrow_mut().take());
+    let previous = kept_previous();
+    keep_previous(None);
     // Only a thread still typing with VisualTeX is given its input method back: the user may have
     // chosen another one meanwhile, which stays.
     let still_ours = active_profile(&manager).map(|profile| profile.is_visualtex()).unwrap_or(false);
-    // (a thread that got VisualTeX without the shortcut, from the switcher while a formula was open
-    // elsewhere, has no input method written down: disabling the profile takes it off)
-    if !held && !still_ours {
-        return;
-    }
     if let (true, Some(profile)) = (still_ours, previous.as_ref()) {
         let result = activate(&manager, profile);
         log::write(&format!("handed back to {profile:?}: {:?}", result.map_err(|error| error.code())));
@@ -247,7 +288,7 @@ extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lpara
             unsafe {
                 let _ = KillTimer(Some(window), ACTIVATE_TIMER);
             }
-            if PENDING.with(Cell::get) != 0 {
+            if thread::get(PENDING) != 0 {
                 log::write("the text service did not start in this thread");
                 hand_back_now();
             }
@@ -297,14 +338,14 @@ pub(crate) fn ensure() {
         unsafe {
             let _ = GetModuleHandleExW(
                 GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-                windows::core::PCWSTR(window_proc as *const u16),
+                PCWSTR(window_proc as *const u16),
                 &mut module,
             );
         }
         let class = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: crate::dll_instance(),
-            lpszClassName: windows::core::PCWSTR(window_class().as_ptr()),
+            lpszClassName: PCWSTR(window_class().as_ptr()),
             ..Default::default()
         };
         unsafe { RegisterClassW(&class) };
@@ -312,7 +353,7 @@ pub(crate) fn ensure() {
     let created = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
-            windows::core::PCWSTR(window_class().as_ptr()),
+            PCWSTR(window_class().as_ptr()),
             w!(""),
             WINDOW_STYLE(0),
             0,

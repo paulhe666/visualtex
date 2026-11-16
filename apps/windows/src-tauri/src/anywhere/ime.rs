@@ -39,8 +39,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 /// The TIP's CLSID and profile (input-method/tip/src/lib.rs).
-pub(super) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xb6e0a6c4_6f52_4c7e_9b7a_2f1e5a3d9c41);
-pub(super) const GUID_PROFILE: GUID = GUID::from_u128(0xd3a1f7b2_8c4e_4e2a_a5d6_6b9e0c1f2a73);
+pub(super) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xbc149223_13ee_45e3_8ac3_a672427d091e);
+pub(super) const GUID_PROFILE: GUID = GUID::from_u128(0x7be4ff4e_8279_46cc_929c_f49f3a48b1a8);
 const LANGID_ZH_CN: u16 = 0x0804;
 /// The request to open a formula, for the window the input method makes in a field's thread
 /// (input-method/tip/src/host.rs).

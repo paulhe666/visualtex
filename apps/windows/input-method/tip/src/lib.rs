@@ -23,6 +23,7 @@ mod log;
 mod register;
 mod service;
 mod space;
+mod thread;
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -31,10 +32,12 @@ use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, E_POINTER, HINSTANCE
 use windows::Win32::UI::WindowsAndMessaging::CallNextHookEx;
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
-/// The text service's CLSID.
-pub(crate) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xb6e0a6c4_6f52_4c7e_9b7a_2f1e5a3d9c41);
+/// The text service's CLSID. (Not the one of the input method VisualTeX had before, a whole input
+/// method with pinyin: Windows keeps a thread's text service for the thread's life, and that one
+/// must never come up again in an application that still has it.)
+pub(crate) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xbc149223_13ee_45e3_8ac3_a672427d091e);
 /// Its language profile (registered under Simplified Chinese; activated whatever the field's language).
-pub(crate) const GUID_PROFILE: GUID = GUID::from_u128(0xd3a1f7b2_8c4e_4e2a_a5d6_6b9e0c1f2a73);
+pub(crate) const GUID_PROFILE: GUID = GUID::from_u128(0x7be4ff4e_8279_46cc_929c_f49f3a48b1a8);
 pub(crate) const LANGID_ZH_CN: u16 = 0x0804;
 pub(crate) const DESCRIPTION: &str = "VisualTeX";
 

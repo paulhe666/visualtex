@@ -256,25 +256,12 @@ fn start_formula(shared: &Rc<Shared>) {
         *state.formula.borrow_mut() = Some(composition);
         *state.formula_context.borrow_mut() = Some(writer.clone());
         state.formula_transitory.set(transitory);
-        let variant = std::env::var("VTX_TIP_VARIANT").unwrap_or_default();
-        if !variant.is_empty() {
-            log::write(&format!("DEBUG variant={variant}"));
-        }
         if transitory {
             // a field typing through IMM32 reports made-up rectangles for parts of the
             // composition: the formula stays on one line there, over a zero-width anchor
-            let text: &[u16] = if variant.contains("space") { &[0x200A, 0x2800] } else if variant.contains("letter") { &[0x0061] } else { IMM_ANCHOR };
-            unsafe { range.SetText(cookie, 0, text)? };
-            if !variant.contains("noattr") {
-                set_attribute_atom(if variant.contains("spaceattr") { state.space_atom.get() } else { state.anchor_atom.get() }, &writer, cookie, &range);
-            }
-            if variant.contains("selend") {
-                let end = unsafe { range.Clone()? };
-                unsafe { end.Collapse(cookie, TF_ANCHOR_END)? };
-                select(&writer, cookie, &end)?;
-            } else if !variant.contains("nosel") {
-                select(&writer, cookie, &range)?;
-            }
+            unsafe { range.SetText(cookie, 0, IMM_ANCHOR)? };
+            set_attribute_atom(state.anchor_atom.get(), &writer, cookie, &range);
+            select(&writer, cookie, &range)?;
         } else {
             let caret = range_rect(&writer, cookie, &range);
             let window = view_window(&writer);
@@ -296,7 +283,7 @@ fn start_formula(shared: &Rc<Shared>) {
         state.calibrations.set(0);
         state.polls.set(0);
         unsafe {
-            SetTimer(Some(host::window()), POLL_TIMER, if variant.contains("latepoll") { 600 } else { 16 }, None);
+            SetTimer(Some(host::window()), POLL_TIMER, 16, None);
         }
         log::write(if transitory { "formula composition started (IMM32 field)" } else { "formula composition started" });
         Ok(())
@@ -774,11 +761,10 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         ACTIVE.with(|active| *active.borrow_mut() = Some(shared.clone()));
         let generation = host::take_pending();
         log::write(&format!("activated gen={generation}"));
-        if generation == 0 {
-            // Not VisualTeX's shortcut (the profile chosen in the input switcher while a formula was
-            // open somewhere): VisualTeX types formulas only, the thread goes back at once.
-            host::hand_back();
-        } else {
+        // (no formula asked for in this thread: Windows gave it the session's input method while a
+        // formula is open in another thread, see host.rs. The text service does nothing here, every
+        // key is the application's, and Windows takes it off again when that formula ends.)
+        if generation != 0 {
             begin(&shared, generation);
         }
         Ok(())

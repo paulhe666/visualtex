@@ -21,9 +21,12 @@ param(
 # current is left alone (no UAC).
 
 $ErrorActionPreference = "Stop"
-$clsid = "{B6E0A6C4-6F52-4C7E-9B7A-2F1E5A3D9C41}"
-$profileGuid = "{D3A1F7B2-8C4E-4E2A-A5D6-6B9E0C1F2A73}"
-$tipId = "0804:$clsid$profileGuid"
+$clsid = "{BC149223-13EE-45E3-8AC3-A672427D091E}"
+$profileGuid = "{7BE4FF4E-8279-46CC-929C-F49F3A48B1A8}"
+# The input method VisualTeX had before (a whole input method, with pinyin, on the user's
+# keyboards): another class, taken out wherever it is found.
+$oldClsid = "{B6E0A6C4-6F52-4C7E-9B7A-2F1E5A3D9C41}"
+$oldTipId = "0804:$oldClsid{D3A1F7B2-8C4E-4E2A-A5D6-6B9E0C1F2A73}"
 $installRoot = Join-Path $env:ProgramFiles "VisualTeX Input"
 $logRoot = Join-Path $env:LOCALAPPDATA "VisualTeX"
 New-Item -Path $logRoot -ItemType Directory -Force | Out-Null
@@ -65,6 +68,26 @@ function Remove-Registration {
     if ($null -ne $classes -and $null -ne $classes.OpenSubKey($clsid)) { $classes.DeleteSubKeyTree($clsid) }
 }
 
+# The earlier input method's registration (elevated): its COM class and its TSF profile.
+function Remove-OldRegistration {
+    $classes = Open-MachineClasses
+    $registered = $null
+    if ($null -ne $classes) {
+        $key = $classes.OpenSubKey("$oldClsid\InprocServer32")
+        if ($null -ne $key) { $registered = [string]$key.GetValue("") }
+    }
+    if ($registered -and (Test-Path $registered)) {
+        $code = Invoke-Regsvr32 @("/u", "/s", (Quote-ProcessArgument $registered))
+        Write-Log "earlier input method unregistered $registered (exit $code)"
+    }
+    $classes = Open-MachineClasses $true
+    if ($null -ne $classes -and $null -ne $classes.OpenSubKey($oldClsid)) { $classes.DeleteSubKeyTree($oldClsid) }
+    $view = if ([Environment]::Is64BitOperatingSystem) { [Microsoft.Win32.RegistryView]::Registry64 } else { [Microsoft.Win32.RegistryView]::Default }
+    $machine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
+    $tips = $machine.OpenSubKey("SOFTWARE\Microsoft\CTF\TIP", $true)
+    if ($null -ne $tips -and $null -ne $tips.OpenSubKey($oldClsid)) { $tips.DeleteSubKeyTree($oldClsid) }
+}
+
 function Read-BuildId([string]$Directory) {
     $file = Join-Path $Directory "build-id"
     if (-not (Test-Path $file)) { return $null }
@@ -100,17 +123,19 @@ function Stop-InputServer {
     }
 }
 
-# VisualTeX is none of the user's input methods: off the language's keyboards (where earlier
-# builds put it), and its profile disabled for the user (the input switcher lists enabled
-# profiles; Windows keeps the user's choice under HKCU).
+# VisualTeX is none of the user's input methods: the earlier one is taken off the language's
+# keyboards (it was put there), and this one's profile is disabled for the user (the input
+# switcher lists enabled profiles; Windows keeps the user's choice under HKCU).
 function Remove-UserKeyboard {
     $list = Get-WinUserLanguageList
     $chinese = $list | Where-Object { $_.LanguageTag -eq "zh-Hans-CN" } | Select-Object -First 1
-    if ($null -ne $chinese -and $chinese.InputMethodTips -contains $tipId) {
-        [void]$chinese.InputMethodTips.Remove($tipId)
+    if ($null -ne $chinese -and $chinese.InputMethodTips -contains $oldTipId) {
+        [void]$chinese.InputMethodTips.Remove($oldTipId)
         Set-WinUserLanguageList -LanguageList $list -Force
-        Write-Log "taken off the user's keyboards"
+        Write-Log "earlier input method taken off the user's keyboards"
     }
+    $oldKey = "HKCU:\Software\Microsoft\CTF\TIP\$oldClsid"
+    if (Test-Path $oldKey) { Remove-Item -Path $oldKey -Recurse -Force }
     $profileKey = "HKCU:\Software\Microsoft\CTF\TIP\$clsid\LanguageProfile\0x00000804\$profileGuid"
     if (-not (Test-Path $profileKey)) { New-Item -Path $profileKey -Force | Out-Null }
     Set-ItemProperty -Path $profileKey -Name "Enable" -Value 0 -Type DWord
@@ -121,6 +146,7 @@ if ($Elevated) {
     try {
         if (-not (Test-IsAdministrator)) { throw "The VisualTeX input method needs administrator rights." }
         $registered = Get-RegisteredDll
+        Remove-OldRegistration
         if ($Uninstall) {
             if ($registered -and (Test-Path $registered)) {
                 $code = Invoke-Regsvr32 @("/u", "/s", (Quote-ProcessArgument $registered))

@@ -707,9 +707,12 @@ fn pending_activation(session: &Session) -> Option<Activation> {
 /// A message from the input method (its link threads).
 pub(super) fn input_method_message(app: &AppHandle, message: &serde_json::Value) {
     let kind = message.get("t").and_then(|value| value.as_str()).unwrap_or("");
-    // (a message about an earlier formula, from a field still closing it)
-    if let Some(about) = message.get("gen").and_then(|value| value.as_u64()).filter(|about| *about != 0) {
-        if session().map(|session| session.generation != about).unwrap_or(false) && kind != "hello" {
+    // Every message is about a formula ("gen"): one about an earlier formula comes from a field
+    // still closing it, and one about none from a thread Windows gave the input method to while a
+    // formula is open elsewhere.
+    if !matches!(kind, "hello" | "disconnected") {
+        let about = message.get("gen").and_then(|value| value.as_u64()).unwrap_or(0);
+        if about == 0 || session().map(|session| session.generation != about).unwrap_or(true) {
             return;
         }
     }
