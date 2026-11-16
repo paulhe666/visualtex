@@ -8,7 +8,6 @@ commands.allow = [
   "anywhere_commit_image",
   "anywhere_dismiss",
   "anywhere_marked",
-  "anywhere_mode",
   "anywhere_log",
   "anywhere_capture_screenshot",
   "anywhere_read_clipboard",
