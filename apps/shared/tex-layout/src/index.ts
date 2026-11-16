@@ -10,7 +10,7 @@ import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
 import { alignShift, caretBarHtml, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
-import { buildEditorGeometry, caretMetrics, type GeometryAtom } from "./editor-geometry.ts";
+import { buildEditorGeometry, caretMetrics, type CaretGeometry, type GeometryAtom } from "./editor-geometry.ts";
 import { shipOut, type ShipResult } from "./shipout.ts";
 import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
 import type { TeXFont, TfmData } from "./tfm.ts";
@@ -242,7 +242,8 @@ export type CaretState =
   | { kind: "empty"; placeholder: GeometryAtom }
   | { kind: "none" };
 
-export type { EditorGeometry, CaretGeometry, Rect as GeometryRect } from "./editor-geometry.ts";
+export type { EditorGeometry, CaretGeometry, CaretRegion, Rect as GeometryRect } from "./editor-geometry.ts";
+export { caretReach } from "./editor-geometry.ts";
 
 export function createVisualTexLayout(data: LayoutData, options: LayoutOptions = {}) {
   const cache = new FontCache((name) => {
@@ -480,6 +481,24 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     });
   }
 
+  /**
+   * AxMath's L-shaped caret (docs/editing-core/DESIGN.md §5): the bar as tall as the region (the slot's content) the
+   * caret is in, and, once the caret is after an item of it, a line along the region's foot over its whole width,
+   * with the bar standing on the line's end when the caret is at the region's end. A stop without a region (an empty
+   * slot has its marker) keeps the short bar.
+   */
+  function lShapedCaret(stop: CaretGeometry, mode: CaretBar["mode"]): CaretBar {
+    const r = stop.region;
+    if (!r) return { ...stop, mode };
+    return {
+      ...stop,
+      top: Math.min(stop.top, r.top),
+      bottom: Math.max(stop.bottom, r.bottom),
+      mode,
+      line: stop.underline ? { x0: Math.min(r.x0, stop.x), x1: Math.max(r.x1, stop.x) } : undefined,
+    };
+  }
+
   /** Editor markup for a mathfield (kernel flags isSelected/containsCaret are already set). */
   function renderMathfield(mathfield: any, _renderOptions?: unknown): string {
     const model = mathfield.model;
@@ -512,7 +531,8 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       band && Number.isFinite(band.up) && Number.isFinite(band.down) && band.up > 0 && band.down >= 0
         ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
         : caret;
-    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret);
+    // (a formula set on several lines keeps the short bar: its regions are drawn in pieces, no line runs through them)
+    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret, (lines?.pieces.length ?? 0) <= 1);
     if (lines) geometry.lines = lines;
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
@@ -530,8 +550,9 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     // the caret goes into the element of the slot that holds it
     const stop = state.kind === "stop" ? geometry.stops[state.offset] : null;
     const emptySlot = state.kind === "empty" ? geometry.markers.get(state.placeholder) : undefined;
+    const caretMode: CaretBar["mode"] = model.mode === "text" || model.mode === "latex" ? model.mode : "math";
     const bar: CaretBar | null = stop
-      ? { ...stop, mode: model.mode === "text" || model.mode === "latex" ? model.mode : "math" }
+      ? lShapedCaret(stop, caretMode)
       : emptySlot && state.kind === "empty"
         ? { x: emptySlot.x0, top: emptySlot.y0, bottom: emptySlot.y1, scale: regions.get(state.placeholder)?.scale ?? 1, side: "left", mode: "math" }
         : null;

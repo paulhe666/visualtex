@@ -3,7 +3,7 @@
 // computes the geometry of every caret stop, empty slot and atom while it lays
 // the formula out; the kernel and the app ask this module instead of
 // measuring the drawn page.
-import type { CaretState, EditorGeometry, GeometryRect } from "../../tex-layout/src/index.ts";
+import { caretReach, type CaretState, type EditorGeometry, type GeometryRect } from "../../tex-layout/src/index.ts";
 import { enterSlot, firstEmptySlotStop, goToStop, moveHorizontal, moveToSlotEdge, space, tab, vertical, type EditingHost, type SelectionDragHost, type SpaceKernel, type TabKernel } from "./navigation.ts";
 import { itemAt, type FormulaPoint } from "./pointer.ts";
 import { rectHitTest, type RectHitView } from "./rectHit.ts";
@@ -60,6 +60,8 @@ export interface EditingCore {
   atomBounds(mathfield: KernelMathfield, atom: unknown): ClientRect | null;
   /** The page rectangle of the caret bar's boundary (zero width), or null. */
   caretRect(mathfield: KernelMathfield): ClientRect | null;
+  /** The page rectangle of the whole caret (zero width): the bar as tall as its region, and the line below it. */
+  caretReachRect(mathfield: KernelMathfield): ClientRect | null;
   /** The page rectangle of a caret stop (zero width; an empty slot's marker edge), or null: a drop caret. */
   stopRect(mathfield: KernelMathfield, offset: number): ClientRect | null;
   /** The app's side of dragging a field's selection (EditingHost.selectionDrag), if any. */
@@ -276,8 +278,18 @@ export function createEditingCore(): EditingCore {
     },
 
     caretPoint(mathfield) {
-      const r = core.caretRect(mathfield);
+      // below the whole caret: the L-shaped caret's line stands under its region's box
+      const r = core.caretReachRect(mathfield) ?? core.caretRect(mathfield);
       return r ? { x: r.right, y: r.bottom, height: r.bottom - r.top } : null;
+    },
+
+    caretReachRect(mathfield) {
+      const geometry = core.geometry(mathfield);
+      const state = core.caretState(mathfield);
+      const c = geometry && state.kind === "stop" ? geometry.stops[state.offset] : null;
+      if (!c) return null;
+      const reach = caretReach(c);
+      return core.toClient(mathfield, { x0: c.x, x1: c.x, y0: reach.top, y1: reach.bottom });
     },
 
     imeAnchor(mathfield) {

@@ -100,6 +100,11 @@ export interface CaretBar {
   scale: number;
   side: "left" | "center";
   mode: "math" | "text" | "latex";
+  /**
+   * AxMath's L-shaped caret: the line under the whole region the caret is in (sp, formula coordinates), along the foot
+   * of the bar: the bar and the line are one caret and blink together
+   */
+  line?: { x0: number; x1: number };
 }
 
 /** An empty-slot marker to draw (sp, formula coordinates). */
@@ -207,10 +212,15 @@ const STRUT = 2;
  * slot's marker.
  */
 export function caretBarHtml(c: CaretBar, ox: number, oy: number, shift: string | null = null): string {
-  const cls = (c.mode === "text" ? "ML__text-caret" : c.mode === "latex" ? "ML__latex-caret" : "ML__caret") + (c.side === "left" ? " ML__vtx-caret--before" : "");
+  const cls =
+    (c.mode === "text" ? "ML__text-caret" : c.mode === "latex" ? "ML__latex-caret" : "ML__caret") +
+    (c.side === "left" ? " ML__vtx-caret--before" : "") +
+    (c.line ? " ML__vtx-caret--line" : "");
   const s = c.scale;
+  // the line: from its left end (relative to the bar) over its width, in em of the caret's font size
+  const line = c.line ? `--vtx-line-left:${fix(em(c.line.x0 - c.x) / s)}em;--vtx-line-width:${fix(em(c.line.x1 - c.line.x0) / s)}em;` : "";
   return (
-    `<span class="${cls}" style="position:absolute;width:0;font-size:${fix(s)}em;` +
+    `<span class="${cls}" style="position:absolute;width:0;font-size:${fix(s)}em;${line}` +
     `left:${plus(`${fix(em(c.x - ox) / s)}em`, shift)};top:${fix(em(c.top - oy) / s)}em;height:${fix(em(c.bottom - c.top) / s)}em"></span>`
   );
 }

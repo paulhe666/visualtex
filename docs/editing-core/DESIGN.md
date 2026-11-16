@@ -102,10 +102,15 @@ The engine already places every glyph in TeX's layout. It additionally returns a
     item (past the operator's space); empty slot → left edge of the marker; neighbouring stops that would share one
     place at a structure boundary (the end of a radicand and after the radical) are set 0.1em apart, the outer one
     outside the structure, so every key press shows the caret moving;
-  - `top/bottom`: one bar everywhere: 0.76em tall, foot 0.05em below the baseline, scaled with the size TeX sets the
-    atom beside the caret in (1 text, 0.7 script, 0.5 script's script; the typesetter records it), never stretched to
-    the slot's content; the empty-slot marker spans the same band, so the caret keeps its size and place when the
-    first character is typed (user, 2026-10-21: the slot-height caret was too tall in scripts and nested structures);
+  - `top/bottom`: the stop's own band: 0.76em tall, foot 0.05em below the baseline, scaled with the size TeX sets the
+    atom beside the caret in (1 text, 0.7 script, 0.5 script's script; the typesetter records it); the empty-slot
+    marker spans the same band, so the caret keeps its size and place when the first character is typed. Popovers and
+    the IME anchor to it (`caretReach` for the whole drawn caret). The drawn caret is the L of `region` below;
+  - `region` — the box of the content of the slot the stop is in: x from the first item's left edge to the last item's
+    right edge, y from the top of the tallest item (a nested structure, an accent, scripts included) to the foot of the
+    deepest, a line's strut (0.75em up, 0.25em down, at the slot's size) as the least. None for an empty slot (its
+    marker is its box) and for a formula set on several lines. `underline` — the stop is after an item of its slot,
+    not at its start;
   - the baseline used is the item's own line (a script's caret on the script, the caret after `\int_0^1` on the
     main baseline);
 - `marker(slot)` — empty-slot marker rectangle (0.40em of the slot's size wide, the caret bar's band high, centred on
@@ -125,6 +130,20 @@ The engine already places every glyph in TeX's layout. It additionally returns a
   half). A stop the caret may not take (a macro's expansion, a phantom) becomes the nearest enclosing
   atom's stop before or after it. Nothing in the row: the formula's first stop if the point is left of it, else its
   last.
+
+**The L-shaped caret** (user, 2026-11-16: "when the cursor is inside an accent the underline covers only the characters
+inside the accent; the same for everything else", learnt from AxMath: its caret walked through ~14 formulas with
+scripted key messages and window captures, `claude-work/axmath-ui` on the Windows PC; measured: 1 px bar, 1 px line, the
+bar's last pixel row is the line's row, the line's right end is where the bar stands at the region's end, both blink
+together): the bar is as tall as the region; once the caret is after an item of its region, a line runs along the foot of
+the whole region, just below its box (0.05em thick, the bar 0.08em; the bar reaches down to the line's lower edge, the
+line's ends stand a half bar width out so the bar is flush on it). So inside `\hat{BC}` only BC is underlined, in a
+numerator only the numerator, at the top level the whole row, whatever the structures inside it. At the start of a region
+the bar stands alone (as in AxMath), in an empty slot only the marker bar. The bar and the line are one element (they
+blink together, and the caret's colour is the theme's). This replaces the 2026-10-21 rule that the bar never stretches to
+its slot (too tall in scripts and nested structures when it stood alone; with the line, its height says which region it
+is). Regions are the slots of the structure table (§4): the row, numerator, denominator, radicand and index, scripts,
+limits, operands, bracket content, matrix cells, an accent's content. Test: `caret_underline_regression.mjs`.
 
 The painter draws the caret, markers, selection and tint from these numbers. The kernel and the app never measure the
 page: anything that needs a position (popovers, IME candidate window, scrolling, the app's row layout) asks the core,

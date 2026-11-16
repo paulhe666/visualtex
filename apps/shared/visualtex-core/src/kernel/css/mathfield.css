@@ -141,6 +141,7 @@
   position: absolute;
   width: 0;
   pointer-events: none;
+  --_caret-width: clamp(2px, 0.08em, 10px);
 }
 .ML__caret::after,
 .ML__text-caret::after,
@@ -159,6 +160,34 @@
 }
 .ML__latex-caret::after {
   background: var(--_latex-color);
+}
+/* AxMath's L-shaped caret: with the bar, a line along the foot of the region the caret is in (the whole slot's
+   content), one caret with the bar. The line stands just below the region's box (the caret element is the region's
+   box), a little thinner than the bar; the bar reaches down to its lower edge and its ends stand as far out as the
+   bar's half width, so the bar on the line's end is flush with it. Both blink together. */
+.ML__vtx-caret--line {
+  --_line-thickness: clamp(1px, 0.05em, 6px);
+}
+.ML__vtx-caret--line::after {
+  bottom: calc(var(--_line-thickness) * -1);
+  border-radius: calc(var(--_caret-width) / 2) calc(var(--_caret-width) / 2) 0 0;
+}
+.ML__vtx-caret--line::before {
+  content: '';
+  visibility: hidden;
+  position: absolute;
+  bottom: calc(var(--_line-thickness) * -1);
+  height: var(--_line-thickness);
+  left: calc(var(--vtx-line-left, 0px) - var(--_caret-width) / 2);
+  width: calc(var(--vtx-line-width, 0px) + var(--_caret-width));
+  background: var(--_caret-color);
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__latex-caret.ML__vtx-caret--line::before {
+  background: var(--_latex-color);
+}
+.ML__focused .ML__vtx-caret--line::before {
+  visibility: visible;
 }
 .ML__vtx-caret--before::after {
   left: auto;

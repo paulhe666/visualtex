@@ -52,6 +52,8 @@ const SAME_PLACE = 0.02 * EM;
 const STOP_GAP = 0.1 * EM;
 /** half the caret bar's width (the CSS bar is 0.08em of the slot's size) */
 const BAR_HALF = 0.04 * EM;
+/** room below a region's box for the L-shaped caret's line (the CSS line is 0.05em thick, at least 1px) */
+const LINE_ROOM = 0.06 * EM;
 
 export interface Rect {
   x0: number;
@@ -70,11 +72,27 @@ export interface GeometryAtom {
   rows?: unknown[][][];
 }
 
+/**
+ * The region a caret stop is in: the box of its slot's content, which AxMath's L-shaped caret is drawn with (the bar is
+ * as tall as the region, the underline runs along its foot). The items' boxes (nested structures, accents and scripts
+ * included) and a line's strut at the slot's size; x from the first item's left edge to the last item's right edge.
+ */
+export interface CaretRegion {
+  x0: number;
+  x1: number;
+  top: number;
+  bottom: number;
+}
+
 export interface CaretGeometry {
   /** the boundary the caret stands at */
   x: number;
   top: number;
   bottom: number;
+  /** the slot's content box (not for the stop of an empty slot, whose marker is its box) */
+  region?: CaretRegion;
+  /** the caret stands after an item of its slot: the underline under the whole region is drawn (not at the slot's start) */
+  underline?: boolean;
   baseline: number;
   /** font scale of the slot (1 text, 0.7 script, 0.5 scriptscript) */
   scale: number;
@@ -86,6 +104,15 @@ export interface CaretGeometry {
   side: "left" | "center";
   /** the stop is an empty slot: the marker the caret touches */
   empty?: GeometryAtom;
+}
+
+/**
+ * How far the whole caret reaches vertically (sp, y down from the baseline): the bar as tall as its region and, with the
+ * underline, the line below the region's box. Where popovers and the IME's window stand below the caret.
+ */
+export function caretReach(c: CaretGeometry): { top: number; bottom: number } {
+  if (!c.region) return { top: c.top, bottom: c.bottom };
+  return { top: Math.min(c.top, c.region.top), bottom: Math.max(c.bottom, c.region.bottom + (c.underline ? LINE_ROOM * c.scale : 0)) };
 }
 
 export interface EditorGeometry {
@@ -126,6 +153,8 @@ export function buildEditorGeometry(
   alignMarkers: number[],
   scales?: Map<Tag, number>,
   caret: CaretMetrics = CM_CARET,
+  /** the caret stops carry their regions (the L-shaped caret); not for a formula set on several lines */
+  withRegions = true,
 ): EditorGeometry {
   const { up: BAR_UP, down: BAR_DOWN, markerWidth: MARKER_WIDTH } = caret;
   const markers = new Map<Tag, Rect>();
@@ -202,6 +231,37 @@ export function buildEditorGeometry(
 
   const band = (baseline: number, s: number) => ({ top: baseline - BAR_UP * s, bottom: baseline + BAR_DOWN * s });
 
+  // the box of a slot's content: its items' regions and a line's strut at the slot's size (AxMath's chain box: a plain
+  // line is as tall as a line, whatever its letters), by owner and branch
+  const regionCache = new Map<GeometryAtom, Map<string, CaretRegion | null>>();
+  const regionOf = (owner: GeometryAtom | undefined, branch: unknown): CaretRegion | null => {
+    if (!owner || !withRegions) return null;
+    const key = String(branch);
+    let byBranch = regionCache.get(owner);
+    if (!byBranch) regionCache.set(owner, (byBranch = new Map()));
+    const cached = byBranch.get(key);
+    if (cached !== undefined) return cached;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    let line: number | undefined;
+    for (const item of owner.branch(branch) ?? []) {
+      if (item.type === "first" || isPlaceholder(item)) continue;
+      const r = regions.get(item);
+      if (!r) continue;
+      x0 = Math.min(x0, r.x0);
+      x1 = Math.max(x1, r.x1);
+      y0 = Math.min(y0, r.y0);
+      y1 = Math.max(y1, r.y1);
+      line ??= baselineOf(item);
+    }
+    let found: CaretRegion | null = null;
+    if (line !== undefined && x1 >= x0) {
+      const s = slotScale(owner, branch);
+      found = { x0, x1, top: Math.min(y0, line - caret.strut.height * s), bottom: Math.max(y1, line + caret.strut.depth * s) };
+    }
+    byBranch.set(key, found);
+    return found;
+  };
+
   const stops: (CaretGeometry | null)[] = [];
   for (let offset = 0; offset <= model.lastOffset; offset++) {
     const a = model.at(offset);
@@ -223,7 +283,8 @@ export function buildEditorGeometry(
       if (lead) {
         const baseline = baselineOf(lead);
         const s = scaleOf(lead);
-        stops.push({ x: regions.get(lead)!.x0, ...band(baseline, s), baseline, scale: s, side: "center" });
+        const region = regionOf(owner, branch);
+        stops.push({ x: regions.get(lead)!.x0, ...band(baseline, s), baseline, scale: s, side: "center", ...(region ? { region } : {}) });
         continue;
       }
       // an empty slot without a marker (a script just opened): at the empty
@@ -238,7 +299,7 @@ export function buildEditorGeometry(
     const r = regions.get(a);
     if (!r) {
       // an atom without material (an empty group): where the previous stop is
-      stops.push(stops[offset - 1] ? { ...stops[offset - 1]!, side: "center", empty: undefined } : null);
+      stops.push(stops[offset - 1] ? { ...stops[offset - 1]!, side: "center", empty: undefined, ...(stops[offset - 1]!.region ? { underline: true } : {}) } : null);
       continue;
     }
     const baseline = baselineOf(a);
@@ -255,7 +316,8 @@ export function buildEditorGeometry(
       if (nr && nr.x0 > x && baselineOf(next!) === baseline) x = nr.x0;
     }
     const s = scaleOf(a);
-    stops.push({ x, ...band(baseline, s), baseline, scale: s, side: "center" });
+    const region = regionOf(owner, branch);
+    stops.push({ x, ...band(baseline, s), baseline, scale: s, side: "center", ...(region ? { region, underline: true } : {}) });
   }
 
   separateCoincidingStops(model, stops);
@@ -272,8 +334,10 @@ export function buildEditorGeometry(
   }
   for (const c of stops) {
     if (!c) continue;
-    height = Math.max(height, Math.ceil(-c.top));
-    depth = Math.max(depth, Math.ceil(c.bottom));
+    // (the L-shaped caret reaches the foot of its region and the line below it)
+    const reach = caretReach(c);
+    height = Math.max(height, Math.ceil(-reach.top));
+    depth = Math.max(depth, Math.ceil(reach.bottom));
     right = Math.max(right, Math.ceil(c.x + BAR_HALF * c.scale - box.width));
   }
   return { width: box.width, height, depth, right, stops, markers, regions, alignMarkers };
