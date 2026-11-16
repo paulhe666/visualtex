@@ -531,8 +531,9 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       band && Number.isFinite(band.up) && Number.isFinite(band.down) && band.up > 0 && band.down >= 0
         ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
         : caret;
-    // (a formula set on several lines keeps the short bar: its regions are drawn in pieces, no line runs through them)
-    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret, (lines?.pieces.length ?? 0) <= 1);
+    // (a formula set on several lines, or one the editor shifts piece by piece on alignment markers, keeps the short bar:
+    // a line along its regions would not meet the shifted material)
+    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret, (lines?.pieces.length ?? 0) <= 1 && alignMarkers.length === 0);
     if (lines) geometry.lines = lines;
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
