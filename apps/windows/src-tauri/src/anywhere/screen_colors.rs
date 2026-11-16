@@ -116,11 +116,14 @@ fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
 pub(super) fn field_colors(caret: ScreenRect) -> Option<FieldColors> {
     let height = caret.height.max(10.0).round() as i32;
     let (scale, work) = super::panel::monitor_at(caret.x, caret.y);
-    // The line around the caret, mostly before it (after it the field may still show a
-    // placeholder), and only what is on the screen: beyond its edge a capture is black, which
-    // would make a light field's formula white (a maximized window's caret near the edge).
-    let before = (160.0 * scale).round() as i32;
-    let width = before + (80.0 * scale).round() as i32;
+    // The line right around the caret: what the cover must match is the field's colour where the
+    // formula stands. (A wide stretch before the caret reached past the field's left edge, and for
+    // a caret at the start of a line the cover took the colour of what is beside the field: a faint
+    // grey box under the formula, 2026-11-15; on the Mac it was a chat's message box, 2026-11-11.)
+    // Only what is on the screen: beyond its edge a capture is black, which would make a light
+    // field's formula white (a maximized window's caret near the edge).
+    let before = (14.0 * scale).round() as i32;
+    let width = before + (44.0 * scale).round() as i32;
     let left = (caret.x.round() as i32 - before).max(work.left);
     let right = (caret.x.round() as i32 - before + width).min(work.right);
     let top = (caret.y.round() as i32).max(work.top);
@@ -184,8 +187,21 @@ fn luminance(color: [f64; 3]) -> f64 {
     0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]
 }
 
-/// The most common colour.
+/// The most common colour: the one colour most pixels have exactly (a field's background is
+/// flat), when a fifth of them have it; else the most common among colours taken coarsely (a
+/// gradient, a translucent field), averaged. (Coarsely alone, the field's colour and the near
+/// greys of its glyph edges or of what lies beside it fell together, and the cover was a shade off.)
 fn background(pixels: &[[f64; 3]]) -> [f64; 3] {
+    let mut exact = std::collections::HashMap::<(u8, u8, u8), usize>::new();
+    for color in pixels {
+        let key = ((color[0] * 255.0).round() as u8, (color[1] * 255.0).round() as u8, (color[2] * 255.0).round() as u8);
+        *exact.entry(key).or_insert(0) += 1;
+    }
+    if let Some((key, count)) = exact.iter().max_by_key(|(_, count)| **count) {
+        if *count * 5 >= pixels.len() {
+            return [key.0 as f64 / 255.0, key.1 as f64 / 255.0, key.2 as f64 / 255.0];
+        }
+    }
     let mut buckets = std::collections::HashMap::<(u8, u8, u8), (usize, [f64; 3])>::new();
     for color in pixels {
         let key = ((color[0] * 15.0) as u8, (color[1] * 15.0) as u8, (color[2] * 15.0) as u8);
@@ -266,5 +282,27 @@ mod tests {
         let mut floating = canvas(width, height);
         fill(&mut floating, width, 7..9, 80..103, INK);
         assert_eq!(bar_in(&floating, width, height, edge, center, 1.5), None);
+    }
+
+    #[test]
+    fn a_flat_field_gives_its_colour_exactly() {
+        // a light grey field (#f3f3f3) and the paler near greys of glyph edges in the same coarse
+        // bucket: the colour is the field's, not an average with them (the cover was a shade off the
+        // field, a faint box)
+        let field = [243.0 / 255.0; 3];
+        let (width, height) = (60, 10);
+        let mut pixels = vec![field; (width * height) as usize];
+        for step in 0..12 {
+            fill(&mut pixels, width, 6 + step..7 + step, 0..4, [0.96 + 0.003 * step as f64; 3]);
+        }
+        assert_eq!(background(&pixels), field);
+    }
+
+    #[test]
+    fn a_gradient_gives_its_most_common_shade() {
+        // no colour reaches a fifth: the coarse buckets decide, averaged
+        let pixels: Vec<[f64; 3]> = (0..100).map(|index| [0.2 + 0.006 * index as f64; 3]).collect();
+        let color = background(&pixels);
+        assert!(color[0] > 0.2 && color[0] < 0.8, "{color:?}");
     }
 }
