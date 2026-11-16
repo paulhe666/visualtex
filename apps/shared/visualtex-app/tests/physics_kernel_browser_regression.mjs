@@ -32,7 +32,9 @@ await withAppBrowser(async ({ evaluate }) => {
             const value = field.value;
             let editedValue = "";
             if (latex.startsWith("\\\\pmqty")) {
-              field.position = 2;
+              // after the first cell's 1 (an offset of the kernel's own: \\pmqty's slot holds the whole matrix)
+              const model = field._mathfield.model;
+              field.position = model.offsetOf(model.atoms.find((atom) => atom.value === "1"));
               field.insert("2", { mode: "math", format: "latex" });
               editedValue = field.value;
             }
