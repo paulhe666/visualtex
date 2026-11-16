@@ -23,7 +23,7 @@
       "../office/macos-offline/fonts/README-STIX-Two-Math.txt": "office/macos-offline/fonts/README-STIX-Two-Math.txt",
       "../office/macos-offline/fonts/GUST-FONT-LICENSE.txt": "office/macos-offline/fonts/GUST-FONT-LICENSE.txt",
       "../office/macos-offline/fonts/STIX-Two-Math-OFL.txt": "office/macos-offline/fonts/STIX-Two-Math-OFL.txt",
-      "../input-method/build/VisualTeX Input.app/": "input-method/VisualTeX Input.app/"
+      "../input-method/build/VisualTeX Formula.app/": "input-method/VisualTeX Formula.app/"
     }
   }
 }

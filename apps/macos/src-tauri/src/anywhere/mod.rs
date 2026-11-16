@@ -44,33 +44,20 @@ const KEY_EVENT: &str = "visualtex-anywhere-key";
 /// The field's text size or colour, learnt after the formula opened.
 #[cfg(target_os = "macos")]
 const STYLE_EVENT: &str = "visualtex-anywhere-style";
-/// Pinyin spelled in the formula's text: the editor's composition.
-#[cfg(target_os = "macos")]
-const COMPOSE_EVENT: &str = "visualtex-anywhere-compose";
 /// Where the field put the formula's pieces (it wraps them as its text).
 #[cfg(target_os = "macos")]
 const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
 /// The most pieces a formula is cut into for the field (a longer formula's
 /// last piece holds the rest).
 const MAX_PIECES: usize = 512;
-/// The shortcut switched the field to the input method; a field that has
-/// not activated it by then does not take text (or the switch failed).
+/// The shortcut asked the input method where the caret is; a field that takes text answers within
+/// this (else what has the keyboard is no text field of the input method's: the pasting strip).
 #[cfg(target_os = "macos")]
-const INPUT_METHOD_WAIT: Duration = Duration::from_millis(1500);
-/// When the field has not switched to the input method after this long, the "Select the previous
-/// input source" shortcut is sent once more (macOS sometimes drops the first one; the formula then
-/// fell back to the pasting strip, somewhere else, and took the keys there).
-#[cfg(target_os = "macos")]
-const SWITCH_RETRY: Duration = Duration::from_millis(450);
+const INPUT_METHOD_WAIT: Duration = Duration::from_millis(500);
 /// The input method reconnects to VisualTeX within a second of being started
 /// or of VisualTeX starting (input-method/Sources/AppLink.swift).
 #[cfg(target_os = "macos")]
 const IME_RELINK_WAIT: Duration = Duration::from_millis(1500);
-/// The shortcut found this process on VisualTeX's input method before the input
-/// method reported any field: it is asked for the caret, and a field it has
-/// answers within this (else the field is switched to it).
-#[cfg(target_os = "macos")]
-const ALREADY_PROBE: Duration = Duration::from_millis(400);
 /// Keys typed before the card is up wait for it, up to this many.
 #[cfg(target_os = "macos")]
 const MAX_PENDING_KEYS: usize = 256;
@@ -192,13 +179,6 @@ struct Activation {
     line_descent: Option<f64>,
     /// The field's background (#rrggbbaa), as read off the screen.
     background_color: Option<String>,
-    /// VisualTeX's input method is installed but not among the user's input
-    /// sources: the strip says so (it types into the field once it is added).
-    input_method_missing: bool,
-    /// The field's application selected VisualTeX's input method but never
-    /// started it (an application running since before the input method was
-    /// replaced): the strip names it, to be reopened.
-    reopen_app: Option<String>,
 }
 
 /// How the field's text looks where the formula goes (input method).
@@ -255,13 +235,10 @@ struct Session {
     /// reload per session.
     reloaded_for: u64,
     delivery: Delivery,
-    /// The input source the field goes back to after the formula (the
-    /// shortcut switched it to the input method).
-    return_to: Option<String>,
     /// The display shortcut opened this session.
     display: bool,
-    /// The generation whose shortcut switched the field to the input method
-    /// and waits for its "activate".
+    /// The generation whose shortcut asked the input method for the field's caret
+    /// and waits for its answer.
     awaiting_input_method: u64,
     /// Keys the input method took before the card was up.
     pending_keys: Vec<serde_json::Value>,
@@ -279,18 +256,12 @@ struct Session {
     /// The generation whose formula colour comes from the screen: it stays,
     /// whatever the field reports later.
     color_from_screen: u64,
-    /// The strip's activation: the input method is not among the input
-    /// sources.
-    input_method_missing: bool,
     /// The app's input source before the strip took an English layout (given
     /// back when it hides).
     strip_source: Option<String>,
     /// The frontmost application (bundle identifier) when the shortcut was
     /// pressed: the field the input method must answer from.
     field_app: Option<String>,
-    /// The strip's activation: the field's application to reopen (see
-    /// Activation::reopen_app).
-    reopen_app: Option<String>,
 }
 
 /// How the formula reaches the application. Paste: the strip sits on the
@@ -327,7 +298,6 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     draft: false,
     reloaded_for: 0,
     delivery: Delivery::Paste,
-    return_to: None,
     display: false,
     awaiting_input_method: 0,
     pending_keys: Vec::new(),
@@ -343,17 +313,13 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     inline_anchor: None,
     color_read: 0,
     color_from_screen: 0,
-    input_method_missing: false,
     strip_source: None,
     field_app: None,
-    reopen_app: None,
 });
 
 /// The application whose field has VisualTeX's input method now (its bundle
 /// identifier, the "client" of the input method's activate; None after its
-/// deactivate). This process's own input source is not the field's: on macOS
-/// 27 a frontmost application keeps its source when another process selects
-/// one, and VisualTeX's own windows (the strip) change this process's.
+/// deactivate).
 #[cfg(target_os = "macos")]
 static IME_FIELD: Mutex<Option<String>> = Mutex::new(None);
 
@@ -460,7 +426,7 @@ fn toggle(app: &AppHandle, display: bool) {
             if ime::is_enabled(&app) {
                 begin_input_method(&app, display);
             } else {
-                activate(&app, display, None);
+                activate(&app, display);
             }
         });
     if let Err(error) = spawned {
@@ -468,10 +434,9 @@ fn toggle(app: &AppHandle, display: bool) {
     }
 }
 
-/// The pasting strip (`reopen_app`: the field's application selected the input
-/// method without starting it, see Activation::reopen_app).
+/// The pasting strip: what has the keyboard is no text field the input method reaches.
 #[cfg(target_os = "macos")]
-fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
+fn activate(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     let trusted = ax::is_trusted();
     if !trusted {
@@ -496,7 +461,6 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     };
     // the strip's formula is typed in English: the app's own input source an
     // ASCII-capable layout while it is up (the one it had, back when it hides)
-    let missing = ime::installed() && !ime::is_enabled(app);
     let strip_source = ime::select_ascii(app);
     let (activation, ready) = {
         let Ok(mut session) = session() else { return };
@@ -504,12 +468,9 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         session.phase = Phase::Activating;
         session.target = Some(target.clone());
         session.delivery = Delivery::Paste;
-        session.input_method_missing = missing;
-        session.reopen_app = reopen_app;
         if strip_source.is_some() {
             session.strip_source = strip_source;
         }
-        session.return_to = None;
         session.display = display;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
@@ -544,42 +505,23 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
         line_height: session.field_text.line_height,
         line_descent: session.field_text.line_descent,
         background_color: session.field_text.background_color.clone(),
-        input_method_missing: session.input_method_missing && session.delivery == Delivery::Paste,
-        reopen_app: session.reopen_app.clone().filter(|_| session.delivery == Delivery::Paste),
     })
 }
 
-/// The shortcut with the input method enabled: switch the field to it; its
-/// "activate" (input_method_message) opens the formula there.
+/// The shortcut with the input method selected: the input method has the field that has the
+/// keyboard already (it is selected beside the user's input source); it is asked where the caret
+/// is, and its answer (input_method_message) opens the formula there. Nothing is switched.
 #[cfg(target_os = "macos")]
 fn begin_input_method(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     let field_app = ax::frontmost_bundle();
-    let own = ime::current_source(app);
-    // Typing with VisualTeX already (chosen in the input menu)? The input
-    // method's own report says: the application whose field it has. This
-    // process's input source is only a guess (the strip and VisualTeX's own
-    // windows change it; 2026-11-09 00:29 it said VisualTeX while Chrome typed
-    // with Pinyin, and every shortcut fell back to the strip without trying).
-    // Until the input method reports a field after VisualTeX starts, the guess
-    // is asked first and an unanswered request switches (see the probe below).
     let known_field = ime_field();
-    let already = match known_field.as_deref() {
-        Some(client) => ime::is_linked() && field_app.as_deref() == Some(client),
-        None => own.as_deref() == Some(ime::SOURCE_ID),
-    };
-    // The field's source after the formula: never VisualTeX's input method.
-    let previous = own
-        .clone()
-        .filter(|source| source != ime::SOURCE_ID)
-        .or_else(|| ime::recent_other_source(app));
     let generation = {
         let Ok(mut session) = session() else { return };
         session.generation += 1;
         session.phase = Phase::Activating;
         session.target = None;
         session.delivery = Delivery::InputMethod;
-        session.return_to = previous.clone().filter(|_| !already);
         session.field_app = field_app.clone();
         session.display = display;
         session.awaiting_input_method = session.generation;
@@ -593,123 +535,54 @@ fn begin_input_method(app: &AppHandle, display: bool) {
         log(&format!("input method session gen={generation}: no panel: {error}"));
         return;
     }
-    let switched = if already {
-        // The input method may be relinking (VisualTeX restarted, or macOS
-        // has just started it for the shortcut's own modifier keys): it
-        // reconnects within a second. Its field answers with the caret.
+    // The input method's process may be gone (it is started with VisualTeX; a crash, an update):
+    // started again, it links within a second.
+    if !ime::is_linked() {
+        ime::launch();
         let deadline = std::time::Instant::now() + IME_RELINK_WAIT;
         while !ime::is_linked() && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(40));
         }
-        ime::send(serde_json::json!({ "t": "caret" }))
-    } else {
-        switch_field(app, generation, previous.as_deref())
-    };
+    }
+    let asked = ime::is_linked() && ime::send(serde_json::json!({ "t": "caret", "app": field_app }));
     log(&format!(
-        "input method requested gen={generation} from={} field={} ime_field={} already={already} switched={switched} linked={} ms={}",
-        own.as_deref().unwrap_or("?"),
+        "input method asked gen={generation} field={} ime_field={} asked={asked} ms={}",
         field_app.as_deref().unwrap_or("?"),
         known_field.as_deref().unwrap_or("-"),
-        ime::is_linked(),
         started.elapsed().as_millis()
     ));
-    if !switched && !(already && known_field.is_none()) {
-        fall_back_to_paste(app, generation, false, display, None);
+    if !asked {
+        fall_back_to_paste(app, generation, display);
         return;
     }
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("visualtex-ime-wait".to_string())
         .spawn(move || {
-            let awaiting = || {
-                session()
-                    .map(|session| session.awaiting_input_method == generation && session.generation == generation)
-                    .unwrap_or(false)
-            };
-            let mut already = already;
-            if already && known_field.is_none() {
-                // This process's source said VisualTeX: a field the input
-                // method has answers within this; none means it has none.
-                std::thread::sleep(ALREADY_PROBE);
-                if !awaiting() {
-                    return;
-                }
-                log(&format!("input method has no field gen={generation}: switching"));
-                if let Ok(mut session) = session() {
-                    session.return_to = previous.clone();
-                }
-                already = false;
-                if !switch_field(&app, generation, previous.as_deref()) {
-                    fall_back_to_paste(&app, generation, false, display, None);
-                    return;
-                }
-            }
-            std::thread::sleep(SWITCH_RETRY);
-            // The field's application handled the shortcut: VisualTeX is the
-            // selected source now (this process follows it while in the back).
-            let selected = ime::current_source(&app).as_deref() == Some(ime::SOURCE_ID);
-            if awaiting() && !already && !selected {
-                log(&format!("input method switch not taken gen={generation}: shortcut sent again"));
-                ime::switch_back();
-            }
-            std::thread::sleep(INPUT_METHOD_WAIT.saturating_sub(SWITCH_RETRY));
-            if awaiting() {
-                // Selected but never started (no activate, no connection to
-                // the input method): an application running since before the
-                // input method was replaced (2026-11-09 00:25 Chrome, running
-                // since 10-28; 11-08 Safari). It takes the input method again
-                // once reopened.
-                let stuck = !already && ime::current_source(&app).as_deref() == Some(ime::SOURCE_ID);
-                log(&format!(
-                    "input method did not take the field gen={generation}{}",
-                    if stuck { " (selected there but not started: the application must be reopened)" } else { "" }
-                ));
-                let reopen = stuck.then(|| ax::frontmost_name()).flatten();
-                fall_back_to_paste(&app, generation, !already, display, reopen);
+            std::thread::sleep(INPUT_METHOD_WAIT);
+            let awaiting = session()
+                .map(|session| session.awaiting_input_method == generation && session.generation == generation)
+                .unwrap_or(false);
+            if awaiting {
+                log(&format!("input method did not answer gen={generation}"));
+                fall_back_to_paste(&app, generation, display);
             }
         });
 }
 
-/// Switches the field to the input method from `previous` (ime::switch_in);
-/// false when macOS refused.
+/// No text field of the input method's has the keyboard: the pasting strip instead.
 #[cfg(target_os = "macos")]
-fn switch_field(app: &AppHandle, generation: u64, previous: Option<&str>) -> bool {
-    // the field took the input method: its activate opened this formula
-    let taken = || {
-        session()
-            .map(|session| session.generation != generation || session.awaiting_input_method != generation)
-            .unwrap_or(true)
-    };
-    match ime::switch_in(app, previous.unwrap_or("com.apple.keylayout.ABC"), &taken) {
-        Ok(()) => true,
-        Err(error) => {
-            log(&format!("input method switch failed gen={generation}: {error}"));
-            false
-        }
-    }
-}
-
-/// The field did not take the input method: back to the input source it
-/// had, and the pasting strip instead.
-#[cfg(target_os = "macos")]
-fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool, display: bool, reopen_app: Option<String>) {
-    let return_to = {
+fn fall_back_to_paste(app: &AppHandle, generation: u64, display: bool) {
+    {
         let Ok(mut session) = session() else { return };
-        if session.generation != generation {
+        if session.generation != generation || session.awaiting_input_method != generation {
             return;
         }
         session.awaiting_input_method = 0;
         session.phase = Phase::Hidden;
         session.delivery = Delivery::Paste;
-        session.return_to.take()
-    };
-    // "Select the previous input source" once more takes the field back from
-    // VisualTeX; a field already back on its source (a resent shortcut
-    // toggled it there) is left alone: another one would take it elsewhere.
-    if switch_back && (return_to.is_none() || ime::current_source(app) != return_to) {
-        ime::switch_back();
     }
-    activate(app, display, reopen_app);
+    activate(app, display);
 }
 
 /// The input method's report of the field: where the formula goes (the
@@ -886,23 +759,15 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             "input method {}",
             message.get("version").and_then(|value| value.as_str()).unwrap_or("?")
         )),
-        "activate" | "geometry" => input_method_caret_reported(app, message),
-        "start" => input_method_started(app, message),
+        "geometry" => input_method_caret_reported(app, message),
+        "nofield" => {
+            // the shortcut's question: no field of the input method's has the keyboard
+            let (generation, display) = session().map(|session| (session.generation, session.display)).unwrap_or((0, false));
+            log(&format!("input method has no field gen={generation}"));
+            fall_back_to_paste(app, generation, display);
+        }
         "key" => input_method_key(app, message),
         "pieces" => input_method_pieces(app, message),
-        "compose" => {
-            let generation = session()
-                .ok()
-                .filter(|session| session.phase == Phase::Presented && session.delivery == Delivery::InputMethod)
-                .map(|session| session.generation);
-            if let (Some(generation), Some(window)) = (generation, app.get_webview_window(WINDOW_LABEL)) {
-                let mut payload = message.clone();
-                if let Some(object) = payload.as_object_mut() {
-                    object.insert("generation".to_string(), serde_json::json!(generation));
-                }
-                let _ = window.emit(COMPOSE_EVENT, payload);
-            }
-        }
         "deactivate" | "disconnected" => {
             let open = session()
                 .map(|session| session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod)
@@ -912,8 +777,7 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
             }
         }
         "forced" => {
-            // The field ended the composition and kept its text; it goes back to its own input
-            // source, as after a commit (not left typing pinyin with VisualTeX's).
+            // The field ended the composition and kept its text.
             let open = session()
                 .map(|session| session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod)
                 .unwrap_or(false);
@@ -925,8 +789,8 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
     }
 }
 
-/// The field took the input method (or answered with its geometry): open
-/// the formula the shortcut asked for, or follow the formula's place.
+/// The input method's answer with the field's geometry: open the formula the
+/// shortcut asked for, or follow the formula's place.
 #[cfg(target_os = "macos")]
 fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
     let geometry = input_method_geometry(message);
@@ -941,12 +805,9 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
     let mut sizing: Option<String> = None;
     let next = {
         let Ok(mut session) = session() else { return };
-        // VisualTeX's own windows (its strip) taking the input method are not
-        // the field the shortcut was pressed in (2026-11-08 10:41: the formula
-        // waited for Chrome and VisualTeX's own window answered).
-        let own_window = kind == "activate"
-            && client == ime::APP_IDENTIFIER
-            && session.field_app.as_deref() != Some(ime::APP_IDENTIFIER);
+        // VisualTeX's own windows (its strip) are not the field the shortcut was
+        // pressed in.
+        let own_window = client == ime::APP_IDENTIFIER && session.field_app.as_deref() != Some(ime::APP_IDENTIFIER);
         if session.delivery != Delivery::InputMethod || own_window {
             Next::Nothing
         } else if session.awaiting_input_method == session.generation && session.phase == Phase::Activating {
@@ -1034,7 +895,8 @@ fn input_method_caret_reported(app: &AppHandle, message: &serde_json::Value) {
     }
     match next {
         Next::Open(activation, ready) => {
-            ime::send(serde_json::json!({ "t": "session", "on": true }));
+            // (the formula's keys are the input method's to take, but VisualTeX's own shortcuts)
+            ime::send(serde_json::json!({ "t": "session", "on": true, "skip": hotkey::registered_chords() }));
             log(&format!(
                 "input method session open client={client:?} caret={} font={:?} color={:?}",
                 geometry
@@ -1100,46 +962,6 @@ fn read_field_color(app: &AppHandle, generation: u64, caret: ScreenRect) {
             }
             let _ = window.emit(STYLE_EVENT, payload);
         });
-}
-
-/// VisualTeX was chosen in the input menu and a character key started a
-/// formula: a session without an input source to go back to.
-#[cfg(target_os = "macos")]
-fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
-    let geometry = input_method_geometry(message);
-    let client = message.get("client").and_then(|value| value.as_str()).unwrap_or("").to_string();
-    let (activation, ready) = {
-        let Ok(mut session) = session() else { return };
-        if session.phase != Phase::Hidden {
-            return;
-        }
-        session.generation += 1;
-        session.phase = Phase::Activating;
-        session.delivery = Delivery::InputMethod;
-        session.return_to = None;
-        session.display = false;
-        session.awaiting_input_method = 0;
-        session.pending_keys.clear();
-        session.field_text = geometry.as_ref().map(opening_text).unwrap_or_default();
-        session.reference_height = geometry.as_ref().and_then(|geometry| geometry.measured);
-        session.inline_anchor = geometry.as_ref().map(inline_anchor);
-        session.target = Some(Target {
-            app_name: client,
-            anchor: geometry
-                .as_ref()
-                .map(|geometry| geometry.caret)
-                .unwrap_or_else(|| ax::capture_target(ax::is_trusted()).anchor),
-            source: AnchorSource::Caret,
-        });
-        (pending_activation(&session, true), session.ready)
-    };
-    if let Err(error) = panel::ensure(app) {
-        log(&format!("input method start: no panel: {error}"));
-        return;
-    }
-    if let (Some(activation), true, Some(window)) = (activation, ready, app.get_webview_window(WINDOW_LABEL)) {
-        send_activation(app, &window, activation);
-    }
 }
 
 /// Where the field put the formula's pieces (points from the first piece's
@@ -1339,11 +1161,10 @@ fn hide(app: &AppHandle, keep_draft: bool, reason: &str) {
 }
 
 /// Hides the strip. With the input method, `tell_input_method` clears the
-/// field's marked text and hands it back to the input source it came from
-/// (not when the input method itself ended the session).
+/// field's marked text (not when the input method itself ended the session).
 #[cfg(target_os = "macos")]
 fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method: bool) {
-    let (generation, delivery, return_to, strip_source) = {
+    let (generation, delivery, strip_source) = {
         let Ok(mut session) = session() else { return };
         if session.phase == Phase::Hidden {
             return;
@@ -1352,13 +1173,13 @@ fn hide_with(app: &AppHandle, keep_draft: bool, reason: &str, tell_input_method:
         session.draft = keep_draft;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
-        (session.generation, session.delivery, session.return_to.take(), session.strip_source.take())
+        (session.generation, session.delivery, session.strip_source.take())
     };
     if let Some(source) = strip_source {
         ime::restore(app, &source);
     }
     if delivery == Delivery::InputMethod && tell_input_method {
-        ime::send(serde_json::json!({ "t": "cancel", "returnTo": return_to }));
+        ime::send(serde_json::json!({ "t": "cancel" }));
     }
     log(&format!("hide gen={generation} keep_draft={keep_draft} ({reason})"));
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
@@ -1449,8 +1270,7 @@ pub(crate) fn anywhere_layout(app: AppHandle, generation: u64, layout: PanelLayo
 /// Enter in the strip: type the formula into the application that owned the
 /// caret. One call is one delivery attempt.
 /// The Image output mode: the formula as a PNG, pasted into the
-/// application (with the input method, its anchor is dropped and the field
-/// goes back to its input source first).
+/// application (with the input method, the formula's space is dropped first).
 #[tauri::command]
 pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_base64: String) -> Result<CommitOutcome, String> {
     use base64::Engine as _;
@@ -1471,15 +1291,14 @@ pub(crate) async fn anywhere_commit_image(app: AppHandle, generation: u64, data_
             session.phase = Phase::Hidden;
             session.draft = false;
             session.pending_keys.clear();
-            (session.delivery == Delivery::InputMethod).then(|| session.return_to.take())
+            session.delivery == Delivery::InputMethod
         };
         let window = app
             .get_webview_window(WINDOW_LABEL)
             .ok_or_else(|| "VisualTeX Anywhere panel is unavailable".to_string())?;
-        if let Some(return_to) = input_method {
-            // The field drops the formula's anchor and goes back to its
-            // input source; the image is pasted where the anchor was.
-            ime::send(serde_json::json!({ "t": "cancel", "returnTo": return_to }));
+        if input_method {
+            // The field drops the formula's space; the image is pasted where it was.
+            ime::send(serde_json::json!({ "t": "cancel" }));
             panel::park(&window);
         } else {
             if !ax::is_trusted() {
@@ -1521,15 +1340,14 @@ pub(crate) async fn anywhere_commit(app: AppHandle, generation: u64, text: Strin
                 session.phase = Phase::Hidden;
                 session.draft = false;
                 session.pending_keys.clear();
-                Some(session.return_to.take())
+                true
             } else {
-                None
+                false
             }
         };
-        if let Some(return_to) = input_method {
-            // The field's marked text becomes the formula's text; the field
-            // goes back to the input source it came from.
-            let sent = ime::send(serde_json::json!({ "t": "commit", "text": text, "returnTo": return_to }));
+        if input_method {
+            // The field's marked text becomes the formula's text.
+            let sent = ime::send(serde_json::json!({ "t": "commit", "text": text }));
             log(&format!("commit gen={generation} chars={} input_method={sent}", text.chars().count()));
             if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
                 panel::park(&window);
@@ -1614,6 +1432,7 @@ pub(crate) fn anywhere_marked(
             let session = session()?;
             session.generation == generation && session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod
         };
+        let _ = (caret_x, caret_y);
         if current && width.is_finite() {
             // The field holds the formula's width; `text` is what it gets if
             // it ends the composition itself.
@@ -1629,8 +1448,6 @@ pub(crate) fn anywhere_marked(
                 "t": "inline",
                 "width": width.clamp(0.0, 4096.0),
                 "text": text,
-                "caretX": caret_x.filter(|value| value.is_finite()).unwrap_or(0.0),
-                "caretY": caret_y.filter(|value| value.is_finite()).unwrap_or(0.0).clamp(-8192.0, 8192.0),
                 "pieces": pieces,
             }));
         }
@@ -1643,26 +1460,12 @@ pub(crate) fn anywhere_marked(
     }
 }
 
-/// The formula's caret entered or left text (\text{}): the input method
-/// spells pinyin there.
+/// The formula's caret entered or left text (\text{}). (The input method types formulas only: it
+/// has nothing to do there; the page still tells.)
 #[tauri::command]
 pub(crate) fn anywhere_mode(generation: u64, text: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let current = {
-            let session = session()?;
-            session.generation == generation && session.phase != Phase::Hidden && session.delivery == Delivery::InputMethod
-        };
-        if current {
-            ime::send(serde_json::json!({ "t": "mode", "text": text }));
-        }
-        Ok(())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (generation, text);
-        Ok(())
-    }
+    let _ = (generation, text);
+    Ok(())
 }
 
 /// The page's own diagnostics (commit outcomes, errors), into anywhere.log.

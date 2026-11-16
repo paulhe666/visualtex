@@ -7,9 +7,9 @@
 	<key>CFBundleDisplayName</key>
 	<string>VisualTeX</string>
 	<key>CFBundleExecutable</key>
-	<string>VisualTeXInput</string>
+	<string>VisualTeXFormula</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.visualtex.inputmethod.VisualTeX</string>
+	<string>com.visualtex.inputmethod.Formula</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -20,27 +20,21 @@
 	<string>__VERSION__</string>
 	<key>CFBundleVersion</key>
 	<string>__BUILD__</string>
+	<key>ComponentInvisibleInSystemUI</key>
+	<true/>
 	<key>InputMethodConnectionName</key>
-	<string>com.visualtex.inputmethod.VisualTeX_Connection</string>
+	<string>com.visualtex.inputmethod.Formula_Connection</string>
 	<key>InputMethodServerControllerClass</key>
-	<string>VTInputController</string>
-	<key>LSBackgroundOnly</key>
+	<string>VTFormulaController</string>
+	<key>InputMethodType</key>
+	<string>palette</string>
+	<key>LSUIElement</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>11.0</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>TISIconIsTemplate</key>
-	<true/>
 	<key>TISInputSourceID</key>
-	<string>com.visualtex.inputmethod.VisualTeX</string>
-	<key>TISIntendedLanguage</key>
-	<string>en</string>
-	<key>tsInputMethodCharacterRepertoireKey</key>
-	<array>
-		<string>Latn</string>
-	</array>
-	<key>tsInputMethodIconFileKey</key>
-	<string>VisualTeX.tiff</string>
+	<string>com.visualtex.inputmethod.Formula</string>
 </dict>
 </plist>

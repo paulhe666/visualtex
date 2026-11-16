@@ -41,8 +41,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt": "licenses/STIXTwoMath-OFL-1.1.txt",
-      "../input-method/Rime/NOTICE-wanxiang.txt": "licenses/NOTICE-wanxiang-pinyin.txt"
+      "../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt": "licenses/STIXTwoMath-OFL-1.1.txt"
     },
     "macOS": {
       "signingIdentity": "-"

@@ -46,7 +46,7 @@ enum HostProbe {
             InputLog.write("probe: the steps cannot be read")
             return
         }
-        guard let controller = VTInputController.current, let client = controller.client() else {
+        guard let controller = VTFormulaController.current, let client = controller.client() else {
             InputLog.write("probe: no field has the keyboard")
             write(["error": "no field has the keyboard"])
             return
@@ -56,10 +56,10 @@ enum HostProbe {
         step(0, steps, controller)
     }
 
-    private static func step(_ index: Int, _ steps: [Step], _ controller: VTInputController) {
-        guard index < steps.count, VTInputController.current === controller, let client = controller.client() else {
+    private static func step(_ index: Int, _ steps: [Step], _ controller: VTFormulaController) {
+        guard index < steps.count, VTFormulaController.current === controller, let client = controller.client() else {
             // (cut short: the field is not left with the probe's marked text)
-            if index < steps.count { controller.client()?.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: VTInputController.noRange) }
+            if index < steps.count { controller.client()?.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: VTFormulaController.noRange) }
             running = false
             write(["done": index, "of": steps.count])
             InputLog.write("probe: done \(index)/\(steps.count)")
@@ -68,23 +68,23 @@ enum HostProbe {
         let step = steps[index]
         var length = 0
         if step.clear == true {
-            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: VTInputController.noRange)
+            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: VTFormulaController.noRange)
         } else if let insert = step.insert {
-            client.insertText(insert, replacementRange: VTInputController.noRange)
+            client.insertText(insert, replacementRange: VTFormulaController.noRange)
         } else if let text = step.text {
             length = (text as NSString).length
             let selection = step.sel.flatMap { $0.count == 2 ? NSRange(location: $0[0], length: $0[1]) : nil } ?? NSRange(location: length, length: 0)
             client.setMarkedText(
                 NSAttributedString(string: text, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
                 selectionRange: selection,
-                replacementRange: VTInputController.noRange
+                replacementRange: VTFormulaController.noRange
             )
         }
         let started = Date()
         let reads = (step.reads ?? [0]).sorted()
         for (order, delay) in reads.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(delay) / 1000) {
-                guard VTInputController.current === controller, let client = controller.client() else { return }
+                guard VTFormulaController.current === controller, let client = controller.client() else { return }
                 var record = read(client, length, beyond: step.beyond ?? 1)
                 record["step"] = index
                 record["label"] = step.label ?? ""
@@ -114,7 +114,7 @@ enum HostProbe {
         }
         record["at"] = at
         // by ranges of the field's text: the selection, the marked text, some of its characters
-        var actual = VTInputController.noRange
+        var actual = VTFormulaController.noRange
         if selected.location != NSNotFound {
             record["firstSel"] = quad(client.firstRect(forCharacterRange: selected, actualRange: &actual)) + pair(actual)
         }

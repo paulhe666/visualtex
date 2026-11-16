@@ -3,7 +3,7 @@ name = "visualtex-tip"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "VisualTeX's Windows input method (a TSF text input processor): pinyin, English and formulas in any application"
+description = "VisualTeX's Windows input method (a TSF text input processor): formulas in any application"
 
 [lib]
 name = "visualtex_tip"

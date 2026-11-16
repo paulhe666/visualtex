@@ -1,8 +1,8 @@
+import Carbon
 import Cocoa
 
-/// A key event as VisualTeX's editor page receives it: the DOM KeyboardEvent
-/// fields (`key`, `code`, modifiers) and, for a character key, the text it
-/// types.
+/// A key as VisualTeX's editor page receives it: the DOM KeyboardEvent fields (`key`, `code`,
+/// modifiers) and, for a character key, the text it types.
 enum KeyMapping {
     /// macOS virtual key codes (ANSI positions) to DOM `code` values.
     private static let codes: [UInt16: String] = [
@@ -32,37 +32,55 @@ enum KeyMapping {
         103: "F11", 111: "F12",
     ]
 
-    static func isReturn(_ event: NSEvent) -> Bool { event.keyCode == 36 || event.keyCode == 76 }
-    static func isEscape(_ event: NSEvent) -> Bool { event.keyCode == 53 }
+    /// The characters a key types with the keyboard layout the user's input source types Latin
+    /// letters with (Pinyin's is ABC's), whatever that source would make of them.
+    private static func characters(_ keyCode: UInt16, shift: Bool, option: Bool, capsLock: Bool) -> String? {
+        guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
+        let modifiers = UInt32(((shift ? shiftKey : 0) | (option ? optionKey : 0) | (capsLock ? alphaLock : 0)) >> 8) & 0xff
+        var dead: UInt32 = 0
+        var length = 0
+        var units = [UniChar](repeating: 0, count: 4)
+        let status = data.withUnsafeBytes { bytes -> OSStatus in
+            guard let layout = bytes.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return OSStatus(paramErr) }
+            return UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDown), modifiers, UInt32(LMGetKbdType()),
+                                  OptionBits(kUCKeyTranslateNoDeadKeysMask), &dead, units.count, &length, &units)
+        }
+        guard status == noErr, length > 0 else { return nil }
+        return String(utf16CodeUnits: units, count: length)
+    }
 
-    /// The text a character key types (nil for a function key or a
-    /// Control-modified key).
-    static func text(of event: NSEvent) -> String? {
-        if namedKeys[event.keyCode] != nil { return nil }
-        if event.modifierFlags.contains(.control) || event.modifierFlags.contains(.command) { return nil }
-        guard let characters = event.characters, !characters.isEmpty else { return nil }
+    private static func printable(_ characters: String?) -> String? {
+        guard let characters, !characters.isEmpty else { return nil }
         let printable = characters.unicodeScalars.allSatisfy { scalar in
             scalar.value >= 0x20 && scalar.value != 0x7f && !(0xF700...0xF8FF).contains(scalar.value)
         }
         return printable ? characters : nil
     }
 
-    static func message(for event: NSEvent) -> [String: Any] {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let text = text(of: event)
-        let key = namedKeys[event.keyCode]
+    /// The key event of a key taken for the formula (KeyGrab): its key code and the modifiers it
+    /// was registered with.
+    static func message(keyCode: UInt16, shift: Bool, option: Bool, control: Bool, command: Bool, isRepeat: Bool) -> [String: Any] {
+        let capsLock = CGEventSource.flagsState(.combinedSessionState).contains(.maskAlphaShift)
+        // the text a character key types (none for a named key or a Control or Command chord)
+        let text = namedKeys[keyCode] != nil || control || command
+            ? nil
+            : printable(characters(keyCode, shift: shift, option: option, capsLock: capsLock))
+        let key = namedKeys[keyCode]
             ?? text
-            ?? event.charactersIgnoringModifiers.flatMap { $0.isEmpty ? nil : $0 }
+            ?? printable(characters(keyCode, shift: shift, option: false, capsLock: capsLock))
             ?? "Unidentified"
         var message: [String: Any] = [
             "t": "key",
             "key": key,
-            "code": codes[event.keyCode] ?? "",
-            "shift": flags.contains(.shift),
-            "alt": flags.contains(.option),
-            "ctrl": flags.contains(.control),
-            "meta": flags.contains(.command),
-            "repeat": event.isARepeat,
+            "code": codes[keyCode] ?? "",
+            "shift": shift,
+            "alt": option,
+            "ctrl": control,
+            "meta": command,
+            "repeat": isRepeat,
         ]
         if let text { message["text"] = text }
         return message

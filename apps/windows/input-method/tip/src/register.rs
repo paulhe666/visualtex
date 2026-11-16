@@ -1,6 +1,7 @@
-//! Registration (regsvr32, elevated: the COM class and the TSF profile live in
-//! HKLM): the in-process COM server, the Simplified Chinese keyboard profile
-//! and the categories that let TSF load it in every kind of application.
+//! Registration (regsvr32, elevated: the COM class and the TSF profile live in HKLM): the
+//! in-process COM server, the keyboard profile (not enabled, and hidden in the settings: it is no
+//! input method of the user's, host.rs enables it for the time of a formula) and the categories
+//! that let TSF load it in every kind of application.
 
 use crate::{dll_instance, CLSID_TEXT_SERVICE, DESCRIPTION, GUID_PROFILE, LANGID_ZH_CN};
 use windows::core::{Result, GUID, HSTRING, PCWSTR};
@@ -15,7 +16,7 @@ use windows::Win32::System::Registry::{
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, CLSID_TF_InputProcessorProfiles, ITfCategoryMgr, ITfInputProcessorProfileMgr,
     GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT, GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
-    GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER, GUID_TFCAT_TIP_KEYBOARD,
+    GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER, GUID_TFCAT_TIP_KEYBOARD, TF_RP_HIDDENINSETTINGUI,
 };
 
 const CATEGORIES: [GUID; 5] = [
@@ -116,8 +117,8 @@ pub(crate) fn register() -> Result<()> {
             0,
             HKL::default(),
             0,
-            true,
-            0,
+            false,
+            TF_RP_HIDDENINSETTINGUI,
         )?;
     }
     let categories: ITfCategoryMgr = unsafe { CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)? };

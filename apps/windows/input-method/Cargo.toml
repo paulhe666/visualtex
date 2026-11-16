@@ -1,12 +1,12 @@
 # VisualTeX's Windows input method (see README.md):
-# - tip: the TSF text input processor, loaded into every application that types with it;
-# - server: VisualTeXInput.exe, one per user session, with RIME (pinyin) and the candidate window.
+# tip: the TSF text input processor that types formulas, loaded into the thread of a field for
+# the time of a formula.
 [workspace]
 resolver = "2"
-members = ["tip", "server"]
+members = ["tip"]
 
 [workspace.package]
-version = "1.2.10"
+version = "2.0.0"
 edition = "2021"
 license = "MIT"
 

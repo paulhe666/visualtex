@@ -335,6 +335,21 @@ fn set_chord(slot: Slot, chord: Option<&AnywhereChord>) -> Result<(), String> {
     }
 }
 
+/// The registered combinations as Carbon has them ([key code, modifiers]): the input method leaves
+/// them alone when it takes the formula's keys.
+pub(super) fn registered_chords() -> Vec<[u32; 2]> {
+    REGISTERED
+        .lock()
+        .map(|registered| {
+            registered
+                .iter()
+                .flatten()
+                .filter_map(|(chord, _)| Some([crate::office::hotkeys::carbon_key_code(&chord.code)?, chord.modifiers()]))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The label of the combination that opens an inline formula (⌃⌥M).
 pub(super) fn shortcut_label() -> String {
     REGISTERED

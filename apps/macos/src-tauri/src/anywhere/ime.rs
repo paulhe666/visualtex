@@ -1,20 +1,19 @@
-//! VisualTeX's macOS input method (input-method/, installed into
-//! ~/Library/Input Methods): installing it, the switch into it that the
-//! shortcut makes, and the socket it talks to VisualTeX over.
+//! VisualTeX's macOS input method (input-method/, installed into ~/Library/Input Methods) from
+//! the app's side: installing it, making it one of the selected input sources, and the socket it
+//! talks to VisualTeX over.
 //!
-//! With the input method the formula is typed the way any input method
-//! types: the field keeps the keyboard and shows the formula's text as
-//! marked text, VisualTeX's card under the line shows the formula itself,
-//! and Return inserts the text through the field's own text input system
-//! (no pasteboard, no synthesized ⌘V).
+//! It is a palette input method: selected beside the user's keyboard input source (as the system's
+//! press-and-hold accents are), never in its place, and hidden in the system's menus. So the
+//! shortcut switches nothing and nothing is switched back: the input method already has the field
+//! that has the keyboard, VisualTeX asks it where the caret is and opens the formula there. The
+//! field keeps the keyboard and holds the formula's space as marked text, VisualTeX draws the
+//! formula in the line, and Return inserts the text through the field's own text input system (no
+//! pasteboard, no synthesized ⌘V).
 //!
-//! macOS gives an input source selected from another process to the
-//! frontmost application only when that application is activated again.
-//! The application's own text input system switches at once, so the
-//! shortcut makes VisualTeX the most recently used other input source and
-//! then sends the system's "Select the previous input source" shortcut,
-//! which the application handles itself. The input method switches back
-//! the same way, through its client (selectMode).
+//! macOS 27 lets no application enable an input source (TISEnableInputSource opens System
+//! Settings). A palette that no menu shows cannot be added there by hand either, so VisualTeX writes
+//! it into the list of enabled third-party input sources itself (com.apple.inputsources), as System
+//! Settings records one, and selects it.
 
 use std::ffi::{c_void, CStr, CString};
 use std::io::{BufRead, BufReader, Write};
@@ -31,17 +30,20 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 /// The input source (and bundle) identifier, input-method/Info.plist.
-pub(crate) const SOURCE_ID: &str = "com.visualtex.inputmethod.VisualTeX";
-const BUNDLE_NAME: &str = "VisualTeX Input.app";
-const EXECUTABLE: &str = "VisualTeXInput";
+pub(crate) const SOURCE_ID: &str = "com.visualtex.inputmethod.Formula";
+const BUNDLE_NAME: &str = "VisualTeX Formula.app";
+const EXECUTABLE: &str = "VisualTeXFormula";
+/// The earlier input method (a keyboard input source with pinyin of its own, which took part in
+/// the user's switching between input sources): taken out when found.
+const OLD_SOURCE_ID: &str = "com.visualtex.inputmethod.VisualTeX";
+const OLD_BUNDLE_NAME: &str = "VisualTeX Input.app";
+const OLD_EXECUTABLE: &str = "VisualTeXInput";
+/// Where macOS records the third-party input sources the user has enabled.
+const ENABLED_DOMAIN: &str = "com.apple.inputsources";
+const ENABLED_KEY: &str = "AppleEnabledThirdPartyInputSources";
 /// input-method/Sources/AppLink.swift
 const SOCKET_NAME: &str = "anywhere-ime.sock";
 pub(super) const APP_IDENTIFIER: &str = "com.visualtex.studio";
-/// "Select the previous input source" in com.apple.symbolichotkeys.
-const SELECT_PREVIOUS_HOTKEY: &str = "60";
-/// Its default binding: Control-Space.
-const DEFAULT_SHORTCUT: Shortcut = Shortcut { key: 0x31, flags: 0x0004_0000 };
-
 type CFTypeRef = *const c_void;
 type CFIndex = isize;
 
@@ -81,19 +83,24 @@ unsafe extern "C" {
     fn CFDataCreate(allocator: CFTypeRef, bytes: *const u8, length: CFIndex) -> CFTypeRef;
     fn CFURLCreateFromFileSystemRepresentation(allocator: CFTypeRef, path: *const u8, length: CFIndex, directory: u8) -> CFTypeRef;
     fn CFPreferencesCopyAppValue(key: CFTypeRef, application: CFTypeRef) -> CFTypeRef;
+    fn CFPreferencesSetAppValue(key: CFTypeRef, value: CFTypeRef, application: CFTypeRef);
     fn CFPreferencesAppSynchronize(application: CFTypeRef) -> u8;
+    fn CFArrayCreateMutable(allocator: CFTypeRef, capacity: CFIndex, callbacks: *const CFCallBacks) -> CFTypeRef;
+    fn CFArrayAppendValue(array: CFTypeRef, value: CFTypeRef);
     static kCFTypeDictionaryKeyCallBacks: CFCallBacks;
     static kCFTypeDictionaryValueCallBacks: CFCallBacks;
+    static kCFTypeArrayCallBacks: CFCallBacks;
 }
 
 #[link(name = "Carbon", kind = "framework")]
 unsafe extern "C" {
     static kTISPropertyInputSourceID: CFTypeRef;
     static kTISPropertyInputSourceIsEnabled: CFTypeRef;
-    static kTISPropertyInputSourceIsSelectCapable: CFTypeRef;
+    static kTISPropertyInputSourceIsSelected: CFTypeRef;
     fn TISCreateInputSourceList(properties: CFTypeRef, include_all_installed: u8) -> CFTypeRef;
     fn TISGetInputSourceProperty(source: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
     fn TISSelectInputSource(source: CFTypeRef) -> i32;
+    fn TISDeselectInputSource(source: CFTypeRef) -> i32;
     fn TISCopyCurrentKeyboardInputSource() -> CFTypeRef;
     fn TISCopyCurrentASCIICapableKeyboardLayoutInputSource() -> CFTypeRef;
     fn TISRegisterInputSource(location: CFTypeRef) -> i32;
@@ -218,63 +225,134 @@ fn input_source(id: &str, include_all_installed: bool) -> Option<Owned> {
     Owned::new(unsafe { CFRetain(first) })
 }
 
-/// The user added VisualTeX in System Settings > Keyboard > Input Sources
-/// (an application cannot: on macOS 27 TISEnableInputSource opens that page).
-/// Text Input Sources tells it: an added third-party input method is listed in
-/// com.apple.inputsources AppleEnabledThirdPartyInputSources, never in
-/// com.apple.HIToolbox AppleEnabledInputSources (Apple's own sources only).
+fn source_flag(source: &Owned, key: CFTypeRef) -> bool {
+    number_value(unsafe { TISGetInputSourceProperty(source.0, key) }) == Some(1)
+}
+
+/// The input method is one of the selected input sources: the field that has the keyboard is its
+/// field too.
 pub(super) fn is_enabled(app: &AppHandle) -> bool {
     on_main(app, || {
         input_source(SOURCE_ID, true)
-            .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsEnabled) }) == Some(1))
+            .map(|source| unsafe { source_flag(&source, kTISPropertyInputSourceIsEnabled) && source_flag(&source, kTISPropertyInputSourceIsSelected) })
             .unwrap_or(false)
     })
     .unwrap_or(false)
 }
 
-/// VisualTeX is in the user's input sources list (for anywhere.log): a
-/// third-party source in com.apple.inputsources, Apple's in com.apple.HIToolbox.
-pub(super) fn listed() -> bool {
-    [
-        ("com.apple.inputsources", "AppleEnabledThirdPartyInputSources"),
-        ("com.apple.HIToolbox", "AppleEnabledInputSources"),
-    ]
-    .iter()
-    .any(|(domain, key)| {
-        let Some(list) = preference(domain, key) else { return false };
-        array_values(list.0).iter().any(|entry| {
-            let bundle = string_value(dictionary_value(*entry, "Bundle ID")).unwrap_or_default();
-            let mode = string_value(dictionary_value(*entry, "Input Mode")).unwrap_or_default();
-            bundle.starts_with("com.visualtex.inputmethod") || mode.starts_with("com.visualtex.inputmethod")
-        })
-    })
+/// The third-party input sources macOS has as enabled, with `add` among them (as System Settings
+/// records a palette input method) and without `remove`; true when the list changed.
+fn write_enabled_sources(add: Option<&str>, remove: Option<&str>) -> bool {
+    let (Some(domain), Some(key)) = (cf_string(ENABLED_DOMAIN), cf_string(ENABLED_KEY)) else { return false };
+    let existing = preference(ENABLED_DOMAIN, ENABLED_KEY);
+    let entries = existing.as_ref().map(|list| array_values(list.0)).unwrap_or_default();
+    let bundle_of = |entry: CFTypeRef| string_value(dictionary_value(entry, "Bundle ID")).unwrap_or_default();
+    let has_added = add.map(|id| entries.iter().any(|entry| bundle_of(*entry) == id)).unwrap_or(true);
+    let has_removed = remove.map(|id| entries.iter().any(|entry| bundle_of(*entry) == id)).unwrap_or(false);
+    if has_added && !has_removed {
+        return false;
+    }
+    let Some(list) = Owned::new(unsafe { CFArrayCreateMutable(ptr::null(), 0, &kCFTypeArrayCallBacks) }) else { return false };
+    for entry in &entries {
+        if remove.map(|id| bundle_of(*entry) == id).unwrap_or(false) {
+            continue;
+        }
+        unsafe { CFArrayAppendValue(list.0, *entry) };
+    }
+    if let (false, Some(id)) = (has_added, add) {
+        let (Some(bundle_key), Some(kind_key), Some(bundle), Some(kind)) =
+            (cf_string("Bundle ID"), cf_string("InputSourceKind"), cf_string(id), cf_string("Non Keyboard Input Method"))
+        else {
+            return false;
+        };
+        let keys = [bundle_key.0, kind_key.0];
+        let values = [bundle.0, kind.0];
+        let Some(entry) = Owned::new(unsafe {
+            CFDictionaryCreate(ptr::null(), keys.as_ptr(), values.as_ptr(), 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks)
+        }) else {
+            return false;
+        };
+        unsafe { CFArrayAppendValue(list.0, entry.0) };
+    }
+    unsafe {
+        CFPreferencesSetAppValue(key.0, list.0, domain.0);
+        CFPreferencesAppSynchronize(domain.0) != 0
+    }
 }
 
-/// The most recently used input source other than VisualTeX
-/// (com.apple.HIToolbox AppleInputSourceHistory, most recent first) that can
-/// be selected: the field's own source when this process's is not (VisualTeX's
-/// own windows changed it).
-pub(super) fn recent_other_source(app: &AppHandle) -> Option<String> {
-    let history = preference("com.apple.HIToolbox", "AppleInputSourceHistory")?;
-    let candidates: Vec<String> = array_values(history.0)
-        .iter()
-        .filter_map(|entry| {
-            let mode = string_value(dictionary_value(*entry, "Input Mode"));
-            let layout = string_value(dictionary_value(*entry, "KeyboardLayout Name"))
-                .map(|name| format!("com.apple.keylayout.{}", name.replace([' ', '.'], "")));
-            let bundle = string_value(dictionary_value(*entry, "Bundle ID"));
-            mode.or(layout).or(bundle)
+/// Makes the input method one of the selected input sources (enabled first, see the module
+/// comment); selecting a palette leaves the keyboard input source as it is. (enabled, selected)
+fn enable_and_select(app: &AppHandle) -> (bool, bool) {
+    let state = |app: &AppHandle| {
+        on_main(app, || {
+            input_source(SOURCE_ID, true)
+                .map(|source| unsafe { (source_flag(&source, kTISPropertyInputSourceIsEnabled), source_flag(&source, kTISPropertyInputSourceIsSelected)) })
         })
-        .filter(|id| !id.starts_with("com.visualtex.inputmethod"))
-        .collect();
-    on_main(app, move || {
-        candidates.into_iter().find(|id| {
-            input_source(id, false)
-                .map(|source| number_value(unsafe { TISGetInputSourceProperty(source.0, kTISPropertyInputSourceIsSelectCapable) }) == Some(1))
-                .unwrap_or(false)
-        })
+        .flatten()
+        .unwrap_or((false, false))
+    };
+    let (mut enabled, mut selected) = state(app);
+    if !enabled {
+        let written = write_enabled_sources(Some(SOURCE_ID), None);
+        // (Text Input Sources reads the list again a moment later)
+        for _ in 0..20 {
+            (enabled, selected) = state(app);
+            if enabled {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        super::log(&format!("input method enabled: written={written} enabled={enabled}"));
+    }
+    if enabled && !selected {
+        let status = on_main(app, || input_source(SOURCE_ID, true).map(|source| unsafe { TISSelectInputSource(source.0) })).flatten();
+        (enabled, selected) = state(app);
+        super::log(&format!("input method selected: status={status:?} selected={selected}"));
+    }
+    (enabled, selected)
+}
+
+/// The earlier input method goes: off the selected and the enabled input sources, its process and
+/// its bundle. (It was a keyboard input source: one the user's input source switching went through.)
+fn retire_old(app: &AppHandle) {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
+    let bundle = home.join("Library").join("Input Methods").join(OLD_BUNDLE_NAME);
+    let listed = write_enabled_sources(None, Some(OLD_SOURCE_ID));
+    if !listed && !bundle.exists() {
+        return;
+    }
+    // A field still typing with it goes to the keyboard layout the user types Latin letters with.
+    let was_current = on_main(app, || {
+        let current = Owned::new(unsafe { TISCopyCurrentKeyboardInputSource() })?;
+        let id = string_value(unsafe { TISGetInputSourceProperty(current.0, kTISPropertyInputSourceID) })?;
+        if id != OLD_SOURCE_ID {
+            return Some(false);
+        }
+        let ascii = Owned::new(unsafe { TISCopyCurrentASCIICapableKeyboardLayoutInputSource() })?;
+        unsafe { TISSelectInputSource(ascii.0) };
+        Some(true)
     })
     .flatten()
+    .unwrap_or(false);
+    let _ = on_main(app, || input_source(OLD_SOURCE_ID, true).map(|source| unsafe { TISDeselectInputSource(source.0) }));
+    let _ = Command::new("/usr/bin/pkill")
+        .arg("-f")
+        .arg(format!("Input Methods/{OLD_BUNDLE_NAME}/Contents/MacOS/{OLD_EXECUTABLE}"))
+        .status();
+    let removed = !bundle.exists() || std::fs::remove_dir_all(&bundle).is_ok();
+    super::log(&format!("earlier input method taken out: listed={listed} current={was_current} bundle_removed={removed}"));
+}
+
+/// Starts the input method's process (macOS starts a palette input method for nobody); it links to
+/// VisualTeX within a second.
+pub(super) fn launch() {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
+    let bundle = home.join("Library").join("Input Methods").join(BUNDLE_NAME);
+    if !bundle.is_dir() {
+        return;
+    }
+    let started = Command::new("/usr/bin/open").arg("-gj").arg(&bundle).status();
+    super::log(&format!("input method started: {}", started.map(|status| status.success()).unwrap_or(false)));
 }
 
 /// The input method is in ~/Library/Input Methods (the app put it there).
@@ -301,26 +379,9 @@ pub(super) fn select_ascii(app: &AppHandle) -> Option<String> {
     .flatten()
 }
 
-/// The app's own input source back to `id` (after select_ascii), never to
-/// VisualTeX's input method: this process would then type with it (its strip,
-/// its windows) and take it for the field's source at the next shortcut.
+/// The app's own input source back to `id` (after select_ascii).
 pub(super) fn restore(app: &AppHandle, id: &str) {
-    if id == SOURCE_ID {
-        if let Some(other) = recent_other_source(app) {
-            let _ = select(app, &other);
-        }
-        return;
-    }
     let _ = select(app, id);
-}
-
-/// The selected keyboard input source.
-pub(super) fn current_source(app: &AppHandle) -> Option<String> {
-    on_main(app, || {
-        let current = Owned::new(unsafe { TISCopyCurrentKeyboardInputSource() })?;
-        string_value(unsafe { TISGetInputSourceProperty(current.0, kTISPropertyInputSourceID) })
-    })
-    .flatten()
 }
 
 fn select(app: &AppHandle, id: &str) -> bool {
@@ -331,113 +392,11 @@ fn select(app: &AppHandle, id: &str) -> bool {
     .unwrap_or(false)
 }
 
-/// The input source used before the current one is VisualTeX
-/// (com.apple.HIToolbox AppleInputSourceHistory, most recent first).
-fn visualtex_is_previous() -> bool {
-    let Some(history) = preference("com.apple.HIToolbox", "AppleInputSourceHistory") else { return false };
-    array_values(history.0)
-        .get(1)
-        .and_then(|entry| string_value(dictionary_value(*entry, "Bundle ID")))
-        .as_deref()
-        == Some(SOURCE_ID)
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Shortcut {
-    key: u16,
-    flags: u64,
-}
-
-/// The user's "Select the previous input source" shortcut; None when it is
-/// turned off.
-fn select_previous_shortcut() -> Option<Shortcut> {
-    let Some(hotkeys) = preference("com.apple.symbolichotkeys", "AppleSymbolicHotKeys") else {
-        return Some(DEFAULT_SHORTCUT);
-    };
-    let entry = dictionary_value(hotkeys.0, SELECT_PREVIOUS_HOTKEY);
-    if entry.is_null() {
-        return Some(DEFAULT_SHORTCUT);
-    }
-    if number_value(dictionary_value(entry, "enabled")) == Some(0) {
-        return None;
-    }
-    let parameters = array_values(dictionary_value(dictionary_value(entry, "value"), "parameters"));
-    match (
-        parameters.get(1).and_then(|value| number_value(*value)),
-        parameters.get(2).and_then(|value| number_value(*value)),
-    ) {
-        (Some(key), Some(flags)) if (0..=0x7f).contains(&key) => Some(Shortcut {
-            key: key as u16,
-            flags: flags as u64,
-        }),
-        _ => Some(DEFAULT_SHORTCUT),
-    }
-}
-
-/// Switches the frontmost application to VisualTeX from `previous` (see the
-/// module comment). The input method's "activate" message confirms it.
-pub(super) fn switch_in(app: &AppHandle, previous: &str, taken: &dyn Fn() -> bool) -> Result<(), String> {
-    let shortcut = select_previous_shortcut()
-        .ok_or_else(|| "the \"Select the previous input source\" shortcut is turned off".to_string())?;
-    if !visualtex_is_previous() {
-        // Both selections are made from here: the application keeps its
-        // input source and only the history changes.
-        if !select(app, SOURCE_ID) {
-            return Err("macOS refused to select the VisualTeX input source".to_string());
-        }
-        // Some applications take VisualTeX's input method from this selection at once (the
-        // user's own Chrome, 2026-11-09: its activate came 30 ms later). Then nothing more is
-        // sent: selecting `previous` and the shortcut reached the input method itself, the
-        // formula ended as it opened and the keys typed pinyin.
-        if wait_taken(taken, Duration::from_millis(150)) {
-            return Ok(());
-        }
-        if !select(app, previous) {
-            return Err("macOS refused to select the VisualTeX input source".to_string());
-        }
-        // The selections reach the application (it re-selects `previous`) a moment later: a
-        // shortcut sent before that switched it to VisualTeX and the late re-selection straight
-        // back, ending the formula as it opened ("field kept the text").
-        if wait_taken(taken, Duration::from_millis(200)) {
-            return Ok(());
-        }
-    }
-    // The shortcut that opened the formula is still held: Control-Option
-    // with the system shortcut's Control would be another shortcut.
-    super::deliver::wait_for_modifiers_released(Duration::from_millis(600));
-    if taken() {
-        return Ok(());
-    }
-    super::deliver::post_shortcut(shortcut.key, shortcut.flags)
-}
-
-/// Waits up to `limit` for the field to take the input method; true when it did.
-fn wait_taken(taken: &dyn Fn() -> bool, limit: Duration) -> bool {
-    let deadline = std::time::Instant::now() + limit;
-    loop {
-        if taken() {
-            return true;
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-/// Switches back when the input method could not take the field (no text
-/// field had the keyboard): the same shortcut, once more.
-pub(super) fn switch_back() {
-    if let Some(shortcut) = select_previous_shortcut() {
-        let _ = super::deliver::post_shortcut(shortcut.key, shortcut.flags);
-    }
-}
-
 // MARK: Installation
 
-/// Copies the input method bundled with the app into ~/Library/Input Methods
-/// when it is missing or another build, and registers it with Text Input
-/// Sources. Enabling it is the user's (System Settings).
+/// Copies the input method bundled with the app into ~/Library/Input Methods when it is missing or
+/// another build, registers it with Text Input Sources, makes it one of the selected input sources,
+/// starts it, and takes the earlier input method out.
 pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     let bundled = app
         .path()
@@ -455,10 +414,9 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
     if changed {
         std::fs::create_dir_all(&folder).map_err(|error| format!("Input Methods folder: {error}"))?;
         // The new build is copied aside and swapped in at once: never is the input method's bundle missing or half
-        // there. An application that reaches for the input method while it cannot be started writes it off for as
-        // long as it runs (its keys swallowed or typed as English whatever is selected; VS Code and TextEdit after
-        // the copies of 2026-11-09/10, reproduced with a test field).
-        let staging = folder.join(".VisualTeX Input.staging");
+        // there (an application that reaches for an input method while it cannot be started writes it off for as
+        // long as it runs).
+        let staging = folder.join(".VisualTeX Formula.staging");
         if staging.exists() {
             std::fs::remove_dir_all(&staging).map_err(|error| format!("{}: {error}", staging.display()))?;
         }
@@ -473,19 +431,22 @@ pub(super) fn install(app: &AppHandle) -> Result<(), String> {
         swap_into_place(&staging, &installed)?;
         // (the old build, now under the staging name; a running copy keeps the files it has open)
         let _ = std::fs::remove_dir_all(&staging);
-        // A running copy keeps the old code; macOS starts the new one when
-        // it is next selected.
+        // A running copy keeps the old code: it goes, and the new one is started below.
         let _ = Command::new("/usr/bin/pkill")
             .arg("-f")
             .arg(format!("Input Methods/{BUNDLE_NAME}/Contents/MacOS/{EXECUTABLE}"))
             .status();
     }
     let registered = on_main(app, move || register(&installed)).unwrap_or(false);
-    super::log(&format!(
-        "input method installed changed={changed} registered={registered} enabled={} listed={}",
-        is_enabled(app),
-        listed()
-    ));
+    retire_old(app);
+    let (enabled, selected) = enable_and_select(app);
+    super::log(&format!("input method installed changed={changed} registered={registered} enabled={enabled} selected={selected}"));
+    if changed {
+        thread::sleep(Duration::from_millis(300));
+    }
+    if !is_linked() {
+        launch();
+    }
     Ok(())
 }
 

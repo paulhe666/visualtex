@@ -1,17 +1,16 @@
-//! The text service: one per UI thread of an application that types with VisualTeX. VisualTeX is
-//! a whole input method, as on the Mac: Chinese through pinyin (RIME, in VisualTeX Input) and
-//! English (Shift switches), with formulas as one more mode. Its sinks share one state (`Shared`).
+//! The text service: VisualTeX's formula in a field. It is active in a thread only while a formula
+//! is open there (host.rs activates it at VisualTeX's shortcut and gives the field its own input
+//! method back when the formula ends), so it has one thing to do.
 //!
-//! Pinyin: the spelling is the field's composition (underlined), the candidates are VisualTeX
-//! Input's window under it, and the chosen text replaces the composition.
-//!
-//! A formula (VisualTeX's "session on", from its shortcut): the field gets a composition where the
-//! caret was holding the formula's space (space.rs: a selected hair space, which hides the field's
-//! caret, then blanks as wide as each piece of the formula, joined by word spaces where the field
-//! may break the line), so the field wraps the formula as its own text; the TIP reads back where
-//! each piece went and VisualTeX draws it there. Every key but the system's goes to VisualTeX
-//! (pinyin spelled in the formula's text goes to it as its composition), and "commit" replaces the
-//! composition with the formula's text.
+//! A formula: the text service tells VisualTeX where the caret is ("activate"); VisualTeX opens the
+//! formula ("session" on); the field gets a composition where the caret was, holding the formula's
+//! space (space.rs: a selected hair space, which hides the field's caret, then blanks as wide as
+//! each piece of the formula, joined by word spaces where the field may break the line), so the
+//! field wraps the formula as its own text; the text service reads back where each piece went and
+//! VisualTeX draws it there. Every key but the system's goes to VisualTeX, and "commit" replaces
+//! the composition with the formula's text. However the formula ends (commit, cancel, the field
+//! losing the keyboard or ending the composition itself, VisualTeX going away, nothing answering),
+//! the field goes back to the input method it had.
 //!
 //! An application typing through IMM32 (Qt's, such as WeChat) sees the composition through
 //! Windows' translation (CUAS, a "transitory" context): the anchor there is a zero-width space
@@ -21,36 +20,28 @@
 //! Electron) calls itself transitory too, but it lays the composition out as its text and tells
 //! where each character went: the formula wraps there as in any other field.
 
-use crate::engine::{Engine, Reply};
+use crate::field::{
+    add_text_height, char_rect, clear_attribute, client_name, edges, estimated_space_widths, field_extent, log_extent,
+    range_extent, range_rect, rect_payload, same_line, select, selection_range, set_attribute_atom, sub_range,
+    types_through_imm32, utf16, view_window, Edges, SPACE_WIDTHS,
+};
 use crate::link::{Link, WM_LINK_CLOSED, WM_LINK_MESSAGE};
-use crate::{display, edit, keys, log, profile, rimekeys, space};
+use crate::{display, edit, host, keys, log, space};
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
-use std::mem::ManuallyDrop;
 use std::rc::Rc;
-use windows::core::{implement, w, Interface, Ref, Result, BOOL, GUID};
-use windows::Win32::Foundation::{E_INVALIDARG, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::ClientToScreen;
-use windows::Win32::System::Variant::{VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_I4};
-use windows::Win32::UI::HiDpi::LogicalToPhysicalPointForPerMonitorDPI;
-use windows::Win32::UI::Input::Ime::{ImmGetCandidateWindow, ImmGetContext, ImmReleaseContext, CANDIDATEFORM, CFS_EXCLUDE};
-use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
+use windows::core::{implement, Interface, Ref, Result, BOOL, GUID};
+use windows::Win32::Foundation::{E_INVALIDARG, FALSE, LPARAM, RECT, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition, ITfCompositionSink,
     ITfCompositionSink_Impl, ITfContext, ITfContextComposition, ITfDisplayAttributeInfo, ITfDisplayAttributeProvider,
     ITfDisplayAttributeProvider_Impl, ITfDocumentMgr, ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl,
-    ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx,
-    ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadMgr, ITfThreadMgrEventSink,
-    ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, INSERT_TEXT_AT_SELECTION_FLAGS, TF_AE_NONE, TF_ANCHOR_END,
-    TF_ANCHOR_START, TF_DEFAULT_SELECTION, TF_IAS_QUERYONLY, TF_SELECTION, TF_SELECTIONSTYLE, TF_SS_TRANSITORY,
+    ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl,
+    ITfTextInputProcessor_Impl, ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl,
+    INSERT_TEXT_AT_SELECTION_FLAGS, TF_ANCHOR_END, TF_IAS_QUERYONLY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClassNameW, GetWindowLongPtrW, KillTimer,
-    PostMessageW, RegisterClassW, SetTimer, SetWindowLongPtrW, GWLP_USERDATA, HWND_MESSAGE, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_APP, WM_TIMER, WNDCLASSW,
-};
+use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer, WM_TIMER};
 
 /// The formula's place in a field typing through IMM32: one zero-width space (the field draws the
 /// clause being converted highlighted, Qt in its text colour: the anchor must have no width).
@@ -59,55 +50,43 @@ const IMM_ANCHOR: &[u16] = &[0x200B];
 /// field may scroll): fast at first, then slowly while the formula is open.
 const POLL_TIMER: usize = 1;
 const FAST_POLLS: u32 = 30;
-/// The candidates follow the pinyin composition for a moment after each key (a late layout).
-const PLACE_TIMER: usize = 2;
-const PLACE_POLLS: u32 = 8;
-/// While VisualTeX is not linked, it is looked for every second (it may start later).
-const LINK_TIMER: usize = 3;
-/// Hands the field back to its previous input method, after the formula's last edit.
-const WM_HAND_BACK: u32 = WM_APP + 0x53;
+/// VisualTeX did not open the formula it asked for (it went away, the request was stale).
+const OPEN_TIMER: usize = 5;
+const OPEN_WAIT_MS: u32 = 2500;
 
-type Edges = (i32, i32, i32, i32);
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Phase {
+    /// No formula: the field is on its way back to its own input method.
+    #[default]
+    Idle,
+    /// VisualTeX was told the caret and is opening the formula.
+    Opening,
+    /// The field holds the formula's space.
+    Composing,
+}
 
 #[derive(Default)]
 struct Shared {
     thread_mgr: RefCell<Option<ITfThreadMgr>>,
     client: Cell<u32>,
     thread_sink_cookie: Cell<u32>,
-    window: Cell<isize>,
     link: RefCell<Option<Link>>,
     key_sink: RefCell<Option<ITfKeyEventSink>>,
     composition_sink: RefCell<Option<ITfCompositionSink>>,
-    engine: Engine,
-    /// The display attribute of pinyin being spelled (0: none registered).
-    display_atom: Cell<u32>,
     /// The display attribute of the formula's anchor in a field typing through IMM32 (0: none).
     anchor_atom: Cell<u32>,
     /// The display attribute of the space a field holds for a formula (0: none).
     space_atom: Cell<u32>,
-    /// Chinese (false) or English, as RIME last said.
-    ascii: Cell<bool>,
-    /// A key RIME was offered in OnTestKey*, for the OnKey* that follows: (vk, release, reply).
-    pending: RefCell<Option<(u32, bool, Reply)>>,
 
-    // Pinyin in the field.
-    pinyin: RefCell<Option<ITfComposition>>,
-    pinyin_context: RefCell<Option<ITfContext>>,
-    placed: Cell<Option<Edges>>,
-    place_polls: Cell<u32>,
-
-    // The formula.
-    /// A formula is open in this thread's focused field.
-    composing: Cell<bool>,
+    phase: Cell<Phase>,
+    /// The formula VisualTeX asked for (its messages carry it).
+    generation: Cell<u64>,
     formula: RefCell<Option<ITfComposition>>,
     formula_context: RefCell<Option<ITfContext>>,
     /// The formula's field types through IMM32 (a transitory context).
     formula_transitory: Cell<bool>,
     /// What the formula inserts, for a field that ends the composition itself.
     formula_text: RefCell<String>,
-    /// The formula's caret from its start, physical pixels, and down to the caret's line.
-    formula_caret_x: Cell<i32>,
-    formula_caret_y: Cell<i32>,
     /// The formula's pieces (physical pixels wide, from VisualTeX), the composition holding them
     /// (space.rs), and the widths of a filler and of a joint as this field draws them.
     piece_widths: RefCell<Vec<f64>>,
@@ -124,38 +103,28 @@ struct Shared {
     reported_pieces: RefCell<Option<Value>>,
     /// The widths changed at the last poll: the space is held again.
     rehold: Cell<bool>,
-    /// Pinyin is being spelled in the formula's text (as its composition).
-    formula_pinyin: Cell<bool>,
-    /// Chinese or English before the formula opened (a formula starts in English).
-    ascii_before_formula: Cell<Option<bool>>,
     last_rect: Cell<Option<Edges>>,
     polls: Cell<u32>,
     stable_rect: Cell<Option<Edges>>,
-    /// The input method to hand the field back to after the formula.
-    hand_back: RefCell<Option<Value>>,
-    /// VisualTeX's screenshot selection has the foreground for a moment: the formula stays
-    /// open when the field loses the keyboard meanwhile.
+    /// VisualTeX's screenshot selection has the foreground for a moment: the formula stays open
+    /// when the field loses the keyboard meanwhile.
     hold: Cell<bool>,
 }
 
-impl Shared {
-    fn window(&self) -> HWND {
-        HWND(self.window.get() as *mut _)
-    }
+thread_local! {
+    /// This thread's active text service.
+    static ACTIVE: RefCell<Option<Rc<Shared>>> = const { RefCell::new(None) };
+}
 
-    /// Sends a message to VisualTeX (reconnecting when it restarted).
-    fn send(&self, message: Value) -> bool {
-        let sent = self.link.borrow().as_ref().map(|link| link.send(&message)).unwrap_or(false);
-        if sent {
-            return true;
-        }
-        if let Some(link) = Link::connect(self.window()) {
-            link.send(&json!({ "t": "hello", "version": env!("CARGO_PKG_VERSION") }));
-            let sent = link.send(&message);
-            *self.link.borrow_mut() = Some(link);
-            return sent;
-        }
-        false
+fn active() -> Option<Rc<Shared>> {
+    ACTIVE.with(|active| active.borrow().clone())
+}
+
+impl Shared {
+    /// Sends a message to VisualTeX, with the formula it is about.
+    fn send(&self, mut message: Value) -> bool {
+        message["gen"] = json!(self.generation.get());
+        self.link.borrow().as_ref().map(|link| link.send(&message)).unwrap_or(false)
     }
 
     fn focused_context(&self) -> Option<ITfContext> {
@@ -165,503 +134,57 @@ impl Shared {
     }
 }
 
-fn client_name() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.file_stem().map(|name| name.to_string_lossy().into_owned()))
-        .unwrap_or_default()
-}
-
-fn utf16(text: &str) -> Vec<u16> {
-    text.encode_utf16().collect()
-}
-
-/// Where a range of the field's text is on the screen.
-struct Extent {
-    /// Physical pixels (top-left origin), whatever the application's DPI awareness.
-    rect: RECT,
-    /// The field cut the rectangle to what it shows (a line partly scrolled out of view is shorter
-    /// than its text).
-    clipped: bool,
-    /// The view's window (0: none).
-    window: isize,
-}
-
-/// The screen rectangle of `range` (see Extent).
-fn range_extent(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<Extent> {
-    let view = unsafe { context.GetActiveView() }.ok()?;
-    let mut rect = RECT::default();
-    let mut clipped = BOOL(0);
-    unsafe { view.GetTextExt(cookie, range, &mut rect, &mut clipped) }.ok()?;
-    if rect.bottom <= rect.top {
-        return None;
-    }
-    let window = unsafe { view.GetWnd() }.ok().filter(|window| !window.is_invalid());
-    if let Some(window) = window {
-        let mut start = POINT { x: rect.left, y: rect.top };
-        let mut end = POINT { x: rect.right, y: rect.bottom };
-        let converted = unsafe {
-            LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut start).as_bool()
-                && LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut end).as_bool()
-        };
-        // Both corners or neither: one converted and one not would make a wrong height.
-        if converted {
-            rect = RECT { left: start.x, top: start.y, right: end.x, bottom: end.y };
-        }
-    }
-    Some(Extent { rect, clipped: clipped.as_bool(), window: window.map(|window| window.0 as isize).unwrap_or(0) })
-}
-
-/// The screen rectangle of `range` in physical pixels (top-left origin).
-fn range_rect(context: &ITfContext, cookie: u32, range: &ITfRange) -> Option<RECT> {
-    range_extent(context, cookie, range).map(|extent| extent.rect)
-}
-
-/// The context is the one Windows keeps for an application typing through IMM32 (CUAS): it holds
-/// the composition only, and its rectangles are made up from the application's composition window
-/// (one line of the default font below the caret where the application gives no font, as Qt).
-fn is_transitory(context: &ITfContext) -> bool {
-    unsafe { context.GetStatus() }.map(|status| status.dwStaticFlags & TF_SS_TRANSITORY != 0).unwrap_or(false)
-}
-
-/// The window of the context's view (0: none).
-fn view_window(context: &ITfContext) -> isize {
-    unsafe { context.GetActiveView().and_then(|view| view.GetWnd()) }
-        .ok()
-        .filter(|window| !window.is_invalid())
-        .map(|window| window.0 as isize)
-        .unwrap_or(0)
-}
-
-/// The view's window is Chromium's (Chrome_WidgetWin_1, Chrome_RenderWidgetHostHWND: Chrome, Edge,
-/// WebView2, Electron applications).
-fn chromium_view(context: &ITfContext) -> bool {
-    let window = view_window(context);
-    if window == 0 {
-        return false;
-    }
-    let mut name = [0u16; 64];
-    let length = unsafe { GetClassNameW(HWND(window as *mut _), &mut name) };
-    let length = usize::try_from(length).unwrap_or(0).min(name.len());
-    String::from_utf16_lossy(&name[..length]).starts_with("Chrome_")
-}
-
-/// The field types through IMM32 (see is_transitory). Chromium's text store calls itself
-/// transitory as well (it keeps no text for reconversion), but its rectangles are its layout's,
-/// one per character of the composition, so the formula's space is held there as in any field.
-fn types_through_imm32(context: &ITfContext) -> bool {
-    is_transitory(context) && !chromium_view(context)
-}
-
-/// The caret an application typing through IMM32 gave Windows for the candidate window: the area
-/// the candidates must not cover (Qt sets its text cursor's rectangle there), in physical screen
-/// pixels. Only a caret-like area counts (some applications exclude their whole text area). Read in
-/// the application's own UI thread, as IMM32 requires.
-fn imm_caret(window: isize) -> Option<RECT> {
-    let focus = unsafe { GetFocus() };
-    for window in [HWND(window as *mut _), focus] {
-        if window.is_invalid() {
-            continue;
-        }
-        let context = unsafe { ImmGetContext(window) };
-        if context.0.is_null() {
-            continue;
-        }
-        let mut form = CANDIDATEFORM::default();
-        let read = unsafe { ImmGetCandidateWindow(context, 0, &mut form) }.as_bool();
-        unsafe {
-            let _ = ImmReleaseContext(window, context);
-        }
-        let area = form.rcArea;
-        let (width, height) = (area.right - area.left, area.bottom - area.top);
-        if !read || form.dwStyle != CFS_EXCLUDE || !(4..=400).contains(&height) || !(0..=height).contains(&width) {
-            continue;
-        }
-        let mut start = POINT { x: area.left, y: area.top };
-        let mut end = POINT { x: area.right, y: area.bottom };
-        if !unsafe { ClientToScreen(window, &mut start).as_bool() && ClientToScreen(window, &mut end).as_bool() } {
-            continue;
-        }
-        // Both corners or neither (see range_extent).
-        let (mut physical_start, mut physical_end) = (start, end);
-        let converted = unsafe {
-            LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut physical_start).as_bool()
-                && LogicalToPhysicalPointForPerMonitorDPI(Some(window), &mut physical_end).as_bool()
-        };
-        if converted {
-            (start, end) = (physical_start, physical_end);
-        }
-        return Some(RECT { left: start.x, top: start.y, right: end.x, bottom: end.y });
-    }
-    None
-}
-
-/// A transitory context's rectangle is made up where, at the IMM32 caret's place, it is not the
-/// caret's line: it lies mostly outside the caret (Qt's: below it) or is of another height. One far
-/// from the caret is about another place, and stays.
-fn made_up(rect: &RECT, caret: &RECT) -> bool {
-    let caret_height = caret.bottom - caret.top;
-    let height = rect.bottom - rect.top;
-    let overlap = rect.bottom.min(caret.bottom) - rect.top.max(caret.top);
-    let near = (rect.left - caret.left).abs() <= caret_height * 2 && (rect.top - caret.top).abs() <= caret_height * 2;
-    near && (overlap * 2 < caret_height || height * 4 < caret_height * 3 || height * 3 > caret_height * 4)
-}
-
-/// The extent to report for a field: `extent` (the context's), or in a transitory context the
-/// IMM32 caret where that is made up. Some(note): the caret is IMM32's (the note says what it
-/// replaced, for the log).
-fn field_extent(context: &ITfContext, extent: Option<Extent>) -> (Option<Extent>, Option<String>) {
-    if !types_through_imm32(context) {
-        return (extent, None);
-    }
-    let window = extent.as_ref().map(|extent| extent.window).filter(|&window| window != 0).unwrap_or_else(|| view_window(context));
-    match (imm_caret(window), extent) {
-        (Some(caret), Some(extent)) if !made_up(&extent.rect, &caret) => (Some(extent), None),
-        (Some(caret), replaced) => {
-            let note = match replaced {
-                Some(Extent { rect, .. }) => {
-                    format!("imm (made up {},{} {}x{})", rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
-                }
-                None => "imm (no rectangle)".to_string(),
-            };
-            (Some(Extent { rect: caret, clipped: false, window }), Some(note))
-        }
-        (None, extent) => (extent, None),
-    }
-}
-
-fn edges(rect: &RECT) -> Edges {
-    (rect.left, rect.top, rect.right, rect.bottom)
-}
-
-fn selection_range(context: &ITfContext, cookie: u32) -> Option<ITfRange> {
-    let mut selection = [TF_SELECTION::default()];
-    let mut fetched = 0u32;
-    unsafe { context.GetSelection(cookie, TF_DEFAULT_SELECTION, &mut selection, &mut fetched) }.ok()?;
-    if fetched == 0 {
-        return None;
-    }
-    unsafe { ManuallyDrop::take(&mut selection[0].range) }
-}
-
-fn select(context: &ITfContext, cookie: u32, range: &ITfRange) -> Result<()> {
-    let selection = TF_SELECTION {
-        range: ManuallyDrop::new(Some(range.clone())),
-        style: TF_SELECTIONSTYLE { ase: TF_AE_NONE, fInterimChar: FALSE },
-    };
-    let result = unsafe { context.SetSelection(cookie, &[selection.clone()]) };
-    drop(ManuallyDrop::into_inner(selection.range));
-    result
-}
-
-thread_local! {
-    /// The widths of a filler and of a joint (space.rs) by window, as the field drew them.
-    static SPACE_WIDTHS: RefCell<HashMap<isize, (f64, f64)>> = RefCell::new(HashMap::new());
-    /// The height of a line of text by window, learnt from the caret where the line had text
-    /// before it (physical pixels). An empty line reports its whole line box instead (Chrome,
-    /// Electron), which would make the formula too large: VisualTeX takes this height there (as
-    /// the macOS input method does). Kept across activations (the service is made anew each
-    /// time); by window, so that one field's text (a search box's) does not size another's.
-    static TEXT_HEIGHTS: RefCell<HashMap<isize, i32>> = RefCell::new(HashMap::new());
-}
-
-/// Text stands before `range` on its line.
-fn text_before(cookie: u32, range: &ITfRange) -> bool {
-    let Ok(before) = (unsafe { range.Clone() }) else { return false };
-    let mut moved = 0i32;
-    let mut text = [0u16; 1];
-    let mut read = 0u32;
+fn kill_timer(id: usize) {
     unsafe {
-        if before.Collapse(cookie, TF_ANCHOR_START).is_err()
-            || before.ShiftStart(cookie, -1, &mut moved, std::ptr::null()).is_err()
-            || moved != -1
-            || before.GetText(cookie, 0, &mut text, &mut read).is_err()
-        {
-            return false;
-        }
-    }
-    read == 1 && !matches!(text[0], 0x0a | 0x0b | 0x0c | 0x0d | 0x2028 | 0x2029)
-}
-
-/// The text-height fields of a geometry message. `learn`: the rectangle is the caret's, so where
-/// text stands before it its height is the text's (never the formula's anchor, whose height some
-/// fields make up, nor a clipped rectangle).
-fn add_text_height(message: &mut Value, cookie: u32, range: &ITfRange, extent: &Extent, learn: bool) {
-    let before = text_before(cookie, range);
-    let height = extent.rect.bottom - extent.rect.top;
-    if learn && before && !extent.clipped && (4..=400).contains(&height) {
-        TEXT_HEIGHTS.with(|heights| heights.borrow_mut().insert(extent.window, height));
-    }
-    message["textBefore"] = json!(before);
-    message["clipped"] = json!(extent.clipped);
-    if let Some(learnt) = TEXT_HEIGHTS.with(|heights| heights.borrow().get(&extent.window).copied()) {
-        message["textHeight"] = json!(learnt);
+        let _ = KillTimer(Some(host::window()), id);
     }
 }
 
-/// One line of the log for a rectangle reported to VisualTeX (`source`: where an IMM32 caret came
-/// from, see field_extent).
-fn log_extent(what: &str, extent: &Extent, message: &Value, source: Option<&str>) {
-    let rect = &extent.rect;
-    log::write(&format!(
-        "{what} {},{} {}x{} clipped={} window={:x} textBefore={} textHeight={}{}",
-        rect.left,
-        rect.top,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        extent.clipped,
-        extent.window,
-        message.get("textBefore").and_then(Value::as_bool).unwrap_or(false),
-        message.get("textHeight").and_then(Value::as_i64).unwrap_or(0),
-        source.map(|source| format!(" source={source}")).unwrap_or_default(),
-    ));
+/// The app's request for a formula in this thread, when the text service is active here already.
+pub(crate) fn begin_in_this_thread(generation: u64) -> bool {
+    let Some(shared) = active() else { return false };
+    begin(&shared, generation);
+    true
 }
 
-fn rect_payload(rect: &RECT) -> Value {
-    json!([rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top])
-}
-
-/// A caret-like rectangle at a rectangle's left edge.
-fn caret_payload(edges: Edges, offset: i32) -> Value {
-    json!([edges.0 + offset, edges.1, 1, edges.3 - edges.1])
-}
-
-/// `length` characters of `range` from its `start`-th.
-fn sub_range(range: &ITfRange, cookie: u32, start: usize, length: usize) -> Option<ITfRange> {
-    let part = unsafe { range.Clone() }.ok()?;
-    let mut moved = 0i32;
+/// A formula opens: VisualTeX is told where the caret is and opens it there.
+fn begin(shared: &Rc<Shared>, generation: u64) {
+    if shared.phase.get() != Phase::Idle {
+        // the shortcut again while a formula is open in this field: that one goes, without text
+        finish_formula(shared, String::new(), None, false);
+    }
+    shared.generation.set(generation);
+    shared.phase.set(Phase::Opening);
+    shared.hold.set(false);
+    shared.formula_text.borrow_mut().clear();
+    shared.piece_widths.borrow_mut().clear();
+    shared.calibrations.set(0);
+    *shared.space.borrow_mut() = space::Layout::default();
+    if shared.link.borrow().is_none() {
+        *shared.link.borrow_mut() = Link::connect(host::window());
+    }
+    if shared.link.borrow().is_none() {
+        log::write(&format!("formula gen={generation}: VisualTeX is not running"));
+        close(shared, None);
+        return;
+    }
+    shared.send(json!({ "t": "hello", "version": env!("CARGO_PKG_VERSION") }));
+    report(shared, "activate");
     unsafe {
-        part.Collapse(cookie, TF_ANCHOR_START).ok()?;
-        part.ShiftEnd(cookie, (start + length) as i32, &mut moved, std::ptr::null()).ok()?;
-        if moved != (start + length) as i32 {
-            return None;
-        }
-        part.ShiftStart(cookie, start as i32, &mut moved, std::ptr::null()).ok()?;
-    }
-    Some(part)
-}
-
-/// The screen rectangle of the `index`-th character of `range` (physical pixels).
-fn char_rect(context: &ITfContext, cookie: u32, range: &ITfRange, index: usize) -> Option<RECT> {
-    let part = sub_range(range, cookie, index, 1)?;
-    range_rect(context, cookie, &part).filter(|rect| rect.right >= rect.left && rect.bottom - rect.top < 2000)
-}
-
-/// Two rectangles on one line of the field.
-fn same_line(a: &RECT, b: &RECT) -> bool {
-    (a.bottom - b.bottom).abs() * 2 < (a.bottom - a.top).max(1)
-}
-
-/// A filler's and a joint's width before the field has shown them: from the height of a line of
-/// its text (a blank is about half an em, a word space a quarter).
-fn estimated_space_widths(window: isize, line_height: i32) -> (f64, f64) {
-    if let Some(known) = SPACE_WIDTHS.with(|widths| widths.borrow().get(&window).copied()) {
-        return known;
-    }
-    let height = TEXT_HEIGHTS.with(|heights| heights.borrow().get(&window).copied()).unwrap_or(line_height).clamp(8, 200) as f64;
-    let em = height / 1.32;
-    (em * 0.5, em * 0.27)
-}
-
-// MARK: Pinyin in the field
-
-fn set_attribute(shared: &Shared, context: &ITfContext, cookie: u32, range: &ITfRange) {
-    set_attribute_atom(shared.display_atom.get(), context, cookie, range);
-}
-
-/// Gives `range` the display attribute registered as `atom` (0: none).
-fn set_attribute_atom(atom: u32, context: &ITfContext, cookie: u32, range: &ITfRange) {
-    if atom == 0 {
-        return;
-    }
-    if let Ok(property) = unsafe { context.GetProperty(&GUID_PROP_ATTRIBUTE) } {
-        let value = VARIANT {
-            Anonymous: VARIANT_0 {
-                Anonymous: ManuallyDrop::new(VARIANT_0_0 {
-                    vt: VT_I4,
-                    wReserved1: 0,
-                    wReserved2: 0,
-                    wReserved3: 0,
-                    Anonymous: VARIANT_0_0_0 { lVal: atom as i32 },
-                }),
-            },
-        };
-        unsafe {
-            let _ = property.SetValue(cookie, range, &value);
-        }
+        SetTimer(Some(host::window()), OPEN_TIMER, OPEN_WAIT_MS, None);
     }
 }
 
-fn clear_attribute(context: &ITfContext, cookie: u32, range: &ITfRange) {
-    if let Ok(property) = unsafe { context.GetProperty(&GUID_PROP_ATTRIBUTE) } {
-        unsafe {
-            let _ = property.Clear(cookie, range);
-        }
+/// The formula is over (its composition already ended): VisualTeX hears `tell`, and the field gets
+/// its input method back.
+fn close(shared: &Rc<Shared>, tell: Option<&'static str>) {
+    stop_polling();
+    kill_timer(OPEN_TIMER);
+    shared.phase.set(Phase::Idle);
+    if let Some(tell) = tell {
+        shared.send(json!({ "t": tell, "client": client_name() }));
     }
-}
-
-/// RIME's commit into the field, its spelling as the field's composition, its candidates under it.
-fn apply_pinyin(shared: &Rc<Shared>, context: &ITfContext, reply: Reply) {
-    let state = shared.clone();
-    let writer = context.clone();
-    let result = edit::request_now(context, shared.client.get(), move |cookie| {
-        if let Some(text) = &reply.commit {
-            let existing = state.pinyin.borrow_mut().take();
-            state.pinyin_context.borrow_mut().take();
-            match existing {
-                Some(composition) => {
-                    let range = unsafe { composition.GetRange()? };
-                    clear_attribute(&writer, cookie, &range);
-                    unsafe {
-                        range.SetText(cookie, 0, &utf16(text))?;
-                        range.Collapse(cookie, TF_ANCHOR_END)?;
-                    }
-                    select(&writer, cookie, &range)?;
-                    unsafe { composition.EndComposition(cookie)? };
-                }
-                None => {
-                    let insert: ITfInsertAtSelection = writer.cast()?;
-                    let range = unsafe { insert.InsertTextAtSelection(cookie, INSERT_TEXT_AT_SELECTION_FLAGS(0), &utf16(text))? };
-                    unsafe { range.Collapse(cookie, TF_ANCHOR_END)? };
-                    select(&writer, cookie, &range)?;
-                }
-            }
-        }
-        if !reply.preedit.is_empty() {
-            let existing = state.pinyin.borrow().clone();
-            let mut before: Option<RECT> = None;
-            let composition = match existing {
-                Some(composition) => composition,
-                None => {
-                    let insert: ITfInsertAtSelection = writer.cast()?;
-                    let range = unsafe { insert.InsertTextAtSelection(cookie, TF_IAS_QUERYONLY, &[])? };
-                    before = range_rect(&writer, cookie, &range);
-                    let composer: ITfContextComposition = writer.cast()?;
-                    let sink = state.composition_sink.borrow().clone();
-                    let composition = unsafe { composer.StartComposition(cookie, &range, sink.as_ref())? };
-                    *state.pinyin.borrow_mut() = Some(composition.clone());
-                    *state.pinyin_context.borrow_mut() = Some(writer.clone());
-                    composition
-                }
-            };
-            let range = unsafe { composition.GetRange()? };
-            unsafe { range.SetText(cookie, 0, &utf16(&reply.preedit))? };
-            set_attribute(&state, &writer, cookie, &range);
-            let caret = unsafe { range.Clone()? };
-            let mut moved = 0i32;
-            unsafe {
-                caret.Collapse(cookie, TF_ANCHOR_START)?;
-                caret.ShiftEnd(cookie, reply.cursor as i32, &mut moved, std::ptr::null())?;
-                caret.Collapse(cookie, TF_ANCHOR_END)?;
-            }
-            select(&writer, cookie, &caret)?;
-            // The candidates under the spelling's start (where the caret was until the field
-            // lays the composition out).
-            let at = range_rect(&writer, cookie, &range).or(before).map(|rect| edges(&rect)).or(state.placed.get());
-            if let Some(at) = at {
-                state.placed.set(Some(at));
-                state.engine.call(json!({ "op": "show", "caret": caret_payload(at, 0) }));
-            }
-        } else if let Some(composition) = state.pinyin.borrow_mut().take() {
-            state.pinyin_context.borrow_mut().take();
-            let range = unsafe { composition.GetRange()? };
-            unsafe {
-                range.SetText(cookie, 0, &[])?;
-                composition.EndComposition(cookie)?;
-            }
-        }
-        if reply.preedit.is_empty() {
-            state.placed.set(None);
-            state.engine.call_existing(json!({ "op": "hide" }));
-        }
-        Ok(())
-    });
-    if let Err(error) = result {
-        log::write(&format!("pinyin edit failed: {error}"));
-    }
-    if shared.pinyin.borrow().is_some() {
-        shared.place_polls.set(0);
-        unsafe {
-            SetTimer(Some(shared.window()), PLACE_TIMER, 30, None);
-        }
-    }
-}
-
-/// Follows the pinyin composition with the candidates (the field lays it out late).
-fn place_candidates(shared: &Rc<Shared>) {
-    let polls = shared.place_polls.get() + 1;
-    shared.place_polls.set(polls);
-    let (Some(context), Some(composition)) = (shared.pinyin_context.borrow().clone(), shared.pinyin.borrow().clone()) else {
-        unsafe {
-            let _ = KillTimer(Some(shared.window()), PLACE_TIMER);
-        }
-        return;
-    };
-    if polls >= PLACE_POLLS {
-        unsafe {
-            let _ = KillTimer(Some(shared.window()), PLACE_TIMER);
-        }
-    }
-    let state = shared.clone();
-    let reader = context.clone();
-    let _ = edit::request(&context, shared.client.get(), move |cookie| {
-        let Ok(range) = (unsafe { composition.GetRange() }) else { return Ok(()) };
-        let Some(rect) = range_rect(&reader, cookie, &range) else { return Ok(()) };
-        let at = edges(&rect);
-        if state.placed.get() != Some(at) {
-            state.placed.set(Some(at));
-            state.engine.call(json!({ "op": "show", "caret": caret_payload(at, 0) }));
-        }
-        Ok(())
-    });
-}
-
-/// What is being spelled goes into the field as it is spelled (a formula opens).
-fn finish_pinyin(shared: &Rc<Shared>) {
-    let (Some(context), Some(_)) = (shared.pinyin_context.borrow().clone(), shared.pinyin.borrow().clone()) else { return };
-    let text = shared
-        .engine
-        .call(json!({ "op": "commit" }))
-        .and_then(|reply| reply.get("commit").and_then(Value::as_str).map(str::to_string))
-        .unwrap_or_default();
-    apply_pinyin(shared, &context, Reply { handled: true, commit: Some(text).filter(|text| !text.is_empty()), ..Default::default() });
-    // Nothing committed: the composition ends with what it shows.
-    if let Some(composition) = shared.pinyin.borrow_mut().take() {
-        shared.pinyin_context.borrow_mut().take();
-        let _ = edit::request(&context, shared.client.get(), move |cookie| unsafe { composition.EndComposition(cookie) });
-    }
-}
-
-/// The field lost the composition (focus moved, the field ended it): RIME forgets the spelling.
-fn drop_pinyin(shared: &Rc<Shared>, end_composition: bool) {
-    let composition = shared.pinyin.borrow_mut().take();
-    let context = shared.pinyin_context.borrow_mut().take();
-    shared.placed.set(None);
-    shared.engine.call_existing(json!({ "op": "clear" }));
-    if let (true, Some(composition), Some(context)) = (end_composition, composition, context) {
-        let _ = edit::request(&context, shared.client.get(), move |cookie| unsafe { composition.EndComposition(cookie) });
-    }
-}
-
-/// "中" / "英" for a moment when Shift switched (under `at`, else under the caret).
-fn note_ascii(shared: &Rc<Shared>, ascii: bool, at: Option<Edges>) {
-    if shared.ascii.replace(ascii) == ascii {
-        return;
-    }
-    let text = if ascii { "英" } else { "中" };
-    if let Some(at) = at {
-        shared.engine.notify(json!({ "op": "indicator", "text": text, "caret": caret_payload(at, 0) }));
-        return;
-    }
-    let Some(context) = shared.focused_context() else { return };
-    let state = shared.clone();
-    let reader = context.clone();
-    let _ = edit::request(&context, shared.client.get(), move |cookie| {
-        if let Some(rect) = selection_range(&reader, cookie).and_then(|range| range_rect(&reader, cookie, &range)) {
-            state.engine.notify(json!({ "op": "indicator", "text": text, "caret": caret_payload(edges(&rect), 0) }));
-        }
-        Ok(())
-    });
+    host::hand_back();
 }
 
 // MARK: The formula
@@ -702,6 +225,7 @@ fn report(shared: &Rc<Shared>, kind: &'static str) {
 fn start_formula(shared: &Rc<Shared>) {
     let Some(context) = shared.focused_context() else {
         log::write("session on without a focused field");
+        close(shared, Some("deactivate"));
         return;
     };
     let state = shared.clone();
@@ -714,6 +238,10 @@ fn start_formula(shared: &Rc<Shared>) {
         let sink = state.composition_sink.borrow().clone();
         let composition = unsafe { composer.StartComposition(cookie, &range, sink.as_ref())? };
         let range = unsafe { composition.GetRange()? };
+        // (set before the text goes in: a field that ends the composition at once finds it)
+        *state.formula.borrow_mut() = Some(composition);
+        *state.formula_context.borrow_mut() = Some(writer.clone());
+        state.formula_transitory.set(transitory);
         if transitory {
             // a field typing through IMM32 reports made-up rectangles for parts of the
             // composition: the formula stays on one line there, over a zero-width anchor
@@ -734,9 +262,6 @@ fn start_formula(shared: &Rc<Shared>) {
             }
             *state.space.borrow_mut() = held;
         }
-        *state.formula.borrow_mut() = Some(composition);
-        *state.formula_context.borrow_mut() = Some(writer.clone());
-        state.formula_transitory.set(transitory);
         state.last_rect.set(None);
         state.stable_rect.set(None);
         state.last_pieces.borrow_mut().clear();
@@ -744,13 +269,16 @@ fn start_formula(shared: &Rc<Shared>) {
         state.calibrations.set(0);
         state.polls.set(0);
         unsafe {
-            SetTimer(Some(state.window()), POLL_TIMER, 16, None);
+            SetTimer(Some(host::window()), POLL_TIMER, 16, None);
         }
         log::write(if transitory { "formula composition started (IMM32 field)" } else { "formula composition started" });
         Ok(())
     });
     if let Err(error) = result {
         log::write(&format!("formula composition failed: {error}"));
+        shared.formula.borrow_mut().take();
+        shared.formula_context.borrow_mut().take();
+        close(shared, Some("deactivate"));
     }
 }
 
@@ -784,13 +312,13 @@ fn hold(shared: &Rc<Shared>) {
     }
     shared.polls.set(0);
     unsafe {
-        SetTimer(Some(shared.window()), POLL_TIMER, 16, None);
+        SetTimer(Some(host::window()), POLL_TIMER, 16, None);
     }
 }
 
 /// Where the field put each piece (the first character of each): reported once two reads agree,
 /// with where the held space starts and ends; the filler's and the joint's widths are read off the
-/// same characters (true: the space was held again with them).
+/// same characters (true: the space is to be held again with them).
 fn follow_pieces(state: &Rc<Shared>, reader: &ITfContext, cookie: u32, range: &ITfRange, polls: u32) -> bool {
     let held = state.space.borrow().clone();
     if held.starts.is_empty() {
@@ -842,9 +370,8 @@ fn follow_pieces(state: &Rc<Shared>, reader: &ITfContext, cookie: u32, range: &I
         *state.reported_pieces.borrow_mut() = Some(message);
     }
     // The widths as the field draws them, read once it has drawn the space held last: a field
-    // answers some places of the composition it replaced for a moment, and widths read then flipped
-    // the joint between 0, 4 and 10 points and left the formula wider than its space (macOS,
-    // 2026-11-09).
+    // answers some places of the composition it replaced for a moment, and widths read then are
+    // wrong.
     if state.last_hold.get().map(|at| at.elapsed() < std::time::Duration::from_millis(120)).unwrap_or(false) {
         return false;
     }
@@ -907,7 +434,7 @@ fn follow_pieces(state: &Rc<Shared>, reader: &ITfContext, cookie: u32, range: &I
 /// is open (scrolling, a late layout).
 fn poll_anchor(shared: &Rc<Shared>) {
     let (Some(context), Some(composition)) = (shared.formula_context.borrow().clone(), shared.formula.borrow().clone()) else {
-        stop_polling(shared);
+        stop_polling();
         return;
     };
     if shared.rehold.replace(false) {
@@ -918,7 +445,7 @@ fn poll_anchor(shared: &Rc<Shared>) {
     shared.polls.set(polls);
     if polls == FAST_POLLS {
         unsafe {
-            SetTimer(Some(shared.window()), POLL_TIMER, 250, None);
+            SetTimer(Some(host::window()), POLL_TIMER, 250, None);
         }
     }
     let state = shared.clone();
@@ -961,21 +488,19 @@ fn poll_anchor(shared: &Rc<Shared>) {
     });
 }
 
-fn stop_polling(shared: &Shared) {
-    unsafe {
-        let _ = KillTimer(Some(shared.window()), POLL_TIMER);
-    }
+fn stop_polling() {
+    kill_timer(POLL_TIMER);
 }
 
-/// Ends the formula's composition with `text` in its place (empty: removed).
-fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>) {
-    stop_polling(shared);
-    shared.composing.set(false);
+/// Ends the formula's composition with `text` in its place (empty: removed), tells VisualTeX
+/// `reply`, and (`then_close`) gives the field its input method back, after the edit.
+fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>, then_close: bool) {
+    stop_polling();
     let composition = shared.formula.borrow_mut().take();
     let context = shared.formula_context.borrow_mut().take();
     let (Some(composition), Some(context)) = (composition, context) else {
         // The composition never started or the field dropped it unseen: a formula committed then
-        // still goes in at the field's caret (it used to vanish, the field taking no input).
+        // still goes in at the field's caret.
         if !text.is_empty() {
             if let Some(context) = shared.focused_context() {
                 let writer = context.clone();
@@ -989,13 +514,17 @@ fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>
                 log::write(&format!("formula inserted without its composition: {}", inserted.is_ok()));
             }
         }
-        if let Some(reply) = reply {
+        if then_close {
+            close(shared, reply);
+        } else if let Some(reply) = reply {
             shared.send(json!({ "t": reply }));
         }
         return;
     };
     let state = shared.clone();
     let writer = context.clone();
+    let done = Rc::new(Cell::new(false));
+    let ran = done.clone();
     let result = edit::request(&context, shared.client.get(), move |cookie| {
         let range = unsafe { composition.GetRange()? };
         // the formula's text is no clause being converted
@@ -1006,111 +535,45 @@ fn finish_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>
         }
         let _ = select(&writer, cookie, &range);
         unsafe { composition.EndComposition(cookie)? };
-        if let Some(reply) = reply {
+        ran.set(true);
+        // (the input method goes back only now: handed back before this edit ran, the field would
+        // end the composition itself, without the formula's text)
+        if then_close {
+            close(&state, reply);
+        } else if let Some(reply) = reply {
             state.send(json!({ "t": reply }));
         }
         Ok(())
     });
-    if let Err(error) = result {
+    if let Err(error) = &result {
         log::write(&format!("formula commit failed: {error}"));
     }
-}
-
-/// A formula opens in English (its letters are variables); Shift switches to Chinese for text.
-/// The input mode comes back after.
-fn set_formula_input_mode(shared: &Rc<Shared>, on: bool) {
-    if on {
-        if shared.ascii_before_formula.get().is_none() {
-            let ascii = shared
-                .engine
-                .call(json!({ "op": "ascii" }))
-                .and_then(|reply| reply.get("ascii").and_then(Value::as_bool))
-                .unwrap_or(false);
-            shared.ascii_before_formula.set(Some(ascii));
-        }
-        shared.engine.call(json!({ "op": "ascii", "on": true }));
-        shared.ascii.set(true);
-    } else if let Some(ascii) = shared.ascii_before_formula.take() {
-        shared.engine.call(json!({ "op": "ascii", "on": ascii }));
-        shared.ascii.set(ascii);
+    // (an edit TSF refused, or one that failed half way)
+    if result.is_err() && !done.get() && then_close {
+        close(shared, reply);
     }
 }
 
-/// Pinyin in the formula's text: RIME's spelling is the editor's composition (shown in the
-/// formula), its commit ends the composition with the chosen characters, its candidates go
-/// under the formula's caret.
-fn formula_pinyin(shared: &Rc<Shared>, reply: &Reply) {
-    // the formula's caret: from the formula's start, on its line (a later one when it wraps)
-    let (dx, dy) = (shared.formula_caret_x.get(), shared.formula_caret_y.get());
-    let caret = shared.stable_rect.get().map(|edges| (edges.0 + dx, edges.1 + dy, edges.0 + dx + 1, edges.3 + dy));
-    note_ascii(shared, reply.ascii, caret);
-    if let Some(commit) = &reply.commit {
-        shared.send(json!({ "t": "compose", "phase": "end", "text": commit }));
-        shared.formula_pinyin.set(false);
-    }
-    if !reply.preedit.is_empty() {
-        shared.send(json!({ "t": "compose", "phase": "update", "text": reply.preedit }));
-        shared.formula_pinyin.set(true);
-        if let Some(caret) = caret {
-            shared.engine.call(json!({ "op": "show", "caret": caret_payload(caret, 0) }));
-        }
-    } else {
-        if shared.formula_pinyin.replace(false) && reply.commit.is_none() {
-            shared.send(json!({ "t": "compose", "phase": "end", "text": "" }));
-        }
-        shared.engine.call_existing(json!({ "op": "hide" }));
-    }
-}
-
-/// Drops pinyin being spelled in the formula (the formula closed).
-fn drop_formula_pinyin(shared: &Rc<Shared>) {
-    shared.engine.call_existing(json!({ "op": "clear" }));
-    if shared.formula_pinyin.replace(false) {
-        shared.send(json!({ "t": "compose", "phase": "end", "text": "" }));
-    }
-}
-
-fn close_formula(shared: &Rc<Shared>, text: String, reply: Option<&'static str>, return_to: Option<&Value>) {
-    drop_formula_pinyin(shared);
-    set_formula_input_mode(shared, false);
-    finish_formula(shared, text, reply);
-    if let Some(profile) = return_to.filter(|profile| profile.is_object()) {
-        *shared.hand_back.borrow_mut() = Some(profile.clone());
-        unsafe {
-            let _ = PostMessageW(Some(shared.window()), WM_HAND_BACK, WPARAM(0), LPARAM(0));
-        }
-    }
-}
-
-/// A message from VisualTeX, on the UI thread.
+/// A message from VisualTeX, on the field's thread.
 fn receive(shared: &Rc<Shared>, message: &Value) {
     let Some(kind) = message.get("t").and_then(Value::as_str) else { return };
     match kind {
         "session" => {
             let on = message.get("on").and_then(Value::as_bool).unwrap_or(false);
-            if on && !shared.composing.get() {
-                finish_pinyin(shared);
-                set_formula_input_mode(shared, true);
-                shared.composing.set(true);
-                shared.formula_text.borrow_mut().clear();
-                shared.formula_caret_x.set(0);
-                shared.formula_caret_y.set(0);
-                shared.piece_widths.borrow_mut().clear();
-                shared.calibrations.set(0);
-                *shared.space.borrow_mut() = space::Layout::default();
+            log::write(&format!("session {} phase={:?}", if on { "on" } else { "off" }, shared.phase.get()));
+            if on && shared.phase.get() == Phase::Opening {
+                kill_timer(OPEN_TIMER);
+                shared.phase.set(Phase::Composing);
                 start_formula(shared);
-            } else if !on && shared.composing.get() {
-                close_formula(shared, String::new(), None, None);
+            } else if !on && shared.phase.get() != Phase::Idle {
+                finish_formula(shared, String::new(), None, true);
             }
-            log::write(&format!("session {}", if on { "on" } else { "off" }));
         }
         "inline" => {
             *shared.formula_text.borrow_mut() = message.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
-            shared.formula_caret_x.set(message.get("caretX").and_then(Value::as_f64).unwrap_or(0.0).round() as i32);
-            shared.formula_caret_y.set(message.get("caretY").and_then(Value::as_f64).unwrap_or(0.0).round() as i32);
             if let Some(pieces) = message.get("pieces").and_then(Value::as_array) {
                 let widths: Vec<f64> = pieces.iter().map(|piece| piece.as_f64().unwrap_or(0.0).clamp(0.0, 16384.0)).collect();
-                if shared.composing.get() && *shared.piece_widths.borrow() != widths {
+                if shared.phase.get() == Phase::Composing && *shared.piece_widths.borrow() != widths {
                     *shared.piece_widths.borrow_mut() = widths;
                     hold(shared);
                 }
@@ -1119,11 +582,11 @@ fn receive(shared: &Rc<Shared>, message: &Value) {
         "commit" => {
             let text = message.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
             log::write(&format!("commit {} chars", text.chars().count()));
-            close_formula(shared, text, Some("committed"), message.get("returnTo"));
+            finish_formula(shared, text, Some("committed"), true);
         }
         "cancel" => {
             log::write("cancel");
-            close_formula(shared, String::new(), Some("cancelled"), message.get("returnTo"));
+            finish_formula(shared, String::new(), Some("cancelled"), true);
         }
         "caret" => report(shared, "geometry"),
         "hold" => shared.hold.set(message.get("on").and_then(Value::as_bool).unwrap_or(false)),
@@ -1131,120 +594,45 @@ fn receive(shared: &Rc<Shared>, message: &Value) {
     }
 }
 
-// MARK: The window that receives VisualTeX's messages and the timers.
-
-fn window_class_registered() {
-    use std::sync::Once;
-    static REGISTER: Once = Once::new();
-    REGISTER.call_once(|| {
-        let class = WNDCLASSW {
-            lpfnWndProc: Some(window_proc),
-            hInstance: crate::dll_instance(),
-            lpszClassName: w!("VisualTeXTipLink"),
-            ..Default::default()
-        };
-        unsafe { RegisterClassW(&class) };
-    });
-}
-
-fn shared_of(window: HWND) -> Option<Rc<Shared>> {
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *const Shared;
-    if pointer.is_null() {
-        return None;
-    }
-    Some(unsafe {
-        Rc::increment_strong_count(pointer);
-        Rc::from_raw(pointer)
-    })
-}
-
-extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+/// A message of this thread's window that is the text service's (true: handled).
+pub(crate) fn window_message(message: u32, wparam: WPARAM, lparam: LPARAM) -> bool {
     match message {
         WM_LINK_MESSAGE => {
             let text = unsafe { Box::from_raw(lparam.0 as *mut String) };
-            if let Some(shared) = shared_of(window) {
-                if let Ok(value) = serde_json::from_str::<Value>(&text) {
-                    receive(&shared, &value);
-                }
+            if let (Some(shared), Ok(value)) = (active(), serde_json::from_str::<Value>(&text)) {
+                receive(&shared, &value);
             }
-            LRESULT(0)
+            true
         }
         WM_LINK_CLOSED => {
-            if let Some(shared) = shared_of(window) {
+            if let Some(shared) = active() {
                 shared.link.borrow_mut().take();
-                if shared.composing.get() {
-                    close_formula(&shared, String::new(), None, None);
-                }
                 log::write("link closed");
-            }
-            LRESULT(0)
-        }
-        WM_HAND_BACK => {
-            if let Some(shared) = shared_of(window) {
-                if let Some(profile) = shared.hand_back.borrow_mut().take() {
-                    profile::activate(&profile);
+                if shared.phase.get() != Phase::Idle {
+                    finish_formula(&shared, String::new(), None, true);
                 }
             }
-            LRESULT(0)
+            true
         }
         WM_TIMER => {
-            if let Some(shared) = shared_of(window) {
-                match wparam.0 {
-                    POLL_TIMER => poll_anchor(&shared),
-                    PLACE_TIMER => place_candidates(&shared),
-                    LINK_TIMER => {
-                        if shared.link.borrow().is_none() {
-                            if let Some(link) = Link::connect(window) {
-                                link.send(&json!({ "t": "hello", "version": env!("CARGO_PKG_VERSION") }));
-                                *shared.link.borrow_mut() = Some(link);
-                                report(&shared, "activate");
-                            }
-                        }
+            let Some(shared) = active() else {
+                kill_timer(wparam.0);
+                return true;
+            };
+            match wparam.0 {
+                POLL_TIMER => poll_anchor(&shared),
+                OPEN_TIMER => {
+                    kill_timer(OPEN_TIMER);
+                    if shared.phase.get() == Phase::Opening {
+                        log::write("VisualTeX did not open the formula");
+                        close(&shared, None);
                     }
-                    _ => {}
                 }
+                _ => return false,
             }
-            LRESULT(0)
+            true
         }
-        _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
-    }
-}
-
-fn create_window(shared: &Rc<Shared>) -> Option<HWND> {
-    window_class_registered();
-    let window = unsafe {
-        CreateWindowExW(
-            WINDOW_EX_STYLE(0),
-            w!("VisualTeXTipLink"),
-            w!(""),
-            WINDOW_STYLE(0),
-            0,
-            0,
-            0,
-            0,
-            Some(HWND_MESSAGE),
-            None,
-            Some(crate::dll_instance()),
-            None,
-        )
-    }
-    .ok()?;
-    let pointer = Rc::into_raw(shared.clone());
-    unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, pointer as isize) };
-    Some(window)
-}
-
-fn destroy_window(shared: &Shared) {
-    let window = HWND(shared.window.replace(0) as *mut _);
-    if window.0.is_null() {
-        return;
-    }
-    let pointer = unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, 0) } as *const Shared;
-    unsafe {
-        let _ = DestroyWindow(window);
-    }
-    if !pointer.is_null() {
-        drop(unsafe { Rc::from_raw(pointer) });
+        _ => false,
     }
 }
 
@@ -1279,16 +667,19 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
         ITfTextInputProcessorEx_Impl::ActivateEx(self, thread_mgr, client, 0)
     }
 
+    /// The field's thread went to another input method: the hand-back after a formula, or the user
+    /// choosing one while a formula was open (the formula goes, and VisualTeX's profile is disabled
+    /// again all the same).
     fn Deactivate(&self) -> Result<()> {
         let shared = self.shared.borrow().clone();
-        if shared.composing.get() {
-            close_formula(&shared, String::new(), None, None);
+        if shared.phase.get() != Phase::Idle {
+            log::write("deactivated with a formula open");
+            finish_formula(&shared, String::new(), None, false);
+            stop_polling();
+            kill_timer(OPEN_TIMER);
+            shared.phase.set(Phase::Idle);
+            shared.send(json!({ "t": "deactivate", "client": client_name() }));
         }
-        if shared.pinyin.borrow().is_some() {
-            drop_pinyin(&shared, true);
-        }
-        shared.engine.call_existing(json!({ "op": "hide" }));
-        shared.send(json!({ "t": "deactivate", "client": client_name() }));
         if let Some(manager) = shared.thread_mgr.borrow_mut().take() {
             if let Ok(keystrokes) = manager.cast::<ITfKeystrokeMgr>() {
                 unsafe {
@@ -1301,17 +692,18 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                 }
             }
         }
-        unsafe {
-            let _ = KillTimer(Some(shared.window()), LINK_TIMER);
-            let _ = KillTimer(Some(shared.window()), PLACE_TIMER);
-        }
-        shared.engine.close();
         shared.key_sink.borrow_mut().take();
         shared.composition_sink.borrow_mut().take();
         shared.link.borrow_mut().take();
-        destroy_window(&shared);
+        ACTIVE.with(|active| {
+            let mut active = active.borrow_mut();
+            if active.as_ref().map(|current| Rc::ptr_eq(current, &shared)).unwrap_or(false) {
+                *active = None;
+            }
+        });
         // A fresh state for a later activation of this object.
         *self.shared.borrow_mut() = Rc::new(Shared::default());
+        host::hand_back();
         log::write("deactivated");
         Ok(())
     }
@@ -1323,9 +715,7 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         let shared = self.shared.borrow().clone();
         *shared.thread_mgr.borrow_mut() = Some(manager.clone());
         shared.client.set(client);
-        if let Some(window) = create_window(&shared) {
-            shared.window.set(window.0 as isize);
-        }
+        host::ensure();
         let key_sink: ITfKeyEventSink = KeySink { shared: shared.clone() }.into();
         let keystrokes: ITfKeystrokeMgr = manager.cast()?;
         unsafe { keystrokes.AdviseKeyEventSink(client, &key_sink, true)? };
@@ -1338,9 +728,6 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         *shared.composition_sink.borrow_mut() = Some(composition_sink);
         let categories: Result<ITfCategoryMgr> = unsafe { CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER) };
         if let Ok(categories) = categories {
-            if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_INPUT) } {
-                shared.display_atom.set(atom);
-            }
             if let Ok(atom) = unsafe { categories.RegisterGUID(&display::GUID_ANCHOR) } {
                 shared.anchor_atom.set(atom);
             }
@@ -1348,15 +735,16 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                 shared.space_atom.set(atom);
             }
         }
-        if let Some(link) = Link::connect(shared.window()) {
-            link.send(&json!({ "t": "hello", "version": env!("CARGO_PKG_VERSION") }));
-            *shared.link.borrow_mut() = Some(link);
+        ACTIVE.with(|active| *active.borrow_mut() = Some(shared.clone()));
+        let generation = host::take_pending();
+        log::write(&format!("activated gen={generation}"));
+        if generation == 0 {
+            // Not VisualTeX's shortcut (the profile chosen in the input switcher while a formula was
+            // open somewhere): VisualTeX types formulas only, the thread goes back at once.
+            host::hand_back();
+        } else {
+            begin(&shared, generation);
         }
-        unsafe {
-            SetTimer(Some(shared.window()), LINK_TIMER, 1000, None);
-        }
-        log::write("activated");
-        report(&shared, "activate");
         Ok(())
     }
 }
@@ -1367,101 +755,28 @@ struct KeySink {
 }
 
 impl KeySink {
-    /// While a formula is open its keys are VisualTeX's (but the system's and the application's
-    /// Control chords).
-    fn takes_formula(&self, vk: u32) -> bool {
-        self.shared.composing.get()
-            && !keys::belongs_to_system(vk)
-            && (rimekeys::is_shift(vk) || keys::belongs_to_formula(vk))
-    }
-
-    /// A key offered to RIME outside a formula: None when it is the application's.
-    fn offer(&self, vk: u32, lparam: isize, release: bool) -> Option<Reply> {
-        let mods = keys::modifiers();
-        if mods.win {
-            return None;
-        }
-        let spelling = self.shared.pinyin.borrow().is_some();
-        if release {
-            // Key-ups matter for Shift (it switches Chinese and English) and Control.
-            if !(rimekeys::is_shift(vk) || rimekeys::is_control(vk)) {
-                return None;
-            }
-        } else if !spelling {
-            if rimekeys::is_modifier(vk) && !(rimekeys::is_shift(vk) || rimekeys::is_control(vk)) {
-                return None;
-            }
-            // Control and Alt shortcuts are the application's while nothing is spelled.
-            if (mods.ctrl || mods.alt) && !rimekeys::is_modifier(vk) {
-                return None;
-            }
-        }
-        let keysym = rimekeys::keysym(vk, lparam)?;
-        self.shared.engine.key(keysym, rimekeys::mask(release))
-    }
-
-    fn take_pending(&self, vk: u32, release: bool) -> Option<Reply> {
-        let pending = self.shared.pending.borrow_mut().take();
-        match pending {
-            Some((key, up, reply)) if key == vk && up == release => Some(reply),
-            _ => None,
-        }
-    }
-
-    fn test(&self, vk: u32, lparam: isize, release: bool) -> bool {
-        if self.shared.composing.get() {
-            return self.takes_formula(vk);
-        }
-        let reply = self.offer(vk, lparam, release);
-        let handled = reply.as_ref().map(|reply| reply.handled).unwrap_or(false);
-        *self.shared.pending.borrow_mut() = reply.map(|reply| (vk, release, reply));
-        handled
-    }
-
-    fn key(&self, context: Option<&ITfContext>, vk: u32, lparam: isize, release: bool) -> bool {
-        let shared = &self.shared;
-        if shared.composing.get() {
-            return self.formula_key(vk, lparam, release);
-        }
-        let Some(reply) = self.take_pending(vk, release).or_else(|| self.offer(vk, lparam, release)) else { return false };
-        let spelling = shared.pinyin.borrow().is_some();
-        if reply.handled || reply.commit.is_some() || (spelling && reply.preedit.is_empty()) {
-            if let Some(context) = context {
-                apply_pinyin(shared, context, reply.clone());
-            }
-        }
-        note_ascii(shared, reply.ascii, shared.placed.get());
-        reply.handled
-    }
-
-    /// A key while a formula is open: Shift to RIME (Chinese or English); Control and Alt chords
-    /// to the formula (its shortcuts, undo, paste, rows); in Chinese the keys spell pinyin and
-    /// the chosen characters become the formula's text; the rest is the formula's.
-    fn formula_key(&self, vk: u32, lparam: isize, release: bool) -> bool {
-        if !self.takes_formula(vk) {
+    /// While a formula is open (or opening: VisualTeX keeps those keys for it) its keys are
+    /// VisualTeX's, but the system's and the application's Control chords, and the modifier keys
+    /// themselves (Alt alone is taken: it would put the keyboard in the application's menu).
+    fn takes(&self, vk: u32) -> bool {
+        if self.shared.phase.get() == Phase::Idle || keys::belongs_to_system(vk) {
             return false;
         }
-        let shared = &self.shared;
-        if rimekeys::is_shift(vk) {
-            if let Some(reply) = rimekeys::keysym(vk, lparam).and_then(|keysym| shared.engine.key(keysym, rimekeys::mask(release))) {
-                formula_pinyin(shared, &reply);
-            }
-            return true;
+        match vk {
+            0x10 | 0xa0 | 0xa1 | 0x11 | 0xa2 | 0xa3 | 0x14 | 0x5b | 0x5c => false,
+            0x12 | 0xa4 | 0xa5 => !keys::modifiers().ctrl,
+            _ => keys::belongs_to_formula(vk),
         }
-        if release {
-            return true;
+    }
+
+    fn key(&self, vk: u32, lparam: isize, release: bool) -> bool {
+        if !self.takes(vk) {
+            return false;
         }
-        let repeat = (lparam >> 30) & 1 == 1;
-        let mods = keys::modifiers();
-        if !(mods.ctrl || mods.alt) {
-            if let Some(reply) = rimekeys::keysym(vk, lparam).and_then(|keysym| shared.engine.key(keysym, rimekeys::mask(false))) {
-                if reply.handled {
-                    formula_pinyin(shared, &reply);
-                    return true;
-                }
-            }
+        if !release && !matches!(vk, 0x12 | 0xa4 | 0xa5) {
+            let repeat = (lparam >> 30) & 1 == 1;
+            self.shared.send(keys::message(vk, lparam, repeat));
         }
-        shared.send(keys::message(vk, lparam, repeat));
         true
     }
 }
@@ -1471,20 +786,20 @@ impl ITfKeyEventSink_Impl for KeySink_Impl {
         Ok(())
     }
 
-    fn OnTestKeyDown(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
-        Ok(BOOL::from(self.test(wparam.0 as u32, lparam.0, false)))
+    fn OnTestKeyDown(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, _lparam: LPARAM) -> Result<BOOL> {
+        Ok(BOOL::from(self.takes(wparam.0 as u32)))
     }
 
-    fn OnTestKeyUp(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
-        Ok(BOOL::from(self.test(wparam.0 as u32, lparam.0, true)))
+    fn OnTestKeyUp(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, _lparam: LPARAM) -> Result<BOOL> {
+        Ok(BOOL::from(self.takes(wparam.0 as u32)))
     }
 
-    fn OnKeyDown(&self, context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
-        Ok(BOOL::from(self.key(context.as_ref(), wparam.0 as u32, lparam.0, false)))
+    fn OnKeyDown(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
+        Ok(BOOL::from(self.key(wparam.0 as u32, lparam.0, false)))
     }
 
-    fn OnKeyUp(&self, context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
-        Ok(BOOL::from(self.key(context.as_ref(), wparam.0 as u32, lparam.0, true)))
+    fn OnKeyUp(&self, _context: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
+        Ok(BOOL::from(self.key(wparam.0 as u32, lparam.0, true)))
     }
 
     fn OnPreservedKey(&self, _context: Ref<'_, ITfContext>, _guid: *const GUID) -> Result<BOOL> {
@@ -1506,29 +821,26 @@ impl ITfThreadMgrEventSink_Impl for FocusSink_Impl {
         Ok(())
     }
 
-    /// Focus moved to another field (or away): an open formula closes (the field it belonged to
-    /// keeps nothing of it; VisualTeX keeps the draft for the next formula, as on macOS), pinyin
-    /// being spelled stays as it is shown, VisualTeX hears of the new field.
-    fn OnSetFocus(&self, focus: Ref<'_, ITfDocumentMgr>, _previous: Ref<'_, ITfDocumentMgr>) -> Result<()> {
+    /// The keyboard went to another field (or away): the formula closes (the field it belonged to
+    /// keeps nothing of it; VisualTeX keeps the draft for the next formula) and the thread goes
+    /// back to its input method.
+    fn OnSetFocus(&self, focus: Ref<'_, ITfDocumentMgr>, previous: Ref<'_, ITfDocumentMgr>) -> Result<()> {
         let shared = &self.shared;
-        if shared.composing.get() && shared.hold.get() {
-            // The screenshot selection: the field gets the keyboard back after it.
+        if shared.phase.get() == Phase::Idle {
             return Ok(());
         }
-        let left_formula = shared.composing.get();
-        if left_formula {
-            close_formula(shared, String::new(), None, None);
+        // (the same document again is no change: some fields set their focus anew when an input
+        // method comes up)
+        let same = match (focus.as_ref(), previous.as_ref()) {
+            (Some(focus), Some(previous)) => focus.as_raw() == previous.as_raw(),
+            _ => false,
+        };
+        log::write(&format!("focus changed: field={} same={same} hold={} phase={:?}", focus.is_some(), shared.hold.get(), shared.phase.get()));
+        if same || shared.hold.get() {
+            // (the screenshot selection: the field gets the keyboard back after it)
+            return Ok(());
         }
-        if shared.pinyin.borrow().is_some() {
-            drop_pinyin(shared, true);
-        }
-        shared.engine.call_existing(json!({ "op": "hide" }));
-        if left_formula || focus.is_none() {
-            shared.send(json!({ "t": "deactivate", "client": client_name() }));
-        }
-        if focus.is_some() {
-            report(shared, "activate");
-        }
+        finish_formula(shared, String::new(), Some("deactivate"), true);
         Ok(())
     }
 
@@ -1547,60 +859,32 @@ struct CompositionSink {
 }
 
 impl ITfCompositionSink_Impl for CompositionSink_Impl {
-    /// The field ended a composition itself (a click elsewhere in it): a formula's gets the
-    /// formula's text, not the anchor; a pinyin spelling stays as shown.
+    /// The field ended the composition itself (a click elsewhere in it): it gets the formula's
+    /// text, not the held space.
     fn OnCompositionTerminated(&self, cookie: u32, composition: Ref<'_, ITfComposition>) -> Result<()> {
         let shared = &self.shared;
         let is_formula = match (composition.as_ref(), shared.formula.borrow().as_ref()) {
             (Some(ended), Some(formula)) => ended.as_raw() == formula.as_raw(),
             _ => false,
         };
-        if is_formula && shared.composing.get() {
-            stop_polling(shared);
-            shared.composing.set(false);
-            shared.formula.borrow_mut().take();
-            shared.formula_context.borrow_mut().take();
-            drop_formula_pinyin(shared);
-            set_formula_input_mode(shared, false);
-            if let Some(composition) = composition.as_ref() {
-                if let Ok(range) = unsafe { composition.GetRange() } {
-                    let text = utf16(&shared.formula_text.borrow());
-                    if let Ok(context) = unsafe { range.GetContext() } {
-                        clear_attribute(&context, cookie, &range);
-                    }
-                    unsafe {
-                        let _ = range.SetText(cookie, 0, &text);
-                    }
+        if !is_formula || shared.phase.get() == Phase::Idle {
+            return Ok(());
+        }
+        shared.formula.borrow_mut().take();
+        shared.formula_context.borrow_mut().take();
+        if let Some(composition) = composition.as_ref() {
+            if let Ok(range) = unsafe { composition.GetRange() } {
+                let text = utf16(&shared.formula_text.borrow());
+                if let Ok(context) = unsafe { range.GetContext() } {
+                    clear_attribute(&context, cookie, &range);
+                }
+                unsafe {
+                    let _ = range.SetText(cookie, 0, &text);
                 }
             }
-            shared.send(json!({ "t": "forced" }));
-            log::write("formula composition terminated by the field");
-        } else if shared.pinyin.borrow().is_some() {
-            drop_pinyin(shared, false);
-            shared.engine.call_existing(json!({ "op": "hide" }));
         }
+        log::write("formula composition terminated by the field");
+        close(shared, Some("forced"));
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn rect(left: i32, top: i32, width: i32, height: i32) -> RECT {
-        RECT { left, top, right: left + width, bottom: top + height }
-    }
-
-    #[test]
-    fn windows_made_up_rectangles_give_way_to_the_imm32_caret() {
-        // WeChat at 150 %: Qt's cursor, 28 px; Windows' rectangles start at its bottom
-        let caret = rect(2325, 1681, 2, 28);
-        assert!(made_up(&rect(2325, 1709, 0, 20), &caret));
-        assert!(made_up(&rect(2328, 1710, 0, 1), &caret));
-        // the caret's own line, or nearly
-        assert!(!made_up(&rect(2325, 1681, 0, 28), &caret));
-        assert!(!made_up(&rect(2325, 1683, 0, 25), &caret));
-        // a rectangle about another place stays
-        assert!(!made_up(&rect(900, 400, 0, 20), &caret));
     }
 }

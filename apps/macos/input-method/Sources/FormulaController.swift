@@ -2,38 +2,39 @@ import Carbon
 import Cocoa
 import InputMethodKit
 
-/// One per host text field. VisualTeX is a whole input method: Chinese
-/// through pinyin (RIME) and English (Shift switches), with formulas as one
-/// more mode. While a formula is open (the shortcut) every key but a Command
-/// shortcut goes to VisualTeX, which edits the formula and draws it in the
-/// line itself, from where the field's caret was, with its own caret: the
-/// field holds the formula's space in its text (FormulaSpace), so it wraps
-/// the formula as it wraps its own text and shows nothing of its own. Where
-/// that space lies is worked out by SpaceModel from the field's caret before
-/// and after it; the field's other answers only confirm or correct it.
-/// Return inserts the formula's text with insertText and, when the shortcut
-/// opened the formula from another input source, hands the field back to it.
-@objc(VTInputController)
-final class VTInputController: IMKInputController {
+/// One per host text field. VisualTeX's input method types formulas and nothing else, and it is no
+/// keyboard input source: a palette input method, selected beside whatever the user types with (as
+/// the system's press-and-hold accents and its character viewer are), so the user's input sources
+/// and the switching between them are never touched. It gets no keys of its own.
+///
+/// VisualTeX's shortcut opens a formula in the field that has the keyboard: VisualTeX asks where
+/// the caret is ("caret"), opens the formula ("session"), edits it and draws it in the line itself,
+/// from where the field's caret was, with its own caret. The field holds the formula's space in its
+/// text as marked text (FormulaSpace), so it wraps the formula as it wraps its own text. Where that
+/// space lies is worked out by SpaceModel from the field's caret before and after it; the field's
+/// other answers only confirm or correct it. While the formula is open the keys are taken before
+/// the field and its input source see them (KeyGrab) and go to VisualTeX. Return inserts the
+/// formula's text with insertText.
+@objc(VTFormulaController)
+final class VTFormulaController: IMKInputController {
     static let noRange = NSRange(location: NSNotFound, length: 0)
 
-    /// Return, keypad Enter, Z and V by virtual key code: with Command they
-    /// act on the formula while it is open (⌘V pastes into it: an image is
-    /// recognized, text goes in).
-    private static let formulaCommandKeys: Set<UInt16> = [36, 76, 6, 9]
+    /// The application of the field the shortcut was pressed in, as VisualTeX tells it (a field
+    /// whose application does not tell the input method its name).
+    static var shortcutApplication: String?
 
     /// The controller whose field has the keyboard: VisualTeX's messages go to it.
-    private static weak var active: VTInputController?
+    private static weak var active: VTFormulaController?
     /// (for HostProbe)
-    static var current: VTInputController? { active }
+    static var current: VTFormulaController? { active }
     /// The height of a line of text by application, measured where text
-    /// stands before the caret (pinyin, formulas). Chrome and Electron report
+    /// stands before the caret. Chrome and Electron report
     /// an empty line's whole line box instead (taller than its text), and no
     /// font: VisualTeX sizes the formula from this so that it does not depend
     /// on whether the line has text yet.
     private static var textHeights: [String: CGFloat] = [:]
 
-    /// The marked text this field shows (pinyin's spelling, or the formula's anchor).
+    /// The marked text this field shows (the formula's space).
     private var marked = ""
     /// What the formula inserts, for a field that ends the composition itself.
     private var formulaText = ""
@@ -43,18 +44,8 @@ final class VTInputController: IMKInputController {
     private var heldRect = NSRect.zero
     /// Each space held; a poll for an older one stops.
     private var holdGeneration = 0
-    /// Where the pinyin being spelled started (the caret before it).
-    private var pinyinStart = NSRect.zero
     /// A formula is open: its keys belong to VisualTeX.
     private var composing = false
-    /// This field's pinyin session (0 until RIME is ready).
-    private var rimeSession: RimeSessionId = 0
-    /// The formula's caret is in text (\text{}): its keys spell pinyin too.
-    private var formulaTextMode = false
-    /// The formula's caret from the formula's start, in points.
-    private var formulaCaretOffset: CGFloat = 0
-    /// Pinyin is being spelled inside the formula (as its composition).
-    private var formulaPinyin = false
     /// Where the field's caret stood when the formula opened, before its
     /// space went in: SpaceModel's places are from there.
     private var formulaStart = NSRect.zero
@@ -84,14 +75,6 @@ final class VTInputController: IMKInputController {
     private var lastEnd: [Double]?
     private var lastCaretLine: [Double]?
     private var placed = false
-    /// The formula's caret below the formula's first baseline, points (it may
-    /// be on a later line).
-    private var formulaCaretY: CGFloat = 0
-    /// When pinyin last went into the field: the field takes a moment to
-    /// place its caret after it (see holdLater).
-    private var lastPinyinCommit = Date.distantPast
-    /// The space is held a moment later (holdLater): nothing holds it meanwhile.
-    private var holdDeferred = false
     /// Applications that answer nothing after the marked text's last character
     /// (Chrome, Electron): they keep a composition's text when they end it
     /// themselves, and tell nothing while they do (endedByField).
@@ -120,28 +103,16 @@ final class VTInputController: IMKInputController {
         var end: [Double]?
         var replacement: String
     }
-    /// A Shift press that becomes a tap when it is let go soon with nothing pressed or clicked meanwhile: its key,
-    /// when, and the input events counted then (shiftChanged).
-    private var shiftTap: (keyCode: UInt16, at: TimeInterval, events: UInt32)?
-    /// Shift's changes and taps while this field had the keyboard (logged when it ends: a field whose Shift never
-    /// arrives shows there).
-    private var shiftChanges = 0
-    private var shiftTaps = 0
 
-    deinit {
-        RimeEngine.shared.destroySession(rimeSession)
-    }
+
+
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         Self.active = self
-        let geometry = self.geometry(sender as? IMKTextInput)
-        InputLog.write("activate client=\(clientID(sender)) geometry=\(geometry) linked=\(AppLink.shared.connect())")
-        var message = geometry
-        message["t"] = "activate"
-        message["client"] = clientID(sender)
-        AppLink.shared.send(message)
-        // a held space this field kept as its text when the input method left it
+        InputLog.write("activate client=\(clientID(sender)) linked=\(AppLink.shared.connect())")
+        AppLink.shared.send(["t": "activate", "client": clientID(sender)])
+        // a held space this field kept as its text when it lost the keyboard
         if Self.leftovers[clientID(sender)]?.isEmpty == false {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, Self.active === self, !self.composing, self.marked.isEmpty, let client = self.client() else { return }
@@ -150,323 +121,28 @@ final class VTInputController: IMKInputController {
         }
     }
 
+    /// The field lost the keyboard: an open formula goes (VisualTeX keeps its draft).
     override func deactivateServer(_ sender: Any!) {
-        InputLog.write("deactivate client=\(clientID(sender)) composing=\(composing) shift=\(shiftChanges)/\(shiftTaps)")
-        shiftChanges = 0
-        shiftTaps = 0
-        shiftTap = nil
+        InputLog.write("deactivate client=\(clientID(sender)) composing=\(composing)")
         let client = sender as? IMKTextInput
         // (Chrome has kept the space as its text by now: taken out where it is; else cleared as
         // marked text is)
         if !marked.isEmpty, let client, !takeOutKept(client, with: "") { clearMarked(client) }
         marked = ""
         holdGeneration += 1
-        if composing { setFormulaInputMode(on: false) }
+        if composing { KeyGrab.shared.stop() }
         composing = false
         formulaText = ""
-        if let client { finishPinyin(client) }
-        CandidateWindow.shared.hide()
         if Self.active === self { Self.active = nil }
         AppLink.shared.send(["t": "deactivate", "client": clientID(sender)])
         super.deactivateServer(sender)
     }
 
-    override func recognizedEvents(_ sender: Any!) -> Int {
-        Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
-    }
-
-    override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
-        guard let event, let client = sender as? IMKTextInput else { return false }
-        Self.active = self
-        if event.type == .flagsChanged {
-            // Shift switches Chinese and English in a formula too.
-            return shiftChanged(event, client: client)
-        }
-        guard event.type == .keyDown else { return false }
-        // a key with Shift down: Shift was part of a chord
-        shiftTap = nil
-        // a held space this field kept as its text (it has the keyboard now)
-        if !composing, marked.isEmpty, Self.leftovers[clientID(client)]?.isEmpty == false { takeOutLeftovers(client) }
-        if composing, [36, 53, 76].contains(event.keyCode) {
-            InputLog.write("formula key \(event.keyCode == 53 ? "escape" : "return")")
-        }
-        if composing {
-            if event.modifierFlags.contains(.command) {
-                // The formula's own Command keys (a row's inline / display
-                // switch ⌘⇧↩ and other Return chords, undo ⌘Z, redo ⌘⇧Z,
-                // paste ⌘V);
-                // the others are the application's.
-                guard Self.formulaCommandKeys.contains(event.keyCode) else { return false }
-                AppLink.shared.send(KeyMapping.message(for: event))
-                return true
-            }
-            // Control and Option chords are the formula's shortcuts (output
-            // format, OCR, the editor's own): never pinyin's.
-            if !event.modifierFlags.intersection([.control, .option]).isEmpty {
-                AppLink.shared.send(KeyMapping.message(for: event))
-                return true
-            }
-            // In a formula, as in the main window: in Chinese the keys spell
-            // pinyin and the chosen characters become the formula's text; in
-            // English (Shift) and for what RIME does not take (digits,
-            // operators, editing keys) they are the formula's.
-            if pinyinKey(event, client: client) { return true }
-            AppLink.shared.send(KeyMapping.message(for: event))
-            return true
-        }
-        return pinyinKey(event, client: client)
-    }
-
-    // MARK: Pinyin and English (RIME)
-
-    private func ensureRimeSession() -> RimeSessionId {
-        if rimeSession != 0, !RimeEngine.shared.isAlive(rimeSession) {
-            InputLog.write("rime session lost: a new one")
-            rimeSession = 0
-        }
-        if rimeSession == 0 {
-            rimeSession = RimeEngine.shared.createSession()
-            // A formula that opened before RIME was ready (the first one after the input method
-            // started, 2026-11-09) starts in English as every formula does: it typed pinyin.
-            if rimeSession != 0, composing { setFormulaInputMode(on: true) }
-        }
-        return rimeSession
-    }
-
-    private func pinyinKey(_ event: NSEvent, client: IMKTextInput) -> Bool {
-        let session = ensureRimeSession()
-        guard session != 0, let keysym = RimeKeys.keysym(of: event) else { return false }
-        // Command shortcuts belong to the application (a composition is
-        // finished first, as with the system's Pinyin).
-        if event.modifierFlags.contains(.command) {
-            finishPinyin(client)
-            return false
-        }
-        let handled = RimeEngine.shared.process(session, keysym: keysym, mask: RimeKeys.modifiers(event.modifierFlags))
-        if composing {
-            if handled { showFormulaPinyin(client) }
-        } else {
-            showPinyin(client)
-        }
-        return handled
-    }
-
-    /// The input events so far (keys, modifiers, clicks): a Shift press and its release with nothing else between
-    /// are two apart (Squirrel's test).
-    private static func inputEventCount() -> UInt32 {
-        let types: [CGEventType] = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-        return types.reduce(UInt32(0)) { $0 &+ CGEventSource.counterForEventType(.combinedSessionState, eventType: $1) }
-    }
-
-    /// Shift alone, let go within half a second with nothing else pressed or clicked meanwhile (no chord, no
-    /// Shift-click), switches between Chinese and English, as macOS Pinyin's does. VisualTeX tells the tap itself:
-    /// RIME's ascii_composer is left out of it (its own Shift state could keep Shift from switching after a while,
-    /// 2026-11-10). With Caps Lock on, letters are English capitals and Shift switches nothing.
-    private func shiftChanged(_ event: NSEvent, client: IMKTextInput) -> Bool {
-        guard event.keyCode == 56 || event.keyCode == 60 else {
-            // another modifier: a chord, not a tap
-            if event.keyCode != 57 { shiftTap = nil }
-            return false
-        }
-        shiftChanges += 1
-        // this side's Shift (the device's left and right bits; .shift when the device sets neither)
-        let raw = event.modifierFlags.rawValue
-        let down = raw & 0x6 != 0 ? raw & (event.keyCode == 56 ? 0x2 : 0x4) != 0 : event.modifierFlags.contains(.shift)
-        if down {
-            // (with Command, Control, Option or Fn, or both Shifts: a chord)
-            let chord = !event.modifierFlags.intersection([.command, .control, .option, .function]).isEmpty || raw & 0x6 == 0x6
-            if chord {
-                shiftTap = nil
-            } else {
-                shiftTap = (keyCode: event.keyCode, at: event.timestamp, events: Self.inputEventCount())
-            }
-            return false
-        }
-        guard let tap = shiftTap, tap.keyCode == event.keyCode else {
-            shiftTap = nil
-            return false
-        }
-        shiftTap = nil
-        guard event.timestamp - tap.at < 0.5, Self.inputEventCount() &- tap.events <= 1 else { return false }
-        if event.modifierFlags.contains(.capsLock) {
-            InputLog.write("shift tap with Caps Lock on: no switch")
-            return false
-        }
-        switchChineseEnglish(client)
-        return false
-    }
-
-    /// Chinese ⇄ English: what is being spelled goes in as the letters typed (as macOS Pinyin's Shift does), the
-    /// mode changes and its indicator shows.
-    private func switchChineseEnglish(_ client: IMKTextInput) {
-        let session = ensureRimeSession()
-        guard session != 0 else {
-            InputLog.write("shift tap before RIME is ready")
-            return
-        }
-        let english = !RimeEngine.shared.isAsciiMode(session)
-        if RimeEngine.shared.state(session).isComposing, let typed = RimeEngine.shared.takeInput(session) {
-            if composing {
-                AppLink.shared.send(["t": "compose", "phase": "end", "text": typed])
-                formulaPinyin = false
-            } else if !typed.isEmpty {
-                client.insertText(typed, replacementRange: Self.noRange)
-                marked = ""
-                lastPinyinCommit = Date()
-            } else if !marked.isEmpty {
-                clearMarked(client)
-            }
-            CandidateWindow.shared.hide()
-        }
-        RimeEngine.shared.setAsciiMode(session, english)
-        shiftTaps += 1
-        ModeIndicator.shared.show(english ? "英" : "中", under: composing ? formulaCaret(client) : caretRect(client))
-    }
-
-    /// RIME's commit into the field, its spelling as marked text, its
-    /// candidates in the candidate window.
-    private func showPinyin(_ client: IMKTextInput) {
-        let engine = RimeEngine.shared
-        if let commit = engine.takeCommit(rimeSession), !commit.isEmpty {
-            client.insertText(commit, replacementRange: Self.noRange)
-            marked = ""
-            lastPinyinCommit = Date()
-        }
-        let state = engine.state(rimeSession)
-        if state.isComposing {
-            if marked.isEmpty { pinyinStart = caretRect(client) }
-            marked = state.preedit
-            let length = (state.preedit as NSString).length
-            client.setMarkedText(
-                NSAttributedString(string: state.preedit, attributes: markAttributes(length)),
-                selectionRange: NSRange(location: min(state.cursor, length), length: 0),
-                replacementRange: Self.noRange
-            )
-            placeCandidates(state, client: client)
-        } else {
-            if !marked.isEmpty { clearMarked(client) }
-            CandidateWindow.shared.hide()
-        }
-    }
-
-    /// The candidates under the start of what is being spelled, as the
-    /// system's input methods place them. Chrome and Electron report the
-    /// marked text's place a moment late (meanwhile a stale or a bogus one),
-    /// so the window starts under the caret as it was before the spelling
-    /// and follows the marked text once the field reports it on screen.
-    private func placeCandidates(_ state: RimeEngine.State, client: IMKTextInput) {
-        let show = { (line: NSRect) in
-            CandidateWindow.shared.show(state.candidates, labels: state.labels, highlighted: state.highlighted, under: line)
-        }
-        let fallback = isOnScreen(pinyinStart) ? pinyinStart : caretRect(client)
-        if let rect = markedRect(client), isOnScreen(rect), abs(rect.minY - fallback.minY) < max(rect.height * 3, 60) {
-            show(NSRect(x: rect.minX, y: rect.minY, width: 1, height: rect.height))
-        } else {
-            show(fallback)
-        }
-        let preedit = state.preedit
-        for delay in [0.05, 0.15] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, !self.composing, self.marked == preedit, let client = self.client(),
-                      let rect = self.markedRect(client), self.isOnScreen(rect),
-                      abs(rect.minY - fallback.minY) < max(rect.height * 3, 60)
-                else { return }
-                if delay > 0.1 { self.noteTextHeight(client, rect) }
-                show(NSRect(x: rect.minX, y: rect.minY, width: 1, height: rect.height))
-            }
-        }
-    }
-
-    private func isOnScreen(_ rect: NSRect) -> Bool {
-        rect.height > 0 && rect.height < 400
-            && NSScreen.screens.contains(where: { $0.frame.insetBy(dx: -2, dy: -2).intersects(rect) })
-    }
-
-    /// Pinyin in the formula's text: RIME's spelling is the editor's
-    /// composition (shown in the formula), its commit ends the composition
-    /// with the chosen characters, its candidates go under the formula's caret.
-    private func showFormulaPinyin(_ client: IMKTextInput) {
-        let engine = RimeEngine.shared
-        if let commit = engine.takeCommit(rimeSession), !commit.isEmpty {
-            AppLink.shared.send(["t": "compose", "phase": "end", "text": commit])
-            formulaPinyin = false
-        }
-        let state = engine.state(rimeSession)
-        if state.isComposing {
-            AppLink.shared.send(["t": "compose", "phase": "update", "text": state.preedit])
-            formulaPinyin = true
-            CandidateWindow.shared.show(state.candidates, labels: state.labels, highlighted: state.highlighted, under: formulaCaret(client))
-        } else {
-            if formulaPinyin { AppLink.shared.send(["t": "compose", "phase": "end", "text": ""]) }
-            formulaPinyin = false
-            CandidateWindow.shared.hide()
-        }
-    }
-
-    /// The formula's caret's line on the screen (AppKit coordinates): the
-    /// line of the formula's start moved to the caret (which may be on a
-    /// later line of the formula).
-    private func formulaCaret(_ client: IMKTextInput) -> NSRect {
-        var line = heldRect.height > 0 ? heldRect : caretRect(client)
-        line.origin.x += formulaCaretOffset
-        line.origin.y -= formulaCaretY
-        line.size.width = 1
-        return line
-    }
-
-    /// Chinese or English before the formula opened, to come back to.
-    private var asciiBeforeFormula: Bool?
-
-    private func setFormulaInputMode(on: Bool) {
-        let session = ensureRimeSession()
-        guard session != 0 else { return }
-        if on {
-            if asciiBeforeFormula == nil { asciiBeforeFormula = RimeEngine.shared.isAsciiMode(session) }
-            RimeEngine.shared.setAsciiMode(session, true)
-        } else if let ascii = asciiBeforeFormula {
-            RimeEngine.shared.setAsciiMode(session, ascii)
-            asciiBeforeFormula = nil
-        }
-    }
-
-    /// Drops pinyin being spelled in the formula (the formula closed).
-    private func dropFormulaPinyin() {
-        guard formulaPinyin || RimeEngine.shared.state(rimeSession).isComposing else { return }
-        RimeEngine.shared.clear(rimeSession)
-        if formulaPinyin { AppLink.shared.send(["t": "compose", "phase": "end", "text": ""]) }
-        formulaPinyin = false
-        CandidateWindow.shared.hide()
-    }
-
-    /// What is being spelled goes into the field as it is (focus moved, the
-    /// input source changed, a formula opens).
-    private func finishPinyin(_ client: IMKTextInput) {
-        guard rimeSession != 0 else { return }
-        let state = RimeEngine.shared.state(rimeSession)
-        guard state.isComposing else { return }
-        if let text = RimeEngine.shared.commitComposition(rimeSession), !text.isEmpty {
-            client.insertText(text, replacementRange: Self.noRange)
-            lastPinyinCommit = Date()
-            InputLog.write("pinyin finished length=\((text as NSString).length)")
-        } else {
-            clearMarked(client)
-        }
-        marked = ""
-        CandidateWindow.shared.hide()
-    }
-
     /// The field ends the composition itself (a click elsewhere in it): it
-    /// gets the formula's text, not the anchor.
+    /// gets the formula's text, not the held space.
     override func commitComposition(_ sender: Any!) {
-        let client = sender as? IMKTextInput
         InputLog.write("commitComposition composing=\(composing) text=\(formulaText.count)")
-        if !composing, let client {
-            finishPinyin(client)
-            return
-        }
-        if composing {
-            if let client { endedByField(client) }
-        }
+        if composing, let client = sender as? IMKTextInput { endedByField(client) }
     }
 
     /// The field ended the composition: the formula's text goes in where the
@@ -497,9 +173,15 @@ final class VTInputController: IMKInputController {
         holdGeneration += 1
         space = FormulaSpace.Layout(text: "", starts: [], counts: [])
         model = nil
-        setFormulaInputMode(on: false)
         composing = false
+        KeyGrab.shared.stop()
         AppLink.shared.send(["t": "forced"])
+    }
+
+    private func isOnScreen(_ rect: NSRect) -> Bool {
+        guard rect.height > 0, rect.minX.isFinite, rect.minY.isFinite else { return false }
+        let point = NSPoint(x: rect.minX, y: rect.midY)
+        return NSScreen.screens.contains { $0.frame.insetBy(dx: -40, dy: -40).contains(point) }
     }
 
     /// The held space, where the field last had it, replaced by `text` when
@@ -675,28 +357,32 @@ final class VTInputController: IMKInputController {
 
     static func receive(_ message: [String: Any]) {
         guard let type = message["t"] as? String else { return }
+        if let application = message["app"] as? String, !application.isEmpty { shortcutApplication = application }
         guard let controller = active, let client = controller.client() else {
             InputLog.write("message \(type) without an active field")
+            // (the shortcut asks where the caret is: no field of this input method has the keyboard)
+            if type == "caret" { AppLink.shared.send(["t": "nofield"]) }
+            KeyGrab.shared.stop()
             return
         }
         switch type {
         case "disconnected":
             if controller.composing {
                 controller.clearMarked(client)
-                controller.setFormulaInputMode(on: false)
                 controller.composing = false
             }
+            KeyGrab.shared.stop()
+        case "caret":
+            // VisualTeX's shortcut: where the formula would go
+            var reply = controller.geometry(client)
+            reply["t"] = "geometry"
+            reply["client"] = controller.clientID(client)
+            AppLink.shared.send(reply)
         case "session":
-            // VisualTeX opened (the shortcut) or closed a formula for this field;
-            // what was being spelled is typed first.
+            // VisualTeX opened (the shortcut) or closed a formula for this field
             let on = message["on"] as? Bool ?? false
-            if on { controller.finishPinyin(client) } else { controller.dropFormulaPinyin() }
-            // A formula starts in English (its letters are variables); Shift
-            // switches to Chinese for text. The input mode comes back after.
-            controller.setFormulaInputMode(on: on)
             controller.composing = on
-            controller.formulaTextMode = false
-            controller.formulaStart = controller.composing ? controller.caretRect(client) : .zero
+            controller.formulaStart = on ? controller.caretRect(client) : .zero
             controller.heldRect = .zero
             controller.holdGeneration += 1
             controller.pieceWidths = []
@@ -707,38 +393,24 @@ final class VTInputController: IMKInputController {
             controller.anchorLine = nil
             controller.lastCharacterLine = nil
             controller.reholds = 0
-            controller.holdDeferred = false
             controller.heldRange = NSRange(location: NSNotFound, length: 0)
             controller.heldText = ""
             controller.lostPolls = 0
             if on { controller.takeOutLeftovers(client) }
-            controller.formulaCaretOffset = 0
-            controller.formulaCaretY = 0
             controller.space = FormulaSpace.Layout(text: "", starts: [], counts: [])
             controller.model = nil
-            // Pinyin that went into the field a moment ago (finished just above, or chosen right
-            // before the shortcut): Chrome and Electron still answer the caret where the pinyin was
-            // spelled, not after it. The space is held once the field has its caret after the pinyin.
-            let sincePinyin = Date().timeIntervalSince(controller.lastPinyinCommit)
-            let before = controller.composing ? " \(controller.fieldState(client))" : ""
-            if controller.composing, sincePinyin < 0.06 {
-                InputLog.write("pinyin \(Int(max(0, sincePinyin) * 1000)) ms ago: the space is held in a moment")
-                controller.holdLater(0.06 - max(0, sincePinyin)) { controller, client in
-                    controller.formulaStart = controller.caretRect(client)
-                    controller.openSpace(client)
-                }
-            } else if controller.composing {
+            let before = on ? " \(controller.fieldState(client))" : ""
+            if on {
+                // the formula's keys from now on (but the chords VisualTeX has for itself)
+                KeyGrab.shared.start(skipping: message["skip"] as? [[Int]] ?? [])
                 controller.openSpace(client)
-            } else if !controller.marked.isEmpty {
-                controller.clearMarked(client)
+            } else {
+                KeyGrab.shared.stop()
+                if !controller.marked.isEmpty { controller.clearMarked(client) }
             }
-            InputLog.write("session \(controller.composing ? "on" : "off")\(before)")
-        case "mode":
-            controller.formulaTextMode = message["text"] as? Bool ?? false
+            InputLog.write("session \(on ? "on" : "off")\(before)")
         case "inline":
             controller.formulaText = message["text"] as? String ?? ""
-            controller.formulaCaretOffset = CGFloat(message["caretX"] as? Double ?? 0)
-            controller.formulaCaretY = CGFloat(message["caretY"] as? Double ?? 0)
             if let pieces = message["pieces"] as? [Double], controller.composing {
                 let widths = pieces.map { CGFloat(max(0, min($0, 20000))) }
                 if widths != controller.pieceWidths {
@@ -747,13 +419,9 @@ final class VTInputController: IMKInputController {
                 }
             }
         case "commit":
-            controller.commit(message["text"] as? String ?? "", returnTo: message["returnTo"] as? String, client: client)
+            controller.commit(message["text"] as? String ?? "", client: client)
         case "cancel":
-            controller.cancel(returnTo: message["returnTo"] as? String, client: client)
-        case "caret":
-            var reply = controller.geometry(client)
-            reply["t"] = "geometry"
-            AppLink.shared.send(reply)
+            controller.cancel(client: client)
         default:
             break
         }
@@ -802,7 +470,7 @@ final class VTInputController: IMKInputController {
     /// The field holds the formula's pieces (FormulaSpace). Where they lie is told to VisualTeX at
     /// once, as the model has it; what the field answers afterwards is taken in (poll).
     private func hold(_ client: IMKTextInput) {
-        guard !holdDeferred, var model else { return }
+        guard var model else { return }
         // held short of the formula by as much as the widths may be off: a filler measured over a run
         // of n fillers is off by up to about 0.7/n point a filler (the field gives places in whole
         // points), an estimated one by 5%, a joint not measured by a quarter of its width
@@ -824,11 +492,7 @@ final class VTInputController: IMKInputController {
         marked = layout.text
         // One marked text a key (set twice a key, the field's underline and caret moved twice a key
         // and each key flashed, 2026-11-10).
-        client.setMarkedText(
-            Self.heldString(layout.text),
-            selectionRange: NSRange(location: 0, length: (FormulaSpace.anchor as NSString).length),
-            replacementRange: Self.noRange
-        )
+        client.setMarkedText(Self.heldString(layout.text), selectionRange: Self.heldSelection, replacementRange: Self.noRange)
         model.hold(layout)
         self.model = model
         // (the first time, once the field has told its line, or in a moment: poll)
@@ -1002,25 +666,17 @@ final class VTInputController: IMKInputController {
         AppLink.shared.send(message)
     }
 
+    /// The selection in the held space: none, at its start. The field's own caret then stands at the
+    /// formula's start and stays there whatever is typed (set after the space, it moved with every
+    /// key and showed beside the formula's caret until VisualTeX had covered it again).
+    static var heldSelection = NSRange(location: 0, length: 0)
+
     /// The held space as marked text: with the thin underline. (Given no
     /// attribute the field draws a thick one. Its colour is the system's,
     /// whatever colour is given: an underline nobody sees cannot be asked
     /// for, 2026-11-10.)
     private static func heldString(_ text: String) -> NSAttributedString {
         NSAttributedString(string: text, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue])
-    }
-
-    /// Holds the space in a moment; nothing else holds it meanwhile (the
-    /// formula's pieces that come are held then).
-    private func holdLater(_ delay: TimeInterval, _ hold: @escaping (VTInputController, IMKTextInput) -> Void) {
-        holdDeferred = true
-        let generation = holdGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.holdDeferred, generation == self.holdGeneration else { return }
-            self.holdDeferred = false
-            guard self.composing, let client = self.client() else { return }
-            hold(self, client)
-        }
     }
 
     /// What the field tells of its marked text and selection, for the log:
@@ -1053,60 +709,32 @@ final class VTInputController: IMKInputController {
         if characterRect(client, length) == nil { Self.lateClients.insert(id) }
     }
 
-    private func commit(_ text: String, returnTo: String?, client: IMKTextInput) {
-        dropFormulaPinyin()
-        setFormulaInputMode(on: false)
-        formulaTextMode = false
+    private func commit(_ text: String, client: IMKTextInput) {
+        KeyGrab.shared.stop()
         notePastEnd(client)
         client.insertText(text, replacementRange: Self.noRange)
-        InputLog.write("commit length=\((text as NSString).length) return=\(returnTo ?? "-")")
+        InputLog.write("commit length=\((text as NSString).length)")
         marked = ""
         formulaText = ""
         composing = false
         space = FormulaSpace.Layout(text: "", starts: [], counts: [])
         model = nil
-        hand(client, to: returnTo)
     }
 
-    private func cancel(returnTo: String?, client: IMKTextInput) {
-        dropFormulaPinyin()
-        setFormulaInputMode(on: false)
-        formulaTextMode = false
+    private func cancel(client: IMKTextInput) {
+        KeyGrab.shared.stop()
         notePastEnd(client)
         clearMarked(client)
         formulaText = ""
         composing = false
         space = FormulaSpace.Layout(text: "", starts: [], counts: [])
         model = nil
-        InputLog.write("cancel return=\(returnTo ?? "-")")
-        hand(client, to: returnTo)
-    }
-
-    /// The field's own text input system switches input source: at once,
-    /// unlike a selection made from another process.
-    private func hand(_ client: IMKTextInput, to source: String?) {
-        guard let source, !source.isEmpty, source != Bundle.main.bundleIdentifier else { return }
-        client.selectMode(source)
+        InputLog.write("cancel")
     }
 
     private func clearMarked(_ client: IMKTextInput) {
         marked = ""
         client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: Self.noRange)
-    }
-
-    func markAttributes(_ length: Int) -> [NSAttributedString.Key: Any] {
-        var attributes: [NSAttributedString.Key: Any] = [:]
-        if let marks = mark(forStyle: kTSMHiliteSelectedRawText, at: NSRange(location: 0, length: length)) {
-            for (key, value) in marks {
-                if let key = key as? NSAttributedString.Key {
-                    attributes[key] = value
-                } else if let key = key as? String {
-                    attributes[NSAttributedString.Key(key)] = value
-                }
-            }
-        }
-        if attributes.isEmpty { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-        return attributes
     }
 
     /// A character of the marked text (by its index in it) as the field
@@ -1201,8 +829,10 @@ final class VTInputController: IMKInputController {
         [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)]
     }
 
+    /// The field's application (its bundle identifier): as the field tells it, else the one
+    /// VisualTeX's shortcut was pressed in.
     private func clientID(_ sender: Any?) -> String {
-        (sender as? IMKTextInput)?.bundleIdentifier() ?? "?"
+        (sender as? IMKTextInput)?.bundleIdentifier() ?? Self.shortcutApplication ?? "?"
     }
 }
 
