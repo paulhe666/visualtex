@@ -170,6 +170,19 @@ function matrixQuantity(small: boolean): PackageCommand {
 }
 
 /**
+ * physics' matrices with their brackets fixed (\pmqty, \bmqty, \vmqty, \Pmqty, \mdet and the small ones): `m`, an
+ * ord, the matrix environment the argument's slot (as plain macros, `#1` inside the environment, their slot marker
+ * fell apart at the cells and no cell could be reached).
+ */
+function bracketMatrix(environment: string, open = '', close = ''): PackageCommand {
+  return (c, a) => {
+    const x = a.m(c);
+    const matrix = matrixSlot(a, x, environment);
+    return `\\mathord{${open ? `{\\left${open}{${matrix}}\\right${close}}` : matrix}}`;
+  };
+}
+
+/**
  * An edited matrix slot: the environment's content; anything typed beside
  * the matrix in its slot joins its first or last cell.
  */
@@ -181,6 +194,20 @@ macroArgumentWriters.matrix = (latex, kind) => {
   const inner = latex.slice(open + `\\begin{${environment}}`.length, close);
   return latex.slice(0, open).trim() + inner + latex.slice(close + `\\end{${environment}}`.length).trim();
 };
+
+/**
+ * physics \qq (\qqtext): `m`, a text between quads; the slot holds the \text group (as a plain macro, `#1` inside
+ * \text, its slot marker was read as text and the argument could not be reached).
+ */
+const quadText: PackageCommand = (c, a) => {
+  const x = a.m(c);
+  a.kinds[x - 1] = 'text';
+  return `\\quad${a.slot(x, `\\text{${a.source(x)}}`)}\\quad `;
+};
+
+/** An edited text slot: the text of its \text groups (what was typed beside one, at its edge, joins the text). */
+macroArgumentWriters.text = (latex) =>
+  latex.replace(/\\text\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g, '$1').trim();
 
 // ------------------------------------------------------------ derivatives --
 const DIFF = '\\mathrm{d}';
@@ -568,6 +595,20 @@ const PACKAGE_COMMANDS: Record<string, PackageCommand> = {
   mqty: matrixQuantity(false),
   smallmatrixquantity: matrixQuantity(true),
   smqty: matrixQuantity(true),
+  qq: quadText,
+  qqtext: quadText,
+  pmqty: bracketMatrix('pmatrix'),
+  Pmqty: bracketMatrix('matrix', '\\lgroup', '\\rgroup'),
+  bmqty: bracketMatrix('bmatrix'),
+  vmqty: bracketMatrix('vmatrix'),
+  matrixdeterminant: bracketMatrix('vmatrix'),
+  mdet: bracketMatrix('vmatrix'),
+  spmqty: bracketMatrix('smallmatrix', '(', ')'),
+  sPmqty: bracketMatrix('smallmatrix', '\\lgroup', '\\rgroup'),
+  sbmqty: bracketMatrix('smallmatrix', '[', ']'),
+  svmqty: bracketMatrix('smallmatrix', '\\lvert', '\\rvert'),
+  smallmatrixdeterminant: bracketMatrix('smallmatrix', '\\lvert', '\\rvert'),
+  smdet: bracketMatrix('smallmatrix', '\\lvert', '\\rvert'),
   // physics: vectors
   vectorbold: vectorStyle((x) => `\\mathbf{${x}}`, (x) => `\\boldsymbol{${x}}`),
   vb: vectorStyle((x) => `\\mathbf{${x}}`, (x) => `\\boldsymbol{${x}}`),

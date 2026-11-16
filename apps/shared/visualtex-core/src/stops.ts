@@ -37,6 +37,11 @@ function isEmptySlotStart(atom: CoreAtom): boolean {
   return items.length === 0 || (items.length === 1 && isPlaceholder(items[0]));
 }
 
+/** A structure that captures the selection but whose body is still edited in place: accents and \mathop. */
+function hasEditableBody(atom: CoreAtom): boolean {
+  return atom.type === "accent" || atom.command === "\\mathop";
+}
+
 export function isAllowedStop(model: CoreModel, offset: number): boolean {
   const atom = model.at(offset);
   if (!atom) return false;
@@ -44,14 +49,19 @@ export function isAllowedStop(model: CoreModel, offset: number): boolean {
   if (isPlaceholder(atom) || atom.type === "prompt") return false;
   // a macro (\ket, \braket, ...) is one structure: only its arguments have stops
   if (atom.type === "macro-argument" || inMacroInternals(atom)) return false;
-  // structures that capture the selection (accents, boxes, ...) have no inner
-  // stops, except an empty slot inside accents, which keys reach as clicks do
-  const capturing: CoreAtom[] = [];
-  for (let p = atom.parent; p; p = p.parent) if (p.captureSelection) capturing.push(p);
-  if (capturing.length > 0 && !(capturing.every((p) => p.type === "accent") && isEmptySlotStart(atom))) return false;
-  // structures that skip their inner boundaries (accents, ...) still have
-  // the one stop of an empty slot
-  if (atom.parent?.skipBoundary && !isEmptySlotStart(atom)) {
+  // structures that capture the selection (\not, boxes, phantoms, ...) have no inner stops. Not counted: an accent
+  // or \mathop, whose body is a slot as any structure's (\hat{a} could be typed but never edited again), and what a
+  // macro's own expansion wraps around one of its arguments (\mel's \smash, \va's \vec): its arguments are its slots
+  // and always reachable
+  let inExpansion = false;
+  for (let p = atom.parent; p; p = p.parent) {
+    if (p.type === "macro-argument") inExpansion = true;
+    else if (p.type === "macro") inExpansion = false;
+    else if (p.captureSelection && !inExpansion && !hasEditableBody(p)) return false;
+  }
+  // structures that skip their inner boundaries still have the one stop of an
+  // empty slot (an accent's or an over/under's body, \underarc's, has all its stops)
+  if (atom.parent?.skipBoundary && atom.parent.type !== "accent" && atom.parent.type !== "overunder" && !isEmptySlotStart(atom)) {
     if (!atom.isFirstSibling && atom.isLastSibling) return false;
     if (atom.type === "first") return false;
   }

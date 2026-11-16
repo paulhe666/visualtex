@@ -81,9 +81,9 @@ Order is reading order, the same for every key. Decisions marked ★ change toda
 | big operator with limits (∑ ∫ lim) | lower, upper | upper above lower | marker for inserted templates, else drop | |
 | root `\sqrt[n]{x}` | index, radicand | — | index: drop; radicand: marker | one order for arrows and Tab ★ |
 | `\left…\right` | body | — | marker | |
-| accents, over/under (`\hat`, `\overline`, `\overset`, `\underbrace`) | body, then above/below | above/below body | marker | placeholder inside an accent reachable by keys and clicks alike ★ |
+| accents, over/under (`\hat`, `\overline`, `\overset`, `\underbrace`, `\underarc`), `\mathop` | body, then above/below | above/below body | marker | the body is a slot with all its stops, filled or empty (2026-11-15: `\hat{a}` could be typed but never edited again) ★ |
 | array, matrix, cases, aligned | cells row by row | rows | marker | last-cell Tab adds a row and keeps the column for align/split ★ |
-| macro (`\ket`, `\bra`, `\braket`, …) | its arguments | — | marker | atomic: one Tab from an argument leaves the macro; no stops inside its expansion ★ |
+| macro (`\ket`, `\bra`, `\braket`, …) | its arguments | — | marker | atomic: one Tab from an argument leaves the macro; no stops inside its expansion, but every argument is reachable whatever the expansion wraps it in (`\mel`'s `\smash`, `\va`'s `\vec`) ★ |
 | text run (`\text{…}`) | — (items are characters) | — | — | caret inside the run is text mode; at either edge math (§6.6) |
 | top level | — | — | — | |
 
@@ -122,7 +122,7 @@ The engine already places every glyph in TeX's layout. It additionally returns a
   field's box). The point is tested along a slot's atoms in order (where two rectangles meet, the first one's: a base
   takes the pixel or two where its scripts start); in an atom its slots come first, in their order; when no slot
   holds the point the middle of the atom's rectangle decides: the stop after it (right half) or before it (left
-  half). A stop the caret may not take (inside an accent's base, a macro's expansion) becomes the nearest enclosing
+  half). A stop the caret may not take (a macro's expansion, a phantom) becomes the nearest enclosing
   atom's stop before or after it. Nothing in the row: the formula's first stop if the point is left of it, else its
   last.
 
@@ -281,7 +281,7 @@ DOM, style geometry.
 4. ArrowDown in a lone superscript goes back to the baseline instead of creating an empty subscript (`_` still
    creates one).
 5. The fraction-order setting applies to Tab as well.
-6. A placeholder inside an accent is reachable by keys exactly when it is reachable by clicks.
+6. An accent's body (and `\mathop`'s, an over/under's) is a slot like any other: reachable by keys and clicks, filled or empty (2026-11-15).
 7. Last-cell Tab in align/split keeps the column of the new row.
 8. Space is a visible space `\ ` everywhere (a word space beside text); it never moves the caret. Besides that it only
    chooses a candidate, confirms a quick escape and finishes a function name. Leaving a structure is Tab, Right or its
