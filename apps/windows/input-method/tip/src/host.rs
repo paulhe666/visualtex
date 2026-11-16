@@ -16,7 +16,7 @@ use crate::{log, service, CLSID_TEXT_SERVICE, GUID_PROFILE, LANGID_ZH_CN};
 use std::cell::{Cell, RefCell};
 use windows::core::{w, GUID};
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{
     GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN,
 };
@@ -77,7 +77,16 @@ pub(crate) fn take_pending() -> u64 {
 }
 
 fn profiles() -> Option<ITfInputProcessorProfileMgr> {
-    unsafe { CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER) }.ok()
+    let created = unsafe { CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER) };
+    if let Ok(manager) = created {
+        return Some(manager);
+    }
+    // a window thread that never started COM (it has no TSF yet either): as a single-threaded
+    // apartment, which is what a window thread is
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER).ok()
+    }
 }
 
 /// The keyboard input method this thread types with now.
@@ -301,6 +310,6 @@ pub(crate) fn ensure() {
     };
     if let Ok(created) = created {
         WINDOW.with(|window| window.set(created.0 as isize));
-        log::write("host window made");
+        log::write(concat!("host window made (input method ", env!("CARGO_PKG_VERSION"), ")"));
     }
 }

@@ -110,8 +110,10 @@ final class VTFormulaController: IMKInputController {
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         Self.active = self
-        InputLog.write("activate client=\(clientID(sender)) linked=\(AppLink.shared.connect())")
-        AppLink.shared.send(["t": "activate", "client": clientID(sender)])
+        // (the field's application as it tells it: not the shortcut's application, which may be another)
+        let application = (sender as? IMKTextInput)?.bundleIdentifier() ?? "?"
+        InputLog.write("activate client=\(application) linked=\(AppLink.shared.connect())")
+        AppLink.shared.send(["t": "activate", "client": application])
         // a held space this field kept as its text when it lost the keyboard
         if Self.leftovers[clientID(sender)]?.isEmpty == false {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in

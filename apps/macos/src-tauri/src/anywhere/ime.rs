@@ -41,6 +41,8 @@ const OLD_EXECUTABLE: &str = "VisualTeXInput";
 /// Where macOS records the third-party input sources the user has enabled.
 const ENABLED_DOMAIN: &str = "com.apple.inputsources";
 const ENABLED_KEY: &str = "AppleEnabledThirdPartyInputSources";
+/// (application data folder) when this input method was first found selected.
+const SELECTED_SINCE_FILE: &str = "input-method-selected-since";
 /// input-method/Sources/AppLink.swift
 const SOCKET_NAME: &str = "anywhere-ime.sock";
 pub(super) const APP_IDENTIFIER: &str = "com.visualtex.studio";
@@ -232,8 +234,25 @@ pub(super) fn is_selected() -> bool {
     is_linked() && SELECTED.load(Ordering::Relaxed)
 }
 
-pub(super) fn note_selected(selected: bool) {
+pub(super) fn note_selected(app: &AppHandle, selected: bool) {
     SELECTED.store(selected, Ordering::Relaxed);
+    // Since when: an application that was running before does not have the input method (macOS
+    // gives an application its palette input methods when it starts) until it is opened again.
+    if selected {
+        if let Ok(directory) = app.path().app_data_dir() {
+            let marker = directory.join(SELECTED_SINCE_FILE);
+            if !marker.exists() {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|time| time.as_secs()).unwrap_or(0);
+                let _ = std::fs::write(marker, now.to_string());
+            }
+        }
+    }
+}
+
+/// When the input method became one of the selected input sources (seconds since 1970).
+pub(super) fn selected_since(app: &AppHandle) -> Option<u64> {
+    let directory = app.path().app_data_dir().ok()?;
+    std::fs::read_to_string(directory.join(SELECTED_SINCE_FILE)).ok()?.trim().parse().ok()
 }
 
 /// The third-party input sources macOS has as enabled, with `add` among them (as System Settings
@@ -520,7 +539,7 @@ fn read_messages(app: &AppHandle, id: u64, stream: UnixStream) {
         })
         .unwrap_or(false);
     if current {
-        note_selected(false);
+        SELECTED.store(false, Ordering::Relaxed);
         super::log(&format!("input method link closed ({id})"));
         super::input_method_message(app, &serde_json::json!({ "t": "disconnected" }));
     }

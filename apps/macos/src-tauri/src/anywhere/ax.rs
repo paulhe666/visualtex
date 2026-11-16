@@ -187,11 +187,16 @@ pub(super) fn frontmost_bundle() -> Option<String> {
         .map(|identifier| identifier.to_string())
 }
 
-/// The frontmost application's name (the strip names it when it must be
-/// reopened).
-pub(super) fn frontmost_name() -> Option<String> {
-    let (_, name) = frontmost_application();
-    (!name.is_empty()).then_some(name)
+/// The frontmost application's name and when its process started (seconds since 1970).
+pub(super) fn frontmost_started() -> Option<(String, u64)> {
+    let (pid, name) = frontmost_application();
+    if pid <= 0 || name.is_empty() {
+        return None;
+    }
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    let read = unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&mut info as *mut libc::proc_bsdinfo).cast(), size) };
+    (read == size).then_some((name, info.pbi_start_tvsec))
 }
 
 fn frontmost_application() -> (i32, String) {

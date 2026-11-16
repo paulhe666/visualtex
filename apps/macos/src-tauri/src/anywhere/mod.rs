@@ -179,6 +179,10 @@ struct Activation {
     line_descent: Option<f64>,
     /// The field's background (#rrggbbaa), as read off the screen.
     background_color: Option<String>,
+    /// The field's application has been running since before the input method was one of the
+    /// input sources (macOS gives an application its input methods when it starts): the strip
+    /// names it, to be reopened; then its formulas are typed in its line.
+    reopen_app: Option<String>,
 }
 
 /// How the field's text looks where the formula goes (input method).
@@ -262,6 +266,9 @@ struct Session {
     /// The frontmost application (bundle identifier) when the shortcut was
     /// pressed: the field the input method must answer from.
     field_app: Option<String>,
+    /// The strip's activation: the field's application to reopen (see
+    /// Activation::reopen_app).
+    reopen_app: Option<String>,
 }
 
 /// How the formula reaches the application. Paste: the strip sits on the
@@ -315,6 +322,7 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     color_from_screen: 0,
     strip_source: None,
     field_app: None,
+    reopen_app: None,
 });
 
 /// The application whose field has VisualTeX's input method now (its bundle
@@ -426,7 +434,7 @@ fn toggle(app: &AppHandle, display: bool) {
             if ime::installed() {
                 begin_input_method(&app, display);
             } else {
-                activate(&app, display);
+                activate(&app, display, None);
             }
         });
     if let Err(error) = spawned {
@@ -434,9 +442,10 @@ fn toggle(app: &AppHandle, display: bool) {
     }
 }
 
-/// The pasting strip: what has the keyboard is no text field the input method reaches.
+/// The pasting strip: what has the keyboard is no text field the input method reaches
+/// (`reopen_app`: because its application must be opened again first, see Activation::reopen_app).
 #[cfg(target_os = "macos")]
-fn activate(app: &AppHandle, display: bool) {
+fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
     let started = std::time::Instant::now();
     let trusted = ax::is_trusted();
     if !trusted {
@@ -468,6 +477,7 @@ fn activate(app: &AppHandle, display: bool) {
         session.phase = Phase::Activating;
         session.target = Some(target.clone());
         session.delivery = Delivery::Paste;
+        session.reopen_app = reopen_app;
         if strip_source.is_some() {
             session.strip_source = strip_source;
         }
@@ -505,6 +515,7 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
         line_height: session.field_text.line_height,
         line_descent: session.field_text.line_descent,
         background_color: session.field_text.background_color.clone(),
+        reopen_app: session.reopen_app.clone().filter(|_| session.delivery == Delivery::Paste),
     })
 }
 
@@ -589,7 +600,15 @@ fn fall_back_to_paste(app: &AppHandle, generation: u64, display: bool) {
         session.phase = Phase::Hidden;
         session.delivery = Delivery::Paste;
     }
-    activate(app, display);
+    // An application running since before the input method was an input source has not got it.
+    let reopen = match (ax::frontmost_started(), ime::selected_since(app)) {
+        (Some((name, started)), Some(since)) if started < since => Some(name),
+        _ => None,
+    };
+    if let Some(name) = reopen.as_ref() {
+        log(&format!("gen={generation}: {name} has been running since before the input method: to be reopened"));
+    }
+    activate(app, display, reopen);
 }
 
 /// The input method's report of the field: where the formula goes (the
@@ -764,7 +783,7 @@ pub(crate) fn input_method_message(app: &AppHandle, message: &serde_json::Value)
     match kind {
         "hello" | "selected" => {
             let selected = message.get("selected").and_then(|value| value.as_bool()).unwrap_or(false);
-            ime::note_selected(selected);
+            ime::note_selected(app, selected);
             log(&format!(
                 "input method {} selected={selected}",
                 message.get("version").and_then(|value| value.as_str()).unwrap_or("")
