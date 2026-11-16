@@ -53,6 +53,14 @@ const FAST_POLLS: u32 = 30;
 /// VisualTeX did not open the formula it asked for (it went away, the request was stale).
 const OPEN_TIMER: usize = 5;
 const OPEN_WAIT_MS: u32 = 2500;
+/// A field typing through IMM32 (the standard edit controls) ends whatever is being composed when
+/// its thread's input method changes, and it hears of the change a moment after the text service is
+/// up: a formula's composition it ends within this of the formula's opening, with no key or click
+/// of the user's, is started again a moment later.
+const RESTART_TIMER: usize = 6;
+const RESTART_DELAY_MS: u32 = 30;
+const RESTART_WITHIN: std::time::Duration = std::time::Duration::from_millis(700);
+const MAX_RESTARTS: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Phase {
@@ -81,6 +89,9 @@ struct Shared {
     phase: Cell<Phase>,
     /// The formula VisualTeX asked for (its messages carry it).
     generation: Cell<u64>,
+    /// When this formula opened, and how often its composition was started again (RESTART_TIMER).
+    opened_at: Cell<Option<std::time::Instant>>,
+    restarts: Cell<u32>,
     formula: RefCell<Option<ITfComposition>>,
     formula_context: RefCell<Option<ITfContext>>,
     /// The formula's field types through IMM32 (a transitory context).
@@ -155,6 +166,8 @@ fn begin(shared: &Rc<Shared>, generation: u64) {
     }
     shared.generation.set(generation);
     shared.phase.set(Phase::Opening);
+    shared.opened_at.set(Some(std::time::Instant::now()));
+    shared.restarts.set(0);
     shared.hold.set(false);
     shared.formula_text.borrow_mut().clear();
     shared.piece_widths.borrow_mut().clear();
@@ -180,6 +193,7 @@ fn begin(shared: &Rc<Shared>, generation: u64) {
 fn close(shared: &Rc<Shared>, tell: Option<&'static str>) {
     stop_polling();
     kill_timer(OPEN_TIMER);
+    kill_timer(RESTART_TIMER);
     shared.phase.set(Phase::Idle);
     if let Some(tell) = tell {
         shared.send(json!({ "t": tell, "client": client_name() }));
@@ -242,12 +256,25 @@ fn start_formula(shared: &Rc<Shared>) {
         *state.formula.borrow_mut() = Some(composition);
         *state.formula_context.borrow_mut() = Some(writer.clone());
         state.formula_transitory.set(transitory);
+        let variant = std::env::var("VTX_TIP_VARIANT").unwrap_or_default();
+        if !variant.is_empty() {
+            log::write(&format!("DEBUG variant={variant}"));
+        }
         if transitory {
             // a field typing through IMM32 reports made-up rectangles for parts of the
             // composition: the formula stays on one line there, over a zero-width anchor
-            unsafe { range.SetText(cookie, 0, IMM_ANCHOR)? };
-            set_attribute_atom(state.anchor_atom.get(), &writer, cookie, &range);
-            select(&writer, cookie, &range)?;
+            let text: &[u16] = if variant.contains("space") { &[0x200A, 0x2800] } else if variant.contains("letter") { &[0x0061] } else { IMM_ANCHOR };
+            unsafe { range.SetText(cookie, 0, text)? };
+            if !variant.contains("noattr") {
+                set_attribute_atom(if variant.contains("spaceattr") { state.space_atom.get() } else { state.anchor_atom.get() }, &writer, cookie, &range);
+            }
+            if variant.contains("selend") {
+                let end = unsafe { range.Clone()? };
+                unsafe { end.Collapse(cookie, TF_ANCHOR_END)? };
+                select(&writer, cookie, &end)?;
+            } else if !variant.contains("nosel") {
+                select(&writer, cookie, &range)?;
+            }
         } else {
             let caret = range_rect(&writer, cookie, &range);
             let window = view_window(&writer);
@@ -269,7 +296,7 @@ fn start_formula(shared: &Rc<Shared>) {
         state.calibrations.set(0);
         state.polls.set(0);
         unsafe {
-            SetTimer(Some(host::window()), POLL_TIMER, 16, None);
+            SetTimer(Some(host::window()), POLL_TIMER, if variant.contains("latepoll") { 600 } else { 16 }, None);
         }
         log::write(if transitory { "formula composition started (IMM32 field)" } else { "formula composition started" });
         Ok(())
@@ -628,6 +655,15 @@ pub(crate) fn window_message(message: u32, wparam: WPARAM, lparam: LPARAM) -> bo
                         close(&shared, None);
                     }
                 }
+                RESTART_TIMER => {
+                    kill_timer(RESTART_TIMER);
+                    if shared.phase.get() == Phase::Composing && shared.formula.borrow().is_none() {
+                        *shared.space.borrow_mut() = space::Layout::default();
+                        start_formula(&shared);
+                        // (the pieces VisualTeX told meanwhile)
+                        hold(&shared);
+                    }
+                }
                 _ => return false,
             }
             true
@@ -872,6 +908,26 @@ impl ITfCompositionSink_Impl for CompositionSink_Impl {
         }
         shared.formula.borrow_mut().take();
         shared.formula_context.borrow_mut().take();
+        // The field heard of its thread's new input method and dropped what was being composed (see
+        // RESTART_TIMER): the formula's space is taken out and held again in a moment.
+        let just_opened = shared.opened_at.get().map(|at| at.elapsed() < RESTART_WITHIN).unwrap_or(false);
+        if just_opened && shared.formula_transitory.get() && shared.restarts.get() < MAX_RESTARTS {
+            shared.restarts.set(shared.restarts.get() + 1);
+            stop_polling();
+            if let Some(range) = composition.as_ref().and_then(|composition| unsafe { composition.GetRange() }.ok()) {
+                if let Ok(context) = unsafe { range.GetContext() } {
+                    clear_attribute(&context, cookie, &range);
+                }
+                unsafe {
+                    let _ = range.SetText(cookie, 0, &[]);
+                }
+            }
+            log::write(&format!("the field ended the composition as the formula opened: started again ({})", shared.restarts.get()));
+            unsafe {
+                SetTimer(Some(host::window()), RESTART_TIMER, RESTART_DELAY_MS, None);
+            }
+            return Ok(());
+        }
         if let Some(composition) = composition.as_ref() {
             if let Ok(range) = unsafe { composition.GetRange() } {
                 let text = utf16(&shared.formula_text.borrow());
@@ -883,7 +939,7 @@ impl ITfCompositionSink_Impl for CompositionSink_Impl {
                 }
             }
         }
-        log::write("formula composition terminated by the field");
+        log::write(&format!("formula composition terminated by the field (polls={})", shared.polls.get()));
         close(shared, Some("forced"));
         Ok(())
     }

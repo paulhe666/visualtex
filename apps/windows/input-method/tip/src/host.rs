@@ -18,7 +18,7 @@ use windows::core::{w, GUID};
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{
-    GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN,
+    GetModuleFileNameW, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
@@ -262,10 +262,27 @@ extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lpara
     }
 }
 
-/// The class of the window, with the protocol's number: the app looks for it by name in the field's
-/// thread, and one made by another build's DLL (still loaded in a long-running application) is not
-/// this one.
-pub(crate) const WINDOW_CLASS: windows::core::PCWSTR = w!("VisualTeXFormulaHost.2");
+/// The class of the window: "VisualTeXFormulaHost." and this build (the name of the folder the DLL
+/// is installed in, its build id). The app looks for the window by this name in the field's thread
+/// with the build it has registered, so one made by another build's DLL, still loaded in a
+/// long-running application, is not taken for this one's (Windows would start the registered
+/// build's text service, which knows nothing of what the other build's window was asked).
+fn window_class() -> &'static [u16] {
+    static CLASS: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
+    CLASS.get_or_init(|| {
+        let mut buffer = vec![0u16; 1024];
+        let length = unsafe { GetModuleFileNameW(Some(crate::dll_instance().into()), &mut buffer) } as usize;
+        let path = std::path::PathBuf::from(String::from_utf16_lossy(&buffer[..length.min(buffer.len())]));
+        let build = path
+            .parent()
+            .and_then(|folder| folder.file_name())
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        let mut class: Vec<u16> = format!("VisualTeXFormulaHost.{build}").encode_utf16().collect();
+        class.push(0);
+        class
+    })
+}
 
 /// Makes this thread's window (once). The DLL is pinned: the window's procedure lives in it, and the
 /// hook that brought it here is taken off again.
@@ -287,7 +304,7 @@ pub(crate) fn ensure() {
         let class = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: crate::dll_instance(),
-            lpszClassName: WINDOW_CLASS,
+            lpszClassName: windows::core::PCWSTR(window_class().as_ptr()),
             ..Default::default()
         };
         unsafe { RegisterClassW(&class) };
@@ -295,7 +312,7 @@ pub(crate) fn ensure() {
     let created = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
-            WINDOW_CLASS,
+            windows::core::PCWSTR(window_class().as_ptr()),
             w!(""),
             WINDOW_STYLE(0),
             0,

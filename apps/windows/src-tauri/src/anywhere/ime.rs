@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
-use windows::core::{s, w, GUID, HSTRING, PCWSTR, PWSTR};
+use windows::core::{s, GUID, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE, HLOCAL, HMODULE, HWND, LPARAM, LRESULT, LocalFree, WAIT_OBJECT_0, WPARAM,
 };
@@ -42,9 +42,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub(super) const CLSID_TEXT_SERVICE: GUID = GUID::from_u128(0xb6e0a6c4_6f52_4c7e_9b7a_2f1e5a3d9c41);
 pub(super) const GUID_PROFILE: GUID = GUID::from_u128(0xd3a1f7b2_8c4e_4e2a_a5d6_6b9e0c1f2a73);
 const LANGID_ZH_CN: u16 = 0x0804;
-/// The window the input method makes in a field's thread, and the request to open a formula there
+/// The request to open a formula, for the window the input method makes in a field's thread
 /// (input-method/tip/src/host.rs).
-const HOST_WINDOW_CLASS: PCWSTR = w!("VisualTeXFormulaHost.2");
 const WM_OPEN: u32 = WM_APP + 0x60;
 /// A thread that pumps messages makes the window within this.
 const HOST_WINDOW_WAIT: std::time::Duration = std::time::Duration::from_millis(400);
@@ -318,6 +317,9 @@ type HookProcedure = unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT;
 struct Tip {
     module: HMODULE,
     hook: HookProcedure,
+    /// The class of the window this build of the input method makes in a field's thread
+    /// ("VisualTeXFormulaHost." and the build: the name of the folder it is installed in).
+    window_class: Vec<u16>,
 }
 
 unsafe impl Send for Tip {}
@@ -332,7 +334,10 @@ fn tip() -> Option<&'static Tip> {
         let module = unsafe { LoadLibraryW(&HSTRING::from(path.as_os_str())) }.ok()?;
         let hook = unsafe { GetProcAddress(module, s!("VisualTeXHook")) }?;
         // (an earlier build's DLL, a whole input method with pinyin, has no such procedure)
-        Some(Tip { module, hook: unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, HookProcedure>(hook) } })
+        let build = path.parent().and_then(|folder| folder.file_name()).map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let mut window_class: Vec<u16> = format!("VisualTeXFormulaHost.{build}").encode_utf16().collect();
+        window_class.push(0);
+        Some(Tip { module, hook: unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, HookProcedure>(hook) }, window_class })
     })
     .as_ref()
 }
@@ -356,11 +361,11 @@ fn focus_thread(field_window: isize) -> u32 {
     thread
 }
 
-/// The input method's window in `thread` (None: it has none yet).
-fn host_window(thread: u32) -> Option<HWND> {
+/// The window of this build of the input method in `thread` (None: it has none yet).
+fn host_window(tip: &Tip, thread: u32) -> Option<HWND> {
     let mut after: Option<HWND> = None;
     loop {
-        let window = unsafe { FindWindowExW(Some(HWND_MESSAGE), after, HOST_WINDOW_CLASS, PCWSTR::null()) }.ok()?;
+        let window = unsafe { FindWindowExW(Some(HWND_MESSAGE), after, PCWSTR(tip.window_class.as_ptr()), PCWSTR::null()) }.ok()?;
         if window.is_invalid() {
             return None;
         }
@@ -381,7 +386,7 @@ pub(super) fn open_in_field(field_window: isize, generation: u64) -> Result<(), 
     if thread == 0 {
         return Err("no window has the keyboard".to_string());
     }
-    let window = match host_window(thread) {
+    let window = match host_window(tip, thread) {
         Some(window) => window,
         None => {
             let hook = unsafe { SetWindowsHookExW(WH_GETMESSAGE, Some(tip.hook), Some(tip.module.into()), thread) }
@@ -392,7 +397,7 @@ pub(super) fn open_in_field(field_window: isize, generation: u64) -> Result<(), 
             let mut window = None;
             while window.is_none() && std::time::Instant::now() < deadline {
                 std::thread::sleep(std::time::Duration::from_millis(4));
-                window = host_window(thread);
+                window = host_window(tip, thread);
             }
             let _ = unsafe { UnhookWindowsHookEx(hook) };
             window.ok_or("the field's thread did not start the input method")?
