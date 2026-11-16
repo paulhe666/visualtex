@@ -424,6 +424,9 @@ function setStripTop(strip: HTMLElement, top: number) {
   }
 }
 
+/** The side the candidate bar was last placed on, for anywhere.log (logged when it changes). */
+let candidateSideLogged = "";
+
 /** Places the candidate bar under the formula (anywhere.css reads the
  * position; the kernel's own, centred on the caret, is for a list), or over
  * it when the screen has no room below the line (the strip then moves down
@@ -468,6 +471,14 @@ function placeCandidateBar(stripElement: HTMLElement) {
   // Under the line when the bar fits there, else over it when it fits there, else on the side with more room.
   const above = !fits(roomBelow) && (fits(roomAbove) || roomAbove > roomBelow);
   const room = above ? roomAbove : roomBelow;
+  const side = above ? "above" : "below";
+  if (side !== candidateSideLogged) {
+    candidateSideLogged = side;
+    void logAnywhere(
+      `candidates ${side}: list=${Math.round(box.height)} roomBelow=${Math.round(roomBelow)} roomAbove=${Math.round(roomAbove)} ` +
+        `screenY=${Math.round(window.screenY)} ink.bottom=${Math.round(ink.bottom)} availTop=${screenTop} availHeight=${window.screen.availHeight} screenHeight=${window.screen.height}`,
+    );
+  }
   if (!fits(room)) {
     // neither side holds the whole list: it is cut to the room and scrolls
     const cap = Math.max(CANDIDATE_LIST_MIN_HEIGHT, Math.min(CANDIDATE_LIST_HEIGHT, Math.floor(room - CANDIDATE_MARGIN)));
