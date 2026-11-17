@@ -4786,6 +4786,45 @@ Public Function VTV2NumberedEquations( _
     Set VTV2NumberedEquations = result
 End Function
 
+' The numbered equations VTV2PlanInsertion needs for a number at position: every one before position, or the first one of the
+' document when none is before it (entries in document order, as VTV2NumberedEquations).
+Private Function VTV2NumberedEquationsAround( _
+    ByVal doc As Document, ByVal position As Long, _
+    Optional ByVal excludeStart As Long = -1) As Collection
+    Dim result As New Collection
+    Dim exact As Range
+    Dim entry As Variant
+    Dim lastStart As Long
+
+    lastStart = -1
+    If position > doc.Content.Start Then
+        For Each exact In VTNumberFieldNativeMathRoots( _
+            doc, doc.Content.Start, position)
+            If exact.Start > lastStart And exact.Start <> excludeStart And _
+               exact.Start < position Then
+                entry = VTV2NumberedEquationEntry(exact)
+                If Not IsEmpty(entry) Then
+                    result.Add entry
+                    lastStart = exact.Start
+                End If
+            End If
+        Next exact
+    End If
+    If result.Count = 0 Then
+        For Each exact In VTNumberFieldNativeMathRoots( _
+            doc, position, doc.Content.End)
+            If exact.Start > lastStart And exact.Start <> excludeStart Then
+                entry = VTV2NumberedEquationEntry(exact)
+                If Not IsEmpty(entry) Then
+                    result.Add entry
+                    Exit For
+                End If
+            End If
+        Next exact
+    End If
+    Set VTV2NumberedEquationsAround = result
+End Function
+
 ' The v2 entry of one native equation (its root Range): Array(start, sequence
 ' name, SEQ instruction, prefix, separator, ordinal, restart value, automatic
 ' heading, end), or Empty when it is not a display equation with a proven
@@ -4844,7 +4883,10 @@ Public Function VTV2PlanEntries( _
     Dim searchStart As Long
 
     If Not VT_WORD_V2_IMPORT_CACHE_ACTIVE Or excludeStart <> -1 Then
-        Set VTV2PlanEntries = VTV2NumberedEquations(doc, excludeStart)
+        ' The plan reads the equations before position, or when there is none the first of the document: the ones after
+        ' position are never looked at (VTV2PlanInsertion), so an insertion near the start of a long document does not
+        ' read all of it.
+        Set VTV2PlanEntries = VTV2NumberedEquationsAround(doc, position, excludeStart)
         Exit Function
     End If
     If VTV2ImportCacheUsable(doc, position) Then
@@ -5164,9 +5206,10 @@ Private Function VTV2FieldTypeUpdatesHarmlessly(ByVal fieldType As Long) As Bool
 End Function
 
 ' Updates the numbering fields from fromPosition to the end of the document: each run of them (with only harmless fields
-' between) in one Fields.Update. Returns the number of calls.
+' between) in one Fields.Update. Returns the number of calls; sawReference tells whether a reference was among them.
 Private Function VTV2UpdateNumberingFields( _
-    ByVal doc As Document, ByVal fromPosition As Long) As Long
+    ByVal doc As Document, ByVal fromPosition As Long, _
+    ByRef sawReference As Boolean) As Long
 
     Dim candidate As Field
     Dim fieldType As Long
@@ -5179,6 +5222,7 @@ Private Function VTV2UpdateNumberingFields( _
         Start:=fromPosition, End:=doc.Content.End).Fields
         fieldType = candidate.Type
         If VTV2FieldIsNumbering(candidate, fieldType) Then
+            If fieldType = wdFieldRef Then sawReference = True
             If Not inSegment Then
                 segmentStart = VTEquationFieldStart(candidate)
                 inSegment = True
@@ -5206,22 +5250,31 @@ Private Function VTV2BulkRenumber( _
 
     Dim candidate As Field
     Dim calls As Long
-    Dim updatedReferences As Long
+    Dim sawReference As Boolean
+    Dim referencesBefore As Boolean
 
     On Error GoTo NotBulk
-    calls = VTV2UpdateNumberingFields(doc, searchStart)
+    calls = VTV2UpdateNumberingFields(doc, searchStart, sawReference)
     VTWordPerformanceMark "renumber-numbers-updated"
     VTWordPerformanceNote "renumber-update-calls", CStr(calls)
     If updateReferences Then
-        ' every reference of the document: the ones before the new number too, which read the numbers just updated
-        For Each candidate In doc.Fields
-            If candidate.Type = wdFieldRef Then
-                candidate.Update
-                updatedReferences = updatedReferences + 1
-            End If
-        Next candidate
+        ' The references of the document: the ones before the new number read the numbers just updated, and the ones after
+        ' it that stand ahead of the equation they point to were updated with a stale number. A Field.Update takes
+        ' about 10 ms for a reference in Word for Mac, so they are updated in bulk as well, when there are any.
+        If Not sawReference And searchStart > doc.Content.Start Then
+            For Each candidate In doc.Range( _
+                Start:=doc.Content.Start, End:=searchStart).Fields
+                If candidate.Type = wdFieldRef Then
+                    referencesBefore = True
+                    Exit For
+                End If
+            Next candidate
+        End If
+        If sawReference Or referencesBefore Then
+            calls = calls + VTV2UpdateNumberingFields(doc, doc.Content.Start, sawReference)
+        End If
         VTWordPerformanceMark "renumber-references-updated"
-        VTWordPerformanceNote "renumber-updated-references", CStr(updatedReferences)
+        VTWordPerformanceNote "renumber-update-calls", CStr(calls)
     End If
     VTV2BulkRenumber = True
     Exit Function
