@@ -23,7 +23,7 @@ import {
   visualTexSourceWrapperTemplate,
   visualTexStartSourceWrapper,
 } from './keyboard-input';
-import { visualTexEditingCore } from './visualtex-hooks';
+import { visualTexEditingCore, visualTexUserLatex } from './visualtex-hooks';
 import {
   parseMathString,
   trimModeShiftCommand,
@@ -138,8 +138,12 @@ export class MathModeEditor extends ModeEditor {
     // 3/ If that didn't work, try some plain text
     // (could be LaTeX, could be ASCIIMath)
     //
-    if (!text)
+    if (!text) {
       text = typeof data === 'string' ? data : data.getData('text/plain');
+      // plain text from outside the editor is LaTeX the user wrote (in the app's spelling); the editor's own
+      // copies carry application/x-latex or atoms, already as stored
+      if (text) text = visualTexUserLatex(text);
+    }
 
     if (text) {
       let wasLatex: boolean;

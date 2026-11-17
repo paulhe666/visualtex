@@ -201,6 +201,7 @@ function syncOfficeEditorSystemSettings(raw?: string | null) {
   }
   applyNumber("zoom", editor.zoom, editor.setZoom);
   applyBoolean("autoPairDelimiters", editor.autoPairDelimiters, editor.setAutoPairDelimiters);
+  applyBoolean("examZhSymbols", editor.examZhSymbols, editor.setExamZhSymbols);
   applyBoolean("showLineNumbers", editor.showLineNumbers, editor.setShowLineNumbers);
   applyBoolean("highlightActiveLine", editor.highlightActiveLine, editor.setHighlightActiveLine);
   applyNumber("formulaInsetLeft", editor.formulaInsetLeft, editor.setFormulaInsetLeft);

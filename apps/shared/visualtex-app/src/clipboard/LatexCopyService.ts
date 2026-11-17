@@ -26,6 +26,7 @@ import type {
 } from "../types/formula";
 import { resolveFormulaDisplayStyle } from "./latexFormatProfile";
 import { toPortableBoldLatex } from "./portableBoldLatex";
+import { storedLatexToUser } from "../math/examZhSymbols";
 
 export type LatexCodeFormatGroup = "single" | "multi";
 
@@ -2068,6 +2069,6 @@ export async function copyFormulaLinesUniversal(
   profile: LatexFormatProfile,
 ) {
   await navigator.clipboard.writeText(
-    toPortableBoldLatex(formatFormulaLinesUniversal(lines, profile)),
+    storedLatexToUser(toPortableBoldLatex(formatFormulaLinesUniversal(lines, profile))),
   );
 }

@@ -16,6 +16,7 @@ import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from 
 import type { TeXFont, TfmData } from "./tfm.ts";
 import { NativeFont, type NativeMeasure } from "./native-font.ts";
 import { PathFont, type PathGlyphSet, PathAlphabet, type PathAlphabetSet } from "./path-font.ts";
+import { ExamZhSignFont } from "./exam-zh-signs.ts";
 import type { Spacing } from "./spacing.ts";
 import { formulaSvgBody, type GlyphTable, type SvgFormula, type SvgOverlay } from "./svg.ts";
 
@@ -273,6 +274,8 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
     // LaTeX's own definitions (amsmath, esint) take precedence
     adapter.pathOps = new Map([...sizes[0].codes].filter(([cmd]) => !data.templates[cmd]));
   }
+  // exam-zh's congruence and similarity signs (≌ \backcong, ∽ \backsim, their negations), at 10, 7 and 5 pt
+  adapter.fams.set(FAM.examzh, [10, 7, 5].map((pt) => new ExamZhSignFont(pt * 65536)) as [ExamZhSignFont, ExamZhSignFont, ExamZhSignFont]);
   if (options.alphabetGlyphs?.bbm) {
     const set = options.alphabetGlyphs.bbm;
     adapter.fams.set(FAM.bbm, [10, 7, 5].map((pt) => new PathAlphabet(set, pt * 65536)) as [PathAlphabet, PathAlphabet, PathAlphabet]);

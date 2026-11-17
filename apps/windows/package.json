@@ -29,7 +29,7 @@
     "test:custom-symbol-designer": "npm run build:desktop && tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/custom-symbol-designer/tests/tex_export.test.mts && tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/custom-symbol-designer/tests/tex_native_compare.test.mts && node ../shared/visualtex-app/tests/custom_symbol_designer_regression.mjs",
     "test:caret-underline": "npm run build:desktop && node ../shared/visualtex-app/tests/caret_underline_regression.mjs",
     "test:caret-operand": "npm run build:desktop && node ../shared/visualtex-app/tests/caret_operand_regression.mjs",
-    "test:chinese-font-relation": "npm run build:desktop && node ../shared/visualtex-app/tests/chinese_font_relation_regression.mjs",
+    "test:exam-zh-signs": "npm run build:desktop && node ../shared/visualtex-app/tests/exam_zh_signs_regression.mjs",
     "test:toolbar-picker": "npm run build:desktop && node ../shared/visualtex-app/tests/toolbar_picker_regression.mjs",
     "test:operand-mathml": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/operand_mathml_regression.mts",
     "test:anywhere-candidates": "npm run build:desktop && node ../shared/visualtex-app/tests/anywhere_candidates_regression.mjs",

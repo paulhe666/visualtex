@@ -84,6 +84,7 @@ import { EXACTLY, hpack, vpack, vpackage } from "./pack.ts";
 import { VList, glue, halign, type AlignNoalign, type AlignRow, type VParams } from "./align.ts";
 import { typesetText, type TextToken } from "./text.ts";
 import type { TeXFont } from "./tfm.ts";
+import { examZhSignCode } from "./exam-zh-signs.ts";
 import { scalePermille, spacingKey, spacingParamScales, spacingPercent, type Spacing } from "./spacing.ts";
 
 /** The parts of a kernel atom the adapter reads (duck-typed). */
@@ -218,6 +219,8 @@ export const FAM = {
   eur: 34,
   /** bbm.sty's \mathbbm: a double-struck alphabet drawn from outlines (PathAlphabet), when the app gives one */
   bbm: 35,
+  /** exam-zh's congruence and similarity signs and their negations, drawn from outlines (ExamZhSignFont); not a TeX family */
+  examzh: 36,
 } as const;
 
 /** Fonts of packages the reference preamble loads, set up as families when the profile's data has them. */
@@ -225,17 +228,6 @@ export const PACKAGE_FAMILIES: [number, [string, string, string]][] = [
   [FAM.stmry, ["stmary10", "stmary7", "stmary5"]],
   [FAM.eur, ["eurm10", "eurm7", "eurm5"]],
 ];
-
-/**
- * Relations no TeX font has but the Chinese fonts do (GB 2312 has them), set in the formula's Chinese font like Chinese text:
- * the congruence sign of Chinese geometry (U+224C). The math fonts (STIX Two Math, Latin Modern Math, TeX Gyre, Cambria Math)
- * draw that code point as a tilde with a gentle wave over an equals sign; the Chinese fonts (SimSun, YaHei, SimHei, KaiTi,
- * Songti SC, Hiragino Sans GB ...) draw the S with curled ends that the textbooks print, about 0.5 em wide in YaHei and 0.85 em
- * in the others. macOS's default stack gets it from WebKit's fallback of the system font, Apple Symbols (a small curled
- * form, 0.54 em wide: PingFang SC has no glyph for it and the stack never reaches Hiragino Sans GB); 宋体, 楷体 and 黑体
- * give Songti SC, Kaiti SC and Heiti SC.
- */
-const CHINESE_FONT_RELATIONS = new Set(["\\backcong", "\u224c"]);
 
 /** The families of a group of characters set in a chosen font: italic, upright, bold, bold italic. */
 export const FACE_GROUP_FAMS = {
@@ -1278,6 +1270,14 @@ export class LatexAdapter {
       out.push(n);
       return true;
     }
+    if (cmd === "\\not" && a.branch("body") !== undefined) {
+      const body = (a.branch("body") ?? []).filter((x) => x.type !== "overlap" && x.type !== "first");
+      const sign = body.length === 1 ? this.examZhSign(body[0], true) : null;
+      if (sign) {
+        out.push(sign);
+        return true;
+      }
+    }
     if (cmd === "\\not" && a.branch("body") !== undefined && this.meaning("\\n@tch@r")) {
       // newtxmath: \not\foo is \notfoo or \nfoo when defined (\not= \ne, \not< \nless,
       // \not> \ngtr), else \n@tch@r\foo
@@ -1769,6 +1769,8 @@ export class LatexAdapter {
   }
 
   private symbol(a: AtomLike, ctx: Ctx): MItem[] {
+    const sign = this.examZhSign(a);
+    if (sign) return [sign];
     const keys: string[] = [];
     if (a.command) keys.push(a.command);
     if (a.value && a.value !== a.command) keys.push(a.value);
@@ -1780,8 +1782,20 @@ export class LatexAdapter {
     }
     const pkg = a.command ? this.packageSymbol(a.command, ctx, a) : null;
     if (pkg) return pkg;
-    if (CHINESE_FONT_RELATIONS.has(a.command ?? "") || CHINESE_FONT_RELATIONS.has(a.value ?? "")) return this.unknownSymbol(a, ctx, REL_NOAD);
     return this.unknownSymbol(a, ctx);
+  }
+
+  /**
+   * The congruence sign of Chinese geometry (≌, \backcong) and the similarity sign (∽, \backsim), negated after \not:
+   * exam-zh's drawings (exam-zh-signs.ts), as relations; null for any other atom.
+   */
+  private examZhSign(a: AtomLike, negated = false): Noad | null {
+    if (!this.fams.has(FAM.examzh)) return null;
+    const code = examZhSignCode(a.command ?? "", negated) ?? examZhSignCode(a.value ?? "", negated);
+    if (code === null) return null;
+    const n = newNoad(REL_NOAD, a);
+    n.nucleus = charField(FAM.examzh, code);
+    return n;
   }
 
   /**

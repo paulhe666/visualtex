@@ -25,6 +25,7 @@ import {
   formatFormulaSelectionUniversal,
 } from "../clipboard/LatexCopyService";
 import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
+import { storedLatexToUser } from "../math/examZhSymbols";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import type {
   CommandSource,
@@ -1650,11 +1651,13 @@ export function FormulaField(props: FormulaFieldProps) {
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
     // Copied text leaves the app as portable LaTeX (\mathbfit -> \boldsymbol), in the formula's code
-    // format when the row has one.
+    // format when the row has one, and in the user's spelling of the congruence and similarity signs.
     const mathLiveExport = field.onExport;
     field.onExport = (mathfield, latex, range) => {
       const current = propsRef.current;
-      if (!current.latexFormatProfile) return toPortableBoldLatex(mathLiveExport(mathfield, latex, range));
+      if (!current.latexFormatProfile) {
+        return storedLatexToUser(toPortableBoldLatex(mathLiveExport(mathfield, latex, range)));
+      }
       const wholeLine = range[0] <= 0 && range[1] >= field.lastOffset;
       const source = formatFormulaSelectionUniversal(
         { id: current.lineId, latex: current.latex, mode: current.mode, displayStyle: current.displayStyle },
@@ -1662,7 +1665,7 @@ export function FormulaField(props: FormulaFieldProps) {
         current.latexFormatProfile,
         wholeLine,
       );
-      return toPortableBoldLatex(formatLatexSourceForEditor(source));
+      return storedLatexToUser(toPortableBoldLatex(formatLatexSourceForEditor(source)));
     };
     field.smartMode = false;
     field.smartFence = propsRef.current.autoPairDelimiters;
@@ -5926,13 +5929,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         event.clipboardData.setData("application/x-latex", latex);
         event.clipboardData.setData(
           "text/plain",
-          toPortableBoldLatex(
-            formatLatexSourceForEditor(
-              formatFormulaLinesUniversal(
-                linesRef.current
-                  .filter((line) => multiLineSelectedIdsRef.current.has(line.id))
-                  .map((line, index) => ({ ...line, latex: selectedLines[index] ?? line.latex })),
-                latexFormatProfile,
+          storedLatexToUser(
+            toPortableBoldLatex(
+              formatLatexSourceForEditor(
+                formatFormulaLinesUniversal(
+                  linesRef.current
+                    .filter((line) => multiLineSelectedIdsRef.current.has(line.id))
+                    .map((line, index) => ({ ...line, latex: selectedLines[index] ?? line.latex })),
+                  latexFormatProfile,
+                ),
               ),
             ),
           ),

@@ -27,7 +27,7 @@ const packagesFile = path.join(path.dirname(visualTexKernelSsrEntry), "../latex-
 fs.writeFileSync(
   kernelFile,
   `export * from ${JSON.stringify(visualTexKernelSsrEntry)};\n` +
-    `export { setVisualTexLayoutEngine, setVisualTexEditingCore } from ${JSON.stringify(hooksFile)};\n` +
+    `export { setVisualTexLayoutEngine, setVisualTexEditingCore, setVisualTexUserLatexIn } from ${JSON.stringify(hooksFile)};\n` +
     // the package command table the browser entry exports too (the export runtime reads it)
     `export { VISUALTEX_PACKAGE_COMMANDS as visualTexPackageCommands } from ${JSON.stringify(packagesFile)};\n`,
 );

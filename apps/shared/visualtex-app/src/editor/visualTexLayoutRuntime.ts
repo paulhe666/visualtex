@@ -1,4 +1,4 @@
-import { setVisualTexEditingCore, setVisualTexLayoutEngine } from "mathlive";
+import { setVisualTexEditingCore, setVisualTexLayoutEngine, setVisualTexUserLatexIn } from "mathlive";
 import { createVisualTexLayout, type LayoutData, type PiecePlacer } from "../../../tex-layout/src/index.ts";
 import { createEditingCore } from "../../../visualtex-core/src/index.ts";
 import tfm from "../../../tex-layout/data/tfm.json";
@@ -16,6 +16,7 @@ import { gunzipSync, strFromU8 } from "fflate";
 import { RARE_INTEGRAL_GLYPHS_GZIP_BASE64 } from "../math/rareIntegralGlyphs.generatedData";
 import { DOUBLE_STRUCK_GLYPHS_GZIP_BASE64 } from "../math/doubleStruckGlyphs.generatedData";
 import { customSymbolCssClass, customSymbolSvgMarkerClass, getActiveCustomSymbols } from "../math/customSymbolRegistry";
+import { userLatexToStored } from "../math/examZhSymbols";
 
 /** A custom operator's italic correction, by the class of its box (editor and export classes). */
 function customSymbolOperatorItalic(className: string) {
@@ -373,6 +374,8 @@ export function installVisualTexLayout(): void {
   installed = true;
   setVisualTexEditingCore(visualTexEditingCore);
   setVisualTexLayoutEngine(createAppLayoutEngine());
+  // typed and pasted LaTeX is read in the user's spelling of the congruence and similarity signs
+  setVisualTexUserLatexIn(userLatexToStored);
   if (typeof window !== "undefined") {
     // open formulas are laid out again in the new fonts
     window.addEventListener(FORMULA_FONT_PREFERENCES_CHANGED_EVENT, relayoutFormulas);

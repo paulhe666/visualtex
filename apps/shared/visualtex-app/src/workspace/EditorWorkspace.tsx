@@ -69,6 +69,7 @@ import {
   parseUniversalLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { storedLatexToUser, userLatexToStored } from "../math/examZhSymbols";
 import { reconcileFormulaLines } from "../history/documentHistory";
 import { useHistorySnapshot } from "../history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../types/formula";
@@ -397,6 +398,8 @@ export function EditorWorkspace({
   );
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
+  // the source pane is written in the user's spelling of the congruence and similarity signs
+  const examZhSymbols = useEditorStore((state) => state.examZhSymbols);
   const isEn = language === "en";
   const localOcrRecognizers = ocrRecognizers.filter(
     (item) => item.group !== "api",
@@ -406,8 +409,11 @@ export function EditorWorkspace({
   );
   const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatLatexSourceForEditor(
-    formatFormulaLinesUniversal(lines, latexFormatProfile),
+  const sourceLatex = useMemo(
+    () => storedLatexToUser(formatLatexSourceForEditor(formatFormulaLinesUniversal(lines, latexFormatProfile))),
+    // examZhSymbols: storedLatexToUser reads the setting
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lines, latexFormatProfile, examZhSymbols],
   );
 
   const handleSourceFocusChange = (focused: boolean) => {
@@ -1067,7 +1073,7 @@ export function EditorWorkspace({
     const parsed = parseUniversalLatexSourceDraft(source, latexFormatProfile);
     if (!parsed.valid) {
       const previewValues = (parsed.previewValues ?? parsed.values).map(
-        normalizeChineseLatex,
+        (value) => normalizeChineseLatex(userLatexToStored(value)),
       );
       const fallback = {
         source,
@@ -1086,7 +1092,7 @@ export function EditorWorkspace({
     }
 
     setSourceDraftFallback(null);
-    const values = parsed.values.map(normalizeChineseLatex);
+    const values = parsed.values.map((value) => normalizeChineseLatex(userLatexToStored(value)));
     const nextLines = reconcileFormulaLines(
       values,
       lines,

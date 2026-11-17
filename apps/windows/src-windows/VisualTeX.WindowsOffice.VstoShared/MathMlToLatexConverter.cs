@@ -214,6 +214,7 @@ internal static class MathMlToLatexConverter
             ["≂"] = @"\eqsim ",
             ["≇"] = @"\ncong ",
             ["≊"] = @"\approxeq ",
+            ["≌"] = @"\backcong ",
             ["≎"] = @"\Bumpeq ",
             ["≏"] = @"\bumpeq ",
             ["≑"] = @"\doteqdot ",
@@ -1505,7 +1506,7 @@ internal static class MathMlToLatexConverter
     private static readonly HashSet<char> GeometryTextSymbols = new()
     {
         '△', '▵', '▲', '▴', '▽', '▿', '▼', '▾', '□', '◻', '■', '◼', '★',
-        '∠', '∡', '∵', '∴', '⊥', '∥', '≅',
+        '∠', '∡', '∵', '∴', '⊥', '∥', '≅', '≌', '∽',
     };
 
     private static string ConvertTokenElement(XElement element)

@@ -31,4 +31,16 @@ export const visualTexLateFunctions: {
   visualTexCanonicalVariantInputCommand?: (command: string) => string;
   visualTexStartSourceWrapper?: (model: any, latex: string, structuralSlot: any) => boolean;
   visualTexSyncSourceWrapper?: (mathfield: any) => void;
+  /** LaTeX the user typed or pasted as the formulas store it (the app's exam-zh spelling setting); identity if unset */
+  visualTexUserLatexIn?: (latex: string) => string;
 } = {};
+
+/** The app's reading of LaTeX the user writes (typed commands, pasted text, previews of what typing inserts). */
+export function setVisualTexUserLatexIn(read: ((latex: string) => string) | null): void {
+  visualTexLateFunctions.visualTexUserLatexIn = read ?? undefined;
+}
+
+/** LaTeX the user typed or pasted, as the formulas store it. */
+export function visualTexUserLatex(latex: string): string {
+  return visualTexLateFunctions.visualTexUserLatexIn ? visualTexLateFunctions.visualTexUserLatexIn(latex) : latex;
+}

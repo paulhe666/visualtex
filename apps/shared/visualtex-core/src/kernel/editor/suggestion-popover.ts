@@ -13,7 +13,7 @@ import {
   releaseSharedElement,
 } from '../common/shared-element';
 import { requestUpdate } from '../editor-mathfield/render';
-import { visualTexLayoutEngine } from '../editor-mathfield/visualtex-hooks';
+import { visualTexLayoutEngine, visualTexUserLatex } from '../editor-mathfield/visualtex-hooks';
 import {
   visualTexCandidateNumberMarkup,
   visualTexCompletionInfo,
@@ -69,7 +69,8 @@ export function showSuggestionPopover(
     // label and preview
     const info = visualTexCompletionInfo(mf, suggestion);
     const command = suggestion;
-    const commandMarkup = latexToMarkup(mf, info.preview);
+    // the preview draws what accepting inserts (in exam-zh's spelling \cong inserts ≌)
+    const commandMarkup = latexToMarkup(mf, visualTexUserLatex(info.preview));
     const keybinding = getKeybindingsForCommand(mf.keybindings, info.command).join(
       '<br>'
     );

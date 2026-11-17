@@ -30,6 +30,7 @@ import {
 } from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
+import { setExamZhSymbolsEnabled } from "../math/examZhSymbols";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
@@ -391,6 +392,8 @@ interface EditorState {
   latexCodeFormat: LatexCodeFormat;
   latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
+  /** the user writes exam-zh's spelling of the congruence and similarity signs (math/examZhSymbols.ts) */
+  examZhSymbols: boolean;
   showLineNumbers: boolean;
   highlightActiveLine: boolean;
   formulaInsetLeft: number;
@@ -443,6 +446,7 @@ interface EditorState {
       | ((current: LatexFormatProfile) => Partial<LatexFormatProfile>),
   ) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
+  setExamZhSymbols: (enabled: boolean) => void;
   setShowLineNumbers: (enabled: boolean) => void;
   setHighlightActiveLine: (enabled: boolean) => void;
   setFormulaInsetLeft: (inset: number) => void;
@@ -560,6 +564,7 @@ export const useEditorStore = create<EditorState>()(
       latexCodeFormat: "mixed-inline-display",
       latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
+      examZhSymbols: true,
       showLineNumbers: false,
       highlightActiveLine: false,
       formulaInsetLeft: DEFAULT_FORMULA_INSET,
@@ -670,6 +675,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
+      setExamZhSymbols: (examZhSymbols) => set({ examZhSymbols }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setHighlightActiveLine: (highlightActiveLine) =>
         set({ highlightActiveLine }),
@@ -913,6 +919,10 @@ export const useEditorStore = create<EditorState>()(
               typeof settings.autoPairDelimiters === "boolean"
                 ? settings.autoPairDelimiters
                 : state.autoPairDelimiters,
+            examZhSymbols:
+              typeof settings.examZhSymbols === "boolean"
+                ? settings.examZhSymbols
+                : state.examZhSymbols,
             showLineNumbers:
               typeof settings.showLineNumbers === "boolean"
                 ? settings.showLineNumbers
@@ -1048,6 +1058,7 @@ export const useEditorStore = create<EditorState>()(
             sourceOpen: state.sourceOpen,
             latexSourceFontSize: state.latexSourceFontSize,
             autoPairDelimiters: state.autoPairDelimiters,
+            examZhSymbols: state.examZhSymbols,
             showLineNumbers: state.showLineNumbers,
             highlightActiveLine: state.highlightActiveLine,
             formulaInsetLeft: state.formulaInsetLeft,
@@ -1094,6 +1105,7 @@ export const useEditorStore = create<EditorState>()(
         latexCodeFormat: "mixed-inline-display",
         latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
+        examZhSymbols: state.examZhSymbols,
         showLineNumbers: state.showLineNumbers,
         highlightActiveLine: state.highlightActiveLine,
         formulaInsetLeft: state.formulaInsetLeft,
@@ -1160,6 +1172,11 @@ export const useEditorStore = create<EditorState>()(
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters
               : true,
+          // exam-zh's spelling by default in the Chinese interface (where users write exam-zh), not in the English one
+          examZhSymbols:
+            typeof persisted.examZhSymbols === "boolean"
+              ? persisted.examZhSymbols
+              : persisted.language !== "en",
           showLineNumbers:
             typeof persisted.showLineNumbers === "boolean"
               ? persisted.showLineNumbers
@@ -1269,3 +1286,7 @@ setUprightJudgmentEnabled(
 useEditorStore.subscribe((state) =>
   setUprightJudgmentEnabled(state.inputBehavior.autoUprightTypography),
 );
+
+// The exam-zh spelling of the congruence and similarity signs, read and written at the app's edges.
+setExamZhSymbolsEnabled(useEditorStore.getState().examZhSymbols);
+useEditorStore.subscribe((state) => setExamZhSymbolsEnabled(state.examZhSymbols));

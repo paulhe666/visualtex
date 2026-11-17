@@ -293,6 +293,9 @@ function applyOfficeEditorPreferences(
   if (typeof settings.autoPairDelimiters === "boolean") {
     editor.setAutoPairDelimiters(settings.autoPairDelimiters);
   }
+  if (typeof settings.examZhSymbols === "boolean") {
+    editor.setExamZhSymbols(settings.examZhSymbols);
+  }
   if (typeof settings.showLineNumbers === "boolean") {
     editor.setShowLineNumbers(settings.showLineNumbers);
   }

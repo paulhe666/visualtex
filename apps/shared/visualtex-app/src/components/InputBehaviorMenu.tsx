@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { InputBehaviorSettingKey } from "../types/formula";
 import { useEditorStore } from "../stores/editorStore";
+import { userLatexToStored } from "../math/examZhSymbols";
 import {
   visualTexAutoEscapeInlineShortcuts,
   visualTexAutoEscapeShortcutGroups,
@@ -89,7 +90,8 @@ function shortcutAfter(definition: VisualTexInlineShortcutDefinition) {
 }
 
 function previewLatex(definition: VisualTexInlineShortcutDefinition) {
-  return shortcutLatex(definition).replaceAll("#?", "\\square");
+  // what the word turns into: cong and sim in the spelling the user writes
+  return userLatexToStored(shortcutLatex(definition)).replaceAll("#?", "\\square");
 }
 
 function readActiveInlineShortcuts(): VisualTexInlineShortcutDefinitions {
@@ -105,6 +107,7 @@ interface InputBehaviorPopoverLayout {
 }
 
 function ShortcutOutput({ definition }: { definition: VisualTexInlineShortcutDefinition }) {
+  useEditorStore((state) => state.examZhSymbols);
   const latex = previewLatex(definition);
   return (
     <span className="auto-escape-map-output-formula">

@@ -16,6 +16,7 @@ import {
   isCertainUnit,
   isUnitSymbol,
 } from "./inputDictionary.ts";
+import { userLatexToStored } from "../math/examZhSymbols.ts";
 
 // The input judgment (docs/upright-typography-plan-20261015.md): one routine,
 // one dictionary (inputDictionary.ts) for both what typed words turn into
@@ -50,6 +51,12 @@ export interface InputJudgmentOptions {
    * Backspace right after a conversion applies this.
    */
   revert?: boolean;
+}
+
+/** The LaTeX a typed word escapes to (alpha -> \alpha); cong and sim in the spelling the user writes (exam-zh's \cong is ≌). */
+function quickEscape(word: string): string | undefined {
+  const escape = GREEK_WORDS[word] ?? SYMBOL_WORDS[word] ?? TEMPLATE_WORDS[word];
+  return escape === undefined ? undefined : userLatexToStored(escape);
 }
 
 let defaultUprightEnabled = true;
@@ -688,9 +695,7 @@ function classify(items: Item[], context: RuleContext) {
         continue;
       }
       // A whole word that is a name: alpha, infty, frac, in.
-      const escape = context.escapes
-        ? GREEK_WORDS[text] ?? SYMBOL_WORDS[text] ?? TEMPLATE_WORDS[text]
-        : undefined;
+      const escape = context.escapes ? quickEscape(text) : undefined;
       if (escape) {
         convert(index, escape);
         continue;
@@ -805,7 +810,7 @@ export function escapeWordAtEnd(
     if (start === 0 && afterNumber && AFTER_NUMBER_WORDS[word]) {
       return { length: word.length, latex: AFTER_NUMBER_WORDS[word] };
     }
-    const escape = GREEK_WORDS[word] ?? SYMBOL_WORDS[word] ?? TEMPLATE_WORDS[word];
+    const escape = quickEscape(word);
     if (escape) return { length: word.length, latex: escape };
     if (FIXED_FUNCTIONS.has(word)) return null;
   }

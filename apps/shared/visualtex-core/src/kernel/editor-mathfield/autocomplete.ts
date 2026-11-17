@@ -3,7 +3,7 @@ import {
   suggest,
   visualTexCompletionInfo,
 } from '../latex-commands/definitions-utils';
-import { visualTexLateFunctions } from './visualtex-hooks';
+import { visualTexLateFunctions, visualTexUserLatex } from './visualtex-hooks';
 
 import type { _Model } from '../editor-model/model-private';
 
@@ -156,7 +156,8 @@ export function complete(
     (x) => !x.isSuggestion
   );
 
-  const latex = useSemanticCompletion ? selectedCompletion : body.map((x) => x.value).join('');
+  // what the user wrote, in the spelling the app reads it in (exam-zh's \cong is ≌, stored \backcong)
+  const latex = visualTexUserLatex(useSemanticCompletion ? selectedCompletion : body.map((x) => x.value).join(''));
   mathfield.visualTexCompletion = null;
 
   const newPos = latexGroup.leftSibling;

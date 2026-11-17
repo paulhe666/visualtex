@@ -207,7 +207,7 @@ const simpleDefinitions: SimpleDefinition[] = [
   ["sim", "\\sim", "相似", "Similar", "relation", 82],
   ["simeq", "\\simeq", "渐近相等", "Asymptotically equal", "relation", 80],
   ["cong", "\\cong", "全等", "Congruent", "relation", 78],
-  // the congruence sign of Chinese geometry (U+224C): the layout sets the Chinese fonts' character, whose S has curled ends; the math fonts' is a gentle wave
+  // the congruence sign of Chinese geometry (U+224C), drawn as exam-zh-symbols draws it; with the exam-zh setting on, \cong is read as this sign
   ["backcong", "\\backcong", "全等（≌）", "Congruent (≌)", "relation", 79, ["congruent", "all equal to"], ["全等", "全等于", "三角形全等", "≌"]],
   ["ll", "\\ll", "远小于", "Much less", "relation", 82],
   ["gg", "\\gg", "远大于", "Much greater", "relation", 82],

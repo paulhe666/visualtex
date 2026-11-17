@@ -116,6 +116,7 @@ export interface FormulaDocument {
     language?: "cn" | "en";
     sourceOpen?: boolean;
     autoPairDelimiters?: boolean;
+    examZhSymbols?: boolean;
     showLineNumbers?: boolean;
     highlightActiveLine?: boolean;
     formulaInsetLeft?: number;

@@ -120,6 +120,7 @@ const editorSettingKeys = [
   "language",
   "sourceOpen",
   "autoPairDelimiters",
+  "examZhSymbols",
   "showLineNumbers",
   "highlightActiveLine",
   "formulaInsetLeft",

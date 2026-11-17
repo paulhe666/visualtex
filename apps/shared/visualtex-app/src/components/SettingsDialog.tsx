@@ -204,6 +204,8 @@ export function SettingsDialog({
   const autoPairDelimiters = useEditorStore(
     (state) => state.autoPairDelimiters,
   );
+  const examZhSymbols = useEditorStore((state) => state.examZhSymbols);
+  const setExamZhSymbols = useEditorStore((state) => state.setExamZhSymbols);
   const showLineNumbers = useEditorStore((state) => state.showLineNumbers);
   const highlightActiveLine = useEditorStore(
     (state) => state.highlightActiveLine,
@@ -967,6 +969,24 @@ export function SettingsDialog({
                     checked={autoPairDelimiters}
                     onChange={(event) =>
                       setAutoPairDelimiters(event.target.checked)
+                    }
+                  />
+                  <span className="switch-control" />
+                </label>
+                <label className="switch-row">
+                  <span>
+                    <strong>
+                      {isEn
+                        ? "exam-zh congruence and similarity (\\cong ≌, \\sim ∽)"
+                        : "exam-zh 全等、相似（\\cong ≌、\\sim ∽）"}
+                    </strong>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={examZhSymbols}
+                    data-exam-zh-symbols-setting
+                    onChange={(event) =>
+                      setExamZhSymbols(event.target.checked)
                     }
                   />
                   <span className="switch-control" />

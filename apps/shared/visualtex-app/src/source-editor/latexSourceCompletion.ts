@@ -22,6 +22,7 @@ import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompati
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { nativeSuggestionPreviewLatex } from "../editor/nativeSuggestionPreviews";
 import { environmentNameCompletionEnd } from "./latexSourceEditorSupport";
+import { userLatexToStored } from "../math/examZhSymbols";
 
 // Source-code completion for the LaTeX panel. Same commands and ranking as
 // the visual editor's candidate panel (Overleaf's approach: CodeMirror's
@@ -177,8 +178,10 @@ const previewMarkup = new Map<string, string>();
 function renderPreview(completion: Completion) {
   const element = document.createElement("span");
   element.className = "cm-vt-completion-preview";
-  const latex = (completion as SourceCompletion).preview;
-  if (!latex) return element;
+  const preview = (completion as SourceCompletion).preview;
+  if (!preview) return element;
+  // the source is written in the user's spelling: exam-zh's \cong is ≌
+  const latex = userLatexToStored(preview);
   let markup = previewMarkup.get(latex);
   if (markup === undefined) {
     markup = "";
