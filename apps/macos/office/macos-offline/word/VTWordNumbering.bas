@@ -5400,8 +5400,9 @@ Private Function VTV2UpdateNumberingFields( _
 End Function
 
 ' False when the document has no bookmark a reference could name (a reference names a bookmark; the hidden _Toc and _GoBack ones of a
-' table of contents and of the cursor are not targets of references), so that looking for references before the new number, one
-' field after the other (0.2 ms each), is left out in a document of equations without references.
+' table of contents and of the cursor, and the VT_Pending_ and VT_E_ ones of this very commit, are not targets of references), so
+' that looking for references before the new number, one field after the other (0.2 ms each), is left out in a document of equations
+' without references.
 Private Function VTV2DocumentMayHaveReferences(ByVal doc As Document) As Boolean
     Dim mark As Bookmark
     Dim hidden As Boolean
@@ -5412,7 +5413,8 @@ Private Function VTV2DocumentMayHaveReferences(ByVal doc As Document) As Boolean
     If Not hidden Then doc.Bookmarks.ShowHidden = True
     For Each mark In doc.Bookmarks
         name = mark.Name
-        If Left$(name, 4) <> "_Toc" And StrComp(name, "_GoBack", vbTextCompare) <> 0 Then
+        If Left$(name, 4) <> "_Toc" And StrComp(name, "_GoBack", vbTextCompare) <> 0 And _
+           Left$(name, 11) <> "VT_Pending_" And Left$(name, 5) <> "VT_E_" Then
             VTV2DocumentMayHaveReferences = True
             Exit For
         End If
