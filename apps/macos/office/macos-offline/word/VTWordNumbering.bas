@@ -8,6 +8,9 @@ Option Private Module
 Public Const VT_WORD_NATIVE_NUMBER_CACHE_PLACEHOLDER As String = _
     "VTNUMBERCACHE0"
 
+' How many numbered equations before the insertion point the plan reads at a time (VTV2NumberedEquationsAround).
+Private Const VT_V2_PLAN_WINDOW As Long = 12
+
 Public Function VTNumberedDisplayTableNearRange( _
     ByVal selectedRange As Range) As Table
 
@@ -4790,54 +4793,155 @@ Public Function VTV2NumberedEquations( _
     Set VTV2NumberedEquations = result
 End Function
 
-' The numbered equations VTV2PlanInsertion needs for a number at position: every one before position, or the first one of the
-' document when none is before it (entries in document order, as VTV2NumberedEquations).
+' The numbered equations VTV2PlanInsertion needs for a number at position, in document order. The plan takes the nearest equation
+' before position and walks back from it while the number prefix and the sequence name stay the same, to the start of that series
+' (VTV2PlanInsertion). Reading every equation before position (0.6 ms each: 240 ms in a document of 400) is only needed to find that
+' start, so a window of the last equations is read, and when they all belong to one series the document's first numbered equation
+' stands for the start of it if it belongs to the series too (a document without chapters: the whole document is one series). A
+' chapter longer than the window is read further back. Before the first numbered equation, the first one after position.
 Private Function VTV2NumberedEquationsAround( _
     ByVal doc As Document, ByVal position As Long, _
     Optional ByVal excludeStart As Long = -1) As Collection
+
     Dim result As New Collection
+    Dim recent As Collection
+    Dim older As Collection
     Dim roots As Collection
     Dim exact As Range
     Dim entry As Variant
-    Dim lastStart As Long
+    Dim firstEntry As Variant
+    Dim nearest As Variant
+    Dim oldest As Variant
     Dim searchFrom As Long
+    Dim index As Long
 
-    lastStart = -1
     If position > doc.Content.Start Then
-        For Each exact In VTNumberFieldNativeMathRoots( _
-            doc, doc.Content.Start, position)
-            If exact.Start > lastStart And exact.Start <> excludeStart And _
-               exact.Start < position Then
+        Set recent = VTV2EntriesBefore(doc, position, excludeStart, VT_V2_PLAN_WINDOW)
+        If recent.Count > 0 Then
+            nearest = recent(recent.Count)
+            Do While recent.Count >= VT_V2_PLAN_WINDOW
+                oldest = recent(1)
+                ' the series starts inside what was read
+                If VTV2PlanEntriesDiffer(oldest, nearest) Then Exit Do
+                firstEntry = VTV2FirstEntryBefore(doc, oldest(0), excludeStart)
+                If IsEmpty(firstEntry) Then Exit Do
+                If Not VTV2PlanEntriesDiffer(firstEntry, nearest) Then
+                    recent.Add firstEntry, , 1
+                    Exit Do
+                End If
+                Set older = VTV2EntriesBefore(doc, oldest(0), excludeStart, VT_V2_PLAN_WINDOW)
+                If older.Count = 0 Then Exit Do
+                For index = older.Count To 1 Step -1
+                    recent.Add older(index), , 1
+                Next index
+            Loop
+            Set VTV2NumberedEquationsAround = recent
+            Exit Function
+        End If
+    End If
+
+    ' The first numbered equation after position, the roots asked for a few at a time: a collection of all the roots of a long
+    ' document costs 0.5 ms each and only the first is wanted.
+    searchFrom = position
+    Do
+        Set roots = VTNumberFieldNativeMathRoots( _
+            doc, searchFrom, doc.Content.End, False, 4)
+        If roots.Count = 0 Then Exit Do
+        For Each exact In roots
+            searchFrom = exact.End
+            If exact.Start <> excludeStart Then
                 entry = VTV2NumberedEquationEntry(exact)
                 If Not IsEmpty(entry) Then
                     result.Add entry
-                    lastStart = exact.Start
+                    Exit Do
                 End If
             End If
         Next exact
-    End If
-    If result.Count = 0 Then
-        ' The first numbered equation after position. The roots are asked for a few at a time: a collection of all the roots of a
-        ' long document costs 0.5 ms each and only the first is wanted.
-        searchFrom = position
-        Do
-            Set roots = VTNumberFieldNativeMathRoots( _
-                doc, searchFrom, doc.Content.End, False, 4)
-            If roots.Count = 0 Then Exit Do
-            For Each exact In roots
-                searchFrom = exact.End
-                If exact.Start > lastStart And exact.Start <> excludeStart Then
-                    entry = VTV2NumberedEquationEntry(exact)
-                    If Not IsEmpty(entry) Then
-                        result.Add entry
-                        Exit Do
-                    End If
-                End If
-            Next exact
-            If roots.Count < 4 Then Exit Do
-        Loop
-    End If
+        If roots.Count < 4 Then Exit Do
+    Loop
     Set VTV2NumberedEquationsAround = result
+End Function
+
+' True when two entries are not of one series (another number prefix or another sequence name).
+Private Function VTV2PlanEntriesDiffer(ByVal first As Variant, ByVal second As Variant) As Boolean
+    If first(3) <> second(3) Then
+        VTV2PlanEntriesDiffer = True
+    ElseIf StrComp(first(1), second(1), vbTextCompare) <> 0 Then
+        VTV2PlanEntriesDiffer = True
+    End If
+End Function
+
+' The last `wanted` numbered equations that start before position, in document order. The roots of a window of the text just
+' before position are read, the window growing until it holds enough.
+Private Function VTV2EntriesBefore( _
+    ByVal doc As Document, ByVal position As Long, _
+    ByVal excludeStart As Long, ByVal wanted As Long) As Collection
+
+    Dim result As Collection
+    Dim roots As Collection
+    Dim exact As Range
+    Dim entry As Variant
+    Dim windowStart As Long
+    Dim windowSize As Long
+    Dim contentStart As Long
+    Dim index As Long
+
+    contentStart = doc.Content.Start
+    windowSize = 6000
+    Do
+        windowStart = position - windowSize
+        If windowStart < contentStart Then windowStart = contentStart
+        Set roots = VTNumberFieldNativeMathRoots(doc, windowStart, position)
+        Set result = New Collection
+        For index = roots.Count To 1 Step -1
+            Set exact = roots(index)
+            If exact.Start < position And exact.Start <> excludeStart Then
+                entry = VTV2NumberedEquationEntry(exact)
+                If Not IsEmpty(entry) Then
+                    If result.Count = 0 Then
+                        result.Add entry
+                    Else
+                        result.Add entry, , 1
+                    End If
+                    If result.Count >= wanted Then Exit For
+                End If
+            End If
+        Next index
+        If result.Count >= wanted Or windowStart <= contentStart Then Exit Do
+        windowSize = windowSize * 4
+    Loop
+    Set VTV2EntriesBefore = result
+End Function
+
+' The first numbered equation of the document that starts before limit (Empty when there is none).
+Private Function VTV2FirstEntryBefore( _
+    ByVal doc As Document, ByVal limit As Long, _
+    ByVal excludeStart As Long) As Variant
+
+    Dim roots As Collection
+    Dim exact As Range
+    Dim entry As Variant
+    Dim searchFrom As Long
+
+    VTV2FirstEntryBefore = Empty
+    If limit <= doc.Content.Start Then Exit Function
+    searchFrom = doc.Content.Start
+    Do
+        Set roots = VTNumberFieldNativeMathRoots( _
+            doc, searchFrom, limit, False, 4)
+        If roots.Count = 0 Then Exit Do
+        For Each exact In roots
+            searchFrom = exact.End
+            If exact.Start < limit And exact.Start <> excludeStart Then
+                entry = VTV2NumberedEquationEntry(exact)
+                If Not IsEmpty(entry) Then
+                    VTV2FirstEntryBefore = entry
+                    Exit Function
+                End If
+            End If
+        Next exact
+        If roots.Count < 4 Then Exit Do
+    Loop
 End Function
 
 ' The v2 entry of one native equation (its root Range): Array(start, sequence
@@ -5295,6 +5399,34 @@ Private Function VTV2UpdateNumberingFields( _
     VTV2UpdateNumberingFields = calls
 End Function
 
+' False when the document has no bookmark a reference could name (a reference names a bookmark; the hidden _Toc and _GoBack ones of a
+' table of contents and of the cursor are not targets of references), so that looking for references before the new number, one
+' field after the other (0.2 ms each), is left out in a document of equations without references.
+Private Function VTV2DocumentMayHaveReferences(ByVal doc As Document) As Boolean
+    Dim mark As Bookmark
+    Dim hidden As Boolean
+    Dim name As String
+
+    On Error GoTo Unknown
+    hidden = doc.Bookmarks.ShowHidden
+    If Not hidden Then doc.Bookmarks.ShowHidden = True
+    For Each mark In doc.Bookmarks
+        name = mark.Name
+        If Left$(name, 4) <> "_Toc" And StrComp(name, "_GoBack", vbTextCompare) <> 0 Then
+            VTV2DocumentMayHaveReferences = True
+            Exit For
+        End If
+    Next mark
+    If Not hidden Then doc.Bookmarks.ShowHidden = False
+    Exit Function
+
+Unknown:
+    VTV2DocumentMayHaveReferences = True
+    On Error Resume Next
+    If Not hidden Then doc.Bookmarks.ShowHidden = False
+    Err.Clear
+End Function
+
 ' The renumbering of VTV2UpdateNumbersFrom in bulk; False when Word refuses somewhere (the caller then does it field by field).
 Private Function VTV2BulkRenumber( _
     ByVal doc As Document, ByVal searchStart As Long, _
@@ -5314,13 +5446,15 @@ Private Function VTV2BulkRenumber( _
         ' it that stand ahead of the equation they point to were updated with a stale number. A Field.Update takes
         ' about 10 ms for a reference in Word for Mac, so they are updated in bulk as well, when there are any.
         If Not sawReference And searchStart > doc.Content.Start Then
-            For Each candidate In doc.Range( _
-                Start:=doc.Content.Start, End:=searchStart).Fields
-                If candidate.Type = wdFieldRef Then
-                    referencesBefore = True
-                    Exit For
-                End If
-            Next candidate
+            If VTV2DocumentMayHaveReferences(doc) Then
+                For Each candidate In doc.Range( _
+                    Start:=doc.Content.Start, End:=searchStart).Fields
+                    If candidate.Type = wdFieldRef Then
+                        referencesBefore = True
+                        Exit For
+                    End If
+                Next candidate
+            End If
         End If
         If sawReference Or referencesBefore Then
             calls = calls + VTV2UpdateNumberingFields(doc, doc.Content.Start, sawReference)

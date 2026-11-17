@@ -2270,7 +2270,12 @@ Public Function VTWordNativeSignatureMatches( _
     End If
 End Function
 
-Public Sub VTFinishPureNativeEquation(ByVal exact As Range, ByVal formulaId As String)
+' createdNow: formulaId was made by this very commit, so no reference to its bookmarks can exist yet and the scan of every field
+' of the document for one (60 ms in a document of 400 equations) is left out. The ids of equations it replaced are scanned as before.
+Public Sub VTFinishPureNativeEquation( _
+    ByVal exact As Range, ByVal formulaId As String, _
+    Optional ByVal createdNow As Boolean = False)
+
     Dim ids As New Collection
     Dim mark As Bookmark
     Dim id As Variant
@@ -2296,11 +2301,15 @@ Public Sub VTFinishPureNativeEquation(ByVal exact As Range, ByVal formulaId As S
     For Each id In ids
         Set exact = VTNativeMathRoot(tracked.OMaths(1)).Range.Duplicate
         VTRetireLegacyNativeBoundary exact, CStr(id)
-        VTFinishPureNativeIdentity exact, CStr(id)
+        VTFinishPureNativeIdentity exact, CStr(id), _
+            (createdNow And StrComp(CStr(id), formulaId, vbBinaryCompare) = 0)
     Next id
 End Sub
 
-Private Sub VTFinishPureNativeIdentity(ByVal exact As Range, ByVal formulaId As String)
+Private Sub VTFinishPureNativeIdentity( _
+    ByVal exact As Range, ByVal formulaId As String, _
+    Optional ByVal noReferencesYet As Boolean = False)
+
     Dim doc As Document
     Dim prefixes As Variant
     Dim prefix As Variant
@@ -2323,12 +2332,14 @@ Private Sub VTFinishPureNativeIdentity(ByVal exact As Range, ByVal formulaId As 
         oldName = CStr(prefix) & Replace$(formulaId, "-", "")
         If doc.Bookmarks.Exists(oldName) Then
             referenced = False
-            For Each candidate In doc.Fields
-                If candidate.Type = wdFieldRef Then
-                    If StrComp(VTReferenceTargetBookmarkName(candidate.Code.Text), _
-                        oldName, vbTextCompare) = 0 Then referenced = True
-                End If
-            Next candidate
+            If Not noReferencesYet Then
+                For Each candidate In doc.Fields
+                    If candidate.Type = wdFieldRef Then
+                        If StrComp(VTReferenceTargetBookmarkName(candidate.Code.Text), _
+                            oldName, vbTextCompare) = 0 Then referenced = True
+                    End If
+                Next candidate
+            End If
             If referenced Then
                 If numberField Is Nothing Then
                     Set source = doc.Bookmarks(oldName).Range.Duplicate

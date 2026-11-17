@@ -1458,6 +1458,7 @@ Public Sub VTCommitWordDispatch( _
             End If
         End If
         On Error GoTo RollbackCandidate
+        VTWordPerformanceMark "native-caret-placed"
         GoTo CommitSucceeded
     End If
 
@@ -1744,7 +1745,7 @@ CommitSucceeded:
     If nativeEquation Then
         VTRestoreNativeNumberBookmarks nativeEquationRange, nativeNumberBookmarks
         VTWordPerformanceMark "commit-number-bookmarks-restored"
-        VTFinishPureNativeEquation nativeEquationRange, formulaId
+        VTFinishPureNativeEquation nativeEquationRange, formulaId, (mode = "create")
         VTWordPerformanceMark "commit-native-finished"
     End If
     VTDeleteWordEditBookmark targetDocument, sessionId

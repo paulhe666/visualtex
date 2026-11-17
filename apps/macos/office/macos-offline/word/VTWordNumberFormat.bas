@@ -367,22 +367,33 @@ Private Function VTTryInferEquationNumbering( _
     Dim found As Boolean
     Dim numberText As String
     Dim ordinalStart As Long
+    Dim roots As Collection
+    Dim searchFrom As Long
 
     On Error GoTo InferFailed
-    For Each exact In VTNumberFieldNativeMathRoots( _
-        documentObject, documentObject.Content.Start, documentObject.Content.End)
-        Set numberField = VTPureNativeNumberField(exact)
-        If Not numberField Is Nothing Then
-            Set marker = VTNativeEquationArrayMarkerRange(exact)
-            If Not marker Is Nothing Then
-                firstStart = exact.Start
-                firstPrefix = documentObject.Range( _
-                    marker.End, VTEquationFieldStart(numberField)).Text
-                found = True
-                Exit For
+    ' The first numbered equation decides. Its root is asked for a few at a time: a collection of every root of a long document
+    ' costs 0.3 ms each (100 ms for 400 equations) and only the first one is read.
+    searchFrom = documentObject.Content.Start
+    Do
+        Set roots = VTNumberFieldNativeMathRoots( _
+            documentObject, searchFrom, documentObject.Content.End, False, 4)
+        If roots.Count = 0 Then Exit Do
+        For Each exact In roots
+            searchFrom = exact.End
+            Set numberField = VTPureNativeNumberField(exact)
+            If Not numberField Is Nothing Then
+                Set marker = VTNativeEquationArrayMarkerRange(exact)
+                If Not marker Is Nothing Then
+                    firstStart = exact.Start
+                    firstPrefix = documentObject.Range( _
+                        marker.End, VTEquationFieldStart(numberField)).Text
+                    found = True
+                    Exit Do
+                End If
             End If
-        End If
-    Next exact
+        Next exact
+        If roots.Count < 4 Then Exit Do
+    Loop
     For Each candidate In documentObject.Bookmarks
         If Left$(candidate.Name, Len(VT_WORD_NUMBER_BOOKMARK_PREFIX)) = _
            VT_WORD_NUMBER_BOOKMARK_PREFIX Then

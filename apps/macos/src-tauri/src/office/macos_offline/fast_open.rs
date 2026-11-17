@@ -486,10 +486,31 @@ pub(super) fn refresh_fast_open_ready_markers() -> Result<(), String> {
     Ok(())
 }
 
+/// The resident polls the inbox every 25 ms so that a request is taken at once. macOS naps a hidden app (App Nap) and then wakes its
+/// timers late: a number request waited 65 to 310 ms for its answer (measured on the Mac, hidden app), about 25 ms when the app was
+/// active. Telling the system that the app does user-initiated work keeps its timers on time; the system may still go to sleep.
+fn keep_resident_responsive() {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+
+    // NSActivityUserInitiatedAllowingIdleSystemSleep: NSActivityUserInitiated (0x00FFFFFF) without NSActivityIdleSystemSleepDisabled (1 << 20)
+    const USER_INITIATED_ALLOWING_IDLE_SLEEP: usize = 0x00EF_FFFF;
+    let reason = NSString::from_str("VisualTeX Office fast open");
+    let activity: Option<Retained<AnyObject>> = unsafe {
+        let info: Retained<AnyObject> = msg_send![class!(NSProcessInfo), processInfo];
+        msg_send![&*info, beginActivityWithOptions: USER_INITIATED_ALLOWING_IDLE_SLEEP, reason: &*reason]
+    };
+    // The activity lasts as long as its token does: it is kept for the life of the process.
+    std::mem::forget(activity);
+}
+
 pub(crate) fn start_fast_open_inbox_watcher(app: AppHandle) {
     if FAST_OPEN_WATCHER_STARTED.set(()).is_err() {
         return;
     }
+    keep_resident_responsive();
     crate::spawn_background_task("visualtex-office-fast-open", move || {
         let mut last_heartbeat = Instant::now()
             .checked_sub(FAST_OPEN_READY_HEARTBEAT_INTERVAL)

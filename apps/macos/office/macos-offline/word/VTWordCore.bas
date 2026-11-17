@@ -433,9 +433,12 @@ Public Sub VTWordPerformanceFlush( _
 
     If Not VT_WORD_PERFORMANCE_ACTIVE Or Len(sessionId) = 0 Then Exit Sub
     On Error Resume Next
+    ' the local clock (seconds since midnight) at the start and the end, to tell what lies before and after the callback
     traceText = _
         "schema=visualtex-word-vba-performance-v1" & vbLf & _
         "operation=" & VT_WORD_PERFORMANCE_OPERATION & vbLf & _
+        "clockStart=" & Format$(VT_WORD_PERFORMANCE_STARTED_AT, "0.000") & vbLf & _
+        "clockEnd=" & Format$(Timer, "0.000") & vbLf & _
         VT_WORD_PERFORMANCE_BUFFER & _
         "errorNumber=" & CStr(errorNumber) & vbLf & _
         "errorDescription=" & Replace$(Replace$( _
