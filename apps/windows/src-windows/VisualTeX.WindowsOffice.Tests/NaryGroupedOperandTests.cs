@@ -31,7 +31,10 @@ public sealed class NaryGroupedOperandTests
             + "<mstyle scriptlevel=\"0\"><mspace width=\"0.167em\"></mspace></mstyle><mi>d</mi><mi>x</mi></mrow>"
             + "<mo>+</mo><mi>c</mi>");
         var nary = Assert.Single(omml.Descendants(M + "nary"));
-        Assert.Equal("f(x)dx", Text(nary.Element(M + "e")));
+        var body = nary.Element(M + "e");
+        // (the parentheses are the attributes of Word's delimiter object, not text: f, (x), d, x)
+        Assert.Equal("fxdx", Text(body));
+        Assert.Single(body!.Elements(M + "d"));
         Assert.Equal("+c", string.Concat(nary.ElementsAfterSelf().Select(Text)));
     }
 
