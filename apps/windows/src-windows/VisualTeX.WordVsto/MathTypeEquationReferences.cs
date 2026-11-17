@@ -54,6 +54,9 @@ internal static class MathTypeEquationReferences
                 Range? numberRange = null;
                 try
                 {
+                    // An MTPlaceRef is a MACROBUTTON: the type is read without the code text of every field
+                    // (a VisualTeX document has several fields a number and none of MathType's).
+                    if (field.Type != WdFieldType.wdFieldMacroButton) return true;
                     code = field.Code;
                     if (!IsMathTypePlaceRefCode(code.Text)) return true;
 
@@ -71,7 +74,6 @@ internal static class MathTypeEquationReferences
 
                     targets.Add(new EquationReferenceTarget(
                         $"mathtype:{position}",
-                        -1,
                         numberText,
                         latexPreview,
                         position,

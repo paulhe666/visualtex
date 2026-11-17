@@ -6415,14 +6415,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     var referenceInsertionEnd = selection.End;
                     var referenceInsertionColor = selection.Font.Color;
                     // (the picker shows at once and fills the LaTeX previews in while it shows)
-                    var canonicalTargets = service.GetCanonicalEquationReferenceTargets(document, deferPreviews: true);
-                    var visualTexTargets = canonicalTargets
+                    var allTargets = service.GetEquationReferenceTargets(document, deferPreviews: true);
+                    var visualTexTargets = allTargets
                         .Where(target => target.Source == EquationReferenceSource.VisualTeX)
                         .ToArray();
-                    var wordOmmlTargets = canonicalTargets
+                    var wordOmmlTargets = allTargets
                         .Where(target => target.Source == EquationReferenceSource.WordOmml)
                         .ToArray();
-                    var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
+                    IReadOnlyList<EquationReferenceTarget> mathTypeTargets = allTargets
+                        .Where(target => target.Source == EquationReferenceSource.MathType)
+                        .ToArray();
                     TraceReferenceMetrics(metrics, "listed");
                     if (visualTexTargets.Length == 0
                         && wordOmmlTargets.Length == 0

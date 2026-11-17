@@ -475,9 +475,8 @@ internal static class WordEquationNumberReferences
             .OrderBy(entry => entry.Position)
             .ToArray();
         var result = ordered
-            .Select((entry, index) => new EquationReferenceTarget(
+            .Select(entry => new EquationReferenceTarget(
                 entry.FormulaId,
-                index + 1,
                 entry.NumberText,
                 previews.TryGetValue(entry.FormulaId, out var preview)
                     ? preview

@@ -405,26 +405,31 @@ internal static partial class WordFormulaNumberingKernel
         return count;
     }
 
-    /// <paramref name="deferPreviews"/>: each target's LaTeX preview is read when first asked for
-    /// (the reference picker fills them in while it shows; a reference named by its number needs none).
-    internal static IReadOnlyList<EquationReferenceTarget>
-        GetCanonicalReferenceTargets(
-            Document document,
-            bool deferPreviews = false) =>
-        GetCanonicalReferenceTargets(
-            document,
-            scope: null,
-            deferPreviews);
-
     /// The reference targets whose hosts lie in <paramref name="scope"/> (null: the whole document),
-    /// read exactly as for the whole document: a native OMML target's cross-reference item still
-    /// counts every Equation SEQ field of the document. (Inserting a reference re-checks its one target
-    /// this way; it re-listed every target of the document, the whole listing cost again.)
+    /// each read in its own paragraph exactly as for the whole document. (Inserting a reference
+    /// re-checks its one target this way; it re-listed every target of the document, the whole listing
+    /// cost again.) <paramref name="deferPreviews"/>: each target's LaTeX preview is read when first
+    /// asked for (the reference picker fills them in while it shows; a reference named by its number
+    /// needs none).
     internal static IReadOnlyList<EquationReferenceTarget>
         GetCanonicalReferenceTargets(
             Document document,
             Range? scope,
-            bool deferPreviews = false)
+            bool deferPreviews = false) =>
+        GetCanonicalReferenceTargets(
+            document,
+            scope,
+            deferPreviews,
+            out _);
+
+    /// <paramref name="hasForeignOle"/>: whether the scope holds an inline OLE object that is not
+    /// VisualTeX's, read by the same index pass (without one there is no MathType target to look for).
+    internal static IReadOnlyList<EquationReferenceTarget>
+        GetCanonicalReferenceTargets(
+            Document document,
+            Range? scope,
+            bool deferPreviews,
+            out bool hasForeignOle)
     {
         using var metric =
             VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
@@ -440,12 +445,9 @@ internal static partial class WordFormulaNumberingKernel
                 : WordFormulaHostResolver.CaptureScopeIndex(
                     document,
                     scope);
+        hasForeignOle = index.HasForeignOle;
         var targets =
             new List<EquationReferenceTarget>();
-        // Native equation items per SEQ series, captured when a host first needs one.
-        var nativeEquationItems =
-            new Dictionary<string, IReadOnlyDictionary<int, int>>(
-                StringComparer.OrdinalIgnoreCase);
 
         foreach (var host in index.Omml
                      .Concat(index.VisualTeX)
@@ -496,10 +498,10 @@ internal static partial class WordFormulaNumberingKernel
                             document,
                             previewHost);
                 }
-                EquationReferenceTarget Target(string formulaId, int nativeReferenceItem, EquationReferenceSource source) =>
+                EquationReferenceTarget Target(string formulaId, EquationReferenceSource source) =>
                     deferPreviews
-                        ? new EquationReferenceTarget(formulaId, nativeReferenceItem, numberText, ReadPreview, previewHost.Range.Start, source, previewHost.Range.End)
-                        : new EquationReferenceTarget(formulaId, nativeReferenceItem, numberText, ReadPreview(), previewHost.Range.Start, source, previewHost.Range.End);
+                        ? new EquationReferenceTarget(formulaId, numberText, ReadPreview, previewHost.Range.Start, source, previewHost.Range.End)
+                        : new EquationReferenceTarget(formulaId, numberText, ReadPreview(), previewHost.Range.Start, source, previewHost.Range.End);
 
                 if (host.Kind == WordFormulaHostKind.Omml)
                 {
@@ -507,20 +509,18 @@ internal static partial class WordFormulaNumberingKernel
                         WordFormulaNumberingContainerKind.CanonicalNativeOmml)
                         continue;
 
-                    int nativeReferenceItem;
-                    using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.NativeItem"))
-                        nativeReferenceItem =
-                            ResolveNativeEquationReferenceItem(
+                    bool nativeNumber;
+                    using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.NativeNumber"))
+                        nativeNumber =
+                            HasNativeEquationSequence(
                                 document,
-                                host,
-                                nativeEquationItems);
-                    if (nativeReferenceItem <= 0)
+                                host);
+                    if (!nativeNumber)
                         continue;
 
                     targets.Add(
                         Target(
                             string.Empty,
-                            nativeReferenceItem,
                             EquationReferenceSource.WordOmml));
                     continue;
                 }
@@ -533,7 +533,6 @@ internal static partial class WordFormulaNumberingKernel
                 targets.Add(
                     Target(
                         formulaId.ToString("D"),
-                        0,
                         EquationReferenceSource.VisualTeX));
             }
             finally
@@ -545,71 +544,14 @@ internal static partial class WordFormulaNumberingKernel
         return targets;
     }
 
-    private static IReadOnlyDictionary<int, int>
-        CaptureNativeEquationReferenceItems(
-            Document document,
-            string sequenceName)
-    {
-        var result =
-            new Dictionary<int, int>();
-        Range? content = null;
-        try
-        {
-            content = document.Content;
-            var nativeItem = 0;
-            // (bounded windows: an indexed pass over document.Fields is O(n^2) in a long document)
-            WordNumberingFieldCollection.ForEachFieldInScope(
-                content,
-                field =>
-                {
-                    Range? code = null;
-                    Range? fieldResult = null;
-                    try
-                    {
-                        code = field.Code.Duplicate;
-                        if (!IsNativeEquationSequenceField(
-                                code.Text,
-                                sequenceName))
-                            return true;
-
-                        fieldResult =
-                            field.Result.Duplicate;
-                        if (fieldResult.StoryType !=
-                            WdStoryType.wdMainTextStory)
-                            return true;
-
-                        nativeItem++;
-                        if (result.ContainsKey(
-                                fieldResult.Start))
-                            throw new InvalidDataException(
-                                "Two native Equation SEQ fields share the same Word result boundary.");
-                        result.Add(
-                            fieldResult.Start,
-                            nativeItem);
-                        return true;
-                    }
-                    finally
-                    {
-                        Release(fieldResult);
-                        Release(code);
-                    }
-                });
-            return result;
-        }
-        finally
-        {
-            Release(content);
-        }
-    }
-
-    // A document's equations are numbered in the series their SEQ fields name: Word writes
-    // its localized Equation caption label (the Chinese one in Chinese Word), WPS writes
-    // "Equation", and the document keeps its series wherever it is opened. An equation's
-    // item is its ordinal in its own series, not in the running application's label.
-    private static int ResolveNativeEquationReferenceItem(
+    // Whether a native OMML equation is numbered by a SEQ field of the main story, read in the
+    // equation alone. A document's equations are numbered in the series their SEQ fields name (Word
+    // writes its localized Equation caption label, WPS writes "Equation"); any series counts. Each
+    // target's ordinal among its series' SEQ fields was counted here, a pass over every field of the
+    // document, for a number nothing read: a reference is bound to the number's own range.
+    private static bool HasNativeEquationSequence(
         Document document,
-        WordFormulaHostDescriptor host,
-        Dictionary<string, IReadOnlyDictionary<int, int>> nativeEquationItems)
+        WordFormulaHostDescriptor host)
     {
         Range? hostRange = null;
         Fields? fields = null;
@@ -623,9 +565,12 @@ internal static partial class WordFormulaNumberingKernel
                     document,
                     host.Range);
             fields = hostRange.Fields;
-            var matched = 0;
+            var series =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            var count = fields.Count;
             for (var index = 1;
-                 index <= fields.Count;
+                 index <= count;
                  index++)
             {
                 Release(result);
@@ -640,32 +585,17 @@ internal static partial class WordFormulaNumberingKernel
                         code.Text);
                 if (sequenceName is null)
                     continue;
-                if (!nativeEquationItems.TryGetValue(
-                        sequenceName,
-                        out var items))
-                {
-                    items =
-                        CaptureNativeEquationReferenceItems(
-                            document,
-                            sequenceName);
-                    nativeEquationItems.Add(
-                        sequenceName,
-                        items);
-                }
-
                 result =
                     field.Result.Duplicate;
-                if (!items.TryGetValue(
-                        result.Start,
-                        out var candidate))
-                    return 0;
-                if (matched != 0
-                    && matched != candidate)
+                if (result.StoryType !=
+                    WdStoryType.wdMainTextStory)
+                    return false;
+                // (two numbers of one series in one equation: which one a reference means is unknown)
+                if (!series.Add(sequenceName))
                     throw new InvalidDataException(
                         "One native OMML equation resolves to multiple Word Equation cross-reference items.");
-                matched = candidate;
             }
-            return matched;
+            return series.Count > 0;
         }
         finally
         {
@@ -676,15 +606,6 @@ internal static partial class WordFormulaNumberingKernel
             Release(hostRange);
         }
     }
-
-    private static bool IsNativeEquationSequenceField(
-        string? instruction,
-        string sequenceName) =>
-        !string.IsNullOrWhiteSpace(sequenceName)
-        && string.Equals(
-            NativeSequenceName(instruction),
-            sequenceName,
-            StringComparison.OrdinalIgnoreCase);
 
     // The series a SEQ field names; null for any other field.
     private static string? NativeSequenceName(

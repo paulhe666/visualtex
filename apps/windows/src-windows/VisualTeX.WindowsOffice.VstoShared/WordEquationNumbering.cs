@@ -14,7 +14,6 @@ internal sealed class EquationReferenceTarget
 {
     public EquationReferenceTarget(
         string formulaId,
-        int nativeReferenceItem,
         string numberText,
         string latexPreview,
         int position,
@@ -22,7 +21,6 @@ internal sealed class EquationReferenceTarget
         int endPosition = -1)
     {
         FormulaId = formulaId;
-        NativeReferenceItem = nativeReferenceItem;
         NumberText = numberText;
         _latexPreview = latexPreview;
         Position = position;
@@ -34,13 +32,12 @@ internal sealed class EquationReferenceTarget
     /// read per formula: in a 400-formula document most of the time of listing the targets).
     public EquationReferenceTarget(
         string formulaId,
-        int nativeReferenceItem,
         string numberText,
         Func<string> latexPreview,
         int position,
         EquationReferenceSource source,
         int endPosition)
-        : this(formulaId, nativeReferenceItem, numberText, string.Empty, position, source, endPosition)
+        : this(formulaId, numberText, string.Empty, position, source, endPosition)
     {
         _readLatexPreview = latexPreview;
     }
@@ -49,7 +46,6 @@ internal sealed class EquationReferenceTarget
     private Func<string>? _readLatexPreview;
 
     public string FormulaId { get; }
-    public int NativeReferenceItem { get; }
     public string NumberText { get; }
     public string LatexPreview
     {

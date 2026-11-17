@@ -303,8 +303,7 @@ public sealed partial class ThisAddIn
             var end = selection.End;
             var color = selection.Font.Color;
             // (matched by number alone: no LaTeX preview is read)
-            var targets = service.GetCanonicalEquationReferenceTargets(document, deferPreviews: true)
-                .Concat(MathTypeEquationReferences.GetTargets(document))
+            var targets = service.GetEquationReferenceTargets(document, deferPreviews: true)
                 .Where(target => source switch
                 {
                     null or "" => true,

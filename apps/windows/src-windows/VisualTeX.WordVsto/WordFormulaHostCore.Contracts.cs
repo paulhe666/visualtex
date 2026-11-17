@@ -126,14 +126,19 @@ internal sealed class WordFormulaDocumentIndex
 {
     internal WordFormulaDocumentIndex(
         IReadOnlyList<WordFormulaHostDescriptor> omml,
-        IReadOnlyList<WordFormulaHostDescriptor> visualTeX)
+        IReadOnlyList<WordFormulaHostDescriptor> visualTeX,
+        bool hasForeignOle)
     {
         Omml = omml;
         VisualTeX = visualTeX;
+        HasForeignOle = hasForeignOle;
     }
 
     internal IReadOnlyList<WordFormulaHostDescriptor> Omml { get; }
     internal IReadOnlyList<WordFormulaHostDescriptor> VisualTeX { get; }
+    /// Whether the scope holds an inline OLE object that is not VisualTeX's (or one whose kind could not
+    /// be read): only then can it hold a MathType equation.
+    internal bool HasForeignOle { get; }
 
     internal IReadOnlyList<WordFormulaHostDescriptor> ForKind(
         WordFormulaHostKind kind) =>

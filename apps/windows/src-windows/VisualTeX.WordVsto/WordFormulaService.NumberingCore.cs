@@ -434,10 +434,12 @@ internal sealed partial class WordFormulaService
         try
         {
             scope = TargetParagraphs(document, target);
+            // (positions only: the insertion reads no preview)
             return WordFormulaNumberingKernel
                 .GetCanonicalReferenceTargets(
                     document,
-                    scope);
+                    scope,
+                    deferPreviews: true);
         }
         finally
         {
@@ -445,12 +447,25 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    /// Every reference target of the document: the VisualTeX and Word OMML ones, then MathType's. A
+    /// MathType number counts only beside a MathType object, so the MathType pass over every field of
+    /// the document runs only when the index met an inline OLE object that is not VisualTeX's.
     internal IReadOnlyList<EquationReferenceTarget>
-        GetCanonicalEquationReferenceTargets(
+        GetEquationReferenceTargets(
             Document document,
-            bool deferPreviews = false) =>
-        WordFormulaNumberingKernel
-            .GetCanonicalReferenceTargets(
-                document,
-                deferPreviews);
+            bool deferPreviews = false)
+    {
+        var canonical =
+            WordFormulaNumberingKernel
+                .GetCanonicalReferenceTargets(
+                    document,
+                    scope: null,
+                    deferPreviews,
+                    out var hasForeignOle);
+        return hasForeignOle
+            ? canonical
+                .Concat(MathTypeEquationReferences.GetTargets(document))
+                .ToArray()
+            : canonical;
+    }
 }

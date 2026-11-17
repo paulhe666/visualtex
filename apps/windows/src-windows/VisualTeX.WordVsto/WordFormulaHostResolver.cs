@@ -65,14 +65,12 @@ internal static class WordFormulaHostResolver
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (scope is null) throw new ArgumentNullException(nameof(scope));
 
-        // One bookmark pass and one REF-result pass for exactly this scope.
-        // Per-formula COM scans are forbidden after these snapshots are built.
+        // One bookmark pass and (when the scope holds an equation) one REF-result
+        // pass for exactly this scope. Per-formula COM scans are forbidden after
+        // these snapshots are built.
         IReadOnlyList<IdentityAnchor> anchors;
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.IdentityAnchors"))
             anchors = CaptureIdentityAnchors(scope);
-        IReadOnlyList<WordFormulaRangeAddress> referenceResults;
-        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.ReferenceResults"))
-            referenceResults = CaptureReferenceResultRanges(scope);
         IReadOnlyList<WordFormulaRangeAddress> tableRanges;
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.TableRanges"))
             tableRanges = CaptureTableRanges(scope);
@@ -80,15 +78,16 @@ internal static class WordFormulaHostResolver
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.Omml"))
             omml = CaptureOmmlIndex(
                 scope,
-                referenceResults,
                 tableRanges);
         IReadOnlyList<WordFormulaHostDescriptor> visualTeX;
+        bool foreignOle;
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX"))
             visualTeX = CaptureVisualTeXIndex(
                 scope,
                 anchors,
-                tableRanges);
-        return new WordFormulaDocumentIndex(omml, visualTeX);
+                tableRanges,
+                out foreignOle);
+        return new WordFormulaDocumentIndex(omml, visualTeX, foreignOle);
     }
 
     internal static IReadOnlyList<WordFormulaHostDescriptor>
@@ -112,11 +111,8 @@ internal static class WordFormulaHostResolver
             CaptureTableRanges(scope);
         if (kind == WordFormulaHostKind.Omml)
         {
-            var referenceResults =
-                CaptureReferenceResultRanges(scope);
             return CaptureOmmlIndex(
                 scope,
-                referenceResults,
                 tableRanges);
         }
 
@@ -127,7 +123,8 @@ internal static class WordFormulaHostResolver
             return CaptureVisualTeXIndex(
                 scope,
                 anchors,
-                tableRanges);
+                tableRanges,
+                out _);
         }
 
         throw new NotSupportedException(
@@ -379,7 +376,6 @@ internal static class WordFormulaHostResolver
 
     private static IReadOnlyList<WordFormulaHostDescriptor> CaptureOmmlIndex(
         Range scope,
-        IReadOnlyList<WordFormulaRangeAddress> referenceResults,
         IReadOnlyList<WordFormulaRangeAddress> tableRanges)
     {
         var result = new List<WordFormulaHostDescriptor>();
@@ -392,6 +388,13 @@ internal static class WordFormulaHostResolver
             // Index access, not the collection enumerator: enumerating OMaths
             // cost ~70 ms per equation (500 equations: 34 s against 0.7 s).
             var count = maths.Count;
+            // The REF results only sort out equations, and reading them is a pass over every field of the
+            // scope: a scope of VisualTeX objects alone (no equation) skips it.
+            if (count == 0)
+                return result;
+            IReadOnlyList<WordFormulaRangeAddress> referenceResults;
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.ReferenceResults"))
+                referenceResults = CaptureReferenceResultRanges(scope);
             for (var index = 1; index <= count; index++)
             {
                 math = maths[index];
@@ -624,11 +627,15 @@ internal static class WordFormulaHostResolver
         }
     }
 
+    /// <paramref name="foreignOle"/>: whether an inline OLE object of the scope is not VisualTeX's (a
+    /// MathType equation can only be one of those).
     private static IReadOnlyList<WordFormulaHostDescriptor> CaptureVisualTeXIndex(
         Range scope,
         IReadOnlyList<IdentityAnchor> anchors,
-        IReadOnlyList<WordFormulaRangeAddress> tableRanges)
+        IReadOnlyList<WordFormulaRangeAddress> tableRanges,
+        out bool foreignOle)
     {
+        foreignOle = false;
         var result = new List<WordFormulaHostDescriptor>();
         InlineShapes? shapes = null;
         InlineShape? shape = null;
@@ -646,6 +653,7 @@ internal static class WordFormulaHostResolver
                     nativeOle = WordFormulaMetadataReader.IsNativeOle(shape);
                 if (!nativeOle)
                 {
+                    if (!foreignOle && MayBeForeignOle(shape)) foreignOle = true;
                     Release(shape); shape = null;
                     continue;
                 }
@@ -689,6 +697,22 @@ internal static class WordFormulaHostResolver
             Release(range);
             Release(shape);
             Release(shapes);
+        }
+    }
+
+    // An inline shape that is not a VisualTeX object: an OLE object (or one whose type cannot be read)
+    // may be MathType's; a picture never is.
+    private static bool MayBeForeignOle(InlineShape shape)
+    {
+        try
+        {
+            return shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                or WdInlineShapeType.wdInlineShapeLinkedOLEObject;
+        }
+        catch (Exception ignored)
+        {
+            IgnoredErrors.Ignore(ignored);
+            return true;
         }
     }
 

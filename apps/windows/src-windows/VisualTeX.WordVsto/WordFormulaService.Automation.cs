@@ -660,7 +660,7 @@ internal sealed partial class WordFormulaService
         {
             // (only the numbers are read here: a target's LaTeX preview opens the formula's OLE object, and Word's field
             // updates behind a document whose objects were all opened cost 5 to 8 times more)
-            try { return GetCanonicalEquationReferenceTargets(document, deferPreviews: true).Concat(MathTypeEquationReferences.GetTargets(document)).ToList(); }
+            try { return GetEquationReferenceTargets(document, deferPreviews: true).ToList(); }
             catch { return new List<EquationReferenceTarget>(); }
         });
 
