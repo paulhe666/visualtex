@@ -651,29 +651,57 @@ body.vtx-toolbar-dragging * {
   color: var(--accent);
 }
 
-/* item picker */
-.toolbar-picker-nav-heading {
-  display: block;
-  padding: 10px 10px 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
+/* item picker: a dense field of cards that show the character and nothing else (the name is the tooltip); only a card
+   already in the group carries a mark */
+.toolbar-item-picker {
+  width: min(900px, calc(100vw - 36px));
+  height: min(640px, calc(100vh - 48px));
 }
 
-.toolbar-picker-nav-block {
-  display: contents;
+.toolbar-item-picker .formula-tile-library-body {
+  grid-template-columns: 128px minmax(0, 1fr);
+}
+
+.toolbar-item-picker .formula-tile-library-groups {
+  gap: 1px;
+  padding: 6px 4px;
+}
+
+.toolbar-item-picker .formula-tile-library-groups button {
+  padding: 6px 9px;
+}
+
+.toolbar-item-picker .formula-tile-library-content {
+  padding: 8px 10px 10px;
 }
 
 .toolbar-item-picker .formula-tile-library-grid {
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 4px;
 }
 
 .toolbar-item-picker .formula-tile-library-item {
-  height: 84px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 2px 3px;
+  border-radius: 7px;
 }
 
 .toolbar-item-picker .formula-tile-library-item.is-wide {
-  grid-column: span 2;
+  grid-column: span 3;
+}
+
+.toolbar-item-picker .formula-tile-library-item-state {
+  top: 2px;
+  right: 2px;
+  width: 13px;
+  height: 13px;
+}
+
+.toolbar-item-picker .formula-tile-library-item-state svg {
+  width: 9px;
+  height: 9px;
 }
 
 /* while the strip scrolls its sections ignore the pointer (styles.css); in edit mode a drag must still find them */
