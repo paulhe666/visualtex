@@ -1743,9 +1743,12 @@ Public Sub VTCommitWordDispatch( _
 CommitSucceeded:
     If nativeEquation Then
         VTRestoreNativeNumberBookmarks nativeEquationRange, nativeNumberBookmarks
+        VTWordPerformanceMark "commit-number-bookmarks-restored"
         VTFinishPureNativeEquation nativeEquationRange, formulaId
+        VTWordPerformanceMark "commit-native-finished"
     End If
     VTDeleteWordEditBookmark targetDocument, sessionId
+    VTWordPerformanceMark "commit-edit-bookmark-deleted"
     On Error Resume Next
     If Not originalImageBackupDocument Is Nothing Then
         originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
@@ -2186,7 +2189,9 @@ Public Sub VTV2PlanInsertion( _
     literalPrefix = ""
     automatic = False
     VTV2DocumentFormat doc, headingLevel, separator
+    VTWordPerformanceMark "v2-plan-format"
     Set entries = VTV2PlanEntries(doc, position, excludeStart)
+    VTWordPerformanceMark "v2-plan-entries"
     If entries.Count = 0 Then
         sequenceName = VTNativeEquationLabelName()
     Else

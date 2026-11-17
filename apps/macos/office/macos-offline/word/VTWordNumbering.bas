@@ -4112,7 +4112,8 @@ Public Function VTNumberFieldNativeMathRoots( _
     ByVal documentObject As Document, _
     ByVal searchStart As Long, _
     ByVal searchEnd As Long, _
-    Optional ByVal includeStyleRef As Boolean = False) As Collection
+    Optional ByVal includeStyleRef As Boolean = False, _
+    Optional ByVal maximumCount As Long = 0) As Collection
 
     Dim result As Collection
     Dim scanRange As Range
@@ -4142,6 +4143,9 @@ Public Function VTNumberFieldNativeMathRoots( _
                     If rootRange.Start > lastStart Then
                         result.Add rootRange
                         lastStart = rootRange.Start
+                        If maximumCount > 0 Then
+                            If result.Count >= maximumCount Then Exit For
+                        End If
                     End If
                 End If
             End If
@@ -4792,9 +4796,11 @@ Private Function VTV2NumberedEquationsAround( _
     ByVal doc As Document, ByVal position As Long, _
     Optional ByVal excludeStart As Long = -1) As Collection
     Dim result As New Collection
+    Dim roots As Collection
     Dim exact As Range
     Dim entry As Variant
     Dim lastStart As Long
+    Dim searchFrom As Long
 
     lastStart = -1
     If position > doc.Content.Start Then
@@ -4811,16 +4817,25 @@ Private Function VTV2NumberedEquationsAround( _
         Next exact
     End If
     If result.Count = 0 Then
-        For Each exact In VTNumberFieldNativeMathRoots( _
-            doc, position, doc.Content.End)
-            If exact.Start > lastStart And exact.Start <> excludeStart Then
-                entry = VTV2NumberedEquationEntry(exact)
-                If Not IsEmpty(entry) Then
-                    result.Add entry
-                    Exit For
+        ' The first numbered equation after position. The roots are asked for a few at a time: a collection of all the roots of a
+        ' long document costs 0.5 ms each and only the first is wanted.
+        searchFrom = position
+        Do
+            Set roots = VTNumberFieldNativeMathRoots( _
+                doc, searchFrom, doc.Content.End, False, 4)
+            If roots.Count = 0 Then Exit Do
+            For Each exact In roots
+                searchFrom = exact.End
+                If exact.Start > lastStart And exact.Start <> excludeStart Then
+                    entry = VTV2NumberedEquationEntry(exact)
+                    If Not IsEmpty(entry) Then
+                        result.Add entry
+                        Exit Do
+                    End If
                 End If
-            End If
-        Next exact
+            Next exact
+            If roots.Count < 4 Then Exit Do
+        Loop
     End If
     Set VTV2NumberedEquationsAround = result
 End Function
@@ -5245,6 +5260,8 @@ Private Function VTV2UpdateNumberingFields( _
     Dim fieldEnd As Long
     Dim inSegment As Boolean
     Dim calls As Long
+    Dim updateStarted As Single
+    Dim updateSeconds As Double
 
     For Each candidate In doc.Range( _
         Start:=fromPosition, End:=doc.Content.End).Fields
@@ -5260,16 +5277,21 @@ Private Function VTV2UpdateNumberingFields( _
             If fieldEnd > segmentEnd Then segmentEnd = fieldEnd
         ElseIf Not VTV2FieldTypeUpdatesHarmlessly(fieldType) Then
             If inSegment Then
+                updateStarted = Timer
                 doc.Range(Start:=segmentStart, End:=segmentEnd).Fields.Update
+                updateSeconds = updateSeconds + VTTimerElapsedSeconds(updateStarted, Timer)
                 calls = calls + 1
                 inSegment = False
             End If
         End If
     Next candidate
     If inSegment Then
+        updateStarted = Timer
         doc.Range(Start:=segmentStart, End:=segmentEnd).Fields.Update
+        updateSeconds = updateSeconds + VTTimerElapsedSeconds(updateStarted, Timer)
         calls = calls + 1
     End If
+    VTWordPerformanceNote "renumber-fields-update-ms", CStr(CLng(1000# * updateSeconds))
     VTV2UpdateNumberingFields = calls
 End Function
 

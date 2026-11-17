@@ -477,6 +477,10 @@ Public Function VTTryFastConvertOmmlBatch( _
     ' that answer and does not start the helper script's second conversion beside it.
     Const MAX_CLAIM_WAIT_SECONDS As Double = 0.4
     Const MAX_ANSWER_WAIT_SECONDS As Double = 20#
+    ' The first part of the wait does not hand control to Word (DoEvents): its idle work (layout of a long document) took
+    ' 0.1 s of a 0.02 s answer. A longer wait does, so that Word stays alive while a large package is built.
+    Const SPIN_SECONDS As Double = 0.25
+    Dim elapsedSeconds As Double
     Dim inboxRoot As String
     Dim requestPath As String
     Dim temporaryPath As String
@@ -522,7 +526,6 @@ Public Function VTTryFastConvertOmmlBatch( _
     startedAt = Timer
     Do While Len(Dir$(requestPath, vbNormal)) > 0
         If Len(Dir$(answerPath, vbNormal)) > 0 Then Exit Do
-        DoEvents
         If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_CLAIM_WAIT_SECONDS Then
             trace = trace & ";unclaimed"
             GoTo NotAvailable
@@ -530,8 +533,9 @@ Public Function VTTryFastConvertOmmlBatch( _
     Loop
     trace = trace & ";claimed-after-ms=" & CStr(CLng(1000# * VTFastLaunchElapsedSeconds(startedAt, Timer)))
     Do While Len(Dir$(answerPath, vbNormal)) = 0
-        DoEvents
-        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then
+        elapsedSeconds = VTFastLaunchElapsedSeconds(startedAt, Timer)
+        If elapsedSeconds > SPIN_SECONDS Then DoEvents
+        If elapsedSeconds > MAX_ANSWER_WAIT_SECONDS Then
             trace = trace & ";timeout"
             GoTo NotAvailable
         End If
