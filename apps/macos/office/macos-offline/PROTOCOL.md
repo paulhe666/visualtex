@@ -248,3 +248,22 @@ neither the paragraph style assignment nor its base/next style is rewritten.
 This preserves Mac Word's direct center/right tab stops and the user's Chinese
 text alignment. Typography synchronization repairs the same scaffold as insertion
 and numbering changes.
+
+## Number request through the fast-open inbox
+
+A numbered Word equation is built by the app (`omml_write`), so a commit that numbers an equation asks the app for its package
+(`sourceKind=nativeNumber`, a manifest of rows like the others). The helper script's `ConvertOmmlBatch` takes the manifest as its
+argument, writes it into the Session folder and runs the app's command line mode (`--office-omml-to-latex-batch`) in a process of its
+own; the call costs Word about 0.6 s (AppleScriptTask, measured on Word for Mac 16.x with 125 numbered equations), the largest fixed
+part of every numbered insertion. The resident app answers the same request through the inbox of the fast open:
+
+- the add-in asks only a resident whose `resident-ready` heartbeat carries the line `numbers=1`;
+- it publishes `<sessionId>.number` holding the manifest (written as `.<sessionId>.number.tmp` and renamed; Word cannot write into
+  the Session folder, which is in Application Scripts) into the inbox of the Word sandbox, and waits at most 1.5 s for
+  `<sessionId>.number-done`;
+- the resident (the 25 ms poll of the fast open) takes the request, puts the manifest into the Session folder as
+  `formula-restore-source.txt`, builds the package exactly as the command line mode does, and writes the result manifest to
+  `omml-latex-result.txt` there and as the answer file (`error=<message>` when it cannot); a request older than 10 s is dropped
+  without an answer;
+- when the resident is not ready, does not say `numbers=1`, does not answer in time or answers with an error, the add-in uses the
+  helper script as before (and removes its own request, so that nothing answers late).

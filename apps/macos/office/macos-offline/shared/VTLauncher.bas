@@ -462,12 +462,14 @@ Private Function VTFastOpenRequestClaimed( _
 #End If
 End Function
 
-' The numbered-equation package of a Session whose manifest is already in the Session folder, asked of the resident app through the
-' sandbox inbox instead of the helper script: AppleScriptTask costs about half a second a call from Word (measured), the
-' resident answers in well under 0.1 s. A marker <session>.number goes into the inbox, the resident builds the package and
-' answers with <session>.number-done holding the result manifest. "" when the resident is not ready, does not answer in time,
-' or fails (the caller then uses ConvertOmmlBatch of the helper script).
-Public Function VTTryFastConvertOmmlBatch(ByVal sessionId As String) As String
+' The numbered-equation package of a manifest (the rows ConvertOmmlBatch of the helper script takes), asked of the resident app
+' through the sandbox inbox instead of the helper script: AppleScriptTask costs about half a second a call from Word
+' (measured), the resident answers in well under 0.1 s. The request <session>.number holds the manifest (Word cannot write
+' into the Session folder, which is in Application Scripts); the resident builds the package and answers with
+' <session>.number-done holding the result manifest. "" when the resident is not ready, does not answer in time, or fails
+' (the caller then uses ConvertOmmlBatch of the helper script).
+Public Function VTTryFastConvertOmmlBatch( _
+    ByVal sessionId As String, ByVal manifest As String) As String
 #If Mac Then
     Const MAX_ANSWER_WAIT_SECONDS As Double = 1.5
     Dim inboxRoot As String
@@ -478,7 +480,7 @@ Public Function VTTryFastConvertOmmlBatch(ByVal sessionId As String) As String
     Dim handle As Integer
     Dim answer As String
 
-    If Not VTIsCanonicalUuid(sessionId) Then Exit Function
+    If Not VTIsCanonicalUuid(sessionId) Or Len(manifest) = 0 Then Exit Function
     On Error GoTo NotAvailable
     If Not VTFastOpenResidentReady("word") Then Exit Function
     inboxRoot = VTFastOpenInboxRoot("word")
@@ -496,7 +498,7 @@ Public Function VTTryFastConvertOmmlBatch(ByVal sessionId As String) As String
 
     handle = FreeFile
     Open temporaryPath For Output Access Write As #handle
-    Print #handle, "nativeNumber";
+    Print #handle, manifest;
     Close #handle
     handle = 0
     Name temporaryPath As requestPath

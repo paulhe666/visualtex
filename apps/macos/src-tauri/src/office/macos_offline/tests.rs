@@ -2221,12 +2221,11 @@ fn the_word_number_request_is_answered_through_the_inbox() {
         format!("item1Separator={}", encode(".")),
         "item1Initial=1".to_string(),
     ];
-    fs::write(session_directory.join(FORMULA_RESTORE_SOURCE_FILE), rows.join("\n")).unwrap();
-    // files that are not number requests stay where they are
+    // the request holds the manifest (the Session folder is not the add-in's to write); files that are not requests stay
     fs::write(inbox.join("resident-ready"), b"ready").unwrap();
     fs::write(inbox.join(format!("{session_id}.json")), b"{}").unwrap();
-    fs::write(inbox.join("not-a-uuid.number"), b"nativeNumber").unwrap();
-    fs::write(inbox.join(format!("{session_id}.number")), b"nativeNumber").unwrap();
+    fs::write(inbox.join("not-a-uuid.number"), rows.join("\n")).unwrap();
+    fs::write(inbox.join(format!("{session_id}.number")), rows.join("\n")).unwrap();
 
     let directory_of = |id: &str| -> Result<PathBuf, String> { Ok(sessions.join(id)) };
     assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 1);
@@ -2237,9 +2236,10 @@ fn the_word_number_request_is_answered_through_the_inbox() {
     assert!(answer.contains("operation=nativeNumber"), "{answer}");
     let docx = answer.lines().find_map(|row| row.strip_prefix("docxPath=")).expect("the answer names the package");
     assert!(Path::new(docx).is_file(), "{docx}");
+    assert!(session_directory.join(FORMULA_RESTORE_SOURCE_FILE).is_file(), "the manifest is kept in the Session folder");
     assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 0, "nothing is answered twice");
 
-    // a Session with no manifest is answered with the error, not left waiting
+    // a request that is no manifest is answered with the error, not left waiting
     let missing = Uuid::new_v4().to_string();
     fs::write(inbox.join(format!("{missing}.number")), b"nativeNumber").unwrap();
     assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 1);

@@ -4996,15 +4996,12 @@ Public Function VTV2RequestNumberDocx( _
         "mathFont=" & VTBase64UrlEncodeUtf8(doc.OMathFontName) & vbLf & _
         IIf(Len(ommlBase64) > 0, "ommlBase64=" & ommlBase64 & vbLf, "") & items
     VTWordPerformanceMark "v2-manifest-built"
-    If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
-        VTWordPerformanceMark "v2-manifest-written"
-        ' The resident app builds the package at once; the helper script's process answers in half a second.
-        resultText = VTTryFastConvertOmmlBatch(sessionId)
-        If Len(resultText) > 0 Then
-            VTWordPerformanceMark "v2-app-converted-fast"
-        Else
-            timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
-        End If
+    ' The resident app builds the package at once; the helper script's process answers in half a second.
+    resultText = VTTryFastConvertOmmlBatch(sessionId, manifest)
+    If Len(resultText) > 0 Then
+        VTWordPerformanceMark "v2-app-converted-fast"
+    ElseIf VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
+        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
     Else
         timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
     End If
@@ -5140,20 +5137,28 @@ End Sub
 ' field, so the numbers from the new one on are updated with one call over the run of numbering fields instead of one call
 ' for each, which took 8 ms an equation (a start-of-document insertion in 400 equations: 3.3 s).
 
-' The fields that make up a number and its references.
-Private Function VTV2FieldTypeIsNumbering(ByVal fieldType As Long) As Boolean
+' The fields VTV2UpdateNumbersFrom updates: the SEQ and STYLEREF of a native equation (whatever its label), the literal
+' chapter prefix QUOTE of its number, and the references. A SEQ or STYLEREF outside an equation (a figure caption, an image
+' number), a QUOTE that is calculated or the user's, and every other kind of field keep their own chain.
+Private Function VTV2FieldIsNumbering( _
+    ByVal candidate As Field, ByVal fieldType As Long) As Boolean
+
     Select Case fieldType
-        Case wdFieldSequence, wdFieldStyleRef, wdFieldRef, wdFieldQuote
-            VTV2FieldTypeIsNumbering = True
+        Case wdFieldRef
+            VTV2FieldIsNumbering = True
+        Case wdFieldSequence, wdFieldStyleRef
+            VTV2FieldIsNumbering = Not VTFieldNativeMathRoot(candidate) Is Nothing
+        Case wdFieldQuote
+            VTV2FieldIsNumbering = (StrComp(Trim$(candidate.Code.Text), _
+                VTNativePrefixInstruction(candidate.Result.Text), vbTextCompare) = 0)
     End Select
 End Function
 
 ' The other fields an update in the same call may pass over: ones an update leaves as they are (an add-in's ADDIN fields,
-' hyperlinks) or that are meant to be current (page numbers). Any other (a table of contents, a date, an include, a
-' picture or object link ...) ends the run: it is not updated by this.
+' hyperlinks). Any other (a table of contents, a date, an include, a picture or object link ...) ends the run.
 Private Function VTV2FieldTypeUpdatesHarmlessly(ByVal fieldType As Long) As Boolean
     Select Case fieldType
-        Case wdFieldAddin, wdFieldHyperlink, wdFieldPageRef, wdFieldNoteRef, wdFieldPage, wdFieldNumPages
+        Case wdFieldAddin, wdFieldHyperlink
             VTV2FieldTypeUpdatesHarmlessly = True
     End Select
 End Function
@@ -5173,7 +5178,7 @@ Private Function VTV2UpdateNumberingFields( _
     For Each candidate In doc.Range( _
         Start:=fromPosition, End:=doc.Content.End).Fields
         fieldType = candidate.Type
-        If VTV2FieldTypeIsNumbering(fieldType) Then
+        If VTV2FieldIsNumbering(candidate, fieldType) Then
             If Not inSegment Then
                 segmentStart = VTEquationFieldStart(candidate)
                 inSegment = True
