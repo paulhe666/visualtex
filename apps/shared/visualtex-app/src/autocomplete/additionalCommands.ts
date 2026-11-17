@@ -204,9 +204,11 @@ const simpleDefinitions: SimpleDefinition[] = [
   ["lt", "<", "小于", "Less than", "relation", 92],
   ["gt", ">", "大于", "Greater than", "relation", 92],
   ["equiv", "\\equiv", "恒等于", "Equivalent", "relation", 88],
-  ["sim", "\\sim", "相似", "Similar", "relation", 82],
+  ["sim", "\\sim", "相似（∼）", "Similar (∼)", "relation", 82],
+  // the similarity sign of Chinese geometry (U+223D), drawn as exam-zh-symbols draws it; with the exam-zh setting on, \sim is read as this sign
+  ["backsim", "\\backsim", "相似（∽）", "Similar (∽)", "relation", 81, ["similar", "reversed tilde"], ["相似", "相似于", "三角形相似", "∽"]],
   ["simeq", "\\simeq", "渐近相等", "Asymptotically equal", "relation", 80],
-  ["cong", "\\cong", "全等", "Congruent", "relation", 78],
+  ["cong", "\\cong", "全等（≅）", "Congruent (≅)", "relation", 78],
   // the congruence sign of Chinese geometry (U+224C), drawn as exam-zh-symbols draws it; with the exam-zh setting on, \cong is read as this sign
   ["backcong", "\\backcong", "全等（≌）", "Congruent (≌)", "relation", 79, ["congruent", "all equal to"], ["全等", "全等于", "三角形全等", "≌"]],
   ["ll", "\\ll", "远小于", "Much less", "relation", 82],

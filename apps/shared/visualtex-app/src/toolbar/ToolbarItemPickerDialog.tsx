@@ -6,6 +6,7 @@ import type { LatexCommand } from "../types/command";
 import { categoryLabels, categoryLabelsEn, commandRegistry } from "../autocomplete/commandRegistry";
 import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
 import { BUILT_IN_GROUP_IDS, defaultGroupItems, hiddenToolbarCommandIds, type ToolbarItem } from "./toolbarLayout";
+import { storedLatexToUser } from "../math/examZhSymbols";
 
 interface Props {
   open: boolean;
@@ -72,10 +73,10 @@ export function ToolbarItemPickerDialog({ open, language, groupName, has, onTogg
       const matches = (text: string) => text.toLowerCase().includes(needle);
       const commandHits = commandRegistry
         .filter((command) => !hiddenToolbarCommandIds.has(command.id))
-        .filter((command) => matches(command.labelZh) || matches(command.labelEn) || matches(command.command) || command.aliases.some(matches) || command.keywords.some(matches))
+        .filter((command) => matches(command.labelZh) || matches(command.labelEn) || matches(command.command) || matches(storedLatexToUser(command.command)) || command.aliases.some(matches) || command.keywords.some(matches))
         .slice(0, 240)
         .map((command) => commandCard(command, isEn));
-      const symbolHits = symbols.filter((command) => matches(command.labelZh) || matches(command.command)).map((command) => commandCard(command, isEn));
+      const symbolHits = symbols.filter((command) => matches(command.labelZh) || matches(command.command) || matches(storedLatexToUser(command.command))).map((command) => commandCard(command, isEn));
       return [...(matches(matrixCard.label) || matches("matrix") || matches("矩阵") ? [matrixCard] : []), ...commandHits, ...symbolHits];
     }
     if (source.kind === "symbols") return symbols.map((command) => commandCard(command, isEn));

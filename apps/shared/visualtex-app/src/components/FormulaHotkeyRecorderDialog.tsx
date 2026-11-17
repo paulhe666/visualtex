@@ -18,6 +18,7 @@ import { useEditorStore } from "../stores/editorStore";
 // an Office action's system-wide hotkey (macOS) gives its chord up when a formula hotkey takes it
 import { useOfficeHotkeyOwner } from "@platform/officeHotkeyOwner";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { storedLatexToUser } from "../math/examZhSymbols";
 import {
   formulaRowHotkeyAction,
   formulaRowHotkeyActionLabel,
@@ -199,7 +200,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
             <div>
               <strong>{targetLabel}</strong>
               <span>{formulaHotkeyTargetKindLabel(target, language)}</span>
-              <code>{target.command.command}</code>
+              <code>{storedLatexToUser(target.command.command)}</code>
             </div>
           </div>
 

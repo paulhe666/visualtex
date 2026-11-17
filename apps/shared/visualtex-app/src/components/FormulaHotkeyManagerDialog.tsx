@@ -15,6 +15,7 @@ import {
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
+import { storedLatexToUser } from "../math/examZhSymbols";
 // each system's Office shortcuts: system-wide hotkeys on macOS, the add-ins' own shortcuts on Windows
 import { OfficeShortcutsTab } from "@platform/OfficeShortcutsTab";
 import {
@@ -187,7 +188,7 @@ export function KeyboardShortcutsPanel() {
                       <span>
                         {formulaHotkeyTargetKindLabel(binding.target, language)}
                         {" · "}
-                        <code>{binding.target.command.command}</code>
+                        <code>{storedLatexToUser(binding.target.command.command)}</code>
                       </span>
                     </div>
                     <kbd>{formatFormulaHotkeyChord(binding.chord)}</kbd>

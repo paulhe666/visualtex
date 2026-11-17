@@ -54,6 +54,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
+import { storedLatexToUser } from "../math/examZhSymbols";
 import { writeLocalStorage } from "../runtime/safeStorage";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
@@ -901,6 +902,8 @@ export function FormulaToolbar({
     Record<string, number>
   >({});
   const language = useEditorStore((state) => state.language);
+  // the tiles' tooltips name their commands in the user's spelling (exam-zh's \cong for ≌)
+  useEditorStore((state) => state.examZhSymbols);
   const customSymbolRevision = useCustomSymbolRevision();
   const registeredCustomSymbols = useMemo(
     () => readCustomSymbolLibrary().symbols,
@@ -2409,7 +2412,8 @@ export function FormulaToolbar({
         title={
           (isEn ? command.labelEn : command.labelZh) +
           " · " +
-          command.command
+          // the command as the user writes it (exam-zh's \cong for ≌)
+          storedLatexToUser(command.command)
         }
       >
         <MathPreview

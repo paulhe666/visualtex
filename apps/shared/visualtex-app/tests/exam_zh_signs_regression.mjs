@@ -9,7 +9,8 @@
 // Chinese interface) what the user types, pastes as text or edits in the source is read in exam-zh's spelling (\cong ≌,
 // \cong* ≌, \sim ∽, \sim* ∼, \ncong, \nsim), and the text copied or shown in the source is written in it (≅ and the
 // negated ≅ and ∼ as their characters). A copy's application/x-latex keeps the stored names, so pasting it inside the
-// app keeps the signs. With the setting off, and by default in the English interface, LaTeX is read and written as is.
+// app keeps the signs; the toolbar tiles' tooltips name their commands in the same spelling, and follow the switch at
+// once. With the setting off, and by default in the English interface, LaTeX is read and written as is.
 import { readFileSync } from "node:fs";
 import { withAppBrowser } from "../testing/browser_test_runtime.mjs";
 
@@ -100,6 +101,12 @@ await withAppBrowser(async ({ baseUrl, client }) => {
       const clipboardData = new DataTransfer();
       sink.dispatchEvent(new ClipboardEvent("copy", { clipboardData, bubbles: true, cancelable: true, composed: true }));
       return { text: clipboardData.getData("text/plain"), latex: clipboardData.getData("application/x-latex") }; })()`);
+  // what a toolbar tile's tooltip names after its label (the tools view in front of the source panel)
+  const tileCommands = async () => {
+    await evaluate(`(() => { document.querySelector('[data-classic-bottom-view="tools"]:not(.is-active)')?.click(); return true; })()`);
+    for (let t = 0; t < 40 && !(await evaluate(`Boolean(document.querySelector('[data-command-id="backcong"]'))`)); t += 1) await sleep(50);
+    return evaluate(`Object.fromEntries(["cong", "backcong", "sim", "backsim"].map((id) => [id, (document.querySelector('[data-command-id="' + id + '"]')?.getAttribute("title") ?? "").split(" · ").slice(1).join(" · ")]))`);
+  };
   const shortcut = async (key, code, vk, modifiers) => {
     for (const type of ["rawKeyDown", "keyUp"]) {
       await client.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers });
@@ -153,7 +160,7 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     assert(Math.abs(b.left - expected) < 0.003, `${DRAWN_ROWS[row]}: b at ${b.left.toFixed(4)}em, expected ${expected.toFixed(4)}em (the space after a relation)`);
   }
 
-  // the toolbar's relation group offers ≌ after ≅ (全等)
+  // the toolbar's relation group offers ≌ after ≅ and ∽ after ∼, each named with its sign
   const click = (selector) =>
     evaluate(`(() => {
       const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => e.getBoundingClientRect().width > 0);
@@ -168,8 +175,10 @@ await withAppBrowser(async ({ baseUrl, client }) => {
   assert(await click('[data-toolbar-picker-source="relation"]'), "the picker has no relation category");
   await sleep(400);
   const cards = await evaluate(`[...document.querySelectorAll("[data-toolbar-item-picker] [data-toolbar-picker-item]")].map((c) => c.getAttribute("title"))`);
-  assert(cards.includes("全等（≌）"), `the relation category has no 全等（≌） card (${cards.slice(0, 12).join(" | ")} ...)`);
-  assert(cards.indexOf("全等（≌）") > cards.indexOf("全等"), "the ≌ card does not follow the ≅ card (全等)");
+  for (const [after, card] of [["全等（≅）", "全等（≌）"], ["相似（∼）", "相似（∽）"]]) {
+    assert(cards.includes(after) && cards.includes(card), `the relation category lacks ${after} or ${card} (${cards.slice(0, 14).join(" | ")} ...)`);
+    assert(cards.indexOf(card) > cards.indexOf(after), `the ${card} card does not follow the ${after} card`);
+  }
   console.log("exam-zh signs drawn: ≌ ∽ and their negations as exam-zh's outlines (10 pt, 7 pt in a subscript), relations like =");
 
   // -- exam-zh's spelling (the Chinese interface's default) --------------------------------------------------------
@@ -214,7 +223,32 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     edited === "a\\backcong b\\backcong c\\backsim d\\sim e\\not\\backcong f\\not\\backsim g",
     `the source edit is not read in exam-zh's spelling: ${JSON.stringify(edited)}`,
   );
-  console.log("exam-zh spelling on: typing, quick escapes, pasted text, copied text and the source panel");
+  const tilesOn = await tileCommands();
+  const expectOn = { cong: "≅", backcong: "\\cong", sim: "\\sim*", backsim: "\\sim" };
+  for (const [id, command] of Object.entries(expectOn)) {
+    assert(tilesOn[id] === command, `exam-zh spelling: the ${id} tile's tooltip names ${JSON.stringify(tilesOn[id])}, expected ${JSON.stringify(command)}`);
+  }
+  console.log("exam-zh spelling on: typing, quick escapes, pasted text, copied text, the source panel and the tiles' tooltips");
+
+  // the switch (Settings > 公式编辑) takes effect at once: tooltips and typing follow it without a reload
+  await open({ rows: ["", STORED] });
+  assert((await tileCommands()).backcong === "\\cong", "a new page does not start in exam-zh's spelling");
+  await shortcut(",", "Comma", 188, 2);
+  for (let t = 0; t < 60 && !(await evaluate(`Boolean(document.querySelector('[data-settings-page="editor"]'))`)); t += 1) await sleep(50);
+  await evaluate(`document.querySelector('[data-settings-page="editor"]')?.click()`);
+  for (let t = 0; t < 60 && !(await evaluate(`Boolean(document.querySelector("[data-exam-zh-symbols-setting]"))`)); t += 1) await sleep(50);
+  assert(await evaluate(`document.querySelector("[data-exam-zh-symbols-setting]").checked`), "the exam-zh switch is not on in the Chinese interface");
+  await evaluate(`document.querySelector("[data-exam-zh-symbols-setting]").click()`);
+  await sleep(300);
+  assert(!(await evaluate(`document.querySelector("[data-exam-zh-symbols-setting]").checked`)), "the exam-zh switch did not turn off");
+  await evaluate(`(() => { document.querySelector('[aria-label="关闭设置"], [aria-label="Close settings"]')?.click(); return true; })()`);
+  for (let t = 0; t < 40 && (await evaluate(`Boolean(document.querySelector("[data-exam-zh-symbols-setting]"))`)); t += 1) await sleep(50);
+  assert(!(await evaluate(`Boolean(document.querySelector("[data-exam-zh-symbols-setting]"))`)), "Settings did not close");
+  const tilesSwitched = await tileCommands();
+  assert(tilesSwitched.backcong === "\\backcong" && tilesSwitched.cong === "\\cong", `after the switch the tooltips still name ${JSON.stringify(tilesSwitched)}`);
+  const typedSwitched = await typed("\\cong ");
+  assert(typedSwitched === "\\cong", `after the switch typed \\cong gives ${JSON.stringify(typedSwitched)}`);
+  console.log("exam-zh switch: turned off in Settings, tooltips and typing follow at once");
 
   // -- the setting off, and the English interface's default ---------------------------------------------------------
   for (const [label, options] of [["setting off", { examZhSymbols: false }], ["English interface", { language: "en" }]]) {
@@ -230,6 +264,11 @@ await withAppBrowser(async ({ baseUrl, client }) => {
     assert(text.includes(STORED), `${label}: the copied text is not the stored formula: ${JSON.stringify(text)}`);
     const shown = await sourceText();
     assert(shown && shown.includes(STORED), `${label}: the source panel is not the stored formula: ${JSON.stringify(shown)}`);
+    const tiles = await tileCommands();
+    const expectOff = { cong: "\\cong", backcong: "\\backcong", sim: "\\sim", backsim: "\\backsim" };
+    for (const [id, command] of Object.entries(expectOff)) {
+      assert(tiles[id] === command, `${label}: the ${id} tile's tooltip names ${JSON.stringify(tiles[id])}, expected ${JSON.stringify(command)}`);
+    }
   }
   console.log("exam-zh spelling off (setting off, English interface): LaTeX read and written as is");
   console.log("exam-zh signs: passed");
