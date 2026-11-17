@@ -784,10 +784,12 @@ Public Function VTAgentInsertReference() As String
     Dim matchKind As String
     Dim matchIndex As Long
 
+    VTWordPerformanceStartLocal "xref-agent"
     wanted = "(" & Trim$(Replace$(Replace$(VTAgentString("number"), "(", ""), ")", "")) & ")"
     source = VTAgentString("source")
     Set documentObject = VTAgentWritableDocument()
     VTAgentPlaceInsertion documentObject
+    VTWordPerformanceMark "xref-agent-placed"
     Set insertionRange = VTResolveEquationReferenceInsertionRange(Selection.Range.Duplicate)
     If insertionRange Is Nothing Then
         Err.Raise vbObjectError + 7914, "VisualTeX", "operation_failed|A reference cannot go at this place."
@@ -816,9 +818,12 @@ Public Function VTAgentInsertReference() As String
         Err.Raise vbObjectError + 7915, "VisualTeX", "invalid_arguments|Several numbered equations are " & wanted & _
             "; give source to choose one. Numbered equations: " & available & "."
     End If
+    VTWordPerformanceMark "xref-agent-matched"
     Set insertedRange = VTInsertEquationNumberReferenceAtRange(insertionRange, matchIndex, True, matchKind)
     insertedRange.Collapse wdCollapseEnd
     insertedRange.Select
+    VTWordPerformanceMark "xref-agent-inserted"
+    VTWordPerformanceFlush VTNewUuidV4(), 0, "", "/word-vba-xref-performance.txt"
     VTAgentInsertReference = VTAgentDone("Inserted a reference to equation " & wanted & ".")
 End Function
 

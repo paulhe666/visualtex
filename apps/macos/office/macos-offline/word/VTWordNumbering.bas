@@ -4904,6 +4904,7 @@ Public Sub VTV2PlanCommitNumber( _
 
     excludeStart = -1
     Set transferEquation = Nothing
+    VTWordPerformanceMark "v2-plan-start"
     If targetIsNative Then
         If targetRange.OMaths.Count >= 1 Then
             Set exact = VTNativeMathRoot(targetRange.OMaths(1)).Range.Duplicate
@@ -4932,6 +4933,7 @@ Public Sub VTV2PlanCommitNumber( _
     End If
     VTV2PlanInsertion doc, targetRange.Start, sequenceName, headingLevel, separator, _
         literalPrefix, automatic, restart, initial, transferEquation, excludeStart
+    VTWordPerformanceMark "v2-plan-complete"
 End Sub
 
 ' --- the app builds the number (omml_write) ----------------------------------
@@ -4975,6 +4977,7 @@ Public Function VTV2RequestNumberDocx( _
     Dim docxPath As String
 
     VTApplyChosenOmmlFontToDocument doc
+    VTWordPerformanceMark "v2-font-applied"
     manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
         "sessionId=" & sessionId & vbLf & _
         "sourceKind=nativeNumber" & vbLf & _
@@ -4983,11 +4986,15 @@ Public Function VTV2RequestNumberDocx( _
         "itemCount=" & CStr(itemCount) & vbLf & _
         "mathFont=" & VTBase64UrlEncodeUtf8(doc.OMathFontName) & vbLf & _
         IIf(Len(ommlBase64) > 0, "ommlBase64=" & ommlBase64 & vbLf, "") & items
+    VTWordPerformanceMark "v2-manifest-built"
     If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
+        VTWordPerformanceMark "v2-manifest-written"
         timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
     Else
         timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
     End If
+    VTWordPerformanceMark "v2-app-converted"
+    VTWordPerformanceNote "v2-app-timing", Left$(timingDetail, InStr(1, timingDetail & "|", "|", vbBinaryCompare) - 1)
     separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
     If separatorPosition <= 1 Or separatorPosition >= Len(timingDetail) Then
         Err.Raise vbObjectError + 7611, "VisualTeX", _
@@ -5074,10 +5081,18 @@ Public Sub VTV2UpdateNumbersFrom( _
     searchStart = doc.Range(Start:=searchStart, End:=searchStart) _
         .Paragraphs(1).Range.Start
     lastStart = -1
-    For Each owner In VTNumberFieldNativeMathRoots( _
+    Dim ownerRoots As Collection
+    Dim updatedOwners As Long
+    Dim updatedReferences As Long
+    VTWordPerformanceMark "renumber-start"
+    Set ownerRoots = VTNumberFieldNativeMathRoots( _
         doc, searchStart, doc.Content.End, True)
+    VTWordPerformanceMark "renumber-roots-listed"
+    VTWordPerformanceNote "renumber-roots", CStr(ownerRoots.Count)
+    For Each owner In ownerRoots
         If owner.End >= fromPosition And owner.Start > lastStart Then
             lastStart = owner.Start
+            updatedOwners = updatedOwners + 1
             For Each candidate In owner.Fields
                 If candidate.Type = wdFieldStyleRef Then candidate.Update
             Next candidate
@@ -5086,10 +5101,17 @@ Public Sub VTV2UpdateNumbersFrom( _
             Next candidate
         End If
     Next owner
+    VTWordPerformanceMark "renumber-fields-updated"
+    VTWordPerformanceNote "renumber-updated-equations", CStr(updatedOwners)
     If Not updateReferences Then Exit Sub
     For Each candidate In doc.Fields
-        If candidate.Type = wdFieldRef Then candidate.Update
+        If candidate.Type = wdFieldRef Then
+            candidate.Update
+            updatedReferences = updatedReferences + 1
+        End If
     Next candidate
+    VTWordPerformanceMark "renumber-references-updated"
+    VTWordPerformanceNote "renumber-updated-references", CStr(updatedReferences)
 End Sub
 
 ' --- restyle and renumber (Windows PlanFormat) ---------------------------------

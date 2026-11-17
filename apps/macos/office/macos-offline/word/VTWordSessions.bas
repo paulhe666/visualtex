@@ -1291,6 +1291,7 @@ Public Sub VTCommitWordDispatch( _
                     Set v2NumberBookmarks = VTCaptureNativeNumberBookmarks( _
                         VTNativeMathRoot(targetRange.OMaths(1)).Range.Duplicate)
             End If
+            VTWordPerformanceMark "v2-bookmarks-captured"
             transactionStage = "v2-build-number"
             nativeDocumentPath = VTV2RequestNumberDocx(sessionId, targetDocument, _
                 ommlBase64, 1, VTV2NumberItemManifest(1, v2SequenceName, _

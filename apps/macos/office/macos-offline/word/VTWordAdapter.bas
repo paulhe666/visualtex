@@ -1125,6 +1125,7 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
     Dim hasImageItems As Boolean
 
     On Error GoTo MenuFailed
+    VTWordPerformanceStartLocal "xref-menu"
     Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
     Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
     If Documents.Count = 0 Then
@@ -1137,10 +1138,13 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
     Set insertionRange = VTResolveEquationReferenceInsertionRange( _
         Selection.Range.Duplicate)
     If insertionRange Is Nothing Then GoTo MenuFailed
+    VTWordPerformanceMark "xref-insertion-range-ready"
     nativeItems = VTEquationNumberCrossReferenceItems( _
         ActiveDocument, VT_WORD_REFERENCE_KIND_NATIVE)
+    VTWordPerformanceMark "xref-native-items"
     imageItems = VTEquationNumberCrossReferenceItems( _
         ActiveDocument, VT_WORD_REFERENCE_KIND_IMAGE)
+    VTWordPerformanceMark "xref-image-items"
     hasNativeItems = IsArray(nativeItems)
     hasImageItems = IsArray(imageItems)
     If Not hasNativeItems And Not hasImageItems Then
@@ -1193,6 +1197,8 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
         menuXml = menuXml & "</menu>"
     End If
     returnedValue = menuXml & "</menu>"
+    VTWordPerformanceMark "xref-menu-built"
+    VTWordPerformanceFlush VTNewUuidV4(), 0, "", "/word-vba-xref-performance.txt"
     Exit Sub
 
 MenuFailed:
@@ -1214,6 +1220,7 @@ Public Sub VTWordRibbonCrossReferenceItem( _
     Dim targetDocument As Document
 
     On Error GoTo InsertFailed
+    VTWordPerformanceStartLocal "xref-insert"
     If VT_WORD_REFERENCE_MENU_DOCUMENT Is Nothing Or _
        VT_WORD_REFERENCE_MENU_INSERTION_RANGE Is Nothing Then
         Err.Raise vbObjectError + 7547, "VisualTeX", _
@@ -1238,10 +1245,14 @@ Public Sub VTWordRibbonCrossReferenceItem( _
     Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
 
     targetDocument.Activate
+    VTWordPerformanceMark "xref-activated"
     Set insertedRange = VTInsertEquationNumberReferenceAtRange( _
         insertionRange, itemIndex, True, referenceKind)
+    VTWordPerformanceMark "xref-inserted"
     insertedRange.Collapse wdCollapseEnd
     insertedRange.Select
+    VTWordPerformanceMark "xref-selected"
+    VTWordPerformanceFlush VTNewUuidV4(), 0, "", "/word-vba-xref-performance.txt"
     Exit Sub
 
 InsertFailed:
@@ -2085,6 +2096,8 @@ Public Sub VisualTeX_ApplyPendingResult()
     Dim hostName As String
     Dim callbackErrorNumber As Long
     Dim callbackErrorDescription As String
+    Dim previousScreenUpdating As Boolean
+    Dim screenUpdatingChanged As Boolean
 
     VTWordPerformanceStart
     On Error GoTo Failed
@@ -2100,7 +2113,13 @@ Public Sub VisualTeX_ApplyPendingResult()
     End If
 
     Select Case actionName
-        Case "commit": VTCommitWordDispatch sessionId, dispatch
+        Case "commit"
+            ' Word repaints after every field update of a renumbering: one
+            ' repaint at the end instead.
+            previousScreenUpdating = Application.ScreenUpdating
+            Application.ScreenUpdating = False
+            screenUpdatingChanged = True
+            VTCommitWordDispatch sessionId, dispatch
         Case "cancel": VTCancelWordDispatch sessionId, dispatch
         Case "latexRedrawPreflight": _
             VTResolveWordLatexRedrawFontsDispatch sessionId, dispatch
@@ -2112,6 +2131,7 @@ Public Sub VisualTeX_ApplyPendingResult()
             Err.Raise vbObjectError + 7403, "VisualTeX", "The VisualTeX Word dispatch action is invalid."
     End Select
     VTWordPerformanceMark "callback-complete"
+    If screenUpdatingChanged Then Application.ScreenUpdating = previousScreenUpdating
     VTEndNumberingResolveScope
     VTWordPerformanceFlush sessionId
     Exit Sub
@@ -2120,6 +2140,7 @@ Failed:
     callbackErrorNumber = Err.Number
     callbackErrorDescription = Err.Description
     On Error Resume Next
+    If screenUpdatingChanged Then Application.ScreenUpdating = previousScreenUpdating
     VTEndNumberingResolveScope
     If Len(sessionId) > 0 Then
         ' documentCommit already records the exact inner import/redraw stage.

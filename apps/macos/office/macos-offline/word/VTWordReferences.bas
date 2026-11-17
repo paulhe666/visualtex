@@ -583,19 +583,27 @@ Public Function VTInsertEquationNumberReferenceAtRange( _
     If targetRange Is Nothing Then Err.Raise vbObjectError + 7547
     Set doc = targetRange.Document
     Set targets = VTCurrentNumberTargets(doc, referenceKind)
+    VTWordPerformanceMark "xref-targets-scanned"
+    VTWordPerformanceNote "xref-targets", CStr(targets.Count)
     If itemIndex < 1 Or itemIndex > targets.Count Then Err.Raise vbObjectError + 7547, , "Number target index=" & CStr(itemIndex) & "; count=" & CStr(targets.Count)
     Set source = targets(itemIndex)
     bookmarkName = "_Ref" & Replace$(VTNewUuidV4(), "-", "")
     doc.Bookmarks.Add Name:=bookmarkName, Range:=source
+    VTWordPerformanceMark "xref-bookmark-added"
     Set insertion = VTResolveEquationReferenceInsertionRange(targetRange)
+    VTWordPerformanceMark "xref-range-resolved"
     start = insertion.Start
     insertion.Text = "()"
     Set insertion = doc.Range(start + 1, start + 1)
+    VTWordPerformanceMark "xref-text-inserted"
     Set reference = doc.Fields.Add(Range:=insertion, Type:=wdFieldRef, _
         Text:=bookmarkName & " \h", PreserveFormatting:=False)
+    VTWordPerformanceMark "xref-field-added"
     reference.Update
+    VTWordPerformanceMark "xref-field-updated"
     Set insertion = doc.Range(start, VTEquationFieldEnd(reference) + 1)
     VTFormatBodyEquationReference doc, reference, insertion
+    VTWordPerformanceMark "xref-formatted"
     Set VTInsertEquationNumberReferenceAtRange = insertion
 
 End Function
