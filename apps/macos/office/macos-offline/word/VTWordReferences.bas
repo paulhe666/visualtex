@@ -568,11 +568,14 @@ Public Function VTResolveEquationReferenceInsertionRange( _
     Set VTResolveEquationReferenceInsertionRange = recoveredRange.Duplicate
 End Function
 
+' knownTargets: the scan of the numbers (VTCurrentNumberTargets of this kind) the caller has just made, when nothing has changed in
+' the document since; without it the numbers are scanned here.
 Public Function VTInsertEquationNumberReferenceAtRange( _
     ByVal targetRange As Range, _
     ByVal itemIndex As Long, _
     Optional ByVal documentAlreadyReconciled As Boolean = False, _
-    Optional ByVal referenceKind As String = "") As Range
+    Optional ByVal referenceKind As String = "", _
+    Optional ByVal knownTargets As Collection = Nothing) As Range
     Dim targets As Collection
     Dim doc As Document
     Dim source As Range
@@ -582,7 +585,11 @@ Public Function VTInsertEquationNumberReferenceAtRange( _
     Dim start As Long
     If targetRange Is Nothing Then Err.Raise vbObjectError + 7547
     Set doc = targetRange.Document
-    Set targets = VTCurrentNumberTargets(doc, referenceKind)
+    If knownTargets Is Nothing Then
+        Set targets = VTCurrentNumberTargets(doc, referenceKind)
+    Else
+        Set targets = knownTargets
+    End If
     VTWordPerformanceMark "xref-targets-scanned"
     VTWordPerformanceNote "xref-targets", CStr(targets.Count)
     If itemIndex < 1 Or itemIndex > targets.Count Then Err.Raise vbObjectError + 7547, , "Number target index=" & CStr(itemIndex) & "; count=" & CStr(targets.Count)
