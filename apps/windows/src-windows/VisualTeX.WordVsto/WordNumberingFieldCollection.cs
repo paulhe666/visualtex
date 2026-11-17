@@ -338,17 +338,35 @@ internal sealed class WordNumberingFieldCollection : IDisposable
 
     private static bool HasOnlyNumberFields(Range target, bool nativeOnly)
     {
-        TextRetrievalMode? retrieval = null;
         try
         {
-            retrieval = target.TextRetrievalMode;
-            retrieval.IncludeFieldCodes = true;
-            retrieval.IncludeHiddenText = true;
-            var text = target.Text;
+            var text = ReadTextWithFieldCodes(target);
             if (!nativeOnly) return WordFieldCode.AllFieldsAre(text, NumberFieldKeywords);
             return WordFieldCode.AllFieldsAre(text, NativeNumberFieldKeywords) && !MentionsOtherKind(text);
         }
         catch (COMException) { return false; }
+    }
+
+    // The text of a range with its field codes and hidden text. Word's text retrieval mode outlives the Range it was
+    // read from: a later Range.Text of the add-in (an agent's context text, a reference's number), of a macro or of
+    // another add-in follows it, so the flags are put back as they were.
+    internal static string ReadTextWithFieldCodes(Range range)
+    {
+        TextRetrievalMode? retrieval = null;
+        try
+        {
+            retrieval = range.TextRetrievalMode;
+            var codes = retrieval.IncludeFieldCodes;
+            var hidden = retrieval.IncludeHiddenText;
+            retrieval.IncludeFieldCodes = true;
+            retrieval.IncludeHiddenText = true;
+            try { return range.Text ?? string.Empty; }
+            finally
+            {
+                try { retrieval.IncludeFieldCodes = codes; retrieval.IncludeHiddenText = hidden; }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+        }
         finally { Release(retrieval); }
     }
 
@@ -765,6 +783,9 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         Range? search = null;
         TextRetrievalMode? retrieval = null;
         Find? find = null;
+        var restoreRetrieval = false;
+        var previousCodes = false;
+        var previousHidden = false;
         try
         {
             revisions = document.Revisions;
@@ -774,8 +795,11 @@ internal sealed class WordNumberingFieldCollection : IDisposable
             if (!HasAnyBookmark(document)) return false;
             search = document.Content;
             retrieval = search.TextRetrievalMode;
+            previousCodes = retrieval.IncludeFieldCodes;
+            previousHidden = retrieval.IncludeHiddenText;
             retrieval.IncludeFieldCodes = true;
             retrieval.IncludeHiddenText = true;
+            restoreRetrieval = true;
             find = search.Find;
             find.ClearFormatting();
             find.Text = "REF";
@@ -790,7 +814,16 @@ internal sealed class WordNumberingFieldCollection : IDisposable
             return find.Execute();
         }
         catch (COMException) { return true; }
-        finally { Release(find); Release(retrieval); Release(search); Release(revisions); }
+        finally
+        {
+            // (the text retrieval mode outlives this range, see ReadTextWithFieldCodes)
+            if (restoreRetrieval && retrieval is not null)
+            {
+                try { retrieval.IncludeFieldCodes = previousCodes; retrieval.IncludeHiddenText = previousHidden; }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            Release(find); Release(retrieval); Release(search); Release(revisions);
+        }
     }
 
     // WPS's Range.Find does not search inside equations, nor the field codes there

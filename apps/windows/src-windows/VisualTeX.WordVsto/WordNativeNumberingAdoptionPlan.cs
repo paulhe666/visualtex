@@ -841,14 +841,29 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
     private static string ReadNumberLabel(Range number)
     {
         TextRetrievalMode? retrieval = null;
+        var restore = false;
+        var codes = false;
+        var hidden = false;
         try
         {
             retrieval = number.TextRetrievalMode;
+            codes = retrieval.IncludeFieldCodes;
+            hidden = retrieval.IncludeHiddenText;
             retrieval.IncludeFieldCodes = false;
             retrieval.IncludeHiddenText = false;
+            restore = true;
             return number.Text ?? string.Empty;
         }
-        finally { Release(retrieval); }
+        finally
+        {
+            // (the text retrieval mode outlives this range: put the flags back)
+            if (restore && retrieval is not null)
+            {
+                try { retrieval.IncludeFieldCodes = codes; retrieval.IncludeHiddenText = hidden; }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            Release(retrieval);
+        }
     }
 
     private static bool HasAnyCurrentField(Range range)
