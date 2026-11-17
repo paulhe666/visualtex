@@ -4872,8 +4872,24 @@ Private Function VTV2NumberedEquationsAround( _
         End If
     End If
 
-    ' The first numbered equation after position, the roots asked for a few at a time: a collection of all the roots of a long
-    ' document costs 0.5 ms each and only the first is wanted.
+    ' Before the first numbered equation: the first one after position.
+    entry = VTV2FirstEntryAfter(doc, position, excludeStart)
+    If Not IsEmpty(entry) Then result.Add entry
+    Set VTV2NumberedEquationsAround = result
+End Function
+
+' The first numbered equation of the document that starts at or after position (Empty when there is none). The roots are asked for a
+' few at a time: a collection of all the roots of a long document costs 0.5 ms each and only the first is wanted.
+Public Function VTV2FirstEntryAfter( _
+    ByVal doc As Document, ByVal position As Long, _
+    Optional ByVal excludeStart As Long = -1) As Variant
+
+    Dim roots As Collection
+    Dim exact As Range
+    Dim entry As Variant
+    Dim searchFrom As Long
+
+    VTV2FirstEntryAfter = Empty
     searchFrom = position
     Do
         Set roots = VTNumberFieldNativeMathRoots( _
@@ -4884,14 +4900,13 @@ Private Function VTV2NumberedEquationsAround( _
             If exact.Start <> excludeStart Then
                 entry = VTV2NumberedEquationEntry(exact)
                 If Not IsEmpty(entry) Then
-                    result.Add entry
-                    Exit Do
+                    VTV2FirstEntryAfter = entry
+                    Exit Function
                 End If
             End If
         Next exact
         If roots.Count < 4 Then Exit Do
     Loop
-    Set VTV2NumberedEquationsAround = result
 End Function
 
 ' True when two entries are not of one series (another number prefix or another sequence name).

@@ -2186,6 +2186,7 @@ Public Sub VTV2PlanInsertion( _
     Dim index As Long
     Dim scopeStart As Long
     Dim numberText As String
+    Dim nextEntry As Variant
 
     Set transferEquation = Nothing
     restart = 0
@@ -2225,6 +2226,20 @@ Public Sub VTV2PlanInsertion( _
             position, headingLevel, scopeStart, automatic)
         If scopeStart < 0 Then automatic = False
         If Not automatic Then literalPrefix = numberText
+        ' A new number ahead of the first number of its own chapter or section (the equations before it belong to the chapter
+        ' before) is the first of its series: the former first number gives up its restart (\r) to it, as before the first
+        ' number of the document. The plan above looked only at the numbers before position.
+        If transferEquation Is Nothing And restart = 0 Then
+            nextEntry = VTV2FirstEntryAfter(doc, position, excludeStart)
+            If Not IsEmpty(nextEntry) Then
+                If nextEntry(3) = numberText And nextEntry(6) > 0 And _
+                   StrComp(nextEntry(1), sequenceName, vbTextCompare) = 0 Then
+                    restart = nextEntry(5)
+                    initial = restart
+                    Set transferEquation = doc.Range(nextEntry(0), nextEntry(8))
+                End If
+            End If
+        End If
     End If
 End Sub
 
