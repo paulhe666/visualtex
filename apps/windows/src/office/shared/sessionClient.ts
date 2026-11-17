@@ -74,6 +74,8 @@ export interface OfficePreferences {
     customTheme?: CustomThemeState;
     /** the main app's confirm-escape key (a chord, or null: off); normalized when read */
     confirmEscapeKey?: unknown;
+    /** the main app's command usage (the candidates' personalized order); merged when read */
+    commandUsage?: unknown;
   };
 }
 

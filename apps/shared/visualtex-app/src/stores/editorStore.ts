@@ -492,6 +492,8 @@ interface EditorState {
   ) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
+  /** Takes in another window's command usage (the main app's, for an Office editor): per command the record used more often. */
+  mergeUsage: (usage: unknown) => void;
   addHistory: (latex?: string) => void;
   clearHistory: () => void;
   loadDocument: (document: FormulaDocument) => void;
@@ -547,6 +549,43 @@ function nextSlideFormulaShortcuts(
 
 const initialLatex = "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,\\mathrm{d}x = \\sqrt{\\pi}";
 const initialLines = [createFormulaLine(initialLatex)];
+
+/**
+ * Another window's usage records merged into these: per command the record used more often (the newer one on a tie),
+ * pinned if either is. Repeating a merge changes nothing; the same object comes back when nothing changed.
+ */
+function mergeCommandUsage(
+  current: Record<string, CommandUsage>,
+  incoming: unknown,
+): Record<string, CommandUsage> {
+  if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return current;
+  let merged: Record<string, CommandUsage> | null = null;
+  for (const [commandId, value] of Object.entries(incoming as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const other = value as Partial<CommandUsage>;
+    if (typeof other.useCount !== "number" || !Number.isFinite(other.useCount)) continue;
+    const mine = current[commandId];
+    const otherLastUsedAt = typeof other.lastUsedAt === "number" ? other.lastUsedAt : 0;
+    const otherWins =
+      !mine || other.useCount > mine.useCount || (other.useCount === mine.useCount && otherLastUsedAt > mine.lastUsedAt);
+    const pinned = Boolean(mine?.pinned) || other.pinned === true;
+    if (!otherWins && (!mine || mine.pinned === pinned)) continue;
+    const base: CommandUsage = otherWins
+      ? {
+          commandId,
+          useCount: other.useCount,
+          lastUsedAt: otherLastUsedAt,
+          recentUses: Array.isArray(other.recentUses) ? other.recentUses.filter((t) => typeof t === "number").slice(-12) : [],
+          acceptedPrefixes: other.acceptedPrefixes && typeof other.acceptedPrefixes === "object" ? { ...other.acceptedPrefixes } : {},
+          contextCounts: other.contextCounts && typeof other.contextCounts === "object" ? { ...other.contextCounts } : {},
+          pinned,
+        }
+      : { ...mine!, pinned };
+    merged ??= { ...current };
+    merged[commandId] = base;
+  }
+  return merged ?? current;
+}
 
 export const useEditorStore = create<EditorState>()(
   persist(
@@ -821,6 +860,11 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
       resetUsage: () => set({ usage: {} }),
+      mergeUsage: (incoming) =>
+        set((state) => {
+          const merged = mergeCommandUsage(state.usage, incoming);
+          return merged === state.usage ? state : { usage: merged };
+        }),
       addHistory: (latexOverride) =>
         set((state) => {
           const latex = normalizeMultilineLatex(
@@ -976,6 +1020,10 @@ export const useEditorStore = create<EditorState>()(
               Number.isFinite(settings.suggestionCount)
                 ? Math.min(10, Math.max(3, Math.round(settings.suggestionCount)))
                 : state.suggestionCount,
+            candidateStyle:
+              settings.candidateStyle !== undefined
+                ? normalizeCandidateStyle(settings.candidateStyle)
+                : state.candidateStyle,
             checkUpdatesOnStartup:
               typeof settings.checkUpdatesOnStartup === "boolean"
                 ? settings.checkUpdatesOnStartup
@@ -1074,6 +1122,7 @@ export const useEditorStore = create<EditorState>()(
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
+            candidateStyle: state.candidateStyle,
             checkUpdatesOnStartup: state.checkUpdatesOnStartup,
             powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
             buttonShortcuts: state.buttonShortcuts,

@@ -52,6 +52,7 @@
     "test:history": "node --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/history_manager_smoke.mjs",
     "test:inline-text-latex-format": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/inline_text_latex_format_regression.mts",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
+    "test:office-candidates": "npm run build:office:windows-native && node scripts/office_candidate_sync_regression.mjs",
     "test:input-judgment": "npm run build:desktop && node ../shared/visualtex-app/tests/input_judgment_regression.mjs",
     "test:latest-macos-editor": "npm run build:desktop && node scripts/run_latest_macos_editor_regressions.mjs",
     "test:latex-format": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts scripts/latex_format_smoke.mjs",

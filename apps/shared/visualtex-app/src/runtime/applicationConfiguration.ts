@@ -139,6 +139,7 @@ const editorSettingKeys = [
   "inputBehavior",
   "personalize",
   "suggestionCount",
+  "candidateStyle",
   "checkUpdatesOnStartup",
   "powerPointDefaultFontSizePt",
   "wordFormulaShortcuts",

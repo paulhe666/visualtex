@@ -278,6 +278,8 @@ function applyOfficeEditorPreferences(
     const escapeKey = useConfirmEscapeKeyStore.getState();
     if (!sameConfirmEscapeChord(escapeKey.chord, chord)) escapeKey.setChord(chord);
   }
+  // the main app's command usage, for the candidates' personalized order
+  if (payload.commandUsage !== undefined) useEditorStore.getState().mergeUsage(payload.commandUsage);
   const settings = payload.settings;
   if (!settings) return;
 
@@ -347,6 +349,16 @@ function applyOfficeEditorPreferences(
   }
   if (typeof settings.keypadMinimizeOnCopy === "boolean") {
     editor.setKeypadMinimizeOnCopy(settings.keypadMinimizeOnCopy);
+  }
+  // the candidates as the main app shows them (Settings > 命令推荐)
+  if (settings.candidateStyle !== undefined) {
+    editor.setCandidateStyle(settings.candidateStyle);
+  }
+  if (typeof settings.suggestionCount === "number") {
+    editor.setSuggestionCount(settings.suggestionCount);
+  }
+  if (typeof settings.personalize === "boolean") {
+    editor.setPersonalize(settings.personalize);
   }
 }
 

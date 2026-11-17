@@ -37,19 +37,27 @@ export function AppOfficeIntegration(_props: Props) {
     if (!isTauriEnvironment()) return;
     let timer = 0;
     let disposed = false;
+    let published = "";
     const publishPreferences = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (disposed) return;
-        const settings = useEditorStore.getState().toDocument().settings;
-        void invoke("set_app_editor_preferences", {
-          preferences: {
-            settings,
-            customTheme: readCustomTheme(),
-            // the Office editor confirms quick escapes with the same key
-            confirmEscapeKey: useConfirmEscapeKeyStore.getState().chord,
-          },
-        }).catch(() => undefined);
+        const state = useEditorStore.getState();
+        const preferences = {
+          settings: state.toDocument().settings,
+          customTheme: readCustomTheme(),
+          // the Office editor confirms quick escapes with the same key
+          confirmEscapeKey: useConfirmEscapeKeyStore.getState().chord,
+          // and orders its candidates by the same usage
+          commandUsage: state.usage,
+        };
+        // a store change that leaves the preferences as they were (typing in a formula) is not sent again
+        const serialized = JSON.stringify(preferences);
+        if (serialized === published) return;
+        published = serialized;
+        void invoke("set_app_editor_preferences", { preferences }).catch(() => {
+          published = "";
+        });
       }, 24);
     };
     publishPreferences();

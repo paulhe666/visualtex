@@ -211,6 +211,11 @@ function syncOfficeEditorSystemSettings(raw?: string | null) {
   applyNumber("formulaRowVerticalInset", editor.formulaRowVerticalInset, editor.setFormulaRowVerticalInset);
   applyBoolean("personalize", editor.personalize, editor.setPersonalize);
   applyNumber("suggestionCount", editor.suggestionCount, editor.setSuggestionCount);
+  // the candidates' look and the usage that orders them, as the main window has them
+  if (typeof persisted.candidateStyle === "string" && persisted.candidateStyle !== editor.candidateStyle) {
+    editor.setCandidateStyle(persisted.candidateStyle as typeof editor.candidateStyle);
+  }
+  if (persisted.usage !== undefined) editor.mergeUsage(persisted.usage);
   applyNumber("classicTileWidth", editor.classicTileWidth, editor.setClassicTileWidth);
   applyNumber("classicDockHeight", editor.classicDockHeight, editor.setClassicDockHeight);
   applyBoolean("keypadMinimizeOnCopy", editor.keypadMinimizeOnCopy, editor.setKeypadMinimizeOnCopy);

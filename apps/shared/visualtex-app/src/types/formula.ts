@@ -117,6 +117,8 @@ export interface FormulaDocument {
     sourceOpen?: boolean;
     autoPairDelimiters?: boolean;
     examZhSymbols?: boolean;
+    /** the candidates' look (stores/editorStore.ts CandidateStyle); normalized when read */
+    candidateStyle?: "list" | "card" | "row" | "bar";
     showLineNumbers?: boolean;
     highlightActiveLine?: boolean;
     formulaInsetLeft?: number;
