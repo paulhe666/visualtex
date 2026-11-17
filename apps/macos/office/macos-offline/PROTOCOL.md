@@ -268,6 +268,9 @@ part of every numbered insertion. The resident app answers the same request thro
 - the add-in waits at most 0.4 s for the request to be taken. One that is taken is answered however long the package takes (a
   numbering of the whole document holds many equations), so the add-in then waits for the answer (20 s at most) and does not start the
   helper script's second conversion beside it;
+- the resident keeps itself out of App Nap (`NSProcessInfo beginActivityWithOptions:` with `NSActivityUserInitiatedAllowingIdleSystemSleep`
+  when the watcher starts): macOS naps a hidden app and wakes its timers late, so the 25 ms poll answered a number request after
+  65 to 310 ms (measured), and after about 25 ms when the app was active;
 - when the resident is not ready, does not say `numbers=1`, does not take the request or answers with an error, the add-in uses the
   helper script as before (and removes its own request, so that nothing answers late). Cleanup code never kills the empty path of a
   step it has not reached: `Kill ""` fails after more than a second in Word for Mac and, inside an error handler, escapes

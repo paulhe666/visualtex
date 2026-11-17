@@ -1690,11 +1690,14 @@ Public Sub VTCommitWordDispatch( _
             End If
             VTNormalizeUnnumberedDisplayParagraph candidate.Range
         End If
+        VTWordPerformanceMark "image-number-layout-done"
         transactionStage = "normalize-image-paragraph-spacing"
         VTNormalizeImageDisplayParagraph candidate.Range
+        VTWordPerformanceMark "image-spacing-done"
         If numberingChanged Then
             transactionStage = "reconcile-image-numbering"
             VTReconcileNumberingAfterEdit targetDocument, candidate.Range.Start, True
+            VTWordPerformanceMark "image-reconciled"
         End If
     End If
     If numberingChanged And regressionFailureAfterSourceRemoval Then

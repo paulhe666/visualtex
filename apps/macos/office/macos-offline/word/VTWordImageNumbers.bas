@@ -1024,12 +1024,13 @@ Public Function VTCurrentImageNumberRange(ByVal placeRef As Field) As Range
 End Function
 
 Public Sub VTUpdateImagePlaceRef(ByVal placeRef As Field)
-    Dim candidate As Field
     ' Never update the outer MACROBUTTON: its display lives in its instruction,
-    ' exactly as in Word/MathType. Update nested fields in physical order.
-    For Each candidate In placeRef.Code.Fields
-        candidate.Update
-    Next candidate
+    ' exactly as in Word/MathType. Update nested fields in physical order,
+    ' all in one call: a Field.Update costs 6 ms in Word for Mac, a Fields.Update
+    ' of a collection 0.3 ms a field.
+    Dim nested As Fields
+    Set nested = placeRef.Code.Fields
+    If nested.Count > 0 Then nested.Update
 End Sub
 
 Public Sub VTRetireExternalSequenceHelper( _
@@ -1267,12 +1268,14 @@ Public Sub VTUpdateImageNumberFieldsFrom( _
     ' The suffix's own Fields collection lists the same fields in the same
     ' physical order as its paragraphs do, without one COM round trip per
     ' paragraph (about 0.25 ms each on Word for Mac).
+    VTWordPerformanceMark "image-renumber-start"
     For Each candidate In scan.Fields
         If VTIsImagePlaceRef(candidate) And _
            VTEquationFieldStart(candidate) >= startPosition Then
             VTUpdateImagePlaceRef candidate
         End If
     Next candidate
+    VTWordPerformanceMark "image-renumber-places-updated"
 
     ' References are cheap compared with rebuilding every formula and Word may
     ' cache their displayed results. Refresh them only after all affected image
@@ -1283,6 +1286,7 @@ Public Sub VTUpdateImageNumberFieldsFrom( _
     For Each candidate In doc.Fields
         If candidate.Type = wdFieldRef Then candidate.Update
     Next candidate
+    VTWordPerformanceMark "image-renumber-references-updated"
 End Sub
 
 Public Sub VTRemoveImageNumberingForEdit( _
