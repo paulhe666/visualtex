@@ -464,12 +464,13 @@ End Function
 
 ' The numbered-equation package of a manifest (the rows ConvertOmmlBatch of the helper script takes), asked of the resident app
 ' through the sandbox inbox instead of the helper script: AppleScriptTask costs about half a second a call from Word
-' (measured), the resident answers in well under 0.1 s. The request <session>.number holds the manifest (Word cannot write
-' into the Session folder, which is in Application Scripts); the resident builds the package and answers with
-' <session>.number-done holding the result manifest. "" when the resident is not ready, does not answer in time, or fails
-' (the caller then uses ConvertOmmlBatch of the helper script).
+' and the script starts a process of the app for it (measured), the resident answers in well under 0.1 s. The request
+' <session>.number holds the manifest (Word cannot write into the Session folder, which is in Application Scripts); the
+' resident builds the package and answers with <session>.number-done holding the result manifest. "" when the resident is
+' not ready, does not answer in time, or fails (the caller then uses ConvertOmmlBatch of the helper script). trace says how far
+' it got (for the performance trace).
 Public Function VTTryFastConvertOmmlBatch( _
-    ByVal sessionId As String, ByVal manifest As String) As String
+    ByVal sessionId As String, ByVal manifest As String, Optional ByRef trace As String) As String
 #If Mac Then
     Const MAX_ANSWER_WAIT_SECONDS As Double = 1.5
     Dim inboxRoot As String
@@ -479,13 +480,24 @@ Public Function VTTryFastConvertOmmlBatch( _
     Dim startedAt As Single
     Dim handle As Integer
     Dim answer As String
+    Dim heartbeat As String
 
+    trace = "start"
     If Not VTIsCanonicalUuid(sessionId) Or Len(manifest) = 0 Then Exit Function
     On Error GoTo NotAvailable
-    If Not VTFastOpenResidentReady("word") Then Exit Function
+    If Not VTFastOpenResidentReady("word") Then
+        trace = trace & ";resident-not-ready"
+        Exit Function
+    End If
+    trace = trace & ";ready"
     inboxRoot = VTFastOpenInboxRoot("word")
     ' only a resident that answers number requests (its heartbeat says so); an older one would leave this waiting
-    If InStr(1, VTReadText(inboxRoot & "/resident-ready", 4096), "numbers=1", vbBinaryCompare) = 0 Then Exit Function
+    heartbeat = VTReadText(inboxRoot & "/resident-ready", 4096)
+    trace = trace & ";heartbeat=" & CStr(Len(heartbeat))
+    If InStr(1, heartbeat, "numbers=1", vbBinaryCompare) = 0 Then
+        trace = trace & ";no-numbers"
+        Exit Function
+    End If
     requestPath = inboxRoot & "/" & sessionId & ".number"
     temporaryPath = inboxRoot & "/." & sessionId & ".number.tmp"
     answerPath = inboxRoot & "/" & sessionId & ".number-done"
@@ -501,19 +513,30 @@ Public Function VTTryFastConvertOmmlBatch( _
     Print #handle, manifest;
     Close #handle
     handle = 0
+    trace = trace & ";written"
     Name temporaryPath As requestPath
+    trace = trace & ";published"
     startedAt = Timer
     Do While Len(Dir$(answerPath, vbNormal)) = 0
         DoEvents
-        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then GoTo NotAvailable
+        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then
+            trace = trace & ";timeout"
+            GoTo NotAvailable
+        End If
     Loop
+    trace = trace & ";answered-after-ms=" & CStr(CLng(1000# * VTFastLaunchElapsedSeconds(startedAt, Timer)))
     answer = VTReadText(answerPath, 65536)
     Kill answerPath
-    If InStr(1, answer, "operation=nativeNumber", vbBinaryCompare) > 0 Then _
+    If InStr(1, answer, "operation=nativeNumber", vbBinaryCompare) > 0 Then
         VTTryFastConvertOmmlBatch = answer
+        trace = trace & ";ok"
+    Else
+        trace = trace & ";answer=" & Left$(Replace$(Replace$(answer, vbCr, " "), vbLf, " "), 120)
+    End If
     Exit Function
 
 NotAvailable:
+    If Err.Number <> 0 Then trace = trace & ";error=" & CStr(Err.Number) & " " & Err.Description
     ' A request nobody answered must not be answered later: the helper script's package would race it.
     On Error Resume Next
     If handle <> 0 Then Close #handle

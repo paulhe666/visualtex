@@ -5026,9 +5026,17 @@ Public Function VTV2RequestNumberDocx( _
     Dim result As Object
     Dim docxPath As String
     Dim resultText As String
+    Dim fastTrace As String
+    Dim requestStep As String
+    Dim failedNumber As Long
+    Dim failedSource As String
+    Dim failedDescription As String
 
+    On Error GoTo RequestFailed
+    requestStep = "font"
     VTApplyChosenOmmlFontToDocument doc
     VTWordPerformanceMark "v2-font-applied"
+    requestStep = "manifest"
     manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
         "sessionId=" & sessionId & vbLf & _
         "sourceKind=nativeNumber" & vbLf & _
@@ -5039,15 +5047,21 @@ Public Function VTV2RequestNumberDocx( _
         IIf(Len(ommlBase64) > 0, "ommlBase64=" & ommlBase64 & vbLf, "") & items
     VTWordPerformanceMark "v2-manifest-built"
     ' The resident app builds the package at once; the helper script's process answers in half a second.
-    resultText = VTTryFastConvertOmmlBatch(sessionId, manifest)
+    requestStep = "resident"
+    resultText = VTTryFastConvertOmmlBatch(sessionId, manifest, fastTrace)
+    VTWordPerformanceNote "v2-resident-trace", fastTrace
     If Len(resultText) > 0 Then
         VTWordPerformanceMark "v2-app-converted-fast"
-    ElseIf VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
-        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
     Else
-        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
-    End If
-    If Len(resultText) = 0 Then
+        VTWordPerformanceMark "v2-resident-declined"
+        requestStep = "direct-write"
+        If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
+            requestStep = "script-convert"
+            timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
+        Else
+            requestStep = "script-convert-argument"
+            timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
+        End If
         VTWordPerformanceMark "v2-app-converted"
         VTWordPerformanceNote "v2-app-timing", Left$(timingDetail, InStr(1, timingDetail & "|", "|", vbBinaryCompare) - 1)
         separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
@@ -5058,6 +5072,7 @@ Public Function VTV2RequestNumberDocx( _
         encodedResult = Mid$(timingDetail, separatorPosition + 1)
         resultText = VTBase64UrlDecodeUtf8(encodedResult)
     End If
+    requestStep = "parse"
     Set result = VTParseDocumentImportManifestText(resultText, sessionId)
     VTRequireDispatchValue result, "docxPath"
     If CStr(result("operation")) <> "nativeNumber" Or _
@@ -5066,12 +5081,24 @@ Public Function VTV2RequestNumberDocx( _
             "VisualTeX returned a Word equation number for another request."
     End If
     docxPath = CStr(result("docxPath"))
+    requestStep = "package"
     VTValidateAbsoluteVisualTeXPath docxPath
     If Not VTPathFileExists(docxPath) Then
         Err.Raise vbObjectError + 7611, "VisualTeX", _
             "The Word equation number package is missing."
     End If
     VTV2RequestNumberDocx = docxPath
+    Exit Function
+
+RequestFailed:
+    ' the same error goes on to the caller; the trace says which step it came from
+    failedNumber = Err.Number
+    failedSource = Err.Source
+    failedDescription = Err.Description
+    VTWordPerformanceNote "v2-request-failed", requestStep & ": " & CStr(failedNumber) & " " & failedDescription
+    VTWordPerformanceNote "v2-resident-trace", fastTrace
+    On Error GoTo 0
+    Err.Raise failedNumber, failedSource, failedDescription
 End Function
 
 ' --- after a numbered equation is inserted -----------------------------------
