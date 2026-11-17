@@ -340,6 +340,7 @@ defineSymbols(
     ['\\backsim', 0x223d],
     ['\\eqsim', 0x2242],
     ['\\backsimeq', 0x22cd],
+    ['\\backcong', 0x224c], // ALL EQUAL TO: the congruence sign of Chinese geometry (stix, unicode-math, MathJax, KaTeX have it; amssymb does not)
     ['\\lesssim', 0x2272],
 
     ['\\nleq', 0x2270],

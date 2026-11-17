@@ -16,6 +16,7 @@ export const KERNEL_PARITY_MACROS: Record<string, VisualTexCompatibilityMacro> =
   arctg: "\\operatorname{arctg}", // function
   arsinh: "\\operatorname{arsinh}", // function
   artanh: "\\operatorname{artanh}", // function
+  backcong: "\\mathrel{≌}", // symbol mrel U+224C
   backdoubleprime: "‶", // symbol mord U+2036
   Beta: "\\mathrm{B}", // texvc
   bfseries: ["\\mathbf{#1}", 1], // mathlive-compatibility

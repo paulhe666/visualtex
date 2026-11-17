@@ -226,6 +226,15 @@ export const PACKAGE_FAMILIES: [number, [string, string, string]][] = [
   [FAM.eur, ["eurm10", "eurm7", "eurm5"]],
 ];
 
+/**
+ * Relations no TeX font has but the Chinese fonts do (GB 2312 has them), set in the formula's Chinese font like Chinese text:
+ * the congruence sign of Chinese geometry (U+224C). The math fonts (STIX Two Math, Latin Modern Math, TeX Gyre, Cambria Math)
+ * draw that code point as a tilde with a gentle wave over an equals sign; the Chinese fonts (SimSun, YaHei, SimHei, KaiTi,
+ * Songti SC, Hiragino Sans GB ...) draw the S with curled ends that the textbooks print. macOS's PingFang SC has no glyph
+ * for it: the next font of the formula's Chinese font stack (Hiragino Sans GB) supplies it.
+ */
+const CHINESE_FONT_RELATIONS = new Set(["\\backcong", "\u224c"]);
+
 /** The families of a group of characters set in a chosen font: italic, upright, bold, bold italic. */
 export const FACE_GROUP_FAMS = {
   letter: [FAM.letterIt, FAM.letterUp, FAM.letterBf, FAM.letterBfIt],
@@ -1769,6 +1778,7 @@ export class LatexAdapter {
     }
     const pkg = a.command ? this.packageSymbol(a.command, ctx, a) : null;
     if (pkg) return pkg;
+    if (CHINESE_FONT_RELATIONS.has(a.command ?? "") || CHINESE_FONT_RELATIONS.has(a.value ?? "")) return this.unknownSymbol(a, ctx, REL_NOAD);
     return this.unknownSymbol(a, ctx);
   }
 
@@ -1799,8 +1809,8 @@ export class LatexAdapter {
     return out;
   }
 
-  /** A symbol LaTeX does not define (e.g. a Chinese character): its character, sized like \text. */
-  private unknownSymbol(a: AtomLike, _ctx: Ctx): MItem[] {
+  /** A symbol LaTeX does not define (e.g. a Chinese character): its character, sized like \text, of the class `cls`. */
+  private unknownSymbol(a: AtomLike, _ctx: Ctx, cls = ORD_NOAD): MItem[] {
     const text = a.value ?? a.command ?? "?";
     const mk = (size: string): MItem[] => {
       const n = newNoad(ORD_NOAD, a);
@@ -1809,7 +1819,10 @@ export class LatexAdapter {
     };
     const [s0, s1, s2] = this.text.sizes;
     const choice: ChoiceItem = { type: CHOICE_NODE, display: mk(s0), text: mk(s0), script: mk(s1), scriptScript: mk(s2), tag: a };
-    return [this.groupNoad([choice], a)];
+    if (cls === ORD_NOAD) return [this.groupNoad([choice], a)];
+    const n = newNoad(cls, a);
+    n.nucleus = mlistField([choice]);
+    return [n];
   }
 
   // ------------------------------------------------------------- fractions --
