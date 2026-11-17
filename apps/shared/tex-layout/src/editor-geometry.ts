@@ -4,6 +4,7 @@
 // draws, hit-tests and anchors popovers with these numbers; nothing measures
 // the page.
 import type { Tag } from "./nodes.ts";
+import { isDifferentialSymbol, isIntegralSymbol, operandScope, operandTokenOfOperator, type OperandToken } from "./operand-scope.ts";
 import type { Region } from "./painter.ts";
 import type { ShipResult } from "./shipout.ts";
 
@@ -65,6 +66,8 @@ export interface Rect {
 /** The part of a kernel atom the geometry reads. */
 export interface GeometryAtom {
   type?: string;
+  /** the atom's symbol (a letter, an operator character, a big operator's sign) */
+  value?: string;
   parent?: GeometryAtom;
   parentBranch?: unknown;
   branch(name: unknown): GeometryAtom[] | undefined;
@@ -104,6 +107,13 @@ export interface CaretGeometry {
   side: "left" | "center";
   /** the stop is an empty slot: the marker the caret touches */
   empty?: GeometryAtom;
+  /**
+   * The ways the caret can stand at this one place, innermost first (a stop is a kernel offset, and the end of a big
+   * operator's operand is also the end of the structures it stands in): [0] inside the operand at its end (the underline
+   * under the operand only), the last outside every operand that ends here (under the whole row). Key presses step
+   * through them (the editing core's level). Only at the end of an operand; the stop itself is the first of them.
+   */
+  levels?: CaretGeometry[];
 }
 
 /**
@@ -113,6 +123,13 @@ export interface CaretGeometry {
 export function caretReach(c: CaretGeometry): { top: number; bottom: number } {
   if (!c.region) return { top: c.top, bottom: c.bottom };
   return { top: Math.min(c.top, c.region.top), bottom: Math.max(c.bottom, c.region.bottom + (c.underline ? LINE_ROOM * c.scale : 0)) };
+}
+
+/** The caret geometry at an offset in one of the ways the caret can stand there (CaretGeometry.levels; 0: the first). */
+export function stopAt(stops: readonly (CaretGeometry | null)[], offset: number, level = 0): CaretGeometry | null {
+  const stop = stops[offset] ?? null;
+  if (!stop?.levels) return stop;
+  return stop.levels[Math.min(Math.max(level, 0), stop.levels.length - 1)];
 }
 
 export interface EditorGeometry {
@@ -143,6 +160,57 @@ const isPlaceholder = (a: GeometryAtom | undefined) => a?.type === "placeholder"
 
 function siblingsOf(a: GeometryAtom): GeometryAtom[] {
   return a.parent?.branch(a.parentBranch) ?? [];
+}
+
+/** What an item of a row is to the operand rule (operand-scope.ts): a fence, relation, separator, sign, differential d, spacing, or other. */
+function operandTokenOf(a: GeometryAtom, next: GeometryAtom | undefined): OperandToken {
+  if (a.type === "space" || a.type === "spacing") return "space";
+  if (a.branches?.length || a.rows) return "other";
+  const text = typeof a.value === "string" ? a.value : "";
+  if (isDifferentialSymbol(text)) return next && next.type === "mord" ? "differential" : "other";
+  if (a.type === "mopen" || a.type === "mclose" || a.type === "mrel" || a.type === "mbin" || a.type === "mpunct" || a.type === "mord") return operandTokenOfOperator(text);
+  return "other";
+}
+
+/**
+ * A big operator's operand (∫ ∑ ∏ ...): the items after the operator that it applies to, by the one rule of operand-scope.ts.
+ * AxMath's operator has a slot for it, and the caret in it has its own underline under the operand only; the formula's
+ * LaTeX has none (the items follow the operator in its row), so the operand is found here, from the row.
+ */
+interface OperandGroup {
+  op: GeometryAtom;
+  /** the operand's items, in order (at least one has material) */
+  items: GeometryAtom[];
+  owner: GeometryAtom;
+  branch: unknown;
+}
+
+function operandGroups(model: GeometryModel, hasMaterial: (a: GeometryAtom) => boolean): OperandGroup[] {
+  const out: OperandGroup[] = [];
+  for (let offset = 0; offset <= model.lastOffset; offset++) {
+    const first = model.at(offset);
+    if (first?.type !== "first" || !first.parent) continue;
+    const owner = first.parent;
+    const items = (owner.branch(first.parentBranch) ?? []).filter((x) => x.type !== "first");
+    if (!items.some((x) => x.type === "extensible-symbol")) continue;
+    const tokens = items.map((x, i) => operandTokenOf(x, items[i + 1]));
+    // [from, to): the operand's items in the row, by index
+    const found: { op: GeometryAtom; from: number; to: number }[] = [];
+    items.forEach((op, index) => {
+      if (op.type === "extensible-symbol") found.push({ op, from: index + 1, to: operandScope(tokens, index + 1, isIntegralSymbol(op.value ?? "")).end });
+    });
+    // an operator inside another's operand cannot reach past its end (∑ ∫ f + g dx: the sum ends at the plus)
+    for (const outer of found) {
+      for (const inner of found) {
+        if (inner !== outer && inner.from > outer.from && inner.from <= outer.to && inner.to > outer.to) inner.to = Math.max(inner.from, outer.to);
+      }
+    }
+    for (const g of found) {
+      const operand = items.slice(g.from, g.to);
+      if (operand.some(hasMaterial)) out.push({ op: g.op, items: operand, owner, branch: first.parentBranch });
+    }
+  }
+  return out;
 }
 
 export function buildEditorGeometry(
@@ -262,6 +330,31 @@ export function buildEditorGeometry(
     return found;
   };
 
+  // the box of a big operator's operand, as of a slot's content
+  const groupRegions = new Map<OperandGroup, CaretRegion | null>();
+  const regionOfGroup = (g: OperandGroup): CaretRegion | null => {
+    if (groupRegions.has(g)) return groupRegions.get(g)!;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    let line: number | undefined;
+    for (const item of g.items) {
+      if (isPlaceholder(item)) continue;
+      const r = regions.get(item);
+      if (!r) continue;
+      x0 = Math.min(x0, r.x0);
+      x1 = Math.max(x1, r.x1);
+      y0 = Math.min(y0, r.y0);
+      y1 = Math.max(y1, r.y1);
+      line ??= baselineOf(item);
+    }
+    let found: CaretRegion | null = null;
+    if (line !== undefined && x1 >= x0) {
+      const s = slotScale(g.owner, g.branch);
+      found = { x0, x1, top: Math.min(y0, line - caret.strut.height * s), bottom: Math.max(y1, line + caret.strut.depth * s) };
+    }
+    groupRegions.set(g, found);
+    return found;
+  };
+
   const stops: (CaretGeometry | null)[] = [];
   for (let offset = 0; offset <= model.lastOffset; offset++) {
     const a = model.at(offset);
@@ -322,6 +415,38 @@ export function buildEditorGeometry(
 
   separateCoincidingStops(model, stops);
 
+  // A big operator's operand has its own region (AxMath: the underline under only the operand while the caret is in it):
+  // the stops inside it (and the one right after the operator, its start) are in the operand; at its end the caret
+  // can stand inside the operand or outside it (and outside every operand that ends there), at one place: one more
+  // way to stand for each, innermost first, a little further right each (the stops' separation at a structure's end).
+  if (withRegions) {
+    const groups = operandGroups(model, (a) => !isPlaceholder(a) && regions.has(a));
+    const holders = new Map<GeometryAtom, OperandGroup[]>();
+    for (const g of groups) for (const a of [g.op, ...g.items]) (holders.get(a) ?? holders.set(a, []).get(a)!).push(g);
+    for (let offset = 0; offset <= model.lastOffset; offset++) {
+      const a = model.at(offset);
+      const base = stops[offset];
+      const held = a ? holders.get(a) : undefined;
+      if (!a || !base || !held) continue;
+      // innermost first (the operator that stands latest in the row holds the others' items)
+      const chain = [...held].reverse().filter((g) => regionOfGroup(g));
+      if (!chain.length) continue;
+      const ending = chain.filter((g) => g.items[g.items.length - 1] === a).length;
+      const states: CaretGeometry[] = [];
+      for (let j = 0; j <= ending; j++) {
+        const g = chain[j];
+        const gap = STOP_GAP * base.scale;
+        const state: CaretGeometry = { ...base, x: Math.round(base.x + j * gap) };
+        if (g) {
+          state.region = regionOfGroup(g)!;
+          state.underline = a !== g.op;
+        }
+        states.push(state);
+      }
+      stops[offset] = states.length > 1 ? { ...states[0], levels: states } : states[0];
+    }
+  }
+
   // the drawn box covers every marker and every caret position, so nothing is
   // clipped and the line keeps its height wherever the caret goes
   const empty = box.width === 0 && box.height === 0 && box.depth === 0;
@@ -332,13 +457,15 @@ export function buildEditorGeometry(
     height = Math.max(height, -m.y0);
     depth = Math.max(depth, m.y1);
   }
-  for (const c of stops) {
-    if (!c) continue;
-    // (the L-shaped caret reaches the foot of its region and the line below it)
-    const reach = caretReach(c);
-    height = Math.max(height, Math.ceil(-reach.top));
-    depth = Math.max(depth, Math.ceil(reach.bottom));
-    right = Math.max(right, Math.ceil(c.x + BAR_HALF * c.scale - box.width));
+  for (const stop of stops) {
+    if (!stop) continue;
+    for (const c of stop.levels ?? [stop]) {
+      // (the L-shaped caret reaches the foot of its region and the line below it)
+      const reach = caretReach(c);
+      height = Math.max(height, Math.ceil(-reach.top));
+      depth = Math.max(depth, Math.ceil(reach.bottom));
+      right = Math.max(right, Math.ceil(c.x + BAR_HALF * c.scale - box.width));
+    }
   }
   return { width: box.width, height, depth, right, stops, markers, regions, alignMarkers };
 }

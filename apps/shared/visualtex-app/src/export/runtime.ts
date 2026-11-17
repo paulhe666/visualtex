@@ -10,6 +10,7 @@ import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
+import { groupBigOperatorOperands } from "./operandMathMl.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
@@ -489,6 +490,8 @@ export function latexToMathMl(latex: string, displayMode = true) {
     end: STATE.COMPILED,
   }) as unknown as MmlNode;
   materializeEffectiveOperatorVariants(root, mathMlOutput.font);
+  // a big operator's operand as one row: what the Word writers make the body of the native n-ary object
+  groupBigOperatorOperands(root, mathMlDocument.mmlFactory);
   const mathMl = serializedMmlVisitor.visitTree(root).trim();
   if (!mathMl.startsWith("<math") || !mathMl.includes("MathML")) {
     throw new Error("MathJax did not produce valid Presentation MathML.");

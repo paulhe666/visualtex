@@ -1,4 +1,11 @@
 import { zipSync, strToU8 } from "fflate";
+import {
+  isDifferentialSymbol,
+  isIntegralSymbol,
+  operandScope,
+  operandTokenOfOperator,
+  type OperandToken,
+} from "../../../../shared/tex-layout/src/operand-scope";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { TeX } from "mathjax-full/js/input/tex.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
@@ -86,34 +93,6 @@ const NARY_OPERATORS = new Set([
   "⨂",
   "⨄",
   "⨆",
-]);
-
-const HARD_SEQUENCE_BOUNDARIES = new Set([
-  "=",
-  "≠",
-  "<",
-  ">",
-  "≤",
-  "≥",
-  "≈",
-  "≃",
-  "≅",
-  "≡",
-  "∼",
-  "∝",
-  "∈",
-  "∉",
-  "⊂",
-  "⊃",
-  "⊆",
-  "⊇",
-  "→",
-  "←",
-  "⇒",
-  "⇐",
-  "⇔",
-  ",",
-  ";",
 ]);
 
 const OPEN_DELIMITERS = new Set([
@@ -518,11 +497,17 @@ function ommlDelimiter(begin: string, end: string, body: string) {
   );
 }
 
-function isHardSequenceBoundary(element: Element) {
-  return (
-    elementName(element) === "mo" &&
-    HARD_SEQUENCE_BOUNDARIES.has(normalizedTokenText(element).trim())
-  );
+/** What an item of a MathML row is to the operand rule (tex-layout/src/operand-scope.ts). */
+function operandToken(element: Element, next: Element | undefined): OperandToken {
+  const name = elementName(element);
+  const text = (element.textContent ?? "").trim();
+  if (name === "mspace") return "space";
+  // MathJax writes \, as an mstyle holding the mspace
+  if (name === "mstyle" && element.children.length === 1 && elementName(element.children[0]) === "mspace") return "space";
+  if ((name === "mi" || name === "mo") && isDifferentialSymbol(text)) {
+    return next && elementName(next) === "mi" ? "differential" : "other";
+  }
+  return name === "mo" ? operandTokenOfOperator(text) : "other";
 }
 
 interface NaryParts {
@@ -686,16 +671,15 @@ function convertSequence(elements: Element[]) {
       index = argumentEnd - 1;
       continue;
     }
-    if (naryParts(element)) {
-      let bodyEnd = index + 1;
-      while (
-        bodyEnd < elements.length &&
-        !isHardSequenceBoundary(elements[bodyEnd])
-      ) {
-        bodyEnd += 1;
-      }
+    const nary = naryParts(element);
+    if (nary) {
+      // the operand: the rule shared with the editor's operand region and the Word writers' n-ary body
+      // (tex-layout/src/operand-scope.ts): up to a relation or separator, a sum's up to a top-level sign, an integral's up
+      // to one after its differential
+      const tokens = elements.map((item, position) => operandToken(item, elements[position + 1]));
+      const bodyEnd = operandScope(tokens, index + 1, isIntegralSymbol(nary.character)).end;
       output += convertNary(element, elements.slice(index + 1, bodyEnd));
-      index = bodyEnd - 1;
+      index = Math.max(bodyEnd, index + 1) - 1;
       continue;
     }
     output += convertElement(element);

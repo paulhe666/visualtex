@@ -10,7 +10,7 @@ import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
 import { alignShift, caretBarHtml, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
-import { buildEditorGeometry, caretMetrics, type CaretGeometry, type GeometryAtom } from "./editor-geometry.ts";
+import { buildEditorGeometry, caretMetrics, stopAt, type CaretGeometry, type GeometryAtom } from "./editor-geometry.ts";
 import { shipOut, type ShipResult } from "./shipout.ts";
 import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
 import type { TeXFont, TfmData } from "./tfm.ts";
@@ -238,12 +238,12 @@ const CJK = /[⺀-鿿豈-﫿＀-￯　-〿]|[\u{20000}-\u{2FA1F}]/u;
 
 /** Where a mathfield shows its caret: at a stop, in an empty slot, or nowhere (a range is selected). */
 export type CaretState =
-  | { kind: "stop"; offset: number }
+  | { kind: "stop"; offset: number; /** which way of standing at the stop (CaretGeometry.levels), 0 the first */ level?: number }
   | { kind: "empty"; placeholder: GeometryAtom }
   | { kind: "none" };
 
 export type { EditorGeometry, CaretGeometry, CaretRegion, Rect as GeometryRect } from "./editor-geometry.ts";
-export { caretReach } from "./editor-geometry.ts";
+export { caretReach, stopAt } from "./editor-geometry.ts";
 
 export function createVisualTexLayout(data: LayoutData, options: LayoutOptions = {}) {
   const cache = new FontCache((name) => {
@@ -549,7 +549,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       }
     }
     // the caret goes into the element of the slot that holds it
-    const stop = state.kind === "stop" ? geometry.stops[state.offset] : null;
+    const stop = state.kind === "stop" ? stopAt(geometry.stops, state.offset, state.level) : null;
     const emptySlot = state.kind === "empty" ? geometry.markers.get(state.placeholder) : undefined;
     const caretMode: CaretBar["mode"] = model.mode === "text" || model.mode === "latex" ? model.mode : "math";
     const bar: CaretBar | null = stop

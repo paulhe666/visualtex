@@ -78,7 +78,7 @@ Order is reading order, the same for every key. Decisions marked ★ change toda
 |---|---|---|---|---|
 | fraction, binom, genfrac, cfrac | numerator, denominator (or the user's fraction-order setting) | num above den | marker | setting applies to arrows, Tab and Backspace alike ★ |
 | scripts on a nucleus / subsup | subscript, superscript | sup above sub | drop | ArrowDown in a lone superscript returns to the baseline; it never creates a subscript ★ |
-| big operator with limits (∑ ∫ lim) | lower, upper | upper above lower | marker for inserted templates, else drop | |
+| big operator with limits (∑ ∫ lim) | lower, upper, then its operand (below) | upper above lower | marker for inserted templates, else drop | the operand is a region of its own, derived from the row (the formula's LaTeX has no slot for it) |
 | root `\sqrt[n]{x}` | index, radicand | — | index: drop; radicand: marker | one order for arrows and Tab ★ |
 | `\left…\right` | body | — | marker | |
 | accents, over/under (`\hat`, `\overline`, `\overset`, `\underbrace`, `\underarc`), `\mathop` | body, then above/below | above/below body | marker | the body is a slot with all its stops, filled or empty (2026-11-15: `\hat{a}` could be typed but never edited again) ★ |
@@ -86,6 +86,24 @@ Order is reading order, the same for every key. Decisions marked ★ change toda
 | macro (`\ket`, `\bra`, `\braket`, …) | its arguments | — | marker | atomic: one Tab from an argument leaves the macro; no stops inside its expansion, but every argument is reachable whatever the expansion wraps it in (`\mel`'s `\smash`, `\va`'s `\vec`) ★ |
 | text run (`\text{…}`) | — (items are characters) | — | — | caret inside the run is text mode; at either edge math (§6.6) |
 | top level | — | — | — | |
+
+**A big operator's operand** (∫ ∮ ∑ ∏ ∐ ⋃ ⋂ ⨀ ⨁ ⨂ ⨄ ⨆ and the other extensible symbols; user 2026-11-16, screenshots of AxMath's caret: the
+underline inside the integral's operand covers only the operand, outside it the whole row; the same for ∑ and ∏): the items
+after the operator that it applies to. LaTeX writes them loose in the operator's row, so the extent is a rule
+(`tex-layout/src/operand-scope.ts`), the one the Word writers use for the body of their native n-ary object
+(`WordOmmlFromMathMl.NaryLooseOperand`, its Rust port `omml_write::prep`; the shared MathML export wraps the operand in an
+mrow, `export/operandMathMl.ts`, and PowerPoint's OMML, `office/omml/latexToOmml.ts`, uses the function itself): the operand
+runs up to a relation or a separator, to a fence that closes something opened before the operator, and to the row's end; a
+sum also ends at a top-level sign (`∑ aᵢ + b` is (∑ aᵢ) + b), an integral only at one that comes after its differential
+(`∫ x + 1 dx` holds the plus, `∫ f dx + c` does not). An operator inside another's operand cannot reach past its end.
+Stops: the stop right after the operator and its limits is the operand's start (AxMath: the bar alone, as tall as the
+operand; no stop of the row stands between the sign and its operand); the stops after the items are inside it. The end of
+an operand is one kernel offset that is also the end of every operand that ends there and a place of the row: the caret has
+one **level** for each of them (`CaretGeometry.levels`, the core's `caretLevel`): the first inside the innermost operand
+(the underline under it only), then inside the next one, the last outside them all (under the whole row, or under the
+operand that goes on). The levels are set a little apart (the stops' separation at a structure's end) and Right steps
+through them before it moves on, Left (and End) comes in from the outside; typing, clicks and every other move put the
+caret at the first. AxMath's operand is a slot the user typed into; here the text stays flat and the rule decides.
 
 New kinds are added to this table, not to handlers.
 
@@ -143,7 +161,8 @@ the bar stands alone (as in AxMath), in an empty slot only the marker bar. The b
 blink together, and the caret's colour is the theme's). This replaces the 2026-10-21 rule that the bar never stretches to
 its slot (too tall in scripts and nested structures when it stood alone; with the line, its height says which region it
 is). Regions are the slots of the structure table (§4): the row, numerator, denominator, radicand and index, scripts,
-limits, operands, bracket content, matrix cells, an accent's content. Test: `caret_underline_regression.mjs`.
+limits, operands, bracket content, matrix cells, an accent's content. Test: `caret_underline_regression.mjs`; the operand's
+region and levels (§4): `caret_operand_regression.mjs`.
 
 The painter draws the caret, markers, selection and tint from these numbers. The kernel and the app never measure the
 page: anything that needs a position (popovers, IME candidate window, scrolling, the app's row layout) asks the core,
@@ -156,7 +175,9 @@ the blink animation.
 
 ### 6.1 Left/Right
 Move to the next/previous allowed stop in document order (slot order from §4, depth-first). A range selection
-collapses to its edge first. Word moves (Ctrl+Left/Right) skip runs of letters/digits within a slot.
+collapses to its edge first. Word moves (Ctrl+Left/Right) skip runs of letters/digits within a slot. At the end of a big
+operator's operand (§4) Right first steps through the caret's levels there (inside the operand, outside it), Left comes
+in from the outside; End goes outside every operand that ends at the row's end. Test: `caret_operand_regression.mjs`.
 
 ### 6.2 Home/End
 Start/end of the current slot; pressed again, of the top level.

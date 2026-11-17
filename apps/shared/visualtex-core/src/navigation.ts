@@ -84,12 +84,37 @@ function originStop(model: CoreModel, direction: Direction): number {
   return direction > 0 ? Math.max(model.position, model.anchor) : Math.min(model.position, model.anchor);
 }
 
-/** Put the caret at a stop; a placeholder right after it is selected (the caret in its empty slot). */
-export function goTo(model: CoreModel, offset: number): boolean {
+/**
+ * The way of standing at the caret's stop (CaretGeometry.levels): the end of a big operator's operand is one place where
+ * the caret can be inside the operand or outside it (under only the operand, or under the whole row). The kernel offset
+ * is the same, so the core keeps the level, for the offset it was set at.
+ */
+interface LevelHolder {
+  visualTexCaretLevel?: { offset: number; level: number };
+}
+
+export function caretLevel(model: CoreModel): number {
+  const held = (model.mathfield as unknown as LevelHolder).visualTexCaretLevel;
+  return held && held.offset === model.position ? held.level : 0;
+}
+
+/** How many ways there are of standing at a stop (1: one). */
+function levelCount(model: CoreModel, offset: number): number {
+  return model.mathfield.visualTexGeometry?.stops[offset]?.levels?.length ?? 1;
+}
+
+/** The level a caret arrives at: coming from the right, outside every operand that ends there; else inside. */
+function arrivalLevel(model: CoreModel, offset: number, direction: Direction): number {
+  return direction < 0 ? levelCount(model, offset) - 1 : 0;
+}
+
+/** Put the caret at a stop (at one of its levels); a placeholder right after it is selected (the caret in its empty slot). */
+export function goTo(model: CoreModel, offset: number, level = 0): boolean {
   const previous = model.position;
   const next = model.at(offset)?.rightSibling;
   if (isPlaceholder(next)) model.setSelection(offset, offset + 1);
   else model.setSelection(offset, offset);
+  (model.mathfield as unknown as LevelHolder).visualTexCaretLevel = { offset, level };
   model.mathfield.stopCoalescingUndo();
   model.announce("move", previous);
   return true;
@@ -125,8 +150,15 @@ export function moveHorizontal(model: CoreModel, direction: Direction, host?: Ed
   }
   const stops = allowedStops(model);
   const from = originStop(model, direction);
+  // At the end of an operand the caret has more than one way of standing at its place: the key steps through them first
+  if (model.selectionIsCollapsed) {
+    const ways = levelCount(model, from);
+    const level = caretLevel(model);
+    if (direction > 0 && level < ways - 1) return goTo(model, from, level + 1);
+    if (direction < 0 && level > 0) return goTo(model, from, level - 1);
+  }
   const next = direction > 0 ? stops.find((s) => s > from) : [...stops].reverse().find((s) => s < from);
-  if (next !== undefined) return goTo(model, next);
+  if (next !== undefined) return goTo(model, next, arrivalLevel(model, next, direction));
   // At the formula's edge: the host may leave the formula (a document's inline formula).
   if (host?.horizontalExit?.(direction)) return true;
   return plonk(model);
@@ -144,11 +176,11 @@ export function moveToSlotEdge(model: CoreModel, direction: Direction, thenFormu
     const atoms = slotAtoms(slot);
     const edgeAtom = direction < 0 ? atoms[0] : atoms[atoms.length - 1];
     const edge = edgeAtom ? model.offsetOf(edgeAtom) : -1;
-    if (edge >= 0 && edge !== from && isAllowedStop(model, edge)) return goTo(model, edge);
+    if (edge >= 0 && edge !== from && isAllowedStop(model, edge)) return goTo(model, edge, direction > 0 ? levelCount(model, edge) - 1 : 0);
   }
   if (!thenFormula) return plonk(model);
   const target = direction < 0 ? stops[0] : stops[stops.length - 1];
-  return target === undefined || target === from ? plonk(model) : goTo(model, target);
+  return target === undefined || target === from ? plonk(model) : goTo(model, target, direction > 0 ? levelCount(model, target) - 1 : 0);
 }
 
 // -------------------------------------------------------------------- Tab --

@@ -3,7 +3,7 @@
 // computes the geometry of every caret stop, empty slot and atom while it lays
 // the formula out; the kernel and the app ask this module instead of
 // measuring the drawn page.
-import { caretReach, type CaretState, type EditorGeometry, type GeometryRect } from "../../tex-layout/src/index.ts";
+import { caretReach, stopAt, type CaretState, type EditorGeometry, type GeometryRect } from "../../tex-layout/src/index.ts";
 import { enterSlot, firstEmptySlotStop, goToStop, moveHorizontal, moveToSlotEdge, space, tab, vertical, type EditingHost, type SelectionDragHost, type SpaceKernel, type TabKernel } from "./navigation.ts";
 import { itemAt, type FormulaPoint } from "./pointer.ts";
 import { rectHitTest, type RectHitView } from "./rectHit.ts";
@@ -47,6 +47,8 @@ interface KernelMathfield {
   field?: HTMLElement | null;
   host?: HTMLElement | null;
   visualTexGeometry?: EditorGeometry;
+  /** which way of standing at a stop the caret has (navigation.ts caretLevel) */
+  visualTexCaretLevel?: { offset: number; level: number };
 }
 
 export interface EditingCore {
@@ -215,7 +217,10 @@ export function createEditingCore(): EditingCore {
   const core: EditingCore = {
     caretState(mathfield) {
       const model = mathfield.model;
-      if (model.selectionIsCollapsed) return { kind: "stop", offset: model.position };
+      if (model.selectionIsCollapsed) {
+        const held = mathfield.visualTexCaretLevel;
+        return { kind: "stop", offset: model.position, level: held && held.offset === model.position ? held.level : 0 };
+      }
       if (model.selectionIsPlaceholder) {
         const p = model.at(Math.max(model.position, model.anchor));
         if (p && (p.type === "placeholder" || p.type === "prompt")) return { kind: "empty", placeholder: p as never };
@@ -267,7 +272,7 @@ export function createEditingCore(): EditingCore {
       if (!geometry) return null;
       const state = core.caretState(mathfield);
       if (state.kind === "stop") {
-        const c = geometry.stops[state.offset];
+        const c = stopAt(geometry.stops, state.offset, state.level);
         return c ? core.toClient(mathfield, { x0: c.x, x1: c.x, y0: c.top, y1: c.bottom }) : null;
       }
       if (state.kind === "empty") {
@@ -286,7 +291,7 @@ export function createEditingCore(): EditingCore {
     caretReachRect(mathfield) {
       const geometry = core.geometry(mathfield);
       const state = core.caretState(mathfield);
-      const c = geometry && state.kind === "stop" ? geometry.stops[state.offset] : null;
+      const c = geometry && state.kind === "stop" ? stopAt(geometry.stops, state.offset, state.level) : null;
       if (!c) return null;
       const reach = caretReach(c);
       return core.toClient(mathfield, { x0: c.x, x1: c.x, y0: reach.top, y1: reach.bottom });
