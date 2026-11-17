@@ -2239,6 +2239,22 @@ fn the_word_number_request_is_answered_through_the_inbox() {
     assert!(session_directory.join(FORMULA_RESTORE_SOURCE_FILE).is_file(), "the manifest is kept in the Session folder");
     assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 0, "nothing is answered twice");
 
+    // an answer nobody picked up for a long time is removed (the add-in gave up on it), a recent one stays
+    let old_answer = inbox.join(format!("{}.number-done", Uuid::new_v4()));
+    let recent_answer = inbox.join(format!("{}.number-done", Uuid::new_v4()));
+    fs::write(&old_answer, b"operation=nativeNumber").unwrap();
+    fs::write(&recent_answer, b"operation=nativeNumber").unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&old_answer)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(600))
+        .unwrap();
+    fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap();
+    assert!(!old_answer.exists(), "a stale answer is removed");
+    assert!(recent_answer.exists(), "a recent answer stays for the add-in");
+    assert!(inbox.join(format!("{session_id}.number-done")).exists(), "the answer of this request stays");
+
     // a request that is no manifest is answered with the error, not left waiting
     let missing = Uuid::new_v4().to_string();
     fs::write(inbox.join(format!("{missing}.number")), b"nativeNumber").unwrap();

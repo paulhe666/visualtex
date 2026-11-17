@@ -259,11 +259,16 @@ part of every numbered insertion. The resident app answers the same request thro
 
 - the add-in asks only a resident whose `resident-ready` heartbeat carries the line `numbers=1`;
 - it publishes `<sessionId>.number` holding the manifest (written as `.<sessionId>.number.tmp` and renamed; Word cannot write into
-  the Session folder, which is in Application Scripts) into the inbox of the Word sandbox, and waits at most 1.5 s for
-  `<sessionId>.number-done`;
-- the resident (the 25 ms poll of the fast open) takes the request, puts the manifest into the Session folder as
-  `formula-restore-source.txt`, builds the package exactly as the command line mode does, and writes the result manifest to
-  `omml-latex-result.txt` there and as the answer file (`error=<message>` when it cannot); a request older than 10 s is dropped
-  without an answer;
-- when the resident is not ready, does not say `numbers=1`, does not answer in time or answers with an error, the add-in uses the
-  helper script as before (and removes its own request, so that nothing answers late).
+  the Session folder, which is in Application Scripts) into the inbox of the Word sandbox. The add-in reads the heartbeat and the
+  answer from the inbox with its own reader: `VTReadText` reads only inside the Session folder's tree and rejects these paths;
+- the resident (the 25 ms poll of the fast open) takes the request out of the inbox within a poll interval, puts the manifest into
+  the Session folder as `formula-restore-source.txt`, builds the package exactly as the command line mode does, and writes the result
+  manifest to `omml-latex-result.txt` there and as the answer file `<sessionId>.number-done` (`error=<message>` when it cannot); a
+  request older than 10 s is dropped without an answer, an answer nobody picked up for 2 minutes is removed;
+- the add-in waits at most 0.4 s for the request to be taken. One that is taken is answered however long the package takes (a
+  numbering of the whole document holds many equations), so the add-in then waits for the answer (20 s at most) and does not start the
+  helper script's second conversion beside it;
+- when the resident is not ready, does not say `numbers=1`, does not take the request or answers with an error, the add-in uses the
+  helper script as before (and removes its own request, so that nothing answers late). Cleanup code never kills the empty path of a
+  step it has not reached: `Kill ""` fails after more than a second in Word for Mac and, inside an error handler, escapes
+  `On Error Resume Next`.

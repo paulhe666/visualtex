@@ -472,7 +472,11 @@ End Function
 Public Function VTTryFastConvertOmmlBatch( _
     ByVal sessionId As String, ByVal manifest As String, Optional ByRef trace As String) As String
 #If Mac Then
-    Const MAX_ANSWER_WAIT_SECONDS As Double = 1.5
+    ' The resident takes a request out of the inbox within a poll interval (25 ms) when it can answer; one it has taken is
+    ' answered however long the package takes (a numbering of the whole document is many equations), so the add-in waits for
+    ' that answer and does not start the helper script's second conversion beside it.
+    Const MAX_CLAIM_WAIT_SECONDS As Double = 0.4
+    Const MAX_ANSWER_WAIT_SECONDS As Double = 20#
     Dim inboxRoot As String
     Dim requestPath As String
     Dim temporaryPath As String
@@ -516,6 +520,15 @@ Public Function VTTryFastConvertOmmlBatch( _
     Name temporaryPath As requestPath
     trace = trace & ";published"
     startedAt = Timer
+    Do While Len(Dir$(requestPath, vbNormal)) > 0
+        If Len(Dir$(answerPath, vbNormal)) > 0 Then Exit Do
+        DoEvents
+        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_CLAIM_WAIT_SECONDS Then
+            trace = trace & ";unclaimed"
+            GoTo NotAvailable
+        End If
+    Loop
+    trace = trace & ";claimed-after-ms=" & CStr(CLng(1000# * VTFastLaunchElapsedSeconds(startedAt, Timer)))
     Do While Len(Dir$(answerPath, vbNormal)) = 0
         DoEvents
         If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then

@@ -39,6 +39,8 @@ const FAST_NUMBER_REQUEST_SUFFIX: &str = ".number";
 const FAST_NUMBER_ANSWER_SUFFIX: &str = ".number-done";
 const FAST_NUMBER_RESULT_FILE: &str = "omml-latex-result.txt";
 const MAX_FAST_NUMBER_BYTES: u64 = 16 * 1024 * 1024;
+/// An answer the add-in has not picked up this long after it was written is nobody's any more (the add-in gave up or Word closed).
+const STALE_FAST_NUMBER_ANSWER_AGE: Duration = Duration::from_secs(120);
 
 pub(super) fn fast_number_session_id(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_str()?;
@@ -69,6 +71,27 @@ pub(super) fn fast_number_answer(session_directory: &Path, manifest: &[u8]) -> S
     }
 }
 
+/// `<session>.number-done` that nobody read for a long time.
+fn is_stale_fast_number_answer(path: &Path, now: SystemTime) -> bool {
+    let Some(session_id) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(FAST_NUMBER_ANSWER_SUFFIX))
+    else {
+        return false;
+    };
+    if validate_uuid(session_id, "Fast-number answer Session id").is_err() {
+        return false;
+    }
+    match fs::symlink_metadata(path).and_then(|metadata| metadata.modified()) {
+        Ok(modified) => now
+            .duration_since(modified)
+            .map(|age| age > STALE_FAST_NUMBER_ANSWER_AGE)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
 /// Answers every number request waiting in `inbox_root` (`session_directory_of` gives a Session's folder). Returns how many.
 pub(super) fn answer_fast_number_requests(
     inbox_root: &Path,
@@ -86,6 +109,10 @@ pub(super) fn answer_fast_number_requests(
     let mut answered = 0;
     for entry in entries.flatten() {
         let path = entry.path();
+        if is_stale_fast_number_answer(&path, now) {
+            let _ = fs::remove_file(&path);
+            continue;
+        }
         let Some(session_id) = fast_number_session_id(&path) else {
             continue;
         };
