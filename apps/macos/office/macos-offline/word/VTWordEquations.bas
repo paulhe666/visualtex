@@ -281,15 +281,16 @@ End Function
 
 ' The root Range of the native equation that contains a field, found through
 ' the field's own paragraph, or Nothing when the field is outside equations.
-Public Function VTFieldNativeMathRoot(ByVal candidate As Field) As Range
-    Dim paragraphRange As Range
+' (paragraphRange: the field's paragraph, when the caller has it already)
+Public Function VTFieldNativeMathRoot( _
+    ByVal candidate As Field, Optional ByVal paragraphRange As Range = Nothing) As Range
     Dim candidateMath As OMath
     Dim rootRange As Range
     Dim fieldStart As Long
 
     If candidate Is Nothing Then Exit Function
     fieldStart = VTEquationFieldStart(candidate)
-    Set paragraphRange = candidate.Code.Paragraphs(1).Range
+    If paragraphRange Is Nothing Then Set paragraphRange = candidate.Code.Paragraphs(1).Range
     If paragraphRange.OMaths.Count = 0 Then Exit Function
     For Each candidateMath In paragraphRange.OMaths
         Set rootRange = VTNativeMathRoot(candidateMath).Range

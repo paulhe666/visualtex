@@ -4600,13 +4600,8 @@ End Sub
 Public Function VTCurrentNumberTargets( _
     ByVal doc As Document, _
     Optional ByVal referenceKind As String = "") As Collection
-    Dim result As New Collection
-    Dim paragraph As Paragraph
-    Dim candidate As Field
-    Dim source As Range
-    Dim math As OMath
-    Dim lastEnd As Long
-    Dim paragraphHasMath As Boolean
+    Dim nativeTargets As Collection
+    Dim imageTargets As Collection
     referenceKind = LCase$(Trim$(referenceKind))
     If Len(referenceKind) > 0 And _
        referenceKind <> VT_WORD_REFERENCE_KIND_NATIVE And _
@@ -4614,52 +4609,114 @@ Public Function VTCurrentNumberTargets( _
         Err.Raise vbObjectError + 7547, "VisualTeX", _
             "The Equation-reference kind is invalid: " & referenceKind
     End If
-    lastEnd = -1
-    For Each paragraph In doc.Paragraphs
-        paragraphHasMath = False
-        If referenceKind <> VT_WORD_REFERENCE_KIND_IMAGE Then
-            For Each math In paragraph.Range.OMaths
-                paragraphHasMath = True
-                Set candidate = VTPureNativeNumberField(math.Range)
-                If Not candidate Is Nothing Then
-                    Set source = VTPureNativeVisibleNumberRange( _
-                        math.Range, candidate)
-                    If source.Start >= lastEnd Then
-                        result.Add source
-                        lastEnd = source.End
+    VTCollectNumberTargets doc, nativeTargets, imageTargets, _
+        referenceKind <> VT_WORD_REFERENCE_KIND_IMAGE, _
+        referenceKind <> VT_WORD_REFERENCE_KIND_NATIVE
+    Select Case referenceKind
+        Case VT_WORD_REFERENCE_KIND_NATIVE
+            Set VTCurrentNumberTargets = nativeTargets
+        Case VT_WORD_REFERENCE_KIND_IMAGE
+            Set VTCurrentNumberTargets = imageTargets
+        Case Else
+            Set VTCurrentNumberTargets = VTMergeNumberTargets(nativeTargets, imageTargets)
+    End Select
+End Function
+
+' The numbers of the document in one pass over its fields, each kind in document order: the native ones (a numbered
+' equation's number, or the SEQ of a legacy external helper paragraph) and the picture ones. Every number is a field (the
+' SEQ in an equation's # slot, a helper's SEQ, a picture's VisualTeXPlaceRef), so the pass reads only the fields and the
+' equations that hold a SEQ: walking every paragraph made it grow with the text of the document (100,000 characters:
+' about 500 paragraphs), and walking doc.OMaths costs about 2 ms an equation in Word for Mac.
+Public Sub VTCollectNumberTargets( _
+    ByVal doc As Document, _
+    ByRef nativeTargets As Collection, _
+    ByRef imageTargets As Collection, _
+    Optional ByVal wantNative As Boolean = True, _
+    Optional ByVal wantImage As Boolean = True)
+    Dim equationTargets As New Collection
+    Dim helperTargets As New Collection
+    Dim candidate As Field
+    Dim numberField As Field
+    Dim paragraphRange As Range
+    Dim rootRange As Range
+    Dim fieldType As Long
+    Dim lastRootStart As Long
+    Set nativeTargets = New Collection
+    Set imageTargets = New Collection
+    lastRootStart = -1
+    For Each candidate In doc.Fields
+        fieldType = candidate.Type
+        If fieldType = wdFieldMacroButton Then
+            If wantImage Then
+                If VTIsImagePlaceRef(candidate) Then _
+                    VTAddNumberTarget imageTargets, VTCurrentImageNumberRange(candidate)
+            End If
+        ElseIf fieldType = wdFieldSequence And wantNative Then
+            ' A SEQ in a paragraph without an equation can be a legacy helper paragraph's (a picture's number never
+            ' is); a SEQ in an equation stands for its equation, which is asked once.
+            Set paragraphRange = candidate.Code.Paragraphs(1).Range
+            If paragraphRange.OMaths.Count = 0 Then
+                If VTHelperParagraphOwnsNativeEquationSequence(paragraphRange) Then
+                    helperTargets.Add candidate.Result.Duplicate
+                End If
+            Else
+                Set rootRange = VTFieldNativeMathRoot(candidate, paragraphRange)
+                If Not rootRange Is Nothing Then
+                    If rootRange.Start > lastRootStart Then
+                        lastRootStart = rootRange.Start
+                        Set numberField = VTPureNativeNumberField(rootRange)
+                        If Not numberField Is Nothing Then
+                            equationTargets.Add VTPureNativeVisibleNumberRange(rootRange, numberField)
+                        End If
                     End If
                 End If
-            Next math
+            End If
         End If
-        For Each candidate In paragraph.Range.Fields
-            Set source = Nothing
-            If VTIsImagePlaceRef(candidate) Then
-                If referenceKind <> VT_WORD_REFERENCE_KIND_NATIVE Then _
-                    Set source = VTCurrentImageNumberRange(candidate)
-            ElseIf candidate.Type = wdFieldSequence And _
-                   referenceKind <> VT_WORD_REFERENCE_KIND_IMAGE Then
-                ' Pure native fields were already collected from the paragraph's
-                ' OMath objects above. Re-entering VTPureNativeNumberField through
-                ' a Field.Result range is both redundant and unstable after an
-                ' image-to-OMML replacement on Word for Mac. This branch is only
-                ' for the legacy external helper geometry, a paragraph with no
-                ' equation (a helper is never one: asking costs 5 ms an equation).
-                If Not paragraphHasMath Then
-                    If VTHelperParagraphOwnsNativeEquationSequence( _
-                       paragraph.Range) Then
-                        Set source = candidate.Result.Duplicate
-                    End If
-                End If
-            End If
-            If Not source Is Nothing Then
-                If source.Start >= lastEnd Then
-                    result.Add source
-                    lastEnd = source.End
-                End If
-            End If
-        Next candidate
-    Next paragraph
-    Set VTCurrentNumberTargets = result
+    Next candidate
+    Set imageTargets = VTMergeNumberTargets(imageTargets, Nothing)
+    Set nativeTargets = VTMergeNumberTargets(equationTargets, helperTargets)
+End Sub
+
+Private Sub VTAddNumberTarget(ByVal targets As Collection, ByVal source As Range)
+    If Not source Is Nothing Then targets.Add source
+End Sub
+
+' Two lists of numbers in document order merged by position; a number that starts inside the previous one is left
+' out (as the paragraph scan did).
+Public Function VTMergeNumberTargets( _
+    ByVal first As Collection, ByVal second As Collection) As Collection
+    Dim result As New Collection
+    Dim nextSource As Range
+    Dim firstIndex As Long
+    Dim secondIndex As Long
+    Dim firstCount As Long
+    Dim secondCount As Long
+    Dim lastEnd As Long
+    If Not first Is Nothing Then firstCount = first.Count
+    If Not second Is Nothing Then secondCount = second.Count
+    lastEnd = -1
+    firstIndex = 1
+    secondIndex = 1
+    Do While firstIndex <= firstCount Or secondIndex <= secondCount
+        If secondIndex > secondCount Then
+            Set nextSource = first(firstIndex)
+            firstIndex = firstIndex + 1
+        ElseIf firstIndex > firstCount Then
+            Set nextSource = second(secondIndex)
+            secondIndex = secondIndex + 1
+        ElseIf first(firstIndex).Start <= second(secondIndex).Start Then
+            Set nextSource = first(firstIndex)
+            firstIndex = firstIndex + 1
+        Else
+            Set nextSource = second(secondIndex)
+            secondIndex = secondIndex + 1
+        End If
+        If nextSource.Start >= lastEnd Then
+            result.Add nextSource
+            lastEnd = nextSource.End
+        End If
+    Loop
+    Set VTMergeNumberTargets = result
 End Function
 
 ' =====================================================================

@@ -799,9 +799,10 @@ Public Function VTAgentInsertReference() As String
     End If
     kinds(1) = VT_WORD_REFERENCE_KIND_NATIVE: sources(1) = "office_equation"
     kinds(2) = VT_WORD_REFERENCE_KIND_IMAGE: sources(2) = "picture"
-    ' One scan of the numbers of each kind (0.6 ms an equation): the insertion below takes the scan of the kind it matched.
+    ' One pass over the document's equations and fields for both kinds (as the Ribbon menu): the insertion below takes
+    ' the numbers of the kind it matched.
+    VTCollectNumberTargets documentObject, targets(1), targets(2)
     For kindIndex = 1 To 2
-        Set targets(kindIndex) = VTCurrentNumberTargets(documentObject, kinds(kindIndex))
         For itemIndex = 1 To targets(kindIndex).Count
             itemText = "(" & Trim$(targets(kindIndex)(itemIndex).Text) & ")"
             If Len(available) > 0 Then available = available & ", "

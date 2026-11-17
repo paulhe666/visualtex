@@ -30,6 +30,10 @@ Private VT_WORD_SELECTED_IMAGE_FINGERPRINT As String
 Private VT_WORD_IMAGE_FONT_CONTROL_STATE As String
 Private VT_WORD_REFERENCE_MENU_DOCUMENT As Document
 Private VT_WORD_REFERENCE_MENU_INSERTION_RANGE As Range
+' The numbers the open reference menu listed: the click inserts from them instead of scanning the document again
+' (nothing can change the document while its menu is open).
+Private VT_WORD_REFERENCE_MENU_NATIVE_TARGETS As Collection
+Private VT_WORD_REFERENCE_MENU_IMAGE_TARGETS As Collection
 
 ' AI agents: the entry macro the app runs (see VTWordAgent)
 Public Sub VisualTeX_AgentRun()
@@ -1117,6 +1121,8 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
 
     Dim nativeItems As Variant
     Dim imageItems As Variant
+    Dim nativeTargets As Collection
+    Dim imageTargets As Collection
     Dim insertionRange As Range
     Dim itemIndex As Long
     Dim itemText As String
@@ -1126,8 +1132,7 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
 
     On Error GoTo MenuFailed
     VTWordPerformanceStartLocal "xref-menu"
-    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
-    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    VTForgetWordReferenceMenu
     If Documents.Count = 0 Then
         returnedValue = VTWordRibbonReferenceMenuMessage( _
             VTUnicodeText(35831, 20808, 25171, 24320, 19968, 20010, _
@@ -1139,12 +1144,12 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
         Selection.Range.Duplicate)
     If insertionRange Is Nothing Then GoTo MenuFailed
     VTWordPerformanceMark "xref-insertion-range-ready"
-    nativeItems = VTEquationNumberCrossReferenceItems( _
-        ActiveDocument, VT_WORD_REFERENCE_KIND_NATIVE)
-    VTWordPerformanceMark "xref-native-items"
-    imageItems = VTEquationNumberCrossReferenceItems( _
-        ActiveDocument, VT_WORD_REFERENCE_KIND_IMAGE)
-    VTWordPerformanceMark "xref-image-items"
+    ' Both kinds in one pass over the document's equations and fields.
+    VTCollectNumberTargets ActiveDocument, nativeTargets, imageTargets
+    VTWordPerformanceMark "xref-targets-collected"
+    nativeItems = VTNumberTargetItems(nativeTargets)
+    imageItems = VTNumberTargetItems(imageTargets)
+    VTWordPerformanceMark "xref-items"
     hasNativeItems = IsArray(nativeItems)
     hasImageItems = IsArray(imageItems)
     If Not hasNativeItems And Not hasImageItems Then
@@ -1156,6 +1161,8 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
 
     Set VT_WORD_REFERENCE_MENU_DOCUMENT = ActiveDocument
     Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = insertionRange.Duplicate
+    Set VT_WORD_REFERENCE_MENU_NATIVE_TARGETS = nativeTargets
+    Set VT_WORD_REFERENCE_MENU_IMAGE_TARGETS = imageTargets
     menuXml = _
         "<menu xmlns=""" & VTWordRibbonCustomUiNamespace() & """>"
     If hasNativeItems Then
@@ -1202,8 +1209,7 @@ Public Sub VTWordRibbonCrossReferenceMenuContent( _
     Exit Sub
 
 MenuFailed:
-    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
-    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    VTForgetWordReferenceMenu
     returnedValue = VTWordRibbonReferenceMenuMessage( _
         VTUnicodeText(26080, 27861, 35835, 21462, 20844, 24335, 21015, 34920))
     Err.Clear
@@ -1218,6 +1224,7 @@ Public Sub VTWordRibbonCrossReferenceItem( _
     Dim insertedRange As Range
     Dim insertionRange As Range
     Dim targetDocument As Document
+    Dim listedTargets As Collection
 
     On Error GoTo InsertFailed
     VTWordPerformanceStartLocal "xref-insert"
@@ -1241,13 +1248,17 @@ Public Sub VTWordRibbonCrossReferenceItem( _
     Set targetDocument = VT_WORD_REFERENCE_MENU_DOCUMENT
     Set insertionRange = _
         VT_WORD_REFERENCE_MENU_INSERTION_RANGE.Duplicate
-    Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
-    Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
+    If referenceKind = VT_WORD_REFERENCE_KIND_NATIVE Then
+        Set listedTargets = VT_WORD_REFERENCE_MENU_NATIVE_TARGETS
+    Else
+        Set listedTargets = VT_WORD_REFERENCE_MENU_IMAGE_TARGETS
+    End If
+    VTForgetWordReferenceMenu
 
     targetDocument.Activate
     VTWordPerformanceMark "xref-activated"
     Set insertedRange = VTInsertEquationNumberReferenceAtRange( _
-        insertionRange, itemIndex, True, referenceKind)
+        insertionRange, itemIndex, True, referenceKind, listedTargets)
     VTWordPerformanceMark "xref-inserted"
     insertedRange.Collapse wdCollapseEnd
     insertedRange.Select
@@ -1256,9 +1267,15 @@ Public Sub VTWordRibbonCrossReferenceItem( _
     Exit Sub
 
 InsertFailed:
+    VTForgetWordReferenceMenu
+    VTShowError "equation cross-reference", Err.Number, Err.Description
+End Sub
+
+Private Sub VTForgetWordReferenceMenu()
     Set VT_WORD_REFERENCE_MENU_DOCUMENT = Nothing
     Set VT_WORD_REFERENCE_MENU_INSERTION_RANGE = Nothing
-    VTShowError "equation cross-reference", Err.Number, Err.Description
+    Set VT_WORD_REFERENCE_MENU_NATIVE_TARGETS = Nothing
+    Set VT_WORD_REFERENCE_MENU_IMAGE_TARGETS = Nothing
 End Sub
 
 Public Sub VTWordRibbonConvertImage(ByVal control As IRibbonControl)

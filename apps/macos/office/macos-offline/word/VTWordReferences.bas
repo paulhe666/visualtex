@@ -499,16 +499,21 @@ End Sub
 Public Function VTEquationNumberCrossReferenceItems( _
     ByVal documentObject As Document, _
     Optional ByVal referenceKind As String = "") As Variant
-    Dim targets As Collection
+    VTEquationNumberCrossReferenceItems = VTNumberTargetItems( _
+        VTCurrentNumberTargets(documentObject, referenceKind))
+End Function
+
+' The labels of a list of numbers ("(3)"), or Empty for none.
+Public Function VTNumberTargetItems(ByVal targets As Collection) As Variant
     Dim index As Long
     Dim items() As String
-    Set targets = VTCurrentNumberTargets(documentObject, referenceKind)
+    If targets Is Nothing Then Exit Function
     If targets.Count = 0 Then Exit Function
     ReDim items(1 To targets.Count)
     For index = 1 To targets.Count
         items(index) = "(" & Trim$(targets(index).Text) & ")"
     Next index
-    VTEquationNumberCrossReferenceItems = items
+    VTNumberTargetItems = items
 End Function
 
 Public Function VTResolveEquationReferenceInsertionRange( _

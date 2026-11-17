@@ -142,7 +142,7 @@ macro does), 0.05 s the app, the rest the add-in: in a document of 400 equations
 the resident 0.04 s (the helper script 0.63 s), the insertion 0.12 s, the renumbering 0.02 to 0.26 s (it follows the number of numbers
 after the new one). A reference (the agent's `insert_equation_reference`, which includes the macro launch) takes 0.9 s instead of 2.1 s
 at 125 equations (the add-in's part of it is 0.33 s) and 1.6 s at 400 (a scan of the numbers 0.25 s, placing the caret 0.33 s, the
-insertion 0.15 s); the Ribbon's menu and its click each scan the numbers once.
+insertion 0.15 s); the Ribbon's menu scans the numbers once and its click inserts from the list the menu showed.
 
 What was done about it (the numbers above are with all of it):
 
@@ -150,7 +150,10 @@ What was done about it (the numbers above are with all of it):
   of other kinds end a run and keep their own chain; any error goes back to the field by field path); the references are refreshed in
   bulk too, and the ones before the new number are looked for only when the document has a bookmark a reference could name;
 - a picture number's nested fields are updated in one call (`VTUpdateImagePlaceRef`);
-- the reference scan (`VTCurrentNumberTargets`) asks the legacy helper question only of paragraphs without an equation;
+- the reference scan (`VTCollectNumberTargets`) reads the document's fields only, both kinds in one pass: every number is a field (the
+  SEQ in an equation's `#` slot, a legacy helper paragraph's SEQ, a picture's `VisualTeXPlaceRef`), an equation is looked at once,
+  through the paragraph of its SEQ, and the legacy helper question is asked only of paragraphs without an equation (walking every
+  paragraph had made the scan grow with the text, and walking `Document.OMaths` costs 2 ms an equation);
 - the numbering plan reads a window of the numbered equations just before the insertion point and the first one of the document, not
   every one before it (`VTV2NumberedEquationsAround`: the plan only needs the nearest one and the start of its series, and a plain
   document is one series; a chapter longer than the window is read further back), and the numbering style of a document is inferred
@@ -158,6 +161,21 @@ What was done about it (the numbers above are with all of it):
 - a formula created by the commit has no references yet, so the commit does not look for them (`VTFinishPureNativeEquation`);
 - the number package is asked of the resident app through the fast-open inbox (PROTOCOL.md, "Number request") instead of the helper
   script (0.04 s instead of 0.63 s); the resident keeps itself out of App Nap so that its 25 ms poll is on time.
+
+References in long documents (2026-11-17): 100 numbered formulas in 50,000 and in 100,000 characters (10 chapters), the caret at
+the start, in the middle and at the end, references to (1), (50) and (100). Real clicks through Accessibility (the VisualTeX tab's
+"插入公式引用" menu, the kind's submenu, the number), the reference seen by asking the application how many fields the document has:
+
+| document | menu shown | click on a number -> reference in the document | the add-in's part (menu / click) |
+| --- | --- | --- | --- |
+| Word, 100 OMML equations, 50,000 / 100,000 characters | 0.44 to 0.47 s | 0.35 to 0.47 s | 0.09 to 0.10 s / 0.03 to 0.07 s |
+| Word, 100 picture formulas, 50,000 / 100,000 characters | 0.42 to 0.44 s | 0.36 to 0.46 s | 0.06 to 0.07 s / 0.03 to 0.06 s |
+
+The rest is Word's: it draws the menu about 0.35 s after the add-in has returned its content, and runs the click's macro about 0.16 s
+after the click. None of it follows the length of the text (the same at the start, the middle and the end, at 50,000 and 100,000
+characters); before, the scan alone took 0.11 to 0.15 s in the OMML documents and grew with the text. WPS for Mac shows only its tabs
+to Accessibility, not the buttons of a tab, so its menu cannot be pressed from outside; timed inside WPS (the probe add-in), the add-in's
+own part in the same documents is 0.06 to 0.10 s for the menu's list and 0.01 to 0.04 s for the click's insertion, OMML and pictures.
 
 Two numbering faults that were there before were found by the checks and fixed: a numbered picture created before the first numbered
 picture of a chapter or section left the former first one its restart, so the numbers read 1, 1, 2, 3 ...
