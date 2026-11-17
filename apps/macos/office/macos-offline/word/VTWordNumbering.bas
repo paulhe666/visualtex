@@ -1306,8 +1306,13 @@ Public Function VTInsertEquationNumber( _
         ' paragraph, so do not rescan every earlier image or touch OMML fields.
         ' Besides preserving that separation, this keeps repeated appends
         ' linear instead of making document construction quadratic.
-        VTUpdateImageNumberFieldsFrom _
-            formulaShape.Range.Document, formulaShape.Range.Start
+        ' In a chapter or section numbering the next numbered image may have to
+        ' give up its restart (\r 1) to the new one, which now starts the scope:
+        ' the reconcile repairs that number and then updates the suffix as before
+        ' (without it the former first number of the scope kept its restart and
+        ' the numbers read 1, 1, 2, 3 ...).
+        VTReconcileNumberingAfterEdit _
+            formulaShape.Range.Document, formulaShape.Range.Start, True
     End If
     If Not IsMissing(performancePhases) Then performancePhases = Array(0#, 0#, 0#, 0#, 0#, 0#)
 End Function
