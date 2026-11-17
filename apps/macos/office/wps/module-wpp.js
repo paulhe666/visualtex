@@ -1722,10 +1722,10 @@
   function fontSizeItemLabel(index) {
     if (index > 0) return presetLabel(index - 1);
     var shapes = safe(selectedFormulaShapes, []);
-    if (!shapes.length) return "请选择 SVG 公式";
+    if (!shapes.length) return "未选公式";
     var sizes = shapes.map(function (shape) { return scaleOf(shape, false).size; });
     var mixed = sizes.some(function (size) { return Math.abs(size - sizes[0]) > 0.05; });
-    return "当前: " + (mixed ? "混合字号" : sizeLabel(sizes[0]));
+    return mixed ? "混合字号" : sizeLabel(sizes[0]);
   }
 
   function fontSizeSelectedIndex() {
@@ -1735,6 +1735,26 @@
     if (sizes.some(function (size) { return Math.abs(size - sizes[0]) > 0.05; })) return 0;
     var index = presetIndex(sizes[0]);
     return index >= 0 ? index + 1 : 0;
+  }
+
+  /* The size list as a menu (WPS for Mac shows no value in a drop-down box):
+     the current size first, then the sizes, the current one ticked. An item is
+     "vtxSize_vtxImageFontSize_<index>" (the drop-down's index), see onAction. */
+  function xmlAttribute(text) {
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function fontSizeMenu() {
+    var selected = safe(fontSizeSelectedIndex, 0);
+    var current = safe(function () { return fontSizeItemLabel(selected); }, "");
+    var xml = "<menu xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
+      "<button id=\"vtxSizeCurrent\" label=\"" + xmlAttribute("当前：" + current) + "\" enabled=\"false\" />" +
+      "<menuSeparator id=\"vtxSizeSeparator\" />";
+    for (var index = 1; index <= FONT_PRESETS.length; index++) {
+      xml += "<button id=\"vtxSize_vtxImageFontSize_" + index + "\" label=\"" +
+        xmlAttribute((index === selected ? "✓ " : "") + presetLabel(index - 1)) + "\" onAction=\"OnVisualTeXAction\" />";
+    }
+    return xml + "</menu>";
   }
 
   /* ---- double-click ----
@@ -2464,12 +2484,14 @@
     },
     onAction: function (id) {
       run(function () {
-        if (COMMANDS[id]) COMMANDS[id]();
+        var size = /^vtxSize_vtxImageFontSize_(\d+)$/.exec(String(id));
+        if (size && Number(size[1]) > 0) resizeSelection(FONT_PRESETS[Number(size[1]) - 1][0]);
+        else if (COMMANDS[id]) COMMANDS[id]();
         else notify("这个 VisualTeX 功能还没有接入 WPS 演示：" + id);
       });
     },
-    menuContent: function () {
-      return null;
+    menuContent: function (id) {
+      return id === "vtxImageFontSize" ? safe(fontSizeMenu, null) : null;
     },
     itemCount: function () {
       return FONT_PRESETS.length + 1;

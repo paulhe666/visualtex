@@ -191,6 +191,24 @@ public interface IWordRibbonCallbacks
     [DispId(61)]
     void OnFormulaKindFontSizeChanged(Office.IRibbonControl control, string value);
 
+    [DispId(62)]
+    void OnConvertFormulasTo(Office.IRibbonControl control);
+
+    [DispId(63)]
+    void OnFormulasToLatex(Office.IRibbonControl control);
+
+    [DispId(64)]
+    int GetOmmlMathFontItemCount(Office.IRibbonControl control);
+
+    [DispId(65)]
+    string GetOmmlMathFontItemLabel(Office.IRibbonControl control, int index);
+
+    [DispId(66)]
+    int GetOmmlMathFontSelectedIndex(Office.IRibbonControl control);
+
+    [DispId(67)]
+    void OnOmmlMathFontSelected(Office.IRibbonControl control, string selectedId, int selectedIndex);
+
 }
 
 [ComVisible(true)]
@@ -254,37 +272,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
-          <box id="VisualTeX.WordVsto.FormatConversionLabelsA" boxStyle="vertical">
-            <labelControl id="VisualTeX.WordVsto.VisualTeXToMathTypeLabel" label="VisualTeX → MathType" />
-            <labelControl id="VisualTeX.WordVsto.MathTypeToVisualTeXLabel" label="MathType → VisualTeX" />
-            <labelControl id="VisualTeX.WordVsto.OmmlToMathTypeLabel" label="OMML → MathType" />
-          </box>
-          <box id="VisualTeX.WordVsto.FormatConversionSelectionA" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.VisualTeXToMathTypeSelection" label="所选" screentip="所选 VisualTeX → MathType" supertip="把所选范围中的 VisualTeX OLE 公式重新绘制为 MathType OLE。" onAction="OnConvertVisualTeXToMathTypeSelection" />
-            <button id="VisualTeX.WordVsto.MathTypeToVisualTeXSelection" label="所选" screentip="所选 MathType → VisualTeX" supertip="把所选范围中的 MathType 公式重新绘制为 VisualTeX OLE。" onAction="OnConvertMathTypeToVisualTeXSelection" />
-            <button id="VisualTeX.WordVsto.OmmlToMathTypeSelection" label="所选" screentip="所选 OMML → MathType" supertip="把所选范围中的 Word 原生公式转换为 MathType OLE。" onAction="OnConvertOmmlToMathTypeSelection" />
-          </box>
-          <box id="VisualTeX.WordVsto.FormatConversionDocumentA" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDocument" label="全文" screentip="全文 VisualTeX → MathType" supertip="把全文所有 VisualTeX OLE 公式重新绘制为 MathType OLE；开始前会再次确认。" onAction="OnConvertVisualTeXToMathTypeDocument" />
-            <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDocument" label="全文" screentip="全文 MathType → VisualTeX" supertip="把全文所有 MathType 公式重新绘制为 VisualTeX OLE；开始前会再次确认。" onAction="OnConvertMathTypeToVisualTeXDocument" />
-            <button id="VisualTeX.WordVsto.OmmlToMathTypeDocument" label="全文" screentip="全文 OMML → MathType" supertip="把全文所有 Word 原生公式转换为 MathType OLE；开始前会再次确认。" onAction="OnConvertOmmlToMathTypeDocument" />
-          </box>
-          <separator id="VisualTeX.WordVsto.FormatConversionSeparator" />
-          <box id="VisualTeX.WordVsto.FormatConversionLabelsB" boxStyle="vertical">
-            <labelControl id="VisualTeX.WordVsto.MathTypeToOmmlLabel" label="MathType → OMML" />
-            <labelControl id="VisualTeX.WordVsto.VisualTeXToOmmlLabel" label="VisualTeX → OMML" />
-            <labelControl id="VisualTeX.WordVsto.OmmlToVisualTeXLabel" label="OMML → VisualTeX" />
-          </box>
-          <box id="VisualTeX.WordVsto.FormatConversionSelectionB" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="所选" screentip="所选 MathType → OMML" supertip="把所选范围中的 MathType 公式转换为 Word 原生公式。" onAction="OnConvertMathTypeToOmmlSelection" />
-            <button id="VisualTeX.WordVsto.VisualTeXToOmmlSelection" label="所选" screentip="所选 VisualTeX → OMML" supertip="把所选范围中的 VisualTeX OLE 公式转换为 Word 原生公式。" onAction="OnConvertVisualTeXToOmmlSelection" />
-            <button id="VisualTeX.WordVsto.OmmlToVisualTeXSelection" label="所选" screentip="所选 OMML → VisualTeX" supertip="把所选范围中的 Word 原生公式转换为 VisualTeX OLE。" onAction="OnConvertOmmlToVisualTeXSelection" />
-          </box>
-          <box id="VisualTeX.WordVsto.FormatConversionDocumentB" boxStyle="vertical">
-            <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="全文" screentip="全文 MathType → OMML" supertip="把全文所有 MathType 公式转换为 Word 原生公式；开始前会再次确认。" onAction="OnConvertMathTypeToOmmlDocument" />
-            <button id="VisualTeX.WordVsto.VisualTeXToOmmlDocument" label="全文" screentip="全文 VisualTeX → OMML" supertip="把全文所有 VisualTeX OLE 公式转换为 Word 原生公式；开始前会再次确认。" onAction="OnConvertVisualTeXToOmmlDocument" />
-            <button id="VisualTeX.WordVsto.OmmlToVisualTeXDocument" label="全文" screentip="全文 OMML → VisualTeX" supertip="把全文所有 Word 原生公式转换为 VisualTeX OLE；开始前会再次确认。" onAction="OnConvertOmmlToVisualTeXDocument" />
-          </box>
+          <menu id="VisualTeX.WordVsto.ConvertFormulas" label="格式转换" size="large" screentip="公式格式转换" supertip="把范围内其他格式的公式（VisualTeX OLE、Word OMML、MathType）全部转为所选格式，已是该格式的公式不变。不同来源的同一公式转换结果相同；字号、编号与引用按当前文档设置重建，可撤销。" tag="batchImport" getImage="GetRibbonImage">
+            <menuSeparator id="VisualTeX.WordVsto.ConvertSelectionHeader" title="所选公式" />
+            <button id="VisualTeX.WordVsto.ConvertSelectionToOmml" label="转为 Word OMML" tag="wordOmml|selection" onAction="OnConvertFormulasTo" />
+            <button id="VisualTeX.WordVsto.ConvertSelectionToMathType" label="转为 MathType" tag="mathTypeOle|selection" onAction="OnConvertFormulasTo" />
+            <button id="VisualTeX.WordVsto.ConvertSelectionToVisualTeX" label="转为 VisualTeX OLE" tag="nativeOle|selection" onAction="OnConvertFormulasTo" />
+            <menuSeparator id="VisualTeX.WordVsto.ConvertDocumentHeader" title="全文公式" />
+            <button id="VisualTeX.WordVsto.ConvertDocumentToOmml" label="全部转为 Word OMML" tag="wordOmml|document" onAction="OnConvertFormulasTo" />
+            <button id="VisualTeX.WordVsto.ConvertDocumentToMathType" label="全部转为 MathType" tag="mathTypeOle|document" onAction="OnConvertFormulasTo" />
+            <button id="VisualTeX.WordVsto.ConvertDocumentToVisualTeX" label="全部转为 VisualTeX OLE" tag="nativeOle|document" onAction="OnConvertFormulasTo" />
+          </menu>
         </group>
         <group id="VisualTeX.WordVsto.RedrawGroup" label="LaTeX 重绘">
           <menu id="VisualTeX.WordVsto.RedrawSelection" label="重绘所选" size="large" screentip="重绘所选公式或 LaTeX 代码" supertip="可将所选 LaTeX 代码原位重绘为 VisualTeX OLE、Word OMML 或 MathType，也可将这三种公式恢复为 LaTeX 代码。" tag="batchImport" getImage="GetRibbonImage">
@@ -292,18 +289,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <button id="VisualTeX.WordVsto.RedrawSelectionOle" label="LaTeX 重绘为 VisualTeX OLE" screentip="原位替换为可双击编辑的 VisualTeX OLE" onAction="OnRedrawSelectionToOle" />
             <button id="VisualTeX.WordVsto.RedrawSelectionMathType" label="LaTeX 重绘为 MathType" screentip="原位替换为 MathType Equation.DSMT4 公式" onAction="OnRedrawSelectionToMathType" />
             <menuSeparator id="VisualTeX.WordVsto.RedrawSelectionSeparator" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionOleToLatex" label="所选 VisualTeX OLE 转为 LaTeX 代码" screentip="恢复所选 VisualTeX OLE 的 LaTeX 源码" onAction="OnRedrawSelectionOleToLatex" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionOmmlToLatex" label="所选 OMML 公式转为 LaTeX 代码" screentip="恢复所选 Word OMML 的 LaTeX 源码" onAction="OnRedrawSelectionOmmlToLatex" />
-            <button id="VisualTeX.WordVsto.RedrawSelectionMathTypeToLatex" label="所选 MathType 公式转为 LaTeX 代码" screentip="直接读取 MathType Equation Native 并恢复为 LaTeX 源码" onAction="OnRedrawSelectionMathTypeToLatex" />
+            <button id="VisualTeX.WordVsto.FormulasToLatexSelection" label="所选公式转为 LaTeX 代码" screentip="所选公式恢复为 LaTeX 代码" supertip="把所选范围中的公式（VisualTeX OLE、Word OMML、MathType 均可）原位恢复为 LaTeX 代码。" tag="selection" onAction="OnFormulasToLatex" />
           </menu>
           <menu id="VisualTeX.WordVsto.RedrawDocument" label="重绘全文" size="large" screentip="重绘全文公式或 LaTeX 代码" supertip="可将全文 LaTeX 代码原位重绘为 VisualTeX OLE、Word OMML 或 MathType，也可将全文这三种公式恢复为 LaTeX 代码；开始前会再次确认。" imageMso="RefreshAll">
             <button id="VisualTeX.WordVsto.RedrawDocumentOmml" label="全文 LaTeX 重绘为 Word OMML" onAction="OnRedrawDocumentToOmml" />
             <button id="VisualTeX.WordVsto.RedrawDocumentOle" label="全文 LaTeX 重绘为 VisualTeX OLE" onAction="OnRedrawDocumentToOle" />
             <button id="VisualTeX.WordVsto.RedrawDocumentMathType" label="全文 LaTeX 重绘为 MathType" onAction="OnRedrawDocumentToMathType" />
             <menuSeparator id="VisualTeX.WordVsto.RedrawDocumentSeparator" />
-            <button id="VisualTeX.WordVsto.RedrawDocumentOleToLatex" label="全文 VisualTeX OLE 转为 LaTeX 代码" onAction="OnRedrawDocumentOleToLatex" />
-            <button id="VisualTeX.WordVsto.RedrawDocumentOmmlToLatex" label="全文 OMML 公式转为 LaTeX 代码" onAction="OnRedrawDocumentOmmlToLatex" />
-            <button id="VisualTeX.WordVsto.RedrawDocumentMathTypeToLatex" label="全文 MathType 公式转为 LaTeX 代码" onAction="OnRedrawDocumentMathTypeToLatex" />
+            <button id="VisualTeX.WordVsto.FormulasToLatexDocument" label="全文公式转为 LaTeX 代码" tag="document" onAction="OnFormulasToLatex" />
           </menu>
         </group>
         <group id="VisualTeX.WordVsto.FontSizeGroup" label="公式字号">
@@ -508,9 +501,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public string GetCustomUI(string ribbonId)
     {
         var startup = new OfficeHostSelection.StartupSteps();
-        var ribbon = OfficeHostSelection.IsCurrentHostEnabled()
-            ? WpsRibbonImages.ForHost(OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml)
-            : string.Empty;
+        // WPS Writer gets its own compact tab in WPS's style (WordRibbonWps.cs); Word keeps its tab.
+        var ribbon = !OfficeHostSelection.IsCurrentHostEnabled()
+            ? string.Empty
+            : OfficeHostEnvironment.IsWps
+                ? BuildWpsRibbonXml(OfficePluginLanguage.IsEnglish)
+                : OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
         startup.Mark("ribbonXml");
         startup.Record(OfficeHostEnvironment.IsWps ? "WpsWriterRibbon" : "WordRibbon");
         return ribbon;
@@ -918,7 +914,58 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         // Clicking the selected item again re-applies it (to another document, say).
         _ = pressed;
-        var choice = WordOmmlMathFontPolicy.Parse(control?.Tag);
+        ApplyOmmlMathFontChoice(WordOmmlMathFontPolicy.Parse(control?.Tag));
+    }
+
+    /// <summary>
+    /// WPS's tab shows the OMML font as a drop-down with the current font in its box (like WPS's own font box),
+    /// in the order of Word's menu.
+    /// </summary>
+    private static readonly OmmlMathFontChoice[] OmmlMathFontListOrder =
+    {
+        OmmlMathFontChoice.FollowDocument,
+        OmmlMathFontChoice.CambriaMath,
+        OmmlMathFontChoice.StixTwoMath,
+        OmmlMathFontChoice.TexGyreTermesMath,
+        OmmlMathFontChoice.LatinModernMath,
+    };
+
+    public int GetOmmlMathFontItemCount(Office.IRibbonControl control) => OmmlMathFontListOrder.Length;
+
+    public string GetOmmlMathFontItemLabel(Office.IRibbonControl control, int index)
+    {
+        if (index < 0 || index >= OmmlMathFontListOrder.Length) return string.Empty;
+        // The names of Word's menu, without its "bundled" note (the box shows the current one).
+        var choice = OmmlMathFontListOrder[index];
+        var name = choice switch
+        {
+            OmmlMathFontChoice.CambriaMath => "Cambria Math",
+            OmmlMathFontChoice.StixTwoMath => "STIX Two Math",
+            OmmlMathFontChoice.TexGyreTermesMath => "TeX Gyre Termes Math",
+            OmmlMathFontChoice.LatinModernMath => "Latin Modern Math",
+            _ => T("跟随文档", "Follow Document"),
+        };
+        if (choice == OmmlMathFontChoice.FollowDocument) return name;
+        var available = true;
+        try { available = WordOmmlMathFontSetting.IsAvailable(choice); } catch { available = false; }
+        return available ? name : name + T("（未加载）", " (not loaded)");
+    }
+
+    public int GetOmmlMathFontSelectedIndex(Office.IRibbonControl control)
+    {
+        try { return Math.Max(0, Array.IndexOf(OmmlMathFontListOrder, WordOmmlMathFontSetting.EffectiveChoice)); }
+        catch { return 0; }
+    }
+
+    public void OnOmmlMathFontSelected(Office.IRibbonControl control, string selectedId, int selectedIndex)
+    {
+        _ = selectedId;
+        if (selectedIndex < 0 || selectedIndex >= OmmlMathFontListOrder.Length) return;
+        ApplyOmmlMathFontChoice(OmmlMathFontListOrder[selectedIndex]);
+    }
+
+    private void ApplyOmmlMathFontChoice(OmmlMathFontChoice choice)
+    {
         WordOmmlMathFontSetting.RefreshAvailability();
         if (!WordOmmlMathFontSetting.IsAvailable(choice))
         {
@@ -991,12 +1038,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         var ribbon = _ribbonUi;
         if (ribbon is null) return;
-        try
+        dynamic ui = ribbon;
+        // WPS's tab has only the drop-down (the first id), Word's the menu and its items.
+        foreach (var id in OmmlMathFontControlIds)
         {
-            dynamic ui = ribbon;
-            foreach (var id in OmmlMathFontControlIds) ui.InvalidateControl(id);
+            try { ui.InvalidateControl(id); }
+            catch { }
         }
-        catch { }
     }
 
     public void OnBulkImport(object control) => _ = BulkImportAsync();

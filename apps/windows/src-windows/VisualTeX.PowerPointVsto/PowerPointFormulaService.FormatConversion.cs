@@ -515,7 +515,8 @@ public sealed partial class PowerPointFormulaService
             var equation = PowerPointMathTypePackage.Read(archive, slide.SlideID, shape.Id);
             var native = MathTypeOleStorage.ReadEquationNative(equation.CompoundFile);
             var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(native);
-            var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+            // as an OMML source is read: the same formula gives the same LaTeX whatever it was stored as
+            var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex))
                 throw new InvalidDataException(Text("MathType 公式为空或无法识别。", "The MathType equation is empty or unsupported."));
             var width = shape.Width;

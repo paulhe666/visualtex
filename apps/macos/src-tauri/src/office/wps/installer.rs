@@ -67,9 +67,7 @@ const IMAGES: [(&str, &[u8]); 17] = [
     ("vtxRedrawDocument.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-document.svg")),
 ];
 /// The Presentation add-in's buttons, drawn like the Writer add-in's.
-const SLIDES_IMAGES: [(&str, &[u8]); 9] = [
-    ("vtxRedrawOmml.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-selection.svg")),
-    ("vtxRedrawImage.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/redraw-document.svg")),
+const SLIDES_IMAGES: [(&str, &[u8]); 7] = [
     ("vtxToLatex.svg", include_bytes!("../../../../office/macos-offline/word/ribbon-icons/document-import.svg")),
     ("vtxOmmlInline.svg", include_bytes!("../../../../office/wps/addin/images/vtxOmmlInline.svg")),
     ("vtxOmmlDisplay.svg", include_bytes!("../../../../office/wps/addin/images/vtxOmmlDisplay.svg")),
@@ -674,5 +672,99 @@ mod tests {
         assert!(updated.contains(&PRESENTATION.publish_entry()));
         assert_eq!(fs::read_to_string(jsaddons.join("authaddin.json")).unwrap(), trusted);
         assert!(addins_are_current(&jsaddons, "token-1"));
+    }
+
+    /// One ribbon element: its name, boxStyle, size and child elements.
+    struct RibbonNode {
+        name: String,
+        style: String,
+        large: bool,
+        children: Vec<RibbonNode>,
+    }
+
+    fn ribbon_tree(xml: &str) -> RibbonNode {
+        use quick_xml::{events::Event, Reader};
+        fn node(start: &quick_xml::events::BytesStart) -> RibbonNode {
+            let attribute = |key: &str| {
+                start
+                    .attributes()
+                    .flatten()
+                    .find(|attribute| attribute.key.as_ref() == key.as_bytes())
+                    .map(|attribute| String::from_utf8_lossy(&attribute.value).into_owned())
+                    .unwrap_or_default()
+            };
+            RibbonNode {
+                name: String::from_utf8_lossy(start.local_name().as_ref()).into_owned(),
+                style: attribute("boxStyle"),
+                large: attribute("size") == "large",
+                children: Vec::new(),
+            }
+        }
+        let mut reader = Reader::from_str(xml);
+        let mut stack = vec![RibbonNode { name: String::new(), style: String::new(), large: false, children: Vec::new() }];
+        loop {
+            match reader.read_event().unwrap() {
+                Event::Start(start) => stack.push(node(&start)),
+                Event::Empty(start) => stack.last_mut().unwrap().children.push(node(&start)),
+                Event::End(_) => {
+                    let done = stack.pop().unwrap();
+                    stack.last_mut().unwrap().children.push(done);
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        stack.pop().unwrap()
+    }
+
+    /// How WPS lays the columns out: it packs consecutive vertical boxes (and small controls beside them) into one
+    /// column of up to four, which makes the tab taller than WPS's own; it centres a lone control between the two
+    /// rows; a box of only size boxes gets tighter rows than buttons. So in a group, small controls stand in columns
+    /// of two (an empty label is a lone control's second row), side-by-side columns stand in a horizontal box, and
+    /// every box has a column with a button or menu.
+    #[test]
+    fn the_tabs_keep_wps_columns_of_two() {
+        fn groups<'a>(node: &'a RibbonNode, out: &mut Vec<&'a RibbonNode>) {
+            if node.name == "group" {
+                out.push(node);
+            }
+            for child in &node.children {
+                groups(child, out);
+            }
+        }
+        let column_of_two = |node: &RibbonNode| {
+            node.name == "box"
+                && node.style == "vertical"
+                && node.children.len() == 2
+                && node.children.iter().all(|child| child.name != "box")
+        };
+        let buttons = |columns: &[&RibbonNode]| {
+            columns.iter().flat_map(|column| column.children.iter()).any(|control| {
+                !matches!(control.name.as_str(), "comboBox" | "dropDown" | "editBox" | "labelControl")
+            })
+        };
+        for ribbon in [RIBBON_XML, SLIDES_RIBBON_XML] {
+            let tree = ribbon_tree(ribbon);
+            let mut found = Vec::new();
+            groups(&tree, &mut found);
+            assert!(found.len() >= 3);
+            for group in found {
+                let mut previous_column = false;
+                for child in &group.children {
+                    let is_column = child.name == "box" && child.style == "vertical";
+                    if child.name == "box" && child.style == "horizontal" {
+                        let columns: Vec<&RibbonNode> = child.children.iter().collect();
+                        assert!(columns.len() >= 2 && columns.iter().all(|column| column_of_two(column)), "columns of two");
+                        assert!(buttons(&columns), "a box of only size boxes gets tighter rows");
+                    } else if is_column {
+                        assert!(!previous_column, "two columns side by side outside a horizontal box");
+                        assert!(column_of_two(child) && buttons(&[child]), "a column of two with a button");
+                    } else {
+                        assert!(child.large, "a small control outside a column");
+                    }
+                    previous_column = is_column;
+                }
+            }
+        }
     }
 }

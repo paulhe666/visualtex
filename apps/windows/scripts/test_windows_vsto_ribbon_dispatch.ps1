@@ -119,20 +119,24 @@ function Test-RibbonComDispatch(
                 $ribbonXml -match 'OnExportSelectedAsPicture') {
                 throw "$ClassName Ribbon XML still exposes the removed picture export command."
             }
-            # Every conversion row has its own Selection and Document buttons.
-            foreach ($row in @(
-                'VisualTeXToMathType',
-                'MathTypeToVisualTeX',
-                'OmmlToMathType',
-                'MathTypeToOmml',
-                'VisualTeXToOmml',
-                'OmmlToVisualTeX'
-            )) {
+            # One source-agnostic conversion menu: every target in both scopes, wired to OnConvertFormulasTo;
+            # equations of any format back to LaTeX through OnFormulasToLatex. The one-direction buttons are gone.
+            foreach ($target in @('Omml', 'MathType', 'VisualTeX')) {
                 foreach ($scope in @('Selection', 'Document')) {
-                    $wired = '<button id="VisualTeX.WordVsto.{0}{1}"[^>]*onAction="OnConvert{0}{1}"' -f $row, $scope
+                    $wired = '<button id="VisualTeX.WordVsto.Convert{0}To{1}"[^>]*onAction="OnConvertFormulasTo"' -f $scope, $target
                     if ($ribbonXml -notmatch $wired) {
-                        throw "$ClassName Ribbon XML has no $scope button for $row wired to OnConvert$row$scope."
+                        throw "$ClassName Ribbon XML has no $scope button converting to $target wired to OnConvertFormulasTo."
                     }
+                }
+            }
+            foreach ($scope in @('Selection', 'Document')) {
+                if ($ribbonXml -notmatch ('<button id="VisualTeX.WordVsto.FormulasToLatex{0}"[^>]*onAction="OnFormulasToLatex"' -f $scope)) {
+                    throw "$ClassName Ribbon XML has no $scope button turning equations of any format into LaTeX."
+                }
+            }
+            foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX')) {
+                if ($ribbonXml -match [regex]::Escape("VisualTeX.WordVsto.$row")) {
+                    throw "$ClassName Ribbon XML still exposes the one-direction conversion $row."
                 }
             }
             foreach ($retired in @(
@@ -175,7 +179,7 @@ function Test-RibbonComDispatch(
         # DispId member of the callback interface, ids must be unique, and the
         # two languages must expose the same controls.
         $languageIds = @{}
-        foreach ($constName in @('RibbonXml', 'RibbonXmlEnglish')) {
+        foreach ($constName in @('RibbonXml', 'RibbonXmlEnglish', 'RibbonXmlWps', 'RibbonXmlWpsEnglish')) {
             $constField = $classType.GetField($constName, [Reflection.BindingFlags]'Static,NonPublic,Public')
             if ($null -eq $constField) {
                 throw "$ClassName is missing its $constName Ribbon definition."
@@ -183,7 +187,8 @@ function Test-RibbonComDispatch(
             $parsed = New-Object Xml.XmlDocument
             $parsed.LoadXml([string]$constField.GetRawConstantValue())
             foreach ($node in @($parsed.SelectNodes('//*'))) {
-                foreach ($attribute in @('onLoad', 'onAction', 'getImage', 'getPressed', 'getEnabled', 'getText', 'onChange', 'getLabel')) {
+                foreach ($attribute in @('onLoad', 'onAction', 'getImage', 'getPressed', 'getEnabled', 'getText', 'onChange', 'getLabel',
+                        'getItemCount', 'getItemLabel', 'getSelectedItemIndex')) {
                     $callback = $node.GetAttribute($attribute)
                     if ([string]::IsNullOrEmpty($callback)) { continue }
                     $method = $callbackInterface.GetMethod($callback)
@@ -199,13 +204,74 @@ function Test-RibbonComDispatch(
                 throw "$ClassName $constName repeats Ribbon id $($duplicate.Name)."
             }
             $languageIds[$constName] = ($ids | Sort-Object) -join '|'
+            if ($constName -like 'RibbonXmlWps*') {
+                # WPS draws an add-in picture in a fixed 16 px box without transparency and an Office icon name it
+                # does not ship as a "?": its tab uses only icon names found in WPS's own resources (12.1, Windows
+                # and Mac: prometheus_kso_res.rcc / public_res.rcc).
+                $wpsIcons = @('EquationScriptGallery', 'EquationFractionGallery', 'EquationProfessional', 'EquationInsertGallery',
+                    'KSEquationEditor', 'UpdateField', 'MoreNumbering', 'Numbering', 'InsertHyperlink', 'EquationTransfer',
+                    'EquationTransferLaTex', 'EquationInsertLaTex', 'EquationOptions', 'FormatPainterQat', 'VAlignCenter',
+                    'InsertPictureFromFile', 'EquationTransferOMML', 'Convert', 'OpenFile', 'CrossReference', 'exporttopicture32',
+                    'Refresh')
+                if (@($parsed.SelectNodes('//*[@getImage or @image]')).Count -gt 0) {
+                    throw "$ClassName $constName uses add-in pictures, which WPS draws as small grey squares."
+                }
+                foreach ($node in @($parsed.SelectNodes('//*[@imageMso]'))) {
+                    if ($wpsIcons -notcontains $node.GetAttribute('imageMso')) {
+                        throw "$ClassName $constName gives $($node.GetAttribute('id')) the icon $($node.GetAttribute('imageMso')), which WPS does not ship."
+                    }
+                }
+                # How WPS lays the columns out: it packs consecutive vertical boxes (and small controls beside them)
+                # into one column of up to four, which makes the tab taller than WPS's own; it centres a lone
+                # control between the two rows; a box of only size boxes gets tighter rows than buttons. So in a
+                # group, small controls stand in columns of two (an empty label is a lone control's second row),
+                # side-by-side columns stand in a horizontal box, and every box has a column with a button or menu.
+                $isColumnOfTwo = {
+                    param($node)
+                    $inner = @($node.ChildNodes | Where-Object { $_.NodeType -eq 'Element' })
+                    $node.LocalName -eq 'box' -and $node.GetAttribute('boxStyle') -eq 'vertical' -and $inner.Count -eq 2 -and
+                        @($inner | Where-Object { $_.LocalName -eq 'box' }).Count -eq 0
+                }
+                $hasButtonRow = {
+                    param($node)
+                    @($node.SelectNodes('.//*') | Where-Object {
+                        $_.ParentNode.LocalName -eq 'box' -and @('comboBox', 'dropDown', 'editBox', 'labelControl', 'box') -notcontains $_.LocalName
+                    }).Count -gt 0
+                }
+                foreach ($group in @($parsed.SelectNodes('//*[local-name()="group"]'))) {
+                    $previousColumn = $false
+                    foreach ($child in @($group.ChildNodes | Where-Object { $_.NodeType -eq 'Element' })) {
+                        $isColumn = $child.LocalName -eq 'box' -and $child.GetAttribute('boxStyle') -eq 'vertical'
+                        if ($child.LocalName -eq 'box' -and $child.GetAttribute('boxStyle') -eq 'horizontal') {
+                            foreach ($column in @($child.ChildNodes | Where-Object { $_.NodeType -eq 'Element' })) {
+                                if (-not (& $isColumnOfTwo $column)) {
+                                    throw "$ClassName $constName box $($child.GetAttribute('id')) holds something other than columns of two."
+                                }
+                            }
+                            if (-not (& $hasButtonRow $child)) {
+                                throw "$ClassName $constName box $($child.GetAttribute('id')) has only size boxes; WPS gives it tighter rows than the buttons beside it."
+                            }
+                        } elseif ($isColumn) {
+                            if ($previousColumn) {
+                                throw "$ClassName $constName puts column $($child.GetAttribute('id')) beside another outside a horizontal box; WPS would merge them."
+                            }
+                            if (-not (& $isColumnOfTwo $child) -or -not (& $hasButtonRow $child)) {
+                                throw "$ClassName $constName column $($child.GetAttribute('id')) is not a column of two with a button."
+                            }
+                        } elseif ($child.GetAttribute('size') -ne 'large') {
+                            throw "$ClassName $constName puts the small control $($child.GetAttribute('id')) directly in a group; WPS would pack it into the column beside it."
+                        }
+                        $previousColumn = $isColumn
+                    }
+                }
+            }
 
             if ($ClassName -eq 'VisualTeX.PowerPointVsto.ThisAddIn') {
                 $requestType = $assembly.GetType('VisualTeX.PowerPointVsto.PowerPointConversionRequest', $true)
                 $tryParse = $requestType.GetMethod('TryParse', [Reflection.BindingFlags]'Static,NonPublic,Public')
                 $conversionButtons = @($parsed.SelectNodes('//*[@onAction="OnConvertFormulaFormat"]'))
-                if ($conversionButtons.Count -ne 45) {
-                    throw "$ClassName $constName exposes $($conversionButtons.Count) format conversion buttons; expected 18 directional, 6 unify, 9 LaTeX redraw and 12 LaTeX code buttons."
+                if ($conversionButtons.Count -ne 21) {
+                    throw "$ClassName $constName exposes $($conversionButtons.Count) format conversion buttons; expected 9 unify (3 scopes x 3 targets), 9 LaTeX redraw and 3 LaTeX code buttons."
                 }
                 foreach ($button in $conversionButtons) {
                     $parseArguments = @($button.GetAttribute('tag'), 'nativeOle', $null)
@@ -213,13 +279,25 @@ function Test-RibbonComDispatch(
                         throw "$ClassName $constName conversion button $($button.GetAttribute('id')) has an invalid tag '$($button.GetAttribute('tag'))'."
                     }
                 }
-                foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX',
-                        'LatexToOmml', 'LatexToVisualTeX', 'LatexToMathType',
-                        'AnyToLatex', 'VisualTeXToLatex', 'MathTypeToLatex', 'OmmlToLatex')) {
+                foreach ($row in @('UnifySelection', 'UnifySlide', 'UnifyAll')) {
+                    foreach ($target in @('OMML', 'MathType', 'VisualTeX')) {
+                        $button = $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.$row$target']")
+                        if ($null -eq $button -or -not $button.GetAttribute('tag').StartsWith('any|')) {
+                            throw "$ClassName $constName has no source-agnostic $row button for $target."
+                        }
+                    }
+                }
+                foreach ($row in @('LatexToOmml', 'LatexToVisualTeX', 'LatexToMathType', 'AnyToLatex')) {
                     foreach ($scope in @('Selection', 'Slide', 'All')) {
                         if ($null -eq $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.$row$scope']")) {
                             throw "$ClassName $constName has no $scope button for $row."
                         }
+                    }
+                }
+                foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX',
+                        'VisualTeXToLatex', 'MathTypeToLatex', 'OmmlToLatex')) {
+                    if ($null -ne $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.${row}Selection']")) {
+                        throw "$ClassName $constName still exposes the one-direction conversion $row."
                     }
                 }
                 # Retired single-object buttons: the conversion group, the editor's
@@ -233,6 +311,9 @@ function Test-RibbonComDispatch(
         }
         if ($languageIds['RibbonXml'] -ne $languageIds['RibbonXmlEnglish']) {
             throw "$ClassName Chinese and English Ribbon definitions expose different controls."
+        }
+        if ($languageIds['RibbonXmlWps'] -ne $languageIds['RibbonXmlWpsEnglish']) {
+            throw "$ClassName Chinese and English WPS Ribbon definitions expose different controls."
         }
 
         $unknown = [Runtime.InteropServices.Marshal]::GetIUnknownForObject($instance)

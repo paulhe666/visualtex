@@ -80,8 +80,12 @@ public sealed partial class ThisAddIn
     private async Task ConvertFormulaFormatAsync(
         bool wholeDocument,
         string sourceMode,
-        string targetMode)
+        string targetMode,
+        UnifiedFormulaConversionRun? unified = null)
     {
+        // One pass of "convert every equation to X" renders every formula from its LaTeX, so the result does not
+        // depend on the source format; a directional conversion may still write a MathType/OMML source's MathML.
+        var canonical = unified is not null;
         var dispatcher = _dispatcher;
         var service = _formulaService;
         var client = SessionClient;
@@ -99,6 +103,7 @@ public sealed partial class ThisAddIn
         {
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-gate-timeout sourceMode={sourceMode} targetMode={targetMode} wholeDocument={wholeDocument}");
+            if (unified is not null) unified.Stopped = true;
             SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
                 "VisualTeX is busy with another Word operation. Try again in a moment."));
             return;
@@ -137,6 +142,13 @@ public sealed partial class ThisAddIn
                 .ConfigureAwait(false);
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-plan sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
+            if (unified is not null && plan.Targets.Count == 0)
+            {
+                // A source format the range has none of: the next pass goes on. Unreadable ones are reported at the end.
+                foreach (var failure in plan.CaptureFailures)
+                    unified.Skipped.Add((FormatConversionModeLabel(sourceMode), string.Empty, failure.Reason));
+                return;
+            }
             if (plan.Targets.Count == 0 && plan.CaptureFailures.Count > 0)
                 throw new FormatConversionReport(
                     T("公式格式转换失败：没有可以转换的公式，Word 文档未修改。",
@@ -159,6 +171,7 @@ public sealed partial class ThisAddIn
             var targetName = FormatConversionModeLabel(targetMode);
 
             if (wholeDocument
+                && unified is null
                 && !string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -232,14 +245,15 @@ public sealed partial class ThisAddIn
 
             SetStatus(T($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…",
                 $"Preparing {targetName} output for {plan.Targets.Count} equations…"));
-            var targetAcceptsDirectSourceMathMl = string.Equals(
-                    targetMode,
-                    FormulaOleContract.WordOmmlMode,
-                    StringComparison.Ordinal)
-                || string.Equals(
-                    targetMode,
-                    FormulaOleContract.MathTypeOleMode,
-                    StringComparison.Ordinal);
+            var targetAcceptsDirectSourceMathMl = !canonical
+                && (string.Equals(
+                        targetMode,
+                        FormulaOleContract.WordOmmlMode,
+                        StringComparison.Ordinal)
+                    || string.Equals(
+                        targetMode,
+                        FormulaOleContract.MathTypeOleMode,
+                        StringComparison.Ordinal));
             var allTargetsHaveDirectMathMl = targetAcceptsDirectSourceMathMl
                 && plan.Targets.All(target => !string.IsNullOrWhiteSpace(target.SourceMathMl));
             if (!allTargetsHaveDirectMathMl)
@@ -422,7 +436,7 @@ public sealed partial class ThisAddIn
                 {
                     Run = run,
                     Session = session,
-                    MathMl = string.IsNullOrWhiteSpace(target.SourceMathMl)
+                    MathMl = canonical || string.IsNullOrWhiteSpace(target.SourceMathMl)
                         ? template.MathMl
                         : target.SourceMathMl,
                     PngPath = template.PngPath,
@@ -580,7 +594,13 @@ public sealed partial class ThisAddIn
             // no partial-success result to report here.
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} skipped={skipped.Count}");
-            if (skipped.Count == 0)
+            if (unified is not null)
+            {
+                unified.Converted += result.FormulaCount;
+                foreach (var item in skipped)
+                    unified.Skipped.Add((sourceName, item.Latex, T($"第 {item.Ordinal} 个：", $"No. {item.Ordinal}: ") + item.Reason));
+            }
+            else if (skipped.Count == 0)
             {
                 SetStatus(T(
                     $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。",
@@ -612,6 +632,7 @@ public sealed partial class ThisAddIn
             // Only the operation's own token is a cancellation; a timed-out or
             // released render batch is an error reported below.
             WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={error}");
+            if (unified is not null) unified.Stopped = true;
             SetStatus(T("公式格式转换已取消，Word 文档未修改。",
                 "Equation format conversion was cancelled. The Word document was not changed."));
         }
@@ -619,6 +640,7 @@ public sealed partial class ThisAddIn
         {
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} applyStarted={applyStarted} error={error}");
+            if (unified is not null) unified.Stopped = true;
             string statusMessage;
             string failureMessage;
             if (error is FormatConversionReport report)

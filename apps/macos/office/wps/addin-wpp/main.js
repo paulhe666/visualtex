@@ -179,6 +179,12 @@ function vtxAsk(name, args, fallback) {
   }
 }
 
+function OnVisualTeXMenuContent(control) {
+  return vtxAsk("menuContent", [control && control.Id],
+    '<menu xmlns="http://schemas.microsoft.com/office/2006/01/customui">' +
+    '<button id="vtxNotRunning" label="' + VTX_NOT_RUNNING + '" enabled="false" /></menu>');
+}
+
 function OnVisualTeXItemCount(control) {
   return vtxAsk("itemCount", [control && control.Id], 1);
 }

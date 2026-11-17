@@ -91,8 +91,8 @@ public sealed partial class ThisAddIn
 
     public string GetVisualTeXTargetFormLabel(Office.IRibbonControl control) =>
         VisualTeXTargetMode == FormulaOleContract.CrossPlatformPictureMode
-            ? T("VisualTeX 形式：SVG", "VisualTeX as: SVG")
-            : T("VisualTeX 形式：OLE", "VisualTeX as: OLE");
+            ? T("VisualTeX 形式：图片", "VisualTeX as: Picture")
+            : T("VisualTeX 形式：OLE 对象", "VisualTeX as: OLE Object");
 
     // What "-> VisualTeX" produces: a double-click-editable OLE object (the
     // default, like Word) or an SVG picture that displays on every device.
@@ -657,9 +657,11 @@ public sealed partial class ThisAddIn
             return;
         }
 
-        // MathType and native-equation sources already carry exact MathML; a
-        // MathType or native target uses it directly instead of a LaTeX round trip.
-        var acceptsSourceMathMl = target is FormulaOleContract.WordOmmlMode or FormulaOleContract.MathTypeOleMode;
+        // MathType and native-equation sources already carry exact MathML; a directional MathType or native target
+        // uses it directly instead of a LaTeX round trip. Unifying ("every formula to X") renders every formula from
+        // its LaTeX, so the same formula gives the same result whatever its source format.
+        var acceptsSourceMathMl = !plan.Request.Unify
+            && target is FormulaOleContract.WordOmmlMode or FormulaOleContract.MathTypeOleMode;
         var toRender = new List<PowerPointConversionItem>();
         foreach (var item in items)
         {

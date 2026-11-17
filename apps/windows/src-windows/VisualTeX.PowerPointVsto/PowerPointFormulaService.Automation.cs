@@ -1009,7 +1009,7 @@ public sealed partial class PowerPointFormulaService
                     var equation = PowerPointMathTypePackage.Read(archive, slideId, info.ShapeId);
                     var native = MathTypeOleStorage.ReadEquationNative(equation.CompoundFile);
                     var mathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(native);
-                    formula.Latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+                    formula.Latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
                     formula.Lines = new List<string> { formula.Latex };
                     formula.FontSizePt = MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(native);
                 }

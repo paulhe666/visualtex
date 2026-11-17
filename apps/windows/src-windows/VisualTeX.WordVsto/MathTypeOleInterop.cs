@@ -208,7 +208,9 @@ internal static partial class MathTypeOleInterop
                 "VisualTeX could not parse this MathType Equation Native structure without losing native formatting.",
                 directError);
         }
-        var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+        // Written as an OMML source is (ConvertWordEquation): the same formula gives the same LaTeX whatever it
+        // was stored as, which the conversions render from and a VisualTeX target keeps.
+        var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
         if (string.IsNullOrWhiteSpace(latex))
         {
             if (IsBlankMathMl(mathMl))

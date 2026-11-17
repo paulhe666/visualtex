@@ -2134,7 +2134,8 @@
 
   /* The ribbon's font-size lists (VTWordRibbonGetImageFontSizeItemLabel and
      its siblings): the first item says what the selection holds or that
-     conversions follow the body text. */
+     conversions follow the body text, in a few characters (the boxes are as
+     wide as "初号 (42 pt)"). */
   function fontSizeItemCount() {
     return FONT_PRESETS.length + 1;
   }
@@ -2144,10 +2145,10 @@
     if (id !== "vtxImageFontSize") return "跟随正文";
     var doc = safe(function () { return app().ActiveDocument; }, null);
     var pictures = doc ? safe(selectedFormulaPictures, []) : [];
-    if (!pictures.length) return "请选择图片公式";
+    if (!pictures.length) return "未选公式";
     var sizes = pictures.map(function (shape) { return formulaPictureSize(doc, shape); });
     var mixed = sizes.some(function (size) { return Math.abs(size - sizes[0]) > 0.05; });
-    return "当前: " + (mixed ? "混合字号" : sizeLabel(sizes[0]));
+    return mixed ? "混合字号" : sizeLabel(sizes[0]);
   }
 
   function fontSizeSelectedIndex(id) {
@@ -2162,6 +2163,34 @@
     var size = conversionSizes[id === "vtxDisplayConversionFontSize" ? "block" : "inline"];
     var preset = size > 0 ? presetIndex(size) : -1;
     return preset >= 0 ? preset + 1 : 0;
+  }
+
+  /* The size lists as menus (WPS for Mac shows no value in a drop-down box):
+     the current size first, then the choices, the current one ticked. An item
+     is "vtxSize_<list id>_<index>" (the drop-down's index), see onAction. */
+  var FONT_SIZE_LISTS = ["vtxInlineConversionFontSize", "vtxDisplayConversionFontSize", "vtxImageFontSize"];
+
+  function fontSizeMenu(id) {
+    var selected = safe(function () { return fontSizeSelectedIndex(id); }, -1);
+    var current = safe(function () { return fontSizeItemLabel(id, Math.max(selected, 0)); }, "");
+    var xml = "<menu xmlns=\"" + CUSTOM_UI_NAMESPACE + "\">" +
+      "<button id=\"vtxSizeCurrent_" + id + "\" label=\"" + xmlText("当前：" + current) + "\" enabled=\"false\" />" +
+      "<menuSeparator id=\"vtxSizeSeparator_" + id + "\" />";
+    /* Item 0 of the selection's list is its status ("未选公式"), not a size. */
+    for (var index = id === "vtxImageFontSize" ? 1 : 0; index < fontSizeItemCount(); index++) {
+      var label = index > 0 ? presetLabel(index - 1) : fontSizeItemLabel(id, 0);
+      xml += "<button id=\"vtxSize_" + id + "_" + index + "\" label=\"" +
+        xmlText((index === selected ? "✓ " : "") + label) + "\" onAction=\"OnVisualTeXAction\" />";
+    }
+    return xml + "</menu>";
+  }
+
+  function selectFontSize(id, index) {
+    if (id === "vtxImageFontSize") {
+      if (index > 0) resizeSelectedPictures(FONT_PRESETS[index - 1][0]);
+    } else {
+      applyConversionFontSize(id, index);
+    }
   }
 
   /* ---- formulas back to LaTeX ("将 OMML 公式转为 LaTeX", "将图片公式转为 LaTeX") ----
@@ -2350,6 +2379,36 @@
       if (failures.length) notify("VisualTeX 有 " + failures.length + " 个图片公式未能恢复：" + failures[0]);
     }).catch(function (error) {
       notify("VisualTeX 恢复 LaTeX 失败：" + error.message);
+    });
+  }
+
+  /* Every formula in the scope back to LaTeX code, whatever its format: the VisualTeX pictures, then the OMML
+     equations (each kind one undo step); a kind the scope has none of is skipped without a message. A selection
+     is followed through the first kind's edits by a range over it, which the second kind then selects. */
+  function restoreAllToLatex(wholeDocument) {
+    var scope = commandScope(wholeDocument);
+    var doc = scope.doc;
+    var pictures = 0;
+    var equations = 0;
+    var shapes = doc.InlineShapes;
+    for (var index = 1; index <= shapes.Count; index++) {
+      var shape = shapes.Item(index);
+      if (isFormulaPicture(shape) && withinScope(shape.Range, scope)) pictures++;
+    }
+    var maths = doc.OMaths;
+    for (var item = 1; item <= maths.Count; item++) {
+      var range = maths.Item(item).Range;
+      if (withinScope(range, scope) && safe(function () { return range.InlineShapes.Count; }, 0) === 0) equations++;
+    }
+    if (!pictures && !equations) {
+      notify(wholeDocument ? "全文中没有可恢复为 LaTeX 的公式。" : "请先选中要恢复为 LaTeX 的公式。");
+      return null;
+    }
+    var tracked = wholeDocument ? null : safe(function () { return doc.Range(scope.start, scope.end); }, null);
+    return Promise.resolve(pictures ? restorePicturesToLatex(wholeDocument) : null).then(function () {
+      if (!equations) return null;
+      if (tracked) safe(function () { tracked.Select(); });
+      return restoreEquationsToLatex(wholeDocument);
     });
   }
 
@@ -3373,8 +3432,9 @@
       targets: { omml: equations, image: images }
     };
     var xml = "<menu xmlns=\"" + CUSTOM_UI_NAMESPACE + "\">";
-    if (equations.length) xml += referenceItemsXml(doc, equations, "omml", "Word OMML 公式");
-    if (images.length) xml += referenceItemsXml(doc, images, "image", "图片公式");
+    /* The formats as the tab names them. */
+    if (equations.length) xml += referenceItemsXml(doc, equations, "omml", "WPS 公式");
+    if (images.length) xml += referenceItemsXml(doc, images, "image", "VisualTeX 公式");
     return xml + "</menu>";
   }
 
@@ -4179,6 +4239,8 @@
     vtxRestoreSelectionImage: function () { restorePicturesToLatex(false); },
     vtxRestoreDocumentOmml: function () { restoreEquationsToLatex(true); },
     vtxRestoreDocumentImage: function () { restorePicturesToLatex(true); },
+    vtxRestoreSelectionAll: function () { restoreAllToLatex(false); },
+    vtxRestoreDocumentAll: function () { restoreAllToLatex(true); },
     vtxConvertNative: function () { convertSelected(false); },
     vtxConvertImage: function () { convertSelected(true); },
     vtxConvertDocumentImagesToOmml: function () { convertDocument("image"); },
@@ -4205,12 +4267,16 @@
         };
       }
       log("module loaded");
+      /* The size menus show the current sizes from the first time they open. */
+      safe(loadConversionSizes);
       startAgentLoop(window.VisualTeXWpsModule);
     },
     onAction: function (id) {
       run(function () {
         var reference = /^vtxRef_(omml|image)_(\d+)$/.exec(String(id));
+        var size = /^vtxSize_(vtx[A-Za-z]+)_(\d+)$/.exec(String(id));
         if (reference) insertReference(reference[1], Number(reference[2]));
+        else if (size && FONT_SIZE_LISTS.indexOf(size[1]) >= 0) selectFontSize(size[1], Number(size[2]));
         else if (COMMANDS[id]) COMMANDS[id]();
         else notify("这个 VisualTeX 功能还没有接入 WPS：" + id);
       });
@@ -4218,6 +4284,9 @@
     menuContent: function (id) {
       if (id === "vtxCrossReference") {
         return safe(crossReferenceMenu, menuMessage("无法读取公式列表"));
+      }
+      if (FONT_SIZE_LISTS.indexOf(id) >= 0) {
+        return safe(function () { return fontSizeMenu(id); }, menuMessage("无法读取字号"));
       }
       return null;
     },
@@ -4231,13 +4300,7 @@
       return safe(function () { return fontSizeSelectedIndex(id); }, 0);
     },
     onSelect: function (id, index) {
-      run(function () {
-        if (id === "vtxImageFontSize") {
-          if (index > 0) resizeSelectedPictures(FONT_PRESETS[index - 1][0]);
-        } else {
-          applyConversionFontSize(id, index);
-        }
-      });
+      run(function () { selectFontSize(id, index); });
     },
     /* Returns true when the double-click opens VisualTeX, so WPS's own action
        (picture pane, equation editing) is cancelled. WPS can raise the event

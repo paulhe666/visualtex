@@ -183,10 +183,13 @@ public sealed partial class ThisAddIn
 
             case "convert_formulas":
             {
-                var source = RequiredMode("from");
                 var target = RequiredMode("to");
+                // from "any": every formula of another format becomes the target (the ribbon's Convert menu)
+                var anySource = string.Equals(OfficeAutomationText.String(arguments, "from"), "any", StringComparison.OrdinalIgnoreCase);
+                var source = anySource ? null : RequiredMode("from");
                 await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
-                await ConvertFormulaFormatAsync(Scope() == "document", source, target).ConfigureAwait(false);
+                if (anySource) await ConvertAllFormulasToAsync(Scope() == "document", target).ConfigureAwait(false);
+                else await ConvertFormulaFormatAsync(Scope() == "document", source!, target).ConfigureAwait(false);
                 return run.Finish();
             }
 
@@ -201,9 +204,11 @@ public sealed partial class ThisAddIn
 
             case "formulas_to_latex_text":
             {
-                var source = RequiredMode("from");
+                var anySource = string.Equals(OfficeAutomationText.String(arguments, "from"), "any", StringComparison.OrdinalIgnoreCase);
+                var source = anySource ? null : RequiredMode("from");
                 await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
-                await ConvertFormulaObjectsToLatexAsync(Scope() == "document", source).ConfigureAwait(false);
+                if (anySource) await ConvertAllFormulaObjectsToLatexAsync(Scope() == "document").ConfigureAwait(false);
+                else await ConvertFormulaObjectsToLatexAsync(Scope() == "document", source!).ConfigureAwait(false);
                 return run.Finish();
             }
 

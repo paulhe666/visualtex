@@ -80,8 +80,8 @@ internal static class WordOleToOmmlReplacement
                 if (_display && _numberScaffold is null) RemoveDisplayLayoutWhitespace(selected);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-scaffold");
                 _owner.CaptureReplacementBoundary(selected);
-                // OMML Font choice: the imported runs carry no font of their own and
-                // follow the document math font, so set it before the import.
+                // OMML Font choice: the imported runs carry the chosen font (Prepare),
+                // which becomes the document math font before the import.
                 WordOmmlMathFontPolicy.ApplyPreferredToDocument(_document);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
                 var wpsInline = OfficeHostEnvironment.IsWps && !_display;
@@ -287,9 +287,18 @@ internal static class WordOleToOmmlReplacement
             owner = MathTypeLocalEditScope.Capture(document, source);
             if (replaceMathTypeNumber)
                 numberScaffold = WordMathTypeHostAdapter.PrepareNumberedScaffold(document, source, owner.ParagraphXml);
+            // The runs carry the math font they are imported under (the OMML font chosen in the add-in, else the
+            // document's), as the paragraph writer gives them: Word stamps Cambria Math on imported runs that have
+            // none, and the same formula would then look different depending on what it was converted from.
+            string? documentMathFont = null;
+            try { documentMathFont = document.OMathFontName; }
+            catch (COMException) { }
+            var equation = WordOmmlDocuments.ApplyExplicitTransferMathFont(
+                WordOmmlConverter.ExtractSingleOMath(omml),
+                WordOmmlMathFontPolicy.PreferredFont ?? documentMathFont ?? string.Empty);
             var fragment = MathTypeLocalFragment.PrepareOmmlReplacement(
                 source.WordOpenXML, owner.ParagraphXml, owner.LocatorName,
-                WordOmmlConverter.ExtractSingleOMath(omml), owner.SourceOleOrdinal, owner.SourceOleCount,
+                equation, owner.SourceOleOrdinal, owner.SourceOleCount,
                 retiredIdentityBookmark);
             var prepared = new Prepared(document, source, owner, fragment, display, retiredIdentityBookmark, numberScaffold);
             numberScaffold = null;

@@ -8,6 +8,12 @@
 > - 转换的标准是“观众看到的不变”：位置、显示大小、颜色、动画、触发器、超链接、名称、可见性、叠放次序都保持。做不到的情况一律报告，绝不静默丢失。
 > - “→ VisualTeX”的结果形式由“VisualTeX 形式”菜单决定（OLE 对象或 SVG 图片），默认 OLE。
 
+> **更新（2026-11-17）：只选目标格式**
+> - 用户只说要什么格式，不再区分来源。Word / WPS 文字的“格式转换”菜单：所选公式或全文公式 → OMML / MathType / VisualTeX（`OnConvertFormulasTo`，tag `目标|selection|document`）；PowerPoint / WPS 演示的“格式转换”：所选 / 本页 / 全部 → 三种格式（tag `any|目标|范围`）。范围内其他格式的公式全部转为目标格式，已是目标格式的不动。下文的六个方向按钮已从 Ribbon 去掉（回调与 MCP 的单方向转换保留）。
+> - 同一公式不论来源结果相同：统一转换的每个公式都从 LaTeX 渲染（不再把 MathType / OMML 的 MathML 直接写入目标），MathType 读出的 LaTeX 与 OMML 相同（`ConvertWordEquation`）；字号、编号格式按当前文档设置。OLE 原位替换为 OMML 时（`WordOleToOmmlReplacement`）公式的文字也写成所选 OMML 字体（否则 Word 给导入的文字标 Cambria Math，同一公式因来源不同而字体不同）。实测（Word，MathType 转换矩阵 10 个公式）：MathType → OMML 与 MathType → VisualTeX → OMML 的 OMML 逐字节相同；MathType → VisualTeX 与 OMML → VisualTeX 的 LaTeX 相同。
+> - Word 按来源格式逐遍执行（每遍是原有的单方向流程，带编号、引用与表格处理），一次确认、一份汇总，每种来源一步撤销（事务不能嵌套）。“公式转为 LaTeX 代码”同样不分格式（`OnFormulasToLatex`）。MCP：`convert_formulas` 与 `formulas_to_latex_text` 的 `from` 可为 `any`。
+> - WPS 用自己的 Ribbon（`WordRibbonWps.cs`、`PowerPointRibbonWps.cs`、macOS `office/wps/addin*/ribbon.xml`），按 WPS 自己的样式：主要操作用大按钮，其余每列两个，落在大按钮的图标行和名称行上，选项卡和 WPS 自己的一样矮。WPS 不显示组标题和菜单分隔标题，所以每个名称写明动作、对象和结果（“转为 WPS 公式”“LaTeX 代码转为公式”“插入公式引用”“行内公式字号”），格式名称处处一致：VisualTeX 公式、WPS 公式（即 OMML）、MathType 公式、LaTeX 代码。组从左到右：插入与编辑、编号与引用、格式转换、LaTeX 代码、字号与工具；日常操作是直接按钮，批量转换要选范围，是在每一项里写明范围的菜单。图标只用 WPS 资源里有的 imageMso 名称，并按图案的含义挑选（交叉引用、转为图片、刷新等；不再把 LaTeX 标志用在转为 VisualTeX 上）。WPS 12.1 的排列规则（Windows 实测，Mac 相同）：相邻的竖排 box 会被并成最多四行的一列（选项卡随之变高），所以一组的各列放在一个横排 box 里；单独一个控件会被放在两行中间，所以它的第二行是一个空标签；只有字号框的 box 行距比按钮小，所以字号框和按钮列放在同一个横排 box 里；菜单放在字号框下面会被拉到同宽，所以 Windows 的“WPS 公式字体”是显示当前字体的下拉框；WPS for Mac 的下拉框不显示当前值，所以 Mac 的字号是勾出当前字号的菜单。由 `test_windows_vsto_ribbon_dispatch.ps1` 与 macOS `installer.rs` 的 `the_tabs_keep_wps_columns_of_two` 检查。
+
 ---
 
 ## 1. 界面

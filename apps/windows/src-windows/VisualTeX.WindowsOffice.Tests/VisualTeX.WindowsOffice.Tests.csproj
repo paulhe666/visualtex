@@ -63,7 +63,6 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordVisibleEquationNumbers.cs" Link="WordVisibleEquationNumbers.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordEquationReferenceFields.cs" Link="WordEquationReferenceFields.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
-    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WpsRibbonImages.cs" Link="WpsRibbonImages.cs" />
     <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointCellMath.cs" Link="PowerPointCellMath.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordFieldCode.cs" Link="WordFieldCode.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WpsFieldXml.cs" Link="WpsFieldXml.cs" />
