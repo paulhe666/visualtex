@@ -88,7 +88,7 @@ fn decode_utf8(value: &str, label: &str) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("{label} is not valid UTF-8"))
 }
 
-fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
+pub(crate) fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
     let values = parse_manifest(input)?;
     if required(&values, "protocolVersion")? != PROTOCOL_VERSION {
         return Err("The OMML batch protocol version is invalid".to_string());

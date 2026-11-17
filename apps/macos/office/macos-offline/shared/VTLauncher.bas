@@ -462,6 +462,66 @@ Private Function VTFastOpenRequestClaimed( _
 #End If
 End Function
 
+' The numbered-equation package of a Session whose manifest is already in the Session folder, asked of the resident app through the
+' sandbox inbox instead of the helper script: AppleScriptTask costs about half a second a call from Word (measured), the
+' resident answers in well under 0.1 s. A marker <session>.number goes into the inbox, the resident builds the package and
+' answers with <session>.number-done holding the result manifest. "" when the resident is not ready, does not answer in time,
+' or fails (the caller then uses ConvertOmmlBatch of the helper script).
+Public Function VTTryFastConvertOmmlBatch(ByVal sessionId As String) As String
+#If Mac Then
+    Const MAX_ANSWER_WAIT_SECONDS As Double = 1.5
+    Dim inboxRoot As String
+    Dim requestPath As String
+    Dim temporaryPath As String
+    Dim answerPath As String
+    Dim startedAt As Single
+    Dim handle As Integer
+    Dim answer As String
+
+    If Not VTIsCanonicalUuid(sessionId) Then Exit Function
+    On Error GoTo NotAvailable
+    If Not VTFastOpenResidentReady("word") Then Exit Function
+    inboxRoot = VTFastOpenInboxRoot("word")
+    ' only a resident that answers number requests (its heartbeat says so); an older one would leave this waiting
+    If InStr(1, VTReadText(inboxRoot & "/resident-ready", 4096), "numbers=1", vbBinaryCompare) = 0 Then Exit Function
+    requestPath = inboxRoot & "/" & sessionId & ".number"
+    temporaryPath = inboxRoot & "/." & sessionId & ".number.tmp"
+    answerPath = inboxRoot & "/" & sessionId & ".number-done"
+    On Error Resume Next
+    Kill answerPath
+    Kill requestPath
+    Kill temporaryPath
+    Err.Clear
+    On Error GoTo NotAvailable
+
+    handle = FreeFile
+    Open temporaryPath For Output Access Write As #handle
+    Print #handle, "nativeNumber";
+    Close #handle
+    handle = 0
+    Name temporaryPath As requestPath
+    startedAt = Timer
+    Do While Len(Dir$(answerPath, vbNormal)) = 0
+        DoEvents
+        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then GoTo NotAvailable
+    Loop
+    answer = VTReadText(answerPath, 65536)
+    Kill answerPath
+    If InStr(1, answer, "operation=nativeNumber", vbBinaryCompare) > 0 Then _
+        VTTryFastConvertOmmlBatch = answer
+    Exit Function
+
+NotAvailable:
+    ' A request nobody answered must not be answered later: the helper script's package would race it.
+    On Error Resume Next
+    If handle <> 0 Then Close #handle
+    Kill requestPath
+    Kill temporaryPath
+    Kill answerPath
+    Err.Clear
+#End If
+End Function
+
 Private Function VTFastLaunchElapsedSeconds( _
     ByVal startedAt As Single, _
     ByVal finishedAt As Single) As Double

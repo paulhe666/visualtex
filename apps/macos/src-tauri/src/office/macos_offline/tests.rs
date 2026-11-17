@@ -2196,3 +2196,54 @@ fn office_geometry_preserves_visual_point_size_and_powerpoint_center() {
             < 0.001
     );
 }
+
+#[test]
+fn the_word_number_request_is_answered_through_the_inbox() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let root = std::env::temp_dir().join(format!("visualtex-fast-number-{}", Uuid::new_v4()));
+    let inbox = root.join("inbox");
+    let sessions = root.join("sessions");
+    fs::create_dir_all(&inbox).unwrap();
+    let session_id = Uuid::new_v4().to_string();
+    let session_directory = sessions.join(&session_id);
+    fs::create_dir_all(&session_directory).unwrap();
+    let encode = |value: &str| URL_SAFE_NO_PAD.encode(value.as_bytes());
+    let rows = [
+        "protocolVersion=1".to_string(),
+        format!("sessionId={session_id}"),
+        "sourceKind=nativeNumber".to_string(),
+        format!("sourceDocumentId={}", encode("Macintosh HD:test.docx")),
+        "bookmarkName=-".to_string(),
+        "itemCount=1".to_string(),
+        format!("mathFont={}", encode("Cambria Math")),
+        format!("item1SequenceName={}", encode("Equation")),
+        "item1HeadingLevel=0".to_string(),
+        format!("item1Separator={}", encode(".")),
+        "item1Initial=1".to_string(),
+    ];
+    fs::write(session_directory.join(FORMULA_RESTORE_SOURCE_FILE), rows.join("\n")).unwrap();
+    // files that are not number requests stay where they are
+    fs::write(inbox.join("resident-ready"), b"ready").unwrap();
+    fs::write(inbox.join(format!("{session_id}.json")), b"{}").unwrap();
+    fs::write(inbox.join("not-a-uuid.number"), b"nativeNumber").unwrap();
+    fs::write(inbox.join(format!("{session_id}.number")), b"nativeNumber").unwrap();
+
+    let directory_of = |id: &str| -> Result<PathBuf, String> { Ok(sessions.join(id)) };
+    assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 1);
+    assert!(!inbox.join(format!("{session_id}.number")).exists(), "the request is taken");
+    assert!(inbox.join("resident-ready").exists() && inbox.join(format!("{session_id}.json")).exists());
+    assert!(inbox.join("not-a-uuid.number").exists(), "only Session-named markers are answered");
+    let answer = fs::read_to_string(inbox.join(format!("{session_id}.number-done"))).unwrap();
+    assert!(answer.contains("operation=nativeNumber"), "{answer}");
+    let docx = answer.lines().find_map(|row| row.strip_prefix("docxPath=")).expect("the answer names the package");
+    assert!(Path::new(docx).is_file(), "{docx}");
+    assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 0, "nothing is answered twice");
+
+    // a Session with no manifest is answered with the error, not left waiting
+    let missing = Uuid::new_v4().to_string();
+    fs::write(inbox.join(format!("{missing}.number")), b"nativeNumber").unwrap();
+    assert_eq!(fast_open::answer_fast_number_requests(&inbox, &directory_of).unwrap(), 1);
+    let failure = fs::read_to_string(inbox.join(format!("{missing}.number-done"))).unwrap();
+    assert!(failure.starts_with("error="), "{failure}");
+    let _ = fs::remove_dir_all(&root);
+}

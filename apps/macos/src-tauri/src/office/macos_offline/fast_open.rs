@@ -30,6 +30,113 @@ pub(super) fn fast_open_inbox_roots() -> Result<Vec<(OfficeHost, PathBuf)>, Stri
     Ok(fast_open_inbox_roots_for_home(&user_home()?))
 }
 
+/// The Word add-in's numbered-equation requests. The add-in writes the manifest into the Session folder and a marker
+/// `<session>.number` into the fast-open inbox; the answer is `<session>.number-done` there, holding the result manifest the
+/// command line mode (`--office-omml-to-latex-batch`) writes, or `error=<message>`. The helper script runs that command line
+/// in a process of its own and costs Word about half a second for each call (AppleScriptTask); this answers in the resident
+/// within a poll interval.
+const FAST_NUMBER_REQUEST_SUFFIX: &str = ".number";
+const FAST_NUMBER_ANSWER_SUFFIX: &str = ".number-done";
+const FAST_NUMBER_RESULT_FILE: &str = "omml-latex-result.txt";
+
+pub(super) fn fast_number_session_id(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    let session_id = file_name.strip_suffix(FAST_NUMBER_REQUEST_SUFFIX)?;
+    if validate_uuid(session_id, "Fast-number Session id").is_ok() {
+        Some(session_id.to_string())
+    } else {
+        None
+    }
+}
+
+/// The result manifest of the Session's request (its formula-restore-source.txt, as the command line mode reads it).
+pub(super) fn fast_number_answer(session_directory: &Path) -> String {
+    let result = (|| -> Result<String, String> {
+        let input = session_directory.join(FORMULA_RESTORE_SOURCE_FILE);
+        let output = session_directory.join(FAST_NUMBER_RESULT_FILE);
+        crate::office::omml_batch::convert_manifest(&input, &output)?;
+        fs::read_to_string(&output)
+            .map_err(|error| format!("Unable to read {}: {error}", output.display()))
+    })();
+    match result {
+        Ok(text) => text,
+        Err(error) => format!("error={}\n", error.replace(['\r', '\n'], " ")),
+    }
+}
+
+/// Answers every number request waiting in `inbox_root` (`session_directory_of` gives a Session's folder). Returns how many.
+pub(super) fn answer_fast_number_requests(
+    inbox_root: &Path,
+    session_directory_of: &dyn Fn(&str) -> Result<PathBuf, String>,
+) -> Result<usize, String> {
+    let entries = match fs::read_dir(inbox_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            mark_fast_open_access_unavailable();
+            return Ok(0);
+        }
+        Err(_) => return Ok(0),
+    };
+    let now = SystemTime::now();
+    let mut answered = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(session_id) = fast_number_session_id(&path) else {
+            continue;
+        };
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            continue;
+        }
+        // The add-in publishes the marker by an atomic rename, so it is complete when it appears. One left from long ago
+        // (the add-in gave up on it) is not answered: the helper script's package would race it.
+        let recent = match metadata.modified() {
+            Ok(modified) => match now.duration_since(modified) {
+                Ok(age) => age <= FAST_OPEN_MAX_AGE,
+                Err(error) => error.duration() <= FAST_OPEN_FUTURE_TOLERANCE,
+            },
+            Err(_) => false,
+        };
+        let claim_path = inbox_root.join(format!(".{session_id}.{}.claim", Uuid::new_v4()));
+        if fs::rename(&path, &claim_path).is_err() {
+            continue;
+        }
+        let _ = fs::remove_file(&claim_path);
+        if !recent {
+            continue;
+        }
+        let answer = match session_directory_of(&session_id) {
+            Ok(directory) => fast_number_answer(&directory),
+            Err(error) => format!("error={}\n", error.replace(['\r', '\n'], " ")),
+        };
+        atomic_write_runtime(
+            &inbox_root.join(format!("{session_id}{FAST_NUMBER_ANSWER_SUFFIX}")),
+            answer.as_bytes(),
+            0o600,
+        )?;
+        answered += 1;
+    }
+    Ok(answered)
+}
+
+pub(crate) fn consume_fast_number_requests() -> Result<usize, String> {
+    if fast_open_access_is_backed_off() {
+        return Ok(0);
+    }
+    let mut answered = 0;
+    for (host, root) in fast_open_inbox_roots()? {
+        if host != OfficeHost::Word {
+            continue;
+        }
+        answered += answer_fast_number_requests(&root, &|session_id| {
+            session_directory(host, session_id)
+        })?;
+    }
+    Ok(answered)
+}
+
 pub(super) fn fast_open_session_id(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_str()?;
     let session_id = file_name.strip_suffix(".json")?;
@@ -304,8 +411,10 @@ pub(super) fn fast_open_ready_heartbeat() -> Result<String, String> {
     if executable.contains(['\r', '\n']) {
         return Err("VisualTeX resident executable path contains a newline".to_string());
     }
+    // numbers=1: this resident answers the Word add-in's number requests (<session>.number), which an older one does not:
+    // the add-in asks only a resident that says so, instead of waiting for an answer that never comes.
     Ok(format!(
-        "visualtex-fast-open-ready-v2\n{}\n{}\n{}\n",
+        "visualtex-fast-open-ready-v2\n{}\n{}\n{}\nnumbers=1\n",
         epoch_ms(),
         std::process::id(),
         executable
@@ -357,6 +466,9 @@ pub(crate) fn start_fast_open_inbox_watcher(app: AppHandle) {
                     eprintln!("Unable to refresh VisualTeX Office fast-open readiness: {error}");
                 }
                 last_heartbeat = Instant::now();
+            }
+            if let Err(error) = consume_fast_number_requests() {
+                eprintln!("Unable to answer VisualTeX Word number request: {error}");
             }
             if let Err(error) = consume_fast_open_request(&app) {
                 eprintln!("Unable to consume VisualTeX Office fast-open request: {error}");

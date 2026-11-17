@@ -507,11 +507,13 @@ Public Function VTHelperParagraphOwnsNativeEquationSequence( _
 
     Dim candidateField As Field
 
-    If paragraphRange Is Nothing Or _
-       paragraphRange.Information(wdWithInTable) Or _
-       paragraphRange.Fields.Count <> 1 Or _
-       paragraphRange.InlineShapes.Count <> 0 Or _
-       paragraphRange.OMaths.Count <> 0 Then Exit Function
+    ' VBA's Or evaluates every operand, and Range.Information takes about 5 ms
+    ' in Word for Mac (measured): the cheap tests come first and stop here.
+    If paragraphRange Is Nothing Then Exit Function
+    If paragraphRange.Fields.Count <> 1 Then Exit Function
+    If paragraphRange.OMaths.Count <> 0 Then Exit Function
+    If paragraphRange.InlineShapes.Count <> 0 Then Exit Function
+    If paragraphRange.Information(wdWithInTable) Then Exit Function
     Set candidateField = paragraphRange.Fields(1)
     VTHelperParagraphOwnsNativeEquationSequence = _
         VTIsNativeEquationSequenceField( _
@@ -4565,6 +4567,7 @@ Public Function VTCurrentNumberTargets( _
     Dim source As Range
     Dim math As OMath
     Dim lastEnd As Long
+    Dim paragraphHasMath As Boolean
     referenceKind = LCase$(Trim$(referenceKind))
     If Len(referenceKind) > 0 And _
        referenceKind <> VT_WORD_REFERENCE_KIND_NATIVE And _
@@ -4574,8 +4577,10 @@ Public Function VTCurrentNumberTargets( _
     End If
     lastEnd = -1
     For Each paragraph In doc.Paragraphs
+        paragraphHasMath = False
         If referenceKind <> VT_WORD_REFERENCE_KIND_IMAGE Then
             For Each math In paragraph.Range.OMaths
+                paragraphHasMath = True
                 Set candidate = VTPureNativeNumberField(math.Range)
                 If Not candidate Is Nothing Then
                     Set source = VTPureNativeVisibleNumberRange( _
@@ -4598,10 +4603,13 @@ Public Function VTCurrentNumberTargets( _
                 ' OMath objects above. Re-entering VTPureNativeNumberField through
                 ' a Field.Result range is both redundant and unstable after an
                 ' image-to-OMML replacement on Word for Mac. This branch is only
-                ' for the legacy external helper geometry.
-                If VTHelperParagraphOwnsNativeEquationSequence( _
-                   paragraph.Range) Then
-                    Set source = candidate.Result.Duplicate
+                ' for the legacy external helper geometry, a paragraph with no
+                ' equation (a helper is never one: asking costs 5 ms an equation).
+                If Not paragraphHasMath Then
+                    If VTHelperParagraphOwnsNativeEquationSequence( _
+                       paragraph.Range) Then
+                        Set source = candidate.Result.Duplicate
+                    End If
                 End If
             End If
             If Not source Is Nothing Then
@@ -4975,6 +4983,7 @@ Public Function VTV2RequestNumberDocx( _
     Dim separatorPosition As Long
     Dim result As Object
     Dim docxPath As String
+    Dim resultText As String
 
     VTApplyChosenOmmlFontToDocument doc
     VTWordPerformanceMark "v2-font-applied"
@@ -4989,20 +4998,28 @@ Public Function VTV2RequestNumberDocx( _
     VTWordPerformanceMark "v2-manifest-built"
     If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
         VTWordPerformanceMark "v2-manifest-written"
-        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
+        ' The resident app builds the package at once; the helper script's process answers in half a second.
+        resultText = VTTryFastConvertOmmlBatch(sessionId)
+        If Len(resultText) > 0 Then
+            VTWordPerformanceMark "v2-app-converted-fast"
+        Else
+            timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
+        End If
     Else
         timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
     End If
-    VTWordPerformanceMark "v2-app-converted"
-    VTWordPerformanceNote "v2-app-timing", Left$(timingDetail, InStr(1, timingDetail & "|", "|", vbBinaryCompare) - 1)
-    separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
-    If separatorPosition <= 1 Or separatorPosition >= Len(timingDetail) Then
-        Err.Raise vbObjectError + 7611, "VisualTeX", _
-            "VisualTeX did not return the Word equation number."
+    If Len(resultText) = 0 Then
+        VTWordPerformanceMark "v2-app-converted"
+        VTWordPerformanceNote "v2-app-timing", Left$(timingDetail, InStr(1, timingDetail & "|", "|", vbBinaryCompare) - 1)
+        separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
+        If separatorPosition <= 1 Or separatorPosition >= Len(timingDetail) Then
+            Err.Raise vbObjectError + 7611, "VisualTeX", _
+                "VisualTeX did not return the Word equation number."
+        End If
+        encodedResult = Mid$(timingDetail, separatorPosition + 1)
+        resultText = VTBase64UrlDecodeUtf8(encodedResult)
     End If
-    encodedResult = Mid$(timingDetail, separatorPosition + 1)
-    Set result = VTParseDocumentImportManifestText( _
-        VTBase64UrlDecodeUtf8(encodedResult), sessionId)
+    Set result = VTParseDocumentImportManifestText(resultText, sessionId)
     VTRequireDispatchValue result, "docxPath"
     If CStr(result("operation")) <> "nativeNumber" Or _
        CLng(result("itemCount")) <> itemCount Then
@@ -5085,6 +5102,10 @@ Public Sub VTV2UpdateNumbersFrom( _
     Dim updatedOwners As Long
     Dim updatedReferences As Long
     VTWordPerformanceMark "renumber-start"
+    If VTV2BulkRenumber(doc, searchStart, updateReferences) Then
+        VTWordPerformanceMark "renumber-bulk-complete"
+        Exit Sub
+    End If
     Set ownerRoots = VTNumberFieldNativeMathRoots( _
         doc, searchStart, doc.Content.End, True)
     VTWordPerformanceMark "renumber-roots-listed"
@@ -5113,6 +5134,96 @@ Public Sub VTV2UpdateNumbersFrom( _
     VTWordPerformanceMark "renumber-references-updated"
     VTWordPerformanceNote "renumber-updated-references", CStr(updatedReferences)
 End Sub
+
+' --- renumbering in bulk ---------------------------------------------------------------------------------------------
+' Word for Mac (measured, 125 numbered equations): Field.Update takes about 6 ms a call, and Fields.Update on a Range 0.3 ms a
+' field, so the numbers from the new one on are updated with one call over the run of numbering fields instead of one call
+' for each, which took 8 ms an equation (a start-of-document insertion in 400 equations: 3.3 s).
+
+' The fields that make up a number and its references.
+Private Function VTV2FieldTypeIsNumbering(ByVal fieldType As Long) As Boolean
+    Select Case fieldType
+        Case wdFieldSequence, wdFieldStyleRef, wdFieldRef, wdFieldQuote
+            VTV2FieldTypeIsNumbering = True
+    End Select
+End Function
+
+' The other fields an update in the same call may pass over: ones an update leaves as they are (an add-in's ADDIN fields,
+' hyperlinks) or that are meant to be current (page numbers). Any other (a table of contents, a date, an include, a
+' picture or object link ...) ends the run: it is not updated by this.
+Private Function VTV2FieldTypeUpdatesHarmlessly(ByVal fieldType As Long) As Boolean
+    Select Case fieldType
+        Case wdFieldAddin, wdFieldHyperlink, wdFieldPageRef, wdFieldNoteRef, wdFieldPage, wdFieldNumPages
+            VTV2FieldTypeUpdatesHarmlessly = True
+    End Select
+End Function
+
+' Updates the numbering fields from fromPosition to the end of the document: each run of them (with only harmless fields
+' between) in one Fields.Update. Returns the number of calls.
+Private Function VTV2UpdateNumberingFields( _
+    ByVal doc As Document, ByVal fromPosition As Long) As Long
+
+    Dim candidate As Field
+    Dim fieldType As Long
+    Dim segmentStart As Long
+    Dim segmentEnd As Long
+    Dim inSegment As Boolean
+    Dim calls As Long
+
+    For Each candidate In doc.Range( _
+        Start:=fromPosition, End:=doc.Content.End).Fields
+        fieldType = candidate.Type
+        If VTV2FieldTypeIsNumbering(fieldType) Then
+            If Not inSegment Then
+                segmentStart = VTEquationFieldStart(candidate)
+                inSegment = True
+            End If
+            segmentEnd = VTEquationFieldEnd(candidate)
+        ElseIf Not VTV2FieldTypeUpdatesHarmlessly(fieldType) Then
+            If inSegment Then
+                doc.Range(Start:=segmentStart, End:=segmentEnd).Fields.Update
+                calls = calls + 1
+                inSegment = False
+            End If
+        End If
+    Next candidate
+    If inSegment Then
+        doc.Range(Start:=segmentStart, End:=segmentEnd).Fields.Update
+        calls = calls + 1
+    End If
+    VTV2UpdateNumberingFields = calls
+End Function
+
+' The renumbering of VTV2UpdateNumbersFrom in bulk; False when Word refuses somewhere (the caller then does it field by field).
+Private Function VTV2BulkRenumber( _
+    ByVal doc As Document, ByVal searchStart As Long, _
+    ByVal updateReferences As Boolean) As Boolean
+
+    Dim candidate As Field
+    Dim calls As Long
+    Dim updatedReferences As Long
+
+    On Error GoTo NotBulk
+    calls = VTV2UpdateNumberingFields(doc, searchStart)
+    VTWordPerformanceMark "renumber-numbers-updated"
+    VTWordPerformanceNote "renumber-update-calls", CStr(calls)
+    If updateReferences Then
+        ' every reference of the document: the ones before the new number too, which read the numbers just updated
+        For Each candidate In doc.Fields
+            If candidate.Type = wdFieldRef Then
+                candidate.Update
+                updatedReferences = updatedReferences + 1
+            End If
+        Next candidate
+        VTWordPerformanceMark "renumber-references-updated"
+        VTWordPerformanceNote "renumber-updated-references", CStr(updatedReferences)
+    End If
+    VTV2BulkRenumber = True
+    Exit Function
+
+NotBulk:
+    Err.Clear
+End Function
 
 ' --- restyle and renumber (Windows PlanFormat) ---------------------------------
 
