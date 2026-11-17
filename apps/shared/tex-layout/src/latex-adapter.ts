@@ -230,8 +230,10 @@ export const PACKAGE_FAMILIES: [number, [string, string, string]][] = [
  * Relations no TeX font has but the Chinese fonts do (GB 2312 has them), set in the formula's Chinese font like Chinese text:
  * the congruence sign of Chinese geometry (U+224C). The math fonts (STIX Two Math, Latin Modern Math, TeX Gyre, Cambria Math)
  * draw that code point as a tilde with a gentle wave over an equals sign; the Chinese fonts (SimSun, YaHei, SimHei, KaiTi,
- * Songti SC, Hiragino Sans GB ...) draw the S with curled ends that the textbooks print. macOS's PingFang SC has no glyph
- * for it: the next font of the formula's Chinese font stack (Hiragino Sans GB) supplies it.
+ * Songti SC, Hiragino Sans GB ...) draw the S with curled ends that the textbooks print, about 0.5 em wide in YaHei and 0.85 em
+ * in the others. macOS's default stack gets it from WebKit's fallback of the system font, Apple Symbols (a small curled
+ * form, 0.54 em wide: PingFang SC has no glyph for it and the stack never reaches Hiragino Sans GB); 宋体, 楷体 and 黑体
+ * give Songti SC, Kaiti SC and Heiti SC.
  */
 const CHINESE_FONT_RELATIONS = new Set(["\\backcong", "\u224c"]);
 
