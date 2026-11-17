@@ -112,4 +112,27 @@ internal static class WordFieldCode
         return normalized.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase)
             && normalized.IndexOf("\\h", StringComparison.OrdinalIgnoreCase) >= 0;
     }
+
+    /// <summary>
+    /// True when every field in <paramref name="rangeText"/> (a range's Text read with field codes included, where each
+    /// field begins with chr(19) followed by its instruction) is one of <paramref name="allowed"/> (the first word of the
+    /// instruction, any case). A field whose instruction does not begin with a letter answers false. Text without a
+    /// field answers true.
+    /// </summary>
+    internal static bool AllFieldsAre(string? rangeText, IReadOnlyCollection<string> allowed)
+    {
+        if (rangeText is null) return false;
+        for (var index = rangeText.IndexOf('\u0013'); index >= 0; index = rangeText.IndexOf('\u0013', index + 1))
+        {
+            var cursor = index + 1;
+            while (cursor < rangeText.Length && rangeText[cursor] == ' ') cursor++;
+            var wordStart = cursor;
+            while (cursor < rangeText.Length && (rangeText[cursor] >= 'A' && rangeText[cursor] <= 'Z' || rangeText[cursor] >= 'a' && rangeText[cursor] <= 'z'))
+                cursor++;
+            if (cursor == wordStart) return false;
+            var word = rangeText.Substring(wordStart, cursor - wordStart);
+            if (!allowed.Any(keyword => keyword.Equals(word, StringComparison.OrdinalIgnoreCase))) return false;
+        }
+        return true;
+    }
 }

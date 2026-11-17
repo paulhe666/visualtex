@@ -3300,6 +3300,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 session.Id,
                 TimeSpan.FromMinutes(30),
                 cancellationToken).ConfigureAwait(false);
+            TraceOpenPerformance("commit-received");
             // an agent's choices do not become the user's defaults
             if (automation is null && session.Mode == "create" && session.DisplayMode == "block")
                 WordEquationNumberFormat.SetDefaultDisplayEquationNumbered(session.Numbered);
@@ -3422,6 +3423,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 imagePath = client.MaterializePng(session);
             }
+            TraceOpenPerformance("previews");
             // Word can fire WindowSelectionChange synchronously while an edit moves
             // an OLE formula into/out of the numbered 1x3 host.  SelectionChange
             // performs formula-identity repair, which is correct for user copy/paste
@@ -3433,7 +3435,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             BeginFormulaFormatMutation();
             try
             {
-                var applied = await dispatcher.InvokeAsync(() =>
+                var applied = await dispatcher.InvokeAsync(() => WithApplyStageMetrics(traceOpenPerformanceToHook, () =>
                 {
                 if (!service.IsActiveSourceDocument(session.SourceDocumentId))
                     throw new InvalidOperationException("活动 Word 文档已切换，未写入公式。");
@@ -3462,41 +3464,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (mathMl is null)
                         throw new InvalidOperationException(
                             "VisualTeX Word OMML MathML payload is unavailable.");
-                    if (!traceOpenPerformanceToHook)
-                    {
-                        return service.ApplyOmmlVisualTeXHostSession(
-                            session,
-                            selection.ObjectMode,
-                            mathMl,
-                            pngPath: null,
-                            emfPath: null);
-                    }
-
-                    var ommlApplyWatch = Stopwatch.StartNew();
-                    using var ommlMetrics = new WordOperationMetrics();
-                    try
-                    {
-                        return service.ApplyOmmlVisualTeXHostSession(
-                            session,
-                            selection.ObjectMode,
-                            mathMl,
-                            pngPath: null,
-                            emfPath: null);
-                    }
-                    finally
-                    {
-                        ommlApplyWatch.Stop();
-                        WordDoubleClickHook.TraceMessage(
-                            $"[perf] ApplySession.omml-write: {ommlApplyWatch.Elapsed.TotalMilliseconds:0.0}ms");
-                        foreach (var entry in ommlMetrics.Entries
-                                     .OrderByDescending(item => item.Value.Milliseconds))
-                        {
-                            WordDoubleClickHook.TraceMessage(
-                                $"[perf] ApplySession.omml-stage {entry.Key}: "
-                                + $"calls={entry.Value.Calls} "
-                                + $"inclusive={entry.Value.Milliseconds:0.0}ms");
-                        }
-                    }
+                    return service.ApplyOmmlVisualTeXHostSession(
+                        session,
+                        selection.ObjectMode,
+                        mathMl,
+                        pngPath: null,
+                        emfPath: null);
                 }
                 if (string.Equals(
                         session.ObjectMode,
@@ -3519,7 +3492,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     return session.Mode == "edit"
                         ? service.Replace(session, imagePath)
                         : service.Insert(session, imagePath);
-                }).ConfigureAwait(false);
+                })).ConfigureAwait(false);
+                TraceOpenPerformance("applied");
                 if (OfficeAutomationRun.Current is { } automationRun) automationRun.Result = applied;
             }
             finally
@@ -3527,6 +3501,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 EndFormulaFormatMutation();
             }
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
+            TraceOpenPerformance("completed");
             if (string.Equals(
                     session.ObjectMode,
                     FormulaOleContract.MathTypeOleMode,
@@ -3608,6 +3583,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _operationGate.Release();
             WordDoubleClickHook.TraceMessage(
                 $"ribbon-session-operation-released sessionId={sessionId ?? "<pending>"}");
+        }
+    }
+
+    /// <summary>
+    /// Runs a document write on the UI thread; with the trace on, its stage timings (WordOperationMetrics, inclusive,
+    /// nested stages overlap) are written to the hook trace as [perf] ApplySession lines.
+    /// </summary>
+    private static T WithApplyStageMetrics<T>(bool trace, Func<T> write)
+    {
+        if (!trace) return write();
+        var watch = Stopwatch.StartNew();
+        using var metrics = new WordOperationMetrics();
+        try { return write(); }
+        finally
+        {
+            watch.Stop();
+            WordDoubleClickHook.TraceMessage($"[perf] ApplySession.write: {watch.Elapsed.TotalMilliseconds:0.0}ms");
+            foreach (var entry in metrics.Entries.OrderByDescending(item => item.Value.Milliseconds))
+                WordDoubleClickHook.TraceMessage(
+                    $"[perf] ApplySession.stage {entry.Key}: calls={entry.Value.Calls} inclusive={entry.Value.Milliseconds:0.0}ms");
         }
     }
 

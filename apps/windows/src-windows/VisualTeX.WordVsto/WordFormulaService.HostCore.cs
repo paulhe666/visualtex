@@ -355,6 +355,11 @@ internal sealed partial class WordFormulaService
     {
         using var numberFormatScope =
             WordEquationNumberFormatAuthority.BeginOperationScope();
+        // A numbered insertion renumbers the formulas behind it: keep Word from painting (and laying out) every
+        // intermediate field result, as the OMML replacement and batch paths do.
+        using var screenUpdating = session.Numbered
+            ? NativeOmmlScreenUpdatingScope.Suspend(_application)
+            : null;
         Document? document = null;
         Range? insertion = null;
         Range? finalRange = null;

@@ -499,7 +499,7 @@ internal static partial class WordEquationReferenceFields
         var failures = new List<Exception>();
         try
         {
-            outerFields = WordNumberingFieldCollection.Capture(document);
+            outerFields = WordNumberingFieldCollection.Capture(document, referencesOnly: true);
             for (var outerIndex = 1; outerIndex <= outerFields.Count; outerIndex++)
             {
                 Field? outerField = null;
@@ -1304,7 +1304,7 @@ internal static partial class WordEquationReferenceFields
         var failures = new List<Exception>();
         try
         {
-            fields = WordNumberingFieldCollection.Capture(document);
+            fields = WordNumberingFieldCollection.Capture(document, referencesOnly: true);
             // Retain direct REF objects in one bounded discovery pass; nested REF
             // can also be exposed through GOTOBUTTON.Code.Fields. Refresh each
             // once without re-indexing the entire document's EMBED collection.

@@ -158,6 +158,16 @@ internal static partial class WordFormulaNumberingKernel
                 .RestoreEquationNumberFormatForConversion(
                     document,
                     formatId);
+            // An inserted or removed number: the numbers behind it, in one Word pass.
+            if (fromPosition > 0
+                && !bulkUpdate
+                && preparedVisualTeX is null
+                && minimumExpectedNumbered == 0)
+                return WordVisualTeXParagraphNumbering
+                    .RefreshFollowingNumbers(
+                        document,
+                        fromPosition,
+                        format.UsesHeading ? format.HeadingLevel : 0);
             return WordVisualTeXParagraphNumbering
                 .RefreshBatchFields(
                     document,

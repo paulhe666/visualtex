@@ -877,12 +877,13 @@ internal static partial class WordVisualTeXParagraphNumbering
                 document.Range(
                     position,
                     position);
-            outer =
-                document.Fields.Add(
-                    insertion,
-                    WdFieldType.wdFieldMacroButton,
-                    PlaceRefInstruction,
-                    false);
+            using (WordOperationMetrics.Measure("Numbering.PlaceRef.OuterAdd"))
+                outer =
+                    document.Fields.Add(
+                        insertion,
+                        WdFieldType.wdFieldMacroButton,
+                        PlaceRefInstruction,
+                        false);
             outer.ShowCodes = true;
 
             outerCode =
@@ -945,12 +946,13 @@ internal static partial class WordVisualTeXParagraphNumbering
                     outer.Code.Duplicate;
                 nestedFields =
                     outerCode.Fields;
-                nested =
-                    nestedFields.Add(
-                        insertion,
-                        WdFieldType.wdFieldEmpty,
-                        segment.Value,
-                        false);
+                using (WordOperationMetrics.Measure("Numbering.PlaceRef.NestedAdd"))
+                    nested =
+                        nestedFields.Add(
+                            insertion,
+                            WdFieldType.wdFieldEmpty,
+                            segment.Value,
+                            false);
                 try
                 {
                     nested.ShowCodes = false;
@@ -1132,18 +1134,21 @@ internal static partial class WordVisualTeXParagraphNumbering
                     document.Range(
                         position,
                         position);
-                field =
-                    document.Fields.Add(
-                        insertion,
-                        WdFieldType.wdFieldEmpty,
-                        instruction,
-                        false);
+                using (WordOperationMetrics.Measure("Numbering.HeadingState.Add"))
+                    field =
+                        document.Fields.Add(
+                            insertion,
+                            WdFieldType.wdFieldEmpty,
+                            instruction,
+                            false);
                 try
                 {
                     field.ShowCodes = false;
                 }
                 catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
-                if (!deferEvaluation) field.Update();
+                if (!deferEvaluation)
+                    using (WordOperationMetrics.Measure("Numbering.HeadingState.Update"))
+                        field.Update();
                 copies?.Remember(document, copyKey!, field);
             }
             finally
@@ -1361,6 +1366,32 @@ internal static partial class WordVisualTeXParagraphNumbering
 
         // The final ')' is materialized before these reverse-inserted segments.
         return result;
+    }
+
+    // The numbers behind a change (an inserted or removed number) in one Word pass instead of one Field.Update per
+    // number (see WordNumberingFieldCollection.BulkUpdateFrom); the references to them follow. The field-by-field
+    // pass remains for WPS, a document with tracked changes and a bulk pass whose self-check failed.
+    internal static int RefreshFollowingNumbers(Document document, int fromPosition, int headingLevel = 0)
+    {
+        using var metric = WordOperationMetrics.Measure("Numbering.RefreshFollowing");
+        if (OfficeHostEnvironment.IsWps || WordNumberingFieldCollection.HasRevisions(document))
+            return RefreshBatchFields(document, fromPosition: fromPosition);
+        var count = WordNumberingFieldCollection.BulkUpdateFrom(document, fromPosition, headingLevel: headingLevel);
+        if (count < 0)
+            return RefreshBatchFields(document, fromPosition: fromPosition);
+        // Formula references are uncommon. Do not perform another document-wide field pass when the document
+        // contains no REF/GOTOBUTTON at all.
+        if (WordNumberingFieldCollection.MayHaveReferenceFields(document))
+        {
+            // The document holds no tracked change (see above) and the pass makes none (tracking is off): reading the
+            // code of each field then needs no per-field Revisions query (26 ms each, twice for every field).
+            using var noRevisions = document.TrackRevisions
+                ? null
+                : WordNumberingFieldCollection.AssumeNoRevisionsWhileReading(document);
+            using (WordOperationMetrics.Measure("Numbering.BatchFields.UpdateReferences"))
+                _ = WordEquationReferenceFields.UpdateReferences(document, null);
+        }
+        return count;
     }
 
     // fromPosition: renumber only the fields after a change (a removed number);

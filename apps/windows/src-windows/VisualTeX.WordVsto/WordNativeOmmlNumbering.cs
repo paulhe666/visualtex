@@ -503,10 +503,14 @@ internal static class WordNativeOmmlNumbering
     // numeric range back into another OMath collection in the same UI turn.
     // hasRevisions: false when the caller proved the document has no tracked
     // change (see WordNumberingFieldCollection.TryCaptureCurrentCode).
+    // updateFields: false when the caller updates every number field of the range in one pass afterwards (the checks
+    // stay; a Field.Update of the single new equation costs 100-300 ms in a long document, as Word has to lay out
+    // what precedes it).
     internal static WordFormulaHostDescriptor RefreshCanonicalNativeFields(
         OMath math,
         WordFormulaHostDescriptor host,
-        bool hasRevisions = true)
+        bool hasRevisions = true,
+        bool updateFields = true)
     {
         Range? exact = null;
         Fields? fields = null;
@@ -575,8 +579,11 @@ internal static class WordNativeOmmlNumbering
                     "Canonical native OMML contains no SEQ field.");
 
             // Heading state must be current before SEQ \s reads it.
-            styleRef?.Update();
-            sequence.Update();
+            if (updateFields)
+            {
+                styleRef?.Update();
+                sequence.Update();
+            }
 
             sequenceResult =
                 sequence.Result.Duplicate;
@@ -661,7 +668,7 @@ internal static class WordNativeOmmlNumbering
         finally { Release(math); Release(maths); }
     }
 
-    private static Range? TryResolveNumberContentRange(OMath math, Range equation)
+    internal static Range? TryResolveNumberContentRange(OMath math, Range equation)
     {
         // WPS answers OMath.Functions with placeholder functions ("default" at [1,1)).
         if (OfficeHostEnvironment.IsWps)

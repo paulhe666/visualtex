@@ -22,8 +22,13 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
     private readonly List<MathTypeLocalEditScope> _literalRecovery = new();
     private readonly HashSet<string> _numberAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Field> _references = new();
+    // The bookmark each REF found from the REF side (CaptureTailReferences) points at: a REF whose bookmark is gone when
+    // the plan is applied (its equation was removed or replaced) is left as it is, Word would write an error into it.
+    private readonly Dictionary<Field, string> _tailReferenceNames = new();
     private int _insertedCount;
     private int _earliestChange;
+    // >= 0: the equations from this position on are renumbered in one Range.Fields.Update (see Prepare), not one by one.
+    private int _bulkFrom = -1;
     internal int Count => _hosts.Count;
 
     private sealed class LiteralPrefixUpdate
@@ -279,12 +284,43 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             // Number aliases (bookmarks inside a number) matter only to the REF
             // fields that display them; reading them costs one more WordOpenXML
             // export per equation. A document without any REF needs none.
-            var captureAliases = WordNumberingFieldCollection.MayHaveReferenceFields(document);
+            bool captureAliases;
+            using (WordOperationMetrics.Measure("NativeNumbering.RefreshPrepare.References"))
+                captureAliases = WordNumberingFieldCollection.MayHaveReferenceFields(document);
             // Only equations can be native numbers. When no equation follows the
             // change, skip the SEQ search: in a document numbered by VisualTeX
             // OLE every following PlaceRef SEQ would otherwise be one more hit.
-            if (cursor < end && !RangeHasAnyEquation(document, cursor, end))
+            if (cursor < end)
+                using (WordOperationMetrics.Measure("NativeNumbering.RefreshPrepare.AnyEquation"))
+                    if (!RangeHasAnyEquation(document, cursor, end))
+                        cursor = end;
+            // No literal chapter prefix to rewrite, no tracked change, not WPS: the equations behind the change are
+            // not visited one by one (22 ms each, and 30 ms more for the bookmarks of one that is referenced). Apply
+            // renumbers them all in one Range.Fields.Update, which gives the same numbers in about 150 ms (measured on
+            // 100 equations). The equations that need a check or a write of their own (_hosts) are still handled
+            // singly; the REF fields that point into the equations behind the change are found from the REF fields.
+            if (cursor < end && !OfficeHostEnvironment.IsWps && !refreshLiteralPrefixes
+                && !document.TrackRevisions && !WordNumberingFieldCollection.HasRevisions(document))
+            {
+                plan._bulkFrom = cursor;
+                if (captureAliases)
+                    using (WordOperationMetrics.Measure("NativeNumbering.RefreshPrepare.TailReferences"))
+                        plan.CaptureTailReferences(document, cursor);
                 cursor = end;
+            }
+            // The equations behind the change are visited by index in one window (a Find for "SEQ" costs 40 ms a
+            // numbered equation in a document of equations), unless the document holds very many of them.
+            var byIndex = false;
+            if (!OfficeHostEnvironment.IsWps && cursor < end)
+            {
+                Range? tail = null;
+                try
+                {
+                    tail = document.Range(cursor, end);
+                    byIndex = WordNumberingFieldCollection.EquationCountAtMost(tail, WordNativeNumberingAdoptionPlan.EquationVisitLimit);
+                }
+                finally { Release(tail); }
+            }
             while (cursor < end)
             {
                 Release(maths); maths = null;
@@ -296,6 +332,10 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                 {
                     paragraph = WordNumberingFieldCollection.NextEquationUnit(scope, cursor, end);
                     if (paragraph is null) break;
+                }
+                else if (byIndex)
+                {
+                    paragraph = document.Range(cursor, end);
                 }
                 else
                 {
@@ -393,15 +433,53 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
         }
     }
 
+    // The names of the bookmarks in an equation. Word: read from the range's own bookmarks, hidden ones (_Ref...)
+    // included, which costs a COM call or two; an export of the equation's XML costs about 30 ms. WPS: the XML.
+    private static IReadOnlyList<string> BookmarkNamesIn(Range exact)
+    {
+        if (OfficeHostEnvironment.IsWps) return MathTypeLocalFragment.BookmarkNames(exact.WordOpenXML);
+        Bookmarks? inside = null;
+        var hiddenShown = false;
+        var previous = false;
+        try
+        {
+            inside = exact.Bookmarks;
+            // (hidden bookmarks, the _Ref ones, are listed only while ShowHidden is on; put it back as it was)
+            previous = inside.ShowHidden;
+            inside.ShowHidden = true;
+            hiddenShown = true;
+            var count = inside.Count;
+            var names = new List<string>(count);
+            for (var index = 1; index <= count; index++)
+            {
+                Bookmark? mark = null;
+                try { mark = inside[index]; names.Add(mark.Name); }
+                finally { Release(mark); }
+            }
+            return names;
+        }
+        finally
+        {
+            if (hiddenShown && inside is not null)
+            {
+                try { inside.ShowHidden = previous; }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            Release(inside);
+        }
+    }
+
     private void CaptureNumberAliases(Range exact)
     {
         Range? number = null;
         Bookmarks? bookmarks = null;
         try
         {
+            var names = BookmarkNamesIn(exact);
+            if (names.Count == 0) return;
             number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
             bookmarks = _document.Bookmarks;
-            foreach (var name in MathTypeLocalFragment.BookmarkNames(exact.WordOpenXML))
+            foreach (var name in names)
             {
                 Bookmark? bookmark = null;
                 Range? range = null;
@@ -416,6 +494,46 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             }
         }
         finally { Release(bookmarks); Release(number); }
+    }
+
+    // The REF fields whose bookmark lies in an equation from `from` on: the references to the numbers that the
+    // renumbering changes (a REF before the change can point to an equation behind it).
+    private void CaptureTailReferences(Document document, int from)
+    {
+        var references = WordNumberingFieldCollection.CaptureReferenceFields(document);
+        Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var field in references)
+            {
+                Range? code = null;
+                Bookmark? bookmark = null;
+                Range? target = null;
+                OMaths? maths = null;
+                try
+                {
+                    code = field.Code;
+                    if (!WordEquationReferenceFields.TryReadReferenceBookmark(code.Text, out var name)
+                        || !bookmarks.Exists(name)) continue;
+                    bookmark = bookmarks[name];
+                    target = bookmark.Range;
+                    if (target.Start < from) continue;
+                    maths = target.OMaths;
+                    if (maths.Count == 0) continue;
+                    _references.Add(field);
+                    _tailReferenceNames[field] = name;
+                }
+                finally { Release(maths); Release(target); Release(bookmark); Release(code); }
+            }
+        }
+        finally
+        {
+            // A field kept in _references is owned by the plan; every other one is released here.
+            foreach (var field in references)
+                if (!_references.Contains(field)) Release(field);
+            Release(bookmarks);
+        }
     }
 
     private void CaptureReferences()
@@ -504,15 +622,30 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                             ContainerRange = address,
                         },
                     },
-                    hasRevisions: hasRevisions);
+                    hasRevisions: hasRevisions,
+                    // the bulk pass below updates these fields too (the check of the structure stays)
+                    updateFields: _bulkFrom < 0 || hasRevisions);
                 prefix?.RestoreAliases(_document, host);
             }
             finally { Release(range); }
+        }
+        // The equations behind the change (not visited singly, see Prepare): every number field from the change on in
+        // one Range.Fields.Update, checked on samples; when Word left a number stale, field by field.
+        if (_bulkFrom >= 0)
+        {
+            using (WordOperationMetrics.Measure("NativeNumbering.RefreshApply.Bulk"))
+            {
+                var updated = hasRevisions ? -1 : WordNumberingFieldCollection.BulkUpdateFrom(_document, _bulkFrom, nativeOnly: true);
+                if (updated < 0)
+                    using (WordOperationMetrics.Measure("NativeNumbering.RefreshApply.BulkFallback"))
+                        UpdateTailFieldByField(_bulkFrom);
+            }
         }
         // These are preflight-proven references to actual native number aliases,
         // not only VTEqNum_* names and not every unrelated REF in the document.
         foreach (var reference in _references)
         {
+            if (_tailReferenceNames.TryGetValue(reference, out var bookmarkName) && !BookmarkExists(bookmarkName)) continue;
             // Native number references can themselves return OMath. Reapplying
             // a body Font snapshot (notably Subscript/Superscript) to that math
             // result is invalid in Word. Let the original REF field and its own
@@ -521,6 +654,63 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             WordEquationReferenceFields.FlattenWpsMathResult(reference);
         }
         WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-after-update");
+    }
+
+    private bool BookmarkExists(string name)
+    {
+        Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = _document.Bookmarks;
+            return bookmarks.Exists(name);
+        }
+        finally { Release(bookmarks); }
+    }
+
+    // The field-by-field counterpart of the bulk pass: the STYLEREF and SEQ fields of each display equation from
+    // the position on, equation by equation, the chapter state before the SEQ that reads it.
+    private void UpdateTailFieldByField(int from)
+    {
+        Range? content = null;
+        Range? tail = null;
+        OMaths? maths = null;
+        try
+        {
+            content = _document.Content;
+            tail = _document.Range(Math.Min(from, content.End), content.End);
+            maths = tail.OMaths;
+            for (var index = 1; index <= maths.Count; index++)
+            {
+                OMath? math = null;
+                Range? range = null;
+                Fields? fields = null;
+                try
+                {
+                    math = maths[index];
+                    if (math.Type != WdOMathType.wdOMathDisplay) continue;
+                    range = math.Range;
+                    fields = range.Fields;
+                    UpdateFieldsOfType(fields, WdFieldType.wdFieldStyleRef);
+                    UpdateFieldsOfType(fields, WdFieldType.wdFieldSequence);
+                }
+                finally { Release(fields); Release(range); Release(math); }
+            }
+        }
+        finally { Release(maths); Release(tail); Release(content); }
+    }
+
+    private static void UpdateFieldsOfType(Fields fields, WdFieldType type)
+    {
+        for (var index = 1; index <= fields.Count; index++)
+        {
+            Field? field = null;
+            try
+            {
+                field = fields[index];
+                if (field.Type == type) field.Update();
+            }
+            finally { Release(field); }
+        }
     }
 
     // A WPS OMath is a tracked range, not the equation: one taken before a write at its
@@ -650,6 +840,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
         _literalStaging?.Dispose(); _literalStaging = null;
         foreach (var reference in _references) Release(reference);
         _references.Clear();
+        _tailReferenceNames.Clear();
         _numberAliases.Clear();
     }
 

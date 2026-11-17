@@ -20,7 +20,20 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
     {
         internal OMath Host = null!;
         internal int Start;
-        internal string Xml = string.Empty;
+        private string? _xml;
+        // The equation's export, read when a planned change needs its bookmark names (a document whose numbers are
+        // all canonical plans no change, and exporting every numbered equation cost 30-60 ms each).
+        internal string Xml
+        {
+            get
+            {
+                if (_xml is not null) return _xml;
+                Range? range = null;
+                try { range = Host.Range; return _xml = WordOmmlConverter.ReadLocalEquationXml(range); }
+                finally { Release(range); }
+            }
+            set => _xml = value;
+        }
         internal string Label = string.Empty;
         internal NumberStyle Style = null!;
         internal string? SequenceCode;
@@ -710,6 +723,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
 
     private bool _stopAtFirstEntry;
 
+    // Above this many equations in the document the search by "#" stays in use (see Capture).
+    internal const int EquationVisitLimit = 1500;
+
     private void Capture()
     {
         var defaultSequence = WordNativeOmmlNumbering.ResolveEquationSequenceName(_document);
@@ -718,6 +734,13 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         try
         {
             scope = _document.Content; var cursor = scope.Start; var end = scope.End; var seen = new HashSet<int>();
+            // Without tracked changes (and outside WPS) a numbered host is recognised from the equation's live
+            // structure and its number text, with no export of the equation (an export is 30-60 ms each).
+            var structural = !OfficeHostEnvironment.IsWps && !WordNumberingFieldCollection.HasRevisions(_document);
+            // ... and then the equations are visited by index in one window (a Find for "#" costs 40 ms a numbered
+            // equation in a document of equations), unless the document holds so many equations that visiting the
+            // unnumbered ones would cost more than the finds.
+            var byIndex = structural && WordNumberingFieldCollection.EquationCountAtMost(scope, EquationVisitLimit);
             while (cursor < end)
             {
                 Release(maths); maths = null; Release(paragraph); paragraph = null;
@@ -727,6 +750,10 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                     // WPS's Find does not search inside equations.
                     paragraph = WordNumberingFieldCollection.NextEquationUnit(scope, cursor, end);
                     if (paragraph is null) break;
+                }
+                else if (byIndex)
+                {
+                    paragraph = scope.Duplicate;
                 }
                 else
                 {
@@ -753,12 +780,23 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         host = maths[index]; if (host.Type != WdOMathType.wdOMathDisplay) continue;
                         exact = host.Range;
                         if (exact.Start < paragraph.Start || exact.End > paragraph.End || !seen.Add(exact.Start)) continue;
-                        string xml;
-                        using (WordOperationMetrics.Measure("NativeNumbering.Capture.WordOpenXml"))
-                            xml = WordOmmlConverter.ReadLocalEquationXml(exact);
-                        if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml)) continue;
-                        number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
-                        var label = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml);
+                        string? xml = null;
+                        string label;
+                        if (structural)
+                        {
+                            using (WordOperationMetrics.Measure("NativeNumbering.Capture.Structure"))
+                                number = WordNativeOmmlNumbering.TryResolveNumberContentRange(host, exact);
+                            if (number is null) continue;
+                            label = ReadNumberLabel(number);
+                        }
+                        else
+                        {
+                            using (WordOperationMetrics.Measure("NativeNumbering.Capture.WordOpenXml"))
+                                xml = WordOmmlConverter.ReadLocalEquationXml(exact);
+                            if (!WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(xml)) continue;
+                            number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
+                            label = WordOmmlEquationNumbers.ReadWordNativeEquationNumberText(xml);
+                        }
                         if (!TryParseLabel(label, out var style)) continue;
                         fields = number.Fields; string? sequenceCode = null; var supported = true;
                         for (var child = 1; child <= fields.Count; child++)
@@ -785,7 +823,8 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         }
                         if (!supported || style.AutomaticHeading && sequenceCode is null) continue;
                         if (sequenceCode is null) style.SequenceName = defaultSequence;
-                        _entries.Add(new Entry { Host = host, Start = exact.Start, Xml = xml, Label = label, Style = style, SequenceCode = sequenceCode });
+                        _entries.Add(new Entry { Host = host, Start = exact.Start, Label = label, Style = style, SequenceCode = sequenceCode });
+                        if (xml is not null) _entries[_entries.Count - 1].Xml = xml;
                         host = null;
                         // Find walks forward, so the first entry is the earliest.
                         if (_stopAtFirstEntry) return;
@@ -796,6 +835,20 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
             _entries.Sort((a, b) => a.Start.CompareTo(b.Start));
         }
         finally { Release(maths); Release(paragraph); Release(find); Release(retrieval); Release(search); Release(scope); }
+    }
+
+    // The number's current text (field results, no codes, no hidden text): the label the XML reader returns.
+    private static string ReadNumberLabel(Range number)
+    {
+        TextRetrievalMode? retrieval = null;
+        try
+        {
+            retrieval = number.TextRetrievalMode;
+            retrieval.IncludeFieldCodes = false;
+            retrieval.IncludeHiddenText = false;
+            return number.Text ?? string.Empty;
+        }
+        finally { Release(retrieval); }
     }
 
     private static bool HasAnyCurrentField(Range range)

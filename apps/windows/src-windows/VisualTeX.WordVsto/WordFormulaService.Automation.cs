@@ -196,6 +196,7 @@ internal sealed partial class WordFormulaService
     {
         Document? document = null;
         Range? target = null;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             document = FindAutomationDocument(key);
@@ -248,8 +249,11 @@ internal sealed partial class WordFormulaService
             {
                 throw new OfficeAutomationException("invalid_arguments", $"Unknown location {where}.");
             }
+            var resolved = watch.ElapsedMilliseconds;
             target?.Select();
-            return ReadCreateSelection();
+            var selected = ReadCreateSelection();
+            WordDoubleClickHook.TraceMessage($"[perf] Automation.place: {watch.ElapsedMilliseconds}ms (target {resolved}ms)");
+            return selected;
         }
         finally
         {
@@ -308,11 +312,22 @@ internal sealed partial class WordFormulaService
     /// before the caret (a write leaves the caret after it).
     private AutomationFormula? FindWritten(Document document, OfficeObjectResult? written)
     {
+        // A write leaves the caret just behind the formula: read it there first. The whole-document index that
+        // looks a formula up by its id costs a pass over every formula (0.5 s at 100), so it is the fallback for a
+        // formula the caret is not behind.
+        var behindCaret = TryResolveBehindCaret(document);
         if (written?.FormulaId is { Length: > 0 } id)
         {
+            if (behindCaret is not null && string.Equals(behindCaret.Host.FormulaId, id, StringComparison.OrdinalIgnoreCase))
+                return behindCaret;
             try { return ResolveAutomationFormula(document, "vtx:" + id); }
             catch (OfficeAutomationException ignored) { IgnoredErrors.Ignore(ignored); }
         }
+        return behindCaret;
+    }
+
+    private AutomationFormula? TryResolveBehindCaret(Document document)
+    {
         Selection? selection = null;
         Range? probe = null;
         try
@@ -332,11 +347,15 @@ internal sealed partial class WordFormulaService
     internal object? AutomationDescribeWritten(OfficeObjectResult? written)
     {
         Document? document = null;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             document = _application.ActiveDocument;
             var formula = FindWritten(document, written);
-            return formula is null ? null : DescribeAutomationFormula(document, formula, 40, full: true);
+            var found = watch.ElapsedMilliseconds;
+            var described = formula is null ? null : DescribeAutomationFormula(document, formula, 40, full: true);
+            WordDoubleClickHook.TraceMessage($"[perf] Automation.describeWritten: {watch.ElapsedMilliseconds}ms (find {found}ms)");
+            return described;
         }
         catch { return null; }
         finally { Release(document); }
@@ -625,7 +644,8 @@ internal sealed partial class WordFormulaService
             lines = full && semantic is not null ? semantic.Lines : null,
             display = semantic?.Display ?? formula.Host.DisplayMode,
             numbered = semantic?.Numbered,
-            number = semantic?.Number ?? (semantic?.Numbered == true ? AutomationNumber(formula, numbers ?? AutomationNumberTargets(document)) : null),
+            number = semantic?.Number ?? (semantic?.Numbered == true
+                ? AutomationNumber(formula, numbers ?? AutomationNumberTargetsAround(document, formula)) : null),
             font_size_pt = semantic?.FontSizePt,
             location = AutomationLocation(document, formula.Host.Range.StoryType, formula.Host.Range.Start),
             context_before = before,
@@ -638,9 +658,30 @@ internal sealed partial class WordFormulaService
     private Lazy<List<EquationReferenceTarget>> AutomationNumberTargets(Document document) =>
         new(() =>
         {
-            try { return GetCanonicalEquationReferenceTargets(document).Concat(MathTypeEquationReferences.GetTargets(document)).ToList(); }
+            // (only the numbers are read here: a target's LaTeX preview opens the formula's OLE object, and Word's field
+            // updates behind a document whose objects were all opened cost 5 to 8 times more)
+            try { return GetCanonicalEquationReferenceTargets(document, deferPreviews: true).Concat(MathTypeEquationReferences.GetTargets(document)).ToList(); }
             catch { return new List<EquationReferenceTarget>(); }
         });
+
+    /// The number of one formula: its targets are read from the paragraph that holds it, previews deferred (the targets
+    /// of the whole document cost about 5 ms a formula, 0.6 s at 100). A MathType formula keeps the whole listing.
+    private Lazy<List<EquationReferenceTarget>> AutomationNumberTargetsAround(Document document, AutomationFormula formula)
+    {
+        if (formula.Kind == AutomationMathTypeKind) return AutomationNumberTargets(document);
+        return new(() =>
+        {
+            Range? scope = null;
+            try
+            {
+                scope = WordFormulaHostSemanticReader.CreateRange(document, formula.Host.Range);
+                scope.Expand(WdUnits.wdParagraph);
+                return WordFormulaNumberingKernel.GetCanonicalReferenceTargets(document, scope, deferPreviews: true).ToList();
+            }
+            catch { return new List<EquationReferenceTarget>(); }
+            finally { Release(scope); }
+        });
+    }
 
     private static string? AutomationNumber(AutomationFormula formula, Lazy<List<EquationReferenceTarget>> numbers)
     {
@@ -779,11 +820,52 @@ internal sealed partial class WordFormulaService
         return formula;
     }
 
+    private static WordFormulaHostDescriptor? TryResolveVisualTeXByBookmark(Document document, string formulaId)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? range = null;
+        try
+        {
+            if (!Guid.TryParse(formulaId, out _)) return null;
+            var name = WordFormulaMetadataReader.IdentityBookmarkName(formulaId);
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(name)) return null;
+            bookmark = bookmarks[name];
+            range = bookmark.Range;
+            var host = WordFormulaHostResolver.ResolveLocal(document, range, WordFormulaHostKind.VisualTeX);
+            return host is not null && string.Equals(host.FormulaId, formulaId, StringComparison.OrdinalIgnoreCase) ? host : null;
+        }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); return null; }
+        finally { Release(range); Release(bookmark); Release(bookmarks); }
+    }
+
+    private AutomationFormula? TryResolveOmmlAt(Document document, int start, int end, string hash)
+    {
+        Range? range = null;
+        try
+        {
+            range = document.Range(start, end);
+            var host = WordFormulaHostLookup.ResolveLocal(document, range, WordFormulaHostKind.Omml);
+            if (host is null || host.Range.StoryType != WdStoryType.wdMainTextStory
+                || host.Range.Start != start || host.Range.End != end) return null;
+            var formula = new AutomationFormula { Host = host, Kind = AutomationOmmlKind };
+            return OfficeAutomationText.Hash8(ReadAutomationSemantic(document, formula, authoritative: false).Latex) == hash
+                ? formula : null;
+        }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); return null; }
+        finally { Release(range); }
+    }
+
     private AutomationFormula ResolveAutomationFormula(Document document, string formulaId)
     {
         if (formulaId.StartsWith("vtx:", StringComparison.Ordinal))
         {
             var id = formulaId.Substring(4);
+            // The formula's identity bookmark leads to it at once; the whole-document index (a pass over every
+            // formula) is for a formula without one.
+            var byBookmark = TryResolveVisualTeXByBookmark(document, id);
+            if (byBookmark is not null) return new AutomationFormula { Host = byBookmark, Kind = AutomationVisualTeXKind, Id = formulaId };
             var matches = WordFormulaHostResolver.CaptureDocumentIndex(document).VisualTeX
                 .Where(host => string.Equals(host.FormulaId, id, StringComparison.OrdinalIgnoreCase))
                 .ToList();
@@ -806,6 +888,12 @@ internal sealed partial class WordFormulaService
             _ => throw new OfficeAutomationException("formula_not_found", "This is not a Word formula id from list_formulas."),
         };
         var hash = parts[5];
+        // The id names the equation's range: read the equation there first (one resolve), before the pass over
+        // every formula of the document (0.3 s at 100 equations). It must still be the same one: same range, same
+        // content hash; otherwise the full search below decides, as before.
+        if (kind == AutomationOmmlKind && story == (int)WdStoryType.wdMainTextStory
+            && TryResolveOmmlAt(document, start, end, hash) is { } direct)
+            return direct;
         var candidates = CaptureAutomationFormulas(document, new HashSet<string> { kind })
             .Where(formula => (int)formula.Host.Range.StoryType == story)
             .ToList();

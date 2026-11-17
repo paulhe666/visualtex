@@ -323,11 +323,14 @@ internal static class WordFormulaHostMutationKernel
                 var numberFormatId =
                     WordEquationNumberFormatAuthority.Resolve(
                         document);
-                numbers =
-                    WordNativeNumberingAdoptionPlan.Prepare(
-                        document,
-                        location.Position,
-                        numberFormatId);
+                // Read-only preflight: with no tracked change in the document no field can be revision-deleted, so
+                // the per-field Revisions queries (26 ms an equation) are skipped.
+                using (WordNumberingFieldCollection.AssumeNoRevisionsWhileReading(document))
+                    numbers =
+                        WordNativeNumberingAdoptionPlan.Prepare(
+                            document,
+                            location.Position,
+                            numberFormatId);
                 omml = numbers.PrepareInsertionOmml(omml);
             }
             // Everything above is read-only preflight, including the strict
