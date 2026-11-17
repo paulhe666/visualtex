@@ -1308,11 +1308,13 @@ Public Function VTInsertEquationNumber( _
         ' linear instead of making document construction quadratic.
         ' In a chapter or section numbering the next numbered image may have to
         ' give up its restart (\r 1) to the new one, which now starts the scope:
-        ' the reconcile repairs that number and then updates the suffix as before
+        ' that number is repaired first and the suffix is then updated as before
         ' (without it the former first number of the scope kept its restart and
         ' the numbers read 1, 1, 2, 3 ...).
-        VTReconcileNumberingAfterEdit _
+        VTRepairNextImageNumberScope _
             formulaShape.Range.Document, formulaShape.Range.Start, True
+        VTUpdateImageNumberFieldsFrom _
+            formulaShape.Range.Document, formulaShape.Range.Start
     End If
     If Not IsMissing(performancePhases) Then performancePhases = Array(0#, 0#, 0#, 0#, 0#, 0#)
 End Function
@@ -4494,6 +4496,45 @@ Private Function VTCanBatchNativeNumberFields(ByVal scan As Range) As Boolean
     VTCanBatchNativeNumberFields = True
 End Function
 
+' In a chapter or section numbering the next numbered image after changedFrom gives up or takes over the restart (\r 1) of its scope
+' when a numbered image was created or removed before it. onlyCanonical: leave it alone when its number is not a place reference in
+' a paragraph of its own (a legacy table or helper number), because rewriting that number needs the legacy migration.
+Public Sub VTRepairNextImageNumberScope( _
+    ByVal doc As Document, ByVal changedFrom As Long, _
+    Optional ByVal onlyCanonical As Boolean = False)
+
+    Dim shape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim placeRef As Field
+    Dim sequence As Field
+    Dim restartAtOne As Boolean
+    Dim result As Range
+
+    If VTEquationNumberingRestartLevel(doc) < 1 Then Exit Sub
+    For Each shape In doc.InlineShapes
+        If shape.Range.Start > changedFrom Then
+            If VTTryParseFormulaReference(shape.Title, formulaId, displayMode, numbered) Then
+                If numbered And displayMode = "block" Then
+                    Set placeRef = VTImagePlaceRef(shape.Range)
+                    If onlyCanonical Then
+                        If placeRef Is Nothing Then Exit For
+                        If VTRangeIsWithinTable(shape.Range.Paragraphs(1).Range) Then Exit For
+                    End If
+                    restartAtOne = VTEquationStartsNumberScope(shape.Range, True)
+                    Set sequence = VTImageSequenceField(placeRef, True)
+                    If Not VTEquationSequenceFieldIsCompatible(sequence, _
+                       VT_WORD_IMAGE_SEQUENCE_NAME, True, False, restartAtOne) Then
+                        Set result = VTWriteSingleParagraphImageNumber(shape, formulaId)
+                    End If
+                    Exit For
+                End If
+            End If
+        End If
+    Next shape
+End Sub
+
 Public Sub VTReconcileNumberingAfterEdit( _
     ByVal doc As Document, ByVal changedFrom As Long, _
     ByVal imageFormula As Boolean)
@@ -4516,21 +4557,7 @@ Public Sub VTReconcileNumberingAfterEdit( _
     ' the affected sequence suffix before acknowledging this edit to the UI.
     If VTEquationNumberingRestartLevel(doc) > 0 Then
         If imageFormula Then
-            For Each shape In doc.InlineShapes
-                If shape.Range.Start > changedFrom Then
-                    If VTTryParseFormulaReference(shape.Title, formulaId, displayMode, numbered) Then
-                        If numbered And displayMode = "block" Then
-                            restartAtOne = VTEquationStartsNumberScope(shape.Range, True)
-                            Set sequence = VTImageSequenceField(VTImagePlaceRef(shape.Range), True)
-                            If Not VTEquationSequenceFieldIsCompatible(sequence, _
-                               VT_WORD_IMAGE_SEQUENCE_NAME, True, False, restartAtOne) Then
-                                Set result = VTWriteSingleParagraphImageNumber(shape, formulaId)
-                            End If
-                            Exit For
-                        End If
-                    End If
-                End If
-            Next shape
+            VTRepairNextImageNumberScope doc, changedFrom
         Else
             For Each exact In VTNumberFieldNativeMathRoots( _
                 doc, changedFrom, doc.Content.End)
