@@ -552,10 +552,6 @@ internal static class WordEquationHeadings
             for (var level = 1; level <= targetLevel; level++)
             {
                 var end = searchEnd;
-                // A formatted Find runs through everything between the start of its range and the end: the whole
-                // document before the formula took 0.6 to 1.6 s at 400 formulas in 40 chapters although the nearest
-                // heading is a chapter away. A window behind the position is searched first, then a wider one.
-                var window = 6000;
                 while (end > content.Start)
                 {
                     Range? search = null;
@@ -568,9 +564,8 @@ internal static class WordEquationHeadings
                     Frames? frames = null;
                     try
                     {
-                        var windowStart = Math.Max(content.Start, end - window);
                         search = content.Duplicate;
-                        search.SetRange(windowStart, end);
+                        search.SetRange(content.Start, end);
                         find = search.Find;
                         find.ClearFormatting();
                         find.Text = "^p";
@@ -584,12 +579,7 @@ internal static class WordEquationHeadings
                         find.Format = true;
                         format = find.ParagraphFormat;
                         format.OutlineLevel = (WdOutlineLevel)level;
-                        if (!find.Execute())
-                        {
-                            if (windowStart <= content.Start) break;
-                            window = window > int.MaxValue / 8 ? int.MaxValue : window * 8;
-                            continue;
-                        }
+                        if (!find.Execute()) break;
                         paragraphs = search.Paragraphs;
                         if (paragraphs.Count == 0) return false;
                         paragraph = paragraphs[1];
