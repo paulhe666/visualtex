@@ -481,6 +481,7 @@ Public Function VTTryFastConvertOmmlBatch( _
     Dim handle As Integer
     Dim answer As String
     Dim heartbeat As String
+    Dim requestBytes() As Byte
 
     trace = "start"
     If Not VTIsCanonicalUuid(sessionId) Or Len(manifest) = 0 Then Exit Function
@@ -492,7 +493,7 @@ Public Function VTTryFastConvertOmmlBatch( _
     trace = trace & ";ready"
     inboxRoot = VTFastOpenInboxRoot("word")
     ' only a resident that answers number requests (its heartbeat says so); an older one would leave this waiting
-    heartbeat = VTReadText(inboxRoot & "/resident-ready", 4096)
+    heartbeat = VTReadInboxText(inboxRoot & "/resident-ready", 4096)
     trace = trace & ";heartbeat=" & CStr(Len(heartbeat))
     If InStr(1, heartbeat, "numbers=1", vbBinaryCompare) = 0 Then
         trace = trace & ";no-numbers"
@@ -501,16 +502,14 @@ Public Function VTTryFastConvertOmmlBatch( _
     requestPath = inboxRoot & "/" & sessionId & ".number"
     temporaryPath = inboxRoot & "/." & sessionId & ".number.tmp"
     answerPath = inboxRoot & "/" & sessionId & ".number-done"
-    On Error Resume Next
-    Kill answerPath
-    Kill requestPath
-    Kill temporaryPath
-    Err.Clear
-    On Error GoTo NotAvailable
+    VTDiscardInboxFile answerPath
+    VTDiscardInboxFile requestPath
+    VTDiscardInboxFile temporaryPath
 
+    requestBytes = VTUtf8Encode(manifest)
     handle = FreeFile
-    Open temporaryPath For Output Access Write As #handle
-    Print #handle, manifest;
+    Open temporaryPath For Binary Access Write As #handle
+    Put #handle, , requestBytes
     Close #handle
     handle = 0
     trace = trace & ";written"
@@ -525,8 +524,8 @@ Public Function VTTryFastConvertOmmlBatch( _
         End If
     Loop
     trace = trace & ";answered-after-ms=" & CStr(CLng(1000# * VTFastLaunchElapsedSeconds(startedAt, Timer)))
-    answer = VTReadText(answerPath, 65536)
-    Kill answerPath
+    answer = VTReadInboxText(answerPath, 65536)
+    VTDiscardInboxFile answerPath
     If InStr(1, answer, "operation=nativeNumber", vbBinaryCompare) > 0 Then
         VTTryFastConvertOmmlBatch = answer
         trace = trace & ";ok"
@@ -538,11 +537,57 @@ Public Function VTTryFastConvertOmmlBatch( _
 NotAvailable:
     If Err.Number <> 0 Then trace = trace & ";error=" & CStr(Err.Number) & " " & Err.Description
     ' A request nobody answered must not be answered later: the helper script's package would race it.
+    If handle <> 0 Then VTCloseFile handle
+    VTDiscardInboxFile requestPath
+    VTDiscardInboxFile temporaryPath
+    VTDiscardInboxFile answerPath
+    Err.Clear
+#End If
+End Function
+
+' Removes a file of the sandbox inbox if there is one. The empty path of a step not reached yet is not killed: Kill of "" fails
+' (error 53 after more than a second in Word for Mac) and, inside an error handler, the failure goes on to the caller as an
+' error of its own, which is how a failed resident request once took the whole insertion down.
+Private Sub VTDiscardInboxFile(ByVal filePath As String)
+#If Mac Then
+    If Len(filePath) = 0 Then Exit Sub
+    On Error Resume Next
+    Kill filePath
+    Err.Clear
+#End If
+End Sub
+
+Private Sub VTCloseFile(ByVal handle As Integer)
+    On Error Resume Next
+    Close #handle
+    Err.Clear
+End Sub
+
+' A small file of the sandbox inbox, read as UTF-8 ("" when it cannot be read). VTReadText reads only inside the Session
+' folder's tree and would reject these paths.
+Private Function VTReadInboxText( _
+    ByVal sourcePath As String, ByVal maximumBytes As Long) As String
+
+#If Mac Then
+    Dim handle As Integer
+    Dim byteCount As Long
+    Dim bytes() As Byte
+
+    On Error GoTo ReadFailed
+    handle = FreeFile
+    Open sourcePath For Binary Access Read As #handle
+    byteCount = LOF(handle)
+    If byteCount > 0 And byteCount <= maximumBytes Then
+        ReDim bytes(0 To byteCount - 1)
+        Get #handle, , bytes
+        VTReadInboxText = VTUtf8Decode(bytes)
+    End If
+    Close #handle
+    Exit Function
+
+ReadFailed:
     On Error Resume Next
     If handle <> 0 Then Close #handle
-    Kill requestPath
-    Kill temporaryPath
-    Kill answerPath
     Err.Clear
 #End If
 End Function
