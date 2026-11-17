@@ -677,7 +677,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
         try
         {
             content = _document.Content;
-            tail = _document.Range(Math.Min(from, content.End), content.End);
+            tail = _document.Range(Math.Max(content.Start, Math.Min(from, content.End - 1)), content.End);
             maths = tail.OMaths;
             for (var index = 1; index <= maths.Count; index++)
             {

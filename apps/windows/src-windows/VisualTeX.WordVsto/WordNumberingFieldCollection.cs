@@ -202,7 +202,8 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         {
             scope = document.Content;
             var end = scope.End;
-            var start = Math.Max(scope.Start, Math.Min(fromPosition, end));
+            // (the story's end is not a position a Range can start at: the last one is the final paragraph mark's)
+            var start = Math.Max(scope.Start, Math.Min(fromPosition, Math.Max(scope.Start, end - 1)));
             using (WordOperationMetrics.Measure("Numbering.BulkUpdateFrom.Start"))
                 start = ParagraphStartAt(document, start);
             // A number by chapter restarts at every heading of its level, so a change reaches the next such heading and
