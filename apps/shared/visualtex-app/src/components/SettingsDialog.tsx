@@ -977,8 +977,8 @@ export function SettingsDialog({
                   <span>
                     <strong>
                       {isEn
-                        ? "exam-zh congruence and similarity (\\cong ≌, \\sim ∽)"
-                        : "exam-zh 全等、相似（\\cong ≌、\\sim ∽）"}
+                        ? "exam-zh congruence and similarity (\\cong, \\sim)"
+                        : "exam-zh 全等、相似（\\cong、\\sim）"}
                     </strong>
                   </span>
                   <input
