@@ -5242,6 +5242,7 @@ Private Function VTV2UpdateNumberingFields( _
     Dim fieldType As Long
     Dim segmentStart As Long
     Dim segmentEnd As Long
+    Dim fieldEnd As Long
     Dim inSegment As Boolean
     Dim calls As Long
 
@@ -5252,9 +5253,11 @@ Private Function VTV2UpdateNumberingFields( _
             If fieldType = wdFieldRef Then sawReference = True
             If Not inSegment Then
                 segmentStart = VTEquationFieldStart(candidate)
+                segmentEnd = segmentStart
                 inSegment = True
             End If
-            segmentEnd = VTEquationFieldEnd(candidate)
+            fieldEnd = VTEquationFieldEnd(candidate)
+            If fieldEnd > segmentEnd Then segmentEnd = fieldEnd
         ElseIf Not VTV2FieldTypeUpdatesHarmlessly(fieldType) Then
             If inSegment Then
                 doc.Range(Start:=segmentStart, End:=segmentEnd).Fields.Update
