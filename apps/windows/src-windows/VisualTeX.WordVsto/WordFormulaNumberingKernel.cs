@@ -2057,18 +2057,30 @@ internal static partial class WordFormulaNumberingKernel
         }
     }
 
+    /// The LaTeX shown beside a reference target (display only). A VisualTeX formula's is the copy cached in
+    /// its shape, which the index read: reading the embedded object makes Word start the formula's OLE server,
+    /// and Word refuses that while the reference dialog is open ("VisualTeX is not installed or not
+    /// responding", one box a formula).
     private static string ReadLatexPreview(
         Document document,
         WordFormulaHostDescriptor host)
     {
         try
         {
-            var payload =
-                WordFormulaHostSemanticReader.Read(
-                    document,
-                    host);
-            var latex = payload.Metadata?.Latex
-                ?? payload.Latex;
+            string? latex;
+            if (host.Kind == WordFormulaHostKind.VisualTeX)
+            {
+                latex = host.Metadata?.Latex;
+            }
+            else
+            {
+                var payload =
+                    WordFormulaHostSemanticReader.Read(
+                        document,
+                        host);
+                latex = payload.Metadata?.Latex
+                    ?? payload.Latex;
+            }
             latex = (latex ?? string.Empty)
                 .Replace("\r", " ")
                 .Replace("\n", " ")
