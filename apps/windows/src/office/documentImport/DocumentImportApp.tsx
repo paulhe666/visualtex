@@ -27,6 +27,7 @@ import {
   updateOfficeSession,
   type OfficeFormulaSession,
 } from "../api/sessionClient";
+import { storeOfficeFormulaFonts } from "../shared/officeFormulaFonts";
 import {
   readDocumentImportFile,
   type ImportedDocumentFile,
@@ -273,6 +274,8 @@ export function DocumentImportApp() {
       try {
         const preferences = await getOfficePreferences();
         resolvedLanguage = preferences.editorPreferences?.settings?.language === "en" ? "en" : "cn";
+        // the previews are drawn in the main app's formula fonts (this page's storage is the companion origin's)
+        storeOfficeFormulaFonts(preferences);
         if (!disposed) setLanguage(resolvedLanguage);
       } catch {
         // Keep the default language if preferences are temporarily unavailable.

@@ -55,6 +55,7 @@ import type {
 } from "../../../../shared/visualtex-app/src/editor/MathEditor";
 import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
 import {
+  normalizeFormulaFaces,
   normalizeFormulaLetterFont,
   type FormulaChineseFont,
   type FormulaLetterFont,
@@ -335,6 +336,13 @@ function applyOfficeEditorPreferences(
   if (settings.formulaSpacing !== undefined) {
     // the main app's spacing configurations, as they are there
     editor.setFormulaSpacing(normalizeFormulaSpacingPreferences(settings.formulaSpacing));
+  }
+  if (settings.formulaFaces !== undefined) {
+    // the main app's fonts for letters, Greek letters and digits (Settings), over the math font. This page keeps its
+    // own storage (the companion's origin), where the layout engine reads them: without them the editor and every
+    // Office image drew those characters in the math font, a KaTeX x where the main app shows Times New Roman.
+    const faces = normalizeFormulaFaces(settings.formulaFaces);
+    if (JSON.stringify(faces) !== JSON.stringify(editor.formulaFaces)) editor.setFormulaFaces(faces);
   }
   if (settings.buttonShortcuts !== undefined) {
     // the chords the user gave buttons in the main app (Settings > Keyboard shortcuts)
@@ -1113,6 +1121,8 @@ export function OfficeDialogApp() {
       !IS_VSTO_CONVERT_RUNTIME ||
       !session ||
       !sessionId ||
+      // the main app's preferences first: they carry the fonts the image is drawn in
+      !officePreferencesReady ||
       conversionStartedRef.current
     ) {
       return;
@@ -1196,11 +1206,13 @@ export function OfficeDialogApp() {
         }
       }
     })();
-  }, [session?.id, sessionId, isEn, save, isActive, generateSessionExportResult]);
+  }, [session?.id, sessionId, isEn, save, isActive, generateSessionExportResult, officePreferencesReady]);
 
 
   useEffect(() => {
-    if (!IS_VSTO_CONVERT_RUNTIME) return;
+    // Batches wait for the main app's preferences, as a session does: drawn before them, the first formulas after the
+    // window opened took this page's stored fonts (the main app's letter, Greek and digit fonts missing).
+    if (!IS_VSTO_CONVERT_RUNTIME || !officePreferencesReady) return;
     let disposed = false;
     let requestInFlight = false;
     // A batch this window cannot finish is reported back at once with its
@@ -1270,10 +1282,11 @@ export function OfficeDialogApp() {
       window.clearInterval(timer);
       window.removeEventListener("visualtex-office-render-batch", wake);
     };
-  }, [generateSessionExportResult]);
+  }, [generateSessionExportResult, officePreferencesReady]);
 
   useEffect(() => {
-    if (!IS_VSTO_CONVERT_RUNTIME) return;
+    // after the main app's preferences, as the render batches above
+    if (!IS_VSTO_CONVERT_RUNTIME || !officePreferencesReady) return;
 
     let disposed = false;
     let requestInFlight = false;
@@ -1387,7 +1400,7 @@ export function OfficeDialogApp() {
         handleBatchConversion,
       );
     };
-  }, [generateSessionExportResult]);
+  }, [generateSessionExportResult, officePreferencesReady]);
 
   useEffect(() => {
     if (IS_VSTO_CONVERT_RUNTIME) return;
