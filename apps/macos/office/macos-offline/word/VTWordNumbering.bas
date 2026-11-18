@@ -1198,6 +1198,8 @@ Public Function VTUpdateEquationNumbersCore( _
     Application.ScreenUpdating = False
     VTUpgradeWordNumberFormats documentObject
     VTUpdateCurrentWordNumberFields documentObject
+    ' Each numbered picture formula's tab stops from the column it is in now.
+    VTV2DisplayTabRepairs documentObject, True
     VTUpdateEquationNumbersCore = VTCurrentNumberTargets(documentObject).Count
     VTWordPerformanceMark "numbering-complete"
 
@@ -3539,12 +3541,17 @@ Public Function VTFindEquationSequenceField( _
     If matchCount = 1 Then Set VTFindEquationSequenceField = match
 End Function
 
+' The width a display formula's tab stops count from (Windows
+' WordDisplayColumnGeometry): Word measures a tab position from the left edge
+' of the column the line is in, so a page-wide width puts the formula on the
+' column edge and the number in the next column. Batch numbering of a document
+' whose one section has one column or equal columns passes that section's
+' width (it numbers no formula in a table); otherwise the content width of the
+' table cell the paragraph is in, else the width of its text column.
 Public Function VTEquationLayoutWidth( _
     ByVal paragraphRange As Range) As Single
 
-    Dim sectionObject As Section
-    Dim textWidth As Single
-    Dim columnCount As Long
+    Dim cellWidth As Single
 
     If paragraphRange Is Nothing Then
         Err.Raise vbObjectError + 7425, "VisualTeX", _
@@ -3554,28 +3561,326 @@ Public Function VTEquationLayoutWidth( _
         VTEquationLayoutWidth = VT_WORD_DISPLAY_NUMBERING_LAYOUT_WIDTH
         Exit Function
     End If
-    On Error Resume Next
-    Set sectionObject = paragraphRange.Sections(1)
-    columnCount = sectionObject.PageSetup.TextColumns.Count
-    textWidth = sectionObject.PageSetup.TextColumns.Width
-    ' After replacing OMath, Mac Word can temporarily return wdUndefined
-    ' for the collection width even in a single-column section. Never use
-    ' that sentinel as a layout dimension. Resolve the one actual column
-    ' first; page margins are a valid fallback only for a single column.
-    If (textWidth <= 0! Or textWidth = wdUndefined) And columnCount = 1 Then
-        textWidth = sectionObject.PageSetup.TextColumns(1).Width
+    If VTEquationCellContentWidth(paragraphRange, cellWidth) Then
+        VTEquationLayoutWidth = cellWidth
+        Exit Function
     End If
-    If (textWidth <= 0! Or textWidth = wdUndefined) And columnCount = 1 Then
-        textWidth = sectionObject.PageSetup.PageWidth - _
-            sectionObject.PageSetup.LeftMargin - _
-            sectionObject.PageSetup.RightMargin
+    VTEquationLayoutWidth = VTEquationColumnWidth(paragraphRange)
+End Function
+
+' The content width of the table cell a range is in: the cell's width less its
+' left and right padding (Windows WordFormulaHost.TryGetCellContentWidth).
+Public Function VTEquationCellContentWidth( _
+    ByVal paragraphRange As Range, ByRef contentWidth As Single) As Boolean
+
+    Dim inTable As Boolean
+    Dim owningCell As Cell
+    Dim total As Single
+    Dim leftPadding As Single
+    Dim rightPadding As Single
+
+    contentWidth = 0!
+    If paragraphRange Is Nothing Then Exit Function
+    On Error Resume Next
+    inTable = paragraphRange.Information(wdWithInTable)
+    If Err.Number <> 0 Then inTable = False
+    Err.Clear
+    If inTable Then
+        Set owningCell = paragraphRange.Cells(1)
+        If Not owningCell Is Nothing Then
+            total = owningCell.Width
+            leftPadding = owningCell.LeftPadding
+            rightPadding = owningCell.RightPadding
+        End If
+        If Err.Number <> 0 Then total = 0!
+        Err.Clear
     End If
     On Error GoTo 0
-    If textWidth <= 2! Or textWidth = wdUndefined Then
+    If total <= 1! Or total >= 5000! Then Exit Function
+    If leftPadding < 0! Or leftPadding >= total Then leftPadding = 0!
+    If rightPadding < 0! Or rightPadding >= total Then rightPadding = 0!
+    contentWidth = total - leftPadding - rightPadding
+    If contentWidth <= 1! Then contentWidth = total
+    VTEquationCellContentWidth = True
+End Function
+
+' The columns of a section Word describes: their widths and the space after
+' each (none after the last). Returns how many there are.
+Private Function VTEquationReadColumns( _
+    ByVal setup As PageSetup, ByRef widths() As Single, _
+    ByRef spaces() As Single) As Long
+
+    Dim columnCount As Long
+    Dim index As Long
+    Dim usable As Long
+    Dim columnWidth As Single
+    Dim spaceAfter As Single
+
+    On Error Resume Next
+    columnCount = setup.TextColumns.Count
+    If Err.Number <> 0 Then columnCount = 0
+    Err.Clear
+    If columnCount < 1 Then
+        On Error GoTo 0
+        Exit Function
+    End If
+    ReDim widths(1 To columnCount)
+    ReDim spaces(1 To columnCount)
+    For index = 1 To columnCount
+        columnWidth = 0!
+        spaceAfter = 0!
+        columnWidth = setup.TextColumns(index).Width
+        ' Word gives no space after the last column (some builds raise).
+        If index < columnCount Then spaceAfter = setup.TextColumns(index).SpaceAfter
+        If Err.Number <> 0 Then Err.Clear
+        If columnWidth > 1! And columnWidth < 5000! Then
+            usable = usable + 1
+            widths(usable) = columnWidth
+            If spaceAfter < 0! Or spaceAfter >= 5000! Then spaceAfter = 0!
+            spaces(usable) = spaceAfter
+        End If
+    Next index
+    On Error GoTo 0
+    VTEquationReadColumns = usable
+End Function
+
+' The text width of a one-column section: its column, else the page width
+' less the margins (after replacing OMath, Mac Word can give wdUndefined for
+' the column even in a one-column section).
+Private Function VTEquationPageTextWidth(ByVal setup As PageSetup) As Single
+    Dim columnWidth As Single
+
+    On Error Resume Next
+    columnWidth = setup.TextColumns(1).Width
+    If Err.Number <> 0 Or columnWidth <= 2! Or columnWidth >= 5000! Then
+        Err.Clear
+        columnWidth = setup.PageWidth - setup.LeftMargin - setup.RightMargin
+    End If
+    On Error GoTo 0
+    If columnWidth <= 2! Or columnWidth >= 5000! Then
         Err.Raise vbObjectError + 7425, "VisualTeX", _
             "Word returned an invalid text width for equation numbering."
     End If
-    VTEquationLayoutWidth = textWidth
+    VTEquationPageTextWidth = columnWidth
+End Function
+
+' The width every display formula of a section has: the text width with one
+' column, the column width with equal columns. False when the columns differ:
+' then each paragraph asks for the column it is in (VTEquationColumnWidth).
+Public Function VTEquationUniformColumnWidth( _
+    ByVal setup As PageSetup, ByRef columnWidth As Single) As Boolean
+
+    Dim widths() As Single
+    Dim spaces() As Single
+    Dim usable As Long
+    Dim index As Long
+
+    usable = VTEquationReadColumns(setup, widths, spaces)
+    If usable <= 1 Then
+        columnWidth = VTEquationPageTextWidth(setup)
+        VTEquationUniformColumnWidth = True
+        Exit Function
+    End If
+    For index = 2 To usable
+        If Abs(widths(index) - widths(1)) > 0.01! Then Exit Function
+    Next index
+    columnWidth = widths(1)
+    VTEquationUniformColumnWidth = True
+End Function
+
+' The width of the text column a paragraph is in (Windows
+' WordDisplayColumnGeometry): the text width with one column, the column width
+' with equal columns, and with unequal columns the column under the
+' paragraph's horizontal position on the page, walking each column's width and
+' the space after it - the narrowest column when Word gives no position, so
+' the formula cannot stand outside any column.
+Public Function VTEquationColumnWidth(ByVal paragraphRange As Range) As Single
+    Dim setup As PageSetup
+    Dim widths() As Single
+    Dim spaces() As Single
+    Dim usable As Long
+    Dim index As Long
+    Dim columnWidth As Single
+    Dim narrowest As Single
+    Dim pageX As Single
+    Dim relativeX As Single
+    Dim cursor As Single
+    Dim nextEdge As Single
+
+    On Error Resume Next
+    Set setup = paragraphRange.Sections(1).PageSetup
+    Err.Clear
+    On Error GoTo 0
+    If setup Is Nothing Then Set setup = paragraphRange.Document.PageSetup
+    If VTEquationUniformColumnWidth(setup, columnWidth) Then
+        VTEquationColumnWidth = columnWidth
+        Exit Function
+    End If
+    usable = VTEquationReadColumns(setup, widths, spaces)
+    narrowest = widths(1)
+    For index = 2 To usable
+        If widths(index) < narrowest Then narrowest = widths(index)
+    Next index
+    pageX = -1!
+    On Error Resume Next
+    pageX = paragraphRange.Information(wdHorizontalPositionRelativeToPage)
+    If Err.Number <> 0 Then pageX = -1!
+    Err.Clear
+    On Error GoTo 0
+    If pageX >= 0! And pageX < 5000! Then
+        relativeX = pageX - setup.LeftMargin
+        cursor = 0!
+        For index = 1 To usable
+            nextEdge = cursor + widths(index) + spaces(index)
+            If relativeX < nextEdge Or index = usable Then
+                VTEquationColumnWidth = widths(index)
+                Exit Function
+            End If
+            cursor = nextEdge
+        Next index
+    End If
+    VTEquationColumnWidth = narrowest
+End Function
+
+' A numbered display formula paragraph's centre and right tab stops for a
+' layout width (Windows WordDisplayColumnGeometry): the first line's left edge
+' and the right edge come from the paragraph's indents; the centre stop is
+' halfway between them, the right stop 1 pt inside the right edge (the Mac
+' add-ins' numbered layout).
+Public Sub VTEquationDisplayTabPositions( _
+    ByVal paragraphRange As Range, ByVal layoutWidth As Single, _
+    ByRef centerPosition As Single, ByRef rightPosition As Single)
+
+    Dim firstLineLeft As Single
+    Dim rightIndent As Single
+    Dim rightEdge As Single
+
+    On Error Resume Next
+    firstLineLeft = paragraphRange.ParagraphFormat.LeftIndent + _
+        paragraphRange.ParagraphFormat.FirstLineIndent
+    rightIndent = paragraphRange.ParagraphFormat.RightIndent
+    Err.Clear
+    On Error GoTo 0
+    If firstLineLeft < 0! Or firstLineLeft >= 5000! Then firstLineLeft = 0!
+    If firstLineLeft > layoutWidth - 1! Then firstLineLeft = layoutWidth - 1!
+    If firstLineLeft < 0! Then firstLineLeft = 0!
+    If rightIndent < 0! Or rightIndent >= 5000! Then rightIndent = 0!
+    rightEdge = layoutWidth - rightIndent
+    If rightEdge < firstLineLeft + 1! Then rightEdge = firstLineLeft + 1!
+    If rightEdge > layoutWidth Then rightEdge = layoutWidth
+    centerPosition = firstLineLeft + (rightEdge - firstLineLeft) / 2!
+    rightPosition = rightEdge - 1!
+End Sub
+
+' Whether a paragraph has the two stops of its numbered layout: one centre
+' stop at the centre and a right stop at the right position (a Windows-written
+' right stop at the column edge itself, 1 pt further, counts as right), and no
+' other stop inside the column. In a section with unequal columns Word for Mac
+' lists the default stops after the last custom one (CustomTab False) and a
+' custom right stop at the column edge that is not saved with the document;
+' stops at or past the column edge are never reached, so neither counts.
+Private Function VTEquationDisplayTabsMatch( _
+    ByVal paragraphRange As Range, ByVal layoutWidth As Single, _
+    ByVal centerPosition As Single, ByVal rightPosition As Single) As Boolean
+
+    Dim stops As TabStops
+    Dim index As Long
+    Dim stopPosition As Single
+    Dim stopAlignment As Long
+    Dim centers As Long
+    Dim hasRight As Boolean
+
+    Set stops = paragraphRange.ParagraphFormat.TabStops
+    For index = 1 To stops.Count
+        If stops(index).CustomTab Then
+            stopPosition = stops(index).Position
+            stopAlignment = stops(index).Alignment
+            If stopAlignment = wdAlignTabRight And _
+               Abs(stopPosition - rightPosition) <= 1.5! Then
+                hasRight = True
+            ElseIf stopAlignment = wdAlignTabCenter And _
+               Abs(stopPosition - centerPosition) <= 0.75! Then
+                centers = centers + 1
+            ElseIf stopPosition < layoutWidth - 0.5! Then
+                Exit Function
+            End If
+        End If
+    Next index
+    VTEquationDisplayTabsMatch = (centers = 1 And hasRight)
+End Function
+
+' Update Equation Format and renumbering: the numbered VisualTeX picture
+' formulas whose centre and right tab stops do not come from the column (or
+' table cell) they are in now - written for the page width by earlier
+' versions, or moved into another column since. With apply only those two
+' stops are set again; the tab character, the number and everything else stay.
+' Returns how many there are.
+Public Function VTV2DisplayTabRepairs( _
+    ByVal doc As Document, ByVal apply As Boolean) As Long
+
+    Dim candidate As Field
+    Dim paragraphRange As Range
+    Dim seenStarts As Collection
+    Dim seenKey As String
+    Dim uniformWidth As Single
+    Dim hasUniformWidth As Boolean
+    Dim layoutWidth As Single
+    Dim centerPosition As Single
+    Dim rightPosition As Single
+    Dim repairs As Long
+    Dim seenBefore As Boolean
+
+    If doc Is Nothing Then Exit Function
+    Set seenStarts = New Collection
+    ' One section with one column or equal columns: one width for every
+    ' formula outside a table (Range.Information costs about 30 ms a formula).
+    If doc.Sections.Count = 1 Then hasUniformWidth = _
+        VTEquationUniformColumnWidth(doc.Sections(1).PageSetup, uniformWidth)
+    For Each candidate In doc.Fields
+        If candidate.Type = wdFieldMacroButton Then
+            If VTIsImagePlaceRef(candidate) Then
+                Set paragraphRange = candidate.Code.Paragraphs(1).Range.Duplicate
+                ' The numbered layout keeps the picture, the tab and the number
+                ' in one paragraph; an older numbered table keeps them apart.
+                If paragraphRange.InlineShapes.Count > 0 Then
+                    seenKey = "p" & CStr(paragraphRange.Start)
+                    seenBefore = False
+                    On Error Resume Next
+                    seenStarts.Add True, seenKey
+                    If Err.Number <> 0 Then seenBefore = True
+                    Err.Clear
+                    On Error GoTo 0
+                    If Not seenBefore Then
+                        If Not VTEquationCellContentWidth(paragraphRange, layoutWidth) Then
+                            If hasUniformWidth Then
+                                layoutWidth = uniformWidth
+                            Else
+                                layoutWidth = VTEquationColumnWidth(paragraphRange)
+                            End If
+                        End If
+                        VTEquationDisplayTabPositions paragraphRange, layoutWidth, _
+                            centerPosition, rightPosition
+                        If Not VTEquationDisplayTabsMatch(paragraphRange, _
+                               layoutWidth, centerPosition, rightPosition) Then
+                            repairs = repairs + 1
+                            If apply Then
+                                With paragraphRange.ParagraphFormat
+                                    .TabStops.ClearAll
+                                    .TabStops.Add Position:=centerPosition, _
+                                        Alignment:=wdAlignTabCenter, _
+                                        Leader:=wdTabLeaderSpaces
+                                    .TabStops.Add Position:=rightPosition, _
+                                        Alignment:=wdAlignTabRight, _
+                                        Leader:=wdTabLeaderSpaces
+                                End With
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next candidate
+    VTV2DisplayTabRepairs = repairs
 End Function
 
 ' Word for Mac can refuse a paragraph's Style once right after the picture in

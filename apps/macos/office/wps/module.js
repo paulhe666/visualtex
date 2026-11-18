@@ -20,6 +20,9 @@
   var WD_FIELD_STYLEREF = 10;
   var WD_FIELD_SEQUENCE = 12;
   var WD_WITHIN_TABLE = 12;
+  var WD_HORIZONTAL_POSITION_RELATIVE_TO_PAGE = 5;
+  var WD_ALIGN_TAB_CENTER = 1;
+  var WD_ALIGN_TAB_RIGHT = 2;
   var WD_COLOR_AUTOMATIC = -16777216;
   var NUMBERED_IMAGE_STYLE = "VisualTeX Numbered Equation";
   var IMAGE_PLACE_REF = "VisualTeXPlaceRef";
@@ -936,13 +939,164 @@
     }[String(letterFont || "")] || "Cambria Math";
   }
 
-  function textColumnWidth(doc, paragraph) {
-    var setup = safe(function () { return paragraph.Sections.Item(1).PageSetup; }, null) || doc.PageSetup;
-    var width = Number(safe(function () { return setup.TextColumns.Width; }, 0));
-    if (!(width > 2 && width < 5000)) {
-      width = Number(setup.PageWidth) - Number(setup.LeftMargin) - Number(setup.RightMargin);
+  function validWidth(value) {
+    return value > 1 && value < 5000;
+  }
+
+  /* The content width of the table cell a range is in: the cell's width less
+     its left and right padding (Windows WordFormulaHost.TryGetCellContentWidth). */
+  function cellContentWidth(range) {
+    if (!safe(function () { return range.Information(WD_WITHIN_TABLE); }, false)) return 0;
+    var cell = safe(function () { return range.Cells.Item(1); }, null);
+    if (!cell) return 0;
+    var total = Number(safe(function () { return cell.Width; }, 0));
+    if (!validWidth(total)) return 0;
+    var left = Number(safe(function () { return cell.LeftPadding; }, 0));
+    var right = Number(safe(function () { return cell.RightPadding; }, 0));
+    if (!(left >= 0 && left < total)) left = 0;
+    if (!(right >= 0 && right < total)) right = 0;
+    var usable = total - left - right;
+    return usable > 1 ? usable : total;
+  }
+
+  /* The columns of a page setup WPS describes: their widths and the space
+     after each (none after the last). */
+  function pageColumns(setup) {
+    var columns = safe(function () { return setup.TextColumns; }, null);
+    var count = columns ? Number(safe(function () { return columns.Count; }, 0)) : 0;
+    var result = [];
+    for (var index = 1; index <= count; index++) {
+      var column = safe(function () { return columns.Item(index); }, null);
+      var width = column ? Number(safe(function () { return column.Width; }, 0)) : 0;
+      if (!validWidth(width)) continue;
+      var space = index < count ? Number(safe(function () { return column.SpaceAfter; }, 0)) : 0;
+      result.push({ width: width, space: space >= 0 && space < 5000 ? space : 0 });
     }
-    return width;
+    return result;
+  }
+
+  /* The width every display formula of a section has: the text width with one
+     column, the column width with equal columns; 0 when the columns differ. */
+  function uniformColumnWidth(setup) {
+    var columns = pageColumns(setup);
+    if (columns.length <= 1) {
+      var single = columns.length ? columns[0].width : 0;
+      if (validWidth(single)) return single;
+      return Number(setup.PageWidth) - Number(setup.LeftMargin) - Number(setup.RightMargin);
+    }
+    for (var index = 1; index < columns.length; index++) {
+      if (Math.abs(columns[index].width - columns[0].width) > 0.01) return 0;
+    }
+    return columns[0].width;
+  }
+
+  /* VTEquationLayoutWidth (Windows WordDisplayColumnGeometry): the width a
+     display formula's tab stops count from. WPS, like Word, measures a tab
+     position from the left edge of the column the line is in, so a page-wide
+     width puts the formula on the column edge and the number in the next
+     column. A table cell gives its content width; one column the text width;
+     equal columns their width; unequal columns the column under the
+     paragraph's horizontal position on the page, walking each column's width
+     and the space after it - the narrowest when WPS gives no position. */
+  function textColumnWidth(doc, paragraph) {
+    var cell = cellContentWidth(paragraph);
+    if (cell) return cell;
+    var setup = safe(function () { return paragraph.Sections.Item(1).PageSetup; }, null) || doc.PageSetup;
+    var uniform = uniformColumnWidth(setup);
+    if (uniform > 2) return uniform;
+    var columns = pageColumns(setup);
+    if (!columns.length) return uniform;
+    var narrowest = Math.min.apply(null, columns.map(function (column) { return column.width; }));
+    var x = Number(safe(function () { return paragraph.Information(WD_HORIZONTAL_POSITION_RELATIVE_TO_PAGE); }, -1));
+    if (x >= 0 && x < 5000) {
+      var relative = x - Number(setup.LeftMargin);
+      var cursor = 0;
+      for (var index = 0; index < columns.length; index++) {
+        var next = cursor + columns[index].width + columns[index].space;
+        if (relative < next || index === columns.length - 1) return columns[index].width;
+        cursor = next;
+      }
+    }
+    return narrowest;
+  }
+
+  /* VTEquationDisplayTabPositions: the centre stop halfway between the first
+     line's left edge and the right edge (from the paragraph's indents), the
+     right stop 1 pt inside the right edge. */
+  function displayTabPositions(paragraph, width) {
+    var format = paragraph.ParagraphFormat;
+    var left = Number(safe(function () { return format.LeftIndent; }, 0)) + Number(safe(function () { return format.FirstLineIndent; }, 0));
+    var rightIndent = Number(safe(function () { return format.RightIndent; }, 0));
+    if (!(left >= 0 && left < 5000)) left = 0;
+    left = Math.max(0, Math.min(width - 1, left));
+    if (!(rightIndent >= 0 && rightIndent < 5000)) rightIndent = 0;
+    var edge = Math.min(width, Math.max(left + 1, width - rightIndent));
+    return { center: left + (edge - left) / 2, right: edge - 1, width: width };
+  }
+
+  /* VTEquationDisplayTabsMatch: one centre stop at the centre, a right stop at
+     the right position (a right stop at the column edge itself, as Windows
+     writes it, counts as right) and no other custom stop inside the column;
+     default stops and stops at or past the column edge are never reached. */
+  function displayTabsMatch(paragraph, positions) {
+    var stops = safe(function () { return paragraph.ParagraphFormat.TabStops; }, null);
+    if (!stops) return false;
+    var centers = 0;
+    var right = false;
+    var count = Number(stops.Count);
+    for (var index = 1; index <= count; index++) {
+      var stop = stops.Item(index);
+      if (!safe(function () { return stop.CustomTab; }, true)) continue;
+      var alignment = Number(safe(function () { return stop.Alignment; }, -1));
+      var position = Number(safe(function () { return stop.Position; }, -1000));
+      if (alignment === WD_ALIGN_TAB_RIGHT && Math.abs(position - positions.right) <= 1.5) right = true;
+      else if (alignment === WD_ALIGN_TAB_CENTER && Math.abs(position - positions.center) <= 0.75) centers++;
+      else if (position < positions.width - 0.5) return false;
+    }
+    return centers === 1 && right;
+  }
+
+  /* VTV2DisplayTabRepairs: the numbered VisualTeX pictures whose centre and
+     right tab stops do not come from the column (or table cell) they are in
+     now - written for the page width by earlier versions, or moved into
+     another column since. */
+  function displayTabRepairs(doc) {
+    var repairs = [];
+    var seen = {};
+    var sections = Number(safe(function () { return doc.Sections.Count; }, 0));
+    var uniform = sections === 1 ? uniformColumnWidth(safe(function () { return doc.Sections.Item(1).PageSetup; }, null) || doc.PageSetup) : 0;
+    var shapes = doc.InlineShapes;
+    for (var index = 1; index <= shapes.Count; index++) {
+      var shape = shapes.Item(index);
+      if (!isFormulaPicture(shape)) continue;
+      var reference = parseFormulaReference(safe(function () { return shape.Title; }, ""));
+      if (!reference || reference.displayMode !== "block" || !reference.numbered) continue;
+      var paragraph = shape.Range.Paragraphs.Item(1).Range;
+      if (seen[paragraph.Start]) continue;
+      seen[paragraph.Start] = true;
+      /* The numbered layout keeps the picture, the tab and the number in one
+         paragraph; an older numbered table keeps them apart. */
+      var fields = paragraph.Fields;
+      var numbered = false;
+      for (var k = 1; k <= fields.Count && !numbered; k++) numbered = isImagePlaceRef(fields.Item(k));
+      if (!numbered) continue;
+      var width = cellContentWidth(paragraph) || (uniform > 2 ? uniform : textColumnWidth(doc, paragraph));
+      var positions = displayTabPositions(paragraph, width);
+      if (!displayTabsMatch(paragraph, positions)) repairs.push({ paragraph: paragraph, positions: positions });
+    }
+    return repairs;
+  }
+
+  /* Only the two stops are set again; the tab, the number and everything else
+     stay. */
+  function applyDisplayTabRepairs(repairs) {
+    repairs.forEach(function (repair) {
+      var stops = repair.paragraph.ParagraphFormat.TabStops;
+      stops.ClearAll();
+      stops.Add(repair.positions.center, WD_ALIGN_TAB_CENTER, 0);
+      stops.Add(repair.positions.right, WD_ALIGN_TAB_RIGHT, 0);
+    });
+    return repairs.length;
   }
 
   function numberedImageStyle(doc) {
@@ -973,8 +1127,8 @@
       safe(function () { format[name] = values[name]; });
     });
     format.TabStops.ClearAll();
-    format.TabStops.Add(width / 2, 1, 0);
-    format.TabStops.Add(width - 1, 2, 0);
+    format.TabStops.Add(width / 2, WD_ALIGN_TAB_CENTER, 0);
+    format.TabStops.Add(width - 1, WD_ALIGN_TAB_RIGHT, 0);
   }
 
   function xmlText(text) {
@@ -1595,6 +1749,12 @@
       });
       removeMarkers(doc);
       updateAllNumberFields(doc);
+      /* Each numbered picture's tab stops from the column it is in now. */
+      try {
+        applyDisplayTabRepairs(displayTabRepairs(doc));
+      } catch (error) {
+        failures.push(error && error.message || String(error));
+      }
     });
     if (failures.length) log("restyle failures " + JSON.stringify(failures.slice(0, 5)));
     return { changed: changed, total: result.equations.length + result.images.length, failures: failures };
@@ -1688,8 +1848,10 @@
      The document's formulas in the current form, as one Undo step: every
      number in the document's style (older reference numbers written anew),
      the older VisualTeX tags gone (the VT_F_ bookmark of a tagged equation,
-     the retired numbering-style variables) and inline pictures on the text
-     baseline (VTV2InlineBaselineRepairs). The formulas do not change. */
+     the retired numbering-style variables), inline pictures on the text
+     baseline (VTV2InlineBaselineRepairs) and numbered pictures' tab stops
+     from the column they are in (VTV2DisplayTabRepairs). The formulas do not
+     change. */
 
   function legacyTagIds(doc) {
     var ids = [];
@@ -1797,9 +1959,10 @@
       var tags = legacyTagIds(doc);
       var tagCount = tags.length + NUMBERING_VARIABLES.filter(function (name) { return variableValue(doc, name) !== null; }).length;
       var repairs = inlineBaselineRepairs(doc);
+      var tabRepairs = displayTabRepairs(doc).length;
       var stale = fonts.stale.slice(0, MAX_DOCUMENT_FORMULAS);
       var unchecked = fonts.known ? "" : "\n（VisualTeX 还不知道当前的公式字体，未检查公式字体。）";
-      if (!numbers && !tagCount && !repairs.length && !stale.length) {
+      if (!numbers && !tagCount && !repairs.length && !tabRepairs && !stale.length) {
         notify("本文档中的公式已经是当前格式。" + unchecked);
         return null;
       }
@@ -1807,6 +1970,7 @@
       if (numbers) message += "\n" + numbers + " 个公式编号将按当前编号格式重写";
       if (tagCount) message += "\n" + tagCount + " 个旧版 VisualTeX 标记将被移除";
       if (repairs.length) message += "\n" + repairs.length + " 个行内图片公式将对齐正文基线";
+      if (tabRepairs) message += "\n" + tabRepairs + " 个带编号的行间公式将在所在栏居中，编号位于该栏右侧";
       if (stale.length) message += "\n" + stale.length + " 个字体与当前设置不同的 VisualTeX 公式将用当前字体（" + fonts.fonts + "）重绘";
       if (fonts.stale.length > stale.length) message += "（其余 " + (fonts.stale.length - stale.length) + " 个请再次更新）";
       message += unchecked;
@@ -1822,6 +1986,7 @@
       return formatUpdateSteps(doc, key).then(function (summary) {
         record.end();
         var text = "已更新 " + numbers + " 个公式编号，对齐 " + repairs.length + " 个行内图片公式，移除 " + tagCount + " 个旧版标记。";
+        if (tabRepairs) text += "\n" + tabRepairs + " 个带编号的行间公式已在所在栏居中。";
         if (summary.failures.length) text += "\n有 " + summary.failures.length + " 个编号未能更新：" + summary.failures[0];
         notify(text);
       }, function (error) {

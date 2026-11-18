@@ -81,6 +81,7 @@ Public Sub VTNumberDisplayFormulas(ByVal wholeDocument As Boolean)
     Dim operationStage As String
     Dim failureNumber As Long
     Dim failureDescription As String
+    Dim uniformWidth As Single
 
     If VT_WORD_NUMBER_UPDATE_RUNNING Then Exit Sub
     On Error Resume Next
@@ -184,8 +185,13 @@ Public Sub VTNumberDisplayFormulas(ByVal wholeDocument As Boolean)
         Set VT_WORD_DISPLAY_NUMBERING_IMAGE_STYLE = Nothing
         Set VT_WORD_DISPLAY_NUMBERING_IMAGE_STYLE = VTEnsureNumberedImageParagraphStyle(doc)
         VT_WORD_DISPLAY_NUMBERING_LAYOUT_WIDTH = 0!
-        If doc.Sections.Count = 1 Then _
-            VT_WORD_DISPLAY_NUMBERING_LAYOUT_WIDTH = VTEquationLayoutWidth(doc.Content)
+        ' One width for the whole batch only where every formula has it: one
+        ' section with one column or equal columns. With unequal columns each
+        ' formula takes the column it is in.
+        If doc.Sections.Count = 1 Then
+            If VTEquationUniformColumnWidth(doc.Sections(1).PageSetup, uniformWidth) Then _
+                VT_WORD_DISPLAY_NUMBERING_LAYOUT_WIDTH = uniformWidth
+        End If
     End If
     VTWriteDisplayNumbering doc, equations, images, equationSources, _
         equationErrors, imageMetadata, imageErrors, imagePrefixes, _

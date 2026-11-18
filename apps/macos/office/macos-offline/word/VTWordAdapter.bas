@@ -2636,13 +2636,15 @@ End Sub
 ' the result and undoes it if anything is left or anything else changed.
 ' The math font step (Windows' Update Equation Format): the chosen OMML font
 ' becomes the document math font, and every Word equation follows the
-' document math font (VTV2MathFontRepairs).
+' document math font (VTV2MathFontRepairs). Numbered picture formulas take
+' their tab stops from the column they are in (VTV2DisplayTabRepairs).
 Public Sub VisualTeX_UpdateEquationFormat()
     Dim doc As Document
     Dim numbers As Long
     Dim tags As Long
     Dim baselines As Long
     Dim fonts As Long
+    Dim displayTabs As Long
     Dim mathFontName As String
     Dim setDocumentFont As Boolean
     Dim staleFormulas As Collection
@@ -2662,12 +2664,13 @@ Public Sub VisualTeX_UpdateEquationFormat()
     tags = VTV2LegacyTagCount(doc)
     baselines = VTV2InlineBaselineRepairs(doc, False)
     fonts = VTV2MathFontRepairs(doc, mathFontName, False)
+    displayTabs = VTV2DisplayTabRepairs(doc, False)
     ' The image formulas VisualTeX draws in other fonts now (the app reads
     ' their metadata); they are drawn again from their LaTeX.
     Set staleFormulas = VTWordFontRefreshTargets( _
         doc, fontsDescription, fontsChecked)
-    If numbers + tags + baselines + fonts + staleFormulas.Count = 0 And _
-       Not setDocumentFont Then
+    If numbers + tags + baselines + fonts + displayTabs + _
+       staleFormulas.Count = 0 And Not setDocumentFont Then
         message = "The equations in this document already use the current format."
         If Not fontsChecked Then message = message & vbCr & vbCr & _
             "(VisualTeX could not be reached, so formula fonts were not checked.)"
@@ -2681,6 +2684,9 @@ Public Sub VisualTeX_UpdateEquationFormat()
         " older VisualTeX tag(s) will be removed." & vbCr
     If baselines > 0 Then message = message & CStr(baselines) & _
         " inline image formula(s) will be aligned with the text baseline." & vbCr
+    If displayTabs > 0 Then message = message & CStr(displayTabs) & _
+        " numbered display formula(s) will be centred in the column they are in, " & _
+        "with the number at its right edge." & vbCr
     If setDocumentFont Then message = message & _
         "The document math font will be set to " & mathFontName & "." & vbCr
     If fonts > 0 Then message = message & CStr(fonts) & _
@@ -2726,6 +2732,8 @@ Public Sub VisualTeX_UpdateEquationFormat()
     message = "Updated " & CStr(numbers) & " equation number(s), aligned " & _
         CStr(baselines) & " inline image formula(s) and removed " & _
         CStr(tags) & " older tag(s)."
+    If displayTabs > 0 Then message = message & vbCr & CStr(displayTabs) & _
+        " numbered display formula(s) centred in their columns."
     If fonts > 0 Or setDocumentFont Then message = message & vbCr & _
         CStr(fonts) & " Word equation(s) changed to the document math font (" & _
         mathFontName & ")."
@@ -2780,6 +2788,7 @@ Public Sub VTApplyEquationFormatUpdate(ByVal doc As Document)
     VTUpgradeWordNumberFormats doc
     VTUpdateCurrentWordNumberFields doc
     VTV2InlineBaselineRepairs doc, True
+    VTV2DisplayTabRepairs doc, True
     If VTV2MathFontRepairs(doc, mathFontName, False) > 0 Then
         VTBeginWordInternalMutation
         mutationStarted = True
@@ -2808,6 +2817,7 @@ Public Function VTEquationFormatIsCurrent(ByVal doc As Document) As Boolean
         VTV2RestyleNumbers(doc, True) = 0 And _
         VTV2LegacyTagCount(doc) = 0 And _
         VTV2InlineBaselineRepairs(doc, False) = 0 And _
+        VTV2DisplayTabRepairs(doc, False) = 0 And _
         VTV2MathFontRepairs(doc, mathFontName, False) = 0
 End Function
 

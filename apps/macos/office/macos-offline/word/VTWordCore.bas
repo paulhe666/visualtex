@@ -70,8 +70,9 @@ Public VT_WORD_NUMBER_UPDATE_RUNNING As Boolean
 ' The numbered image paragraph style while a batch numbers images: prepared
 ' once, because changing a style makes Word revisit every paragraph using it.
 Public VT_WORD_DISPLAY_NUMBERING_IMAGE_STYLE As Style
-' The text width of a one-section document while a batch numbers images
-' (VTEquationLayoutWidth asks the section's page setup for every formula).
+' The column width of a one-section document with one column or equal columns
+' while a batch numbers images (VTEquationLayoutWidth would ask the section's
+' page setup for every formula).
 Public VT_WORD_DISPLAY_NUMBERING_LAYOUT_WIDTH As Single
 Private VT_WORD_MUTATION_SMART_CUT_PASTE As Boolean
 Public VT_WORD_V2_IMPORT_CACHE_ACTIVE As Boolean
