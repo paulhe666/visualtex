@@ -72,6 +72,44 @@ public sealed class OfficeFormulaSizingTests
     }
 
     [Fact]
+    public void EditedSizeKeepsTheSizeAnEditOpenedAt()
+    {
+        // A slide formula drawn at 20 pt and shown at 1.5x opens in the editor at 30 pt (the size it shows at) and is
+        // drawn again at 30 pt; with that size as the reference it shows 1:1 at 30 pt. With the stored 20 pt it took
+        // the 1.5x once more on every edit that changed its LaTeX (2026-11-18, WPS Presentation).
+        var size = OfficeFormulaSizing.EditedSize(
+            currentWidth: 186.13f,
+            currentHeight: 90.98f,
+            originalRenderWidth: 165.45d,
+            originalRenderHeight: 80.87d,
+            newRenderWidth: 307.07f,
+            newRenderHeight: 111.31f,
+            originalFontSizePt: 30d,
+            originalRenderFontSizePt: 20d);
+
+        Assert.Equal(230.30f, size.Width, 1);
+        Assert.Equal(83.48f, size.Height, 1);
+    }
+
+    [Fact]
+    public void EditedSizeShowsASizeChosenInTheEditor()
+    {
+        // the same formula, the size set to 40 pt in the editor: drawn at 40 pt, shown at 40 pt
+        var size = OfficeFormulaSizing.EditedSize(
+            currentWidth: 186.13f,
+            currentHeight: 90.98f,
+            originalRenderWidth: 165.45d,
+            originalRenderHeight: 80.87d,
+            newRenderWidth: 409.43f,
+            newRenderHeight: 148.41f,
+            originalFontSizePt: 30d,
+            originalRenderFontSizePt: 20d);
+
+        Assert.Equal(307.07f, size.Width, 1);
+        Assert.Equal(111.31f, size.Height, 1);
+    }
+
+    [Fact]
     public void EditedSizeFitsPowerPointBoundsWithoutDistortion()
     {
         var size = OfficeFormulaSizing.EditedSize(

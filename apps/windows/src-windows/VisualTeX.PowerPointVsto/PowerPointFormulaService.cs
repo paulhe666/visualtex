@@ -1196,7 +1196,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 originalMetadata,
                 session.ExportResult?.Width ?? oldWidth / 0.75f,
                 session.ExportResult?.Height ?? oldHeight / 0.75f,
-                FormulaContentEquivalent(originalMetadata, metadata));
+                FormulaContentEquivalent(originalMetadata, metadata),
+                session.OriginalMetadata?.FontSizePt);
             var newLeft = left + (oldWidth - editedSize.Width) / 2f;
             var newTop = top + (oldHeight - editedSize.Height) / 2f;
             redrawFreeze = FreezePowerPointWindowRedraw();
@@ -1308,7 +1309,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 originalMetadata,
                 session.ExportResult?.Width ?? oldWidth / 0.75f,
                 session.ExportResult?.Height ?? oldHeight / 0.75f,
-                FormulaContentEquivalent(originalMetadata, metadata));
+                FormulaContentEquivalent(originalMetadata, metadata),
+                session.OriginalMetadata?.FontSizePt);
             var newLeft = left + (oldWidth - editedSize.Width) / 2f;
             var newTop = top + (oldHeight - editedSize.Height) / 2f;
 
@@ -1820,13 +1822,16 @@ public sealed partial class PowerPointFormulaService : IDisposable
         return scaleRatio >= 0.90f && scaleRatio <= 1.10f;
     }
 
+    // editFontSizePt: the font size the edit opened with - the size the formula showed at (an edit takes it from
+    // the shape, InferPowerPointFormulaFontSize), which the new drawing is made at unless the user picked another
     private static (float Width, float Height) ResolvePowerPointEditedSize(
         float currentWidth,
         float currentHeight,
         FormulaMetadata? originalMetadata,
         float newRenderWidth,
         float newRenderHeight,
-        bool preserveCurrentGeometry)
+        bool preserveCurrentGeometry,
+        double? editFontSizePt = null)
     {
         const float maximumWidth = 600f;
         const float maximumHeight = 400f;
@@ -1862,6 +1867,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
             return (Math.Max(1f, width), Math.Max(1f, height));
         }
 
+        // The shape shows the old drawing scaled; the new drawing is made at the size the formula showed at, so
+        // that scale is already in it: dividing by editFontSizePt / render size keeps it from being applied
+        // again (a formula drawn at 20 pt and shown at 1.5x grew by 1.5x on every edit that changed its LaTeX).
         return OfficeFormulaSizing.EditedSize(
             currentWidth,
             currentHeight,
@@ -1871,8 +1879,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
             newRenderHeight,
             maximumWidth,
             maximumHeight,
-            originalMetadata?.FontSizePt,
-            originalMetadata?.RenderFontSizePt);
+            editFontSizePt is > 0 ? editFontSizePt : originalMetadata?.FontSizePt,
+            originalMetadata is null ? null : FormulaFontSize.ResolveRenderFontSize(originalMetadata));
     }
 
     private static (float Width, float Height) ScaleCurrentShapeSize(
