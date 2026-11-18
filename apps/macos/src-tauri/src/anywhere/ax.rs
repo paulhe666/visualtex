@@ -114,13 +114,18 @@ struct Owned(CFTypeRef);
 
 impl Owned {
     fn new(value: CFTypeRef) -> Option<Self> {
-        (!value.is_null()).then_some(Self(value))
+        // (not `then_some(Self(value))`: that builds the wrapper first and drops it for a missing object, and the
+        // drop released NULL, which stops the app: VisualTeX quit at every start where macOS had no list of
+        // enabled third-party input sources yet)
+        if value.is_null() { None } else { Some(Self(value)) }
     }
 }
 
 impl Drop for Owned {
     fn drop(&mut self) {
-        unsafe { CFRelease(self.0) }
+        if !self.0.is_null() {
+            unsafe { CFRelease(self.0) }
+        }
     }
 }
 
@@ -476,5 +481,15 @@ fn pointer_anchor() -> ScreenRect {
         y: location.y - FALLBACK_LINE_HEIGHT / 2.0,
         width: 0.0,
         height: FALLBACK_LINE_HEIGHT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_object_is_none_and_nothing_is_released() {
+        assert!(Owned::new(ptr::null()).is_none());
     }
 }

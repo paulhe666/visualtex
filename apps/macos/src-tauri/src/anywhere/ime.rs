@@ -123,13 +123,18 @@ struct Owned(CFTypeRef);
 
 impl Owned {
     fn new(value: CFTypeRef) -> Option<Self> {
-        (!value.is_null()).then_some(Self(value))
+        // (not `then_some(Self(value))`: that builds the wrapper first and drops it for a missing object, and the
+        // drop released NULL, which stops the app: VisualTeX quit at every start where macOS had no list of
+        // enabled third-party input sources yet)
+        if value.is_null() { None } else { Some(Self(value)) }
     }
 }
 
 impl Drop for Owned {
     fn drop(&mut self) {
-        unsafe { CFRelease(self.0) }
+        if !self.0.is_null() {
+            unsafe { CFRelease(self.0) }
+        }
     }
 }
 
@@ -641,5 +646,22 @@ fn input_method_requirement() -> String {
         text.replacen(&own_identifier, &identifier_only, 1)
     } else {
         identifier_only
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_object_is_none_and_nothing_is_released() {
+        // Owned(NULL) built and dropped released NULL, which stops the process
+        assert!(Owned::new(ptr::null()).is_none());
+    }
+
+    #[test]
+    fn a_preference_that_does_not_exist_reads_as_none() {
+        // the start-up path that quit VisualTeX on a Mac without a list of enabled third-party input sources
+        assert!(preference("com.visualtex.tests.absent-domain", "AbsentKey").is_none());
     }
 }
