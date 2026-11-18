@@ -18,9 +18,40 @@ internal sealed class EquationReferenceDialog : Form
     // Fills the targets' LaTeX previews in a few at a time while the dialog shows (each is a Word read).
     private readonly System.Windows.Forms.Timer _previewTimer = new() { Interval = 1 };
 
+    // Drawn by the dialog, so that an item whose preview came in is only painted again. ListBox.RefreshItem
+    // takes the item out of the native list and puts it back, and doing that to items above the selection
+    // moved the selection up by one while the previews filled in: Insert Reference then referenced the
+    // equation above the one picked.
     private sealed class TargetListBox : ListBox
     {
-        public void RefreshTarget(int index) => RefreshItem(index);
+        public TargetListBox() => DrawMode = DrawMode.OwnerDrawFixed;
+
+        // (an owner-drawn list does not size its rows from its font itself)
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            ItemHeight = Math.Min(255, Font.Height + 1);
+        }
+
+        public void RefreshTarget(int index)
+        {
+            if (index >= 0 && index < Items.Count) Invalidate(GetItemRectangle(index));
+        }
+
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index >= 0 && e.Index < Items.Count)
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    Items[e.Index]?.ToString() ?? string.Empty,
+                    e.Font ?? Font,
+                    e.Bounds,
+                    e.ForeColor,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
+                    | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            e.DrawFocusRectangle();
+        }
     }
     private readonly Label _styleLabel = new();
     private readonly ComboBox _styleBox = new();
