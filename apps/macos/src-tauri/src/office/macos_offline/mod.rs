@@ -252,6 +252,10 @@ struct MacOfflineDocumentImportRequest {
     output_kind: Option<String>,
     #[serde(default)]
     source_kind: Option<String>,
+    /// Update Equation Format's font step: a picture-to-picture formula restore that draws the formulas again in the
+    /// fonts of the Settings, each at its own size (office::formula_fonts).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    font_refresh: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -349,6 +353,9 @@ pub struct MacOfflineDocumentImportPublicRequest {
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     restore_targets: Option<Vec<MacOfflineFormulaRestoreTarget>>,
+    /// The restore draws picture formulas again in the current fonts (Update Equation Format).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    font_refresh: bool,
     /// "wps" when the WPS add-in started the operation (the windows name WPS).
     #[serde(skip_serializing_if = "Option::is_none")]
     client: Option<String>,

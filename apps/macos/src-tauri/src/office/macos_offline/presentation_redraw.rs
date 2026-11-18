@@ -78,6 +78,9 @@ struct RestoreTarget {
     /// PowerPoint copies its equations instead (copy_powerpoint_equations).
     #[serde(default)]
     zone: Option<String>,
+    /// Update Equation Format: a picture formula's height on its slide, from which the size it shows at follows.
+    #[serde(default)]
+    height_pt: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,9 +189,23 @@ fn restore_source(request: &MacOfflineSessionRequest) -> Result<RestoreSource, S
     Ok(source)
 }
 
+/// The size a picture formula shows at: its height over its height at the 14 pt reference, which its metadata records
+/// (the picture may have been resized by hand); else the size the add-in read from its tags.
+fn shown_size(target: &RestoreTarget, metadata: Option<&VisualTeXFormulaMetadata>) -> f64 {
+    let reference = metadata.and_then(|metadata| metadata.reference_height_pt).filter(|height| height.is_finite() && *height > 0.0);
+    match (target.height_pt.filter(|height| height.is_finite() && *height > 0.0), reference) {
+        (Some(height), Some(reference)) => {
+            let size = height / reference * POWERPOINT_REFERENCE_FONT_SIZE_PT;
+            if (MIN_POWERPOINT_FONT_SIZE_PT..=MAX_POWERPOINT_FONT_SIZE_PT).contains(&size) { size } else { target.font_size_pt }
+        }
+        _ => target.font_size_pt,
+    }
+}
+
 /// The LaTeX a restore target becomes, with what the redraw window shows.
 fn restore_targets(request: &MacOfflineSessionRequest, source: &RestoreSource) -> Result<Vec<MacOfflineFormulaRestoreTarget>, String> {
     let directory = session_directory(OfficeHost::Powerpoint, &request.session_id)?;
+    let font_refresh = request.document_import.as_ref().is_some_and(|options| options.font_refresh);
     let mut targets = Vec::with_capacity(source.targets.len());
     for (index, target) in source.targets.iter().enumerate() {
         let (latex, metadata, formula_id) = if target.kind == "image" {
@@ -201,12 +218,14 @@ fn restore_targets(request: &MacOfflineSessionRequest, source: &RestoreSource) -
             };
             (super::super::powerpoint_omml::to_latex::from_omml(&equation)?.latex, None, None)
         };
+        // a picture drawn again in the current fonts keeps the size it shows at
+        let font_size = if font_refresh { shown_size(target, metadata.as_ref()) } else { target.font_size_pt };
         targets.push(MacOfflineFormulaRestoreTarget {
             source_start: index * 2,
             source_end: index * 2 + 1,
             source_text: "\u{FFFC}".to_string(),
             display_mode: target.display_mode.clone(),
-            font_size_pt: clamp_size(target.font_size_pt),
+            font_size_pt: clamp_size(font_size),
             source_kind: target.kind.clone(),
             formula_id,
             numbered: false,
@@ -249,6 +268,7 @@ pub(super) fn public_request(request: &MacOfflineSessionRequest) -> Result<MacOf
         source_kind: document_import.source_kind.clone(),
         source,
         restore_targets,
+        font_refresh: document_import.font_refresh,
         client: request.client.clone(),
         segments,
         agent: None,
@@ -445,6 +465,69 @@ pub(super) fn commit(state: &OfficeCompanionState, request: &MacOfflineSessionRe
                 items.push(entry);
             }
         }
+        "formulaRestore" if options.font_refresh => {
+            // Update Equation Format's font step: each picture formula drawn again in the current fonts goes where
+            // the old one is, at the size it shows at (the add-in sent that size), with its id.
+            let source = restore_source(request)?;
+            for (index, item) in input.items.iter().enumerate() {
+                let MacOfflineDocumentImportCommitItem::Formula {
+                    formula_id, font_size_pt, metadata, svg_base64, png_base64, width, height, source_start, ..
+                } = item else {
+                    return Err("A formula font update writes picture formulas only".to_string());
+                };
+                let target_index = source_start.ok_or("A redrawn formula names no picture")? / 2;
+                let target = source.targets.get(target_index).ok_or("A redrawn formula names no picture")?;
+                let original = target.metadata.as_deref().ok_or("A redrawn picture has no metadata")?;
+                if target.kind != "image" || decoded_latex(original)?.formula_id != *formula_id {
+                    return Err("A redrawn formula names another picture".to_string());
+                }
+                let size = font_size_pt.clamp(MIN_POWERPOINT_FONT_SIZE_PT, MAX_POWERPOINT_FONT_SIZE_PT);
+                let (svg, png) = (svg_base64.as_deref().ok_or("A picture formula has no SVG")?, png_base64.as_deref());
+                let (width_pt, height_pt, reference_width, reference_height) =
+                    picture_geometry(width.unwrap_or_default(), height.unwrap_or_default(), size)?;
+                let mut metadata = metadata.clone();
+                if metadata.formula_id != *formula_id {
+                    return Err("A picture formula's metadata names another formula".to_string());
+                }
+                metadata.display_mode = "block".to_string();
+                metadata.numbered = false;
+                metadata.font_size_pt = Some(size);
+                metadata.reference_width_pt = Some(reference_width);
+                metadata.reference_height_pt = Some(reference_height);
+                metadata.reference_baseline_pt = None;
+                let svg_name = format!("{session_id}-refresh-{index}.svg");
+                let svg_path = directory.join(&svg_name);
+                atomic_write_runtime(&svg_path, &decode_svg(svg)?, 0o600)?;
+                files.push((svg_name.clone(), svg_path.clone()));
+                let mut picture = json!({ "image": svg_name, "imagePath": svg_path.to_string_lossy() });
+                if let Some(png) = png {
+                    let png_name = format!("{session_id}-refresh-{index}.png");
+                    let png_path = directory.join(&png_name);
+                    atomic_write_runtime(&png_path, &decode_png(png)?, 0o600)?;
+                    files.push((png_name.clone(), png_path.clone()));
+                    picture["fallback"] = json!(png_name);
+                    picture["fallbackPath"] = json!(png_path.to_string_lossy());
+                }
+                items.push(json!({
+                    "index": index,
+                    "kind": "refresh",
+                    "slideId": target.slide_id,
+                    "shapeId": target.shape_id,
+                    // the picture must still be this formula
+                    "original": original,
+                    "formulaId": formula_id,
+                    "metadata": encode_metadata(&metadata)?,
+                    "formulaReference": super::super::wps::payload::formula_reference(formula_id, "block", false),
+                    "fontSizePt": size,
+                    "widthPt": width_pt,
+                    "heightPt": height_pt,
+                    "referenceWidthPt": reference_width,
+                    "referenceHeightPt": reference_height,
+                    "files": picture,
+                }));
+                let _ = state.formula_cache.put(formula_id, metadata);
+            }
+        }
         "formulaRestore" => {
             let source = restore_source(request)?;
             for (index, item) in input.items.iter().enumerate() {
@@ -493,8 +576,16 @@ pub(super) fn commit(state: &OfficeCompanionState, request: &MacOfflineSessionRe
             #[cfg(not(target_os = "macos"))]
             return super::super::wps::bridge::deliver_document_commit(&session_id, payload, files, input.items.len());
         }
-        let payload = json!({ "operation": operation, "outputKind": input.output_kind, "items": items });
+        let payload = json!({
+            "operation": operation,
+            "outputKind": input.output_kind,
+            "fontRefresh": options.font_refresh,
+            "items": items,
+        });
         return super::super::wps::bridge::deliver_document_commit(&session_id, payload, files, input.items.len());
+    }
+    if options.font_refresh {
+        return apply_batch_in_powerpoint(state, request, &items);
     }
     apply_in_powerpoint(state, request, &items)
 }
@@ -605,6 +696,60 @@ fn apply_in_powerpoint(state: &OfficeCompanionState, request: &MacOfflineSession
     #[cfg(not(target_os = "macos"))]
     run()
 }
+
+/// Update Equation Format's pictures go in with one macro call (VisualTeX_ApplyPresentationItems), so that PowerPoint
+/// keeps them as one Undo step: the add-in writes every item presentation-batch.txt names and reports each one in
+/// presentation-item-<index>.txt. A formula that cannot be written keeps its picture; the message names it.
+fn apply_batch_in_powerpoint(state: &OfficeCompanionState, request: &MacOfflineSessionRequest, items: &[Value]) -> Result<(), String> {
+    let session_id = request.session_id.as_str();
+    let directory = session_directory(OfficeHost::Powerpoint, session_id)?;
+    let identity = request.source_document_id.clone().ok_or("The presentation operation has no presentation")?;
+    let total = items.len();
+    let mut indices = Vec::with_capacity(total);
+    for item in items {
+        let index = item["index"].as_u64().ok_or("An item has no index")? as usize;
+        let _ = fs::remove_file(directory.join(format!("presentation-item-{index}.txt")));
+        atomic_write_runtime(
+            &directory.join(format!("presentation-item-{index}.in")),
+            powerpoint_item(session_id, &identity, item)?.as_bytes(),
+            0o600,
+        )?;
+        indices.push(index);
+    }
+    let list = indices.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+    atomic_write_runtime(&directory.join(BATCH_FILE), list.as_bytes(), 0o600)?;
+    let _ = write_document_progress(session_id, 0, total, "inserting");
+    let app = state.app.as_ref();
+    with_dispatch_pointer(OfficeHost::Powerpoint, session_id, || match app {
+        Some(app) => run_office_vba_script_on_main_thread(app, APPLY_BATCH_SCRIPT, "PowerPoint formula font update"),
+        None => run_office_vba_script(APPLY_BATCH_SCRIPT, "PowerPoint formula font update"),
+    })
+    .map_err(|error| summary(0, total, &[], &error))?;
+    let mut written = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+    for index in indices {
+        let result = fs::read_to_string(directory.join(format!("presentation-item-{index}.txt"))).unwrap_or_default();
+        if result.trim() == "ok" {
+            written += 1;
+        } else if let Some(detail) = result.strip_prefix("error\n") {
+            failures.push(format!("formula {}: {}", index + 1, detail.trim()));
+        } else {
+            failures.push(format!("formula {}: PowerPoint did not confirm it", index + 1));
+        }
+    }
+    let _ = write_document_progress(session_id, total, total, if failures.is_empty() { "complete" } else { "error" });
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(summary(written, total, &failures, ""))
+    }
+}
+
+/// The items VisualTeX_ApplyPresentationItems writes, in order.
+const BATCH_FILE: &str = "presentation-batch.txt";
+const APPLY_BATCH_SCRIPT: &str = "with timeout of 600 seconds
+tell application \"Microsoft PowerPoint\" to run VB macro macro name \"VisualTeX_ApplyPresentationItems\" list of parameters {}
+end timeout";
 
 /// Which item VisualTeX_ApplyPresentationItem writes next.
 const NEXT_ITEM_FILE: &str = "presentation-next.txt";
@@ -801,9 +946,13 @@ pub(super) fn validate(request: &MacOfflineSessionRequest) -> Result<(), String>
         return Err("The presentation operation's options are invalid".to_string());
     }
     let (file, outputs): (&str, &[&str]) = match operation {
-        "latexRedraw" if options.source_kind.is_none() => (REDRAW_SOURCE_FILE, &["omml", "image"]),
+        "latexRedraw" if options.source_kind.is_none() && !options.font_refresh => (REDRAW_SOURCE_FILE, &["omml", "image"]),
+        // Update Equation Format's font step: picture formulas drawn again as picture formulas.
+        "formulaRestore" if options.font_refresh && options.source_kind.as_deref() == Some("image") => (RESTORE_SOURCE_FILE, &["image"]),
         // A restore of equations and pictures together names no source kind.
-        "formulaRestore" if matches!(options.source_kind.as_deref(), None | Some("omml" | "image")) => (RESTORE_SOURCE_FILE, &["latex"]),
+        "formulaRestore" if !options.font_refresh && matches!(options.source_kind.as_deref(), None | Some("omml" | "image")) => {
+            (RESTORE_SOURCE_FILE, &["latex"])
+        }
         _ => return Err("A presentation supports LaTeX redraw and formula restore only".to_string()),
     };
     if !options.output_kind.as_deref().is_some_and(|kind| outputs.contains(&kind)) {

@@ -75,7 +75,7 @@
                   image="VisualTeXWordUpdateFormat"
                   onAction="VTWordRibbonUpdateEquationFormat"
                   screentip="更新公式格式"
-                  supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式（与 Windows 版相同），并应用“OMML 字体”的选择，让所有 OMML 公式统一使用文档数学字体。公式内容不变，可一步撤销。"/>
+                  supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式（与 Windows 版相同），并应用“OMML 字体”的选择，让所有 OMML 公式统一使用文档数学字体；字体与当前设置不同的 VisualTeX 图片公式按 LaTeX 用当前字体重绘。公式内容、编号、引用和字号不变，可一步撤销。"/>
           <button id="VisualTeX.Mac.Word.Numbering"
                   label="更新公式编号"
                   image="VisualTeXWordUpdateNumbers"

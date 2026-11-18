@@ -557,6 +557,12 @@ pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
         font_size_pt: original.and_then(|value| value.font_size_pt),
         formula_letter_font: Some(session.formula_letter_font.clone()),
         formula_chinese_font: Some(session.formula_chinese_font.clone()),
+        // the faces the picture was drawn in, as the editor reported them with it
+        formula_faces: session
+            .export_result
+            .as_ref()
+            .and_then(|value| value.formula_faces.clone())
+            .filter(crate::office::formula_fonts::valid_faces_record),
         reference_width_pt: original.and_then(|value| value.reference_width_pt),
         reference_height_pt: original.and_then(|value| value.reference_height_pt),
         reference_baseline_pt: original.and_then(|value| value.reference_baseline_pt),

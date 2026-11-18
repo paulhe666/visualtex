@@ -57,6 +57,11 @@ public sealed class FormulaMetadata
     [JsonPropertyName("formulaChineseFont")]
     public string? FormulaChineseFont { get; set; }
 
+    /// <summary>The fonts for letters, Greek letters and digits the formula was drawn in (absent: none).</summary>
+    [JsonPropertyName("formulaFaces")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FormulaFaces? FormulaFaces { get; set; }
+
     [JsonPropertyName("wordInlineOleWidthPt")]
     public double? WordInlineOleWidthPt { get; set; }
 
@@ -120,6 +125,10 @@ public sealed class FormulaMetadata
         if (RenderFontSizePt is double renderSize && !SupportedSize(renderSize)) RenderFontSizePt = null;
         if (FormulaLetterFont is not null && !IsSupportedFormulaLetterFont(FormulaLetterFont)) FormulaLetterFont = null;
         if (FormulaChineseFont is not null && !IsSupportedFormulaChineseFont(FormulaChineseFont)) FormulaChineseFont = null;
+        if (FormulaFaces is not null
+            && ((FormulaFaces.Letter ?? string.Empty).Length > 128 || (FormulaFaces.Greek ?? string.Empty).Length > 128
+                || (FormulaFaces.Digit ?? string.Empty).Length > 128))
+            FormulaFaces = null;
         if (WordInlineOleWidthPt.HasValue != WordInlineOleHeightPt.HasValue || !inline
             || WordInlineOleWidthPt is double oleWidth && !(oleWidth > 0 && Finite(oleWidth))
             || WordInlineOleHeightPt is double oleHeight && !(oleHeight > 0 && Finite(oleHeight)))
@@ -185,6 +194,7 @@ public sealed class FormulaMetadata
             throw new InvalidOperationException("VisualTeX formulaLetterFont is not supported.");
         if (FormulaChineseFont is not null && !IsSupportedFormulaChineseFont(FormulaChineseFont))
             throw new InvalidOperationException("VisualTeX formulaChineseFont is not supported.");
+        FormulaFaces?.Validate();
         if (WordInlineOleWidthPt.HasValue != WordInlineOleHeightPt.HasValue)
             throw new InvalidOperationException(
                 "VisualTeX Word inline OLE width and height must be stored together.");

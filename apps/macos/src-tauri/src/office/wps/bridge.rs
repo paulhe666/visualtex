@@ -534,6 +534,10 @@ fn router(bridge: Arc<Bridge>) -> Router {
         .route("/wps/v1/images/numbered", post(numbered_image_metadata))
         .route("/wps/v1/images/letter-fonts", post(image_letter_fonts))
         .route("/wps/v1/formulas/latex", post(formula_metadata_latex))
+        .route(
+            "/wps/v1/formulas/font-check",
+            post(formula_font_check).layer(DefaultBodyLimit::max(MAX_DOCUMENT_BODY_BYTES)),
+        )
         .route("/wps/v1/omml/latex", post(omml_latex))
         .route("/wps/v1/conversion-font-sizes", get(read_conversion_font_sizes).post(write_conversion_font_sizes))
         .route("/wps/v1/math-font", get(read_math_font).post(write_math_font))
@@ -949,6 +953,9 @@ struct CreateDocumentBody {
     /// agent's text (macos_offline::open_agent_import).
     #[serde(default)]
     agent: bool,
+    /// Update Equation Format's font step: a picture-to-picture formula restore in the current fonts.
+    #[serde(default)]
+    font_refresh: bool,
 }
 
 /// The request the Word-for-Mac add-in writes for a document operation
@@ -982,6 +989,9 @@ fn document_request(body: &CreateDocumentBody) -> Result<Value, String> {
         if let Some(value) = value {
             fields.insert(key.into(), json!(value));
         }
+    }
+    if body.font_refresh {
+        fields.insert("fontRefresh".into(), json!(true));
     }
     if body.operation == "documentImport" {
         let (inline, display) = conversion_font_sizes();
@@ -1036,6 +1046,9 @@ fn presentation_document_request(body: &CreateDocumentBody, session_id: &str) ->
         if let Some(value) = value {
             fields.insert(key.into(), json!(value));
         }
+    }
+    if body.font_refresh {
+        fields.insert("fontRefresh".into(), json!(true));
     }
     Ok(json!({
         "protocolVersion": 1,
@@ -1567,6 +1580,25 @@ async fn image_letter_fonts(Json(body): Json<NumberedImagesBody>) -> Response {
         })
         .collect();
     Json(json!({ "fonts": fonts })).into_response()
+}
+
+/// Update Equation Format's font step: which picture formulas were drawn in other fonts than the app draws in now
+/// (office::formula_fonts), and those fonts in a few words for the confirmation. `known` is false while no window of
+/// the app has told it its fonts yet.
+async fn formula_font_check(Json(body): Json<NumberedImagesBody>) -> Response {
+    if body.metadata.len() > crate::office::formula_fonts::MAX_CHECKED_FORMULAS {
+        return bad_request("Too many picture formulas in one request");
+    }
+    let Some(current) = crate::office::formula_fonts::current() else {
+        return Json(json!({ "known": false, "stale": [] })).into_response();
+    };
+    Json(json!({
+        "known": true,
+        "stale": crate::office::formula_fonts::stale_formulas(&body.metadata, &current),
+        "fontsZh": crate::office::formula_fonts::describe(&current, false),
+        "fontsEn": crate::office::formula_fonts::describe(&current, true),
+    }))
+    .into_response()
 }
 
 /// The LaTeX a picture formula's metadata holds, for "将图片公式转为 LaTeX" when

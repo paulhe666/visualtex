@@ -245,6 +245,7 @@ mod tests {
             font_size_pt: Some(12.0),
             formula_letter_font: None,
             formula_chinese_font: None,
+            formula_faces: None,
             reference_width_pt: Some(60.0),
             reference_height_pt: Some(15.0),
             reference_baseline_pt: Some(-3.0),

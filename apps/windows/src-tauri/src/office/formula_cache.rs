@@ -238,6 +238,7 @@ mod tests {
             render_font_size_pt: Some(14.0),
             formula_letter_font: Some("times".to_string()),
             formula_chinese_font: Some("kaiti".to_string()),
+            formula_faces: None,
             native_omml_fingerprint: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),

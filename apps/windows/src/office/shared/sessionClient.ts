@@ -3,6 +3,7 @@ import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/edit
 import type { FormulaDocument } from "../../../../shared/visualtex-app/src/types/formula";
 import type {
   FormulaChineseFont,
+  FormulaFaces,
   FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import type { CustomThemeState } from "../../../../shared/visualtex-app/src/themeCustomization";
@@ -44,6 +45,8 @@ export interface OfficeExportResult {
   baseline?: number;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** the fonts for letters, Greek letters and digits the image was drawn in (the add-in records them) */
+  formulaFaces?: FormulaFaces;
 }
 
 export interface NativePowerPointCommitSelection {

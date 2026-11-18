@@ -32,7 +32,7 @@
                 <button id="vtxConvertDocumentImagesToOmml" label="全文图片公式 → WPS 公式" onAction="OnVisualTeXAction" />
                 <button id="vtxConvertDocumentOmmlToImages" label="全文 WPS 公式 → 图片公式" onAction="OnVisualTeXAction" />
               </menu>
-              <button id="vtxUpdateEquationFormat" label="更新公式格式" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式。公式内容不变，可一步撤销。" imageMso="Refresh" onAction="OnVisualTeXAction" />
+              <button id="vtxUpdateEquationFormat" label="更新公式格式" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式；字体与当前设置不同的 VisualTeX 图片公式按 LaTeX 用当前字体重绘。公式内容、编号、引用和字号不变，可一步撤销。" imageMso="Refresh" onAction="OnVisualTeXAction" />
             </box>
             <box id="vtxNumberingColumn" boxStyle="vertical">
               <button id="vtxUpdateNumbers" label="更新公式编号" screentip="更新公式编号" supertip="重新计算当前文档中 WPS 公式与 VisualTeX 图片公式的编号，并更新对它们的引用。" imageMso="UpdateField" onAction="OnVisualTeXAction" />

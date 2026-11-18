@@ -126,6 +126,9 @@ export function WordLatexRedrawApp() {
         if (request.operation === "formulaRestore") {
           const targets = request.restoreTargets ?? [];
           const outputKind = request.outputKind;
+          // Update Equation Format's font step: picture formulas drawn again in the fonts of the Settings, each at
+          // its own size, in its place (the add-in chose the ones drawn in other fonts).
+          const fontRefresh = request.fontRefresh === true;
           if (!targets.length) {
             throw new OfficeConversionError(
               request.redrawScope === "document"
@@ -140,6 +143,11 @@ export function WordLatexRedrawApp() {
           ) {
             throw new OfficeConversionError(
               t(`${office} 公式还原的输出格式无效（收到：${String(outputKind)}）。`, `The ${office} formula restore output format is invalid (received: ${String(outputKind)}).`),
+            );
+          }
+          if (fontRefresh && (outputKind !== "image" || request.sourceKind !== "image")) {
+            throw new OfficeConversionError(
+              t(`${office} 公式字体更新只能重绘图片公式。`, `The ${office} formula font update redraws picture formulas only.`),
             );
           }
 
@@ -165,7 +173,11 @@ export function WordLatexRedrawApp() {
             });
           } else {
             const formulaOutputKind = outputKind === "omml" ? "omml" : "image";
-            setStatus(t(`正在渲染公式 0/${recovered.length}…`, `Rendering 0/${recovered.length} formulas…`));
+            const renderingStatus = (current: number, total: number) =>
+              fontRefresh
+                ? t(`正在用当前字体重绘公式 ${current}/${total}…`, `Drawing formulas in the current fonts ${current}/${total}…`)
+                : t(`正在渲染公式 ${current}/${total}…`, `Rendering ${current}/${total} formulas…`);
+            setStatus(renderingStatus(0, recovered.length));
             const { items, failures } = await prepareWindowsStyleWordLatexRedrawItems(
               recovered.map((target) => ({
                 start: target.sourceStart,
@@ -180,7 +192,9 @@ export function WordLatexRedrawApp() {
                 sourceKind: target.sourceKind,
               })),
               formulaOutputKind,
-              (current, total) => setStatus(t(`正在渲染公式 ${current}/${total}…`, `Rendering ${current}/${total} formulas…`)),
+              (current, total) => setStatus(renderingStatus(current, total)),
+              presentation ? "powerpoint" : "word",
+              { fontRefresh },
             );
             if (!items.length) throw allFormulasFailed(failures);
             const forAgent = failures.length > 0 && (await noteMacosAgentSession(sessionId, skippedForAgent(failures)));

@@ -171,6 +171,114 @@ pub(crate) fn consume_fast_number_requests() -> Result<usize, String> {
     Ok(answered)
 }
 
+/// The Office add-ins' font checks (Update Equation Format): the add-in writes the encoded metadata of a document's
+/// picture formulas into its fast-open inbox as `<session>.fonts`; the answer, `<session>.fonts-done`, names the ones
+/// drawn in other fonts than the app draws in now (office::formula_fonts::answer_font_check). Word's and PowerPoint's
+/// inboxes alike. The add-in asks only a resident whose heartbeat says `fonts=1` (it knows the fonts).
+const FAST_FONTS_REQUEST_SUFFIX: &str = ".fonts";
+const FAST_FONTS_ANSWER_SUFFIX: &str = ".fonts-done";
+const MAX_FAST_FONTS_BYTES: u64 = 16 * 1024 * 1024;
+
+pub(super) fn fast_fonts_session_id(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    let session_id = file_name.strip_suffix(FAST_FONTS_REQUEST_SUFFIX)?;
+    validate_uuid(session_id, "Font check Session id").ok()?;
+    Some(session_id.to_string())
+}
+
+/// `<session>.fonts-done` that nobody read for a long time.
+fn is_stale_fast_fonts_answer(path: &Path, now: SystemTime) -> bool {
+    let Some(session_id) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(FAST_FONTS_ANSWER_SUFFIX))
+    else {
+        return false;
+    };
+    if validate_uuid(session_id, "Font check answer Session id").is_err() {
+        return false;
+    }
+    match fs::symlink_metadata(path).and_then(|metadata| metadata.modified()) {
+        Ok(modified) => now
+            .duration_since(modified)
+            .map(|age| age > STALE_FAST_NUMBER_ANSWER_AGE)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+/// Answers every font check waiting in `inbox_root`. Returns how many.
+pub(super) fn answer_fast_font_requests(inbox_root: &Path) -> Result<usize, String> {
+    let entries = match fs::read_dir(inbox_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            mark_fast_open_access_unavailable();
+            return Ok(0);
+        }
+        Err(_) => return Ok(0),
+    };
+    let now = SystemTime::now();
+    let mut answered = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_stale_fast_fonts_answer(&path, now) {
+            let _ = fs::remove_file(&path);
+            continue;
+        }
+        let Some(session_id) = fast_fonts_session_id(&path) else {
+            continue;
+        };
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_FAST_FONTS_BYTES {
+            continue;
+        }
+        // Published by an atomic rename, so complete when it appears; one left from long ago is nobody's any more.
+        let recent = match metadata.modified() {
+            Ok(modified) => match now.duration_since(modified) {
+                Ok(age) => age <= FAST_OPEN_MAX_AGE,
+                Err(error) => error.duration() <= FAST_OPEN_FUTURE_TOLERANCE,
+            },
+            Err(_) => false,
+        };
+        let claim_path = inbox_root.join(format!(".{session_id}.{}.claim", Uuid::new_v4()));
+        if fs::rename(&path, &claim_path).is_err() {
+            continue;
+        }
+        let manifest = fs::read(&claim_path);
+        let _ = fs::remove_file(&claim_path);
+        if !recent {
+            continue;
+        }
+        let answer = match manifest {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(text) => crate::office::formula_fonts::answer_font_check(&text),
+                Err(_) => "error=The font check is not UTF-8\n".to_string(),
+            },
+            Err(error) => format!("error=Unable to read the font check: {error}\n"),
+        };
+        atomic_write_runtime(
+            &inbox_root.join(format!("{session_id}{FAST_FONTS_ANSWER_SUFFIX}")),
+            answer.as_bytes(),
+            0o600,
+        )?;
+        answered += 1;
+    }
+    Ok(answered)
+}
+
+pub(crate) fn consume_fast_font_requests() -> Result<usize, String> {
+    if fast_open_access_is_backed_off() {
+        return Ok(0);
+    }
+    let mut answered = 0;
+    for (_host, root) in fast_open_inbox_roots()? {
+        answered += answer_fast_font_requests(&root)?;
+    }
+    Ok(answered)
+}
+
 pub(super) fn fast_open_session_id(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_str()?;
     let session_id = file_name.strip_suffix(".json")?;
@@ -446,9 +554,11 @@ pub(super) fn fast_open_ready_heartbeat() -> Result<String, String> {
         return Err("VisualTeX resident executable path contains a newline".to_string());
     }
     // numbers=1: this resident answers the Word add-in's number requests (<session>.number), which an older one does not:
-    // the add-in asks only a resident that says so, instead of waiting for an answer that never comes.
+    // the add-in asks only a resident that says so, instead of waiting for an answer that never comes. fonts=1: it
+    // answers font checks (<session>.fonts) and knows the fonts formulas are drawn in now.
+    let fonts = if crate::office::formula_fonts::current().is_some() { "fonts=1\n" } else { "" };
     Ok(format!(
-        "visualtex-fast-open-ready-v2\n{}\n{}\n{}\nnumbers=1\n",
+        "visualtex-fast-open-ready-v2\n{}\n{}\n{}\nnumbers=1\n{fonts}",
         epoch_ms(),
         std::process::id(),
         executable
@@ -524,6 +634,9 @@ pub(crate) fn start_fast_open_inbox_watcher(app: AppHandle) {
             }
             if let Err(error) = consume_fast_number_requests() {
                 eprintln!("Unable to answer VisualTeX Word number request: {error}");
+            }
+            if let Err(error) = consume_fast_font_requests() {
+                eprintln!("Unable to answer VisualTeX Office font check: {error}");
             }
             if let Err(error) = consume_fast_open_request(&app) {
                 eprintln!("Unable to consume VisualTeX Office fast-open request: {error}");

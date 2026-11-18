@@ -57,6 +57,7 @@ pub(super) fn document_import_request_data(
         source_kind: document_import.source_kind.clone(),
         source,
         restore_targets,
+        font_refresh: document_import.font_refresh,
         client: request.client.clone(),
         segments: None,
         agent: agent_import(request),
@@ -647,6 +648,10 @@ pub(super) fn commit_document_import_blocking(
         ("itemCount".to_string(), input.items.len().to_string()),
     ];
     if is_range_replace {
+        if public_request.font_refresh {
+            // the commit also brings the rest of the format up to date, in the same Undo step
+            entries.push(("fontRefresh".to_string(), "1".to_string()));
+        }
         entries.push((
             "redrawScope".to_string(),
             public_request.redraw_scope.clone().unwrap_or_default(),
@@ -1215,6 +1220,7 @@ pub(super) fn commit_document_import_blocking(
             "outputKind": input.output_kind,
             "sourceKind": public_request.source_kind,
             "redrawScope": public_request.redraw_scope,
+            "fontRefresh": public_request.font_refresh,
             "bookmarkName": public_request.bookmark_name,
             "sourceDocumentId": public_request.source_document_id,
             "mathFont": crate::office::omml_write::normalize_math_font_name(word_equation_math_font(&request)),

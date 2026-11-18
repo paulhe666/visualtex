@@ -5,6 +5,7 @@ import type {
 } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
 import type {
   FormulaChineseFont,
+  FormulaFaces,
   FormulaLetterFont,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import {
@@ -41,6 +42,8 @@ export interface OfficeExportResult {
   inkTopRatio?: number;
   inkBottomRatio?: number;
   inkCenterYRatio?: number;
+  /** The fonts for letters, Greek letters and digits the picture was drawn in (the formula records them). */
+  formulaFaces?: FormulaFaces;
 }
 
 export interface NativePowerPointCommitSelection {

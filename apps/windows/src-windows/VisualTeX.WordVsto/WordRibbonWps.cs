@@ -44,7 +44,7 @@ public sealed partial class ThisAddIn
             <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="为所选行间公式编号" onAction="OnNumberDisplayFormulasSelection" />
             <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="为全文行间公式编号" onAction="OnNumberDisplayFormulasDocument" />
           </menu>
-          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新&#10;公式格式" size="large" enableLineBreak="true" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式，并让 WPS 公式使用“WPS 公式字体”选定的字体。公式内容与类型不变。" imageMso="Refresh" onAction="OnUpdateEquationFormat" />
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新&#10;公式格式" size="large" enableLineBreak="true" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式，让 WPS 公式使用“WPS 公式字体”选定的字体，并用当前设置的字体重绘字体与之不同的 VisualTeX 公式，编号、引用和字号不变。公式内容与类型不变。" imageMso="Refresh" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="批量&#10;导入" size="large" enableLineBreak="true" screentip="批量导入 LaTeX / Markdown" supertip="选择一个 LaTeX 或 Markdown 文档，正文插入为文字，公式插入为可编辑、可调字号的行内和行间公式。" imageMso="OpenFile" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
@@ -136,7 +136,7 @@ public sealed partial class ThisAddIn
             <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="Number Display Equations in Selection" onAction="OnNumberDisplayFormulasSelection" />
             <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="Number All Display Equations" onAction="OnNumberDisplayFormulasDocument" />
           </menu>
-          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="Update &#10;Equation Format" size="large" enableLineBreak="true" screentip="Update equation format" supertip="Bring every equation number structure an earlier VisualTeX wrote in this document into the current format and give WPS equations the font chosen under WPS Equation Font. Equation content and kinds do not change." imageMso="Refresh" onAction="OnUpdateEquationFormat" />
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="Update &#10;Equation Format" size="large" enableLineBreak="true" screentip="Update equation format" supertip="Bring every equation number structure an earlier VisualTeX wrote in this document into the current format, give WPS equations the font chosen under WPS Equation Font, and draw the VisualTeX equations drawn in other fonts again in the current fonts, keeping their numbers, references and sizes. Equation content and kinds do not change." imageMso="Refresh" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="Bulk &#10;Import" size="large" enableLineBreak="true" screentip="Import LaTeX / Markdown" supertip="Choose a LaTeX or Markdown document: its text becomes text and its equations become editable inline and display equations." imageMso="OpenFile" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="Format Conversion">

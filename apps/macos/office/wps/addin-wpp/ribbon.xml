@@ -1,7 +1,7 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddinLoad">
   <!-- The same tab as the PowerPoint for Mac add-in's (powerpoint/customUI14.xml): the same groups and buttons in the
        same order, large where PowerPoint's are large, and PowerPoint's column of three (delete, size, open) as a column
-       of three, with WPS's own equations called "WPS 公式" where PowerPoint says OMML. See ../addin/ribbon.xml for
+       of three after its large 更新格式, with WPS's own equations called "WPS 公式" where PowerPoint says OMML. See ../addin/ribbon.xml for
        how WPS lays boxes out, the size menus and the icons; large labels are short (no "公式": 行内WPS, 新建SVG,
        转为LaTeX) and have no space, as WPS for Mac draws them on one line; the screentips keep the full names. -->
   <ribbon>
@@ -31,6 +31,7 @@
           </menu>
         </group>
         <group id="VisualTeXSlidesToolsGroup" label="公式工具">
+          <button id="vtxUpdateEquationFormat" label="更新格式" size="large" screentip="更新公式格式" supertip="字体与当前设置不同的 VisualTeX 公式按 LaTeX 用当前字体重绘，位置、旋转、层级和大小不变。" imageMso="Refresh" onAction="OnVisualTeXAction" />
           <box id="vtxSlidesToolsColumn" boxStyle="vertical">
             <button id="vtxDeleteSelected" label="删除所选公式" screentip="删除所选 VisualTeX 公式" imageMso="EquationCollectItemDelete" onAction="OnVisualTeXAction" />
             <dynamicMenu id="vtxImageFontSize" label="SVG 公式字号" screentip="SVG 公式字号" supertip="先选中一个或多个 VisualTeX 公式（SVG 图片），再选择字号；立即应用，并保持中心、旋转和层级不变。" imageMso="FontSizeQat" getContent="OnVisualTeXMenuContent" invalidateContentOnDrop="true" />

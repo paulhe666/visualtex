@@ -118,6 +118,10 @@ pub struct OfficeExportResult {
     pub ink_bottom_ratio: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ink_center_y_ratio: Option<f64>,
+    /// The fonts for letters, Greek letters and digits the picture was drawn in (the Office editor reports them, the
+    /// formula's metadata records them; kept as given).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula_faces: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +159,10 @@ pub struct VisualTeXFormulaMetadata {
     pub formula_letter_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_chinese_font: Option<String>,
+    /// {letter, greek, digit}: the fonts the formula was drawn in over its math font ("" = the math font's); a
+    /// formula without them was drawn without them (office::formula_fonts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula_faces: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_width_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1073,6 +1081,7 @@ mod tests {
             font_size_pt: None,
             formula_letter_font: None,
             formula_chinese_font: None,
+            formula_faces: None,
             reference_width_pt: None,
             reference_height_pt: None,
             reference_baseline_pt: None,

@@ -53,6 +53,8 @@ export interface MacosDocumentImportRequest {
   sourceKind?: "omml" | "image";
   source?: string;
   restoreTargets?: MacosFormulaRestoreTarget[];
+  /** Update Equation Format's font step: the picture formulas of a restore are drawn again in the current fonts. */
+  fontRefresh?: boolean;
   /** "wps" when the WPS add-in started the operation. */
   client?: "wps";
   /** A presentation's text boxes in `source`, each searched on its own. */

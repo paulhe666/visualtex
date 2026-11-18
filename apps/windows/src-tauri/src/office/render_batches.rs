@@ -22,7 +22,7 @@ mod tests {
                 svg: String::new(), svg_base64: String::new(),
                 math_ml: Some("<math><msup><mi>x</mi><mn>2</mn></msup></math>".into()),
                 png_base64: None, width: 20.0, height: 15.0, baseline: Some(12.0),
-                formula_letter_font: None, formula_chinese_font: None,
+                formula_letter_font: None, formula_chinese_font: None, formula_faces: None,
             }),
         }
     }

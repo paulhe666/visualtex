@@ -244,6 +244,11 @@ pub(super) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
             .as_ref()
             .and_then(|value| value.formula_chinese_font.clone())
             .or_else(|| original.and_then(|value| value.formula_chinese_font.clone())),
+        formula_faces: session
+            .export_result
+            .as_ref()
+            .and_then(|value| value.formula_faces.clone())
+            .or_else(|| original.and_then(|value| value.formula_faces.clone())),
         native_omml_fingerprint: original
             .and_then(|value| value.native_omml_fingerprint.clone()),
         created_with_version: original

@@ -428,7 +428,8 @@ Private Function VTFormulaRestoreManifest( _
     ByVal targetRange As Range, _
     ByVal sourceKind As String, _
     ByVal targets As Collection, _
-    ByVal outputKind As String) As String
+    ByVal outputKind As String, _
+    Optional ByVal fontRefresh As Boolean = False) As String
 
     Dim manifest As String
     Dim prefix As String
@@ -529,8 +530,9 @@ Private Function VTFormulaRestoreManifest( _
             End If
             payload = encodedMetadata
         End If
-        ' Format conversion gives the formula the global size for its kind.
-        If outputKind <> "latex" Then
+        ' Format conversion gives the formula the global size for its kind; a
+        ' formula drawn again in the current fonts keeps its own.
+        If outputKind <> "latex" And Not fontRefresh Then
             fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
         End If
         manifest = manifest & _
@@ -890,6 +892,245 @@ Private Function VTFormulaRestoreNothingFoundMessage( _
     End If
     VTFormulaRestoreNothingFoundMessage = message
 End Function
+
+' Update Equation Format's font step (VisualTeX_UpdateEquationFormat): the
+' document's image formulas the app draws in other fonts than it draws in now.
+' The app reads their metadata (VTTryResidentFontCheck); checked is False when
+' VisualTeX could not answer, description names the fonts it draws in now.
+Public Function VTWordFontRefreshTargets( _
+    ByVal documentObject As Document, _
+    ByRef description As String, _
+    ByRef checked As Boolean) As Collection
+
+    Const MAX_CHECKED_FORMULAS As Long = 4000
+    Dim result As New Collection
+    Dim candidates As New Collection
+    Dim formulaShape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim sessionId As String
+    Dim manifest As String
+    Dim answer As String
+    Dim staleList As String
+    Dim staleNumbers() As String
+    Dim index As Long
+    Dim number As Long
+
+    Set VTWordFontRefreshTargets = result
+    checked = True
+    description = ""
+    If documentObject Is Nothing Then Exit Function
+    For Each formulaShape In documentObject.Content.InlineShapes
+        formulaId = ""
+        displayMode = ""
+        numbered = False
+        encodedMetadata = ""
+        metadataNeedsWrite = False
+        formatNeedsWrite = False
+        ' read only: nothing changes before the user confirms
+        If VTTryResolveVisualTeXInlineShapeReference( _
+           formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+           metadataNeedsWrite, formatNeedsWrite, False) Then
+            If VTIsEncodedMetadata(encodedMetadata) Then
+                candidates.Add formulaShape
+                manifest = manifest & "image" & CStr(candidates.Count) & _
+                    "Metadata=" & encodedMetadata & vbLf
+            End If
+        End If
+    Next formulaShape
+    If candidates.Count = 0 Then Exit Function
+    checked = False
+    If candidates.Count > MAX_CHECKED_FORMULAS Then Exit Function
+    sessionId = VTNewUuidV4()
+    manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
+        "sessionId=" & sessionId & vbLf & _
+        "imageCount=" & CStr(candidates.Count) & vbLf & manifest
+    answer = VTTryResidentFontCheck(VT_WORD_HOST, sessionId, manifest)
+    If Len(answer) = 0 Then Exit Function
+    checked = True
+    description = VTBase64UrlDecodeUtf8(VTResidentAnswerValue(answer, "fontsEn"))
+    staleList = VTResidentAnswerValue(answer, "stale")
+    If Len(staleList) = 0 Then Exit Function
+    staleNumbers = Split(staleList, ",")
+    For index = LBound(staleNumbers) To UBound(staleNumbers)
+        number = CLng(Val(staleNumbers(index)))
+        If number >= 1 And number <= candidates.Count Then
+            result.Add candidates(number)
+        End If
+    Next index
+End Function
+
+' Draws the given image formulas again in the current fonts: a document
+' formula restore from images to images that keeps each formula's size. The
+' app's commit (VTCommitWordLatexRedrawDispatch, fontRefresh) writes them and
+' brings the rest of the equation format up to date in the same Undo step.
+Public Sub VTStartWordFontRefresh( _
+    ByVal documentObject As Document, _
+    ByVal targets As Collection)
+
+    Dim sessionId As String
+    Dim bookmarkName As String
+    Dim sourceDocumentId As String
+    Dim targetRange As Range
+    Dim defaultFontSizePt As Double
+    Dim requestJson As String
+    Dim manifest As String
+    Dim manifestPath As String
+    Dim operationStage As String
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    On Error GoTo Failed
+    operationStage = "resolve-range"
+    If documentObject Is Nothing Or targets Is Nothing Then
+        Err.Raise vbObjectError + 7595, "VisualTeX", _
+            "The formula font update has no document."
+    End If
+    If targets.Count = 0 Or _
+       targets.Count > VT_WORD_LATEX_REDRAW_MAX_FORMULAS Then
+        Err.Raise vbObjectError + 7595, "VisualTeX", _
+            "The formula font update must redraw 1 to 1000 formulas."
+    End If
+    Set targetRange = documentObject.Content.Duplicate
+    If VTUtf8ByteLength(targetRange.Text) > _
+       VT_WORD_LATEX_REDRAW_MAX_BYTES Then
+        Err.Raise vbObjectError + 7595, "VisualTeX", _
+            "The Word document exceeds 5 MB of text."
+    End If
+
+    operationStage = "create-identities"
+    sessionId = VTNewUuidV4()
+    bookmarkName = VTDocumentImportBookmarkName(sessionId)
+    sourceDocumentId = VTWordDocumentIdentity()
+    defaultFontSizePt = VTPreferredWordFormulaFontSize(targetRange)
+    If documentObject.Bookmarks.Exists(bookmarkName) Then
+        documentObject.Bookmarks(bookmarkName).Delete
+    End If
+    documentObject.Bookmarks.Add Name:=bookmarkName, Range:=targetRange
+
+    operationStage = "serialize-request"
+    requestJson = VTFormulaRestoreRequestJson( _
+        sessionId, sourceDocumentId, bookmarkName, defaultFontSizePt, _
+        "document", "image", "image")
+    requestJson = Left$(requestJson, Len(requestJson) - 2) & _
+        "," & """fontRefresh"":true}}"
+    requestJson = VTV2WithDocumentMathFont(requestJson, documentObject)
+    manifest = VTFormulaRestoreManifest( _
+        sessionId, sourceDocumentId, bookmarkName, targetRange, _
+        "image", targets, "image", True)
+    If VTUtf8ByteLength(manifest) <= _
+       VT_WORD_FORMULA_RESTORE_COMBINED_MAX_BYTES Then
+        operationStage = "write-source-and-launch"
+        Call VTWriteFormulaRestoreAndLaunchSession( _
+            VT_WORD_HOST, sessionId, requestJson, manifest)
+    Else
+        operationStage = "write-request"
+        VTWriteRequest sessionId, requestJson
+        manifestPath = VTSessionDirectory(sessionId) & _
+            VT_WORD_FORMULA_RESTORE_SOURCE_FILE
+        operationStage = "write-source"
+        VTWriteLargeSessionText manifestPath, manifest
+        operationStage = "launch"
+        VTLaunchSession VT_WORD_HOST, sessionId
+    End If
+    Application.StatusBar = "VisualTeX: drawing " & CStr(targets.Count) & _
+        " formula(s) again in the current fonts..."
+    Exit Sub
+
+Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    If Len(bookmarkName) > 0 Then
+        If documentObject.Bookmarks.Exists(bookmarkName) Then
+            documentObject.Bookmarks(bookmarkName).Delete
+        End If
+    End If
+    If Len(sessionId) > 0 Then VTDeleteSessionFiles sessionId
+    On Error GoTo 0
+    VTShowError _
+        "Update Equation Format (" & operationStage & ")", _
+        errorNumber, errorDescription
+End Sub
+
+' The bookmarks on an image formula's number that are not VisualTeX's own
+' (Word's _Ref cross-reference targets, the user's): the font update puts them
+' back on the number of the formula drawn again.
+Private Function VTFontRefreshNumberBookmarks( _
+    ByVal formulaShape As InlineShape, _
+    ByVal formulaId As String) As Collection
+
+    Dim result As New Collection
+    Dim name As Variant
+
+    On Error GoTo Finished
+    For Each name In VTCaptureImageNumberBookmarks(formulaShape, formulaId)
+        If UCase$(Left$(CStr(name), 3)) <> "VT_" Then result.Add CStr(name)
+    Next name
+Finished:
+    Err.Clear
+    Set VTFontRefreshNumberBookmarks = result
+End Function
+
+' The image formula with this id in the document's main text (Nothing if none).
+Private Function VTFontRefreshImageShape( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String) As InlineShape
+
+    Dim candidate As InlineShape
+    Dim actualFormulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+
+    For Each candidate In documentObject.Content.InlineShapes
+        actualFormulaId = ""
+        If VTTryResolveVisualTeXInlineShapeReference( _
+           candidate, actualFormulaId, displayMode, numbered, _
+           encodedMetadata, metadataNeedsWrite, formatNeedsWrite, False) Then
+            If StrComp(actualFormulaId, formulaId, vbTextCompare) = 0 Then
+                Set VTFontRefreshImageShape = candidate
+                Exit Function
+            End If
+        End If
+    Next candidate
+End Function
+
+' The REF fields of the document that point to the restored bookmarks show
+' their numbers again.
+Private Sub VTUpdateReferencesToBookmarks( _
+    ByVal documentObject As Document, _
+    ByVal entries As Collection)
+
+    Dim names As New Collection
+    Dim entry As Variant
+    Dim name As Variant
+    Dim candidate As Field
+    Dim target As String
+
+    On Error Resume Next
+    For Each entry In entries
+        For Each name In entry(1)
+            names.Add CStr(name), LCase$(CStr(name))
+        Next name
+    Next entry
+    Err.Clear
+    For Each candidate In documentObject.Content.Fields
+        If candidate.Type = wdFieldRef Then
+            target = VTReferenceTargetBookmarkName(candidate.Code.Text)
+            If Len(target) > 0 Then
+                If VTCollectionHasKey(names, LCase$(target)) Then candidate.Update
+            End If
+        End If
+    Next candidate
+    Err.Clear
+End Sub
 
 Public Sub VTStartWordFormulaRestore( _
     ByVal restoreScope As String, _
@@ -2186,7 +2427,8 @@ Private Sub VTResolveFormulaRestoreWordOffsets( _
     ByVal sourceKind As String, _
     ByVal itemCount As Long, _
     ByRef wordStarts() As Long, _
-    ByRef wordEnds() As Long)
+    ByRef wordEnds() As Long, _
+    Optional ByVal fontRefresh As Boolean = False)
 
     Dim targetRange As Range
     Dim sourceRange As Range
@@ -2203,6 +2445,8 @@ Private Sub VTResolveFormulaRestoreWordOffsets( _
     Dim formatNeedsWrite As Boolean
     Dim itemIndex As Long
     Dim previousEnd As Long
+    Dim liveIndex As Long
+    Dim found As Boolean
 
     If documentObject Is Nothing Or targetEnd <= targetStart Then
         Err.Raise vbObjectError + 7591, "VisualTeX", _
@@ -2216,6 +2460,56 @@ Private Sub VTResolveFormulaRestoreWordOffsets( _
     Set targetRange = documentObject.Range( _
         Start:=targetStart, End:=targetEnd)
     Set targets = VTCollectFormulaRestoreTargets(targetRange, sourceKind)
+    If fontRefresh And sourceKind = "image" Then
+        ' The formulas drawn again are some of the document's image formulas,
+        ' in document order: each is found again by its id.
+        ReDim wordStarts(0 To itemCount - 1)
+        ReDim wordEnds(0 To itemCount - 1)
+        previousEnd = 0
+        liveIndex = 1
+        For itemIndex = 0 To itemCount - 1
+            expectedFormulaId = VTDispatchOptional( _
+                manifest, VTDocumentImportItemKey(itemIndex, "formulaId"))
+            found = False
+            Do While liveIndex <= targets.Count And Not found
+                Set formulaShape = targets(liveIndex)
+                liveIndex = liveIndex + 1
+                actualFormulaId = ""
+                displayMode = ""
+                numbered = False
+                encodedMetadata = ""
+                metadataNeedsWrite = False
+                formatNeedsWrite = False
+                If VTTryResolveVisualTeXInlineShapeReference( _
+                   formulaShape, actualFormulaId, displayMode, numbered, _
+                   encodedMetadata, metadataNeedsWrite, formatNeedsWrite, _
+                   False) Then
+                    found = (Len(expectedFormulaId) > 0 And _
+                        StrComp(actualFormulaId, expectedFormulaId, _
+                            vbTextCompare) = 0)
+                End If
+            Loop
+            If Not found Then
+                Err.Raise vbObjectError + 7591, "VisualTeX", _
+                    "An image formula was changed or removed while it was being drawn again; nothing was changed."
+            End If
+            Set sourceRange = VTVisualTeXImageContainerRange(formulaShape)
+            If sourceRange Is Nothing Then
+                Err.Raise vbObjectError + 7591, "VisualTeX", _
+                    "Word could not re-resolve a formula during the font update."
+            End If
+            wordStarts(itemIndex) = sourceRange.Start - targetStart
+            wordEnds(itemIndex) = sourceRange.End - targetStart
+            If wordStarts(itemIndex) < previousEnd Or _
+               wordEnds(itemIndex) <= wordStarts(itemIndex) Or _
+               wordEnds(itemIndex) > targetEnd - targetStart Then
+                Err.Raise vbObjectError + 7591, "VisualTeX", _
+                    "The live Word formula ranges overlap or exceed the update target."
+            End If
+            previousEnd = wordEnds(itemIndex)
+        Next itemIndex
+        Exit Sub
+    End If
     If targets.Count <> itemCount Then
         Err.Raise vbObjectError + 7591, "VisualTeX", _
             "The Word formula inventory changed while format conversion was running."
@@ -2353,10 +2647,24 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
     Dim deferNumberingReconcile As Boolean
     Dim numberParagraphCleared As Boolean
     Dim replacementStart As Long
+    Dim fontRefresh As Boolean
+    Dim formatInventory As String
+    Dim refreshReferences As Collection
+    Dim keptBookmarks As Collection
+    Dim refreshEntry As Variant
+    Dim refreshedShape As InlineShape
 
     On Error GoTo Failed
     transactionStage = "redraw-validate-target"
     operationName = CStr(manifest("operation"))
+    ' Update Equation Format's font step: image formulas drawn again in the
+    ' current fonts, written with the rest of the format update in one record.
+    fontRefresh = (operationName = "formulaRestore" And _
+        VTDispatchOptional(manifest, "fontRefresh") = "1")
+    If fontRefresh And outputKind <> "image" Then
+        Err.Raise vbObjectError + 7591, "VisualTeX", _
+            "A formula font update writes image formulas only."
+    End If
     atomicFormulaConversion = _
         (operationName = "formulaRestore" And outputKind <> "latex")
     If operationName <> "latexRedraw" And _
@@ -2496,7 +2804,8 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
         sourceKind = VTDispatchOptional(manifest, "sourceKind")
         VTResolveFormulaRestoreWordOffsets _
             targetDocument, targetStart, targetEnd, manifest, _
-            sourceKind, itemCount, wordStarts, wordEnds
+            sourceKind, itemCount, wordStarts, wordEnds, fontRefresh
+        If fontRefresh Then formatInventory = VTV2EquationInventory(targetDocument)
     End If
 
     For itemIndex = 0 To itemCount - 1
@@ -2597,7 +2906,9 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
     anchorBookmark.Delete
     transactionStage = "redraw-start-undo"
     Set undoRecord = CallByName(Application, "UndoRecord", VbGet)
-    If operationName = "formulaRestore" Then
+    If fontRefresh Then
+        undoRecord.StartCustomRecord "VisualTeX Update Equation Format"
+    ElseIf operationName = "formulaRestore" Then
         undoRecord.StartCustomRecord "VisualTeX Restore Word Formulas"
     Else
         undoRecord.StartCustomRecord "VisualTeX Redraw LaTeX Formulas"
@@ -2606,6 +2917,7 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
     Set insertedFormulaIds = New Collection
     Set numberedFormulaIds = New Collection
     Set numberedRestoreRanges = New Collection
+    Set refreshReferences = New Collection
     VTBeginWordInternalMutation
     internalMutationStarted = True
     VTUpdateDocumentImportProgress sessionId, 0, itemCount, "inserting"
@@ -2636,6 +2948,20 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
                VTDispatchOptional(manifest, VTDocumentImportItemKey( _
                    itemIndex, "displayMode")) = "block" Then
                 VTSeparateLatexRedrawDisplayParagraph sourceRange
+            End If
+            If fontRefresh And sourceKind = "image" Then
+                ' Word's cross-reference bookmarks on the number go with the
+                ' old picture; they are put back on its new number below.
+                If sourceRange.InlineShapes.Count >= 1 Then
+                    Set keptBookmarks = VTFontRefreshNumberBookmarks( _
+                        sourceRange.InlineShapes(1), _
+                        VTDocumentImportRequired(manifest, itemIndex, "formulaId"))
+                    If keptBookmarks.Count > 0 Then
+                        refreshReferences.Add Array( _
+                            VTDocumentImportRequired(manifest, itemIndex, "formulaId"), _
+                            keptBookmarks)
+                    End If
+                End If
             End If
             replacementStart = sourceRange.Start
             sourceRange.Delete
@@ -2702,6 +3028,20 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
     End If
     VTWordPerformanceMark "redraw-numbering-complete"
 
+    If fontRefresh And refreshReferences.Count > 0 Then
+        transactionStage = "redraw-restore-references"
+        For Each refreshEntry In refreshReferences
+            Set refreshedShape = VTFontRefreshImageShape( _
+                targetDocument, CStr(refreshEntry(0)))
+            If refreshedShape Is Nothing Then
+                Err.Raise vbObjectError + 7591, "VisualTeX", _
+                    "A redrawn image formula could not be found again for its cross-references."
+            End If
+            VTRestoreImageNumberBookmarks refreshedShape, refreshEntry(1)
+        Next refreshEntry
+        VTUpdateReferencesToBookmarks targetDocument, refreshReferences
+    End If
+
     If operationName = "formulaRestore" And outputKind = "latex" Then
         VTFinalizeFormulaRestoreNumbering _
             targetDocument, numberedFormulaIds, numberedRestoreRanges
@@ -2721,9 +3061,22 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
         Set sharedNativeDocument = Nothing
         targetDocument.Activate
     End If
+    If fontRefresh Then
+        ' The rest of Update Equation Format, in the same Undo step.
+        transactionStage = "format-update"
+        VTApplyEquationFormatUpdate targetDocument
+    End If
     If undoRecordStarted Then
         undoRecord.EndCustomRecord
         undoRecordStarted = False
+    End If
+    If fontRefresh Then
+        transactionStage = "format-verify"
+        If Not VTEquationFormatIsCurrent(targetDocument) Or _
+           VTV2EquationInventory(targetDocument) <> formatInventory Then
+            Err.Raise vbObjectError + 7613, "VisualTeX", _
+                "The equation format update could not be verified and was undone."
+        End If
     End If
     If displayAlertsChanged Then
         Application.DisplayAlerts = previousDisplayAlerts
@@ -2737,7 +3090,12 @@ Public Sub VTCommitWordLatexRedrawDispatch( _
     VTWordPerformanceMark "redraw-cleanup-complete"
     VTUpdateDocumentImportProgress _
         sessionId, itemCount, itemCount, "complete"
-    Application.StatusBar = ""
+    If fontRefresh Then
+        Application.StatusBar = "VisualTeX: " & CStr(itemCount) & _
+            " formula(s) drawn again in the current fonts; equation format updated."
+    Else
+        Application.StatusBar = ""
+    End If
     Exit Sub
 
 Failed:

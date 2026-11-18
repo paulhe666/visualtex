@@ -41,6 +41,7 @@ public sealed partial class ThisAddIn
             <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetOle" label="OLE 对象（双击编辑，嵌入文件）" tag="nativeOle" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
             <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetSvg" label="SVG 图片（任何设备都能显示）" tag="crossPlatformPicture" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
           </menu>
+          <button id="VisualTeX.PowerPointVsto.UpdateEquationFormat" label="更新&#10;公式格式" size="large" enableLineBreak="true" screentip="更新公式格式" supertip="用当前设置的字体（数学字体、中文字体以及字母、希腊字母和数字的字体）重绘字体与之不同的 VisualTeX 公式（SVG 图片和 OLE 对象）；每个公式保持位置、显示大小、旋转和层级，公式内容不变。" imageMso="Refresh" onAction="OnUpdateEquationFormat" />
         </group>
         <group id="VisualTeX.PowerPointVsto.LatexRedrawGroup" label="LaTeX 重绘">
           <menu id="VisualTeX.PowerPointVsto.LatexRedraw" label="LaTeX &#10;重绘" size="large" enableLineBreak="true" screentip="LaTeX 代码重绘为公式" supertip="把 LaTeX 公式（$…$、$$…$$、\(…\)、\[…\] 和 equation 等环境）重绘为公式。重绘为 WPS 公式在文本框中原位进行；重绘为 VisualTeX 或 MathType 时，只含一个 LaTeX 公式的文本框换成同一位置的公式。" imageMso="EquationInsertLaTex">
@@ -119,6 +120,7 @@ public sealed partial class ThisAddIn
             <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetOle" label="OLE object (double-click to edit, embedded)" tag="nativeOle" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
             <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetSvg" label="SVG picture (displays on every device)" tag="crossPlatformPicture" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
           </menu>
+          <button id="VisualTeX.PowerPointVsto.UpdateEquationFormat" label="Update &#10;Equation Format" size="large" enableLineBreak="true" screentip="Update equation format" supertip="Draw the VisualTeX equations (SVG pictures and OLE objects) drawn in other fonts again in the current fonts (the math font, the Chinese font and the fonts for letters, Greek letters and digits); each keeps its position, size, rotation and layer, and its content does not change." imageMso="Refresh" onAction="OnUpdateEquationFormat" />
         </group>
         <group id="VisualTeX.PowerPointVsto.LatexRedrawGroup" label="LaTeX Redraw">
           <menu id="VisualTeX.PowerPointVsto.LatexRedraw" label="LaTeX &#10;Redraw" size="large" enableLineBreak="true" screentip="Redraw LaTeX code as equations" supertip="Redraw LaTeX equations ($…$, $$…$$, \(…\), \[…\] and environments such as equation). Redrawing as WPS equations happens in place in the text box; redrawing as VisualTeX or MathType replaces a text box holding a single LaTeX equation with an equation at the same place." imageMso="EquationInsertLaTex">

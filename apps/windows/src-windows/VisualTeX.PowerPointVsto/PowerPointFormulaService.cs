@@ -1740,7 +1740,17 @@ public sealed partial class PowerPointFormulaService : IDisposable
             || !string.Equals(
                 Chinese(original?.FormulaChineseFont),
                 Chinese(current.FormulaChineseFont),
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase)
+            || !SameFaces(original?.FormulaFaces, current.FormulaFaces);
+    }
+
+    // the fonts for letters, Greek letters and digits (absent: none)
+    private static bool SameFaces(FormulaFaces? original, FormulaFaces? current)
+    {
+        static string Face(string? value) => (value ?? string.Empty).Trim();
+        return string.Equals(Face(original?.Letter), Face(current?.Letter), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Face(original?.Greek), Face(current?.Greek), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Face(original?.Digit), Face(current?.Digit), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeFormulaText(string? value) =>

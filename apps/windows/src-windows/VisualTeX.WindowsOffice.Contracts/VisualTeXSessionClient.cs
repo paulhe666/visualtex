@@ -753,6 +753,21 @@ public sealed class VisualTeXSessionClient : IDisposable
         throw new TimeoutException("VisualTeX formula editing session timed out.");
     }
 
+    /// <summary>
+    /// The fonts the main app draws formulas in now (its published editor preferences), to find the formulas drawn
+    /// in others (Update Equation Format).
+    /// </summary>
+    public async Task<FormulaFontSettings> GetFormulaFontSettingsAsync(CancellationToken cancellationToken)
+    {
+        EnsureAuthorizationHeader();
+        using var response = await SendTrackedAsync(() => _http.GetAsync(
+            "/api/v1/preferences",
+            cancellationToken), "GET /api/v1/preferences", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return FormulaFontSettings.FromPreferencesJson(json);
+    }
+
     public async Task<OfficeSessionDocument> GetSessionAsync(
         string sessionId,
         CancellationToken cancellationToken)
@@ -1962,6 +1977,7 @@ public sealed class OfficeSessionDocument
                 : OriginalMetadata?.RenderFontSizePt ?? FormulaFontSize.Normalize(FontSizePt),
             FormulaLetterFont = ExportResult?.FormulaLetterFont ?? OriginalMetadata?.FormulaLetterFont,
             FormulaChineseFont = ExportResult?.FormulaChineseFont ?? OriginalMetadata?.FormulaChineseFont,
+            FormulaFaces = ExportResult?.FormulaFaces ?? OriginalMetadata?.FormulaFaces,
             WordInlineOleWidthPt = OriginalMetadata?.WordInlineOleWidthPt,
             WordInlineOleHeightPt = OriginalMetadata?.WordInlineOleHeightPt,
             WordInlineOlePositionPt = OriginalMetadata?.WordInlineOlePositionPt,
@@ -2029,4 +2045,8 @@ public sealed class OfficeExportDocument
 
     [JsonPropertyName("formulaChineseFont")]
     public string? FormulaChineseFont { get; set; }
+
+    /// <summary>The fonts for letters, Greek letters and digits the image was drawn in.</summary>
+    [JsonPropertyName("formulaFaces")]
+    public FormulaFaces? FormulaFaces { get; set; }
 }

@@ -151,6 +151,34 @@ Idempotent. Each formula keeps its kind: OMML stays OMML (in v2), VisualTeX
 image/OLE formulas stay VisualTeX formulas in their current layout. Legacy forms
 per platform are listed in the plan; each platform upgrades only its own.
 
+### 5.1 Fonts
+
+Every VisualTeX formula records the fonts it was drawn in: the math font
+(`formulaLetterFont`, `katex` when missing), the Chinese font
+(`formulaChineseFont`) and the letter / Greek / digit faces (`formulaFaces`;
+missing = none, so formulas from before the record count as drawn without
+faces). The scan compares them with the fonts the main app draws in now (the
+Chinese font only when the LaTeX has CJK text; names compared trimmed and
+case-insensitively). Formulas that differ are listed in the same confirmation
+("N VisualTeX formulas drawn in other fonts, to be drawn again in …") and are
+drawn again from their stored LaTeX in the current fonts:
+
+* Word / WPS Writer: in place; the formula ID, number, references, font size
+  and inline/display form are kept (the number and the references live
+  outside the picture). Windows writes them in an Undo record of their own
+  after the format records; macOS in the same Undo record as the rest.
+* PowerPoint / WPS Presentation (button in the conversion group): each
+  formula keeps its form (picture or object), centre, displayed size,
+  rotation and layer. PowerPoint for Windows undoes it in one step, plus one
+  for the delayed size fix of OLE objects (as any OLE edit); PowerPoint for
+  Mac in one step; WPS Presentation keeps every shape change apart. The displayed size comes from the
+  shape against its recorded render size; a box whose width and height scale
+  differ (the OLE container glitch) falls back to the formula's own font size.
+
+A formula changed or removed while the update runs is left as it is and
+reported. When VisualTeX cannot be reached, fonts are not checked and the
+confirmation says so.
+
 ## 6. Identity check
 
 The same LaTeX cases (inline, display, numbered in all five styles, matrices,

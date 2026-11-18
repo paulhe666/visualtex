@@ -962,6 +962,9 @@ export function OfficeDialogApp() {
       baseline: svg.baseline,
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
+      // the fonts for letters, Greek letters and digits the image is drawn in (always the current ones): the
+      // formula records them, so Update Equation Format finds the formulas drawn in others
+      formulaFaces: isMathTypeOle ? undefined : normalizeFormulaFaces(useEditorStore.getState().formulaFaces),
     };
   }, [
     currentRenderedLatex,

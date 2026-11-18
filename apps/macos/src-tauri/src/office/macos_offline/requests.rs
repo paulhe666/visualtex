@@ -201,7 +201,7 @@ pub(super) fn validate_request(request: &MacOfflineSessionRequest, session_id: &
             ) {
                 return Err("LaTeX redraw output kind must be omml or image".to_string());
             }
-            if document_import.source_kind.is_some() {
+            if document_import.source_kind.is_some() || document_import.font_refresh {
                 return Err("LaTeX redraw request contains a formula restore source kind".to_string());
             }
             let source_path =
@@ -225,8 +225,16 @@ pub(super) fn validate_request(request: &MacOfflineSessionRequest, session_id: &
             if !matches!(document_import.source_kind.as_deref(), Some("omml" | "image")) {
                 return Err("Formula restore source kind must be omml or image".to_string());
             }
+            // Update Equation Format's font step draws picture formulas again as pictures; nothing else does.
+            if document_import.font_refresh
+                && (document_import.output_kind.as_deref() != Some("image")
+                    || document_import.source_kind.as_deref() != Some("image"))
+            {
+                return Err("A formula font update redraws VisualTeX image formulas as images".to_string());
+            }
             if document_import.output_kind.as_deref() == Some("image")
                 && document_import.source_kind.as_deref() != Some("omml")
+                && !document_import.font_refresh
             {
                 return Err("Only native OMML can be restored to a VisualTeX image".to_string());
             }
@@ -247,6 +255,7 @@ pub(super) fn validate_request(request: &MacOfflineSessionRequest, session_id: &
         } else if document_import.redraw_scope.is_some()
             || document_import.output_kind.is_some()
             || document_import.source_kind.is_some()
+            || document_import.font_refresh
         {
             return Err("Document import request contains formula transform fields".to_string());
         }
@@ -618,6 +627,13 @@ pub(super) fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return Err("VisualTeX metadata imageInkCenterYRatio is invalid".to_string());
         }
+    }
+    if metadata
+        .formula_faces
+        .as_ref()
+        .is_some_and(|faces| !crate::office::formula_fonts::valid_faces_record(faces))
+    {
+        return Err("VisualTeX metadata formulaFaces is invalid".to_string());
     }
     Ok(())
 }

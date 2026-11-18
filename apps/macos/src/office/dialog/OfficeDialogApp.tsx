@@ -4,6 +4,7 @@ import { MathfieldElement } from "mathlive";
 import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
 import { OcrDialog } from "../../../../shared/visualtex-app/src/components/OcrDialog";
 import { installMcpRenderBridge } from "../shared/mcpRenderBridge";
+import { installFormulaFontPublisher } from "../shared/formulaFontPublisher";
 import { EditorWorkspace } from "../../../../shared/visualtex-app/src/workspace/EditorWorkspace";
 import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../../../shared/visualtex-app/src/history/EditorSession";
 import {
@@ -32,6 +33,7 @@ import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browser
 import {
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
+  readPersistedFormulaFaces,
   readPersistedFormulaFontPreferences,
 } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
 import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
@@ -262,6 +264,9 @@ function officeExportResultFromArtifacts(
     width: svg.width,
     height: svg.height,
     baseline: svg.baseline,
+    // the faces the layout engine drew in (always the Settings'): the formula records them, so Update Equation
+    // Format finds the formulas drawn in others
+    formulaFaces: readPersistedFormulaFaces(),
   };
 }
 
@@ -380,6 +385,8 @@ function documentFingerprint(
 export function OfficeDialogApp() {
   // the resident editors also draw formulas for AI agents (render_latex)
   useEffect(() => installMcpRenderBridge(), []);
+  // the resident tells the add-ins which fonts formulas are drawn in now (Update Equation Format)
+  useEffect(() => installFormulaFontPublisher(), []);
   const tauriResidentEditor = isMacosOfflineTauriTransport();
   const editorRef = useRef<MathEditorHandle>(null);
   const historyManager = useHistoryManager();

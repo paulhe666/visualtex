@@ -60,3 +60,7 @@ End Sub
 Public Sub VTPowerPointRibbonToLatexAll(ByVal control As IRibbonControl)
     VisualTeX_RestorePresentationToLatex
 End Sub
+
+Public Sub VTPowerPointRibbonUpdateEquationFormat(ByVal control As IRibbonControl)
+    VisualTeX_UpdateEquationFormat
+End Sub

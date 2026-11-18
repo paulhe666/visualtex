@@ -863,6 +863,7 @@ pub fn run() {
             office::lifecycle::open_word,
             office::lifecycle::open_powerpoint,
             office::macos_offline::get_macos_offline_document_import_request,
+            office::formula_fonts::macos_office_publish_formula_fonts,
             office::macos_offline::report_macos_offline_latex_redraw_stage,
             office::macos_offline::resolve_macos_offline_latex_redraw_font_sizes,
             office::macos_offline::focus_macos_offline_document_import_target,

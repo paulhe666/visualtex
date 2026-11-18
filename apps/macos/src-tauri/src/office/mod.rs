@@ -3,6 +3,7 @@ pub mod background;
 pub mod certificate;
 pub(crate) mod dotnet;
 pub mod formula_cache;
+pub mod formula_fonts;
 pub mod hotkeys;
 pub mod lifecycle;
 pub mod macos_offline;

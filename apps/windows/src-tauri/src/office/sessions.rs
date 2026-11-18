@@ -92,6 +92,10 @@ pub struct OfficeExportResult {
     pub formula_letter_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_chinese_font: Option<String>,
+    /// The fonts for letters, Greek letters and digits the image was drawn in (the Office page reports them, the
+    /// add-in records them in the formula's metadata; kept as given).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula_faces: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +134,8 @@ pub struct VisualTeXFormulaMetadata {
     pub formula_letter_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_chinese_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula_faces: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_omml_fingerprint: Option<String>,
     pub created_with_version: String,
@@ -944,6 +950,7 @@ mod tests {
                 render_font_size_pt: Some(14.0),
                 formula_letter_font: Some("times".to_string()),
                 formula_chinese_font: Some("kaiti".to_string()),
+                formula_faces: None,
                 native_omml_fingerprint: None,
                 created_with_version: "1.1.4".to_string(),
                 updated_with_version: "1.1.4".to_string(),
@@ -1165,6 +1172,7 @@ mod tests {
             render_font_size_pt: None,
             formula_letter_font: None,
             formula_chinese_font: None,
+            formula_faces: None,
             native_omml_fingerprint: None,
             created_with_version: "1.0.6".to_string(),
             updated_with_version: "1.0.6".to_string(),

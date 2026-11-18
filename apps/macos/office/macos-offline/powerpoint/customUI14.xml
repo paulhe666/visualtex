@@ -83,6 +83,13 @@
           </menu>
         </group>
         <group id="VisualTeX.Mac.PowerPoint.Group" label="公式工具">
+          <button id="VisualTeX.Mac.PowerPoint.UpdateEquationFormat"
+                  label="更新公式格式"
+                  size="large"
+                  image="VisualTeXPowerPointUpdateFormat"
+                  onAction="VTPowerPointRibbonUpdateEquationFormat"
+                  screentip="更新公式格式"
+                  supertip="字体与当前设置不同的 VisualTeX 公式按 LaTeX 用当前字体重绘，位置、旋转、层级和大小不变，可一步撤销。"/>
           <button id="VisualTeX.Mac.PowerPoint.Delete"
                   label="删除所选公式"
                   size="normal"

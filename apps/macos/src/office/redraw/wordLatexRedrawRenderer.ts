@@ -16,7 +16,12 @@ import type {
 import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
 import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
 import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
-import { normalizeFormulaLetterFont } from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import {
+  normalizeFormulaLetterFont,
+  type FormulaChineseFont,
+  type LegacyFormulaLetterFont,
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import { currentFormulaFontSettings } from "../../../../shared/visualtex-app/src/office/shared/formulaFontRefresh";
 import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
 
 const WORD_LATEX_REDRAW_RENDER_CONCURRENCY = 4;
@@ -47,10 +52,33 @@ type RenderTemplate = {
   referenceBaselinePt?: number;
 };
 
+/** The fonts a formula is drawn in and records. */
+type RenderFonts = {
+  formulaLetterFont: LegacyFormulaLetterFont;
+  formulaChineseFont: FormulaChineseFont;
+};
+
+/**
+ * A picture formula keeps the fonts it was drawn in (a conversion changes its form, not its look); a formula of
+ * Update Equation Format's font step takes the fonts of the Settings, which is what it is drawn again for.
+ */
+function renderFonts(span: WordLatexRedrawRenderTarget, fontRefresh: boolean): RenderFonts {
+  if (fontRefresh) {
+    const current = currentFormulaFontSettings();
+    return { formulaLetterFont: current.letterFont, formulaChineseFont: current.chineseFont };
+  }
+  const editorPreferences = useEditorStore.getState();
+  return {
+    formulaLetterFont: span.metadata?.formulaLetterFont ?? editorPreferences.formulaLetterFont,
+    formulaChineseFont: span.metadata?.formulaChineseFont ?? editorPreferences.formulaChineseFont,
+  };
+}
+
 async function renderTemplate(
   span: WordLatexRedrawRenderTarget,
   outputKind: WordLatexRedrawOutputKind,
   host: "word" | "powerpoint",
+  fonts: RenderFonts,
 ): Promise<RenderTemplate> {
   const line = { id: createUuid(), latex: span.latex };
   const editorDocument =
@@ -59,13 +87,9 @@ async function renderTemplate(
       : normalizeFormulaEditorDocument([line], "raw");
   const canonicalLatex = serializeFormulaEditorDocument(editorDocument);
 
-  const editorPreferences = useEditorStore.getState();
   // formulas saved by Windows or older versions may name letter fonts no longer offered
-  const formulaLetterFont = normalizeFormulaLetterFont(
-    span.metadata?.formulaLetterFont ?? editorPreferences.formulaLetterFont,
-  );
-  const formulaChineseFont =
-    span.metadata?.formulaChineseFont ?? editorPreferences.formulaChineseFont;
+  const formulaLetterFont = normalizeFormulaLetterFont(fonts.formulaLetterFont);
+  const formulaChineseFont = fonts.formulaChineseFont;
 
   if (outputKind === "omml") {
     // Windows' MathML step rejects commands Word OMML cannot represent.
@@ -153,6 +177,7 @@ function createMetadata(
   formulaId: string,
   span: WordLatexRedrawRenderTarget,
   template: RenderTemplate,
+  fonts: RenderFonts,
 ): VisualTeXFormulaMetadata {
   const original = span.metadata ?? null;
   const line = {
@@ -163,11 +188,7 @@ function createMetadata(
     span.sourceKind === "image" && original
       ? original.lines
       : [line];
-  const editorPreferences = useEditorStore.getState();
-  const formulaLetterFont =
-    original?.formulaLetterFont ?? editorPreferences.formulaLetterFont;
-  const formulaChineseFont =
-    original?.formulaChineseFont ?? editorPreferences.formulaChineseFont;
+  const { formulaLetterFont, formulaChineseFont } = fonts;
   return createFormulaMetadata({
     formulaId,
     title:
@@ -219,26 +240,28 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
   outputKind: WordLatexRedrawOutputKind,
   onProgress?: (current: number, total: number) => void,
   host: "word" | "powerpoint" = "word",
+  options: { fontRefresh?: boolean } = {},
 ): Promise<{ items: DocumentImportFormulaCommitItem[]; failures: WordLatexRedrawFailure[] }> {
   const templates = new Map<string, RenderTemplate>();
   const templateFailures = new Map<string, string>();
   const isEn = useEditorStore.getState().language === "en";
-  const spanKeys = spans.map((span) =>
+  const spanFonts = spans.map((span) => renderFonts(span, options.fontRefresh === true));
+  const spanKeys = spans.map((span, index) =>
     [
       outputKind,
       span.displayMode,
       span.metadata?.inlineImageMathStyle ?? "text",
       String(span.fontSizePt),
-      span.metadata?.formulaLetterFont ?? "",
-      span.metadata?.formulaChineseFont ?? "",
+      spanFonts[index].formulaLetterFont,
+      spanFonts[index].formulaChineseFont,
       span.sourceKind ?? "",
       span.metadata?.codeFormat ?? "",
       span.latex,
     ].join("\x1f"),
   );
-  const uniqueTargets = new Map<string, WordLatexRedrawRenderTarget>();
+  const uniqueTargets = new Map<string, [WordLatexRedrawRenderTarget, RenderFonts]>();
   spans.forEach((span, index) => {
-    if (!uniqueTargets.has(spanKeys[index])) uniqueTargets.set(spanKeys[index], span);
+    if (!uniqueTargets.has(spanKeys[index])) uniqueTargets.set(spanKeys[index], [span, spanFonts[index]]);
   });
   const pendingTemplates = [...uniqueTargets.entries()];
   let nextTemplateIndex = 0;
@@ -252,9 +275,9 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
         const templateIndex = nextTemplateIndex;
         nextTemplateIndex += 1;
         if (templateIndex >= pendingTemplates.length) return;
-        const [key, span] = pendingTemplates[templateIndex];
+        const [key, [span, fonts]] = pendingTemplates[templateIndex];
         try {
-          templates.set(key, await renderTemplate(span, outputKind, host));
+          templates.set(key, await renderTemplate(span, outputKind, host, fonts));
         } catch (reason) {
           templateFailures.set(key, describeConversionFailure(reason, isEn));
         }
@@ -279,7 +302,7 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
     }
     const formulaId = span.formulaId ?? createUuid();
     const numbered = span.numbered ?? false;
-    const metadata = createMetadata(formulaId, span, template);
+    const metadata = createMetadata(formulaId, span, template, spanFonts[index]);
     const item: DocumentImportFormulaCommitItem = {
       kind: "formula",
       formulaId,

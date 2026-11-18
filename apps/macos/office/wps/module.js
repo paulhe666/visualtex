@@ -1741,6 +1741,42 @@
     retireIdentity(doc, compactId, target);
   }
 
+  /* The rest of "更新公式格式" inside an open Undo record (its own, or the
+     record of the font step's pictures): every number in the current style,
+     the older tags gone, inline pictures on the text baseline. */
+  function formatUpdateSteps(doc, key) {
+    return renumberDocument({ doc: doc, undoLabel: "VisualTeX 更新公式格式" }).then(function (summary) {
+      var current = findDocument(key);
+      if (!current) throw new Error("文档已经关闭");
+      legacyTagIds(current).forEach(function (compactId) { retireEquationTag(current, compactId); });
+      inlineBaselineRepairs(current).forEach(function (repair) {
+        var font = repair.shape.Range.Font;
+        safe(function () { font.Superscript = 0; font.Subscript = 0; });
+        font.Position = repair.position;
+      });
+      return summary;
+    });
+  }
+
+  /* The font step: which picture formulas VisualTeX draws in other fonts than
+     it draws in now (office::formula_fonts reads their metadata). */
+  function checkFormulaFonts(doc) {
+    var images = restoreTargets(doc, doc.Content.Start, doc.Content.End, "image").filter(function (target) {
+      return target.reference && String(safe(function () { return target.shape.AlternativeText; }, "") || "").indexOf(METADATA_PREFIX) === 0;
+    });
+    if (!images.length) return Promise.resolve({ known: true, stale: [], fonts: "" });
+    var metadata = images.map(function (target) { return String(target.shape.AlternativeText || ""); });
+    return call("POST", "/formulas/font-check", { metadata: metadata }, 30000).then(function (result) {
+      var stale = [];
+      images.forEach(function (target, index) {
+        if (result.stale && result.stale[index]) stale.push(target.reference.formulaId);
+      });
+      return { known: !!result.known, stale: stale, fonts: String(result.fontsZh || "") };
+    }, function () {
+      return { known: false, stale: [], fonts: "" };
+    });
+  }
+
   function updateEquationFormat() {
     var doc = safe(function () { return app().ActiveDocument; }, null);
     if (!doc) {
@@ -1754,31 +1790,36 @@
       body.mode = style.mode;
       body.separator = style.separator;
     }
-    return call("POST", "/numbers/restyle", body, 30000).then(function (result) {
+    return Promise.all([call("POST", "/numbers/restyle", body, 30000), checkFormulaFonts(doc)]).then(function (answers) {
+      var result = answers[0];
+      var fonts = answers[1];
       var numbers = result.equations.concat(result.images).filter(function (item) { return item.changed; }).length;
       var tags = legacyTagIds(doc);
       var tagCount = tags.length + NUMBERING_VARIABLES.filter(function (name) { return variableValue(doc, name) !== null; }).length;
       var repairs = inlineBaselineRepairs(doc);
-      if (!numbers && !tagCount && !repairs.length) {
-        notify("本文档中的公式已经是当前格式。");
+      var stale = fonts.stale.slice(0, MAX_DOCUMENT_FORMULAS);
+      var unchecked = fonts.known ? "" : "\n（VisualTeX 还不知道当前的公式字体，未检查公式字体。）";
+      if (!numbers && !tagCount && !repairs.length && !stale.length) {
+        notify("本文档中的公式已经是当前格式。" + unchecked);
         return null;
       }
       var message = "将本文档中的公式更新为当前 VisualTeX 格式？\n";
       if (numbers) message += "\n" + numbers + " 个公式编号将按当前编号格式重写";
       if (tagCount) message += "\n" + tagCount + " 个旧版 VisualTeX 标记将被移除";
       if (repairs.length) message += "\n" + repairs.length + " 个行内图片公式将对齐正文基线";
-      message += "\n\n公式内容不变，可一步撤销。";
+      if (stale.length) message += "\n" + stale.length + " 个字体与当前设置不同的 VisualTeX 公式将用当前字体（" + fonts.fonts + "）重绘";
+      if (fonts.stale.length > stale.length) message += "（其余 " + (fonts.stale.length - stale.length) + " 个请再次更新）";
+      message += unchecked;
+      message += "\n\n公式内容、编号、引用和字号不变，可一步撤销。";
       if (!confirmWithUser(message)) return null;
+      if (stale.length) {
+        /* VisualTeX draws them; their pictures and the rest of the format go
+           in as one Undo step (applyDocumentResult). */
+        startFontRefresh(doc, stale);
+        return null;
+      }
       var record = openUndo("VisualTeX 更新公式格式");
-      return renumberDocument({ doc: doc, undoLabel: "VisualTeX 更新公式格式" }).then(function (summary) {
-        var current = findDocument(key);
-        if (!current) throw new Error("文档已经关闭");
-        legacyTagIds(current).forEach(function (compactId) { retireEquationTag(current, compactId); });
-        inlineBaselineRepairs(current).forEach(function (repair) {
-          var font = repair.shape.Range.Font;
-          safe(function () { font.Superscript = 0; font.Subscript = 0; });
-          font.Position = repair.position;
-        });
+      return formatUpdateSteps(doc, key).then(function (summary) {
         record.end();
         var text = "已更新 " + numbers + " 个公式编号，对齐 " + repairs.length + " 个行内图片公式，移除 " + tagCount + " 个旧版标记。";
         if (summary.failures.length) text += "\n有 " + summary.failures.length + " 个编号未能更新：" + summary.failures[0];
@@ -1789,6 +1830,36 @@
       });
     }).catch(function (error) {
       notify("VisualTeX 更新公式格式失败：" + error.message);
+    });
+  }
+
+  /* The pictures drawn in other fonts drawn again from their LaTeX, each at
+     its own size (a picture-to-picture format conversion with fontRefresh). */
+  function startFontRefresh(doc, formulaIds) {
+    run(function () {
+      var wanted = {};
+      formulaIds.forEach(function (formulaId) { wanted[formulaId] = true; });
+      var start = doc.Content.Start;
+      var end = doc.Content.End;
+      var targets = restoreTargets(doc, start, end, "image").filter(function (target) {
+        return target.reference && wanted[target.reference.formulaId];
+      });
+      if (!targets.length) throw new Error("要重绘的公式已不在文档中");
+      var sessionId = newUuid();
+      var anchor = documentAnchor(sessionId);
+      /* No conversion size: each formula keeps its own. */
+      var manifest = restoreManifest(doc, sessionId, anchor, start, end, "image", targets, { inline: 0, display: 0 });
+      if (utf8Length(manifest) > 16 * 1024 * 1024) throw new Error("文档中的公式太多，超过 16 MB");
+      deleteBookmark(doc, anchor);
+      doc.Bookmarks.Add(anchor, doc.Range(start, end));
+      startDocumentSession({
+        sessionId: sessionId, doc: doc, anchor: anchor, operation: "formulaRestore",
+        redrawScope: "document", sourceKind: "image", outputKind: "image", fontRefresh: true,
+        source: manifest, defaultFontSizePt: preferredFontSize(doc, doc.Range(start, end)),
+        targets: targets.map(function (target) {
+          return { sourceStart: target.sourceStart, formulaId: target.formulaId, numbered: target.numbered };
+        })
+      });
     });
   }
 
@@ -2591,7 +2662,7 @@
       bookmarkName: spec.anchor,
       defaultFontSizePt: spec.defaultFontSizePt
     };
-    ["redrawScope", "outputKind", "sourceKind", "source"].forEach(function (key) {
+    ["redrawScope", "outputKind", "sourceKind", "source", "fontRefresh"].forEach(function (key) {
       if (spec[key] !== undefined && spec[key] !== null) body[key] = spec[key];
     });
     /* An agent's operation: VisualTeX opens an import window with the agent's text itself, and the other
@@ -3093,6 +3164,24 @@
     } else {
       /* A formula conversion: the formulas found when it started, found again. */
       var live = restoreTargets(doc, start, end, payload.sourceKind);
+      if (payload.fontRefresh) {
+        /* The font step redraws some of the pictures: each found again by its id. */
+        var byId = {};
+        live.forEach(function (target) { if (target.reference) byId[target.reference.formulaId] = target; });
+        repairAllNumberFields(doc);
+        items.forEach(function (item, index) {
+          var target = byId[item.formulaId];
+          if (!target) throw new Error("一个要重绘的图片公式在准备期间被改动或删除，未作修改");
+          markers.push("VT_X_" + index);
+          doc.Bookmarks.Add(markers[index], doc.Range(target.start, target.end));
+        });
+        for (var refresh = items.length - 1; refresh >= 0; refresh--) {
+          replaceItem(doc, sessionId, payload, items[refresh], markers[refresh], numbered);
+          deleteBookmark(doc, markers[refresh]);
+          progress(items.length - refresh);
+        }
+        return;
+      }
       if (!current.targets || live.length !== current.targets.length) {
         throw new Error("转换期间文档中的公式有增减，未作修改");
       }
@@ -3305,7 +3394,7 @@
     };
     /* Removed before the Undo record, which would bring it back. */
     deleteBookmark(doc, current.anchor);
-    var label = DOCUMENT_LABELS[payload.operation] || "VisualTeX";
+    var label = payload.fontRefresh ? "VisualTeX 更新公式格式" : DOCUMENT_LABELS[payload.operation] || "VisualTeX";
     var record = openUndo(label);
     var numbered = [];
     var caret = null;
@@ -3338,12 +3427,26 @@
     }, function (error) {
       return "编号未能写入：" + error.message;
     }).then(function (problem) {
+      if (!payload.fontRefresh) return problem;
+      /* The font step of "更新公式格式": the rest of the format in the same record. */
+      return formatUpdateSteps(doc, current.docKey).then(function (summary) {
+        var failed = summary && summary.failures.length
+          ? "有 " + summary.failures.length + " 个编号未能更新：" + summary.failures[0] : "";
+        return [problem, failed].filter(Boolean).join("；");
+      }, function (error) {
+        return (problem ? problem + "；" : "") + "公式格式未能更新：" + error.message;
+      });
+    }).then(function (problem) {
       removeMarkers(doc);
       /* Inside the record: the typing font reset is a step of its own. */
       if (caret !== null) safe(function () { doc.Range(caret, caret).Select(); resetTypingFont(); });
       record.end();
       safe(function () { app().StatusBar = "VisualTeX: 已写入 " + total + " 项"; });
-      if (problem) notify("VisualTeX 已写入公式，但" + problem);
+      if (payload.fontRefresh) {
+        notify("已用当前字体重绘 " + total + " 个 VisualTeX 公式，并更新了公式格式。" + (problem ? "\n但" + problem : ""));
+      } else if (problem) {
+        notify("VisualTeX 已写入公式，但" + problem);
+      }
       finishDocument(sessionId, { ok: true }, false);
     });
   }

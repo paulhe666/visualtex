@@ -2645,29 +2645,33 @@ Public Sub VisualTeX_UpdateEquationFormat()
     Dim fonts As Long
     Dim mathFontName As String
     Dim setDocumentFont As Boolean
+    Dim staleFormulas As Collection
+    Dim fontsDescription As String
+    Dim fontsChecked As Boolean
     Dim inventory As String
     Dim message As String
     Dim recordStarted As Boolean
-    Dim mutationStarted As Boolean
     Dim failureNumber As Long
     Dim failureDescription As String
 
     On Error GoTo Failed
     VTRequireWritableWordDocument
     Set doc = ActiveDocument
-    mathFontName = VTChosenOmmlFontName()
-    If Len(mathFontName) > 0 Then
-        setDocumentFont = StrComp(VTDocumentMathFontName(doc), _
-            mathFontName, vbTextCompare) <> 0
-    Else
-        mathFontName = VTDocumentMathFontName(doc)
-    End If
+    VTResolveEquationFormatMathFont doc, mathFontName, setDocumentFont
     numbers = VTV2RestyleNumbers(doc, True)
     tags = VTV2LegacyTagCount(doc)
     baselines = VTV2InlineBaselineRepairs(doc, False)
     fonts = VTV2MathFontRepairs(doc, mathFontName, False)
-    If numbers + tags + baselines + fonts = 0 And Not setDocumentFont Then
-        VTShowInformation "The equations in this document already use the current format."
+    ' The image formulas VisualTeX draws in other fonts now (the app reads
+    ' their metadata); they are drawn again from their LaTeX.
+    Set staleFormulas = VTWordFontRefreshTargets( _
+        doc, fontsDescription, fontsChecked)
+    If numbers + tags + baselines + fonts + staleFormulas.Count = 0 And _
+       Not setDocumentFont Then
+        message = "The equations in this document already use the current format."
+        If Not fontsChecked Then message = message & vbCr & vbCr & _
+            "(VisualTeX could not be reached, so formula fonts were not checked.)"
+        VTShowInformation message
         Exit Sub
     End If
     message = "Update this document's equations to the current VisualTeX format?" & vbCr & vbCr
@@ -2682,30 +2686,38 @@ Public Sub VisualTeX_UpdateEquationFormat()
     If fonts > 0 Then message = message & CStr(fonts) & _
         " Word equation(s) will use the document math font (" & mathFontName & _
         "); normal text in equations keeps its font." & vbCr
-    message = message & vbCr & "Equation content does not change. Undo reverses the whole update."
+    If staleFormulas.Count > VT_WORD_LATEX_REDRAW_MAX_FORMULAS Then
+        message = message & CStr(staleFormulas.Count) & _
+            " VisualTeX image formula(s) are drawn in other fonts than the current ones (" & _
+            fontsDescription & "); the first " & CStr(VT_WORD_LATEX_REDRAW_MAX_FORMULAS) & _
+            " will be drawn again now, update the format again for the rest." & vbCr
+    ElseIf staleFormulas.Count > 0 Then
+        message = message & CStr(staleFormulas.Count) & _
+            " VisualTeX image formula(s) drawn in other fonts will be drawn again in the current fonts (" & _
+            fontsDescription & ")." & vbCr
+    End If
+    If Not fontsChecked Then message = message & _
+        "(VisualTeX could not be reached, so formula fonts were not checked.)" & vbCr
+    message = message & vbCr & "Equation content does not change; numbers, references and sizes stay as they are. " & _
+        "Undo reverses the whole update."
     If MsgBox(message, vbOKCancel + vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
+
+    If staleFormulas.Count > 0 Then
+        ' VisualTeX draws them; its commit writes them and brings the rest of
+        ' the format up to date in the same Undo step.
+        VTStartWordFontRefresh doc, VTFirstFormulas( _
+            staleFormulas, VT_WORD_LATEX_REDRAW_MAX_FORMULAS)
+        Exit Sub
+    End If
 
     inventory = VTV2EquationInventory(doc)
     Application.UndoRecord.StartCustomRecord "VisualTeX Update Equation Format"
     recordStarted = True
-    If setDocumentFont Then doc.OMathFontName = mathFontName
-    VTUpgradeWordNumberFormats doc
-    VTUpdateCurrentWordNumberFields doc
-    VTV2InlineBaselineRepairs doc, True
-    If fonts > 0 Then
-        VTBeginWordInternalMutation
-        mutationStarted = True
-        VTV2MathFontRepairs doc, mathFontName, True
-        VTEndWordInternalMutation
-        mutationStarted = False
-    End If
+    VTApplyEquationFormatUpdate doc
     Application.UndoRecord.EndCustomRecord
     recordStarted = False
 
-    If VTV2RestyleNumbers(doc, True) <> 0 Or VTV2LegacyTagCount(doc) <> 0 Or _
-       VTV2InlineBaselineRepairs(doc, False) <> 0 Or _
-       VTV2MathFontRepairs(doc, mathFontName, False) <> 0 Or _
-       StrComp(VTDocumentMathFontName(doc), mathFontName, vbTextCompare) <> 0 Or _
+    If Not VTEquationFormatIsCurrent(doc) Or _
        VTV2EquationInventory(doc) <> inventory Then
         doc.Undo 1
         Err.Raise vbObjectError + 7613, "VisualTeX", _
@@ -2724,7 +2736,6 @@ Failed:
     failureNumber = Err.Number
     failureDescription = Err.Description
     On Error Resume Next
-    If mutationStarted Then VTEndWordInternalMutation
     If recordStarted Then
         Application.UndoRecord.EndCustomRecord
         doc.Undo 1
@@ -2732,6 +2743,87 @@ Failed:
     On Error GoTo 0
     VTShowError "Update Equation Format", failureNumber, failureDescription
 End Sub
+
+' The font Word equations take in the current format: the OMML font chosen in
+' the Ribbon (setDocumentFont when the document's math font is another one),
+' otherwise the document's own math font.
+Public Sub VTResolveEquationFormatMathFont( _
+    ByVal doc As Document, _
+    ByRef mathFontName As String, _
+    ByRef setDocumentFont As Boolean)
+
+    setDocumentFont = False
+    mathFontName = VTChosenOmmlFontName()
+    If Len(mathFontName) > 0 Then
+        setDocumentFont = StrComp(VTDocumentMathFontName(doc), _
+            mathFontName, vbTextCompare) <> 0
+    Else
+        mathFontName = VTDocumentMathFontName(doc)
+    End If
+End Sub
+
+' Brings the document's equations to the current format: number formats and
+' fields, inline image baselines and the math font of Word equations. The
+' caller owns the Undo record (Update Equation Format, or the commit of its
+' font step).
+Public Sub VTApplyEquationFormatUpdate(ByVal doc As Document)
+    Dim mathFontName As String
+    Dim setDocumentFont As Boolean
+    Dim mutationStarted As Boolean
+    Dim errorNumber As Long
+    Dim errorSource As String
+    Dim errorDescription As String
+
+    On Error GoTo Failed
+    VTResolveEquationFormatMathFont doc, mathFontName, setDocumentFont
+    If setDocumentFont Then doc.OMathFontName = mathFontName
+    VTUpgradeWordNumberFormats doc
+    VTUpdateCurrentWordNumberFields doc
+    VTV2InlineBaselineRepairs doc, True
+    If VTV2MathFontRepairs(doc, mathFontName, False) > 0 Then
+        VTBeginWordInternalMutation
+        mutationStarted = True
+        VTV2MathFontRepairs doc, mathFontName, True
+        VTEndWordInternalMutation
+        mutationStarted = False
+    End If
+    Exit Sub
+
+Failed:
+    errorNumber = Err.Number
+    errorSource = Err.Source
+    errorDescription = Err.Description
+    If mutationStarted Then VTEndWordInternalMutation
+    Err.Raise errorNumber, errorSource, errorDescription
+End Sub
+
+' Whether the document's equations are in the current format (what
+' VTApplyEquationFormatUpdate leaves).
+Public Function VTEquationFormatIsCurrent(ByVal doc As Document) As Boolean
+    Dim mathFontName As String
+    Dim setDocumentFont As Boolean
+
+    VTResolveEquationFormatMathFont doc, mathFontName, setDocumentFont
+    VTEquationFormatIsCurrent = Not setDocumentFont And _
+        VTV2RestyleNumbers(doc, True) = 0 And _
+        VTV2LegacyTagCount(doc) = 0 And _
+        VTV2InlineBaselineRepairs(doc, False) = 0 And _
+        VTV2MathFontRepairs(doc, mathFontName, False) = 0
+End Function
+
+' The first `limit` formulas of a collection.
+Private Function VTFirstFormulas( _
+    ByVal formulas As Collection, ByVal limit As Long) As Collection
+
+    Dim result As New Collection
+    Dim index As Long
+
+    For index = 1 To formulas.Count
+        If index > limit Then Exit For
+        result.Add formulas(index)
+    Next index
+    Set VTFirstFormulas = result
+End Function
 
 Public Sub VTWordRibbonGetOmmlFontPressed( _
     ByVal control As IRibbonControl, _

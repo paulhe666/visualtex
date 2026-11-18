@@ -5,6 +5,7 @@ import { useEditorStore } from "../../../shared/visualtex-app/src/stores/editorS
 import { readLocalStorage, writeLocalStorage } from "../../../shared/visualtex-app/src/runtime/safeStorage";
 import { isTauriEnvironment } from "../../../shared/visualtex-app/src/ocr/ocrService";
 import { installMcpRenderBridge } from "../office/shared/mcpRenderBridge";
+import { installFormulaFontPublisher } from "../office/shared/formulaFontPublisher";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { MacOfficeFirstRunPrompt } from "../components/MacOfficeFirstRunPrompt";
@@ -46,6 +47,8 @@ export function AppOfficeIntegration({ language, onToast: setToast, onModalOpenC
   const isEn = language === "en";
   // draws formulas for AI agents (render_latex)
   useEffect(() => installMcpRenderBridge(), []);
+  // the add-ins ask which fonts formulas are drawn in now (Update Equation Format)
+  useEffect(() => installFormulaFontPublisher(), []);
   const [macOfficeFirstRunOpen, setMacOfficeFirstRunOpen] = useState(false);
   const [macOfficePromptMode, setMacOfficePromptMode] = useState<
     "setup" | "update" | "repair"

@@ -280,6 +280,7 @@ const RIBBON_ICON_FILES = {
     VisualTeXPowerPointRedrawOmml: { svg: "redraw-selection.svg" },
     VisualTeXPowerPointRedrawImage: { svg: "redraw-document.svg" },
     VisualTeXPowerPointToLatex: { svg: "document-import.svg" },
+    VisualTeXPowerPointUpdateFormat: { svg: "update-format.svg" },
   },
 };
 

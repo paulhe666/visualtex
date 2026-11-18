@@ -268,7 +268,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="为所选行间公式编号" onAction="OnNumberDisplayFormulasSelection" />
             <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="为全文行间公式编号" onAction="OnNumberDisplayFormulasDocument" />
           </menu>
-          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同），并让所有 OMML 公式使用文档数学字体（OMML 字体选定的字体）。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同），让所有 OMML 公式使用文档数学字体（OMML 字体选定的字体），并用当前设置的字体重绘字体与之不同的 VisualTeX 公式，编号、引用和字号不变。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
@@ -6256,25 +6256,46 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     }
 
     // Update Equation Format: scan (read-only), show what will change, then
-    // bring every older number structure into the current format.
+    // bring every older number structure into the current format and draw the
+    // VisualTeX formulas drawn in other fonts again in the current ones.
     private async Task UpdateEquationFormatAsync()
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
-        if (dispatcher is null || service is null) return;
+        var client = SessionClient;
+        var lifetime = _lifetime;
+        if (dispatcher is null || service is null || lifetime is null || lifetime.IsCancellationRequested) return;
+        if (!await _operationGate.WaitAsync(TimeSpan.FromSeconds(2), lifetime.Token).ConfigureAwait(false))
+        {
+            SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Try again in a moment."));
+            return;
+        }
+        WordOperationProgress? progress = null;
+        var title = T("VisualTeX 更新公式格式", "VisualTeX Update Equation Format");
         try
         {
             var report = await dispatcher.InvokeAsync(service.ScanEquationFormat)
                 .ConfigureAwait(false);
+            // the fonts the main app draws in now, and the VisualTeX formulas drawn in others
+            var fonts = client is null
+                ? null
+                : await TryGetFormulaFontSettingsAsync(client, lifetime.Token).ConfigureAwait(false);
+            var fontTargets = fonts is null
+                ? (IReadOnlyList<WordFormulaService.FontRefreshTarget>)Array.Empty<WordFormulaService.FontRefreshTarget>()
+                : await dispatcher.InvokeAsync(() => service.CaptureFontRefreshTargets(fonts)).ConfigureAwait(false);
             var proceed = await dispatcher.InvokeAsync(() =>
             {
-                var title = T("VisualTeX 更新公式格式", "VisualTeX Update Equation Format");
-                if (report.Total == 0)
+                if (report.Total == 0 && fontTargets.Count == 0)
                 {
                     WriteRedrawAcceptanceLog("equation-format-update-current");
+                    var current = T("本文档的公式已经是当前格式，无需更新。",
+                        "The equations in this document already use the current format.");
+                    if (fonts is null)
+                        current += T("\r\n\r\n（无法连接 VisualTeX，未检查公式字体。）",
+                            "\r\n\r\n(VisualTeX could not be reached, so formula fonts were not checked.)");
                     AutomationMessageBox.Show(
-                        T("本文档的公式已经是当前格式，无需更新。",
-                          "The equations in this document already use the current format."),
+                        current,
                         title,
                         System.Windows.Forms.MessageBoxButtons.OK,
                         System.Windows.Forms.MessageBoxIcon.Information);
@@ -6316,8 +6337,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     zh += $"字体未跟随文档数学字体的公式：{report.MathFont.EquationsToAlign} 个\r\n";
                     en += $"Equations whose fonts do not follow the document math font: {report.MathFont.EquationsToAlign}\r\n";
                 }
-                zh += "\r\n公式内容和类型不变。是否继续？";
-                en += "\r\nEquation content and kinds do not change. Continue?";
+                if (fontTargets.Count > 0)
+                {
+                    zh += $"字体与当前设置不同的 VisualTeX 公式：{fontTargets.Count} 个，将用当前字体（{fonts!.Describe(false)}）重绘\r\n";
+                    en += $"VisualTeX equations drawn in other fonts: {fontTargets.Count}, to be drawn again in the current fonts ({fonts!.Describe(true)})\r\n";
+                }
+                if (fonts is null)
+                {
+                    zh += "（无法连接 VisualTeX，未检查公式字体。）\r\n";
+                    en += "(VisualTeX could not be reached, so formula fonts were not checked.)\r\n";
+                }
+                zh += "\r\n公式内容和类型不变；编号、引用和字号保持不变。是否继续？";
+                en += "\r\nEquation content and kinds do not change; numbers, references and sizes stay as they are. Continue?";
                 return AutomationMessageBox.Show(
                     T(zh, en),
                     title,
@@ -6327,17 +6358,41 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     == System.Windows.Forms.DialogResult.Yes;
             }).ConfigureAwait(false);
             if (!proceed) return;
+
+            var failures = new List<string>();
+            var prepared = new List<(WordFormulaService.FontRefreshTarget Target, PreparedWordBulkFormula Prepared)>();
+            if (fontTargets.Count > 0)
+            {
+                progress = await dispatcher.InvokeAsync(() => BeginOperationProgress(
+                    title, service, T("正在用当前字体重绘公式…", "Drawing equations in the current fonts…")))
+                    .ConfigureAwait(false);
+                prepared = await RenderFontRefreshAsync(client!, fontTargets, progress, failures, lifetime.Token)
+                    .ConfigureAwait(false);
+            }
             WordOmmlMathFont.OmmlMathFontAlignmentResult? fontResult = null;
-            var count = await dispatcher.InvokeAsync(() =>
-                {
-                    var numbers = service.UpgradeEquationFormat(out var font);
-                    fontResult = font;
-                    return numbers;
-                })
-                .ConfigureAwait(false);
+            var count = 0;
+            var redrawn = 0;
+            BeginFormulaFormatMutation();
+            try
+            {
+                (count, redrawn) = await dispatcher.InvokeAsync(() =>
+                    {
+                        var numbers = 0;
+                        if (report.Total > 0)
+                        {
+                            numbers = service.UpgradeEquationFormat(out var font);
+                            fontResult = font;
+                        }
+                        var written = prepared.Count > 0 ? service.ApplyFontRefresh(prepared, failures) : 0;
+                        return (numbers, written);
+                    })
+                    .ConfigureAwait(false);
+            }
+            finally { EndFormulaFormatMutation(); }
             WriteRedrawAcceptanceLog(
                 $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}"
-                + $" ommlFont={fontResult?.MathFont ?? "-"} fontEquations={fontResult?.Equations ?? 0}");
+                + $" ommlFont={fontResult?.MathFont ?? "-"} fontEquations={fontResult?.Equations ?? 0}"
+                + $" redrawnInCurrentFonts={redrawn} fontFailures={failures.Count}");
             var fontZh = fontResult is null
                 ? string.Empty
                 : $"；数学字体 {fontResult.MathFont}"
@@ -6348,7 +6403,24 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 : $"; math font {fontResult.MathFont}"
                     + (fontResult.PreviousMathFont is null ? string.Empty : $" (was {fontResult.PreviousMathFont})")
                     + $", {fontResult.Equations} equation font(s) brought in line";
-            SetStatus(T($"公式格式已更新（{count} 个编号{fontZh}）。", $"Equation format updated ({count} numbers{fontEn})."));
+            var redrawZh = fontTargets.Count == 0 ? string.Empty : $"；用当前字体重绘了 {redrawn} 个 VisualTeX 公式";
+            var redrawEn = fontTargets.Count == 0 ? string.Empty : $"; {redrawn} VisualTeX equation(s) drawn again in the current fonts";
+            var summary = T($"公式格式已更新（{count} 个编号{fontZh}{redrawZh}）。", $"Equation format updated ({count} numbers{fontEn}{redrawEn}).");
+            SetStatus(summary);
+            if (failures.Count > 0)
+            {
+                var details = string.Join("\r\n", failures.Take(15));
+                await dispatcher.InvokeAsync(() =>
+                {
+                    AutomationMessageBox.Show(
+                        summary + "\r\n\r\n" + T($"{failures.Count} 个公式保持原来的字体：", $"{failures.Count} equation(s) keep their fonts:")
+                            + "\r\n" + details,
+                        title,
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return true;
+                }).ConfigureAwait(false);
+            }
         }
         catch (Exception error)
         {
@@ -6356,7 +6428,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             SetStatus(T($"更新公式格式失败：{error.Message}", $"Equation format update failed: {error.Message}"));
             await ShowWordOperationErrorAsync(dispatcher, "更新公式格式", error).ConfigureAwait(false);
         }
-        finally { InvalidateEquationNumberFormatControls(); }
+        finally
+        {
+            progress?.Dispose();
+            _operationGate.Release();
+            InvalidateEquationNumberFormatControls();
+        }
     }
 
     private async Task SetEquationNumberFormatAsync(string? requestedFormatId)

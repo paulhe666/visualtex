@@ -1201,6 +1201,7 @@
       source: JSON.stringify(spec.source)
     };
     if (spec.sourceKind) body.sourceKind = spec.sourceKind;
+    if (spec.fontRefresh) body.fontRefresh = true;
     /* An agent's operation: the window tells the agent what it skipped instead of showing it. */
     if (agentRun) body.agent = true;
     var posting = call("POST", "/documents", body, 60000);
@@ -1328,6 +1329,114 @@
     }, function (error) {
       notify("VisualTeX 无法读取公式：" + (error && error.message || error));
     });
+  }
+
+  /* "更新公式格式" (VisualTeX_UpdateEquationFormat): the presentation's
+     VisualTeX picture formulas drawn in other fonts than VisualTeX draws in
+     now (office::formula_fonts reads their metadata) are drawn again from
+     their LaTeX and put where they were - the same id, centre, rotation and
+     layer, at the size they show at. WPS Slides keeps every shape change as
+     an Undo entry of its own, so the confirmation promises no single Undo. */
+  function updateEquationFormat() {
+    var presentation = activePresentation();
+    var pictures = [];
+    var slides = presentation.Slides;
+    for (var index = 1; index <= slides.Count; index++) {
+      var slide = slides.Item(index);
+      var shapes = slide.Shapes;
+      for (var k = 1; k <= shapes.Count; k++) {
+        var shape = shapes.Item(k);
+        if (isFormulaShape(shape)) pictures.push({ slide: slide, shape: shape, metadata: shapeMetadata(shape) });
+      }
+    }
+    if (!pictures.length) {
+      notify("这个演示文稿中没有 VisualTeX 公式。");
+      return;
+    }
+    call("POST", "/formulas/font-check", { metadata: pictures.map(function (picture) { return picture.metadata; }) }, 30000)
+      .then(function (result) {
+        if (!result.known) throw new Error("VisualTeX 还不知道当前的公式字体，请打开 VisualTeX 后再试");
+        var stale = pictures.filter(function (picture, position) { return result.stale && result.stale[position]; });
+        if (!stale.length) {
+          notify("这个演示文稿中的 VisualTeX 公式已经使用当前字体（" + String(result.fontsZh || "") + "）。");
+          return;
+        }
+        var more = stale.length > 1000 ? stale.length - 1000 : 0;
+        stale = stale.slice(0, 1000);
+        var message = stale.length + " 个字体与当前设置不同的 VisualTeX 公式将用当前字体（" + String(result.fontsZh || "") + "）重绘";
+        if (more) message += "（其余 " + more + " 个请再次更新）";
+        message += "。\n\n内容、位置、旋转、层级和大小不变。继续吗？";
+        if (!confirmWithUser(message)) return;
+        startDocumentSession({
+          presentation: presentation, operation: "formulaRestore", outputKind: "image", scope: "presentation",
+          sourceKind: "image", fontRefresh: true,
+          source: { targets: stale.map(function (picture) {
+            return {
+              slideId: Number(picture.slide.SlideID), shapeId: Number(picture.shape.Id), kind: "image",
+              displayMode: "block", fontSizePt: scaleOf(picture.shape, false).size,
+              heightPt: Number(picture.shape.Height), metadata: picture.metadata
+            };
+          }) }
+        });
+      })
+      .catch(function (error) {
+        notify("VisualTeX 更新公式格式失败：" + (error && error.message || error));
+      });
+  }
+
+  /* A picture formula drawn again in the current fonts in place of the old
+     one: its name and identity, its centre, rotation and layer, at the size it
+     showed at (writeFormula's identity, the scale of the size it shows at). */
+  function replacePictureWithRefreshed(presentation, slide, original, item, sessionId) {
+    if (!isFormulaShape(original) || shapeMetadata(original) !== String(item.original)) {
+      throw new Error("公式在准备期间被修改，保持原样。");
+    }
+    if (shapeFormulaId(original) !== String(item.formulaId)) throw new Error("公式的标识与重绘结果不符。");
+    var files = item.files || {};
+    var paths = [];
+    var picture = null;
+    var centerX = Number(original.Left) + Number(original.Width) / 2;
+    var centerY = Number(original.Top) + Number(original.Height) / 2;
+    var rotation = Number(safe(function () { return original.Rotation; }, 0)) || 0;
+    var width = Number(item.widthPt);
+    var height = Number(item.heightPt);
+    var name = String(safe(function () { return original.Name; }, "") || "") || SHAPE_PREFIX + item.formulaId;
+    var documentTag = tag(original, TAG_DOCUMENT);
+    try {
+      var imagePath = download(sessionId, files.image);
+      paths.push(imagePath);
+      picture = safe(function () {
+        return slide.Shapes.AddPicture(imagePath, MSO_FALSE, MSO_TRUE, centerX - width / 2, centerY - height / 2, width, height);
+      }, null);
+      if (!picture && files.fallback) {
+        var fallbackPath = download(sessionId, files.fallback);
+        paths.push(fallbackPath);
+        picture = slide.Shapes.AddPicture(fallbackPath, MSO_FALSE, MSO_TRUE, centerX - width / 2, centerY - height / 2, width, height);
+      }
+      if (!picture) throw new Error("WPS 无法插入公式图片");
+      picture.LockAspectRatio = MSO_TRUE;
+      if (Math.abs(rotation) > 0.01) safe(function () { picture.Rotation = rotation; });
+      picture.AlternativeText = item.metadata;
+      safe(function () { picture.Title = item.formulaReference; });
+      setTag(picture, TAG_FORMULA_ID, item.formulaId);
+      setTag(picture, TAG_DOCUMENT, documentTag || presentationIdentity(presentation));
+      setTag(picture, TAG_OBJECT, objectIdentity(slide, picture));
+      setTag(picture, TAG_SESSION, sessionId);
+      setTag(picture, TAG_PENDING, "0");
+      setTag(picture, TAG_REFERENCE, item.formulaReference);
+      writeScale(picture, { size: Number(item.fontSizePt), width: Number(item.referenceWidthPt), height: Number(item.referenceHeightPt) });
+      safe(function () { setTag(picture, TAG_METADATA, item.metadata); });
+      restoreZOrder(picture, Number(original.ZOrderPosition) + 1);
+      original.Delete();
+    } catch (error) {
+      if (picture) safe(function () { picture.Delete(); });
+      throw error;
+    } finally {
+      paths.forEach(removeFile);
+    }
+    /* Names are unique on a slide: the name once the old formula is gone. */
+    safe(function () { picture.Name = name; });
+    return picture;
   }
 
   /* The equations of several text boxes from one saved copy. */
@@ -1466,6 +1575,10 @@
       replacePictureWithText(slide, shape, item);
       return;
     }
+    if (item.kind === "refresh") {
+      replacePictureWithRefreshed(presentation, slide, shape, item, sessionId);
+      return;
+    }
     /* Text: the shape's text must still be what VisualTeX read, apart from
        the items after this one, already written. */
     var text = liveText(shape);
@@ -1542,6 +1655,8 @@
     }
     if (failures.length) {
       notify("VisualTeX 已写入 " + written + " 项，" + failures.length + " 项未能写入：" + failures.slice(0, 3).join("；"));
+    } else if (payload.fontRefresh) {
+      notify("已用当前字体重绘 " + written + " 个 VisualTeX 公式。");
     }
     finishResult(sessionId, { ok: true });
   }
@@ -2459,6 +2574,7 @@
     vtxOmmlInline: function () { createNative("inline"); },
     vtxOmmlDisplay: function () { createNative("block"); },
     vtxNewFormula: create,
+    vtxUpdateEquationFormat: updateEquationFormat,
     vtxEditSelected: editSelection,
     vtxDeleteSelected: deleteSelection,
     vtxOpen: openVisualTeX

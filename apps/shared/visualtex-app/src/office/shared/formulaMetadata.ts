@@ -2,10 +2,14 @@ import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 import { APP_PLATFORM } from "@platform/appInfo";
 import {
   FORMULA_CHINESE_FONT_OPTIONS,
+  FORMULA_FACE_ROLES,
   LEGACY_FORMULA_LETTER_FONTS,
   normalizeFormulaChineseFont,
+  normalizeFormulaFaces,
   normalizeFormulaLetterFont,
+  readPersistedFormulaFaces,
   type FormulaChineseFont,
+  type FormulaFaces,
   type LegacyFormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
 
@@ -48,6 +52,11 @@ export interface VisualTeXFormulaMetadata {
   /** VisualTeX font preferences used for this formula's rendered/native Office form. */
   formulaLetterFont?: LegacyFormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /**
+   * The fonts for letters, Greek letters and digits the formula was drawn in over its math font ("" follows the
+   * math font). A formula without the record was drawn without them (formulaFontsDiffer).
+   */
+  formulaFaces?: FormulaFaces;
   /** Physical Word inline OLE extent retained across OLE/OMML conversions. */
   wordInlineOleWidthPt?: number;
   wordInlineOleHeightPt?: number;
@@ -90,6 +99,8 @@ export interface CreateFormulaMetadataInput {
   renderFontSizePt?: number;
   formulaLetterFont?: LegacyFormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /** macOS: the faces the formula is drawn in (default: the ones the app draws in now). */
+  formulaFaces?: FormulaFaces;
   wordInlineOleWidthPt?: number;
   wordInlineOleHeightPt?: number;
   wordInlineOlePositionPt?: number;
@@ -147,6 +158,16 @@ function unescapeXmlAttribute(value: string) {
 export function validFormulaId(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
+  );
+}
+
+/** A recorded set of faces: each role a font name of at most 128 characters (Windows writes all three). */
+function validFormulaFacesRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const faces = value as Record<string, unknown>;
+  return FORMULA_FACE_ROLES.every(
+    (role) => faces[role] === undefined || faces[role] === null ||
+      (typeof faces[role] === "string" && (faces[role] as string).length <= 128),
   );
 }
 
@@ -211,6 +232,7 @@ export function isVisualTeXFormulaMetadata(
       FORMULA_CHINESE_FONT_OPTIONS.some(
         (item) => item.id === candidate.formulaChineseFont,
       )) &&
+    (candidate.formulaFaces === undefined || validFormulaFacesRecord(candidate.formulaFaces)) &&
     ((candidate.wordInlineOleWidthPt === undefined &&
       candidate.wordInlineOleHeightPt === undefined) ||
       (candidate.displayMode === "inline" &&
@@ -411,6 +433,7 @@ function createMacFormulaMetadata({
   fontSizePt,
   formulaLetterFont,
   formulaChineseFont,
+  formulaFaces,
   referenceWidthPt,
   referenceHeightPt,
   referenceBaselinePt,
@@ -484,6 +507,8 @@ function createMacFormulaMetadata({
     ...(resolvedFontSize ? { fontSizePt: resolvedFontSize } : {}),
     formulaLetterFont: resolvedFormulaLetterFont,
     formulaChineseFont: resolvedFormulaChineseFont,
+    // the layout engine draws every formula in the faces of the Settings, so the formula records those
+    formulaFaces: normalizeFormulaFaces(formulaFaces ?? readPersistedFormulaFaces()),
     ...(resolvedReferenceWidth ? { referenceWidthPt: resolvedReferenceWidth } : {}),
     ...(resolvedReferenceHeight ? { referenceHeightPt: resolvedReferenceHeight } : {}),
     ...(resolvedReferenceBaseline !== undefined

@@ -153,6 +153,15 @@ function validateExportResult(value: unknown, path: string): OfficeExportResult 
       finiteNumber(entry, `${path}.${key}`);
     }
   }
+  if (result.formulaFaces !== undefined && result.formulaFaces !== null) {
+    const faces = record(result.formulaFaces, `${path}.formulaFaces`);
+    for (const role of ["letter", "greek", "digit"] as const) {
+      const name = faces[role];
+      if (name !== undefined && (typeof name !== "string" || name.length > 128)) {
+        invalid(`${path}.formulaFaces.${role}`, "a font name of at most 128 characters");
+      }
+    }
+  }
   return result as unknown as OfficeExportResult;
 }
 

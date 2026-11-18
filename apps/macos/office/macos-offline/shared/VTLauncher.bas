@@ -562,6 +562,114 @@ NotAvailable:
 #End If
 End Function
 
+' Update Equation Format's font check: which of a document's picture formulas the app draws in other fonts than it
+' draws in now (src-tauri office/formula_fonts.rs reads their metadata, which VBA cannot inflate). The request
+' <session>.fonts in the host's sandbox inbox holds "imageCount" and "image<n>Metadata" rows; the resident answers
+' <session>.fonts-done with "stale" (the numbers of those drawn in other fonts) and "fontsEn" (the fonts, Base64URL).
+' Only a resident whose heartbeat says fonts=1 knows the fonts; when none runs, the app is started in the background
+' first (it publishes them once its windows load). "" when VisualTeX cannot answer.
+Public Function VTTryResidentFontCheck( _
+    ByVal hostName As String, ByVal sessionId As String, ByVal manifest As String) As String
+#If Mac Then
+    Const MAX_START_WAIT_SECONDS As Double = 25#
+    Const MAX_CLAIM_WAIT_SECONDS As Double = 3#
+    Const MAX_ANSWER_WAIT_SECONDS As Double = 60#
+    Dim normalizedHost As String
+    Dim inboxRoot As String
+    Dim requestPath As String
+    Dim temporaryPath As String
+    Dim answerPath As String
+    Dim startedAt As Single
+    Dim handle As Integer
+    Dim answer As String
+    Dim requestBytes() As Byte
+
+    If Not VTIsCanonicalUuid(sessionId) Or Len(manifest) = 0 Then Exit Function
+    On Error GoTo NotAvailable
+    normalizedHost = VTCanonicalOfficeHost(hostName)
+    If Not VTResidentKnowsFormulaFonts(normalizedHost) Then
+        VTTryPrewarmApplication normalizedHost
+        startedAt = Timer
+        Do Until VTResidentKnowsFormulaFonts(normalizedHost)
+            If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_START_WAIT_SECONDS Then GoTo NotAvailable
+            DoEvents
+        Loop
+    End If
+    inboxRoot = VTFastOpenInboxRoot(normalizedHost)
+    requestPath = inboxRoot & "/" & sessionId & ".fonts"
+    temporaryPath = inboxRoot & "/." & sessionId & ".fonts.tmp"
+    answerPath = inboxRoot & "/" & sessionId & ".fonts-done"
+    VTDiscardInboxFile answerPath
+    VTDiscardInboxFile requestPath
+    VTDiscardInboxFile temporaryPath
+    requestBytes = VTUtf8Encode(manifest)
+    handle = FreeFile
+    Open temporaryPath For Binary Access Write As #handle
+    Put #handle, , requestBytes
+    Close #handle
+    handle = 0
+    Name temporaryPath As requestPath
+    startedAt = Timer
+    Do While Len(Dir$(requestPath, vbNormal)) > 0
+        If Len(Dir$(answerPath, vbNormal)) > 0 Then Exit Do
+        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_CLAIM_WAIT_SECONDS Then GoTo NotAvailable
+        DoEvents
+    Loop
+    Do While Len(Dir$(answerPath, vbNormal)) = 0
+        If VTFastLaunchElapsedSeconds(startedAt, Timer) > MAX_ANSWER_WAIT_SECONDS Then GoTo NotAvailable
+        DoEvents
+    Loop
+    answer = VTReadInboxText(answerPath, 1048576)
+    VTDiscardInboxFile answerPath
+    If InStr(1, answer, "operation=fontCheck", vbBinaryCompare) > 0 Then VTTryResidentFontCheck = answer
+    Exit Function
+
+NotAvailable:
+    ' A request nobody answered must not be answered later.
+    If handle <> 0 Then VTCloseFile handle
+    VTDiscardInboxFile requestPath
+    VTDiscardInboxFile temporaryPath
+    VTDiscardInboxFile answerPath
+    Err.Clear
+#End If
+End Function
+
+' One value of a resident's key=value answer ("" when it has none).
+Public Function VTResidentAnswerValue(ByVal answer As String, ByVal key As String) As String
+    Dim rows() As String
+    Dim index As Long
+
+    rows = Split(Replace$(answer, vbCr, ""), vbLf)
+    For index = LBound(rows) To UBound(rows)
+        If Left$(rows(index), Len(key) + 1) = key & "=" Then
+            VTResidentAnswerValue = Mid$(rows(index), Len(key) + 2)
+            Exit Function
+        End If
+    Next index
+End Function
+
+' The resident runs, is fresh and knows the fonts formulas are drawn in now (its heartbeat says fonts=1).
+Private Function VTResidentKnowsFormulaFonts(ByVal normalizedHost As String) As Boolean
+#If Mac Then
+    On Error GoTo NotReady
+    If Not VTFastOpenResidentReady(normalizedHost) Then Exit Function
+    VTResidentKnowsFormulaFonts = InStr(1, _
+        VTReadInboxText(VTFastOpenInboxRoot(normalizedHost) & "/resident-ready", 4096), _
+        "fonts=1", vbBinaryCompare) > 0
+    Exit Function
+
+NotReady:
+    Err.Clear
+#End If
+End Function
+
+' Starts the resident in the background; a failure only means the check gets no answer.
+Private Sub VTTryPrewarmApplication(ByVal normalizedHost As String)
+    On Error Resume Next
+    VTPrewarmApplication normalizedHost
+    Err.Clear
+End Sub
+
 ' Removes a file of the sandbox inbox if there is one. The empty path of a step not reached yet is not killed: Kill of "" fails
 ' (error 53 after more than a second in Word for Mac) and, inside an error handler, the failure goes on to the caller as an
 ' error of its own, which is how a failed resident request once took the whole insertion down.

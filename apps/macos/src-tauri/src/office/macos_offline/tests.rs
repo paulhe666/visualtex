@@ -767,6 +767,7 @@ fn latex_redraw_request_rejects_invalid_scope_and_output_before_file_access() {
             redraw_scope: Some("page".to_string()),
             output_kind: Some("image".to_string()),
             source_kind: None,
+            font_refresh: false,
         }),
         client: None,
         agent: false,
@@ -801,6 +802,35 @@ fn latex_redraw_request_rejects_invalid_scope_and_output_before_file_access() {
     assert!(validate_request(&request, &session_id)
         .unwrap_err()
         .contains("formula transform fields"));
+
+    // Update Equation Format's font step: picture formulas drawn again as pictures, and only that.
+    let document_import = request.document_import.as_mut().unwrap();
+    document_import.output_kind = None;
+    document_import.font_refresh = true;
+    assert!(validate_request(&request, &session_id)
+        .unwrap_err()
+        .contains("formula transform fields"));
+    request.operation = Some("formulaRestore".to_string());
+    let document_import = request.document_import.as_mut().unwrap();
+    document_import.inline_font_size_pt = None;
+    document_import.display_font_size_pt = None;
+    document_import.redraw_scope = Some("document".to_string());
+    document_import.source_kind = Some("image".to_string());
+    document_import.output_kind = Some("omml".to_string());
+    assert!(validate_request(&request, &session_id)
+        .unwrap_err()
+        .contains("font update"));
+    let document_import = request.document_import.as_mut().unwrap();
+    document_import.output_kind = Some("image".to_string());
+    document_import.font_refresh = false;
+    assert!(validate_request(&request, &session_id)
+        .unwrap_err()
+        .contains("Only native OMML"));
+    request.document_import.as_mut().unwrap().font_refresh = true;
+    // accepted up to its source, which this test does not write
+    assert!(validate_request(&request, &session_id)
+        .unwrap_err()
+        .contains("formula restore source"));
 }
 
 #[test]
@@ -1453,6 +1483,7 @@ fn metadata_codec_round_trips_the_shared_schema() {
         font_size_pt: Some(10.5),
         formula_letter_font: None,
         formula_chinese_font: None,
+        formula_faces: None,
         reference_width_pt: Some(37.5),
         reference_height_pt: Some(15.0),
         reference_baseline_pt: Some(-3.0),
@@ -1519,6 +1550,7 @@ fn document_formula_metadata(
         font_size_pt: Some(14.0),
         formula_letter_font: None,
         formula_chinese_font: None,
+        formula_faces: None,
         reference_width_pt: None,
         reference_height_pt: None,
         reference_baseline_pt: None,
@@ -2067,6 +2099,7 @@ fn office_geometry_preserves_visual_point_size_and_powerpoint_center() {
             ink_top_ratio: None,
             ink_bottom_ratio: None,
             ink_center_y_ratio: None,
+            formula_faces: None,
         }),
         original_metadata: Some(VisualTeXFormulaMetadata {
             schema: "visualtex-formula".to_string(),
@@ -2085,6 +2118,7 @@ fn office_geometry_preserves_visual_point_size_and_powerpoint_center() {
             font_size_pt: None,
             formula_letter_font: None,
             formula_chinese_font: None,
+            formula_faces: None,
             reference_width_pt: None,
             reference_height_pt: None,
             reference_baseline_pt: None,

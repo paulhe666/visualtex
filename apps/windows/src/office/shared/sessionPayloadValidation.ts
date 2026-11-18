@@ -168,6 +168,15 @@ function validateExportResult(value: unknown, path: string): OfficeExportResult 
     `${path}.formulaChineseFont`,
     CHINESE_FONTS,
   );
+  if (result.formulaFaces !== undefined && result.formulaFaces !== null) {
+    const faces = record(result.formulaFaces, `${path}.formulaFaces`);
+    for (const role of ["letter", "greek", "digit"]) {
+      const name = faces[role];
+      if (name !== undefined && (typeof name !== "string" || name.length > 128)) {
+        invalid(`${path}.formulaFaces.${role}`, "a font name of at most 128 characters");
+      }
+    }
+  }
   return result as unknown as OfficeExportResult;
 }
 

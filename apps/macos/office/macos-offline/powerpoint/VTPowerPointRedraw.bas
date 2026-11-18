@@ -58,6 +58,146 @@ Public Sub VisualTeX_RestorePresentationToLatex()
     VTStartPresentationRestore "presentation"
 End Sub
 
+' Update Equation Format: the presentation's VisualTeX picture formulas drawn in
+' other fonts than VisualTeX draws in now are drawn again from their LaTeX and
+' put where they were - the same id, centre, rotation and layer, at the size they
+' show at - in one Undo step. VisualTeX reads their metadata
+' (VTTryResidentFontCheck), draws them (a picture-to-picture formula restore
+' with fontRefresh) and writes them through VisualTeX_ApplyPresentationItems.
+Public Sub VisualTeX_UpdateEquationFormat()
+    Dim formulas As New Collection
+    Dim stale As New Collection
+    Dim slideItem As PowerPoint.Slide
+    Dim shapeItem As PowerPoint.Shape
+    Dim entry As Variant
+    Dim manifest As String
+    Dim checkSessionId As String
+    Dim answer As String
+    Dim staleNumbers() As String
+    Dim fontsDescription As String
+    Dim message As String
+    Dim index As Long
+    Dim number As Long
+    Dim buffer As String
+    Dim sessionId As String
+    Dim sourcePath As String
+    Dim written As Boolean
+    Dim stage As String
+    Dim errorNumber As Long
+    Dim errorText As String
+
+    On Error GoTo Failed
+    stage = "require-presentation"
+    VTRequireWritablePowerPointPresentation
+    stage = "collect-formulas"
+    For Each slideItem In ActivePresentation.Slides
+        For Each shapeItem In slideItem.Shapes
+            If VTIsVisualTeXPowerPointShape(shapeItem) Then
+                formulas.Add Array(slideItem, shapeItem)
+                manifest = manifest & "image" & CStr(formulas.Count) & "Metadata=" & _
+                    VTShapeMetadata(shapeItem) & vbLf
+            End If
+        Next shapeItem
+    Next slideItem
+    If formulas.Count = 0 Then
+        VTShowInformation "This presentation has no VisualTeX picture formulas."
+        Exit Sub
+    End If
+    stage = "check-fonts"
+    checkSessionId = VTNewUuidV4()
+    answer = VTTryResidentFontCheck(PresentationHost, checkSessionId, _
+        "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
+        "sessionId=" & checkSessionId & vbLf & _
+        "imageCount=" & CStr(formulas.Count) & vbLf & manifest)
+    If Len(answer) = 0 Then
+        Err.Raise vbObjectError + 7955, "VisualTeX", _
+            "VisualTeX could not be reached, so formula fonts were not checked. Open VisualTeX and try again."
+    End If
+    fontsDescription = VTBase64UrlDecodeUtf8(VTResidentAnswerValue(answer, "fontsEn"))
+    If Len(VTResidentAnswerValue(answer, "stale")) > 0 Then
+        staleNumbers = Split(VTResidentAnswerValue(answer, "stale"), ",")
+        For index = LBound(staleNumbers) To UBound(staleNumbers)
+            number = CLng(Val(staleNumbers(index)))
+            If number >= 1 And number <= formulas.Count And stale.Count < MaxFormulas Then
+                stale.Add formulas(number)
+            End If
+        Next index
+    End If
+    If stale.Count = 0 Then
+        VTShowInformation "The VisualTeX formulas in this presentation already use the current fonts (" & _
+            fontsDescription & ")."
+        Exit Sub
+    End If
+    If Not VT_AGENT_MODE Then
+        message = CStr(stale.Count) & _
+            " VisualTeX formula(s) drawn in other fonts will be drawn again in the current fonts (" & _
+            fontsDescription & ")." & vbCr
+        If UBound(staleNumbers) - LBound(staleNumbers) + 1 > stale.Count Then message = message & _
+            "Update the format again for the rest." & vbCr
+        message = message & vbCr & _
+            "Content, position, rotation, layer and size stay as they are. Undo reverses the whole update. Continue?"
+        If MsgBox(message, vbOKCancel Or vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
+    End If
+
+    stage = "write-source"
+    sessionId = VTNewUuidV4()
+    sourcePath = VTSessionDirectory(sessionId) & RestoreSourceName
+    buffer = "{""targets"":["
+    For index = 1 To stale.Count
+        entry = stale(index)
+        Set slideItem = entry(0)
+        Set shapeItem = entry(1)
+        If index > 1 Then buffer = buffer & ","
+        buffer = buffer & "{""slideId"":" & CStr(slideItem.SlideID) & _
+            ",""shapeId"":" & CStr(shapeItem.Id) & _
+            ",""kind"":""image"",""displayMode"":""block""" & _
+            ",""fontSizePt"":" & VTJsonNumber(VTPresentationShownSize(shapeItem)) & _
+            ",""heightPt"":" & VTJsonNumber(shapeItem.Height) & _
+            ",""metadata"":" & VTPresentationJsonText(VTShapeMetadata(shapeItem)) & "}"
+        If Len(buffer) >= SourceChunkCharacters Then
+            VTWritePresentationSource sourcePath, buffer, written
+            buffer = ""
+        End If
+    Next index
+    VTWritePresentationSource sourcePath, buffer & "]}", written
+    stage = "write-request"
+    buffer = VTPresentationOperationJson(sessionId, "formulaRestore", "presentation", "image", "image")
+    VTWriteRequest sessionId, Left$(buffer, Len(buffer) - 2) & ",""fontRefresh"":true}}"
+    stage = "launch"
+    VTLaunchSession PresentationHost, sessionId
+    Exit Sub
+
+Failed:
+    errorNumber = Err.Number
+    errorText = Err.Description
+    Resume ReportFailure
+ReportFailure:
+    On Error Resume Next
+    If written Then VTDeletePresentationSession sessionId
+    On Error GoTo 0
+    VTShowError "PowerPoint Update Equation Format (" & stage & ")", errorNumber, errorText
+End Sub
+
+' The size a picture formula shows at: its height over its height at the 14 pt
+' reference (tags), else the size it was given (read only, unlike
+' VTEnsurePowerPointFormulaScaleState).
+Private Function VTPresentationShownSize(ByVal shapeItem As PowerPoint.Shape) As Double
+    Dim fontSizePt As Double
+    Dim referenceHeightPt As Double
+    Dim observed As Double
+
+    fontSizePt = VTPresentationPictureSize(shapeItem)
+    On Error Resume Next
+    referenceHeightPt = VTParseInvariantDouble(shapeItem.Tags("VisualTeXReferenceHeightPt"))
+    Err.Clear
+    On Error GoTo 0
+    If referenceHeightPt > 0# And referenceHeightPt <= 10000# Then
+        observed = shapeItem.Height / referenceHeightPt * 14#
+        If observed >= 1# And observed <= 512# Then fontSizePt = observed
+    End If
+    VTPresentationShownSize = fontSizePt
+End Function
+
 Private Sub VTStartPresentationRedraw(ByVal scope As String, ByVal outputKind As String)
     Dim targets As Collection
     Dim target As Variant
@@ -328,6 +468,42 @@ Report:
     End If
 End Sub
 
+' Update Equation Format's pictures, all in this one macro call, so that
+' PowerPoint keeps them as one Undo step (presentation_redraw.rs
+' apply_batch_in_powerpoint): every item presentation-batch.txt names, each
+' outcome in presentation-item-<index>.txt. An item without an outcome is
+' reported by VisualTeX as not written.
+Public Sub VisualTeX_ApplyPresentationItems()
+    Dim sessionId As String
+    Dim directory As String
+    Dim indices() As String
+    Dim position As Long
+    Dim index As Long
+
+    On Error GoTo Finished
+    sessionId = VTReadActiveSessionId(PresentationHost)
+    directory = VTSessionDirectory(sessionId)
+    indices = Split(Trim$(VTReadText(directory & "/presentation-batch.txt", 65536)), ",")
+    For position = LBound(indices) To UBound(indices)
+        index = CLng(indices(position))
+        VTWriteTextAtomic directory & "/presentation-item-" & CStr(index) & ".txt", _
+            VTApplyPresentationBatchItem(directory, sessionId, index)
+    Next position
+Finished:
+End Sub
+
+Private Function VTApplyPresentationBatchItem(ByVal directory As String, ByVal sessionId As String, _
+    ByVal index As Long) As String
+
+    On Error GoTo Failed
+    VTApplyPresentationItem VTReadPresentationItem( _
+        directory & "/presentation-item-" & CStr(index) & ".in", sessionId)
+    VTApplyPresentationBatchItem = "ok"
+    Exit Function
+Failed:
+    VTApplyPresentationBatchItem = "error" & vbLf & Err.Description
+End Function
+
 Private Sub VTApplyPresentationItem(ByVal item As Collection)
     Dim targetPresentation As PowerPoint.Presentation
     Dim slideItem As PowerPoint.Slide
@@ -339,6 +515,8 @@ Private Sub VTApplyPresentationItem(ByVal item As Collection)
             VTWriteRedrawEquation targetPresentation, slideItem, shapeItem, item
         Case "picture"
             VTWriteRedrawPicture targetPresentation, slideItem, shapeItem, item
+        Case "refresh"
+            VTWriteRefreshedPicture slideItem, shapeItem, item
         Case "text"
             If VTItemValue(item, "replace") = "picture" Then
                 VTWriteRestoredPicture slideItem, shapeItem, item
@@ -540,6 +718,118 @@ Private Sub VTWriteRedrawPicture(ByVal targetPresentation As PowerPoint.Presenta
     On Error GoTo Failed
     VTRestoreZOrder pictureShape, zOrder + 1
     shapeItem.Delete
+    Exit Sub
+
+Failed:
+    errorNumber = Err.Number
+    errorText = Err.Description
+    Resume RemovePicture
+RemovePicture:
+    On Error Resume Next
+    If Not pictureShape Is Nothing Then pictureShape.Delete
+    On Error GoTo 0
+    Err.Raise errorNumber, "VisualTeX", errorText
+End Sub
+
+' A picture formula drawn again in the current fonts in place of the old one
+' (Update Equation Format): its name, tags and id, its centre, rotation and
+' layer, at the size it showed at.
+Private Sub VTWriteRefreshedPicture(ByVal slideItem As PowerPoint.Slide, ByVal shapeItem As PowerPoint.Shape, _
+    ByVal item As Collection)
+
+    Dim formulaId As String
+    Dim metadata As String
+    Dim formulaReference As String
+    Dim imagePath As String
+    Dim fallbackPath As String
+    Dim originalName As String
+    Dim widthPt As Double
+    Dim heightPt As Double
+    Dim fontSizePt As Double
+    Dim referenceWidthPt As Double
+    Dim referenceHeightPt As Double
+    Dim centerX As Double
+    Dim centerY As Double
+    Dim rotation As Double
+    Dim zOrder As Long
+    Dim tagIndex As Long
+    Dim pictureShape As PowerPoint.Shape
+    Dim errorNumber As Long
+    Dim errorText As String
+
+    If Not VTIsVisualTeXPowerPointShape(shapeItem) Then
+        Err.Raise vbObjectError + 7954, "VisualTeX", "The formula is no longer a VisualTeX formula; it was left as it is."
+    End If
+    If StrComp(VTShapeMetadata(shapeItem), VTItemValue(item, "original"), vbBinaryCompare) <> 0 Then
+        Err.Raise vbObjectError + 7954, "VisualTeX", "The formula changed after VisualTeX read it; it was left as it is."
+    End If
+    formulaId = VTItemValue(item, "formulaId")
+    metadata = VTItemValue(item, "metadata")
+    formulaReference = VTItemValue(item, "formulaReference")
+    If Not VTIsCanonicalUuid(formulaId) Or Not VTIsEncodedMetadata(metadata) Or _
+       StrComp(formulaId, VTShapeFormulaId(shapeItem), vbTextCompare) <> 0 Then
+        Err.Raise vbObjectError + 7957, "VisualTeX", "VisualTeX sent PowerPoint an invalid picture formula."
+    End If
+    imagePath = VTItemValue(item, "imagePath")
+    VTValidateAbsoluteVisualTeXPath imagePath
+    If VTCollectionHasKey(item, "fallbackImagePath") Then
+        fallbackPath = VTItemValue(item, "fallbackImagePath")
+        VTValidateAbsoluteVisualTeXPath fallbackPath
+    End If
+    widthPt = VTParseInvariantDouble(VTItemValue(item, "widthPt"))
+    heightPt = VTParseInvariantDouble(VTItemValue(item, "heightPt"))
+    fontSizePt = VTParseInvariantDouble(VTItemValue(item, "fontSizePt"))
+    referenceWidthPt = VTParseInvariantDouble(VTItemValue(item, "referenceWidthPt"))
+    referenceHeightPt = VTParseInvariantDouble(VTItemValue(item, "referenceHeightPt"))
+    If widthPt <= 0# Or heightPt <= 0# Then
+        Err.Raise vbObjectError + 7957, "VisualTeX", "VisualTeX sent PowerPoint a picture formula without a size."
+    End If
+    centerX = shapeItem.Left + shapeItem.Width / 2#
+    centerY = shapeItem.Top + shapeItem.Height / 2#
+    rotation = shapeItem.Rotation
+    zOrder = shapeItem.ZOrderPosition
+    originalName = shapeItem.Name
+
+    On Error Resume Next
+    Set pictureShape = slideItem.Shapes.AddPicture( _
+        FileName:=imagePath, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+        Left:=CSng(centerX - widthPt / 2#), Top:=CSng(centerY - heightPt / 2#), _
+        Width:=CSng(widthPt), Height:=CSng(heightPt))
+    Err.Clear
+    On Error GoTo Failed
+    If pictureShape Is Nothing And Len(fallbackPath) > 0 Then
+        Set pictureShape = slideItem.Shapes.AddPicture( _
+            FileName:=fallbackPath, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+            Left:=CSng(centerX - widthPt / 2#), Top:=CSng(centerY - heightPt / 2#), _
+            Width:=CSng(widthPt), Height:=CSng(heightPt))
+    End If
+    If pictureShape Is Nothing Then
+        Err.Raise vbObjectError + 7957, "VisualTeX", "PowerPoint could not insert the formula picture."
+    End If
+    pictureShape.LockAspectRatio = msoTrue
+    If Abs(rotation) > 0.01 Then pictureShape.Rotation = rotation
+    ' the old formula's tags (its identity, its document) come along
+    For tagIndex = 1 To shapeItem.Tags.Count
+        pictureShape.Tags.Add shapeItem.Tags.Name(tagIndex), shapeItem.Tags.Value(tagIndex)
+    Next tagIndex
+    pictureShape.AlternativeText = metadata
+    pictureShape.Title = formulaReference
+    VTSetShapeTag pictureShape, "VisualTeXFormulaId", formulaId
+    VTSetShapeTag pictureShape, "VisualTeXObjectId", VTPowerPointShapeObjectIdentity(slideItem, pictureShape)
+    VTSetShapeTag pictureShape, "VisualTeXPending", "0"
+    VTSetShapeTag pictureShape, "VisualTeXFormulaReference", formulaReference
+    VTSetPowerPointFormulaScaleState pictureShape, fontSizePt, referenceWidthPt, referenceHeightPt
+    On Error Resume Next
+    VTSetShapeTag pictureShape, "VisualTeXMetadata", metadata
+    Err.Clear
+    On Error GoTo Failed
+    VTRestoreZOrder pictureShape, zOrder + 1
+    shapeItem.Delete
+    ' The name once the old formula is gone (names are unique on a slide); the
+    ' formula is written by now, whatever happens to its name.
+    On Error Resume Next
+    pictureShape.Name = originalName
+    Err.Clear
     Exit Sub
 
 Failed:

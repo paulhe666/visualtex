@@ -754,6 +754,7 @@ mod tests {
                 baseline: Some(22.0),
                 formula_letter_font: Some("times".to_string()),
                 formula_chinese_font: Some("kaiti".to_string()),
+                formula_faces: None,
             }),
             original_metadata: None,
             dirty,
