@@ -746,7 +746,7 @@ pub fn run() {
                             office_state.install_token.as_str().to_string(),
                             office::wps::installer::addin_log_path(&office_state),
                         );
-                        office::wps::installer::auto_install_in_background(office_state.clone());
+                        office::wps::installer::auto_install_in_background(app.handle().clone(), office_state.clone());
                     }
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())

@@ -848,6 +848,19 @@ pub(crate) async fn list_system_font_families() -> Result<Vec<SystemFontFamily>,
     }
 }
 
+/// Whether macOS has a font family of exactly this name (the fonts WPS can use).
+pub(crate) fn macos_font_family_available(family: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::probe_fonts(&[family.to_string()]).first().is_some_and(|probe| probe.available);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = family;
+        false
+    }
+}
+
 #[tauri::command]
 pub(crate) fn probe_macos_math_fonts(
     font_families: Vec<String>,

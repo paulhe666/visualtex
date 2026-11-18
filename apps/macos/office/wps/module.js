@@ -2193,6 +2193,58 @@
     }
   }
 
+  /* ---- WPS 公式字体 (Word's "OMML 字体") ----
+     The math font VisualTeX writes into WPS equations: WPS has no document
+     math font, so VisualTeX names the chosen font in every equation it
+     inserts, edits, converts or redraws (the bridge adds it to each request).
+     One choice for every document, shared with the Word add-in. A menu with
+     the current font first and the choices ticked, like the size menus; a font
+     macOS does not have cannot be chosen. An item is "vtxMathFont_<key>". */
+  var MATH_FONT_CHOICES = [
+    ["follow", "跟随文档（不更改）"],
+    ["cambria", "Cambria Math"],
+    ["stix", "STIX Two Math"],
+    ["latinModern", "Latin Modern Math"],
+    ["termes", "TeX Gyre Termes Math"]
+  ];
+  var mathFont = { loaded: false, choice: "follow", available: {} };
+
+  function takeMathFont(state) {
+    mathFont.choice = state && state.choice || "follow";
+    mathFont.available = state && state.available || {};
+    invalidateControl("vtxOmmlFont");
+  }
+
+  function loadMathFont() {
+    if (mathFont.loaded) return;
+    mathFont.loaded = true;
+    call("GET", "/math-font", undefined, 5000).then(takeMathFont, function () { mathFont.loaded = false; });
+  }
+
+  function mathFontMenu() {
+    loadMathFont();
+    var current = MATH_FONT_CHOICES.filter(function (choice) { return choice[0] === mathFont.choice; })[0] || MATH_FONT_CHOICES[0];
+    var xml = "<menu xmlns=\"" + CUSTOM_UI_NAMESPACE + "\">" +
+      "<button id=\"vtxMathFontCurrent\" label=\"" + xmlText("当前：" + current[1]) + "\" enabled=\"false\" />" +
+      "<menuSeparator id=\"vtxMathFontSeparator\" />";
+    MATH_FONT_CHOICES.forEach(function (choice) {
+      var installed = choice[0] === "follow" || mathFont.available[choice[0]] !== false;
+      var label = (choice[0] === mathFont.choice ? "✓ " : "") + choice[1] + (installed ? "" : "（未安装）");
+      xml += "<button id=\"vtxMathFont_" + choice[0] + "\" label=\"" + xmlText(label) + "\"" +
+        (installed ? " onAction=\"OnVisualTeXAction\"" : " enabled=\"false\"") + " />";
+    });
+    return xml + "</menu>";
+  }
+
+  function selectMathFont(key) {
+    call("POST", "/math-font", { choice: key }, 10000).then(function (state) {
+      mathFont.loaded = true;
+      takeMathFont(state);
+    }, function (error) {
+      notify("VisualTeX 无法设置 WPS 公式字体：" + error.message);
+    });
+  }
+
   /* ---- formulas back to LaTeX ("将 OMML 公式转为 LaTeX", "将图片公式转为 LaTeX") ----
      Each formula becomes its LaTeX as text, "$...$" inline and "$$...$$" for
      a display formula; a number goes with its formula and the paragraph
@@ -4267,16 +4319,19 @@
         };
       }
       log("module loaded");
-      /* The size menus show the current sizes from the first time they open. */
+      /* The size and font menus show the current choice from the first time they open. */
       safe(loadConversionSizes);
+      safe(loadMathFont);
       startAgentLoop(window.VisualTeXWpsModule);
     },
     onAction: function (id) {
       run(function () {
         var reference = /^vtxRef_(omml|image)_(\d+)$/.exec(String(id));
         var size = /^vtxSize_(vtx[A-Za-z]+)_(\d+)$/.exec(String(id));
+        var font = /^vtxMathFont_([A-Za-z]+)$/.exec(String(id));
         if (reference) insertReference(reference[1], Number(reference[2]));
         else if (size && FONT_SIZE_LISTS.indexOf(size[1]) >= 0) selectFontSize(size[1], Number(size[2]));
+        else if (font) selectMathFont(font[1]);
         else if (COMMANDS[id]) COMMANDS[id]();
         else notify("这个 VisualTeX 功能还没有接入 WPS：" + id);
       });
@@ -4287,6 +4342,9 @@
       }
       if (FONT_SIZE_LISTS.indexOf(id) >= 0) {
         return safe(function () { return fontSizeMenu(id); }, menuMessage("无法读取字号"));
+      }
+      if (id === "vtxOmmlFont") {
+        return safe(mathFontMenu, menuMessage("无法读取字体"));
       }
       return null;
     },

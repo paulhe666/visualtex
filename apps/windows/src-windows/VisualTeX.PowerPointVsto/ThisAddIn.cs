@@ -273,11 +273,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public string GetCustomUI(string ribbonId)
     {
         var startup = new OfficeHostSelection.StartupSteps();
-        // WPS Presentation gets its own compact tab in WPS's style (PowerPointRibbonWps.cs); PowerPoint keeps its tab.
+        // WPS Presentation gets PowerPoint's tab laid out for WPS (PowerPointRibbonWps.cs).
         var ribbon = !OfficeHostSelection.IsCurrentHostEnabled()
             ? string.Empty
             : OfficeHostEnvironment.IsWps
-                ? OfficePluginLanguage.IsEnglish ? RibbonXmlWpsEnglish : RibbonXmlWps
+                ? BuildWpsRibbonXml(OfficePluginLanguage.IsEnglish)
                 : OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
         startup.Mark("ribbonXml");
         startup.Record(OfficeHostEnvironment.IsWps ? "WpsPresentationRibbon" : "PowerPointRibbon");

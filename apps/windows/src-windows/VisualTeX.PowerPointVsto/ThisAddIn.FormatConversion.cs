@@ -89,10 +89,15 @@ public sealed partial class ThisAddIn
         catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
     }
 
-    public string GetVisualTeXTargetFormLabel(Office.IRibbonControl control) =>
-        VisualTeXTargetMode == FormulaOleContract.CrossPlatformPictureMode
-            ? T("VisualTeX 形式：图片", "VisualTeX as: Picture")
-            : T("VisualTeX 形式：OLE 对象", "VisualTeX as: OLE Object");
+    // WPS's tab shows this large menu's label on two lines (enableLineBreak); the colon or space before the break
+    // keeps the label whole in a WPS that drops the break.
+    public string GetVisualTeXTargetFormLabel(Office.IRibbonControl control)
+    {
+        var lineBreak = OfficeHostEnvironment.IsWps ? "\n" : "";
+        return VisualTeXTargetMode == FormulaOleContract.CrossPlatformPictureMode
+            ? T($"VisualTeX 形式：{lineBreak}图片", $"VisualTeX as: {lineBreak}Picture")
+            : T($"VisualTeX 形式：{lineBreak}OLE 对象", $"VisualTeX as: {lineBreak}OLE Object");
+    }
 
     // What "-> VisualTeX" produces: a double-click-editable OLE object (the
     // default, like Word) or an SVG picture that displays on every device.

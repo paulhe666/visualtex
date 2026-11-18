@@ -30,6 +30,7 @@ use health::*;
 pub(crate) use locations::*;
 pub(crate) use maintenance::*;
 use math_fonts::*;
+pub(crate) use math_fonts::install_math_fonts_with_wps_addin;
 pub(crate) use office_apps::*;
 pub(crate) use powerpoint::*;
 use validation::*;

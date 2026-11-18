@@ -1,47 +1,40 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddinLoad">
-  <!-- The tab in WPS's own style (see ../addin/ribbon.xml for the naming and for how WPS lays columns out): every
-       name says what it does, the formats are VisualTeX 公式 / WPS 公式 / LaTeX 代码, columns of two in a horizontal
-       box per group (a lone control's second row is an empty label), the size a menu with the current size ticked,
-       WPS's own icons chosen by what they show. -->
+  <!-- The same tab as the PowerPoint for Mac add-in's (powerpoint/customUI14.xml): the same groups and buttons in the
+       same order, large where PowerPoint's are large, and PowerPoint's column of three (delete, size, open) as a column
+       of three, with WPS's own equations called "WPS 公式" where PowerPoint says OMML. See ../addin/ribbon.xml for
+       how WPS lays boxes out, the size menus and the icons; large labels are short (no "公式": 行内WPS, 新建SVG,
+       转为LaTeX) and have no space, as WPS for Mac draws them on one line; the screentips keep the full names. -->
   <ribbon>
     <tabs>
       <tab id="VisualTeXSlidesTab" label="VisualTeX" insertAfterMso="TabHome">
-        <group id="VisualTeXSlidesFormulaGroup" label="插入与编辑">
-          <button id="vtxNewFormula" label="插入公式" size="large" screentip="插入 VisualTeX 公式" supertip="在当前幻灯片中央插入一个 VisualTeX 公式（SVG 图片）；编辑完成后可以像图片一样移动和缩放，双击即可再次编辑。" imageMso="EquationFractionGallery" onAction="OnVisualTeXAction" />
-          <box id="vtxSlidesOmmlBox" boxStyle="vertical">
-            <button id="vtxOmmlInline" label="WPS 行内公式" screentip="插入 WPS 行内公式" supertip="在 VisualTeX 编辑器中写好后，在文本框的光标处插入 WPS 自己的公式（OMML），前后文字保留；没有文本光标时新建一个只含公式的文本框。" imageMso="EquationProfessional" onAction="OnVisualTeXAction" />
-            <button id="vtxOmmlDisplay" label="WPS 行间公式" screentip="插入 WPS 行间公式" supertip="在 VisualTeX 编辑器中写好后，在当前文本框中插入单独居中的 WPS 公式（OMML）段落；没有文本光标时新建一个只含公式的文本框。" imageMso="EquationInsertGallery" onAction="OnVisualTeXAction" />
-          </box>
-          <button id="vtxEditSelected" label="编辑公式" size="large" screentip="编辑所选公式" supertip="在 VisualTeX 编辑器中编辑所选的 VisualTeX 公式或光标所在的 WPS 公式；也可以双击公式。" imageMso="KSEquationEditor" onAction="OnVisualTeXAction" />
+        <group id="VisualTeXSlidesFormulaGroup" label="公式">
+          <button id="vtxOmmlInline" label="行内WPS" size="large" screentip="插入行内 WPS 公式" supertip="在 VisualTeX 编辑器中写好后，在文本框的光标处插入 WPS 自己的公式（OMML），前后文字保留；没有文本光标时新建一个只含公式的文本框。" imageMso="EquationProfessional" onAction="OnVisualTeXAction" />
+          <button id="vtxOmmlDisplay" label="行间WPS" size="large" screentip="插入行间 WPS 公式" supertip="在 VisualTeX 编辑器中写好后，在当前文本框中插入单独居中的 WPS 公式（OMML）段落；没有文本光标时新建一个只含公式的文本框。" imageMso="EquationInsertGallery" onAction="OnVisualTeXAction" />
+          <button id="vtxNewFormula" label="新建SVG" size="large" screentip="新建 SVG 公式" supertip="在当前幻灯片中央插入一个 VisualTeX 公式（SVG 图片）；编辑完成后可以像图片一样移动和缩放，双击即可再次编辑。" imageMso="EquationFractionGallery" onAction="OnVisualTeXAction" />
+          <button id="vtxEditSelected" label="编辑所选" size="large" screentip="编辑所选公式" supertip="在 VisualTeX 编辑器中编辑所选的 VisualTeX 公式或光标所在的 WPS 公式；也可以双击公式。" imageMso="KSEquationEditor" onAction="OnVisualTeXAction" />
         </group>
-        <group id="VisualTeXSlidesLatexGroup" label="LaTeX 代码">
-          <box id="vtxSlidesLatexBox" boxStyle="vertical">
-            <menu id="vtxRedrawMenu" label="LaTeX 代码转为公式" screentip="LaTeX 代码转为公式" supertip="把文本框中写成文字的 LaTeX 公式（$…$、$$…$$、\(…\)、\[…\] 和公式环境）换成公式。转为 WPS 公式时在文字中原位替换，$$ 和 \[ 成为单独居中的行间公式；转为 VisualTeX 公式时，只含一个 LaTeX 公式的文本框换成同一位置的 VisualTeX 公式。" imageMso="EquationInsertLaTex">
-              <button id="vtxRedrawImageSelection" label="所选 LaTeX 代码转为 VisualTeX 公式" onAction="OnVisualTeXAction" />
-              <button id="vtxRedrawImageSlide" label="本页 LaTeX 代码转为 VisualTeX 公式" onAction="OnVisualTeXAction" />
-              <button id="vtxRedrawImageAll" label="全部 LaTeX 代码转为 VisualTeX 公式" onAction="OnVisualTeXAction" />
-              <menuSeparator id="vtxRedrawSeparator" />
-              <button id="vtxRedrawOmmlSelection" label="所选 LaTeX 代码转为 WPS 公式" onAction="OnVisualTeXAction" />
-              <button id="vtxRedrawOmmlSlide" label="本页 LaTeX 代码转为 WPS 公式" onAction="OnVisualTeXAction" />
-              <button id="vtxRedrawOmmlAll" label="全部 LaTeX 代码转为 WPS 公式" onAction="OnVisualTeXAction" />
-            </menu>
-            <menu id="vtxToLatex" label="公式转为 LaTeX 代码" screentip="公式转为 LaTeX 代码" supertip="WPS 公式在文字中换成 $…$ 或 $$…$$；VisualTeX 公式换成同一位置、含 $$…$$ 的文本框，之后可以再转回公式。" imageMso="EquationTransferLaTex">
-              <button id="vtxToLatexSelection" label="所选公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
-              <button id="vtxToLatexSlide" label="本页公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
-              <button id="vtxToLatexAll" label="全部公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
-            </menu>
-          </box>
+        <group id="VisualTeXSlidesRedrawGroup" label="LaTeX 重绘">
+          <menu id="vtxRedrawOmmlMenu" label="LaTeX→WPS" size="large" screentip="LaTeX 重绘为 WPS 公式" supertip="把文本框中写成文字的 LaTeX 公式（$…$、$$…$$、\(…\)、\[…\] 和公式环境）在文字中原位换成 WPS 公式，$$ 和 \[ 成为单独居中的行间公式。" imageMso="EquationTransferOMML">
+            <button id="vtxRedrawOmmlSelection" label="所选" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawOmmlSlide" label="本页" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawOmmlAll" label="全部" onAction="OnVisualTeXAction" />
+          </menu>
+          <menu id="vtxRedrawImageMenu" label="LaTeX→VisualTeX" size="large" screentip="LaTeX 重绘为 VisualTeX 公式" supertip="只含一个 LaTeX 公式的文本框换成同一位置的 VisualTeX 公式（SVG 图片）。" imageMso="exporttopicture32">
+            <button id="vtxRedrawImageSelection" label="所选" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawImageSlide" label="本页" onAction="OnVisualTeXAction" />
+            <button id="vtxRedrawImageAll" label="全部" onAction="OnVisualTeXAction" />
+          </menu>
+          <menu id="vtxToLatex" label="转为LaTeX" size="large" screentip="公式转为 LaTeX 代码" supertip="WPS 公式在文字中换成 $…$ 或 $$…$$；VisualTeX 公式换成同一位置、含 $$…$$ 的文本框，之后可以再转回公式。" imageMso="EquationTransferLaTex">
+            <button id="vtxToLatexSelection" label="所选公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+            <button id="vtxToLatexSlide" label="本页公式全部转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+            <button id="vtxToLatexAll" label="全部公式转为 LaTeX 代码" onAction="OnVisualTeXAction" />
+          </menu>
         </group>
-        <group id="VisualTeXSlidesToolsGroup" label="字号与工具">
-          <box id="vtxSlidesToolsColumns" boxStyle="horizontal">
-            <box id="vtxSlidesSizeBox" boxStyle="vertical">
-              <dynamicMenu id="vtxImageFontSize" label="所选公式字号" screentip="所选公式字号" supertip="先选中一个或多个 VisualTeX 公式，再选择字号；立即应用，并保持中心、旋转和层级不变。" imageMso="FontSizeQat" getContent="OnVisualTeXMenuContent" invalidateContentOnDrop="true" />
-              <labelControl id="vtxSlidesSizeRow2" label="　" />
-            </box>
-            <box id="vtxSlidesToolsBox" boxStyle="vertical">
-              <button id="vtxDeleteSelected" label="删除公式" screentip="删除所选 VisualTeX 公式" imageMso="EquationCollectItemDelete" onAction="OnVisualTeXAction" />
-              <button id="vtxOpen" label="打开 VisualTeX" screentip="打开 VisualTeX 主窗口" imageMso="EquationOptions" onAction="OnVisualTeXAction" />
-            </box>
+        <group id="VisualTeXSlidesToolsGroup" label="公式工具">
+          <box id="vtxSlidesToolsColumn" boxStyle="vertical">
+            <button id="vtxDeleteSelected" label="删除所选公式" screentip="删除所选 VisualTeX 公式" imageMso="EquationCollectItemDelete" onAction="OnVisualTeXAction" />
+            <dynamicMenu id="vtxImageFontSize" label="SVG 公式字号" screentip="SVG 公式字号" supertip="先选中一个或多个 VisualTeX 公式（SVG 图片），再选择字号；立即应用，并保持中心、旋转和层级不变。" imageMso="FontSizeQat" getContent="OnVisualTeXMenuContent" invalidateContentOnDrop="true" />
+            <button id="vtxOpen" label="打开 VisualTeX" screentip="打开 VisualTeX 主窗口" imageMso="EquationOptions" onAction="OnVisualTeXAction" />
           </box>
         </group>
       </tab>

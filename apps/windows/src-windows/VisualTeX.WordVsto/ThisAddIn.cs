@@ -501,7 +501,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public string GetCustomUI(string ribbonId)
     {
         var startup = new OfficeHostSelection.StartupSteps();
-        // WPS Writer gets its own compact tab in WPS's style (WordRibbonWps.cs); Word keeps its tab.
+        // WPS Writer gets Word's tab laid out for WPS (WordRibbonWps.cs).
         var ribbon = !OfficeHostSelection.IsCurrentHostEnabled()
             ? string.Empty
             : OfficeHostEnvironment.IsWps
@@ -967,12 +967,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void ApplyOmmlMathFontChoice(OmmlMathFontChoice choice)
     {
         WordOmmlMathFontSetting.RefreshAvailability();
+        // WPS's tab calls the setting "WPS 公式字体" (WordRibbonWps.cs).
+        var setting = OfficeHostEnvironment.IsWps ? T("WPS 公式字体", "WPS equation font") : T("OMML 字体", "OMML font");
         if (!WordOmmlMathFontSetting.IsAvailable(choice))
         {
             var family = WordOmmlMathFontPolicy.FontFamily(choice) ?? string.Empty;
             SetStatus(T(
-                $"OMML 字体：{family} 不可用（字体未安装；重新安装 VisualTeX 的 Office 集成可恢复），未更改设置。",
-                $"OMML font: {family} is not available (the font is not installed; reinstalling VisualTeX's Office integration restores it); the setting is unchanged."));
+                $"{setting}：{family} 不可用（字体未安装；重新安装 VisualTeX 的 Office 集成可恢复），未更改设置。",
+                $"{setting}: {family} is not available (the font is not installed; reinstalling VisualTeX's Office integration restores it); the setting is unchanged."));
             InvalidateOmmlMathFontControls();
             return;
         }
@@ -981,8 +983,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (choice == OmmlMathFontChoice.FollowDocument)
         {
             SetStatus(OfficeHostEnvironment.IsWps
-                ? T("OMML 字体：跟随文档，VisualTeX 写入的 OMML 公式使用 Cambria Math。",
-                    "OMML font: follow the document; OMML equations VisualTeX writes use Cambria Math.")
+                ? T("WPS 公式字体：跟随文档，VisualTeX 写入的 WPS 公式使用 Cambria Math。",
+                    "WPS equation font: follow the document; WPS equations VisualTeX writes use Cambria Math.")
                 : T("OMML 字体：跟随文档，VisualTeX 不再更改文档的数学字体。",
                     "OMML font: follow the document; VisualTeX no longer changes the document math font."));
             return;
@@ -993,8 +995,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // equations: the font goes into every equation VisualTeX writes or edits.
             var family = WordOmmlMathFontPolicy.FontFamily(choice) ?? string.Empty;
             SetStatus(T(
-                $"OMML 字体：{family}。VisualTeX 之后插入或编辑的 OMML 公式使用它；已有公式在编辑后改用它。",
-                $"OMML font: {family}. OMML equations VisualTeX inserts or edits from now on use it; an existing equation changes when it is edited."));
+                $"WPS 公式字体：{family}。VisualTeX 之后插入或编辑的 WPS 公式使用它；已有公式在编辑后改用它。",
+                $"WPS equation font: {family}. WPS equations VisualTeX inserts or edits from now on use it; an existing equation changes when it is edited."));
             return;
         }
         _ = ApplyOmmlMathFontAsync();

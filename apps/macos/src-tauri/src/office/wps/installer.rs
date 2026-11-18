@@ -453,8 +453,9 @@ fn install_all(state: &OfficeCompanionState, reenable: bool) -> Vec<(String, Str
 }
 
 /// At startup: install or update the add-in in every WPS container, unless
-/// the user uninstalled it. Failures only show up in Settings.
-pub(crate) fn auto_install_in_background(state: OfficeCompanionState) {
+/// the user uninstalled it, with the math fonts of its equation font menu.
+/// Failures only show up in Settings.
+pub(crate) fn auto_install_in_background(app: tauri::AppHandle, state: OfficeCompanionState) {
     crate::spawn_background_task("visualtex-wps-addin-install", move || {
         std::thread::sleep(Duration::from_secs(4));
         if auto_install_disabled(&state) {
@@ -463,7 +464,16 @@ pub(crate) fn auto_install_in_background(state: OfficeCompanionState) {
         for (bundle_id, error) in install_all(&state, false) {
             eprintln!("VisualTeX could not install the WPS add-in for {bundle_id}: {error}");
         }
+        if wps_present() {
+            crate::office::macos_offline_installer::install_math_fonts_with_wps_addin(&app);
+        }
     });
+}
+
+/// WPS is installed (an app bundle or a container of it).
+fn wps_present() -> bool {
+    WPS_APPLICATIONS.iter().any(|path| Path::new(path).is_dir())
+        || home().map(|home| !jsaddons_roots(&home).is_empty()).unwrap_or(false)
 }
 
 #[tauri::command]
@@ -475,11 +485,15 @@ pub async fn get_wps_addin_status(state: tauri::State<'_, OfficeCompanionState>)
 }
 
 #[tauri::command]
-pub async fn install_wps_addin(state: tauri::State<'_, OfficeCompanionState>) -> Result<WpsAddinStatus, String> {
+pub async fn install_wps_addin(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, OfficeCompanionState>,
+) -> Result<WpsAddinStatus, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         set_auto_install_disabled(&state, false);
         let errors = install_all(&state, true);
+        crate::office::macos_offline_installer::install_math_fonts_with_wps_addin(&app);
         if let Some((_, error)) = errors.first() {
             return Err(error.clone());
         }
@@ -718,12 +732,11 @@ mod tests {
     }
 
     /// How WPS lays the columns out: it packs consecutive vertical boxes (and small controls beside them) into one
-    /// column of up to four, which makes the tab taller than WPS's own; it centres a lone control between the two
-    /// rows; a box of only size boxes gets tighter rows than buttons. So in a group, small controls stand in columns
-    /// of two (an empty label is a lone control's second row), side-by-side columns stand in a horizontal box, and
-    /// every box has a column with a button or menu.
+    /// column, and it centres a column's controls between the rows; a box of only size boxes gets tighter rows than
+    /// buttons. So in a group, small controls stand in columns of two or three rows, side-by-side columns stand in a
+    /// horizontal box with the same number of rows each, and every box has a button or menu row.
     #[test]
-    fn the_tabs_keep_wps_columns_of_two() {
+    fn the_tabs_keep_wps_columns() {
         fn groups<'a>(node: &'a RibbonNode, out: &mut Vec<&'a RibbonNode>) {
             if node.name == "group" {
                 out.push(node);
@@ -732,11 +745,13 @@ mod tests {
                 groups(child, out);
             }
         }
-        let column_of_two = |node: &RibbonNode| {
-            node.name == "box"
+        let column_rows = |node: &RibbonNode| {
+            let rows = node.children.len();
+            (node.name == "box"
                 && node.style == "vertical"
-                && node.children.len() == 2
-                && node.children.iter().all(|child| child.name != "box")
+                && (2..=3).contains(&rows)
+                && node.children.iter().all(|child| child.name != "box"))
+            .then_some(rows)
         };
         let buttons = |columns: &[&RibbonNode]| {
             columns.iter().flat_map(|column| column.children.iter()).any(|control| {
@@ -754,11 +769,13 @@ mod tests {
                     let is_column = child.name == "box" && child.style == "vertical";
                     if child.name == "box" && child.style == "horizontal" {
                         let columns: Vec<&RibbonNode> = child.children.iter().collect();
-                        assert!(columns.len() >= 2 && columns.iter().all(|column| column_of_two(column)), "columns of two");
+                        let rows: Vec<Option<usize>> = columns.iter().map(|column| column_rows(column)).collect();
+                        assert!(columns.len() >= 2 && rows.iter().all(Option::is_some), "columns of two or three rows");
+                        assert!(rows.windows(2).all(|pair| pair[0] == pair[1]), "columns side by side have the same rows");
                         assert!(buttons(&columns), "a box of only size boxes gets tighter rows");
                     } else if is_column {
                         assert!(!previous_column, "two columns side by side outside a horizontal box");
-                        assert!(column_of_two(child) && buttons(&[child]), "a column of two with a button");
+                        assert!(column_rows(child).is_some() && buttons(&[child]), "a column of two or three with a button");
                     } else {
                         assert!(child.large, "a small control outside a column");
                     }
@@ -766,5 +783,74 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A tab's layout, group by group: "L" for a large control, "C<n>" for a column of n small controls. Office for
+    /// Mac stacks consecutive small controls three to a column by itself; WPS needs a vertical box for each column.
+    fn layout(xml: &str) -> Vec<Vec<String>> {
+        fn flush(small: &mut usize, out: &mut Vec<String>) {
+            while *small > 0 {
+                let rows = (*small).min(3);
+                out.push(format!("C{rows}"));
+                *small -= rows;
+            }
+        }
+        fn group_layout(group: &RibbonNode, out: &mut Vec<String>) {
+            let mut small = 0;
+            for child in &group.children {
+                match (child.name.as_str(), child.style.as_str()) {
+                    ("box", "horizontal") => {
+                        flush(&mut small, out);
+                        for column in &child.children {
+                            let rows = column.children.iter().filter(|row| row.name != "labelControl").count();
+                            out.push(format!("C{rows}"));
+                        }
+                    }
+                    ("box", "vertical") => {
+                        flush(&mut small, out);
+                        let rows = child.children.iter().filter(|row| row.name != "labelControl").count();
+                        out.push(format!("C{rows}"));
+                    }
+                    _ if child.large => {
+                        flush(&mut small, out);
+                        out.push("L".to_string());
+                    }
+                    _ => small += 1,
+                }
+            }
+            flush(&mut small, out);
+        }
+        fn walk(node: &RibbonNode, out: &mut Vec<Vec<String>>) {
+            if node.name == "group" {
+                let mut group = Vec::new();
+                group_layout(node, &mut group);
+                out.push(group);
+                return;
+            }
+            for child in &node.children {
+                walk(child, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(&ribbon_tree(xml), &mut out);
+        out
+    }
+
+    /// WPS's tabs are the Office for Mac tabs: the same groups with the same large buttons and columns.
+    #[test]
+    fn the_tabs_have_the_office_tabs_layout() {
+        let word = include_str!("../../../../office/macos-offline/word/customUI14.xml");
+        let powerpoint = include_str!("../../../../office/macos-offline/powerpoint/customUI14.xml");
+        assert_eq!(layout(RIBBON_XML), layout(word));
+        assert_eq!(layout(SLIDES_RIBBON_XML), layout(powerpoint));
+        assert_eq!(
+            layout(RIBBON_XML),
+            vec![
+                vec!["L"; 5],
+                vec!["C3", "C3", "C3"],
+                vec!["L", "L"],
+                vec!["C3", "L"],
+            ]
+        );
     }
 }

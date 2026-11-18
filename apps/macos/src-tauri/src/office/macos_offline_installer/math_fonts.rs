@@ -141,3 +141,15 @@ pub(super) fn install_bundled_math_fonts(root: &Path, operation: &str) {
         &detail,
     );
 }
+
+/// The same fonts with the WPS add-in: WPS's equation font menu offers them too (office::wps::bridge). Only writes
+/// a font that is missing or older; the result goes to the maintenance log, never to the add-in installation.
+pub(crate) fn install_math_fonts_with_wps_addin(app: &AppHandle) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    match resource_root(app) {
+        Ok(root) => install_bundled_math_fonts(&root, "wps-install"),
+        Err(error) => append_office_maintenance_log("wps-install", "install-math-fonts", "error", &error),
+    }
+}

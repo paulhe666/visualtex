@@ -536,6 +536,7 @@ fn router(bridge: Arc<Bridge>) -> Router {
         .route("/wps/v1/formulas/latex", post(formula_metadata_latex))
         .route("/wps/v1/omml/latex", post(omml_latex))
         .route("/wps/v1/conversion-font-sizes", get(read_conversion_font_sizes).post(write_conversion_font_sizes))
+        .route("/wps/v1/math-font", get(read_math_font).post(write_math_font))
         .route(
             "/wps/v1/documents",
             post(create_document).layer(DefaultBodyLimit::max(MAX_DOCUMENT_BODY_BYTES)),
@@ -875,10 +876,11 @@ fn open_on_main_thread(app: &AppHandle, request: Value) -> Result<(), String> {
 }
 
 async fn create_session(State(bridge): State<Arc<Bridge>>, Json(body): Json<CreateSessionBody>) -> Response {
-    let request = match session_request(&body) {
+    let mut request = match session_request(&body) {
         Ok(request) => request,
         Err(error) => return bad_request(error),
     };
+    with_chosen_math_font(&mut request);
     let session_id = body.session_id.clone();
     bridge.log(&format!("session={session_id} open mode={} display={} native={} agent={}", body.mode, body.display_mode, body.native_equation, body.agent));
     // The add-in runs one Session at a time and stops polling a finished one.
@@ -1071,10 +1073,11 @@ fn open_document_on_main_thread(app: &AppHandle, request: Value, source: Option<
 /// add-in writes to its Session folder, and VisualTeX opens the same renderer
 /// or import window. The add-in then polls the Session like a formula's.
 async fn create_document(State(bridge): State<Arc<Bridge>>, Json(body): Json<CreateDocumentBody>) -> Response {
-    let request = match document_request(&body) {
+    let mut request = match document_request(&body) {
         Ok(request) => request,
         Err(error) => return bad_request(error),
     };
+    with_chosen_math_font(&mut request);
     let session_id = body.session_id.clone();
     bridge.log(&format!(
         "session={session_id} document operation={} output={:?} source={:?}",
@@ -1685,6 +1688,106 @@ async fn write_conversion_font_sizes(Json(body): Json<ConversionFontSizesBody>) 
     }
 }
 
+/// "WPS 公式字体" is Word's "OMML 字体" (VTWordOmmlFont.bas): one choice for every document, shared with the Word
+/// add-in, which keeps it as "follow" or the font's name.
+fn math_font_choice_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join("Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime/WordOmmlMathFont.txt"))
+}
+
+/// The menu's fonts as (key, the names the font has, first the one VisualTeX writes). A choice saved before 1.3.0
+/// names the CFF Latin Modern Math, which is used only where the TrueType VisualTeX build is missing.
+const MATH_FONT_CHOICES: [(&str, &[&str]); 4] = [
+    ("cambria", &["Cambria Math"]),
+    ("stix", &["STIX Two Math"]),
+    ("latinModern", &["VisualTeX Latin Modern Math", "Latin Modern Math"]),
+    ("termes", &["VisualTeX TeX Gyre Termes Math"]),
+];
+
+/// The saved choice's key ("follow" when none is saved or it names no menu font).
+fn saved_math_font_choice() -> &'static str {
+    let saved = math_font_choice_path()
+        .and_then(|path| std::fs::read(path).ok())
+        .filter(|bytes| bytes.len() <= 256)
+        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
+        .unwrap_or_default();
+    math_font_choice_key(&saved)
+}
+
+fn math_font_choice_key(saved: &str) -> &'static str {
+    MATH_FONT_CHOICES
+        .iter()
+        .find(|(_, names)| names.contains(&saved))
+        .map(|(key, _)| *key)
+        .unwrap_or("follow")
+}
+
+/// The font a menu item writes, when macOS has it (WPS uses the fonts macOS has; VisualTeX installs the three it
+/// bundles into ~/Library/Fonts).
+fn math_font_for_choice(key: &str) -> Option<&'static str> {
+    let (_, names) = MATH_FONT_CHOICES.iter().find(|(candidate, _)| *candidate == key)?;
+    names.iter().copied().find(|name| crate::system_math_glyphs::macos_font_family_available(name))
+}
+
+/// The font VisualTeX names in the WPS equations it writes, or none (WPS's own default).
+fn chosen_math_font() -> Option<&'static str> {
+    match saved_math_font_choice() {
+        "follow" => None,
+        key => math_font_for_choice(key),
+    }
+}
+
+/// WPS has no document math font: the chosen font goes into every equation VisualTeX writes into a WPS Writer
+/// document (the Word request's document math font), so an existing equation takes it when it is edited.
+fn with_chosen_math_font(request: &mut Value) {
+    if request["host"] != "word" || request.get("wordDocumentMathFontName").is_some() {
+        return;
+    }
+    if let Some(font) = chosen_math_font() {
+        request["wordDocumentMathFontName"] = json!(font);
+    }
+}
+
+fn math_font_state() -> Value {
+    let available: serde_json::Map<String, Value> = MATH_FONT_CHOICES
+        .iter()
+        .map(|(key, _)| (key.to_string(), json!(math_font_for_choice(key).is_some())))
+        .collect();
+    json!({ "choice": saved_math_font_choice(), "available": available })
+}
+
+async fn read_math_font() -> Response {
+    Json(math_font_state()).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct MathFontBody {
+    choice: String,
+}
+
+async fn write_math_font(Json(body): Json<MathFontBody>) -> Response {
+    let saved = if body.choice == "follow" {
+        "follow"
+    } else if MATH_FONT_CHOICES.iter().any(|(key, _)| *key == body.choice) {
+        match math_font_for_choice(&body.choice) {
+            Some(font) => font,
+            None => return bad_request("This font is not installed"),
+        }
+    } else {
+        return bad_request("Unknown WPS equation font");
+    };
+    let Some(path) = math_font_choice_path() else {
+        return bad_request("Unable to resolve the equation font file");
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::write(&path, saved) {
+        Ok(()) => Json(math_font_state()).into_response(),
+        Err(error) => bad_request(format!("Unable to write {}: {error}", path.display())),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct PreferenceBody {
     mode: String,
@@ -1789,6 +1892,24 @@ async fn open_app(State(bridge): State<Arc<Bridge>>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_math_font_choice_reads_the_word_add_in_names() {
+        assert_eq!(math_font_choice_key("STIX Two Math"), "stix");
+        assert_eq!(math_font_choice_key("Cambria Math"), "cambria");
+        assert_eq!(math_font_choice_key("VisualTeX Latin Modern Math"), "latinModern");
+        assert_eq!(math_font_choice_key("Latin Modern Math"), "latinModern");
+        assert_eq!(math_font_choice_key("VisualTeX TeX Gyre Termes Math"), "termes");
+        assert_eq!(math_font_choice_key("follow"), "follow");
+        assert_eq!(math_font_choice_key(""), "follow");
+        assert_eq!(math_font_choice_key("Times New Roman"), "follow");
+        let mut presentation = json!({ "host": "powerpoint" });
+        with_chosen_math_font(&mut presentation);
+        assert!(presentation.get("wordDocumentMathFontName").is_none());
+        let mut named = json!({ "host": "word", "wordDocumentMathFontName": "STIX Two Math" });
+        with_chosen_math_font(&mut named);
+        assert_eq!(named["wordDocumentMathFontName"], "STIX Two Math");
+    }
 
     fn body(mode: &str) -> CreateSessionBody {
         CreateSessionBody {
