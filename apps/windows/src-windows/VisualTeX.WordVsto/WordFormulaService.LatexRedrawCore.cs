@@ -833,10 +833,9 @@ internal sealed partial class WordFormulaService
         var coordinateRebaseTotal = 0L;
         var cumulativeCoordinateDelta = 0;
         var previousMainStoryEnd = ReadMainStoryEnd(document);
-        var displayTabStopsBySection =
-            new Dictionary<int, (float Center, float Right)>();
-        var mathTypeDisplayWidthsBySection =
-            new Dictionary<int, float>();
+        // display tab stops and MathType widths from each formula's column
+        // (or cell), section geometry read once (WordDisplayColumns)
+        var displayColumns = new WordDisplayColumns.BatchCache();
         var mathTypeNativeStylesPrepared = false;
         // Numbered VisualTeX redraw: plan every number once (final order,
         // heading scopes, ordinals) exactly like batch format conversion,
@@ -979,8 +978,7 @@ internal sealed partial class WordFormulaService
                             formula,
                             targetKind,
                             cumulativeCoordinateDelta,
-                            displayTabStopsBySection,
-                            mathTypeDisplayWidthsBySection,
+                            displayColumns,
                             mathTypeNativeStylesPrepared,
                             visualTeXNumbers,
                             numberedOmml,
@@ -1233,8 +1231,7 @@ internal sealed partial class WordFormulaService
             PreparedWordBulkFormula formula,
             WordFormulaHostKind targetKind,
             int cumulativeCoordinateDelta,
-            Dictionary<int, (float Center, float Right)> displayTabStopsBySection,
-            Dictionary<int, float> mathTypeDisplayWidthsBySection,
+            WordDisplayColumns.BatchCache displayColumns,
             bool mathTypeNativeStylesPrepared,
             WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null,
             WordNativeOmmlNumbering.NumberedOmmlBatch? numberedOmml = null,
@@ -1296,10 +1293,7 @@ internal sealed partial class WordFormulaService
                 using (WordOperationMetrics.Measure(
                            "Redraw.Source.ResolveDisplayTabStops"))
                 {
-                    displayTabStops = ResolveBatchDisplayTabStops(
-                        document,
-                        source,
-                        displayTabStopsBySection);
+                    displayTabStops = displayColumns.TabStopsFor(document, source);
                 }
             }
             else if (display
@@ -1308,11 +1302,7 @@ internal sealed partial class WordFormulaService
                 using (WordOperationMetrics.Measure(
                            "Redraw.Source.ResolveMathTypeDisplayWidth"))
                 {
-                    mathTypeDisplayColumnWidth =
-                        ResolveBatchMathTypeDisplayColumnWidth(
-                            document,
-                            source,
-                            mathTypeDisplayWidthsBySection);
+                    mathTypeDisplayColumnWidth = displayColumns.ColumnWidthFor(document, source);
                 }
             }
 
@@ -1787,168 +1777,6 @@ internal sealed partial class WordFormulaService
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
-        }
-    }
-
-    private static float? ResolveBatchMathTypeDisplayColumnWidth(
-        Document document,
-        Range source,
-        IDictionary<int, float> sectionCache)
-    {
-        if (WordFormulaHost.TryGetCellContentWidth(
-                source,
-                out var cellContentWidth))
-            return cellContentWidth;
-
-        int sectionNumber;
-        try
-        {
-            sectionNumber = Convert.ToInt32(
-                source.get_Information(
-                    WdInformation.wdActiveEndSectionNumber));
-        }
-        catch
-        {
-            return null;
-        }
-        if (sectionNumber <= 0)
-            return null;
-        if (sectionCache.TryGetValue(
-                sectionNumber,
-                out var cached))
-            return cached;
-
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
-        TextColumns? columns = null;
-        try
-        {
-            sections = document.Sections;
-            if (sectionNumber > sections.Count)
-                return null;
-            section = sections[sectionNumber];
-            pageSetup = section.PageSetup;
-            columns = pageSetup.TextColumns;
-            // A multi-column section can have unequal columns and therefore needs
-            // the live paragraph-position resolver. Cache only the unambiguous
-            // single-column case; table cells were handled above.
-            if (columns is not null
-                && columns.Count > 1)
-                return null;
-            var width = Math.Max(
-                72f,
-                pageSetup.PageWidth
-                - pageSetup.LeftMargin
-                - pageSetup.RightMargin);
-            sectionCache[sectionNumber] = width;
-            return width;
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            Release(columns);
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
-        }
-    }
-
-    private static (float Center, float Right)? ResolveBatchDisplayTabStops(
-        Document document,
-        Range source,
-        IDictionary<int, (float Center, float Right)> sectionCache)
-    {
-        if (WordFormulaHost.TryGetCellContentWidth(source, out var cellContentWidth))
-            return (cellContentWidth / 2f, cellContentWidth);
-
-        // Range.Information(wdActiveEndSectionNumber) costs ~30 ms per display
-        // formula in a long document. A one-section document (the usual case)
-        // has one answer, so resolve it once per batch; the redraw does not add
-        // sections. Real section numbers start at 1, key 0 marks this case.
-        const int SingleSectionKey = 0;
-        if (sectionCache.TryGetValue(SingleSectionKey, out var singleSection))
-            return singleSection;
-        if (sectionCache.Count == 0)
-        {
-            Sections? allSections = null;
-            try
-            {
-                allSections = document.Sections;
-                if (allSections.Count == 1)
-                {
-                    var only = ResolveBatchDisplayTabStopsForSection(document, 1);
-                    if (only is { } positions)
-                        sectionCache[SingleSectionKey] = positions;
-                    return only;
-                }
-            }
-            catch (Exception ignored)
-            {
-                // Fall through to the per-target section lookup below.
-                IgnoredErrors.Ignore(ignored);
-            }
-            finally
-            {
-                Release(allSections);
-            }
-        }
-
-        int sectionNumber;
-        try
-        {
-            sectionNumber = Convert.ToInt32(
-                source.get_Information(
-                    WdInformation.wdActiveEndSectionNumber));
-        }
-        catch
-        {
-            return null;
-        }
-        if (sectionNumber <= 0)
-            return null;
-        if (sectionCache.TryGetValue(sectionNumber, out var cached))
-            return cached;
-
-        var resolved = ResolveBatchDisplayTabStopsForSection(document, sectionNumber);
-        if (resolved is { } sectionPositions)
-            sectionCache[sectionNumber] = sectionPositions;
-        return resolved;
-    }
-
-    private static (float Center, float Right)? ResolveBatchDisplayTabStopsForSection(
-        Document document,
-        int sectionNumber)
-    {
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
-        try
-        {
-            sections = document.Sections;
-            if (sectionNumber > sections.Count)
-                return null;
-            section = sections[sectionNumber];
-            pageSetup = section.PageSetup;
-            return WordEquationParagraphLayout.CalculateEquationTabStops(
-                pageSetup.PageWidth,
-                pageSetup.LeftMargin,
-                pageSetup.RightMargin,
-                0,
-                0);
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
         }
     }
 }

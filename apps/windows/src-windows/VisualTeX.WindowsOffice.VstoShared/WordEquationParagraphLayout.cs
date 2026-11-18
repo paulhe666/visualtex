@@ -220,9 +220,7 @@ internal static class WordEquationParagraphLayout
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
+        Document? document = null;
         ParagraphFormat? format = null;
         TabStops? tabStops = null;
         ListFormat? listFormat = null;
@@ -276,37 +274,11 @@ internal static class WordEquationParagraphLayout
             tabStops = format.TabStops;
             tabStops.ClearAll();
 
-            var pageWidth = 612f;
-            var leftMargin = 72f;
-            var rightMargin = 72f;
-            var hasCellWidth = TryResolveOwningTableCellContentWidth(
-                formulaRange,
-                out var cellContentWidth);
-            if (!hasCellWidth)
-            {
-                try
-                {
-                    sections = paragraphRange.Sections;
-                    if (sections.Count > 0)
-                    {
-                        section = sections[1];
-                        pageSetup = section.PageSetup;
-                        pageWidth = pageSetup.PageWidth;
-                        leftMargin = pageSetup.LeftMargin;
-                        rightMargin = pageSetup.RightMargin;
-                    }
-                }
-                catch (Exception ignored)
-                {
-                    // Standard US Letter and one-inch margins are a safe fallback
-                    // for protected/custom stories without an exposed PageSetup.
-                    IgnoredErrors.Ignore(ignored);
-                }
-            }
-
-            var positions = hasCellWidth
-                ? (Center: cellContentWidth / 2f, Right: cellContentWidth)
-                : CalculateEquationTabStops(pageWidth, leftMargin, rightMargin, 0, 0);
+            // Word measures tab positions from the left edge of the column (or
+            // table cell) the line is in: the stops come from that width, not the
+            // page's (WordDisplayColumns). The indents were just set to zero.
+            document = formulaRange.Document;
+            var positions = WordDisplayColumns.TabStops(document, paragraphRange);
             if (!numbered && nativeOmmlParagraph)
             {
                 // Standalone native OMML remains Word-native display math. The
@@ -337,9 +309,7 @@ internal static class WordEquationParagraphLayout
             Release(listFormat);
             Release(tabStops);
             Release(format);
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
+            Release(document);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
@@ -355,9 +325,7 @@ internal static class WordEquationParagraphLayout
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
+        Document? document = null;
         ParagraphFormat? format = null;
         TabStops? tabStops = null;
         try
@@ -385,57 +353,17 @@ internal static class WordEquationParagraphLayout
             }
             else
             {
-                var pageWidth = 612f;
-                var leftMargin = 72f;
-                var rightMargin = 72f;
-                bool hasCellWidth;
-                float cellContentWidth;
-                using (WordOperationMetrics.Measure("Display.TabStops.CellWidth"))
-                    hasCellWidth = TryResolveOwningTableCellContentWidth(
-                        formulaRange,
-                        out cellContentWidth);
-                if (!hasCellWidth)
+                // the column (or table cell) the paragraph is in (WordDisplayColumns)
+                using (WordOperationMetrics.Measure("Display.TabStops.ColumnWidth"))
                 {
-                    using var pageMetric = WordOperationMetrics.Measure("Display.TabStops.PageSetup");
-                    try
-                    {
-                        var sectionCount = 0;
-                        using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Sections"))
-                        {
-                            sections = paragraphRange.Sections;
-                            sectionCount = sections.Count;
-                            if (sectionCount > 0)
-                                section = sections[1];
-                        }
-                        if (sectionCount > 0)
-                        {
-                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Object"))
-                                pageSetup = section!.PageSetup;
-                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.PageWidth"))
-                                pageWidth = pageSetup.PageWidth;
-                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Margins"))
-                            {
-                                leftMargin = pageSetup.LeftMargin;
-                                rightMargin = pageSetup.RightMargin;
-                            }
-                        }
-                    }
-                    catch (Exception ignored)
-                    {
-                        // Keep the same safe page fallback as the full paragraph
-                        // configurator for protected/custom stories.
-                        IgnoredErrors.Ignore(ignored);
-                    }
+                    document = formulaRange.Document;
+                    positions = WordDisplayColumns.TabStops(
+                        document,
+                        paragraphRange,
+                        format.LeftIndent,
+                        format.FirstLineIndent,
+                        format.RightIndent);
                 }
-
-                positions = hasCellWidth
-                    ? (Center: cellContentWidth / 2f, Right: cellContentWidth)
-                    : CalculateEquationTabStops(
-                        pageWidth,
-                        leftMargin,
-                        rightMargin,
-                        0,
-                        0);
             }
             tabStops.Add(
                 positions.Center,
@@ -453,9 +381,7 @@ internal static class WordEquationParagraphLayout
         {
             Release(tabStops);
             Release(format);
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
+            Release(document);
             Release(paragraphRange);
             Release(paragraph);
             Release(paragraphs);
@@ -587,9 +513,6 @@ internal static class WordEquationParagraphLayout
         ParagraphFormat? format = null;
         TabStops? tabStops = null;
         TabStop? formulaTab = null;
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
         Range? start = null;
         Range? end = null;
         try
@@ -605,32 +528,8 @@ internal static class WordEquationParagraphLayout
             paragraphRange = paragraph.Range;
             format = paragraph.Format;
 
-            var pageWidth = 612f;
-            var leftMargin = 72f;
-            var rightMargin = 72f;
-            try
-            {
-                sections = paragraphRange.Sections;
-                if (sections.Count > 0)
-                {
-                    section = sections[1];
-                    pageSetup = section.PageSetup;
-                    pageWidth = pageSetup.PageWidth;
-                    leftMargin = pageSetup.LeftMargin;
-                    rightMargin = pageSetup.RightMargin;
-                }
-            }
-            catch (Exception ignored)
-            {
-                // Use the same standard-page fallback as ConfigureEquationParagraph.
-                IgnoredErrors.Ignore(ignored);
-            }
-            var expected = CalculateEquationTabStops(
-                pageWidth,
-                leftMargin,
-                rightMargin,
-                0f,
-                0f);
+            // the column the paragraph is in, as ConfigureEquationParagraph set it
+            var expected = WordDisplayColumns.TabStops(document, paragraphRange);
 
             var formulaText = formulaRange.Text ?? string.Empty;
             var visibleStart = formulaRange.Start
@@ -722,9 +621,6 @@ internal static class WordEquationParagraphLayout
         {
             Release(end);
             Release(start);
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
             Release(formulaTab);
             Release(tabStops);
             Release(format);
@@ -734,9 +630,6 @@ internal static class WordEquationParagraphLayout
             Release(document);
         }
     }
-
-    private static bool TryResolveOwningTableCellContentWidth(Range range, out float width)
-        => WordFormulaHost.TryGetCellContentWidth(range, out width);
 
     internal static (float Center, float Right) CalculateEquationTabStops(
         float pageWidth,

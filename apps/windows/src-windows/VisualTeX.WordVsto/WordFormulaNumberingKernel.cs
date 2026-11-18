@@ -2689,10 +2689,7 @@ internal static partial class WordFormulaNumberingKernel
         ParagraphFormat? centerFormat = null;
         ParagraphFormat? rightFormat = null;
         Borders? borders = null;
-        Section? section = null;
-        PageSetup? page = null;
         Range? tableRange = null;
-        Sections? sections = null;
         try
         {
             rows = table.Rows;
@@ -2701,13 +2698,12 @@ internal static partial class WordFormulaNumberingKernel
                 throw new InvalidDataException(
                     "The canonical equation-number table must be 1x3.");
 
+            // The table sits in a column: its width, not the page's (a page-wide
+            // table runs into the next column; WordDisplayColumns).
             tableRange = table.Range;
-            sections = tableRange.Sections;
-            section = sections[1];
-            page = section.PageSetup;
             var writable = Math.Max(
                 180f,
-                page.PageWidth - page.LeftMargin - page.RightMargin);
+                WordDisplayColumns.ColumnWidth(document, tableRange, ownCell: false));
             var side = Math.Min(
                 SideColumnWidthPoints,
                 writable * 0.2f);
@@ -2767,10 +2763,7 @@ internal static partial class WordFormulaNumberingKernel
         }
         finally
         {
-            Release(sections);
             Release(tableRange);
-            Release(page);
-            Release(section);
             Release(borders);
             Release(rightFormat);
             Release(centerFormat);

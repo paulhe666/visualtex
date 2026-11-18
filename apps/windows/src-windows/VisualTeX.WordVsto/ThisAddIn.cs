@@ -6284,9 +6284,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var fontTargets = fonts is null
                 ? (IReadOnlyList<WordFormulaService.FontRefreshTarget>)Array.Empty<WordFormulaService.FontRefreshTarget>()
                 : await dispatcher.InvokeAsync(() => service.CaptureFontRefreshTargets(fonts)).ConfigureAwait(false);
+            // display formulas whose tab stops are not those of the column they are in now
+            var tabReflow = await dispatcher.InvokeAsync(service.CountDisplayTabStopReflow).ConfigureAwait(false);
             var proceed = await dispatcher.InvokeAsync(() =>
             {
-                if (report.Total == 0 && fontTargets.Count == 0)
+                if (report.Total == 0 && fontTargets.Count == 0 && tabReflow == 0)
                 {
                     WriteRedrawAcceptanceLog("equation-format-update-current");
                     var current = T("本文档的公式已经是当前格式，无需更新。",
@@ -6337,6 +6339,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     zh += $"字体未跟随文档数学字体的公式：{report.MathFont.EquationsToAlign} 个\r\n";
                     en += $"Equations whose fonts do not follow the document math font: {report.MathFont.EquationsToAlign}\r\n";
                 }
+                if (tabReflow > 0)
+                {
+                    zh += $"制表位与所在栏不符的行间公式：{tabReflow} 个，将按所在栏重设制表位\r\n";
+                    en += $"Display equations whose tab stops do not fit their column: {tabReflow}, to be reset from the column\r\n";
+                }
                 if (fontTargets.Count > 0)
                 {
                     zh += $"字体与当前设置不同的 VisualTeX 公式：{fontTargets.Count} 个，将用当前字体（{fonts!.Describe(false)}）重绘\r\n";
@@ -6372,10 +6379,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WordOmmlMathFont.OmmlMathFontAlignmentResult? fontResult = null;
             var count = 0;
             var redrawn = 0;
+            var tabsReset = 0;
             BeginFormulaFormatMutation();
             try
             {
-                (count, redrawn) = await dispatcher.InvokeAsync(() =>
+                (count, redrawn, tabsReset) = await dispatcher.InvokeAsync(() =>
                     {
                         var numbers = 0;
                         if (report.Total > 0)
@@ -6383,8 +6391,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             numbers = service.UpgradeEquationFormat(out var font);
                             fontResult = font;
                         }
+                        var reset = tabReflow > 0 ? service.ApplyDisplayTabStopReflow() : 0;
                         var written = prepared.Count > 0 ? service.ApplyFontRefresh(prepared, failures) : 0;
-                        return (numbers, written);
+                        return (numbers, written, reset);
                     })
                     .ConfigureAwait(false);
             }
@@ -6392,7 +6401,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WriteRedrawAcceptanceLog(
                 $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}"
                 + $" ommlFont={fontResult?.MathFont ?? "-"} fontEquations={fontResult?.Equations ?? 0}"
-                + $" redrawnInCurrentFonts={redrawn} fontFailures={failures.Count}");
+                + $" redrawnInCurrentFonts={redrawn} fontFailures={failures.Count} tabStopsReset={tabsReset}");
             var fontZh = fontResult is null
                 ? string.Empty
                 : $"；数学字体 {fontResult.MathFont}"
@@ -6405,7 +6414,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     + $", {fontResult.Equations} equation font(s) brought in line";
             var redrawZh = fontTargets.Count == 0 ? string.Empty : $"；用当前字体重绘了 {redrawn} 个 VisualTeX 公式";
             var redrawEn = fontTargets.Count == 0 ? string.Empty : $"; {redrawn} VisualTeX equation(s) drawn again in the current fonts";
-            var summary = T($"公式格式已更新（{count} 个编号{fontZh}{redrawZh}）。", $"Equation format updated ({count} numbers{fontEn}{redrawEn}).");
+            var tabsZh = tabReflow == 0 ? string.Empty : $"；按所在栏重设了 {tabsReset} 个行间公式的制表位";
+            var tabsEn = tabReflow == 0 ? string.Empty : $"; tab stops of {tabsReset} display equation(s) reset from their column";
+            var summary = T($"公式格式已更新（{count} 个编号{fontZh}{tabsZh}{redrawZh}）。", $"Equation format updated ({count} numbers{fontEn}{tabsEn}{redrawEn}).");
             SetStatus(summary);
             if (failures.Count > 0)
             {

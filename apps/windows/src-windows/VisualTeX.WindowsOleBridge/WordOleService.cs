@@ -397,9 +397,10 @@ internal sealed class WordOleService : IWordFormulaService
                 return;
             }
 
-            var pageWidth = 612f;
-            var leftMargin = 72f;
-            var rightMargin = 72f;
+            // Word measures tab positions from the left edge of the column the
+            // line is in: the stops come from that column's width, as in the
+            // add-ins (DisplayColumnGeometry, WordDisplayColumns).
+            var columnWidth = 468f;
             try
             {
                 paragraphRange = ((dynamic)paragraph).Range;
@@ -408,9 +409,7 @@ internal sealed class WordOleService : IWordFormulaService
                 {
                     section = ((dynamic)sections).Item(1);
                     pageSetup = ((dynamic)section).PageSetup;
-                    pageWidth = Convert.ToSingle(((dynamic)pageSetup).PageWidth);
-                    leftMargin = Convert.ToSingle(((dynamic)pageSetup).LeftMargin);
-                    rightMargin = Convert.ToSingle(((dynamic)pageSetup).RightMargin);
+                    columnWidth = ColumnWidth(pageSetup!, paragraphRange!);
                 }
             }
             catch (Exception ignored)
@@ -420,12 +419,7 @@ internal sealed class WordOleService : IWordFormulaService
                 IgnoredErrors.Ignore(ignored);
             }
 
-            var positions = CalculateEquationTabStops(
-                pageWidth,
-                leftMargin,
-                rightMargin,
-                0,
-                0);
+            var positions = DisplayColumnGeometry.TabStops(columnWidth);
             ((dynamic)format).Alignment = WdAlignParagraphLeft;
             ((dynamic)tabStops).Add(
                 positions.Center,
@@ -447,6 +441,106 @@ internal sealed class WordOleService : IWordFormulaService
             ComRelease.Final(paragraph);
             ComRelease.Final(paragraphs);
             ComRelease.Final(shapeRange);
+        }
+    }
+
+    // The width the paragraph's line is laid out in: its table cell's (less the
+    // cell's padding); else the page's text width for one column, the common width
+    // for equal columns, else the column the paragraph's page position falls in
+    // (the narrowest when Word cannot tell).
+    private static float ColumnWidth(object pageSetup, object paragraphRange)
+    {
+        if (TryOwningCellWidth(paragraphRange, out var cellWidth)) return cellWidth;
+        var leftMargin = Convert.ToSingle(((dynamic)pageSetup).LeftMargin);
+        var pageTextWidth = Math.Max(
+            72f,
+            Convert.ToSingle(((dynamic)pageSetup).PageWidth) - leftMargin - Convert.ToSingle(((dynamic)pageSetup).RightMargin));
+        object? columns = null;
+        object? column = null;
+        try
+        {
+            columns = ((dynamic)pageSetup).TextColumns;
+            var count = Convert.ToInt32(((dynamic)columns).Count);
+            if (count <= 1) return pageTextWidth;
+            var widths = new List<float>(count);
+            var spaces = new List<float>(count);
+            for (var index = 1; index <= count; index++)
+            {
+                ComRelease.Final(column);
+                column = ((dynamic)columns).Item(index);
+                var width = Convert.ToSingle(((dynamic)column).Width);
+                if (!(width > 1f) || float.IsNaN(width) || float.IsInfinity(width)) continue;
+                var space = 0f;
+                if (index < count)
+                {
+                    // the last column has no gap after it (some builds throw for it)
+                    try { space = Math.Max(0f, Convert.ToSingle(((dynamic)column).SpaceAfter)); }
+                    catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+                }
+                widths.Add(width);
+                spaces.Add(float.IsNaN(space) || float.IsInfinity(space) ? 0f : space);
+            }
+            if (widths.Count == 0) return pageTextWidth;
+            float? offset = null;
+            if (!DisplayColumnGeometry.AreEqual(widths))
+            {
+                try
+                {
+                    // wdHorizontalPositionRelativeToPage = 5
+                    var pageX = Convert.ToSingle(((dynamic)paragraphRange).Information(5));
+                    if (pageX >= 0f && !float.IsNaN(pageX) && !float.IsInfinity(pageX)) offset = pageX - leftMargin;
+                }
+                catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            return DisplayColumnGeometry.ColumnAt(widths, spaces, offset);
+        }
+        catch (Exception ignored)
+        {
+            IgnoredErrors.Ignore(ignored);
+            return pageTextWidth;
+        }
+        finally
+        {
+            ComRelease.Final(column);
+            ComRelease.Final(columns);
+        }
+    }
+
+    // A range with no table in it owns no cell (a cheap structural answer before
+    // asking for the cell). Word's undefined width (9999999) is no width.
+    private static bool TryOwningCellWidth(object range, out float width)
+    {
+        width = 0f;
+        object? tables = null;
+        object? cells = null;
+        object? cell = null;
+        try
+        {
+            tables = ((dynamic)range).Tables;
+            if (Convert.ToInt32(((dynamic)tables).Count) == 0) return false;
+            cells = ((dynamic)range).Cells;
+            if (Convert.ToInt32(((dynamic)cells).Count) < 1) return false;
+            cell = ((dynamic)cells).Item(1);
+            var total = Convert.ToSingle(((dynamic)cell).Width);
+            if (!(total > 1f) || float.IsNaN(total) || float.IsInfinity(total) || total >= 9999999f) return false;
+            var left = Convert.ToSingle(((dynamic)cell).LeftPadding);
+            var right = Convert.ToSingle(((dynamic)cell).RightPadding);
+            if (float.IsNaN(left) || float.IsInfinity(left) || left < 0f || left >= total) left = 0f;
+            if (float.IsNaN(right) || float.IsInfinity(right) || right < 0f || right >= total) right = 0f;
+            var usable = total - left - right;
+            width = usable > 1f ? usable : total;
+            return true;
+        }
+        catch (Exception ignored)
+        {
+            IgnoredErrors.Ignore(ignored);
+            return false;
+        }
+        finally
+        {
+            ComRelease.Final(cell);
+            ComRelease.Final(cells);
+            ComRelease.Final(tables);
         }
     }
 

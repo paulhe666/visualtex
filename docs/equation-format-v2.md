@@ -151,6 +151,20 @@ Idempotent. Each formula keeps its kind: OMML stays OMML (in v2), VisualTeX
 image/OLE formulas stay VisualTeX formulas in their current layout. Legacy forms
 per platform are listed in the plan; each platform upgrades only its own.
 
+### 5.0 Tab stops in columns
+
+Word measures tab positions from the left edge of the column a line is in, so a
+display formula's centre and right stops come from that column's width: the
+owning table cell; else the section's single column (the page's text width);
+else the columns' common width; else, for columns of different widths, the
+column the paragraph's page position falls in (the narrowest when Word cannot
+tell). The paragraph's indents narrow the line the stops are centred in. Every
+writer uses this one rule (Windows `WordDisplayColumns` / `DisplayColumnGeometry`,
+macOS `VTEquationLayoutWidth`, WPS `textColumnWidth`). Update Equation Format
+lists and resets the stops of display formulas whose column changed;
+renumbering does the same in documents with newspaper columns. Only the stops
+change: the tab character, the number scaffold and the formula stay.
+
 ### 5.1 Fonts
 
 Every VisualTeX formula records the fonts it was drawn in: the math font

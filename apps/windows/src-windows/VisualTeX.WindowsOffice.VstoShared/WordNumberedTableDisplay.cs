@@ -3287,9 +3287,6 @@ internal static class WordNumberedTableDisplay
         float? minimumDisplayHeightPoints = null,
         string? preparedOmml = null)
     {
-        Sections? sections = null;
-        Section? section = null;
-        PageSetup? pageSetup = null;
         Rows? rows = null;
         Columns? columns = null;
         Column? leftColumn = null;
@@ -3307,12 +3304,11 @@ internal static class WordNumberedTableDisplay
         Borders? borders = null;
         try
         {
-            sections = formulaRange.Sections;
-            section = sections[1];
-            pageSetup = section.PageSetup;
+            // The table sits in the column the formula is in: its width, not the
+            // page's (a page-wide table runs into the next column; WordDisplayColumns).
             var writableWidth = Math.Max(
                 120f,
-                pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin);
+                WordDisplayColumns.ColumnWidth(document, formulaRange, ownCell: false));
             var sideWidth = Math.Min(
                 NativeOmmlTableSideWidthPoints,
                 Math.Max(24f, (writableWidth - 96f) / 2f));
@@ -3434,9 +3430,6 @@ internal static class WordNumberedTableDisplay
             Release(leftColumn);
             Release(columns);
             Release(rows);
-            Release(pageSetup);
-            Release(section);
-            Release(sections);
         }
     }
 

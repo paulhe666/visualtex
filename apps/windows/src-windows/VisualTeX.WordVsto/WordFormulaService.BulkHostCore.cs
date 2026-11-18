@@ -66,8 +66,7 @@ internal sealed partial class WordFormulaService
                         new List<string>();
                     var deferredVisualTeXNumbers = 0;
                     // As in the redraw: display tab stops once per section.
-                    var displayTabStopsBySection =
-                        new Dictionary<int, (float Center, float Right)>();
+                    var displayColumns = new WordDisplayColumns.BatchCache();
 
                     for (var blockIndex = 0;
                          blockIndex < source.Blocks.Count;
@@ -107,7 +106,7 @@ internal sealed partial class WordFormulaService
                                         formula,
                                         display: true,
                                         insertedIds,
-                                        displayTabStopsBySection))
+                                        displayColumns))
                                     deferredVisualTeXNumbers++;
 
                             using (WordOperationMetrics.Measure("Bulk.ResetNextParagraph"))
@@ -291,7 +290,7 @@ internal sealed partial class WordFormulaService
         PreparedWordBulkFormula formula,
         bool display,
         ICollection<string> insertedIds,
-        IDictionary<int, (float Center, float Right)> displayTabStopsBySection)
+        WordDisplayColumns.BatchCache displayColumns)
     {
         Range? insertion = null;
         Range? current = null;
@@ -377,10 +376,7 @@ internal sealed partial class WordFormulaService
             {
                 using (WordOperationMetrics.Measure("Bulk.DisplayTabStops"))
                 {
-                    var tabStops = ResolveBatchDisplayTabStops(
-                        document,
-                        insertion,
-                        displayTabStopsBySection);
+                    var tabStops = displayColumns.TabStopsFor(document, insertion);
                     if (tabStops.HasValue)
                     {
                         request.DisplayCenterTabPoints = tabStops.Value.Center;

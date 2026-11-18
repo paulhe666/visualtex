@@ -322,7 +322,7 @@ internal sealed partial class WordFormulaService
             }
 
             var visualTeXOperations = new Dictionary<int, string>();
-            var sectionTabs = Array.Empty<(int Start, int End, float Center, float Right)>();
+            WordDisplayColumns.BatchCache? displayColumns = null;
             if (plan.VisualTeX.Count > 0)
             {
                 foreach (var host in plan.VisualTeX)
@@ -333,7 +333,7 @@ internal sealed partial class WordFormulaService
                     formatId);
                 visualTeXNumbers.EnableBodyFieldCopies();
                 if (plan.VisualTeXNeedsLayout.Count > 0)
-                    sectionTabs = CaptureConversionSectionTabStops(document);
+                    displayColumns = WordDisplayColumns.BatchCache.BySectionPosition(document);
             }
 
             MathTypeWordOpenXml.NumberTemplate? mathTypeTemplate = null;
@@ -406,7 +406,7 @@ internal sealed partial class WordFormulaService
                             case WordFormulaHostKind.VisualTeX:
                             {
                                 var target = plan.VisualTeXNeedsLayout.Contains(host.Range.Start)
-                                    ? PrepareVisualTeXNumberedLayout(document, host, sectionTabs)
+                                    ? PrepareVisualTeXNumberedLayout(document, host, displayColumns!)
                                     : host;
                                 using (WordOperationMetrics.Measure("DisplayNumbering.VisualTeX.Attach"))
                                     _ = WordFormulaNumberingKernel.AttachCanonical(
@@ -500,7 +500,7 @@ internal sealed partial class WordFormulaService
     private static WordFormulaHostDescriptor PrepareVisualTeXNumberedLayout(
         Document document,
         WordFormulaHostDescriptor host,
-        (int Start, int End, float Center, float Right)[] sectionTabs)
+        WordDisplayColumns.BatchCache displayColumns)
     {
         using var metric = WordOperationMetrics.Measure("DisplayNumbering.VisualTeX.Layout");
         Range? range = null;
@@ -514,12 +514,13 @@ internal sealed partial class WordFormulaService
             if (shapes.Count != 1)
                 throw new InvalidDataException("The VisualTeX OLE to number moved before it was numbered.");
             shape = shapes[1];
-            var section = sectionTabs.FirstOrDefault(item => item.Start <= host.Range.Start && item.End > host.Range.Start);
+            // the stops of the column (or cell) the formula is in (WordDisplayColumns)
+            var tabs = displayColumns.TabStopsFor(document, range, host.Range.Start);
             WordEquationParagraphLayout.PrepareVisualTeXDisplayHostLayout(
                 document,
                 range,
-                section.End > section.Start ? section.Center : null,
-                section.End > section.Start ? section.Right : null);
+                tabs?.Center,
+                tabs?.Right);
             moved = shape.Range;
             return new WordFormulaHostDescriptor
             {
@@ -547,8 +548,9 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    // The display column width of every single-column section (null for
-    // multi-column sections, whose width depends on the paragraph position).
+    // The display column width of every section that lays its lines out alike:
+    // single-column and equal-column sections (null where columns differ, whose
+    // width depends on the paragraph position; WordDisplayColumns).
     private static (int Start, int End, float? Width)[] CaptureMathTypeSectionColumnWidths(Document document)
     {
         using var metric = WordOperationMetrics.Measure("DisplayNumbering.MathType.SectionWidths");
@@ -562,19 +564,14 @@ internal sealed partial class WordFormulaService
                 Section? section = null;
                 Range? range = null;
                 PageSetup? setup = null;
-                TextColumns? columns = null;
                 try
                 {
                     section = sections[index];
                     range = section.Range;
                     setup = section.PageSetup;
-                    columns = setup.TextColumns;
-                    float? width = columns is not null && columns.Count > 1
-                        ? null
-                        : Math.Max(72f, setup.PageWidth - setup.LeftMargin - setup.RightMargin);
-                    result.Add((range.Start, range.End, width));
+                    result.Add((range.Start, range.End, WordDisplayColumns.Read(setup).UniformWidth));
                 }
-                finally { Release(columns); Release(setup); Release(range); Release(section); }
+                finally { Release(setup); Release(range); Release(section); }
             }
         }
         finally { Release(sections); }

@@ -44,6 +44,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNativeCaptions.cs" Link="WordNativeCaptions.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedDisplayLayout.cs" Link="WordNumberedDisplayLayout.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTableDisplay.cs" Link="WordNumberedTableDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDisplayColumns.cs" Link="WordDisplayColumns.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTrueDisplay.cs" Link="WordNumberedTrueDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTypingParagraphs.cs" Link="WordNumberedTypingParagraphs.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingCleanup.cs" Link="WordNumberingCleanup.cs" />

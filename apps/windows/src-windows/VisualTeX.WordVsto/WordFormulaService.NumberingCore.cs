@@ -39,6 +39,9 @@ internal sealed partial class WordFormulaService
                     // It need not rediscover/serialize native OMaths again.
                     count += WordFormulaNumberingKernel.RefreshCanonicalNumbers(
                         document, kindFilter: WordFormulaHostKind.VisualTeX);
+                    // display formulas now in another column get that column's
+                    // tab stops (documents with newspaper columns only)
+                    ReflowDisplayTabStops(document, apply: true, multiColumnOnly: true);
                     return count;
                 }, verifyRollback: nativeNumbers.VerifyRollback);
         }

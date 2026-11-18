@@ -268,9 +268,11 @@ internal sealed partial class WordFormulaService
                 visualTeXNumbers = WordFormulaNumberingKernel.VisualTeXConversionNumberPlan.Capture(
                     document, plan.Targets.Where(item => item.Numbered).Select(item => (item.Id, item.SourceStart)), plan.NumberFormatId);
 
-            var displaySectionTabs = targetKind == WordFormulaHostKind.VisualTeX
-                ? CaptureConversionSectionTabStops(document)
-                : Array.Empty<(int Start, int End, float Center, float Right)>();
+            // display tab stops from each source's column (or cell), section
+            // geometry read once (WordDisplayColumns)
+            var displayColumns = targetKind == WordFormulaHostKind.VisualTeX
+                ? WordDisplayColumns.BatchCache.BySectionPosition(document)
+                : null;
 
             // Native source reads (including WordOpenXML) are preflight, not
             // target mutation. In Word, exporting that XML can close an active
@@ -386,9 +388,17 @@ internal sealed partial class WordFormulaService
                     if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable
                         && string.Equals(target.WriteDisplayMode, "block", StringComparison.OrdinalIgnoreCase))
                     {
-                        var section = displaySectionTabs.First(item => item.Start <= source.Range.Start && item.End > source.Range.Start);
-                        request.DisplayCenterTabPoints = section.Center;
-                        request.DisplayRightTabPoints = section.Right;
+                        Range? sourceRange = null;
+                        try
+                        {
+                            sourceRange = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
+                            if (displayColumns!.TabStopsFor(document, sourceRange) is { } tabs)
+                            {
+                                request.DisplayCenterTabPoints = tabs.Center;
+                                request.DisplayRightTabPoints = tabs.Right;
+                            }
+                        }
+                        finally { Release(sourceRange); }
                     }
                     preparedWrites.Add(target.Id, request);
                     if (targetKind == WordFormulaHostKind.Omml)
@@ -773,35 +783,6 @@ internal sealed partial class WordFormulaService
                 write.PreparedOleReplacement?.Dispose();
             Release(document);
         }
-    }
-
-    private static (int Start, int End, float Center, float Right)[] CaptureConversionSectionTabStops(Document document)
-    {
-        using var metric = WordOperationMetrics.Measure("FormatConversion.CaptureSectionTabGeometry");
-        var result = new List<(int Start, int End, float Center, float Right)>();
-        Sections? sections = null;
-        try
-        {
-            sections = document.Sections;
-            for (var index = 1; index <= sections.Count; index++)
-            {
-                Section? section = null;
-                Range? range = null;
-                PageSetup? setup = null;
-                try
-                {
-                    section = sections[index];
-                    range = section.Range;
-                    setup = section.PageSetup;
-                    var tabs = WordEquationParagraphLayout.CalculateEquationTabStops(
-                        setup.PageWidth, setup.LeftMargin, setup.RightMargin, 0, 0);
-                    result.Add((range.Start, range.End, tabs.Center, tabs.Right));
-                }
-                finally { Release(setup); Release(range); Release(section); }
-            }
-        }
-        finally { Release(sections); }
-        return result.ToArray();
     }
 
     private WordFormulaFormatConversionTarget CaptureCoreConversionTarget(

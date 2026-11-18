@@ -234,7 +234,7 @@ internal sealed partial class WordFormulaService
             skeleton = null;
             TraceAcceptancePerformance("MathType.BulkSkeleton", "native-formatting", watch, ref checkpoint);
 
-            var widths = new Dictionary<int, float>();
+            var widths = new WordDisplayColumns.BatchCache();
             var nativeStylesPrepared = false;
             var repairs = new List<(string FormulaId, string RightBoundaryWhitespace)>();
             for (var index = plan.Slots.Count - 1; index >= 0; index--)
@@ -257,7 +257,7 @@ internal sealed partial class WordFormulaService
                     insertion.Text = string.Empty;
                     insertion.Collapse(WdCollapseDirection.wdCollapseStart);
                     var width = slot.Display
-                        ? ResolveBatchMathTypeDisplayColumnWidth(document, insertion, widths)
+                        ? widths.ColumnWidthFor(document, insertion)
                         : null;
                     InsertPreparedFormula(document, selection, slot.Formula,
                         display: slot.Display,

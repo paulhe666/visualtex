@@ -3392,8 +3392,7 @@ internal sealed partial class WordFormulaService
         Selection? selection = null;
         var insertedFormulaIds =
             new List<string>();
-        var mathTypeDisplayWidthsBySection =
-            new Dictionary<int, float>();
+        var mathTypeDisplayWidthsBySection = new WordDisplayColumns.BatchCache();
         var mathTypeNativeStylesPrepared = false;
         try
         {
@@ -3476,10 +3475,7 @@ internal sealed partial class WordFormulaService
                         displayInsertion.Collapse(
                             WdCollapseDirection.wdCollapseStart);
                         var displayColumnWidth =
-                            ResolveBatchMathTypeDisplayColumnWidth(
-                                document,
-                                displayInsertion,
-                                mathTypeDisplayWidthsBySection);
+                            mathTypeDisplayWidthsBySection.ColumnWidthFor(document, displayInsertion);
                         InsertPreparedFormula(
                             document,
                             selection,
