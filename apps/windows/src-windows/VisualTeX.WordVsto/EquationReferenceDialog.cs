@@ -99,6 +99,11 @@ internal sealed class EquationReferenceDialog : Form
         _wordOmmlTargets = wordOmmlTargets ?? Array.Empty<EquationReferenceTarget>();
         _mathTypeTargets = mathTypeTargets ?? Array.Empty<EquationReferenceTarget>();
 
+        // The layout below is in pixels at 96 DPI and scaled to the screen's DPI when the dialog is created: without
+        // this the text grew with the DPI and the labels covered the start of the boxes beside them.
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = T("插入公式引用", "Insert Equation Reference");
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -203,6 +208,17 @@ internal sealed class EquationReferenceDialog : Form
         _previewTimer.Tick += (_, _) => FillPreviews();
         Shown += (_, _) => _previewTimer.Start();
         FormClosed += (_, _) => _previewTimer.Stop();
+        ResumeLayout(false);
+        PerformLayout();
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        // WinForms scales a ListBox's height twice with the DPI (at 150 % the list covered the format row and the
+        // buttons): the list ends 16 pixels (at 96 DPI) above the format box, as laid out.
+        var gap = (int)Math.Round(16 * DeviceDpi / 96.0);
+        _listBox.Height = Math.Max(_listBox.ItemHeight * 4, _styleBox.Top - gap - _listBox.Top);
     }
 
     protected override void Dispose(bool disposing)
