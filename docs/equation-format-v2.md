@@ -191,7 +191,11 @@ drawn again from their stored LaTeX in the current fonts:
 
 A formula changed or removed while the update runs is left as it is and
 reported. When VisualTeX cannot be reached, fonts are not checked and the
-confirmation says so.
+confirmation says so. The same holds while VisualTeX runs without having opened
+its main window (an Office add-in started it): the main window publishes the
+fonts, so until then the companion answers without them; the confirmation asks
+to open the main window first, and no formula is drawn again (taking the
+defaults would redraw every formula drawn in other fonts).
 
 ## 6. Identity check
 

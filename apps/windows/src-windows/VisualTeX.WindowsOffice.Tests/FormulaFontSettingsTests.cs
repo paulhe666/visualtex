@@ -59,7 +59,7 @@ public sealed class FormulaFontSettingsTests
     {
         var fonts = FormulaFontSettings.FromPreferencesJson(
             "{\"editorPreferences\":{\"settings\":{\"formulaLetterFont\":\"times\",\"formulaChineseFont\":\"kaiti\"," +
-            "\"formulaFaces\":{\"letter\":\" Times New Roman \",\"greek\":\"\",\"digit\":\"Cambria\"}}}}");
+            "\"formulaFaces\":{\"letter\":\" Times New Roman \",\"greek\":\"\",\"digit\":\"Cambria\"}}}}")!;
         Assert.Equal("times", fonts.LetterFont);
         Assert.Equal("kaiti", fonts.ChineseFont);
         Assert.Equal("Times New Roman", fonts.Faces.Letter);
@@ -72,10 +72,20 @@ public sealed class FormulaFontSettingsTests
     [Fact]
     public void MissingOrEarlierPreferencesKeepTheDefaults()
     {
-        var fonts = FormulaFontSettings.FromPreferencesJson("{\"editorPreferences\":{\"settings\":{\"formulaLetterFont\":\"cm\"}}}");
+        var fonts = FormulaFontSettings.FromPreferencesJson("{\"editorPreferences\":{\"settings\":{\"formulaLetterFont\":\"cm\"}}}")!;
         Assert.Equal("katex", fonts.LetterFont);
         Assert.Equal("system", fonts.ChineseFont);
         Assert.Equal("KaTeX", fonts.Describe(true));
-        Assert.Equal("katex", FormulaFontSettings.FromPreferencesJson("{}").LetterFont);
+        Assert.Equal("katex", FormulaFontSettings.FromPreferencesJson("{\"editorPreferences\":{\"settings\":{}}}")!.LetterFont);
+    }
+
+    [Fact]
+    public void UnpublishedPreferencesAreUnknownNotDefaults()
+    {
+        // VisualTeX started by an add-in without its main window answers with no editor settings: its fonts are not
+        // known, and taking KaTeX for them would draw every formula in other fonts again
+        Assert.Null(FormulaFontSettings.FromPreferencesJson("{}"));
+        Assert.Null(FormulaFontSettings.FromPreferencesJson("{\"powerpointDefaultFontSizePt\":18,\"editorPreferences\":{}}"));
+        Assert.Null(FormulaFontSettings.FromPreferencesJson("{\"editorPreferences\":null}"));
     }
 }

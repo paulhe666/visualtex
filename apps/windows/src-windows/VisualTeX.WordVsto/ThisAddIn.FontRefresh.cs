@@ -8,22 +8,34 @@ namespace VisualTeX.WordVsto;
 // render batch, as conversions use) and written back by the service.
 public sealed partial class ThisAddIn
 {
-    /// <summary>The main app's current formula fonts, or null when VisualTeX cannot be reached (fonts not checked).</summary>
-    private async Task<FormulaFontSettings?> TryGetFormulaFontSettingsAsync(
+    /// <summary>
+    /// The main app's current formula fonts. Fonts is null when they are not checked: VisualTeX cannot be reached
+    /// (Reached false), or it runs without having opened its main window, which publishes them.
+    /// </summary>
+    private async Task<(FormulaFontSettings? Fonts, bool Reached)> TryGetFormulaFontSettingsAsync(
         VisualTeXSessionClient client,
         CancellationToken token)
     {
         try
         {
             await client.EnsureHealthyAsync(token).ConfigureAwait(false);
-            return await client.GetFormulaFontSettingsAsync(token).ConfigureAwait(false);
+            var fonts = await client.GetFormulaFontSettingsAsync(token).ConfigureAwait(false);
+            if (fonts is null) WordDoubleClickHook.TraceMessage("font-refresh-settings-unpublished");
+            return (fonts, true);
         }
         catch (Exception error) when (error is not OperationCanceledException || !token.IsCancellationRequested)
         {
             WordDoubleClickHook.TraceMessage($"font-refresh-settings-unavailable error={error.Message}");
-            return null;
+            return (null, false);
         }
     }
+
+    /// <summary>Why the formula fonts were not checked, for Update Equation Format's messages.</summary>
+    private static string FontsNotCheckedNote(bool reached) => reached
+        ? T("（请先打开 VisualTeX 主窗口，本次未检查公式字体。）",
+            "(Open the VisualTeX main window first; formula fonts were not checked this time.)")
+        : T("（无法连接 VisualTeX，未检查公式字体。）",
+            "(VisualTeX could not be reached, so formula fonts were not checked.)");
 
     /// <summary>
     /// Draws the formulas again in the current fonts, each at its own size and display mode, 20 to a batch, and

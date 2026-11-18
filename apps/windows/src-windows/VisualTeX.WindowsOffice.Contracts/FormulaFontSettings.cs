@@ -74,18 +74,19 @@ public sealed class FormulaFontSettings
 
     /// <summary>
     /// Reads the fonts from the companion's preferences answer (<c>GET /api/v1/preferences</c>:
-    /// <c>editorPreferences.settings.formulaLetterFont / formulaChineseFont / formulaFaces</c>); what is missing
-    /// keeps the default.
+    /// <c>editorPreferences.settings.formulaLetterFont / formulaChineseFont / formulaFaces</c>); a font an earlier
+    /// version does not send keeps the default. Null when the answer has no editor settings at all: the main window
+    /// publishes them, so a VisualTeX started without it (by an Office add-in) does not know its fonts yet.
     /// </summary>
-    public static FormulaFontSettings FromPreferencesJson(string json)
+    public static FormulaFontSettings? FromPreferencesJson(string json)
     {
-        var result = new FormulaFontSettings();
         using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 64 });
         if (!document.RootElement.TryGetProperty("editorPreferences", out var preferences)
             || preferences.ValueKind != JsonValueKind.Object
             || !preferences.TryGetProperty("settings", out var settings)
             || settings.ValueKind != JsonValueKind.Object)
-            return result;
+            return null;
+        var result = new FormulaFontSettings();
         if (settings.TryGetProperty("formulaLetterFont", out var letter) && letter.ValueKind == JsonValueKind.String)
             // fonts of earlier versions are drawn in KaTeX now (normalizeFormulaLetterFont)
             result.LetterFont = string.Equals(letter.GetString(), "times", StringComparison.OrdinalIgnoreCase) ? "times" : "katex";

@@ -6278,9 +6278,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var report = await dispatcher.InvokeAsync(service.ScanEquationFormat)
                 .ConfigureAwait(false);
             // the fonts the main app draws in now, and the VisualTeX formulas drawn in others
-            var fonts = client is null
-                ? null
+            var fontAnswer = client is null
+                ? ((FormulaFontSettings?)null, false)
                 : await TryGetFormulaFontSettingsAsync(client, lifetime.Token).ConfigureAwait(false);
+            var fonts = fontAnswer.Item1;
+            var fontsReached = fontAnswer.Item2;
             var fontTargets = fonts is null
                 ? (IReadOnlyList<WordFormulaService.FontRefreshTarget>)Array.Empty<WordFormulaService.FontRefreshTarget>()
                 : await dispatcher.InvokeAsync(() => service.CaptureFontRefreshTargets(fonts)).ConfigureAwait(false);
@@ -6290,12 +6292,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 if (report.Total == 0 && fontTargets.Count == 0 && tabReflow == 0)
                 {
-                    WriteRedrawAcceptanceLog("equation-format-update-current");
+                    WriteRedrawAcceptanceLog("equation-format-update-current fontsChecked="
+                        + (fonts is not null ? "yes" : fontsReached ? "unpublished" : "unreachable"));
                     var current = T("本文档的公式已经是当前格式，无需更新。",
                         "The equations in this document already use the current format.");
                     if (fonts is null)
-                        current += T("\r\n\r\n（无法连接 VisualTeX，未检查公式字体。）",
-                            "\r\n\r\n(VisualTeX could not be reached, so formula fonts were not checked.)");
+                        current += "\r\n\r\n" + FontsNotCheckedNote(fontsReached);
                     AutomationMessageBox.Show(
                         current,
                         title,
@@ -6351,8 +6353,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 if (fonts is null)
                 {
-                    zh += "（无法连接 VisualTeX，未检查公式字体。）\r\n";
-                    en += "(VisualTeX could not be reached, so formula fonts were not checked.)\r\n";
+                    var note = FontsNotCheckedNote(fontsReached);
+                    zh += note + "\r\n";
+                    en += note + "\r\n";
                 }
                 zh += "\r\n公式内容和类型不变；编号、引用和字号保持不变。是否继续？";
                 en += "\r\nEquation content and kinds do not change; numbers, references and sizes stay as they are. Continue?";
@@ -6401,7 +6404,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WriteRedrawAcceptanceLog(
                 $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}"
                 + $" ommlFont={fontResult?.MathFont ?? "-"} fontEquations={fontResult?.Equations ?? 0}"
-                + $" redrawnInCurrentFonts={redrawn} fontFailures={failures.Count} tabStopsReset={tabsReset}");
+                + $" redrawnInCurrentFonts={redrawn} fontFailures={failures.Count} tabStopsReset={tabsReset}"
+                + $" fontsChecked={(fonts is not null ? "yes" : fontsReached ? "unpublished" : "unreachable")}");
             var fontZh = fontResult is null
                 ? string.Empty
                 : $"；数学字体 {fontResult.MathFont}"

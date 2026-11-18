@@ -42,6 +42,19 @@ public sealed partial class ThisAddIn
             progress = NewConversionProgress(title, owner, T("正在读取 VisualTeX 的字体设置…", "Reading VisualTeX's font settings…"));
             await client.EnsureHealthyAsync(lifetimeToken).ConfigureAwait(false);
             var fonts = await client.GetFormulaFontSettingsAsync(lifetimeToken).ConfigureAwait(false);
+            if (fonts is null)
+            {
+                // VisualTeX started without its main window (by an add-in) has not published its fonts: nothing to
+                // compare with, so nothing is drawn again
+                progress.Dispose();
+                progress = null;
+                PowerPointOperationLog.Write("font-refresh-unpublished");
+                await ShowConversionMessageAsync(dispatcher, owner,
+                    T("请先打开 VisualTeX 主窗口，再更新公式格式（本次未检查公式字体）。",
+                        "Open the VisualTeX main window first, then update the equation format (formula fonts were not checked this time)."),
+                    title, MessageBoxIcon.Information).ConfigureAwait(false);
+                return;
+            }
             progress.Report(T("正在扫描公式…", "Scanning equations…"));
             var targets = await dispatcher.InvokeAsync(() => service.CaptureFontRefreshTargets(fonts)).ConfigureAwait(false);
             progress.Dispose();

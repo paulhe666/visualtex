@@ -755,9 +755,9 @@ public sealed class VisualTeXSessionClient : IDisposable
 
     /// <summary>
     /// The fonts the main app draws formulas in now (its published editor preferences), to find the formulas drawn
-    /// in others (Update Equation Format).
+    /// in others (Update Equation Format); null while its main window has not published them.
     /// </summary>
-    public async Task<FormulaFontSettings> GetFormulaFontSettingsAsync(CancellationToken cancellationToken)
+    public async Task<FormulaFontSettings?> GetFormulaFontSettingsAsync(CancellationToken cancellationToken)
     {
         EnsureAuthorizationHeader();
         using var response = await SendTrackedAsync(() => _http.GetAsync(
