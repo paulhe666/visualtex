@@ -11,6 +11,7 @@ import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import { groupBigOperatorOperands } from "./operandMathMl.ts";
+import { bareSvgFontFamilies } from "./svgFontFamilies.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 import { normalizeTensorIndexCommands } from "../math/tensorIndexCompatibility.ts";
@@ -596,6 +597,8 @@ async function latexToEngineSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" ` +
     `role="img" focusable="false" viewBox="${x} ${y} ${width} ${height}">${backdrop}${markedBody}</svg>`;
   if (options.forceExplicitBlack) svg = forceWordCompatibleBlack(svg);
+  // font names bare where CSS allows it: WPS draws quoted ones in a fallback font
+  svg = bareSvgFontFamilies(svg);
   assertSelfContained(svg);
   return {
     svg,
@@ -673,6 +676,7 @@ async function latexToMathJaxSvg(
   }
 
   assertResolvedMathJaxSvg(svg);
+  svg = bareSvgFontFamilies(svg);
   assertSelfContained(svg);
   return {
     svg,

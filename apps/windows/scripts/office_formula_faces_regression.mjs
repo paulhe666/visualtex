@@ -198,6 +198,10 @@ try {
       assert.match(entry.family, /Times New Roman/, `${label}: ${character} is drawn in ${entry.family}`);
       assert.equal(entry.italic, italic, `${label}: ${character} italic: ${entry.italic}`);
     }
+    // WPS draws a quoted font name ("Times New Roman", serif) in a fallback font: the names are written bare
+    for (const entry of texts) {
+      assert.doesNotMatch(entry.family, /["']/, `${label}: ${entry.text} names its font in quotes (${entry.family})`);
+    }
     // KaTeX's letters (cmmi10) and digits (cmr10) are not drawn
     assert.doesNotMatch(image, new RegExp(`cmmi10-(${letterCode}|${greekCode})"`), `${label}: ${letter} or ${greek} is drawn from KaTeX's math italic outlines`);
     assert.doesNotMatch(image, new RegExp(`cmr10-${digitCode}"`), `${label}: ${digit} is drawn from KaTeX's roman outlines`);

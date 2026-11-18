@@ -47,6 +47,7 @@
     "test:formula-hotkeys": "npm run build:desktop && node scripts/formula_hotkey_regression.mjs",
     "test:formula-lines": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/formula_lines_regression.mts",
     "test:formula-font-refresh": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/formula_font_refresh_regression.mts",
+    "test:svg-font-family": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/svg_font_family_regression.mts",
     "test:history": "node --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/history_manager_smoke.mjs",
     "test:inline-text-latex-format": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs --import ../shared/visualtex-app/testing/kernel-node.mts ../shared/visualtex-app/tests/inline_text_latex_format_regression.mts",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
