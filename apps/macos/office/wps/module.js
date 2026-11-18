@@ -946,6 +946,8 @@
   /* The content width of the table cell a range is in: the cell's width less
      its left and right padding (Windows WordFormulaHost.TryGetCellContentWidth). */
   function cellContentWidth(range) {
+    /* no table in the range: no cell (cheap, before the layout query) */
+    if (Number(safe(function () { return range.Tables.Count; }, 1)) === 0) return 0;
     if (!safe(function () { return range.Information(WD_WITHIN_TABLE); }, false)) return 0;
     var cell = safe(function () { return range.Cells.Item(1); }, null);
     if (!cell) return 0;
@@ -957,6 +959,17 @@
     if (!(right >= 0 && right < total)) right = 0;
     var usable = total - left - right;
     return usable > 1 ? usable : total;
+  }
+
+  /* Whether a section of the document has more than one newspaper column (a
+     section WPS cannot describe counts as one that has). */
+  function hasTextColumns(doc) {
+    var sections = Number(safe(function () { return doc.Sections.Count; }, 0));
+    for (var index = 1; index <= sections; index++) {
+      var count = Number(safe(function () { return doc.Sections.Item(index).PageSetup.TextColumns.Count; }, 2));
+      if (!(count <= 1)) return true;
+    }
+    return false;
   }
 
   /* The columns of a page setup WPS describes: their widths and the space
@@ -1046,7 +1059,8 @@
     var count = Number(stops.Count);
     for (var index = 1; index <= count; index++) {
       var stop = stops.Item(index);
-      if (!safe(function () { return stop.CustomTab; }, true)) continue;
+      /* the default stops come after the last real one: they end the scan */
+      if (!safe(function () { return stop.CustomTab; }, true)) break;
       var alignment = Number(safe(function () { return stop.Alignment; }, -1));
       var position = Number(safe(function () { return stop.Position; }, -1000));
       if (alignment === WD_ALIGN_TAB_RIGHT && Math.abs(position - positions.right) <= 1.5) right = true;
@@ -1749,9 +1763,11 @@
       });
       removeMarkers(doc);
       updateAllNumberFields(doc);
-      /* Each numbered picture's tab stops from the column it is in now. */
+      /* Each numbered picture's tab stops from the column it is in now: only a
+         document with newspaper columns has stops another column gives, so
+         renumbering any other document does not look at every formula. */
       try {
-        applyDisplayTabRepairs(displayTabRepairs(doc));
+        if (hasTextColumns(doc)) applyDisplayTabRepairs(displayTabRepairs(doc));
       } catch (error) {
         failures.push(error && error.message || String(error));
       }

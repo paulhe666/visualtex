@@ -1198,8 +1198,12 @@ Public Function VTUpdateEquationNumbersCore( _
     Application.ScreenUpdating = False
     VTUpgradeWordNumberFormats documentObject
     VTUpdateCurrentWordNumberFields documentObject
-    ' Each numbered picture formula's tab stops from the column it is in now.
-    VTV2DisplayTabRepairs documentObject, True
+    ' Each numbered picture formula's tab stops from the column it is in now:
+    ' only a document with newspaper columns has stops another column gives
+    ' (page-width stops are right in one column), so renumbering any other
+    ' document does not look at every formula (Update Equation Format does).
+    If VTDocumentHasTextColumns(documentObject) Then _
+        VTV2DisplayTabRepairs documentObject, True
     VTUpdateEquationNumbersCore = VTCurrentNumberTargets(documentObject).Count
     VTWordPerformanceMark "numbering-complete"
 
@@ -3568,6 +3572,30 @@ Public Function VTEquationLayoutWidth( _
     VTEquationLayoutWidth = VTEquationColumnWidth(paragraphRange)
 End Function
 
+' Whether a section of the document has more than one newspaper column (a
+' section Word cannot describe counts as one that has: its formulas are then
+' looked at).
+Public Function VTDocumentHasTextColumns(ByVal doc As Document) As Boolean
+    Dim sectionObject As Section
+    Dim columnCount As Long
+
+    If doc Is Nothing Then Exit Function
+    On Error Resume Next
+    For Each sectionObject In doc.Sections
+        columnCount = 1
+        columnCount = sectionObject.PageSetup.TextColumns.Count
+        If Err.Number <> 0 Then
+            Err.Clear
+            columnCount = 2
+        End If
+        If columnCount > 1 Then
+            VTDocumentHasTextColumns = True
+            Exit For
+        End If
+    Next sectionObject
+    On Error GoTo 0
+End Function
+
 ' The content width of the table cell a range is in: the cell's width less its
 ' left and right padding (Windows WordFormulaHost.TryGetCellContentWidth).
 Public Function VTEquationCellContentWidth( _
@@ -3582,6 +3610,15 @@ Public Function VTEquationCellContentWidth( _
     contentWidth = 0!
     If paragraphRange Is Nothing Then Exit Function
     On Error Resume Next
+    ' A range with no table in it owns no cell: that structural answer is
+    ' cheap, Information(wdWithInTable) costs about 5 ms on Word for Mac.
+    If paragraphRange.Tables.Count = 0 Then
+        If Err.Number = 0 Then
+            On Error GoTo 0
+            Exit Function
+        End If
+        Err.Clear
+    End If
     inTable = paragraphRange.Information(wdWithInTable)
     If Err.Number <> 0 Then inTable = False
     Err.Clear
@@ -3784,28 +3821,30 @@ Private Function VTEquationDisplayTabsMatch( _
     ByVal centerPosition As Single, ByVal rightPosition As Single) As Boolean
 
     Dim stops As TabStops
-    Dim index As Long
+    Dim tabStopItem As TabStop
     Dim stopPosition As Single
     Dim stopAlignment As Long
     Dim centers As Long
     Dim hasRight As Boolean
 
+    ' One pass, each property read once: Word for Mac builds the list with
+    ' its default stops after the last real one, and every stops(index) call
+    ' costs a round of that. The default stops end the real ones.
     Set stops = paragraphRange.ParagraphFormat.TabStops
-    For index = 1 To stops.Count
-        If stops(index).CustomTab Then
-            stopPosition = stops(index).Position
-            stopAlignment = stops(index).Alignment
-            If stopAlignment = wdAlignTabRight And _
-               Abs(stopPosition - rightPosition) <= 1.5! Then
-                hasRight = True
-            ElseIf stopAlignment = wdAlignTabCenter And _
-               Abs(stopPosition - centerPosition) <= 0.75! Then
-                centers = centers + 1
-            ElseIf stopPosition < layoutWidth - 0.5! Then
-                Exit Function
-            End If
+    For Each tabStopItem In stops
+        If Not tabStopItem.CustomTab Then Exit For
+        stopPosition = tabStopItem.Position
+        stopAlignment = tabStopItem.Alignment
+        If stopAlignment = wdAlignTabRight And _
+           Abs(stopPosition - rightPosition) <= 1.5! Then
+            hasRight = True
+        ElseIf stopAlignment = wdAlignTabCenter And _
+           Abs(stopPosition - centerPosition) <= 0.75! Then
+            centers = centers + 1
+        ElseIf stopPosition < layoutWidth - 0.5! Then
+            Exit Function
         End If
-    Next index
+    Next tabStopItem
     VTEquationDisplayTabsMatch = (centers = 1 And hasRight)
 End Function
 
