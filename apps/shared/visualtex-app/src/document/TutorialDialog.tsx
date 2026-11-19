@@ -1,80 +1,103 @@
-// Document mode's tutorials (toolbar button and main menu): the tasks on the left, the chosen one's screen recording
-// and what it shows on the right. The videos are the app's own files (public/tutorials/<zh|en>/<id>.mp4), read
-// into a blob first: a media element asks for byte ranges, which the app's asset protocol does not answer everywhere.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, GraduationCap, X } from "lucide-react";
-import { TUTORIAL_GROUPS, type Tutorial } from "@platform/tutorials";
+// Document mode's tutorial (the toolbar's tutorial button, the main menu, and by itself the first time document mode
+// opens): a few cards, one task each, most with a short looping animation of the page made from the app itself
+// (tutorial/<zh|en>/<id>.webp). An animation is read into a blob and shown from a new object URL each time its card
+// comes up, so it starts from its first frame.
+import { useEffect, useRef, useState } from "react";
+import { FileText, X } from "lucide-react";
+import { TUTORIAL_CARDS, type TutorialCard } from "@platform/tutorials";
 
-const blobs = new Map<string, Promise<string>>();
+const ANIMATIONS = import.meta.glob("./tutorial/*/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
-function videoBlob(path: string): Promise<string> {
-  let url = blobs.get(path);
-  if (!url) {
-    url = fetch(path)
-      .then((response) => {
-        if (!response.ok) throw new Error(`${response.status}`);
-        return response.blob();
-      })
-      .then((blob) => URL.createObjectURL(blob));
-    url.catch(() => blobs.delete(path));
-    blobs.set(path, url);
+const blobs = new Map<string, Promise<Blob>>();
+
+function animationBlob(url: string): Promise<Blob> {
+  let blob = blobs.get(url);
+  if (!blob) {
+    blob = fetch(url).then((response) => {
+      if (!response.ok) throw new Error(`${response.status}`);
+      return response.blob();
+    });
+    blob.catch(() => blobs.delete(url));
+    blobs.set(url, blob);
   }
-  return url;
+  return blob;
 }
 
-const ALL: Tutorial[] = TUTORIAL_GROUPS.flatMap((group) => group.tutorials);
+function animationUrl(card: TutorialCard | undefined, lang: "zh" | "en"): string | null {
+  return card?.animation ? (ANIMATIONS[`./tutorial/${lang}/${card.id}.webp`] ?? null) : null;
+}
+
+/** A card's text: what is written between backticks is drawn as a key. */
+function CardText({ text }: { text: string }) {
+  return <p>{text.split("`").map((part, i) => (i % 2 ? <kbd key={i}>{part}</kbd> : part))}</p>;
+}
 
 export function TutorialDialog(props: { open: boolean; isEn: boolean; onClose: () => void }) {
   const { open, isEn, onClose } = props;
-  const [current, setCurrent] = useState(ALL[0].id);
+  const [index, setIndex] = useState(0);
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
   const lang = isEn ? "en" : "zh";
   const pick = (pair: [string, string]) => (isEn ? pair[1] : pair[0]);
-  const index = ALL.findIndex((tutorial) => tutorial.id === current);
-  const tutorial = ALL[index];
-  const base = `${import.meta.env.BASE_URL}tutorials/${lang}/`;
-  const poster = useMemo(() => `${base}${current}.jpg`, [base, current]);
+  const count = TUTORIAL_CARDS.length;
+  const card = TUTORIAL_CARDS[Math.min(index, count - 1)];
+  const last = index >= count - 1;
+
+  // each opening starts at the first card
+  useEffect(() => {
+    if (open) setIndex(0);
+  }, [open]);
 
   useEffect(() => {
-    if (!open) return;
-    let alive = true;
     setSrc(null);
     setFailed(false);
-    videoBlob(`${base}${current}.mp4`).then(
-      (url) => alive && setSrc(url),
+    const url = open ? animationUrl(card, lang) : null;
+    if (!url) return;
+    let alive = true;
+    let objectUrl: string | null = null;
+    animationBlob(url).then(
+      (blob) => {
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      },
       () => alive && setFailed(true),
     );
-    // the next one too, so stepping through does not wait
-    const next = ALL[index + 1];
-    if (next) void videoBlob(`${base}${next.id}.mp4`).catch(() => undefined);
+    // the next card's as well, so stepping on does not wait
+    const nextUrl = animationUrl(TUTORIAL_CARDS[index + 1], lang);
+    if (nextUrl) void animationBlob(nextUrl).catch(() => undefined);
     return () => {
       alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [open, base, current, index]);
+  }, [open, card, index, lang]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         onClose();
-      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
         event.preventDefault();
-        const step = event.key === "ArrowDown" ? 1 : -1;
-        setCurrent((id) => {
-          const at = ALL.findIndex((item) => item.id === id);
-          return ALL[Math.min(ALL.length - 1, Math.max(0, at + step))].id;
-        });
+        event.stopPropagation();
+        const step = event.key === "ArrowRight" ? 1 : -1;
+        setIndex((at) => Math.min(count - 1, Math.max(0, at + step)));
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  }, [open, onClose, count]);
 
-  if (!open || !tutorial) return null;
-  const go = (step: number) => setCurrent(ALL[Math.min(ALL.length - 1, Math.max(0, index + step))].id);
+  // Enter goes on (or closes on the last card)
+  useEffect(() => {
+    if (open) nextRef.current?.focus({ preventScroll: true });
+  }, [open, index]);
+
+  if (!open || !card) return null;
+  const hasAnimation = card.animation && !failed;
 
   return (
     <div
@@ -84,74 +107,61 @@ export function TutorialDialog(props: { open: boolean; isEn: boolean; onClose: (
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="dialog help-dialog vtx-tutorial-dialog" role="dialog" aria-modal="true" aria-labelledby="vtx-tutorial-title">
-        <header className="help-dialog-header">
-          <div>
-            <strong id="vtx-tutorial-title">
-              <GraduationCap size={18} />
-              {isEn ? "Document tutorials" : "文档教程"}
-            </strong>
-          </div>
-          <button type="button" className="icon-button compact" onClick={onClose} aria-label={isEn ? "Close" : "关闭"} title={isEn ? "Close (Esc)" : "关闭 (Esc)"}>
-            <X size={17} />
-          </button>
-        </header>
-        <div className="help-dialog-body vtx-tutorial-body">
-          <nav className="help-dialog-toc vtx-tutorial-list" aria-label={isEn ? "Tutorials" : "教程"}>
-            {TUTORIAL_GROUPS.map((group) => (
-              <div key={group.title[1]} className="vtx-tutorial-group">
-                <div className="vtx-tutorial-group-title">{pick(group.title)}</div>
-                {group.tutorials.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={item.id === current ? "is-current" : undefined}
-                    aria-current={item.id === current ? "true" : undefined}
-                    onClick={() => setCurrent(item.id)}
-                  >
-                    {pick(item.title)}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <article className="vtx-tutorial-main">
-            <div className="vtx-tutorial-video">
-              {failed ? (
-                <div className="vtx-tutorial-missing">{isEn ? "This video could not be loaded." : "无法加载这段视频。"}</div>
-              ) : (
-                <video
-                  key={current}
-                  ref={videoRef}
-                  src={src ?? undefined}
-                  poster={poster}
-                  autoPlay
-                  muted
-                  playsInline
-                  controls
-                  preload="auto"
-                />
-              )}
+      <section className="vtx-tutorial-dialog" role="dialog" aria-modal="true" aria-labelledby="vtx-tutorial-title">
+        <button
+          type="button"
+          className="icon-button compact vtx-tutorial-close"
+          onClick={onClose}
+          aria-label={isEn ? "Close" : "关闭"}
+          title={isEn ? "Close (Esc)" : "关闭 (Esc)"}
+        >
+          <X size={17} />
+        </button>
+        <div className="vtx-tutorial-stage">
+          {hasAnimation ? (
+            src && <img key={src} src={src} alt="" draggable={false} />
+          ) : (
+            <div className="vtx-tutorial-file" aria-hidden="true">
+              <FileText size={46} strokeWidth={1.3} />
+              {card.path && <code>{pick(card.path)}</code>}
             </div>
-            <div className="vtx-tutorial-text">
-              <h3>{pick(tutorial.title)}</h3>
-              <p>{pick(tutorial.summary)}</p>
-            </div>
-            <footer className="vtx-tutorial-steps">
-              <button type="button" className="secondary-button" disabled={index <= 0} onClick={() => go(-1)}>
-                <ChevronLeft size={15} />
-                {isEn ? "Previous" : "上一个"}
-              </button>
-              <span>
-                {index + 1} / {ALL.length}
-              </span>
-              <button type="button" className="secondary-button" disabled={index >= ALL.length - 1} onClick={() => go(1)}>
-                {isEn ? "Next" : "下一个"}
-                <ChevronRight size={15} />
-              </button>
-            </footer>
-          </article>
+          )}
         </div>
+        <div className="vtx-tutorial-copy">
+          <h3 id="vtx-tutorial-title">{pick(card.title)}</h3>
+          <CardText text={pick(card.text)} />
+        </div>
+        <footer className="vtx-tutorial-footer">
+          <div className="vtx-tutorial-dots" role="tablist" aria-label={isEn ? "Cards" : "卡片"}>
+            {TUTORIAL_CARDS.map((item, at) => (
+              <button
+                type="button"
+                key={item.id}
+                role="tab"
+                className={at === index ? "is-current" : undefined}
+                aria-selected={at === index}
+                aria-label={`${pick(item.title)} (${at + 1}/${count})`}
+                title={pick(item.title)}
+                onClick={() => setIndex(at)}
+              />
+            ))}
+          </div>
+          <div className="vtx-tutorial-actions">
+            {index > 0 && (
+              <button type="button" className="secondary-button" onClick={() => setIndex(index - 1)}>
+                {isEn ? "Back" : "上一步"}
+              </button>
+            )}
+            <button
+              ref={nextRef}
+              type="button"
+              className="primary-button"
+              onClick={() => (last ? onClose() : setIndex(index + 1))}
+            >
+              {last ? (isEn ? "Start writing" : "开始写作") : isEn ? "Next" : "下一步"}
+            </button>
+          </div>
+        </footer>
       </section>
     </div>
   );

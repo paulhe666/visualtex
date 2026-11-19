@@ -59,7 +59,7 @@ Node 脚本（测试、生成器）用 `tsx --import ../shared/visualtex-app/tes
 | `ocrBackend` | OCR 后端提供什么（安装恢复、存储位置、模型下载、预热命令） |
 | `anywhereKeyRules`、`anywhereWindow` | VisualTeX Anywhere 的快捷键规则、提示与快捷键转交 |
 | `exportFile` | 写出导出文件 |
-| `tutorials`、`helpManual` | 教程视频、帮助手册 |
+| `tutorials`、`helpManual` | 文档模式的教程卡片（文字，各平台的按键与文件夹）、帮助手册 |
 
 ### 在两台机器上工作
 
@@ -197,7 +197,7 @@ with its settings (the add-ins connect to it differently on each system), and `s
 | `ocrBackend` | what the OCR backend offers (install recovery, storage folder, model downloads, the warm-up command) |
 | `anywhereKeyRules`, `anywhereWindow` | VisualTeX Anywhere's shortcut rules, notes and shortcut hand-over |
 | `exportFile` | writing an export file |
-| `tutorials`, `helpManual` | the tutorial videos, the help manual |
+| `tutorials`, `helpManual` | document mode's tutorial cards (their text, each platform's keys and folder), the help manual |
 
 ### Working on both machines
 

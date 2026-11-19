@@ -2924,89 +2924,136 @@
   background: var(--cand-head-hover);
 }
 
-/* ---- tutorials (TutorialDialog.tsx): the tasks on the left, the video and what it shows on the right ---- */
+/* ---- tutorial (TutorialDialog.tsx): one card at a time, its animation above what it shows ---- */
 .vtx-tutorial-dialog {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(1240px, calc(100vw - 28px));
-  height: min(880px, calc(100vh - 28px));
+  width: min(660px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px 14px;
+  overflow: auto;
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg, 0 22px 56px rgba(0, 0, 0, 0.24));
+  animation: dialog-in 170ms ease-out;
 }
-.vtx-tutorial-body {
-  grid-template-columns: 200px minmax(0, 1fr);
+.vtx-tutorial-close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  z-index: 1;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
-.vtx-tutorial-group + .vtx-tutorial-group {
-  margin-top: 10px;
-}
-.vtx-tutorial-group-title {
-  padding: 6px 9px 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-.vtx-tutorial-list button {
-  font-size: 13px;
-}
-.vtx-tutorial-list button.is-current {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-.vtx-tutorial-main {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  padding: 16px 18px 14px;
-  overflow: hidden;
-}
-.vtx-tutorial-video {
-  min-height: 0;
+/* the animations are the white page */
+.vtx-tutorial-stage {
+  flex: none;
+  aspect-ratio: 2 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface-sunken);
+  background: #fff;
   overflow: hidden;
 }
-.vtx-tutorial-video video {
+.vtx-tutorial-stage img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: var(--surface-sunken);
+  user-select: none;
 }
-.vtx-tutorial-missing {
-  color: var(--text-muted);
+.vtx-tutorial-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #4b5563;
+}
+.vtx-tutorial-file code {
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: #374151;
+  font-family: "JetBrains Mono", "Cascadia Mono", Menlo, monospace;
   font-size: 13px;
 }
-.vtx-tutorial-text h3 {
-  margin: 0 0 4px;
+.vtx-tutorial-copy {
+  padding: 0 4px;
+}
+.vtx-tutorial-copy h3 {
+  margin: 0 0 6px;
   color: var(--text);
   font-size: 16px;
+  font-weight: 650;
 }
-.vtx-tutorial-text p {
+.vtx-tutorial-copy p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.7;
 }
-.vtx-tutorial-steps {
+.vtx-tutorial-copy kbd {
+  min-width: 20px;
+  height: 20px;
+  margin: 0 2px;
+  padding: 0 5px;
+  vertical-align: 1px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+}
+.vtx-tutorial-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
 }
-.vtx-tutorial-steps button {
-  display: inline-flex;
+.vtx-tutorial-dots {
+  display: flex;
   align-items: center;
   gap: 4px;
+}
+.vtx-tutorial-dots button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.vtx-tutorial-dots button::before {
+  content: "";
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin: auto;
+  border-radius: 50%;
+  background: var(--border-strong, var(--border));
+  transition: width 140ms ease, background 140ms ease;
+}
+.vtx-tutorial-dots button.is-current::before {
+  width: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.vtx-tutorial-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vtx-tutorial-actions button {
+  border-radius: 7px;
 }
 .vtx-tutorial-button {
   margin-left: auto;

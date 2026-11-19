@@ -44,6 +44,7 @@
     "test:document-file-workspace": "npm run build:desktop && node ../shared/visualtex-app/tests/document_file_workspace_regression.mjs",
     "test:document-markdown-file": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/document_markdown_file_regression.mts",
     "test:document-scrollbar-style": "npm run build:desktop && node ../shared/visualtex-app/tests/document_scrollbar_style_regression.mjs",
+    "test:document-tutorial-cards": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/document_tutorial_cards_regression.mts",
     "test:dotnet": "dotnet test src-windows/VisualTeX.WindowsOffice.Tests/VisualTeX.WindowsOffice.Tests.csproj --configuration Release && dotnet test src-windows/VisualTeX.NativeRender.Tests/VisualTeX.NativeRender.Tests.csproj --configuration Release",
     "test:editor": "npm run build && npm run test:editor:run",
     "test:editor-history": "npm run build && npm run test:editor-history:run",
