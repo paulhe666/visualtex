@@ -202,7 +202,9 @@ internal static class WordFormulaMetadataReader
             format = shape.OLEFormat;
             oleObject = WordOleObjectAccessor.GetRunningObject(format);
             return oleObject is IVisualTeXFormulaObject formula
-                ? FormulaOleInterop.ReadMetadata(formula)
+                ? FormulaFontSize.WithDeferredFontSize(
+                    FormulaOleInterop.ReadMetadata(formula),
+                    TryReadCachedPreview(shape))
                 : null;
         }
         catch

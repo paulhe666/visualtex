@@ -196,6 +196,178 @@ internal static class WordVisualTeXHostWriter
             throw new ArgumentException(
                 "VisualTeX font-size update received another host kind.");
 
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        try
+        {
+            (shape, shapeRange) = FindOwnShape(document, host);
+            FormulaMetadata metadata;
+            using (WordOperationMetrics.Measure("FontSize.Ole.ReadPayload"))
+                metadata =
+                    WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
+                    ?? throw new InvalidDataException(
+                        "The VisualTeX host has no authoritative embedded metadata.");
+            if (!string.IsNullOrWhiteSpace(host.FormulaId)
+                && !string.Equals(
+                    host.FormulaId,
+                    metadata.FormulaId,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "The VisualTeX host identity changed before its font-size update.");
+
+            ApplyFontSizeGeometry(document, shape, shapeRange, metadata, targetFontSizePoints);
+            using (WordOperationMetrics.Measure("FontSize.Ole.WritePayload"))
+                WordFormulaMetadataReader.Write(
+                    shape,
+                    metadata);
+
+            return FontSizeResult(
+                shapeRange,
+                metadata,
+                host,
+                WordFormulaNumberingResolver.ResolveLocal(document, host));
+        }
+        finally
+        {
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
+    // A VisualTeX object whose font size a batch changes without reading its
+    // payload: the object, where it is, and Word's cached copy of its metadata.
+    internal sealed class CachedFontSizeTarget : IDisposable
+    {
+        internal CachedFontSizeTarget(InlineShape shape, Range shapeRange, FormulaMetadata metadata)
+        {
+            Shape = shape;
+            ShapeRange = shapeRange;
+            Metadata = metadata;
+        }
+
+        internal InlineShape Shape { get; }
+        internal Range ShapeRange { get; }
+        internal FormulaMetadata Metadata { get; }
+        // The size the batch gives the object, and whether it is a display formula.
+        internal (float Width, float Height) Size { get; set; }
+        internal bool Display { get; set; }
+
+        public void Dispose()
+        {
+            Release(ShapeRange);
+            Release(Shape);
+        }
+    }
+
+    // The object by Word's cached metadata, when that cache is this formula's
+    // and describes the object as it is (null otherwise: the caller then reads
+    // the payload, UpdateFontSize). Nothing is written: a size write before the
+    // batch's undo record would make every move in it slower (PositionCached).
+    internal static CachedFontSizeTarget? PrepareCachedFontSize(
+        Document document,
+        WordFormulaHostDescriptor host)
+    {
+        if (host.Kind != WordFormulaHostKind.VisualTeX
+            || !Guid.TryParse(host.FormulaId, out _))
+            return null;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        try
+        {
+            (shape, shapeRange) = FindOwnShape(document, host);
+            var metadata = WordFormulaMetadataReader.TryReadCachedPreview(shape);
+            var width = shape.Width;
+            var height = shape.Height;
+            if (metadata is null
+                || !string.Equals(metadata.FormulaId, host.FormulaId, StringComparison.OrdinalIgnoreCase)
+                || !FormulaFontSize.CacheMatchesOleSize(metadata, width, height))
+                return null;
+            var target = new CachedFontSizeTarget(shape, shapeRange, metadata);
+            shape = null;
+            shapeRange = null;
+            return target;
+        }
+        catch (Exception error) when (error is COMException or InvalidDataException or InvalidOperationException)
+        {
+            return null;
+        }
+        finally
+        {
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
+    // Inside the batch's undo record the three steps run for all objects one
+    // after the other, positions and numbers before sizes. Measured in Word
+    // (100 display objects, one custom undo record): moving an object on its
+    // line costs 8 ms while Word has not resized it in this session, and from
+    // 20 ms up to 500 ms per object once it has (Word runs the object's server
+    // for every size write; nothing the server does changes that). So every
+    // object is moved before any is resized, an object whose offset stays the
+    // same is not written (WordNumberedDisplayLayout.TryMoveEmbeddedOleObject),
+    // and the sizes come last.
+
+    // 1. The object's position on its line for the new size, calculated from
+    // the size it is about to get.
+    internal static WordFormulaHostDescriptor PositionCached(
+        Document document,
+        WordFormulaHostDescriptor host,
+        CachedFontSizeTarget target,
+        double targetFontSizePoints)
+    {
+        var metadata = target.Metadata;
+        var normalized = FormulaFontSize.Normalize(targetFontSizePoints);
+        metadata.FontSizePt = normalized;
+        metadata.UpdatedWithVersion = "1.2.7";
+        metadata.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
+        target.Size = FormulaFontSize.OleSizeAt(metadata, normalized);
+        target.Display = !string.Equals(metadata.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase);
+        if (target.Display)
+        {
+            if (!WordNumberedDisplayLayout.TryMoveEmbeddedOleObject(
+                    target.ShapeRange,
+                    WordNumberedDisplayLayout.DisplayOlePosition(target.Size.Height, metadata)))
+                WordEquationParagraphLayout.AlignVisualTeXDisplayHostBaseline(
+                    document, target.ShapeRange, target.Size.Height, metadata);
+        }
+        else
+            WordFormulaHostLayout.PositionVisualTeXInline(
+                target.Shape, target.ShapeRange, metadata, target.Size.Height);
+        return FontSizeResult(target.ShapeRange, metadata, host, host.Numbering);
+    }
+
+    // 2. The object's size in Word.
+    internal static void ResizeCached(CachedFontSizeTarget target) =>
+        WordFormulaHostLayout.SetVisualTeXSize(target.Shape, target.Size.Width, target.Size.Height);
+
+    // 3. The new size in Word's cached metadata, with the size Word gave an
+    // inline object. The payload keeps the old size until the formula is next
+    // written (FormulaFontSize.WithDeferredFontSize reads the cached one
+    // meanwhile).
+    internal static void CacheResized(CachedFontSizeTarget target)
+    {
+        var metadata = target.Metadata;
+        if (target.Display)
+        {
+            metadata.WordInlineOleWidthPt = null;
+            metadata.WordInlineOleHeightPt = null;
+            metadata.WordInlineOlePositionPt = null;
+        }
+        else
+        {
+            metadata.WordInlineOleWidthPt = target.Shape.Width;
+            metadata.WordInlineOleHeightPt = target.Shape.Height;
+            metadata.WordInlineSourceBottomWhitespacePt = null;
+        }
+        metadata.Validate();
+        WordFormulaMetadataReader.CacheMetadata(target.Shape, metadata);
+    }
+
+    private static (InlineShape Shape, Range ShapeRange) FindOwnShape(
+        Document document,
+        WordFormulaHostDescriptor host)
+    {
         Range? range = null;
         InlineShapes? shapes = null;
         InlineShape? shape = null;
@@ -237,78 +409,10 @@ internal static class WordVisualTeXHostWriter
             if (shape is null || shapeRange is null)
                 throw new InvalidDataException(
                     "The VisualTeX host moved before its font-size update.");
-
-            var metadata =
-                WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
-                ?? throw new InvalidDataException(
-                    "The VisualTeX host has no authoritative embedded metadata.");
-            if (!string.IsNullOrWhiteSpace(host.FormulaId)
-                && !string.Equals(
-                    host.FormulaId,
-                    metadata.FormulaId,
-                    StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException(
-                    "The VisualTeX host identity changed before its font-size update.");
-
-            var normalized =
-                FormulaFontSize.Normalize(
-                    targetFontSizePoints);
-            metadata.FontSizePt = normalized;
-            metadata.UpdatedWithVersion = "1.2.7";
-            metadata.UpdatedAt =
-                DateTimeOffset.UtcNow.ToString("O");
-
-            var size =
-                FormulaFontSize.OleSizeAt(
-                    metadata,
-                    normalized);
-            var display = !string.Equals(
-                metadata.DisplayMode,
-                "inline",
-                StringComparison.OrdinalIgnoreCase);
-            WordFormulaHostLayout.ApplyVisualTeXGeometry(
-                shape,
-                metadata,
-                size.Width,
-                size.Height,
-                (float)(metadata.RenderHeightPx ?? 0d),
-                metadata.Baseline.HasValue
-                    ? (float?)metadata.Baseline.Value
-                    : null,
-                deferDisplayPosition: display);
-            // A display OLE is lowered so the formula's own baseline sits on
-            // the line that carries its TABs and number. That offset depends on
-            // the height, so it is recalculated here as insertion does; the
-            // paragraph's tab stops are left as they are.
-            if (display)
-                WordEquationParagraphLayout.AlignVisualTeXDisplayHostBaseline(
-                    document,
-                    shapeRange,
-                    size.Height,
-                    metadata);
-            WordFormulaMetadataReader.Write(
-                shape,
-                metadata);
-
-            return new WordFormulaHostDescriptor
-            {
-                Kind = WordFormulaHostKind.VisualTeX,
-                Range = new WordFormulaRangeAddress
-                {
-                    StoryType = shapeRange.StoryType,
-                    Start = shapeRange.Start,
-                    End = shapeRange.End,
-                },
-                DisplayMode = metadata.DisplayMode,
-                FormulaId = metadata.FormulaId,
-                Metadata = metadata,
-                MetadataAuthoritative = true,
-                Numbering = WordFormulaNumberingResolver.ResolveLocal(
-                    document,
-                    host),
-                WithinTable = host.WithinTable,
-                Latex = metadata.Latex,
-            };
+            var found = (shape, shapeRange);
+            shape = null;
+            shapeRange = null;
+            return found;
         }
         finally
         {
@@ -318,6 +422,76 @@ internal static class WordVisualTeXHostWriter
             Release(range);
         }
     }
+
+    // The object's size and position in Word for a font size, and the size in
+    // its metadata.
+    private static void ApplyFontSizeGeometry(
+        Document document,
+        InlineShape shape,
+        Range shapeRange,
+        FormulaMetadata metadata,
+        double targetFontSizePoints)
+    {
+        var normalized =
+            FormulaFontSize.Normalize(
+                targetFontSizePoints);
+        metadata.FontSizePt = normalized;
+        metadata.UpdatedWithVersion = "1.2.7";
+        metadata.UpdatedAt =
+            DateTimeOffset.UtcNow.ToString("O");
+
+        var size =
+            FormulaFontSize.OleSizeAt(
+                metadata,
+                normalized);
+        var display = !string.Equals(
+            metadata.DisplayMode,
+            "inline",
+            StringComparison.OrdinalIgnoreCase);
+        WordFormulaHostLayout.ApplyVisualTeXGeometry(
+            shape,
+            metadata,
+            size.Width,
+            size.Height,
+            (float)(metadata.RenderHeightPx ?? 0d),
+            metadata.Baseline.HasValue
+                ? (float?)metadata.Baseline.Value
+                : null,
+            deferDisplayPosition: display);
+        // A display OLE is lowered so the formula's own baseline sits on
+        // the line that carries its TABs and number. That offset depends on
+        // the height, so it is recalculated here as insertion does; the
+        // paragraph's tab stops are left as they are.
+        if (display)
+            WordEquationParagraphLayout.AlignVisualTeXDisplayHostBaseline(
+                document,
+                shapeRange,
+                size.Height,
+                metadata);
+    }
+
+    private static WordFormulaHostDescriptor FontSizeResult(
+        Range shapeRange,
+        FormulaMetadata metadata,
+        WordFormulaHostDescriptor host,
+        WordFormulaNumberingDescriptor numbering) =>
+        new()
+        {
+            Kind = WordFormulaHostKind.VisualTeX,
+            Range = new WordFormulaRangeAddress
+            {
+                StoryType = shapeRange.StoryType,
+                Start = shapeRange.Start,
+                End = shapeRange.End,
+            },
+            DisplayMode = metadata.DisplayMode,
+            FormulaId = metadata.FormulaId,
+            Metadata = metadata,
+            MetadataAuthoritative = true,
+            Numbering = numbering,
+            WithinTable = host.WithinTable,
+            Latex = metadata.Latex,
+        };
 
     internal static Range DeleteExactToExternalDisplayBoundary(
         Document document,

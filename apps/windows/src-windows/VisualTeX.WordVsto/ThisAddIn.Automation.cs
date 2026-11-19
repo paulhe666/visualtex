@@ -168,6 +168,8 @@ public sealed partial class ThisAddIn
                             $"已把 {batch.Resized} 个{(display ? "行间" : "行内")}公式改为 {FormulaFontSize.Describe(size)}。",
                             $"{batch.Resized} {(display ? "display" : "inline")} formula(s) set to {FormulaFontSize.Describe(size, english: true)}."));
                         foreach (var failure in batch.Failures) run.Warn(failure);
+                        WriteRedrawAcceptanceLog(
+                            $"formula-kind-font-size display={display} size={size} resized={batch.Resized} failed={batch.Failures.Count} {batch.MetricDetail}");
                     }
                     finally { EndFormulaFormatMutation(); }
                     return run.Finish();

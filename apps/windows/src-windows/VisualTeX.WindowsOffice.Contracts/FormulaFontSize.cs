@@ -261,6 +261,77 @@ public static class FormulaFontSize
         return Normalize(ResolveRenderFontSize(metadata) * scale, fallback);
     }
 
+    // A batch font-size change resizes a Word OLE formula in the document and
+    // records the new size in Word's cached copy of the metadata only: loading
+    // every object to rewrite its payload costs about 70 ms each and makes the
+    // undo record slower with each object. The cache is then the later record
+    // of the same formula and differs from the payload in nothing but the size
+    // and the Word geometry that follows it; that size is the formula's. Any
+    // other cache (older, of another formula, with other content) is ignored.
+    public static FormulaMetadata WithDeferredFontSize(
+        FormulaMetadata embedded,
+        FormulaMetadata? cached)
+    {
+        if (embedded is null) throw new ArgumentNullException(nameof(embedded));
+        if (cached is null
+            || !string.Equals(cached.FormulaId, embedded.FormulaId, StringComparison.OrdinalIgnoreCase)
+            || !DateTimeOffset.TryParse(
+                cached.UpdatedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cachedAt)
+            || !DateTimeOffset.TryParse(
+                embedded.UpdatedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var embeddedAt)
+            || cachedAt <= embeddedAt
+            || !string.Equals(WithoutSize(cached), WithoutSize(embedded), StringComparison.Ordinal))
+            return embedded;
+        embedded.FontSizePt = cached.FontSizePt;
+        embedded.WordInlineOleWidthPt = cached.WordInlineOleWidthPt;
+        embedded.WordInlineOleHeightPt = cached.WordInlineOleHeightPt;
+        embedded.WordInlineOlePositionPt = cached.WordInlineOlePositionPt;
+        embedded.WordInlineSourceBottomWhitespacePt = cached.WordInlineSourceBottomWhitespacePt;
+        embedded.UpdatedWithVersion = cached.UpdatedWithVersion;
+        embedded.UpdatedAt = cached.UpdatedAt;
+        return embedded;
+    }
+
+    private static string WithoutSize(FormulaMetadata metadata)
+    {
+        var copy = FormulaMetadataCodec.DeserializeJson(FormulaMetadataCodec.SerializeJson(metadata))
+            ?? throw new InvalidOperationException("Unable to clone VisualTeX formula metadata.");
+        copy.FontSizePt = null;
+        copy.WordInlineOleWidthPt = null;
+        copy.WordInlineOleHeightPt = null;
+        copy.WordInlineOlePositionPt = null;
+        copy.WordInlineSourceBottomWhitespacePt = null;
+        copy.UpdatedWithVersion = string.Empty;
+        copy.UpdatedAt = string.Empty;
+        return FormulaMetadataCodec.SerializeJson(copy);
+    }
+
+    // Whether cached metadata describes the object as it is in the document:
+    // its size at its font size is the object's size (Word rounds sizes, and an
+    // inline object keeps the exact size it was given). A cache left over from
+    // other content gives another size, and is then not used to resize.
+    public static bool CacheMatchesOleSize(
+        FormulaMetadata? cached,
+        float currentWidthPoints,
+        float currentHeightPoints)
+    {
+        if (cached is null
+            || cached.RenderWidthPx is not > 0
+            || cached.RenderHeightPx is not > 0
+            || currentWidthPoints <= 0
+            || currentHeightPoints <= 0)
+            return false;
+        static bool Close(float actual, float expected) =>
+            Math.Abs(actual - expected) <= Math.Max(0.75f, expected * 0.015f);
+        if (cached.WordInlineOleWidthPt is > 0
+            && cached.WordInlineOleHeightPt is > 0
+            && Close(currentWidthPoints, (float)cached.WordInlineOleWidthPt.Value)
+            && Close(currentHeightPoints, (float)cached.WordInlineOleHeightPt.Value))
+            return true;
+        var expected = OleSizeAt(cached, ResolveSemanticFontSize(cached));
+        return Close(currentWidthPoints, expected.Width) && Close(currentHeightPoints, expected.Height);
+    }
+
     public static (float Width, float Height) OleSizeAt(
         FormulaMetadata metadata,
         double targetFontSizePt,

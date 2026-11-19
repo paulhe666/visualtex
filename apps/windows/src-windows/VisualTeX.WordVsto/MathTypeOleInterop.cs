@@ -565,6 +565,20 @@ internal static partial class MathTypeOleInterop
         finally { Release(list); }
     }
 
+    // Where a MathType object stands in its paragraph only (a display formula or
+    // inline, numbered or not), without reading its equation.
+    internal static string ReadDisplayMode(InlineShape shape, out bool numbered)
+    {
+        if (shape is null) throw new ArgumentNullException(nameof(shape));
+        Range? range = null;
+        try
+        {
+            range = shape.Range;
+            return InferDisplayMode(range, out numbered);
+        }
+        finally { Release(range); }
+    }
+
     private static string InferDisplayMode(Range range, out bool numbered)
     {
         numbered = false;

@@ -25,16 +25,7 @@ internal static class WordFormulaHostLayout
         if (shape is null) throw new ArgumentNullException(nameof(shape));
         if (metadata is null) throw new ArgumentNullException(nameof(metadata));
 
-        var width = Math.Max(1f, widthPoints);
-        var height = Math.Max(1f, heightPoints);
-        using (WordOperationMetrics.Measure(
-                   "FormatConversion.VisualTeXGeometry.SetSize"))
-        {
-            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
-            shape.Width = width;
-            shape.Height = height;
-            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
-        }
+        SetVisualTeXSize(shape, widthPoints, heightPoints);
 
         var inline = string.Equals(
             metadata.DisplayMode,
@@ -81,6 +72,42 @@ internal static class WordFormulaHostLayout
         using (WordOperationMetrics.Measure(
                    "FormatConversion.VisualTeXGeometry.CacheMetadata"))
             WordFormulaMetadataReader.CacheMetadata(shape, metadata);
+    }
+
+    // An inline object's position on its line for a height it has or is about
+    // to get (the batch font size sets positions before sizes, and writes an
+    // object only when its offset changes: WordNumberedDisplayLayout
+    // .TryMoveEmbeddedOleObject).
+    internal static void PositionVisualTeXInline(
+        InlineShape shape,
+        Range shapeRange,
+        FormulaMetadata metadata,
+        float heightPoints)
+    {
+        var position = CalculateVisualTeXInlinePosition(
+            shape,
+            heightPoints,
+            (float)(metadata.RenderHeightPx ?? 0d),
+            metadata.Baseline.HasValue ? (float?)metadata.Baseline.Value : null,
+            FormulaFontSize.ResolveSemanticFontSize(metadata));
+        metadata.WordInlineOlePositionPt = position;
+        if (!WordNumberedDisplayLayout.TryMoveEmbeddedOleObject(shapeRange, position))
+            SetInlineOleWordPosition(shape, position);
+    }
+
+    internal static void SetVisualTeXSize(
+        InlineShape shape,
+        float widthPoints,
+        float heightPoints)
+    {
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXGeometry.SetSize"))
+        {
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
+            shape.Width = Math.Max(1f, widthPoints);
+            shape.Height = Math.Max(1f, heightPoints);
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
+        }
     }
 
     internal static void ConfigureDisplayParagraph(

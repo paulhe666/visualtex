@@ -36,6 +36,60 @@ internal static class WordMathTypeHostAdapter
         finally { Release(content); }
     }
 
+    // The document's MathType objects with where they are and whether they are
+    // display formulas (numbered or not), without reading their equations: the
+    // batch font size reads each formula it changes anyway, and reading every
+    // equation of a document takes about 90 ms each.
+    internal static IReadOnlyList<WordFormulaHostDescriptor> CaptureLayoutIndex(Document document)
+    {
+        var result = new List<WordFormulaHostDescriptor>();
+        Range? content = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? range = null;
+        try
+        {
+            content = document.Content;
+            shapes = content.InlineShapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                shape = shapes[index];
+                if (!MathTypeOleInterop.IsMathTypeOle(shape))
+                {
+                    Release(shape);
+                    shape = null;
+                    continue;
+                }
+                range = shape.Range.Duplicate;
+                var displayMode = MathTypeOleInterop.ReadDisplayMode(shape, out var numbered);
+                result.Add(new WordFormulaHostDescriptor
+                {
+                    Kind = WordFormulaHostKind.MathType,
+                    Range = new WordFormulaRangeAddress
+                    {
+                        StoryType = range.StoryType,
+                        Start = range.Start,
+                        End = range.End,
+                    },
+                    DisplayMode = string.Equals(displayMode, "block", StringComparison.OrdinalIgnoreCase)
+                        ? "block"
+                        : "inline",
+                    Numbering = new WordFormulaNumberingDescriptor { Numbered = numbered },
+                });
+                Release(range); range = null;
+                Release(shape); shape = null;
+            }
+            return result;
+        }
+        finally
+        {
+            Release(range);
+            Release(shape);
+            Release(shapes);
+            Release(content);
+        }
+    }
+
     internal static IReadOnlyList<WordFormulaHostDescriptor> CaptureScopeIndex(
         WordApplication application,
         Document document,

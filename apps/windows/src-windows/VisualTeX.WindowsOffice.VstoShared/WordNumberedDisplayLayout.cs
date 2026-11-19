@@ -1810,27 +1810,7 @@ internal static class WordNumberedDisplayLayout
             rangeFont = formulaRange.Font;
             rangeFont.Position = 0;
 
-            var semanticFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
-            var exportedHeight = metadata.RenderHeightPx.HasValue
-                ? (float)metadata.RenderHeightPx.Value
-                : 0f;
-            float? exportedBaseline = metadata.Baseline.HasValue
-                ? (float)metadata.Baseline.Value
-                : null;
-            // Preview-ink readback used to run here for every unnumbered display
-            // OLE even though the resulting ratios are not used by the baseline
-            // calculation below. That diagnostic cache forces Word to materialize
-            // EnhMetaFileBits and parse the preview during every batch insertion.
-            // Keep insertion dependent only on the already-exported geometry.
-
-            var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
-                actualHeightPoints,
-                exportedHeight,
-                exportedBaseline,
-                existingFontPosition: null,
-                sourceSemanticFontSizePoints: semanticFontSize,
-                targetSemanticFontSizePoints: semanticFontSize);
-            var clamped = Math.Max(-256, Math.Min(256, position));
+            var clamped = DisplayOlePosition(actualHeightPoints, metadata);
 
             // A Word inline OLE is a wdFieldEmbed whose Result owns the painted
             // U+0001 object character. Resolve that one local field directly on
@@ -1858,6 +1838,87 @@ internal static class WordNumberedDisplayLayout
             Release(characterFont);
             Release(character);
             Release(rangeFont);
+        }
+    }
+
+    // How far a display object is lowered for a height: its own baseline from
+    // VisualTeX's exported geometry, not from MathType's storage or an
+    // arbitrary half-height approximation. Preview-ink readback is not used:
+    // it would make Word materialize EnhMetaFileBits for every formula.
+    internal static int DisplayOlePosition(
+        float actualHeightPoints,
+        FormulaMetadata metadata)
+    {
+        if (metadata is null)
+            throw new ArgumentNullException(nameof(metadata));
+        var semanticFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
+        var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+            actualHeightPoints,
+            metadata.RenderHeightPx.HasValue ? (float)metadata.RenderHeightPx.Value : 0f,
+            metadata.Baseline.HasValue ? (float)metadata.Baseline.Value : null,
+            existingFontPosition: null,
+            sourceSemanticFontSizePoints: semanticFontSize,
+            targetSemanticFontSizePoints: semanticFontSize);
+        return Math.Max(-256, Math.Min(256, position));
+    }
+
+    // An object moved on its line the way the batch font size does it: only
+    // the object character of the object's one EMBED field is written, and
+    // only when its offset changes (the field's instruction is put back on the
+    // baseline only when it is not there). Measured in Word: inside one custom
+    // undo record, a write on the object character of an object Word has
+    // resized earlier in the session costs more with every such object written
+    // before it (100 objects: about 18 s, 8 ms each before any resize), so an
+    // object whose offset stays the same is left alone. False when the range
+    // is not one EMBED field with an object character; nothing was moved then.
+    internal static bool TryMoveEmbeddedOleObject(
+        Range formulaRange,
+        int position)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        Microsoft.Office.Interop.Word.Font? codeFont = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            fields = formulaRange.Fields;
+            if (fields.Count != 1)
+                return false;
+            field = fields[1];
+            if (field.Type != WdFieldType.wdFieldEmbed)
+                return false;
+            result = field.Result.Duplicate;
+            var text = result.Text ?? string.Empty;
+            if (!string.Equals(text, "\u0001", StringComparison.Ordinal)
+                && !string.Equals(text, "\uFFFC", StringComparison.Ordinal))
+                return false;
+            if (result.Start < formulaRange.Start
+                || result.End > formulaRange.End)
+                return false;
+            code = field.Code;
+            codeFont = code.Font;
+            if (codeFont.Position != 0)
+                codeFont.Position = 0;
+            font = result.Font;
+            var clamped = Math.Max(-256, Math.Min(256, position));
+            if (font.Position != clamped)
+                font.Position = clamped;
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            Release(font);
+            Release(codeFont);
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
         }
     }
 

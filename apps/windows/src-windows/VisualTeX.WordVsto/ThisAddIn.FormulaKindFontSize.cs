@@ -93,7 +93,7 @@ public sealed partial class ThisAddIn
                     $"{result.Failures.Count} 个未能更改：{result.Failures[0]}",
                     $" {result.Failures.Count} could not be changed: {result.Failures[0]}");
             WriteRedrawAcceptanceLog(
-                $"formula-kind-font-size display={display} size={size} resized={result.Resized} failed={result.Failures.Count}");
+                $"formula-kind-font-size display={display} size={size} resized={result.Resized} failed={result.Failures.Count} {result.MetricDetail}");
             SetStatus(message);
         }
         catch (Exception error)
