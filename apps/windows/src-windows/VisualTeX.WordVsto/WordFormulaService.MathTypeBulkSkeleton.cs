@@ -126,9 +126,14 @@ internal sealed partial class WordFormulaService
             owner = WordCharacterFormatting.ResolveParagraphAtPosition(target, target.Start);
             var joinsExistingPrefix = target.Start > owner.Start;
             // A structural block owns a whole paragraph. Never turn pre-existing
-            // prefix prose into a heading/list/quote/code/display paragraph.
+            // prefix prose into a heading/list/quote/code/display paragraph. At the
+            // end of a paragraph with text the import starts a paragraph of its
+            // own, as an import as VisualTeX or Word equations does
+            // (WordBulkInsertion.EnsureWritableParagraph).
+            var atEndOfText = target.Start >= owner.End - 1
+                && WordFormulaHostSetup.ContainsVisibleBodyText(owner.Text);
             var leadingBreak = joinsExistingPrefix
-                && plan.Blocks[0].Block.Kind != WordBulkBlockKind.Paragraph;
+                && (plan.Blocks[0].Block.Kind != WordBulkBlockKind.Paragraph || atEndOfText);
             // Opening or closing a staging document terminates Word's active
             // Custom UndoRecord. Prepare one immutable native section field tree
             // now; parameterize each copied target tree using native ranges only.
