@@ -369,6 +369,8 @@ Private Function VTTryInferEquationNumbering( _
     Dim ordinalStart As Long
     Dim roots As Collection
     Dim searchFrom As Long
+    Dim pictureField As Field
+    Dim picturePrefix As String
 
     On Error GoTo InferFailed
     ' The first numbered equation decides. Its root is asked for a few at a time: a collection of every root of a long document
@@ -415,6 +417,22 @@ Private Function VTTryInferEquationNumbering( _
             End If
         End If
     Next candidate
+    ' A numbered picture: the prefix written in its VisualTeXPlaceRef. Its
+    ' number bookmark spans the whole field, whose text does not show it.
+    For Each pictureField In documentObject.Fields
+        If pictureField.Type = wdFieldMacroButton Then
+            If VTIsImagePlaceRef(pictureField) Then
+                If Not found Or VTEquationFieldStart(pictureField) < firstStart Then
+                    If VTTryImageNumberPrefixText(pictureField, picturePrefix) Then
+                        firstStart = VTEquationFieldStart(pictureField)
+                        firstPrefix = picturePrefix
+                        found = True
+                    End If
+                End If
+                Exit For
+            End If
+        End If
+    Next pictureField
     If Not found Then Exit Function
     VTTryInferEquationNumbering = VTParseEquationNumberPrefix( _
         firstPrefix, numberingMode, separatorText)

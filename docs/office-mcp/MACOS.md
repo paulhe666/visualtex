@@ -181,3 +181,9 @@ Two numbering faults that were there before were found by the checks and fixed: 
 picture of a chapter or section left the former first one its restart, so the numbers read 1, 1, 2, 3 ...
 (`VTRepairNextImageNumberScope`), and a numbered equation created before the first equation of a later chapter did the same
 (`VTV2PlanInsertion` moves the `\r` switch whenever the new number starts its own chapter).
+
+A document of numbered picture formulas lost its chapter numbering (found 2026-11-18): the numbering style of a document is read from
+its first number when the session has none chosen for it, and for a picture that was the text of its number bookmark, which spans the
+whole `VisualTeXPlaceRef` and never shows the number. The style fell back to the user's default (continuous), so the first time Word
+opened such a document (the image schema migration writes every number again) or Update Equation Numbers ran, (1-1), (2-3) ... became
+(1), (2) .... The style is now read from the prefix written in the first picture's `VisualTeXPlaceRef` (`VTTryImageNumberPrefixText`).

@@ -1008,6 +1008,23 @@ Private Function VTImageNumberPrefixRange( _
     Next characterPosition
 End Function
 
+' The literal chapter prefix of a picture's number as it is written ("2.1-"
+' in "(2.1-3)", nothing in "(3)"): what the document's numbering style is
+' read from.
+Public Function VTTryImageNumberPrefixText( _
+    ByVal placeRef As Field, ByRef prefixText As String) As Boolean
+    Dim numberField As Field
+    Dim prefixRange As Range
+    If Not VTIsImagePlaceRef(placeRef) Then Exit Function
+    Set numberField = VTImageSequenceField(placeRef, False)
+    If numberField Is Nothing Then Exit Function
+    Set prefixRange = VTImageNumberPrefixRange(placeRef, numberField)
+    If prefixRange Is Nothing Then Exit Function
+    prefixRange.TextRetrievalMode.IncludeFieldCodes = False
+    prefixText = prefixRange.Text
+    VTTryImageNumberPrefixText = True
+End Function
+
 Public Function VTCurrentImageNumberRange(ByVal placeRef As Field) As Range
     Dim codeRange As Range
     Dim prefixRange As Range
