@@ -349,4 +349,9 @@ LaTeX text is the single source of truth in VisualTeX. Visual editing, toolbar i
 
 ## License
 
-VisualTeX is released under the [MIT License](LICENSE).
+Copyright (C) 2026 paulhe666
+
+VisualTeX is distributed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only).
+
+Code released up to and including commit 6e4de4e of main (version 1.3.0), and up to and including commit 0d85f18 of this branch, remains available under the MIT License it was published under; all changes after them are available only under AGPL-3.0.
+Parts marked as coming from third parties (such as CodeMirror and the markdown-it emoji data) keep their own licenses.
