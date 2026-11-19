@@ -121,7 +121,7 @@ Public Sub VTMigrateDocumentImageMacroButtons( _
     Dim wasSaved As Boolean
     Dim hasManagedImage As Boolean
     Dim inkCenterYRatio As Double
-    Dim migratedRange As Range
+    Dim hasNumberedImage As Boolean
     Dim requiresNumberReconcile As Boolean
     Dim internalMutationStarted As Boolean
     Dim migrationErrorNumber As Long
@@ -165,13 +165,7 @@ Public Sub VTMigrateDocumentImageMacroButtons( _
                             documentObject, formulaId, inkCenterYRatio
                     End If
                     If numbered Then
-                        Set migratedRange = VTInsertEquationNumber( _
-                            formulaShape, formulaId, "VisualTeX formula", True)
-                        If migratedRange Is Nothing Then
-                            Err.Raise vbObjectError + 7593, "VisualTeX", _
-                                "The numbered image schema migration lost its formula row."
-                        End If
-                        requiresNumberReconcile = True
+                        hasNumberedImage = True
                     Else
                         VTNormalizeUnnumberedDisplayParagraph formulaShape.Range
                         VTNormalizeImageDisplayParagraph formulaShape.Range
@@ -180,6 +174,14 @@ Public Sub VTMigrateDocumentImageMacroButtons( _
             End If
         End If
     Next imageIndex
+    ' The numbers in the current layout, in the document's own numbering
+    ' style. A document VisualTeX wrote has them already (the schema marker
+    ' is only written here, so every such document comes this way when it is
+    ' opened); only numbers in an older layout are written again.
+    If hasNumberedImage Then
+        If VTUpgradeImageNumberFormats(documentObject, True) > 0 Then _
+            requiresNumberReconcile = True
+    End If
     If requiresNumberReconcile Then
         VTReconcileEquationNumbers documentObject
     End If
@@ -1797,30 +1799,29 @@ Public Function VTV2LegacyTagCount(ByVal doc As Document) As Long
     Next variable
 End Function
 
-Public Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
+' The numbered picture formulas in the document's number format: each one's
+' number written again in its paragraph (VTWriteSingleParagraphImageNumber)
+' with the chapter prefix and restart of its place, every prefix from one
+' heading pass. keepCurrent: a picture whose number already is exactly that
+' keeps everything (renumbering, opening a document); writing one costs about
+' 60 ms in Word for Mac and adds to Undo. Returns how many were written.
+Public Function VTUpgradeImageNumberFormats( _
+    ByVal doc As Document, _
+    Optional ByVal keepCurrent As Boolean = False) As Long
     Dim index As Long
     Dim shape As InlineShape
     Dim formulaId As String
     Dim displayMode As String
     Dim numbered As Boolean
+    Dim kept As Boolean
     Dim result As Range
-    Dim math As OMath
-    Dim bookmark As Bookmark
-    Dim ids As New Collection
     Dim imageShapes As New Collection
-    Dim nativeMaths As New Collection
-    Dim item As Variant
     Dim numberingMode As String
     Dim imageCount As Long
-    Dim nativeCount As Long
     Dim imageAnchors() As Long
-    Dim nativeAnchors() As Long
     Dim imagePrefixes() As String
-    Dim nativePrefixes() As String
     Dim imageOrdinals() As Long
-    Dim nativeOrdinals() As Long
 
-    VTPinEquationNumbering doc
     numberingMode = VTEquationNumberingMode(doc)
     For index = 1 To doc.InlineShapes.Count
         Set shape = doc.InlineShapes(index)
@@ -1850,18 +1851,39 @@ Public Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
             Err.Raise vbObjectError + 7605, "VisualTeX", _
                 "A numbered image identity changed during format migration."
         End If
-        If shape.Range.Information(wdWithInTable) Then
+        kept = False
+        If VTRangeIsWithinTable(shape.Range) Then
             Set result = VTInsertEquationNumber( _
                 shape, formulaId, "", True)
         ElseIf numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE Then
             Set result = VTWriteSingleParagraphImageNumber( _
-                shape, formulaId, "", True, False, True)
+                shape, formulaId, "", True, False, True, _
+                keepCurrent:=keepCurrent, kept:=kept)
         Else
             Set result = VTWriteSingleParagraphImageNumber( _
                 shape, formulaId, imagePrefixes(index), True, _
-                imageOrdinals(index) = 1, True)
+                imageOrdinals(index) = 1, True, _
+                keepCurrent:=keepCurrent, kept:=kept)
         End If
+        If Not kept Then _
+            VTUpgradeImageNumberFormats = VTUpgradeImageNumberFormats + 1
     Next index
+    VTWordPerformanceNote "picturesWritten", CStr(VTUpgradeImageNumberFormats)
+End Function
+
+Public Sub VTUpgradeWordNumberFormats( _
+    ByVal doc As Document, _
+    Optional ByVal keepCurrent As Boolean = False)
+    Dim formulaId As String
+    Dim result As Range
+    Dim math As OMath
+    Dim bookmark As Bookmark
+    Dim ids As New Collection
+    Dim item As Variant
+
+    VTPinEquationNumbering doc
+    VTUpgradeImageNumberFormats doc, keepCurrent
+    VTWordPerformanceMark "formats-pictures"
 
     For Each bookmark In doc.Bookmarks
         If VTTryFormulaIdFromNativeBookmark(bookmark.Name, formulaId) Then ids.Add formulaId
@@ -1882,4 +1904,5 @@ Public Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
     ' Equation format v2: every native number in the document's numbering
     ' style, written by the shared builder (Windows PlanFormat).
     VTV2RestyleNumbers doc
+    VTWordPerformanceMark "formats-native"
 End Sub

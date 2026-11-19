@@ -1088,6 +1088,64 @@ Public Sub VTRetireExternalSequenceHelper( _
     If documentObject.Bookmarks.Exists(name) Then documentObject.Bookmarks(name).Delete
 End Sub
 
+' The number of a numbered picture whose paragraph already holds what
+' VTWriteSingleParagraphImageNumber writes - the tab before the picture, no
+' math zone, a canonical number with the chapter prefix and restart of its
+' place, and both number bookmarks on it - or Nothing. Renumbering and opening
+' a document leave such a formula as it is; only its fields are updated.
+Private Function VTCurrentImageParagraphNumber( _
+    ByVal formulaShape As InlineShape, _
+    ByVal formulaId As String, _
+    ByVal paragraphRange As Range, _
+    ByVal leadingRange As Range, _
+    ByVal restartAtOne As Boolean, _
+    ByVal prefixText As String) As Range
+
+    Dim doc As Document
+    Dim placeRef As Field
+    Dim numberField As Field
+    Dim numberSource As Range
+    Dim fullNumber As Range
+    Dim bookmarkName As String
+    Dim marked As Range
+    Dim reason As String
+
+    reason = "math"
+    If paragraphRange.OMaths.Count > 0 Then GoTo Stale
+    reason = "lead"
+    If leadingRange.Text <> vbTab Then GoTo Stale
+    reason = "placeref"
+    Set placeRef = VTImagePlaceRef(formulaShape.Range)
+    If placeRef Is Nothing Then GoTo Stale
+    reason = "canonical"
+    If Not VTImagePlaceRefIsCanonical(placeRef, restartAtOne, prefixText) Then GoTo Stale
+    reason = "source"
+    Set numberSource = VTCurrentImageNumberRange(placeRef)
+    If numberSource Is Nothing Then GoTo Stale
+    Set numberField = VTImageSequenceField(placeRef, False)
+    Set doc = paragraphRange.Document
+    reason = "seqmark"
+    bookmarkName = VTEquationSequenceNumberBookmarkName(formulaId)
+    If Not doc.Bookmarks.Exists(bookmarkName) Then GoTo Stale
+    ' Word ends a bookmark that ends in a field result after the whole field.
+    Set marked = doc.Bookmarks(bookmarkName).Range
+    If marked.Start <> numberSource.Start Then GoTo Stale
+    If marked.End <> numberSource.End And _
+       marked.End <> VTEquationFieldEnd(numberField) Then GoTo Stale
+    reason = "nummark"
+    Set fullNumber = doc.Range(VTEquationFieldStart(placeRef), VTEquationFieldEnd(placeRef))
+    bookmarkName = VTEquationNumberBookmarkName(formulaId)
+    If Not doc.Bookmarks.Exists(bookmarkName) Then GoTo Stale
+    Set marked = doc.Bookmarks(bookmarkName).Range
+    If marked.Start <> fullNumber.Start Or _
+       marked.End <> fullNumber.End Then GoTo Stale
+    Set VTCurrentImageParagraphNumber = fullNumber
+    Exit Function
+
+Stale:
+    VTWordPerformanceNote "stale", reason
+End Function
+
 Public Function VTWriteSingleParagraphImageNumber( _
     ByRef formulaShape As InlineShape, _
     ByVal formulaId As String, _
@@ -1096,7 +1154,9 @@ Public Function VTWriteSingleParagraphImageNumber( _
     Optional ByVal restartAtOneOverride As Boolean = False, _
     Optional ByVal restartResolved As Boolean = False, _
     Optional ByVal placeRefTemplate As Range = Nothing, _
-    Optional ByVal updateNumberFields As Boolean = True) As Range
+    Optional ByVal updateNumberFields As Boolean = True, _
+    Optional ByVal keepCurrent As Boolean = False, _
+    Optional ByRef kept As Boolean = False) As Range
     Dim doc As Document
     Dim paragraphRange As Range
     Dim container As Range
@@ -1147,6 +1207,15 @@ Public Function VTWriteSingleParagraphImageNumber( _
     If VTWordRangeHasMeaningfulText(insertion) Then
         Err.Raise vbObjectError + 7605, "VisualTeX", _
             "A numbered image requires a dedicated paragraph."
+    End If
+    If keepCurrent Then
+        Set fullNumber = VTCurrentImageParagraphNumber(formulaShape, formulaId, _
+            paragraphRange, insertion, restartAtOne, prefixText)
+        If Not fullNumber Is Nothing Then
+            kept = True
+            Set VTWriteSingleParagraphImageNumber = fullNumber
+            Exit Function
+        End If
     End If
     If paragraphRange.OMaths.Count > 0 Then VTClearImageParagraphMathMark formulaShape
     insertion.Text = vbTab

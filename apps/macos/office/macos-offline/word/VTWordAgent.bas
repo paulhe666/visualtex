@@ -745,8 +745,10 @@ End Function
 Public Function VTAgentUpdateEquationNumbers() As String
     Dim updated As Long
 
+    VTWordPerformanceStartLocal "renumber-agent"
     Call VTAgentWritableDocument
     updated = VTUpdateEquationNumbersCore(ActiveDocument, True)
+    VTWordPerformanceFlush VTNewUuidV4(), 0, "", "/word-vba-renumber-performance.txt"
     VTAgentUpdateEquationNumbers = VTAgentDone("Updated " & CStr(updated) & " equation numbers.")
 End Function
 

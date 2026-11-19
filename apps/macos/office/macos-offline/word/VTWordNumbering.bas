@@ -1196,14 +1196,16 @@ Public Function VTUpdateEquationNumbersCore( _
     VTBeginWordInternalMutation
     mutationStarted = True
     Application.ScreenUpdating = False
-    VTUpgradeWordNumberFormats documentObject
+    ' A picture whose number already has the layout and the chapter prefix
+    ' of its place keeps it; the fields give every number its value.
+    VTUpgradeWordNumberFormats documentObject, True
     VTUpdateCurrentWordNumberFields documentObject
-    ' Each numbered picture formula's tab stops from the column it is in now:
-    ' only a document with newspaper columns has stops another column gives
-    ' (page-width stops are right in one column), so renumbering any other
-    ' document does not look at every formula (Update Equation Format does).
-    If VTDocumentHasTextColumns(documentObject) Then _
-        VTV2DisplayTabRepairs documentObject, True
+    VTWordPerformanceMark "renumber-fields"
+    ' Each numbered picture formula's tab stops from the column (or table
+    ' cell) it is in now: the paragraphs are no longer written again, so this
+    ' is what corrects stops another page width or column made wrong.
+    VTV2DisplayTabRepairs documentObject, True
+    VTWordPerformanceMark "renumber-tabs"
     VTUpdateEquationNumbersCore = VTCurrentNumberTargets(documentObject).Count
     VTWordPerformanceMark "numbering-complete"
 
@@ -3572,30 +3574,6 @@ Public Function VTEquationLayoutWidth( _
     VTEquationLayoutWidth = VTEquationColumnWidth(paragraphRange)
 End Function
 
-' Whether a section of the document has more than one newspaper column (a
-' section Word cannot describe counts as one that has: its formulas are then
-' looked at).
-Public Function VTDocumentHasTextColumns(ByVal doc As Document) As Boolean
-    Dim sectionObject As Section
-    Dim columnCount As Long
-
-    If doc Is Nothing Then Exit Function
-    On Error Resume Next
-    For Each sectionObject In doc.Sections
-        columnCount = 1
-        columnCount = sectionObject.PageSetup.TextColumns.Count
-        If Err.Number <> 0 Then
-            Err.Clear
-            columnCount = 2
-        End If
-        If columnCount > 1 Then
-            VTDocumentHasTextColumns = True
-            Exit For
-        End If
-    Next sectionObject
-    On Error GoTo 0
-End Function
-
 ' The content width of the table cell a range is in: the cell's width less its
 ' left and right padding (Windows WordFormulaHost.TryGetCellContentWidth).
 Public Function VTEquationCellContentWidth( _
@@ -4782,24 +4760,25 @@ End Function
 
 Public Sub VTUpdateCurrentWordNumberFields(ByVal doc As Document)
     Dim candidate As Field
-    Dim math As OMath
-    ' Field objects retain their ranges when earlier field results change length.
-    ' Traverse main-story paragraphs in order; do not freeze integer positions.
-    Dim paragraph As Paragraph
-    For Each paragraph In doc.Paragraphs
-        For Each math In paragraph.Range.OMaths
-            For Each candidate In math.Range.Fields
-                If candidate.Type = wdFieldSequence Or candidate.Type = wdFieldStyleRef Then candidate.Update
-            Next candidate
-        Next math
-        For Each candidate In paragraph.Range.Fields
+    Dim fieldType As Long
+    Dim placeRefEnd As Long
+    ' The document's fields in document order, those in equations included:
+    ' one pass without a round trip per paragraph (about 0.25 ms each on Word
+    ' for Mac), each field updated once. Field objects keep their ranges when
+    ' earlier results change length. A picture's number fields are updated
+    ' with their VisualTeXPlaceRef; the list names them right after it.
+    placeRefEnd = -1
+    For Each candidate In doc.Fields
+        fieldType = candidate.Type
+        If fieldType = wdFieldMacroButton Then
             If VTIsImagePlaceRef(candidate) Then
                 VTUpdateImagePlaceRef candidate
-            ElseIf candidate.Type = wdFieldSequence Or candidate.Type = wdFieldStyleRef Then
-                candidate.Update
+                placeRefEnd = candidate.Code.End
             End If
-        Next candidate
-    Next paragraph
+        ElseIf fieldType = wdFieldSequence Or fieldType = wdFieldStyleRef Then
+            If candidate.Code.Start > placeRefEnd Then candidate.Update
+        End If
+    Next candidate
     For Each candidate In doc.Fields
         If candidate.Type = wdFieldRef Then candidate.Update
     Next candidate

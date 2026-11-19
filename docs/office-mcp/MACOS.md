@@ -100,8 +100,8 @@ so the operations go that way instead of through a macro:
 What the user waits for is the time from Apply (or the reference menu's click) to the document being updated. The app logs the first
 as `apply-ui-start` .. `apply-backend-complete` in the Session's `editor-performance.jsonl`; the add-in logs its own stages when
 `~/Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime/word-performance-trace.enabled` exists (`word-vba-performance.txt` in
-the Session folder; the reference menu and insertion write `word-vba-xref-performance.txt`, which also needs
-`word-vba-performance.enabled` beside it). Word for Mac costs, measured with 125 numbered equations (the object model is where the time
+the Session folder; the reference menu and insertion write `word-vba-xref-performance.txt`, the agent's Update Equation Numbers
+`word-vba-renumber-performance.txt`, which also need `word-vba-performance.enabled` beside it). Word for Mac costs, measured with 125 numbered equations (the object model is where the time
 goes, so these decide how the code is written):
 
 | call | cost |
@@ -181,6 +181,24 @@ Two numbering faults that were there before were found by the checks and fixed: 
 picture of a chapter or section left the former first one its restart, so the numbers read 1, 1, 2, 3 ...
 (`VTRepairNextImageNumberScope`), and a numbered equation created before the first equation of a later chapter did the same
 (`VTV2PlanInsertion` moves the `\r` switch whenever the new number starts its own chapter).
+
+Update Equation Numbers and opening a document (2026-11-18). Both wrote every numbered picture formula again (paragraph style, tab
+stops, number fields, bookmarks, the number's font and position): about 60 ms a picture in a newly started Word and 270 ms once Word
+had done a few such passes, each one adding to Undo; the second renumbering of 125 pictures waited 46 s for Word before its macro even
+started. Opening did it for every document without the image schema marker, which only that migration writes (and a document is not
+saved after it), so for every document VisualTeX had written. A picture whose number already has the layout and the chapter prefix and
+restart of its place is now left as it is (`VTCurrentImageParagraphNumber`; the prefixes come from one heading pass,
+`VTUpgradeImageNumberFormats`), the number fields are updated in one pass over the document's fields (the paragraph walk had updated an
+equation's fields twice), and renumbering sets only the tab stops another page width or column made wrong. `update_equation_numbers`,
+twice in a row:
+
+| document | before | now |
+| --- | --- | --- |
+| 125 numbered picture formulas | 11.0 s, 84 s | 2.1 s, 2.3 s (the add-in's part 1.2 s) |
+| 100 picture formulas in 10 chapters | 18.5 s | 1.7 s, 2.2 s |
+| the same with one chapter heading deleted | | 2.7 s, that chapter's 10 pictures written again |
+
+Opening these documents no longer changes their numbers.
 
 A document of numbered picture formulas lost its chapter numbering (found 2026-11-18): the numbering style of a document is read from
 its first number when the session has none chosen for it, and for a picture that was the text of its number bookmark, which spans the
