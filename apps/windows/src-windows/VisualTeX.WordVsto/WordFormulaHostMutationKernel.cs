@@ -562,10 +562,12 @@ internal static class WordFormulaHostMutationKernel
         var normalizeDisplayOmmlBoundary =
             fresh.Kind == WordFormulaHostKind.Omml
             && fresh.Display;
+        // In a table cell too: the display layout there is the same one
+        // centre tab before the object, and the deletion leaves the object
+        // alone whenever the paragraph holds anything else.
         var normalizeDisplayVisualTeXBoundary =
             fresh.Kind == WordFormulaHostKind.VisualTeX
-            && fresh.Display
-            && !fresh.WithinTable;
+            && fresh.Display;
         var rightBoundaryBeforeDelete =
             normalizeDisplayOmmlBoundary
                 ? null
@@ -673,7 +675,6 @@ internal static class WordFormulaHostMutationKernel
                                 fresh)
                             : fresh.Kind == WordFormulaHostKind.VisualTeX
                               && fresh.Display
-                              && !fresh.WithinTable
                                 ? WordVisualTeXHostWriter.DeleteExactToExternalDisplayBoundary(
                                     document,
                                     fresh)
