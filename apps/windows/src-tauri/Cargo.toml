@@ -3,7 +3,7 @@ name = "visualtex"
 version = "1.3.0"
 description = "A visual LaTeX formula editor"
 authors = ["paulhe666"]
-license = "MIT"
+license = "AGPL-3.0-only"
 edition = "2021"
 default-run = "visualtex"
 

@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/WORD-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="Word" />
     <img src="https://img.shields.io/badge/POWERPOINT-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="PowerPoint" />
     <img src="https://img.shields.io/badge/LaTeX-INPUT-0099E5?style=for-the-badge&labelColor=555555" alt="LaTeX" />
-    <img src="https://img.shields.io/badge/LICENSE-MIT-55B800?style=for-the-badge&labelColor=555555" alt="MIT License" />
+    <img src="https://img.shields.io/badge/LICENSE-AGPL--3.0-55B800?style=for-the-badge&labelColor=555555" alt="AGPL-3.0 License" />
   </p>
 </div>
 
@@ -213,7 +213,12 @@ npm run check
 
 ## 开源协议
 
-VisualTeX 使用 [MIT License](LICENSE)。
+Copyright (C) 2026 paulhe666
+
+VisualTeX 使用 [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0-only）。
+
+提交 6e4de4e（1.3.0 版）及之前发布的代码仍可按原来的 MIT License 使用；此后的所有改动只按 AGPL-3.0 提供。
+代码中注明来自第三方的部分（如 CodeMirror、markdown-it 的 emoji 数据）保留其原有许可。
 
 ---
 
@@ -389,6 +394,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the repository architecture
 
 ## License
 
-VisualTeX is distributed under the [MIT License](LICENSE).
+Copyright (C) 2026 paulhe666
+
+VisualTeX is distributed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only).
+
+Code released up to and including commit 6e4de4e (version 1.3.0) remains available under the MIT License it was published under; all changes after it are available only under AGPL-3.0.
+Parts marked as coming from third parties (such as CodeMirror and the markdown-it emoji data) keep their own licenses.
 
 
