@@ -187,14 +187,9 @@ fn shutdown_runtime(app: &AppHandle, started: &AtomicBool, reason: &str) {
             ));
         }
         if office::state::isolated_acceptance_runtime() {
-            // No global Office sidecar or OCR runtime was started by this mode.
+            // No OCR runtime was started by this mode.
             app_lifecycle::append_lifecycle_log("isolated Office acceptance shutdown completed");
             return;
-        }
-        if let Err(error) = state.platform_backend.shutdown() {
-            app_lifecycle::append_lifecycle_log(format!(
-                "Unable to stop VisualTeX Office platform backend: {error}"
-            ));
         }
     }
 

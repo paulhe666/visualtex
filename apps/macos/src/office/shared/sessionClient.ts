@@ -243,14 +243,6 @@ export function confirmNativePowerPointSession(sessionId: string) {
   );
 }
 
-export function commitWindowsOfficeSession(sessionId: string) {
-  return requestJson<OfficeFormulaSession>(
-    `/api/v1/windows/sessions/${encodeURIComponent(sessionId)}/commit`,
-    { method: "POST", body: "{}" },
-    decodeOfficeFormulaSession,
-  );
-}
-
 export function commitNativePowerPointSessionKeepalive(
   sessionId: string,
   update: UpdateOfficeSessionInput,

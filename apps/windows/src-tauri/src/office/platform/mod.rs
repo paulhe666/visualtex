@@ -1,8 +1,6 @@
 use crate::office::state::OfficePaths;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
-use tauri::AppHandle;
 
 pub mod windows;
 
@@ -25,7 +23,6 @@ pub struct OfficePlatformStatus {
     pub platform: String,
     pub mode: OfficeIntegrationMode,
     pub active_backend: String,
-    pub ole_bridge_healthy: bool,
     pub ole_local_server_healthy: bool,
     pub static_install_verified: bool,
     pub word_files_present: bool,
@@ -58,14 +55,8 @@ pub struct OfficePlatformStatus {
 pub trait OfficePlatformBackend: Send + Sync {
     fn status(&self) -> OfficePlatformStatus;
     fn set_mode(&self, mode: OfficeIntegrationMode) -> Result<OfficePlatformStatus, String>;
-    fn request(&self, request: Value) -> Result<Value, String>;
-    fn events_after(&self, cursor: u64) -> Vec<Value>;
-    fn shutdown(&self) -> Result<(), String>;
 }
 
-pub fn create_backend(
-    app: Option<&AppHandle>,
-    paths: &OfficePaths,
-) -> Arc<dyn OfficePlatformBackend> {
-    Arc::new(windows::WindowsOfficePlatformBackend::new(app, paths.clone()))
+pub fn create_backend(paths: &OfficePaths) -> Arc<dyn OfficePlatformBackend> {
+    Arc::new(windows::WindowsOfficePlatformBackend::new(paths.clone()))
 }

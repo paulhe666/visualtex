@@ -278,6 +278,19 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+; Earlier releases shipped visualtex-windows-office-bridge.exe, which stayed in memory once Settings had started it.
+; Nothing uses it any more and this payload no longer replaces it: stop a copy left running (the old app is already
+; stopped here) and remove the file.
+!macro VisualTeXRemoveLegacyOfficeBridge
+  nsExec::ExecToStack `"$SYSDIR\taskkill.exe" /F /IM visualtex-windows-office-bridge.exe`
+  Pop $0
+  Pop $1
+  ${If} $0 == "0"
+    Sleep 500
+  ${EndIf}
+  Delete "$INSTDIR\visualtex-windows-office-bridge.exe"
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; Normalize the two legacy 1.2.3 install locations back to Tauri's canonical
   ; current-user directory. Preserve genuinely custom directories.
@@ -417,6 +430,7 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro VisualTeXRemoveLegacyOfficeBridge
   !insertmacro VisualTeXRegisterMarkdownOpenWith
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
   ${If} $VisualTeXOfficeChoice == "native"

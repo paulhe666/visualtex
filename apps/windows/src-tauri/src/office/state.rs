@@ -360,8 +360,8 @@ impl OfficeCompanionStatus {
     }
 }
 
-/// Isolated converter acceptance does not attach to the user's global Office
-/// bridge, inspect its registry state, launch a sidecar, or mutate integration.
+/// Isolated converter acceptance does not inspect the user's global Office
+/// registry state or mutate integration.
 struct IsolatedConversionBackend;
 impl OfficePlatformBackend for IsolatedConversionBackend {
     fn status(&self) -> crate::office::platform::OfficePlatformStatus {
@@ -369,7 +369,6 @@ impl OfficePlatformBackend for IsolatedConversionBackend {
             platform: std::env::consts::OS.to_string(),
             mode: crate::office::platform::OfficeIntegrationMode::Auto,
             active_backend: "isolated-conversion".to_string(),
-            ole_bridge_healthy: false,
             ole_local_server_healthy: false,
             static_install_verified: false,
             word_files_present: false,
@@ -400,11 +399,6 @@ impl OfficePlatformBackend for IsolatedConversionBackend {
         -> Result<crate::office::platform::OfficePlatformStatus, String> {
         Err("Global Office integration is disabled for isolated conversion acceptance".to_string())
     }
-    fn request(&self, _request: serde_json::Value) -> Result<serde_json::Value, String> {
-        Err("Global Office bridge is disabled for isolated conversion acceptance".to_string())
-    }
-    fn events_after(&self, _cursor: u64) -> Vec<serde_json::Value> { Vec::new() }
-    fn shutdown(&self) -> Result<(), String> { Ok(()) }
 }
 
 #[derive(Clone)]
@@ -458,7 +452,7 @@ impl OfficeCompanionState {
         let platform_backend: Arc<dyn OfficePlatformBackend> = if isolated_acceptance_runtime() {
             Arc::new(IsolatedConversionBackend)
         } else {
-            platform::create_backend(app.as_ref(), &paths)
+            platform::create_backend(&paths)
         };
         Self {
             app,

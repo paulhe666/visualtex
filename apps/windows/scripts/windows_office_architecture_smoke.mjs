@@ -8,7 +8,7 @@ const read = path => readFileSync(resolve(root, path), "utf8");
 const solution = read("src-windows/VisualTeX.WindowsOffice.sln");
 const projects = new Map([...solution.matchAll(/Project\("[^"\r\n]+"\) = "([^"]+)", "([^"]+\.(?:csproj|vcxproj|wixproj))"/g)]
   .map(([, name, path]) => [name, path.replaceAll("\\", "/")]));
-for (const name of ["VisualTeX.WindowsOffice.Contracts", "VisualTeX.WindowsOleBridge",
+for (const name of ["VisualTeX.WindowsOffice.Contracts",
   "VisualTeX.WordVsto", "VisualTeX.PowerPointVsto", "VisualTeX.WindowsOffice.Tests",
   "VisualTeX.WindowsOffice.Installer", "VisualTeX.FormulaOleServer",
   "VisualTeX.FormulaOleServer.Tests", "VisualTeX.NativeOfficeOleAcceptance"]) {
@@ -27,7 +27,7 @@ function property(xml, name) {
   return [...xml.matchAll(new RegExp("<" + name + "(?:\\s[^>]*)?>([^<]+)</" + name + ">", "g"))].map(match => match[1]);
 }
 assert.deepEqual(property(project("VisualTeX.WindowsOffice.Contracts"), "TargetFramework"), ["netstandard2.0"]);
-assert.deepEqual(property(project("VisualTeX.WindowsOleBridge"), "TargetFramework"), ["net8.0-windows"]);
+assert.ok(!projects.has("VisualTeX.WindowsOleBridge"), "The retired Office bridge must stay out of the solution");
 const sharedPath = "src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeCore.projitems";
 const shared = read(sharedPath);
 const sharedIncludes = [...shared.matchAll(/<Compile\s+Include="\$\(MSBuildThisFileDirectory\)([^"]+)"/g)].map(match => match[1]);

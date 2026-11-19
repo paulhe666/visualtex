@@ -108,7 +108,7 @@
     "test:windows-office-diagnostics": "node scripts/windows_office_diagnostics_smoke.mjs",
     "test:windows-office-paths": "node scripts/run_windows_powershell.mjs scripts/test_windows_office_path_resolution.ps1",
     "test:windows-office-status-safety": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/windows_office_status_payload_safety_regression.mts",
-    "test:windows-resource-ownership": "powershell.exe -NoProfile -File scripts/test_clipboard_ownership.ps1 && powershell.exe -NoProfile -File scripts/test_windows_pipe_ownership.ps1",
+    "test:windows-resource-ownership": "powershell.exe -NoProfile -File scripts/test_clipboard_ownership.ps1",
     "verify:embedded-frontend": "node scripts/verify_embedded_frontend_assets.mjs",
     "verify:frontend-dist": "node scripts/verify_frontend_dist.mjs",
     "verify:office-native": "npm run build:office:windows-native && node scripts/windows_office_architecture_smoke.mjs",
@@ -127,7 +127,7 @@
       "test:editor-scenarios": 3600
     },
     "skip": {
-      "test:windows-resource-ownership": "uses the clipboard and named pipes of the signed-in session",
+      "test:windows-resource-ownership": "uses the clipboard of the signed-in session",
       "test:ocr-install": "installs and warms up the OCR runtime",
       "test:ocr-models": "needs the OCR model packs",
       "verify:windows-release": "checks the artifacts of a release build (npm run tauri:build)",

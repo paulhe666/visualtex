@@ -1,7 +1,6 @@
 {
   "bundle": {
     "externalBin": [
-      "binaries/visualtex-windows-office-bridge",
       "binaries/visualtex-mcp"
     ],
     "resources": {

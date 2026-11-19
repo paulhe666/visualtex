@@ -9,7 +9,6 @@ const platform = {
   platform: "windows",
   mode: "vsto",
   activeBackend: "vsto",
-  oleBridgeHealthy: true,
   oleLocalServerHealthy: true,
   staticInstallVerified: true,
   wordFilesPresent: true,

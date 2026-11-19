@@ -21,7 +21,6 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
@@ -44,14 +43,12 @@ mod ocr;
 mod powerpoint;
 mod rendering;
 mod sessions;
-mod windows_bridge;
 
 pub(crate) use editor_window::*;
 use ocr::*;
 use powerpoint::*;
 pub(crate) use rendering::*;
 use sessions::*;
-use windows_bridge::*;
 
 #[cfg(target_os = "windows")]
 const SW_HIDE: i32 = 0;
@@ -73,7 +70,6 @@ unsafe extern "system" {
 const INSTALL_TOKEN_HEADER: &str = "x-visualtex-install-token";
 const OFFICE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://*.office.com https://*.officeapps.live.com";
 static POWERPOINT_COMMIT_LOCK: Mutex<()> = Mutex::new(());
-static WINDOWS_OFFICE_COMMIT_LOCK: Mutex<()> = Mutex::new(());
 static OFFICE_BATCH_CONVERSION_QUEUE: OnceLock<Mutex<VecDeque<Vec<String>>>> =
     OnceLock::new();
 #[cfg(target_os = "windows")]
@@ -275,6 +271,12 @@ async fn api_status(
     Json(context.companion.snapshot())
 }
 
+async fn get_office_platform_status(
+    State(context): State<ServerContext>,
+) -> Json<crate::office::platform::OfficePlatformStatus> {
+    Json(context.companion.platform_backend.status())
+}
+
 #[cfg(target_os = "windows")]
 const OFFICE_EDITOR_WINDOW_LABEL: &str = "office-session-editor";
 #[cfg(target_os = "windows")]
@@ -451,12 +453,6 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             post(confirm_powerpoint_session),
         )
         .route("/powerpoint/events", get(get_powerpoint_events))
-        .route("/windows/bridge", post(windows_bridge_request))
-        .route("/windows/events", get(get_windows_events))
-        .route(
-            "/windows/sessions/{session_id}/commit",
-            post(commit_windows_session),
-        )
         .route("/ocr/status", get(get_ocr_status))
         .route(
             "/ocr/providers",

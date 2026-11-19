@@ -130,6 +130,5 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCompObj.cs" Link="MathTypeCompObj.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordCoordinateShifts.cs" Link="WordCoordinateShifts.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
-    <ProjectReference Include="..\VisualTeX.WindowsOleBridge\VisualTeX.WindowsOleBridge.csproj" />
   </ItemGroup>
 </Project>

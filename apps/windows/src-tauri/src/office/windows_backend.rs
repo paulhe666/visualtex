@@ -2,14 +2,11 @@
 
 use crate::office::platform::{OfficeIntegrationMode, OfficePlatformStatus};
 use crate::office::state::OfficePaths;
-use crate::office::windows_pipe::{locate_sidecar, WindowsPipeClient};
-use serde_json::Value;
 use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::AppHandle;
 
 const WORD_VSTO_KEY: &str =
     r"HKLM\Software\Microsoft\Office\Word\Addins\VisualTeX.WordVsto";
@@ -60,25 +57,14 @@ fn hidden_command(program: &str) -> Command {
 pub struct WindowsOfficeBackend {
     paths: OfficePaths,
     mode: Mutex<OfficeIntegrationMode>,
-    pipe: Option<WindowsPipeClient>,
-    pipe_error: Option<String>,
 }
 
 impl WindowsOfficeBackend {
-    pub fn new(app: Option<&AppHandle>, paths: OfficePaths) -> Self {
+    pub fn new(paths: OfficePaths) -> Self {
         let mode = read_mode(&paths).unwrap_or_default();
-        let sidecar = locate_sidecar(app);
-        let temp_root = windows_temp_root();
-        let log_root = paths.root.join("logs");
-        let (pipe, pipe_error) = match WindowsPipeClient::new(sidecar, temp_root, log_root) {
-            Ok(client) => (Some(client), None),
-            Err(error) => (None, Some(error)),
-        };
         Self {
             paths,
             mode: Mutex::new(mode),
-            pipe,
-            pipe_error,
         }
     }
 
@@ -152,7 +138,6 @@ impl WindowsOfficeBackend {
             && companion_https_healthy
             && companion_certificate_matches
             && companion_protocol_matches;
-        let ole_bridge_healthy = self.pipe.as_ref().is_some_and(WindowsPipeClient::is_healthy);
         // Only meaningful once the private renderer (which carries MathType's
         // fonts) is installed; its absence is reported by the install checks.
         let mathtype_fonts_problem = registry_string_value(NATIVE_RENDER_KEY, "InstallPath")
@@ -189,14 +174,13 @@ impl WindowsOfficeBackend {
                 None
             }
         } else {
-            self.pipe_error.clone()
+            None
         };
 
         OfficePlatformStatus {
             platform: "windows".to_string(),
             mode,
             active_backend: active_backend.to_string(),
-            ole_bridge_healthy,
             ole_local_server_healthy,
             static_install_verified,
             word_files_present,
@@ -233,28 +217,6 @@ impl WindowsOfficeBackend {
             .lock()
             .map_err(|_| "Windows Office mode lock is poisoned".to_string())? = mode;
         Ok(self.status())
-    }
-
-    pub fn request(&self, request: Value) -> Result<Value, String> {
-        self.pipe
-            .as_ref()
-            .ok_or_else(|| {
-                self.pipe_error
-                    .clone()
-                    .unwrap_or_else(|| "Windows Office bridge is unavailable".to_string())
-            })?
-            .request_value(request)
-    }
-
-    pub fn events_after(&self, cursor: u64) -> Vec<Value> {
-        self.pipe
-            .as_ref()
-            .map(|pipe| pipe.events_after(cursor))
-            .unwrap_or_default()
-    }
-
-    pub fn shutdown(&self) -> Result<(), String> {
-        self.pipe.as_ref().map(WindowsPipeClient::shutdown).unwrap_or(Ok(()))
     }
 }
 
@@ -749,15 +711,6 @@ fn append_registry_view_flag(command: &mut Command, view: RegistryView) {
     if let Some(flag) = view.reg_flag() {
         command.arg(flag);
     }
-}
-
-fn windows_temp_root() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("VisualTeX")
-        .join("office")
-        .join("temp")
 }
 
 fn windows_certificate_trusted(paths: &OfficePaths) -> bool {

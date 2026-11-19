@@ -4,7 +4,6 @@ export interface OfficePlatformStatus {
   platform: string;
   mode: WindowsOfficeMode;
   activeBackend: string;
-  oleBridgeHealthy: boolean;
   oleLocalServerHealthy: boolean;
   staticInstallVerified: boolean;
   wordFilesPresent: boolean;
@@ -91,7 +90,6 @@ export function decodeOfficePlatformStatus(value: unknown): OfficePlatformStatus
   }
   stringValue(status.activeBackend, "officePlatformStatus.activeBackend");
   const booleanKeys = [
-    "oleBridgeHealthy",
     "oleLocalServerHealthy",
     "staticInstallVerified",
     "wordFilesPresent",
