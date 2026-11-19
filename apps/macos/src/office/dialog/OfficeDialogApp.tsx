@@ -872,19 +872,19 @@ export function OfficeDialogApp() {
     const sessionNumbered =
       session.displayMode === "block" && Boolean(session.numbered);
     // A formula edited in WPS keeps the number it has (office::wps); a new one
-    // follows the same "Add equation number" preference as in Word.
-    const loadedNumbered =
+    // follows the same "Add equation number" preference as in Word. An AI
+    // agent's formula is numbered as the agent asked and leaves the
+    // preference as the user set it.
+    const followsNumberedPreference =
       session.host === "word" &&
       session.mode === "create" &&
-      session.displayMode === "block"
-        ? readOfficeWordCreateNumberedPreference(sessionNumbered)
-        : sessionNumbered;
+      session.displayMode === "block" &&
+      session.operation !== "agent";
+    const loadedNumbered = followsNumberedPreference
+      ? readOfficeWordCreateNumberedPreference(sessionNumbered)
+      : sessionNumbered;
     setNumbered(loadedNumbered);
-    if (
-      session.host === "word" &&
-      session.mode === "create" &&
-      session.displayMode === "block"
-    ) {
+    if (followsNumberedPreference) {
       writeOfficeWordCreateNumberedPreference(loadedNumbered);
     }
     const requestedFontSizePt = normalizeOfficeFontSizePt(

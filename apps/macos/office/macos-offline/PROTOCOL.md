@@ -195,7 +195,8 @@ changes retain image edit metadata; native OMML is read from the live Word tree.
 A failed transaction restores the original number, paragraph and content.
 
 Run `npm run test:office-numbering-edit` for delayed-draft/rapid-toggle/apply/close
-regressions. With the matching compiled Word add-in installed, run
+regressions and for an agent's new display formula (numbered as the agent asked,
+whatever the "Add equation number" preference says, which it leaves unchanged). With the matching compiled Word add-in installed, run
 `npm run test:word-numbering-edit` for real Word SEQ, chapter restart, rollback,
 save/reopen and dense-document timing acceptance.
 

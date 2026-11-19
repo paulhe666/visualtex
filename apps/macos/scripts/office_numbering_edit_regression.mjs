@@ -12,16 +12,21 @@ await withAppBrowser(async ({ baseUrl, send, evaluate }) => {
     const q = new URLSearchParams(location.search);
     const callbacks = new Map(), listeners = new Map(); let serial = 0;
     const probe = window.__numberingProbe = { commands: [], writes: [], commits: [], closes: 0, cancels: 0 };
+    // agent=1: an AI agent's new display formula (committed by the hidden editor itself), numbered as initial says, while
+    // the user's "Add equation number" preference says the opposite
+    const agent = q.get("agent") === "1";
     let session = {
-      id: ${JSON.stringify(sessionId)}, mode: "edit", host: "word", nativeEquation: q.get("native") === "1",
+      id: ${JSON.stringify(sessionId)}, mode: agent ? "create" : "edit", host: "word", nativeEquation: q.get("native") === "1",
       formulaId: "22222222-3333-4444-8555-666666666666", sourceDocumentId: "probe", sourceObjectId: "probe",
       title: "Numbering edit regression", lines: [{ id: "line-1", latex: "x=\\\\frac{1}{2}" }], activeLineId: "line-1",
       codeFormat: "raw", displayMode: "block", inlineImageMathStyle: "text", numbered: q.get("initial") === "1",
       fontSizePt: 14, exportWidth: 0, exportHeight: 0, exportResult: null, originalMetadata: null,
-      dirty: false, status: "editing", autoCommitOnClose: q.get("close") !== "cancel", explicitCancel: false,
-      error: null, createdAt: Date.now(), updatedAt: Date.now(), expiresAt: Date.now() + 600000
+      dirty: agent, status: agent ? "created" : "editing", autoCommitOnClose: q.get("close") !== "cancel", explicitCancel: false,
+      error: null, createdAt: Date.now(), updatedAt: Date.now(), expiresAt: Date.now() + 600000,
+      ...(agent ? { operation: "agent" } : {})
     };
     localStorage.setItem("visualtex-office-word-create-numbered", "false");
+    localStorage.setItem("visualtex.office.word.create.numbered", agent && q.get("initial") !== "1" ? "true" : "false");
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: (event, id) => { listeners.delete(id); } };
     globalThis.isTauri = true; // set by the Tauri runtime (isTauri())
     window.__TAURI_INTERNALS__ = {
@@ -50,6 +55,18 @@ await withAppBrowser(async ({ baseUrl, send, evaluate }) => {
     };
     probe.close = () => { for (const [id, listener] of listeners) { if (listener.event === "tauri://close-requested") callbacks.get(listener.handler)({ id, event: listener.event, payload: null }); } };
   })();` });
+  for (const native of [false, true]) for (const initial of [false, true]) {
+    await send("Page.navigate", { url: `${baseUrl}/office-native-dialog.html?transport=tauri&officeHost=word&native=${+native}&initial=${+initial}&agent=1` });
+    await waitFor(() => evaluate("Boolean(window.__numberingProbe && window.__numberingProbe.commits.length)")).catch(async error => { console.error(await evaluate("({text: document.body.innerText, probe: window.__numberingProbe})")); throw error; });
+    await sleep(600);
+    const result = await evaluate("JSON.parse(JSON.stringify(window.__numberingProbe))");
+    assert.equal(result.commits.length, 1, "The agent's formula is committed once");
+    const patch = result.commits[0].patch;
+    assert.equal(patch.numbered, initial, "The agent's formula is numbered as the agent asked, whatever the preference says");
+    assert.equal(await evaluate("localStorage.getItem('visualtex.office.word.create.numbered')"), initial ? "false" : "true",
+      "The agent's formula leaves the user's numbering preference as it was");
+    console.log(`PASS ${native ? "OMML" : "image"}: agent asks for ${initial ? "a numbered" : "an unnumbered"} formula, preference says the opposite`);
+  }
   for (const native of [false, true]) for (const [initial, close] of [[false, "apply"], [true, "apply"], [true, "settled"], [false, "commit"], [true, "cancel"]]) {
     await send("Page.navigate", { url: `${baseUrl}/office-native-dialog.html?transport=tauri&officeHost=word&native=${+native}&initial=${+initial}&close=${close}` });
     await waitFor(() => evaluate("Boolean(document.querySelector('[data-office-numbered]') && document.querySelector('math-field'))")).catch(async error => { console.error(await evaluate("({text: document.body.innerText, probe: window.__numberingProbe})")); throw error; });
