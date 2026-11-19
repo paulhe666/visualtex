@@ -4622,7 +4622,10 @@ internal static class WordNumberedTableDisplay
             insertion = document.Range(position, position);
             Release(probe);
             probe = document.Range(position, position + 1);
-            if (probe.Text != "\r")
+            // The last paragraph of a section ends with the section break (\f) instead
+            // of a paragraph mark; the new mark goes before it, so the continuation
+            // paragraph stays in the formula's section and carries the break.
+            if (probe.Text is not ("\r" or "\f"))
                 throw new InvalidDataException("The display continuation boundary is not a paragraph mark.");
             insertion.InsertAfter("\r");
             Release(probe);

@@ -3613,6 +3613,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             }
             SetStatus(failureMessage);
+            // The editor window has closed by now and the status bar is easy to
+            // miss (WPS shows none): a formula that was not written is said so.
+            var dispatcher = _dispatcher;
+            if (automation is null && dispatcher is not null)
+                await ShowWordOperationErrorAsync(
+                        dispatcher,
+                        mode == "edit" ? T("更新公式", "formula update") : T("插入公式", "formula insertion"),
+                        error)
+                    .ConfigureAwait(false);
         }
         finally
         {
@@ -6664,6 +6673,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             "更新公式格式" => "equation-format update",
             "编号格式" => "equation-number format update",
             "插入公式引用" => "equation-reference insertion",
+            "插入公式" => "formula insertion",
+            "更新公式" => "formula update",
             _ when !OfficePluginLanguage.ContainsCjk(operation) => operation,
             _ => "operation",
         };

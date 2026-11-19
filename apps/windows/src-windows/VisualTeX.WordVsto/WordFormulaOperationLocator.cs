@@ -253,7 +253,8 @@ internal static class WordFormulaOperationLocator
             // Word's final cell-paragraph atom occupies ONE native position,
             // while Range.Text exposes it as CR+CELL. Never subtract two based
             // on that serialized string length or cross into the preceding cell.
-            if (mark.Text != "\r" && mark.Text != "\r\a")
+            // The last paragraph of a section ends with the section break (\f).
+            if (mark.Text is not ("\r" or "\r\a" or "\f"))
                 throw new InvalidDataException("The native display create point has no owned paragraph mark.");
 
             var blank = contentEnd == owner.Start;
