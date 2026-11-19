@@ -721,6 +721,9 @@ internal sealed partial class WordFormulaService
                     NativeOmmlScreenUpdatingScope.Suspend(
                         _application);
 
+            if (plan.NumberDisplayFormulas)
+                MarkLatexRedrawTargetsInTables(document, plan);
+
             // Streamed formulas get the same per-target session values when the
             // writer takes them.
             if (streamed is null)
@@ -794,17 +797,53 @@ internal sealed partial class WordFormulaService
     private static string WriteRedrawStage =>
         OfficePluginLanguage.Text("正在原位写入重绘公式…", "Writing redrawn formulas in place…");
 
+    // Whether a redraw target gets a number: a display formula when numbering
+    // was asked for, unless it is in a table cell - Number Display Equations
+    // skips those (DisplayNumberingCore), and the writers keep no number there.
+    private static bool NumbersLatexRedrawTarget(
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target) =>
+        plan.NumberDisplayFormulas
+        && string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+        && !target.WithinTable;
+
+    // The display targets in table cells, read before the first write (the
+    // coordinates are still the captured ones).
+    private static void MarkLatexRedrawTargetsInTables(
+        Document document,
+        WordLatexRedrawPlan plan)
+    {
+        Tables? tables = null;
+        try
+        {
+            tables = document.Tables;
+            if (tables.Count == 0)
+                return;
+        }
+        finally { Release(tables); }
+        foreach (var target in plan.Targets)
+        {
+            if (!string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                || target.AbsoluteStart < 0
+                || target.AbsoluteEnd <= target.AbsoluteStart)
+                continue;
+            Range? source = null;
+            try
+            {
+                source = document.Range(target.AbsoluteStart, target.AbsoluteEnd);
+                target.WithinTable = WordFormulaHostLookup.IsWhollyInsideTable(source);
+            }
+            finally { Release(source); }
+        }
+    }
+
     private static void PrepareLatexRedrawTargetSession(
         WordLatexRedrawPlan plan,
         WordLatexRedrawTarget target,
         PreparedWordBulkFormula formula)
     {
         formula.Session.Numbered =
-            plan.NumberDisplayFormulas
-            && string.Equals(
-                target.DisplayMode,
-                "block",
-                StringComparison.Ordinal);
+            NumbersLatexRedrawTarget(plan, target);
         formula.Session.DisplayMode =
             target.DisplayMode;
         formula.Session.FontSizePt =
@@ -844,7 +883,7 @@ internal sealed partial class WordFormulaService
         var numberedVisualTeXTargets = plan.NumberDisplayFormulas
             ? plan.Targets
                 .Where(target =>
-                    string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                    NumbersLatexRedrawTarget(plan, target)
                     && TargetKind(target) == WordFormulaHostKind.VisualTeX)
                 .ToArray()
             : Array.Empty<WordLatexRedrawTarget>();
@@ -857,7 +896,7 @@ internal sealed partial class WordFormulaService
         var numberedOmmlTargets = plan.NumberDisplayFormulas
             ? plan.Targets
                 .Where(target =>
-                    string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                    NumbersLatexRedrawTarget(plan, target)
                     && TargetKind(target) == WordFormulaHostKind.Omml)
                 .ToArray()
             : Array.Empty<WordLatexRedrawTarget>();
@@ -889,7 +928,7 @@ internal sealed partial class WordFormulaService
         {
         if (plan.NumberDisplayFormulas
             && plan.Targets.Any(target =>
-                string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                NumbersLatexRedrawTarget(plan, target)
                 && TargetKind(target) == WordFormulaHostKind.MathType)
             && EquationNumberFormat.Resolve(WordEquationNumberFormatAuthority.Resolve(document)).UsesHeading)
             mathTypeSection = new MathTypeSectionStaging(document, CreateMathTypeSectionFlatOpc(0, 0));
@@ -1031,6 +1070,10 @@ internal sealed partial class WordFormulaService
             result.FormulaCount++;
             ReportOperationProgress(WriteRedrawStage, result.FormulaCount, plan.Targets.Count);
             successfulTargetIds.Add(target.Id);
+            if (plan.NumberDisplayFormulas
+                && target.WithinTable
+                && string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
+                result.UnnumberedInTables++;
             if (nativeNumberRefresh is not null
                 && targetResult.InsertedHost is { Kind: WordFormulaHostKind.Omml } insertedNative
                 && insertedNative.Numbering.Numbered)
@@ -1094,10 +1137,7 @@ internal sealed partial class WordFormulaService
                             plan.Targets
                                 .Where(target =>
                                     successfulTargetIds.Contains(target.Id)
-                                    && string.Equals(
-                                        target.DisplayMode,
-                                        "block",
-                                        StringComparison.OrdinalIgnoreCase))
+                                    && NumbersLatexRedrawTarget(plan, target))
                                 .Select(TargetKind)
                                 .Distinct()
                                 .ToArray();
@@ -1127,10 +1167,7 @@ internal sealed partial class WordFormulaService
                             // of both families in the document.
                             var numberedTargets = plan.Targets.Count(target =>
                                 successfulTargetIds.Contains(target.Id)
-                                && string.Equals(
-                                    target.DisplayMode,
-                                    "block",
-                                    StringComparison.OrdinalIgnoreCase)
+                                && NumbersLatexRedrawTarget(plan, target)
                                 && TargetKind(target) == canonicalKinds[0]);
                             if (canonicalKinds[0] == WordFormulaHostKind.Omml
                                 && nativeNumberRefresh is not null)

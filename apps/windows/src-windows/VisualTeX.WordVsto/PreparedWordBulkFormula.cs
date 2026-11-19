@@ -87,6 +87,9 @@ internal sealed class WordLatexRedrawTarget
     internal string DisplayMode { get; set; } = "inline";
     internal bool PreserveDisplayParagraphBoundary { get; set; }
     internal bool DedicatedDisplayParagraph { get; set; }
+    // A display formula in a table cell: never numbered (as in Number Display
+    // Equations), so the redraw neither plans nor counts a number for it.
+    internal bool WithinTable { get; set; }
     internal double FontSizePt { get; set; }
     // Set only when the LaTeX source was produced from an inline native object and
     // carries a VisualTeX provenance bookmark for its established Word baseline.
@@ -233,6 +236,9 @@ internal sealed class WordLatexRedrawResult
     internal List<(string TargetId, string Latex, string Error)> Failures { get; } =
         new();
     internal List<string> Warnings { get; } = new();
+    // Display formulas redrawn in table cells while numbering was asked for:
+    // they stay unnumbered (WordLatexRedrawTarget.WithinTable).
+    internal int UnnumberedInTables { get; set; }
     internal WordCoordinateShifts CoordinateShifts { get; } = new();
 }
 

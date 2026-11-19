@@ -4639,7 +4639,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var averageRenderMilliseconds = totalRenderMilliseconds / uniqueRenderCount;
             WriteRedrawAcceptanceLog(
                 $"redraw-complete formulas={result.FormulaCount} unique={rendered.Count} "
-                + $"skipped={skippedTargets.Count} "
+                + $"skipped={skippedTargets.Count} unnumberedInTables={result.UnnumberedInTables} "
                 + $"renderAverageMs={averageRenderMilliseconds} renderMaxMs={maxRenderMilliseconds} "
                 + $"insertTotalMs={result.TotalInsertMilliseconds} insertMaxMs={result.MaxInsertMilliseconds} "
                 + $"sourceMutationTotalMs={result.TotalSourceMutationMilliseconds} "
@@ -4658,9 +4658,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 ? string.Empty
                 : T($"；另有 {result.Warnings.Count} 个收尾警告",
                     $"; {result.Warnings.Count} finalization warning(s)");
+            var tableSuffix = result.UnnumberedInTables == 0
+                ? string.Empty
+                : T($"；表格中的 {result.UnnumberedInTables} 个行间公式不编号",
+                    $"; {result.UnnumberedInTables} display formula(s) in tables are not numbered");
             SetStatus(T(
-                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}{warningSuffix}；{performanceSuffix}。",
-                $"LaTeX redraw finished: {result.FormulaCount} formula(s) converted to {modeLabel}{skippedSuffix}{warningSuffix}; {performanceSuffix}."));
+                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{tableSuffix}{skippedSuffix}{warningSuffix}；{performanceSuffix}。",
+                $"LaTeX redraw finished: {result.FormulaCount} formula(s) converted to {modeLabel}{tableSuffix}{skippedSuffix}{warningSuffix}; {performanceSuffix}."));
             progress.Dispose();
             await ShowLatexRedrawFailuresAsync(
                     dispatcher,
