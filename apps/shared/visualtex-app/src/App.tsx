@@ -2,13 +2,14 @@ import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useRef, useState }
 import { useDocumentModeStore } from "./stores/documentModeStore";
 import { DocumentHistoryButtons } from "./document/DocumentControls";
 import { useDocumentLibraryStore } from "./document/documentLibraryApi";
+import { watchSystemOpenRequests } from "./document/documentOpenRequests";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
-  DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_PDF_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
+  DOCUMENT_SAVE_AS_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
 } from "./document/documentEvents";
@@ -278,6 +279,10 @@ function App() {
     if (source !== "source-apply") setSourceDocumentRevision(revision => revision + 1);
     return replaceDocumentTransaction(after, source);
   };
+
+  // Documents the system hands over (a .md double-clicked, opened with VisualTeX or dropped on the window) open in
+  // document mode.
+  useEffect(() => watchSystemOpenRequests(), []);
 
   useEffect(() => {
     if (initialEditorFocusDoneRef.current) return;
@@ -1138,7 +1143,7 @@ function App() {
         if (primary && ["z", "y", "n", "o", "s"].includes(documentKey)) {
           if (documentKey === "s") {
             event.preventDefault();
-            window.dispatchEvent(new Event(DOCUMENT_SAVE_REQUEST_EVENT));
+            window.dispatchEvent(new Event(event.shiftKey ? DOCUMENT_SAVE_AS_EVENT : DOCUMENT_SAVE_REQUEST_EVENT));
           } else if (documentKey === "o") {
             event.preventDefault();
             window.dispatchEvent(new Event(DOCUMENT_OPEN_REQUEST_EVENT));
@@ -1610,10 +1615,10 @@ function App() {
                 <span>{isEn ? "Save document" : "保存文档"}</span>
                 <kbd>{onPlatform("Ctrl+S", "⌘S")}</kbd>
               </button>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_FILE_EVENT)))}>
-                <FileDown size={16} />
-                <span>{isEn ? "Export document" : "导出文档"}</span>
-                <kbd>.vtxdoc</kbd>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_SAVE_AS_EVENT)))}>
+                <Save size={16} />
+                <span>{isEn ? "Save as…" : "另存为…"}</span>
+                <kbd>{onPlatform("Ctrl+Shift+S", "⇧⌘S")}</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(() => window.dispatchEvent(new Event(DOCUMENT_EXPORT_MARKDOWN_EVENT)))}>
                 <FileDown size={16} />

@@ -41,16 +41,17 @@ function sources(text: string, kind: "markdown" | "latex"): string[] {
 
 const isAbsolute = (path: string) => /^(?:[a-zA-Z]:[\\/]|\/|\\\\)/.test(path);
 
-/** path -> image key for the pictures `text` names that could be found. */
+/** path -> image key for the pictures `text` names (and the paths in `more`) that could be found. */
 export async function loadImportImages(
   text: string,
   kind: "markdown" | "latex",
   where: { archive: Map<string, Uint8Array> | null; base: string; folder: string | null; folders: string[] },
+  more: string[] = [],
 ): Promise<Map<string, string>> {
   const keys = new Map<string, string>();
   const extensions = kind === "latex" ? ["", ".png", ".jpg", ".jpeg", ".PNG", ".JPG"] : [""];
   await Promise.all(
-    sources(text, kind).map(async (src) => {
+    [...new Set([...sources(text, kind), ...more])].map(async (src) => {
       const path = imagePathKey(src);
       let bytes: Uint8Array | null = null;
       let name = path;

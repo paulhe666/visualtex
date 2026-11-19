@@ -8,8 +8,9 @@ export const DOCUMENT_FILE_FORMAT = "visualtex-document";
 /** 2: the file carries images (`images`); 3: it has image boards; 4: figures and tables with captions (figures.ts);
  *  5: the text is its Markdown source (the source editor, sourceMarkdown.ts: "**" and a heading's "#" are text);
  *  6: the document is lines of Markdown (lists, quotes, code fences and rules are lines of text, as in Obsidian).
- *  Read, an older file becomes lines (toSourceDocument). */
-export const DOCUMENT_FILE_VERSION = 6;
+ *  Read, an older file becomes lines (toSourceDocument).
+ *  7: sections are numbered only when the document says so; before, a document that did not say had "1", "1.1". */
+export const DOCUMENT_FILE_VERSION = 7;
 
 export interface DocumentFile {
   format: typeof DOCUMENT_FILE_FORMAT;
@@ -49,5 +50,7 @@ export function parseDocument(schema: Schema, text: string): { doc: Node; meta: 
   // before 6 a document was paragraphs and blocks: as source lines (a blank line between paragraphs; lists, quotes,
   // code blocks, rules their lines of text)
   if (file.version < 6) doc = toSourceDocument(separateParagraphs(doc));
+  // written when sections were numbered unless the document said otherwise: it keeps its numbers
+  if (file.version < 7 && doc.attrs.headingNumbering == null) doc = doc.type.create({ ...doc.attrs, headingNumbering: "1" }, doc.content, doc.marks);
   return { doc, meta: file.meta ?? {} };
 }

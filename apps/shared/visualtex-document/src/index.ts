@@ -26,6 +26,30 @@ export { createDocumentState, footnoteEditorPlugins, type FootnoteEditorOptions,
 export { hasMathDelimiters, parseMathText, splitInlineMath, type MathTextBlock } from "./mathText.ts";
 export { documentToLatex, escapeLatexText, sliceToLatex, type LatexExportOptions } from "./latex.ts";
 export { parseDocument, serializeDocument, DOCUMENT_FILE_FORMAT } from "./fileFormat.ts";
+export {
+  DOCUMENT_MEMORY_FORMAT,
+  DOCUMENT_MEMORY_VERSION,
+  decodeFileText,
+  encodeFileText,
+  isEmptyMemory,
+  newPicturePaths,
+  parseDocumentMemory,
+  picturePath,
+  picturePaths,
+  readDocumentFile,
+  sameDocument,
+  serializeDocumentMemory,
+  textHash,
+  withImageFiles,
+  writeDocumentFile,
+  type DocumentFileOptions,
+  type DocumentFileSource,
+  type DocumentMemory,
+  type FileEncoding,
+  type MemoryBlock,
+  type ReadDocumentFile,
+  type WrittenDocumentFile,
+} from "./markdownFile.ts";
 export * from "./blocks.ts";
 export {
   commandMenuEntries,

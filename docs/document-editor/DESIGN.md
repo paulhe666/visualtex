@@ -42,7 +42,8 @@ Blocks (every block has a stable `id`, assigned by the ids plugin):
 Inline: text with marks `strong`, `em`, `underline`, `strike`, `code`; `math_inline` (atom; `latex`);
 `hard_break`; `eqref` (atom; `target` = a display formula id).
 
-File: `.vtxdoc` = JSON `{ format: "visualtex-document", version: 1, doc: <ProseMirror JSON>, meta }`.
+File: a Markdown file and the document's memory (§13). `.vtxdoc` — JSON `{ format: "visualtex-document", version,
+doc: <ProseMirror JSON>, meta, images }` — was the file until 2026-11-18 and stays readable (`fileFormat.ts`).
 
 ## 3. Formula islands (`formulas.ts` + app `DocumentEditor.tsx`, `DocumentFormulaField.tsx`)
 
@@ -106,8 +107,8 @@ display math). Text is escaped (`# $ % & ~ _ ^ \ { }`).
 | Toolbar `(1)` or `/ref` | reference to a numbered display formula: shows "(n)", follows renumbering, Ctrl+click jumps, exports `\eqref{eq:<id>}` |
 | Formula toolbar and tiles | insert into the open formula (or a new inline formula at the caret), through MathEditor's own `prepare/attemptLatexCommandInsertion` |
 
-Main window: the header switch Formulas | Document; the document autosaves (localStorage
-`visualtex.document.autosave.v1`), saves/opens `.vtxdoc`, exports `.tex`, copies LaTeX; the source panel shows the
+Main window: the header switch Formulas | Document; the document autosaves into its file (§13), exports Markdown
+and PDF; the source panel shows the
 document's LaTeX read-only; Ctrl+S / Ctrl+O go to the document; the header zoom scales the text (17px x zoom).
 
 Not yet: images, drawings, Word export of documents, LaTeX import, `\eqref` from pasted text, numbered tables/figures
@@ -511,3 +512,103 @@ the image as a `data:` URL in the HTML, so a paste into another document finds i
   that paragraph on that side; elsewhere it stops wrapping. Ctrl copies, Esc cancels, one undo step.
 - Wrap: the bar's wrap buttons. The image goes to the start of its paragraph (an image line wraps the next body
   paragraph); "centre / left / right" in the bar makes it an image line again before that paragraph.
+
+## 13. Documents are Markdown files (2026-11-18)
+
+Owner's decisions: documents are ordinary `.md` files in a visible folder (default `Documents/VisualTeX`, changeable);
+a Markdown file from elsewhere is edited in place; nothing only VisualTeX reads is written into the file — what Markdown
+has no syntax for is kept beside it ("the document's memory") and restored when VisualTeX opens the file again; other
+editors see plain Markdown. VisualTeX never makes itself the default program for `.md`.
+
+### 13.1 The file (`markdownFile.ts`, `markdown.ts` with `file: true`)
+
+- The file is the document's lines, one per line. An object (display formula, table with its caption, row of
+  pictures, and any block that is not a line) stands with one blank line on each side; that blank line is the file's
+  spacing, not a line of the document. Read: a blank line beside an object, between it and another block, is taken
+  as that spacing (never the file's first or last line).
+- Inline formula `$…$`, display formula `$$` / LaTeX / `$$`, GFM table with Pandoc's `Table: …` caption line, picture
+  `![alt](path)` (several on one line: an image line or board), footnote `[^label]` with the definitions as the
+  file's last lines, title `# …`, author / date / abstract / caption lines as text, `[toc]`, a citation its
+  number, a reference list `[n] entry` lines. A page command made in VisualTeX has no line in the file (decision 2
+  lists page commands among what the memory keeps): the memory keeps it with the block after it (before it at the
+  end; a document of nothing else has an empty line to keep it by). A file's own `\newpage`, `\pagenumbering{…}`…
+  lines are read as page commands and written back as the file has them.
+- A numbered formula is written with `\tag{n}` (`\tag*{[n]}` with square brackets). A file's own `\tag` stays the
+  formula's own (no renumbering of what another program wrote); `\label{name}` names the formula (its id) and
+  `$\eqref{name}$` refers to it; formulas made here are referred to by number, "(n)". The names a file gave are
+  kept with its source (`DocumentFileSource.labels`), so a name shaped like the editor's ids (ten lowercase letters
+  and digits, "definition") is written back as a name too, also by Save as.
+- Formulas the dollars cannot say plainly: a word joiner (U+2060) between a formula and a digit or dollar next to
+  it (the reader removes it), LaTeX of several lines on one, a closing backslash followed by ` {}`, `\$` inside a
+  formula read as part of it. An empty inline formula writes nothing (the memory keeps it).
+- Read from any Markdown: also `\(…\)`, `\[…\]` (on one line, or opened by a row that is only `\[`), tables
+  without outer pipes, pictures in a line of text when their file is found. Footnotes are read only when every
+  definition is among the file's last lines and has exactly one reference; otherwise they stay text.
+- A block read from a file and not changed is written back as the file had it (its lines, the blank lines around an
+  object); the document unchanged is the file's text itself. Line ends (CRLF / LF / CR), a missing last newline, the
+  encoding (UTF-8 with or without a mark, UTF-16, GB 18030 with its two- and four-byte characters, and any other
+  bytes read as Windows-1252, which gives every byte back) are kept; a character the file's encoding cannot hold
+  makes the file UTF-8. In a file whose lines end in different ways every row keeps its own line end (an edited
+  row the one of the row it replaces); an added row takes the line end most rows have.
+
+### 13.2 The memory
+
+JSON, `{ format: "visualtex-document-memory", version: 1, settings, blocks, images }`:
+
+- `settings`: the doc node's attributes that are set (page, fonts, spacing, numbering formats).
+- `blocks`: `{ hash, occurrence, lines, nodes }` — for a run of `lines` lines whose text alone does not read as the
+  document's nodes, those nodes as ProseMirror JSON. `hash` is a 64-bit hash of the lines' text joined by `\n`;
+  `occurrence` says which of the places in the file with that text (from 0). Ids made by the editor are left out
+  unless a reference names them.
+- `images`: image key → path, for the pictures the blocks show.
+
+How entries are made: the writer reads its own text back as the text alone would read and compares, run by run,
+with the document; every run that differs gets an entry. So the file and the memory together are the document by
+construction, and a document that needs no memory has none. Read: an entry is applied where its lines still stand
+as whole blocks; a line another program rewrote no longer has its text, so its entry finds no place and is dropped
+(the rest stays). Two equal lines are told apart by `occurrence` only.
+
+Where it is kept (`document_files.rs`): for a document of the documents folder, `.visualtex/<relative path>.json`
+in that folder (hidden); for a file elsewhere, the app's data folder (`documents/memory/<uuid>.json`, indexed in
+`documents/outside.json` by the file's path and the SHA-256 of its bytes, by which a moved or copied file is found
+again while its text is unchanged). Rename, move, duplicate, trash and restore carry the record along.
+
+### 13.3 Pictures
+
+Files, named by the paths in the text. A file made elsewhere keeps every path; a picture without a file gets
+`assets/<name of the file it came from>` or `assets/image-<date>-<time>.png` (pasted) beside the document, `-2`, `-3`
+when the name is taken; a path once given stays. A picture file is never replaced by a save, nor by a move,
+restore or folder deletion (another file of a picture's name refuses those; a save whose new picture's name another
+program took meanwhile names the picture again; an imported archive whose pictures' names are taken goes into a
+folder of its own). The image registry still holds the bytes by content hash; `DocumentFile.imagePaths` maps key →
+path for the open document.
+
+### 13.4 The library (`document_files.rs`, `document_library.rs`, `documentLibraryApi.ts`)
+
+The documents folder's `.md` / `.markdown` (and `.vtxdoc`) files; its folders are its subfolders (`assets` and hidden
+folders aside); a document's id is its relative path. `.trash/<uuid>/` holds a deleted document with its record,
+pictures and where it was, for 30 days. Files elsewhere are listed as recent files (`file:<path>` ids); taken out
+of that list, a file keeps its record (`unlisted` in `outside.json`) and is listed again when opened.
+
+Saving (`DocumentWorkspace.tsx`, `documentFiles.ts`): 400 ms after a change and on leaving, one save after another.
+Each save carries the fingerprint the editor read; the backend refuses it when the file's bytes are others now.
+Coming back to the window the file is checked: changed on the disk only → read again; changed on both sides → the
+user chooses Reload, Overwrite or Save a copy. The documents folder is listed again then too (files other programs
+added, moved or deleted). Writes go through a temporary file beside the target; a link is written through to the
+file it points at, a file keeps its permissions, and a read-only file is not written.
+
+### 13.5 Earlier documents (`documentMigration.ts`)
+
+The first time document mode opens, each `.vtxdoc` of the library in the app's data folder is written as Markdown
+and memory, read back and compared (`sameDocument`); the same → a `.md` in the documents folder (its folder a
+subfolder, its time kept); otherwise the `.vtxdoc` itself is put there and reported (until the report is answered;
+one kept in a later run, after a run cut short, is reported then). The earlier library is left where it is; its
+documents in its own trash are not converted.
+Section numbers: off unless the document says so; a `.vtxdoc` written before file version 7 gets `"1"`.
+
+### 13.6 Files from the system
+
+A queue in the backend (`queue_files`, `document_pending_files`, event `document-open-files`); the page takes the
+paths at its start and when told, switches to document mode and opens them in place. Windows: start arguments and
+the single-instance notification; "Open with" through a ProgID in `OpenWithProgids` and the `Applications` key
+(`hooks.nsh`). macOS: `CFBundleDocumentTypes` with `LSHandlerRank` Alternate, file URLs of `RunEvent::Opened`.

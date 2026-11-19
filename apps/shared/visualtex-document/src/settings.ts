@@ -9,7 +9,7 @@ export type PaperName = "a4" | "a5" | "b5" | "letter";
 /** Equation numbers: through the document (1), (2); or within level-1 sections, (1.1) / (1-1). */
 export type EquationNumbering = "1" | "1.1" | "1-1";
 export type EquationBrackets = "()" | "[]";
-/** Section numbers: "1" / "1.1" (default: LaTeX's), "1." / "1.1.", or none. */
+/** Section numbers: none (default: a Markdown file's headings have none), "1" / "1.1" (LaTeX's) or "1." / "1.1.". */
 export type HeadingNumbering = "1." | "1" | "none";
 
 /** Paper sizes in millimetres (portrait). B5 is the JIS size Word and WPS call B5. */
@@ -53,7 +53,7 @@ export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettings = {
   lineSpacing: 1,
   equationNumbering: "1",
   equationBrackets: "()",
-  headingNumbering: "1",
+  headingNumbering: "none",
 };
 
 export type MarginName = "marginTop" | "marginBottom" | "marginLeft" | "marginRight";
@@ -148,7 +148,7 @@ export function documentSettings(doc: Node): DocumentSettings {
     lineSpacing: finite(a.lineSpacing, 0.8, 3) ?? d.lineSpacing,
     equationNumbering: a.equationNumbering === "1.1" || a.equationNumbering === "1-1" ? a.equationNumbering : d.equationNumbering,
     equationBrackets: a.equationBrackets === "[]" ? "[]" : d.equationBrackets,
-    headingNumbering: a.headingNumbering === "1." || a.headingNumbering === "none" ? a.headingNumbering : d.headingNumbering,
+    headingNumbering: a.headingNumbering === "1." || a.headingNumbering === "1" || a.headingNumbering === "none" ? a.headingNumbering : d.headingNumbering,
   };
 }
 

@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod document_export;
+#[path = "../../../shared/visualtex-backend/src/document_files.rs"]
+mod document_files;
 #[path = "../../../shared/visualtex-backend/src/document_library.rs"]
 mod document_library;
 #[path = "../../../shared/visualtex-backend/src/ocr_offline.rs"]
@@ -634,11 +636,18 @@ pub fn run() {
     let quick_ocr_state = quick_ocr::QuickOcrState::default();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
-            |app, arguments, _cwd| {
+            |app, arguments, cwd| {
                 if arguments.iter().any(|argument| {
                     argument == office::background::BACKGROUND_ARGUMENT
                         || argument == office::macos_offline_installer::MAINTENANCE_INSTALL_ARGUMENT
                 }) {
+                    return;
+                }
+                // a second start with documents (a command line): the running app opens them
+                let documents = document_files::document_arguments(&arguments, Some(std::path::Path::new(&cwd)));
+                if !documents.is_empty() {
+                    document_library::queue_files(app, documents);
+                    let _ = office::background::reveal_main_window(app);
                     return;
                 }
                 #[cfg(target_os = "macos")]
@@ -802,8 +811,12 @@ pub fn run() {
             copy_png_to_clipboard,
             document_library::document_library_list,
             document_library::document_library_read,
+            document_library::document_library_check,
             document_library::document_library_create,
             document_library::document_library_save,
+            document_library::document_library_save_as,
+            document_library::document_library_open_file,
+            document_library::document_library_forget,
             document_library::document_library_rename,
             document_library::document_library_duplicate,
             document_library::document_library_move,
@@ -815,7 +828,13 @@ pub fn run() {
             document_library::document_library_rename_folder,
             document_library::document_library_delete_folder,
             document_library::document_library_search,
+            document_library::document_library_set_root,
             document_library::document_library_reveal,
+            document_library::document_library_legacy_list,
+            document_library::document_library_legacy_read,
+            document_library::document_library_migration,
+            document_library::document_library_set_migration,
+            document_library::document_pending_files,
             quick_ocr::capture_quick_ocr_screenshot,
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,
@@ -941,6 +960,8 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
+            // Finder hands documents over as file URLs (a double click, "Open With", a drop on the Dock icon)
+            let mut documents = Vec::new();
             for url in urls {
                 if url.scheme() == "visualtex" {
                     if let Err(error) =
@@ -948,7 +969,17 @@ pub fn run() {
                     {
                         report_office_open_failure(app, &error);
                     }
+                } else if url.scheme() == "file" {
+                    if let Ok(path) = url.to_file_path() {
+                        if document_files::is_document_path(&path) {
+                            documents.push(path);
+                        }
+                    }
                 }
+            }
+            if !documents.is_empty() {
+                document_library::queue_files(app, documents);
+                let _ = office::background::reveal_main_window(app);
             }
         }
         #[cfg(target_os = "macos")]

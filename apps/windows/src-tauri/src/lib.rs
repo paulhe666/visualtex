@@ -22,6 +22,8 @@ pub fn system_font_asset_acceptance_json(
         .map_err(|error| format!("VisualTeX could not serialize the system font asset: {error}"))
 }
 mod document_export;
+#[path = "../../../shared/visualtex-backend/src/document_files.rs"]
+mod document_files;
 #[path = "../../../shared/visualtex-backend/src/document_library.rs"]
 mod document_library;
 mod office;
@@ -270,6 +272,12 @@ pub fn run() {
                     );
                     return;
                 }
+                // a .md double-clicked or opened with VisualTeX while it runs: kept for the page, which the
+                // window below shows (it may have to be created first)
+                document_library::queue_files(
+                    app,
+                    app_lifecycle::documents_to_open(&arguments, Some(std::path::Path::new(&cwd))),
+                );
                 if let Err(error) = app_lifecycle::ensure_main_window(app) {
                     app_lifecycle::append_lifecycle_log(format!(
                         "single-instance desktop activation failed: {error}"
@@ -352,6 +360,14 @@ pub fn run() {
                         "Unable to resume installed Office background service: {error}"
                     ));
                 }
+                // the documents this start was given (a .md double-clicked or opened with VisualTeX)
+                document_library::queue_files(
+                    app.handle(),
+                    app_lifecycle::documents_to_open(
+                        &std::env::args().collect::<Vec<_>>(),
+                        std::env::current_dir().ok().as_deref(),
+                    ),
+                );
                 app_lifecycle::ensure_main_window(app.handle()).map_err(|error| {
                     app_lifecycle::append_lifecycle_log(format!(
                         "desktop startup could not create main window: {error}"
@@ -375,8 +391,12 @@ pub fn run() {
             document_export::pdf_print_close,
             document_library::document_library_list,
             document_library::document_library_read,
+            document_library::document_library_check,
             document_library::document_library_create,
             document_library::document_library_save,
+            document_library::document_library_save_as,
+            document_library::document_library_open_file,
+            document_library::document_library_forget,
             document_library::document_library_rename,
             document_library::document_library_duplicate,
             document_library::document_library_move,
@@ -388,7 +408,13 @@ pub fn run() {
             document_library::document_library_rename_folder,
             document_library::document_library_delete_folder,
             document_library::document_library_search,
+            document_library::document_library_set_root,
             document_library::document_library_reveal,
+            document_library::document_library_legacy_list,
+            document_library::document_library_legacy_read,
+            document_library::document_library_migration,
+            document_library::document_library_set_migration,
+            document_library::document_pending_files,
             ocr::get_ocr_runtime_status,
             ocr::configure_ocr_storage_location,
             ocr::open_ocr_storage_location,

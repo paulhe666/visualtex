@@ -392,7 +392,32 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+; "Open with" for Markdown files (.md, .markdown): VisualTeX is listed for them. The program that opens them by
+; default is not touched (no default value of the extension's key, no UserChoice): the user chooses it.
+!macro VisualTeXRegisterMarkdownOpenWith
+  WriteRegStr HKCU "Software\Classes\VisualTeX.Markdown" "" "Markdown"
+  WriteRegStr HKCU "Software\Classes\VisualTeX.Markdown\DefaultIcon" "" "$INSTDIR\${MAINBINARYNAME}.exe,0"
+  WriteRegStr HKCU "Software\Classes\VisualTeX.Markdown\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  WriteRegStr HKCU "Software\Classes\.md\OpenWithProgids" "VisualTeX.Markdown" ""
+  WriteRegStr HKCU "Software\Classes\.markdown\OpenWithProgids" "VisualTeX.Markdown" ""
+  WriteRegStr HKCU "Software\Classes\Applications\${MAINBINARYNAME}.exe" "FriendlyAppName" "VisualTeX"
+  WriteRegStr HKCU "Software\Classes\Applications\${MAINBINARYNAME}.exe\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  WriteRegStr HKCU "Software\Classes\Applications\${MAINBINARYNAME}.exe\SupportedTypes" ".md" ""
+  WriteRegStr HKCU "Software\Classes\Applications\${MAINBINARYNAME}.exe\SupportedTypes" ".markdown" ""
+  ; SHCNE_ASSOCCHANGED: Explorer reads the "Open with" lists again
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
+!macro VisualTeXUnregisterMarkdownOpenWith
+  DeleteRegKey HKCU "Software\Classes\VisualTeX.Markdown"
+  DeleteRegValue HKCU "Software\Classes\.md\OpenWithProgids" "VisualTeX.Markdown"
+  DeleteRegValue HKCU "Software\Classes\.markdown\OpenWithProgids" "VisualTeX.Markdown"
+  DeleteRegKey HKCU "Software\Classes\Applications\${MAINBINARYNAME}.exe"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro VisualTeXRegisterMarkdownOpenWith
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
   ${If} $VisualTeXOfficeChoice == "native"
     ; the hosts the add-ins run in (read by the add-ins at startup)
@@ -640,6 +665,7 @@ visualtex_preuninstall_done:
   ; Preserve %APPDATA%\VisualTeX because it stores OfficeSessions user data,
   ; and preserve %APPDATA%\com.visualtex.studio.
   DeleteRegKey HKCU "Software\visualtex\VisualTeX"
+  !insertmacro VisualTeXUnregisterMarkdownOpenWith
   RMDir /r "$PROFILE\AppData\VisualTeX"
   RMDir /r "$INSTDIR"
 

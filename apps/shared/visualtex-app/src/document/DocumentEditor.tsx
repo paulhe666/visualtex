@@ -104,6 +104,8 @@ export interface DocumentEditorHandle {
   /** Open Markdown text as the document (undoable). */
   loadMarkdown(text: string): void;
   load(text: string): void;
+  /** Shows a document read from its file, as it is (a new history). */
+  open(doc: Node): void;
   setDoc(doc: Node): void;
   focus(): void;
 }
@@ -482,10 +484,11 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
             void Promise.all(
               paths.map((path) =>
                 invoke<string>("read_image_file", { path })
-                  .then((base64) => new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: path.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "" }))
+                  // (with its name: the picture's file beside the document is named after it)
+                  .then((base64) => new File([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], path.split(/[\\/]/).pop() ?? "", { type: path.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "" }))
                   .catch(() => null),
               ),
-            ).then((blobs) => insertImageFiles(view, blobs.filter((b): b is Blob => !!b), { x, y }));
+            ).then((blobs) => insertImageFiles(view, blobs.filter((b): b is File => !!b), { x, y }));
           }, 250);
         })
         .then((dispose) => {
@@ -561,6 +564,9 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     },
     load(text) {
       replaceState(parseDocument(documentSchema, text).doc);
+    },
+    open(doc) {
+      replaceState(doc);
     },
     setDoc(doc) {
       replaceState(toSourceDocument(doc));

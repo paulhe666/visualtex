@@ -334,6 +334,15 @@ pub fn arguments_request_desktop(arguments: &[String]) -> bool {
     })
 }
 
+/// The documents a start names (a .md double-clicked or opened with VisualTeX passes its path): existing Markdown
+/// and .vtxdoc files among the arguments. A start for Office (background, bootstrap) opens none.
+pub fn documents_to_open(arguments: &[String], cwd: Option<&std::path::Path>) -> Vec<PathBuf> {
+    if !arguments_request_desktop(arguments) {
+        return Vec::new();
+    }
+    crate::document_files::document_arguments(arguments, cwd)
+}
+
 fn lifecycle_log_path() -> PathBuf {
     if let Ok(Some(runtime)) = crate::office::state::acceptance_runtime() {
         return runtime.app_data_root.join("logs").join("app-lifecycle.log");
@@ -686,6 +695,32 @@ mod tests {
             "visualtex.exe".to_string(),
             OFFICE_BOOTSTRAP_ARGUMENT.to_string(),
         ]));
+    }
+
+    #[test]
+    fn a_start_with_a_document_requests_the_desktop_and_names_the_document() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let note = dir.path().join("lecture notes.md");
+        let other = dir.path().join("b.markdown");
+        std::fs::write(&note, "# Notes\n").unwrap();
+        std::fs::write(&other, "b\n").unwrap();
+        let exe = "C:\\Users\\me\\AppData\\Local\\VisualTeX\\visualtex.exe".to_string();
+        let path = |file: &std::path::Path| file.to_string_lossy().into_owned();
+        // Explorer starts the program with the file's path as one argument
+        let arguments = vec![exe.clone(), path(&note)];
+        assert!(arguments_request_desktop(&arguments));
+        assert_eq!(AppRunMode::from_arguments(&arguments), AppRunMode::Desktop);
+        assert_eq!(documents_to_open(&arguments, None), vec![note.clone()]);
+        // several files selected, a missing file, a file that is not a document
+        let missing = path(&dir.path().join("gone.md"));
+        let arguments = vec![exe.clone(), path(&note), missing, "C:\\Windows\\win.ini".to_string(), path(&other)];
+        assert_eq!(documents_to_open(&arguments, None), vec![note.clone(), other]);
+        // a relative path from a command line, taken from where the start was made
+        assert_eq!(documents_to_open(&[exe.clone(), "lecture notes.md".to_string()], Some(dir.path())), vec![note.clone()]);
+        // a plain start, and the starts Office makes, open nothing
+        assert!(documents_to_open(&[exe.clone()], None).is_empty());
+        assert!(documents_to_open(&[exe.clone(), OFFICE_BACKGROUND_ARGUMENT.to_string(), path(&note)], None).is_empty());
+        assert!(documents_to_open(&[exe, OFFICE_BOOTSTRAP_ARGUMENT.to_string(), path(&note)], None).is_empty());
     }
 
     #[test]

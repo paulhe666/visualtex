@@ -5,13 +5,15 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Copy,
   Download,
   FilePlus2,
   FileText,
-  FileUp,
   Folder,
+  FolderCog,
   FolderInput,
+  FolderOpen,
   FolderPlus,
   FolderSearch,
   MoreHorizontal,
@@ -28,7 +30,8 @@ import { libraryDocumentName, useDocumentLibraryStore, type Library, type Librar
 export interface DocumentLibraryActions {
   open(id: string): void;
   create(folder: string | null): void;
-  importFile(): void;
+  /** Opens a file from the disk, where it is. */
+  openFile(): void;
   rename(id: string, title: string): void;
   duplicate(id: string): void;
   move(id: string, folder: string | null): void;
@@ -36,14 +39,18 @@ export interface DocumentLibraryActions {
   restore(id: string): void;
   remove(id: string): void;
   emptyTrash(): void;
+  /** A file opened from elsewhere leaves the recent files. */
+  forget(id: string): void;
   /** Resolves to the new folder's id. */
   createFolder(): Promise<string | null>;
   renameFolder(id: string, name: string): void;
   deleteFolder(id: string): void;
-  /** the document to a file: its own format, Markdown or PDF */
+  /** the document to a file: Markdown with its pictures, or PDF */
   exportFile(id: string, format?: DocumentExportFormat): void;
   /** Shows the file in Finder / Explorer (the app only). */
   reveal: ((id: string) => void) | null;
+  /** Chooses another documents folder (the app only). */
+  chooseRoot: (() => void) | null;
   search(query: string): Promise<string[]>;
 }
 
@@ -114,13 +121,17 @@ function InlineName(props: { value: string; placeholder: string; onDone: (value:
 
 type MenuTarget = { kind: "document" | "folder"; id: string; x: number; y: number; moving?: boolean; exporting?: boolean };
 
-export type DocumentExportFormat = "vtxdoc" | "markdown" | "pdf";
+export type DocumentExportFormat = "markdown" | "pdf";
 
 const EXPORT_FORMATS: Array<{ id: DocumentExportFormat; en: string; zh: string; extension: string }> = [
   { id: "pdf", en: "PDF", zh: "PDF", extension: ".pdf" },
   { id: "markdown", en: "Markdown", zh: "Markdown", extension: ".md" },
-  { id: "vtxdoc", en: "VisualTeX document", zh: "VisualTeX 文档", extension: ".vtxdoc" },
 ];
+
+/** A document's name in the list: its file's name; a document of an earlier version with its extension. */
+const shownName = (doc: LibraryDocument, isEn: boolean) => libraryDocumentName(doc, isEn) + (doc.kind === "vtxdoc" ? ".vtxdoc" : "");
+/** A folder's own name (its id is its path in the documents folder). */
+const folderName = (id: string) => id.slice(id.lastIndexOf("/") + 1);
 
 function Menu(props: { target: MenuTarget; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -219,11 +230,12 @@ export function DocumentLibrary(props: {
     () => [...(library?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name, isEn ? "en" : "zh-Hans-CN")),
     [library, isEn],
   );
+  const recent = library?.recent ?? [];
   const results = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return null;
     return documents.filter(
-      (doc) => found?.includes(doc.id) || words.every((word) => libraryDocumentName(doc, isEn).toLowerCase().includes(word)),
+      (doc) => found?.includes(doc.id) || words.every((word) => shownName(doc, isEn).toLowerCase().includes(word)),
     );
   }, [documents, found, query, isEn]);
 
@@ -262,7 +274,7 @@ export function DocumentLibrary(props: {
 
   const documentRow = (doc: LibraryDocument, nested: boolean) => {
     const current = doc.id === currentId;
-    const name = libraryDocumentName(doc, isEn);
+    const name = shownName(doc, isEn);
     return (
       <div
         key={doc.id}
@@ -287,11 +299,11 @@ export function DocumentLibrary(props: {
         <FileText size={14} className="document-library-item-icon" />
         {renaming?.kind === "document" && renaming.id === doc.id ? (
           <InlineName
-            value={doc.titleSet ? doc.title : ""}
-            placeholder={doc.title || t("Untitled", "未命名文档")}
+            value={doc.title}
+            placeholder={t("Name", "名称")}
             onDone={(value) => {
               setRenaming(null);
-              if (value !== null && value.trim() !== (doc.titleSet ? doc.title : "")) actions.rename(doc.id, value.trim());
+              if (value?.trim() && value.trim() !== doc.title) actions.rename(doc.id, value.trim());
             }}
           />
         ) : (
@@ -332,9 +344,14 @@ export function DocumentLibrary(props: {
         >
           <FolderPlus size={15} />
         </button>
-        <button type="button" className="document-library-icon" title={t(`Import (${MOD}O)`, `导入 (${MOD}O)`)} aria-label={t("Import", "导入")} onClick={() => actions.importFile()}>
-          <FileUp size={15} />
+        <button type="button" className="document-library-icon" title={t(`Open (${MOD}O)`, `打开 (${MOD}O)`)} aria-label={t("Open", "打开")} onClick={() => actions.openFile()}>
+          <FolderOpen size={15} />
         </button>
+        {actions.chooseRoot && (
+          <button type="button" className="document-library-icon" title={library?.root ? `${t("Documents folder", "文档文件夹")}\n${library.root}` : t("Documents folder", "文档文件夹")} aria-label={t("Documents folder", "文档文件夹")} onClick={() => actions.chooseRoot?.()}>
+            <FolderCog size={15} />
+          </button>
+        )}
         <button type="button" className="document-library-icon" title={t("Hide", "收起")} aria-label={t("Hide", "收起")} onClick={() => setOpen(false)}>
           <PanelLeftClose size={15} />
         </button>
@@ -385,11 +402,11 @@ export function DocumentLibrary(props: {
                     <Folder size={14} className="document-library-item-icon" />
                     {renaming?.kind === "folder" && renaming.id === folder.id ? (
                       <InlineName
-                        value={folder.name}
+                        value={folderName(folder.id)}
                         placeholder={t("Folder", "文件夹")}
                         onDone={(value) => {
                           setRenaming(null);
-                          if (value?.trim() && value.trim() !== folder.name) actions.renameFolder(folder.id, value.trim());
+                          if (value?.trim() && value.trim() !== folderName(folder.id)) actions.renameFolder(folder.id, value.trim());
                         }}
                       />
                     ) : (
@@ -415,6 +432,39 @@ export function DocumentLibrary(props: {
             <div className={"document-library-root" + (dropTarget === "" ? " is-drop" : "")} {...drop(null)}>
               {documents.filter((doc) => !doc.folder).map((doc) => documentRow(doc, false))}
             </div>
+            {recent.length > 0 && (
+              <div className="document-library-group document-library-recent" role="group">
+                <div className="document-library-folder document-library-recent-head">
+                  <Clock size={14} className="document-library-item-icon" />
+                  <span className="document-library-item-name">{t("Recent files", "最近打开")}</span>
+                </div>
+                {recent.map((doc) => (
+                  <div
+                    key={doc.id}
+                    role="treeitem"
+                    aria-selected={doc.id === currentId}
+                    className={"document-library-item is-nested" + (doc.id === currentId ? " is-current" : "")}
+                    onClick={() => actions.open(doc.id)}
+                    title={doc.path}
+                  >
+                    <FileText size={14} className="document-library-item-icon" />
+                    <span className="document-library-item-name">{shownName(doc, isEn)}</span>
+                    <button
+                      type="button"
+                      className="document-library-item-action"
+                      title={t("Remove from list", "从列表移除")}
+                      aria-label={t("Remove from list", "从列表移除")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        actions.forget(doc.id);
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -441,9 +491,9 @@ export function DocumentLibrary(props: {
           {trashOpen && (
             <div className="document-library-trash-list">
               {trashed.map((doc) => (
-                <div key={doc.id} className="document-library-item is-nested is-trashed" title={libraryDocumentName(doc, isEn)}>
+                <div key={doc.id} className="document-library-item is-nested is-trashed" title={shownName(doc, isEn)}>
                   <FileText size={14} className="document-library-item-icon" />
-                  <span className="document-library-item-name">{libraryDocumentName(doc, isEn)}</span>
+                  <span className="document-library-item-name">{shownName(doc, isEn)}</span>
                   <button type="button" className="document-library-item-action" title={t("Restore", "恢复")} aria-label={t("Restore", "恢复")} onClick={() => actions.restore(doc.id)}>
                     <RotateCcw size={13} />
                   </button>

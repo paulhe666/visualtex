@@ -15,6 +15,7 @@ import { Slice, type Mark, type Node, type Schema } from "prosemirror-model";
 import { Transform } from "prosemirror-transform";
 import { EditorState, Plugin, PluginKey } from "prosemirror-state";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
+import { isGeneratedId } from "./ids.ts";
 import { FONT_SIZES } from "./schema.ts";
 import { bibliographyEntries, citeLabel } from "./notes.ts";
 import { documentSettings, equationLabels, ownEquationTag } from "./settings.ts";
@@ -236,7 +237,8 @@ function tidy(state: StateCore) {
     if ((token.type === "td_open" || token.type === "th_open") && tokens[i + 1]?.type === "inline") {
       tokens.splice(i + 1, 0, new Token("paragraph_open", "p", 1));
       tokens.splice(i + 3, 0, new Token("paragraph_close", "p", -1));
-      i += 3;
+      // (the cell's text is read next: its HTML as any line's)
+      i += 1;
       continue;
     }
     if (token.type !== "inline" || !token.children) continue;
@@ -393,6 +395,12 @@ function widthFraction(value: string | null): number | null {
   return Math.max(0.01, Math.min(1, Math.round(fraction * 1000) / 1000));
 }
 
+/** A picture's own size as a width, as Typora and the browsers show it (on an A4 page's text width). */
+export function ownImageWidth(key: string): number {
+  const natural = imageEntry(key)?.width ?? 0;
+  return natural > 0 ? Math.max(0.05, Math.min(1, Math.round((natural / 605) * 1000) / 1000)) : DEFAULT_IMAGE_WIDTH;
+}
+
 /** An image token for the parser (the image node), or null when its file is not known. */
 function imageToken(state: StateCore, src: string, alt: string, width: number | null, align: string | null): Token | null {
   const key = resolveImageSource(src);
@@ -400,9 +408,7 @@ function imageToken(state: StateCore, src: string, alt: string, width: number | 
   const token = new state.Token("vtx_image", "img", 0);
   token.attrSet("src", key);
   token.attrSet("alt", alt);
-  // no width given: the picture's own size, as Typora and the browsers show it (on an A4 page's text width)
-  const natural = imageEntry(key)?.width ?? 0;
-  token.attrSet("width", String(width ?? (natural > 0 ? Math.max(0.05, Math.min(1, Math.round((natural / 605) * 1000) / 1000)) : DEFAULT_IMAGE_WIDTH)));
+  token.attrSet("width", String(width ?? ownImageWidth(key)));
   if (align === "left" || align === "right") token.attrSet("wrap", align);
   return token;
 }
@@ -1163,6 +1169,39 @@ export interface MarkdownExportOptions {
   /** The document's text is its Markdown source (the source editor, sourceMarkdown.ts): written as it stands (no
    *  escapes), a heading's "#" being in its text. */
   sourceText?: boolean;
+  /**
+   * The document's own file (markdownFile.ts): Markdown and nothing only VisualTeX reads. No HTML for alignment,
+   * colour, size or a picture's width; a picture is `![alt](path)`, the title "# …", the authors, the date, the
+   * abstract and captions lines of text, a page command nothing, a reference its number. What the text does not
+   * say is kept beside the file (the document's memory).
+   */
+  file?: boolean;
+  /** (file) The footnotes' labels, by node. */
+  footnoteLabels?: Map<Node, string>;
+  /** (file) The names a file gave its formulas (\label) that have the form of the editor's own ids. */
+  formulaNames?: ReadonlySet<string>;
+}
+
+/** Between a formula and a digit or "$" after it, or a "$" before it: `$x$2` and `$a$$b$` would not read back as
+ *  they were. A word joiner shows nothing in any viewer; the file's reader takes it out again. */
+export const FORMULA_JOINER = "\u2060";
+
+/**
+ * An inline formula as a file writes it between `before` and `after` (the characters next to it): "" when empty,
+ * LaTeX of several lines on one, a closing backslash kept from the dollar, and joiners where its dollars would
+ * read as something else.
+ */
+export function inlineFormulaSource(latex: string, before: string, after: string): string {
+  let body = latex.replace(/\s*\n\s*/g, " ").trim();
+  if (!body) return "";
+  // "x\ " trimmed ends in a backslash, which would escape the closing dollar: the control space and an empty group
+  if (/(?:^|[^\\])(?:\\\\)*\\$/.test(body)) body += " {}";
+  return `${before === "$" ? FORMULA_JOINER : ""}$${body}$${/[\d$]/.test(after) ? FORMULA_JOINER : ""}`;
+}
+
+/** A picture as Markdown: ![alt](path), the path in <…> when it has spaces or brackets. */
+export function imageMarkdown(alt: string, path: string): string {
+  return `![${alt.replace(/([\[\]\\])/g, "\\$1").replace(/\n/g, " ")}](${/[\s()]/.test(path) ? `<${path}>` : path})`;
 }
 
 const htmlAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -1261,8 +1300,32 @@ function serializerFor(
   /** An image as the HTML GitHub, Typora, Obsidian and VS Code show at its width (DESIGN.md §11.1). */
   const imageHtml = (node: Node, title = "") =>
     `<img src="${htmlAttr(pathOf(node.attrs.src))}" alt="${htmlAttr(node.attrs.alt || "")}" width="${percent(node.attrs.width)}"${node.attrs.wrap ? ` align="${node.attrs.wrap}"` : ""}${title ? ` title="${htmlAttr(title).replace(/>/g, "&gt;")}"` : ""}>`;
+  const file = !!options.file;
+  /** (file) An id that is a name the file gave a formula: not one of the editor's own ids, or one the file gave. */
+  const isFormulaName = (id: unknown): id is string => typeof id === "string" && !!id && (!isGeneratedId(id) || !!options.formulaNames?.has(id));
+  const imageSourceOf = (node: Node) => imageMarkdown(String(node.attrs.alt || ""), pathOf(node.attrs.src));
+  /** The character a formula's neighbour in its line writes next to it ("" at the line's end). */
+  const besideFormula = (parent: Node, index: number, side: -1 | 1): string => {
+    const neighbour = index + side >= 0 && index + side < parent.childCount ? parent.child(index + side) : null;
+    if (!neighbour) return "";
+    if (neighbour.isText) return side < 0 ? neighbour.text!.slice(-1) : neighbour.text!.slice(0, 1);
+    // (a formula before this one has put the joiner after itself)
+    return side > 0 && neighbour.type.name === "math_inline" && String(neighbour.attrs.latex).trim() ? "$" : "";
+  };
   const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {
     paragraph(state, node) {
+      if (file) {
+        // pictures a space apart, text as it stands
+        if (isImageLine(node)) {
+          const images: string[] = [];
+          node.forEach((child) => {
+            if (isImage(child)) images.push(imageSourceOf(child));
+          });
+          state.write(images.join(" "));
+        } else state.renderInline(node);
+        state.closeBlock(node);
+        return;
+      }
       if (isImageLine(node)) {
         // an image line: one <p> (align on <img> does not centre), the images a space apart
         const images: string[] = [];
@@ -1284,20 +1347,25 @@ function serializerFor(
       state.closeBlock(node);
     },
     title(state, node) {
-      state.write(MARKDOWN_TITLE_OPEN);
+      state.write(file ? "# " : MARKDOWN_TITLE_OPEN);
       state.renderInline(node, false);
-      state.write(MARKDOWN_TITLE_CLOSE);
+      if (!file) state.write(MARKDOWN_TITLE_CLOSE);
       state.closeBlock(node);
     },
     // the authors and the date: centred lines with a class (GitHub and Typora show them centred, as the title)
     author(state, node) {
-      titleBlockLine(state, node, "author");
+      if (!file) return titleBlockLine(state, node, "author");
+      state.renderInline(node, false);
+      state.closeBlock(node);
     },
     date(state, node) {
-      titleBlockLine(state, node, "date");
+      if (!file) return titleBlockLine(state, node, "date");
+      state.renderInline(node, false);
+      state.closeBlock(node);
     },
     // the abstract: a <div class="abstract"> around its Markdown (blank lines inside, so viewers read it as Markdown)
     abstract(state, node) {
+      if (file) return state.renderContent(node);
       state.write('<div class="abstract">');
       state.closeBlock(node);
       state.renderContent(node);
@@ -1335,6 +1403,11 @@ function serializerFor(
       // a plain row as an image line; otherwise rows of images with their margins (Typora, Obsidian, VS Code show
       // them exactly; GitHub keeps the rows), or, when images overlap, one group with each image placed; every image
       // carries its place (data-x, data-top) for VisualTeX
+      if (file) {
+        state.write(boardItems(node).sort((a, b) => a.top - b.top || a.x - b.x).map((item) => imageSourceOf(item.node)).join(" "));
+        state.closeBlock(node);
+        return;
+      }
       const row = canonicalRow(node);
       if (row) {
         state.write(`<p align="${row.align}">${row.items.map((item) => imageHtml(item.node)).join("&emsp;")}</p>`);
@@ -1381,6 +1454,17 @@ function serializerFor(
       // Markdown viewers number nothing); a wrapped figure opens the next paragraph's line, its caption the title
       const { body, caption } = figureParts(node);
       if (!body) return;
+      if (file) {
+        // the picture's line, its caption the line under it
+        state.render(body, node, 0);
+        if (caption.content.size) {
+          // (one newline, not the blank line between two blocks; the serializer's types leave the method out)
+          (state as unknown as { flushClose(size: number): void }).flushClose(1);
+          state.renderInline(caption);
+          state.closeBlock(caption);
+        }
+        return;
+      }
       const label = options.captionLabels?.get(node);
       const prefix = label ? `${label.name}: ` : "";
       if (figureWrap(node)) {
@@ -1414,7 +1498,7 @@ function serializerFor(
         state.write(caption.content.size ? "Table: " : "Table:");
         state.renderInline(caption);
         state.closeBlock(caption);
-      } else if (!caption) {
+      } else if (!caption && !file) {
         state.write("<!-- no caption -->");
         state.closeBlock(node);
       }
@@ -1456,6 +1540,8 @@ function serializerFor(
       state.closeBlock(node);
     },
     page_command(state, node) {
+      // (a file: nothing; the document's memory keeps it)
+      if (file) return;
       // a page break as Typora and the browsers print one; the other commands kept as a comment
       if (node.attrs.command === "newpage" || node.attrs.command === "clearpage") state.write('<div style="page-break-after: always;"></div>');
       else state.write(`<!-- ${pageCommandLatex(node.attrs.command, node.attrs.value)} -->`);
@@ -1469,30 +1555,37 @@ function serializerFor(
       const number = numbers.byNode.get(node);
       // A formula the text refers to carries its label, so the references can point at it.
       const own = ownEquationTag(node.attrs.latex) !== null;
-      const label = live && (number !== undefined || own) && node.attrs.id && referenced.has(node.attrs.id) ? ` \\label{${labelOf(node.attrs.id, options.source)}}` : "";
+      // (a file: the name it gave the formula stays with it; a formula made here has none, its references are numbers)
+      const label = file
+        ? isFormulaName(node.attrs.id) ? ` \\label{${node.attrs.id}}` : ""
+        : live && (number !== undefined || own) && node.attrs.id && referenced.has(node.attrs.id) ? ` \\label{${labelOf(node.attrs.id, options.source)}}` : "";
       state.write("$$");
       state.ensureNewLine();
       const tag = number === undefined ? "" : numbers.brackets === "[]" ? ` \\tag*{[${number}]}` : ` \\tag{${number}}`;
-      state.text(latexOf(node.attrs.latex) + tag + (tag || own ? label : ""), false);
+      state.text(latexOf(node.attrs.latex) + tag + (tag || own || file ? label : ""), false);
       state.ensureNewLine();
       state.write("$$");
       state.closeBlock(node);
     },
-    math_inline(state, node) {
-      state.write(`$${latexOf(node.attrs.latex)}$`);
+    math_inline(state, node, parent, index) {
+      if (file) state.write(inlineFormulaSource(latexOf(node.attrs.latex), besideFormula(parent, index, -1), besideFormula(parent, index, 1)));
+      else state.write(`$${latexOf(node.attrs.latex)}$`);
     },
     image(state, node) {
       // a wrapped image opens its paragraph's line, the text beside it (an <img> alone on the line above would make
       // the paragraph raw HTML)
-      state.write(imageHtml(node) + (node.attrs.wrap ? " " : ""));
+      if (file) state.write(imageSourceOf(node));
+      else state.write(imageHtml(node) + (node.attrs.wrap ? " " : ""));
     },
     eqref(state, node) {
       const number = node.attrs.target ? numbers.byId.get(node.attrs.target) : undefined;
-      if (number === undefined) state.write("(??)");
-      else state.write(live ? `$\\eqref{${labelOf(node.attrs.target, options.source)}}$` : numbers.brackets === "[]" ? `[${number}]` : `(${number})`);
+      // (a file: a formula the file named is referred to by that name, any other by its number)
+      const named = file ? isFormulaName(node.attrs.target) : live;
+      if (number === undefined && !(file && named)) state.write("(??)");
+      else state.write(named ? `$\\eqref{${file ? node.attrs.target : labelOf(node.attrs.target, options.source)}}$` : numbers.brackets === "[]" ? `[${number}]` : `(${number})`);
     },
     footnote(state, node) {
-      state.write(`[^${notes.footnotes.get(node) ?? "?"}]`);
+      state.write(`[^${options.footnoteLabels?.get(node) ?? notes.footnotes.get(node) ?? "?"}]`);
     },
     cite(state, node) {
       state.write(citeLabel((node.attrs.targets as string[]).map((id) => notes.entries.get(id) ?? null)));
@@ -1513,6 +1606,8 @@ function serializerFor(
       state.closeBlock(node);
     },
     hard_break(state, node, parent, index) {
+      // (a file's line is one line: the break as the source editor writes it)
+      if (file) return state.write("<br>");
       for (let i = index + 1; i < parent.childCount; i++) {
         if (parent.child(i).type !== node.type) {
           state.write("\\\n");
@@ -1581,14 +1676,14 @@ function serializerFor(
       escape: false,
     },
     // Colour and size as the HTML Typora keeps and shows (GitHub shows the text plain).
-    textColor: { open: (_state, mark) => `<span style="color:${mark.attrs.color}">`, close: "</span>" },
+    textColor: { open: (_state, mark) => (file ? "" : `<span style="color:${mark.attrs.color}">`), close: file ? "" : "</span>" },
     highlight: {
-      open: (_state, mark) => (mark.attrs.color === MARKDOWN_HIGHLIGHT ? "==" : `<span style="background-color:${mark.attrs.color}">`),
-      close: (_state, mark) => (mark.attrs.color === MARKDOWN_HIGHLIGHT ? "==" : "</span>"),
+      open: (_state, mark) => (mark.attrs.color === MARKDOWN_HIGHLIGHT ? "==" : file ? "" : `<span style="background-color:${mark.attrs.color}">`),
+      close: (_state, mark) => (mark.attrs.color === MARKDOWN_HIGHLIGHT ? "==" : file ? "" : "</span>"),
     },
     fontSize: {
-      open: (_state, mark) => `<span style="font-size:${FONT_SIZES.find((size) => size.name === mark.attrs.size)?.ratio ?? 1}em">`,
-      close: "</span>",
+      open: (_state, mark) => (file ? "" : `<span style="font-size:${FONT_SIZES.find((size) => size.name === mark.attrs.size)?.ratio ?? 1}em">`),
+      close: file ? "" : "</span>",
     },
     // never reaches the writer (withoutMarkdownSyntax): the Markdown shown in a span while the caret is there
     md_syntax: { open: "", close: "" },
@@ -1597,7 +1692,7 @@ function serializerFor(
   // heading, a list, an image line, the next wrapped paragraph…) gets <br clear="all"> first (GitHub keeps it).
   for (const [name, write] of Object.entries(nodes)) {
     nodes[name] = (state, node, parent, index) => {
-      if (parent?.type.name === "doc" && clearsWrap(node) && wrapGoesOn(parent, index)) {
+      if (!file && parent?.type.name === "doc" && clearsWrap(node) && wrapGoesOn(parent, index)) {
         state.write('<br clear="all">');
         state.closeBlock(node);
       }
@@ -1730,6 +1825,27 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
   if (!definitions) return text;
   const newline = source.crlf ? "\r\n" : "\n";
   return `${text.replace(/\s+$/, "")}${newline}${newline}${definitions.replace(/\n/g, newline)}${newline}`;
+}
+
+/**
+ * The writer of a document's top-level blocks for its own file (markdownFile.ts): a block's lines of Markdown, the
+ * file's conventions (`file`) in force.
+ */
+export function fileBlockWriter(doc: Node, options: MarkdownExportOptions = {}): (node: Node) => string {
+  const serializer = serializerFor(numbering(doc), { ...options, file: true, sourceText: true, source: null }, referencedIds(doc), noteNumbers(doc));
+  const { paragraph } = doc.type.schema.nodes;
+  return (node) => {
+    if (node.type.name === "paragraph" || node.type.name === "heading") {
+      // a line of text: as it stands (a heading's "#" is in its text), its objects as Markdown
+      let plain = true;
+      node.forEach((child) => {
+        if (!child.isText) plain = false;
+      });
+      if (plain) return node.textContent;
+      if (node.type.name === "heading") node = paragraph.create(null, node.content);
+    }
+    return serializer.serialize(doc.type.create(null, [node]), { tightLists: true }).replace(/^\n+|\n+$/g, "");
+  };
 }
 
 // ------------------------------------------------------- keeping the file --

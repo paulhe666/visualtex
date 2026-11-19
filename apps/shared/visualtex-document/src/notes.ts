@@ -11,23 +11,29 @@ import { splitInlineMath } from "./mathText.ts";
 // ------------------------------------------------------------------ schema --
 
 export const noteNodes: Record<string, NodeSpec> = {
-  /** A footnote: its number in the text; its note's text (with $…$ formulas) in `text`. */
+  /** A footnote: its number in the text; its note's text (with $…$ formulas) in `text`. `label`: the name a
+   *  Markdown file gave it ([^name]), written back as it was (none: its number). */
   footnote: {
     group: "inline",
     inline: true,
     atom: true,
     selectable: true,
-    attrs: { id: { default: null as string | null }, text: { default: "" } },
+    attrs: { id: { default: null as string | null }, text: { default: "" }, label: { default: null as string | null } },
     parseDOM: [
       {
         tag: "span.vtx-footnote",
         getAttrs: (dom: HTMLElement | string) =>
-          typeof dom === "string" ? {} : { id: dom.getAttribute("data-id"), text: dom.getAttribute("data-text") ?? "" },
+          typeof dom === "string" ? {} : { id: dom.getAttribute("data-id"), text: dom.getAttribute("data-text") ?? "", label: dom.getAttribute("data-label") },
       },
     ],
     toDOM: (node): DOMOutputSpec => [
       "span",
-      { class: "vtx-footnote", ...(node.attrs.id ? { "data-id": node.attrs.id } : {}), "data-text": node.attrs.text },
+      {
+        class: "vtx-footnote",
+        ...(node.attrs.id ? { "data-id": node.attrs.id } : {}),
+        "data-text": node.attrs.text,
+        ...(node.attrs.label ? { "data-label": node.attrs.label } : {}),
+      },
     ],
   },
 

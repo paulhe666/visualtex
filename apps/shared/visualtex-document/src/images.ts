@@ -18,6 +18,10 @@ export interface ImageEntry {
   width: number;
   height: number;
   url?: string;
+  /** the name of the file the picture came from (none: pasted) */
+  name?: string;
+  /** when a picture without a file name came in (its file is named by this) */
+  added?: number;
 }
 
 export const IMAGE_KEY_PREFIX = "vtx-image:";
@@ -123,15 +127,27 @@ function mimeOf(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
   return null;
 }
 
-/** PNG or JPEG bytes into the registry; their key (the same image twice is one entry). Null for other formats. */
-export function registerImageBytes(bytes: Uint8Array): string | null {
+/** A file name a picture keeps: not the clipboard's ("image.png") or a blob's. */
+function ownName(name: string | undefined): string | undefined {
+  const base = (name ?? "").split(/[\\/]/).pop()!.trim();
+  return base && !/^(image|blob|untitled|未命名|图片)\.[a-z0-9]+$/i.test(base) && /\.[a-z0-9]+$/i.test(base) ? base : undefined;
+}
+
+/**
+ * PNG or JPEG bytes into the registry; their key (the same image twice is one entry). Null for other formats.
+ * `name`: the file they came from (the picture's file beside a document is named after it).
+ */
+export function registerImageBytes(bytes: Uint8Array, name?: string): string | null {
   const mime = mimeOf(bytes);
   if (!mime) return null;
   const key = `${IMAGE_KEY_PREFIX}${sha256Hex(bytes)}.${mime === "image/png" ? "png" : "jpg"}`;
-  if (!registry.has(key)) {
+  let entry = registry.get(key);
+  if (!entry) {
     const size = imageSize(bytes, mime) ?? { width: 0, height: 0 };
-    registry.set(key, { key, mime, bytes, width: size.width, height: size.height });
+    entry = { key, mime, bytes, width: size.width, height: size.height, added: Date.now() };
+    registry.set(key, entry);
   }
+  entry.name ??= ownName(name);
   return key;
 }
 
@@ -185,9 +201,12 @@ export function registerDataUrl(url: string): string | null {
 /** Files that come with a text being read (a .zip's figures/…): path -> key. */
 let fileResolver: ((path: string) => string | null) | null = null;
 
-/** While a project is read, the paths its text gives images resolve through this (null: none). */
-export function setImageFileResolver(resolver: ((path: string) => string | null) | null): void {
+/** While a project is read, the paths its text gives images resolve through this (null: none). Returns the
+ *  resolver that was set before. */
+export function setImageFileResolver(resolver: ((path: string) => string | null) | null): ((path: string) => string | null) | null {
+  const before = fileResolver;
   fileResolver = resolver;
+  return before;
 }
 
 /** An image source in a text being read (Markdown, LaTeX, HTML): a key, a data: URL or a file of the project. */
@@ -207,7 +226,8 @@ export function resolveImageSource(src: string): string | null {
 /** Any image file the webview can decode: PNG and JPEG as they are, anything else drawn into a PNG. */
 export async function registerImageFile(file: Blob): Promise<string | null> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const direct = registerImageBytes(bytes);
+  const name = typeof (file as File).name === "string" ? (file as File).name : undefined;
+  const direct = registerImageBytes(bytes, name);
   if (direct) return direct;
   try {
     const url = URL.createObjectURL(file);
@@ -222,7 +242,7 @@ export async function registerImageFile(file: Blob): Promise<string | null> {
       canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
       const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!png) return null;
-      const key = registerImageBytes(new Uint8Array(await png.arrayBuffer()));
+      const key = registerImageBytes(new Uint8Array(await png.arrayBuffer()), name);
       // an SVG drawn at twice its size is shown at its own size
       if (key && scale !== 1) {
         const entry = registry.get(key)!;

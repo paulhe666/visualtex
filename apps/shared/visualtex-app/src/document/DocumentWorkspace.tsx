@@ -13,7 +13,6 @@ import {
   decodeText,
   documentSchema,
   findMarkdownFile,
-  setImageFileResolver,
   hasMathDelimiters,
   insertDisplayLatex,
   insertInlineFormula,
@@ -21,7 +20,8 @@ import {
   mathTextToSlice,
   parseDocument,
   parseMathText,
-  serializeDocument,
+  picturePath,
+  picturePaths,
 } from "../../../visualtex-document/src/index.ts";
 import type { MathEditorHandle, MathEditorInsertionTarget } from "../editor/MathEditor";
 import type { FormulaEditSource } from "../history/historyTypes";
@@ -30,31 +30,38 @@ import { createSafeStorage } from "../runtime/safeStorage";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexCommand } from "../types/command";
 import { DocumentTextToolbar } from "./DocumentControls";
-import { DocumentEditor, type DocumentEditorHandle } from "./DocumentEditor";
+import { DocumentEditor, portableFormulaLatex, type DocumentEditorHandle } from "./DocumentEditor";
 import { DocumentLibrary, DocumentLibraryToggle, type DocumentExportFormat, type DocumentLibraryActions } from "./DocumentLibrary";
 import {
+  chooseDocumentFile,
+  chooseExportPath,
+  chooseFolder,
   documentLibrary,
   documentTitle,
   libraryDocumentName,
-  saveTextFile,
+  readFileBytes,
   saveBinaryFile,
-  chooseExportPath,
-  chooseImportFile,
+  saveTextFile,
+  untitledName,
   useDocumentLibraryStore,
+  type DocumentContent,
   type Library,
   type LibraryDocument,
 } from "./documentLibraryApi";
+import { documentContent, loadDocumentFile, newDocumentContent, renameNewPictures, type DocumentFile } from "./documentFiles";
+import { keptDocuments, migrateLegacyLibrary } from "./documentMigration";
+import { DOCUMENT_OPEN_FILES_EVENT, takeOpenRequests } from "./documentOpenRequests";
+import { DocumentFileDialog } from "./DocumentFileDialog";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
 import { documentToPdf } from "./documentPdf";
-import { imagePathKey, loadImportImages } from "./importImages";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
-  DOCUMENT_EXPORT_FILE_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_PDF_EVENT,
   DOCUMENT_NEW_REQUEST_EVENT,
   DOCUMENT_OPEN_REQUEST_EVENT,
+  DOCUMENT_SAVE_AS_EVENT,
   DOCUMENT_SAVE_REQUEST_EVENT,
   DOCUMENT_TUTORIAL_EVENT,
 } from "./documentEvents";
@@ -86,43 +93,8 @@ function readAutosave(): unknown {
 
 const SAVE_DELAY_MS = 400;
 
-// The LaTeX documents of earlier versions: library entries holding a pointer to a TeX project (whose files stay
-// where they are), their ids remembered here. They go to Recently deleted once; one still met is not opened.
-const OLD_LATEX_IDS_KEY = "visualtex.document.latex-ids.v1";
-
-function isOldLatexPointer(text: string): boolean {
-  if (!text.includes('"visualtex-latex-project"')) return false;
-  try {
-    return (JSON.parse(text) as { format?: unknown }).format === "visualtex-latex-project";
-  } catch {
-    return false;
-  }
-}
-
-async function trashOldLatexDocuments(api: ReturnType<typeof documentLibrary>, lib: Library): Promise<Library> {
-  const kept = storage.getItem(OLD_LATEX_IDS_KEY);
-  if (kept === null) return lib;
-  let ids: unknown = [];
-  try {
-    ids = JSON.parse(kept);
-  } catch {
-    // unreadable: nothing to move
-  }
-  for (const id of Array.isArray(ids) ? ids : []) {
-    if (typeof id !== "string" || !lib.documents.some((doc) => doc.id === id && doc.trashed === null)) continue;
-    try {
-      lib = await api.trash(id);
-    } catch {
-      // left where it is (it is not opened)
-    }
-  }
-  storage.removeItem(OLD_LATEX_IDS_KEY);
-  return lib;
-}
-
-function emptyDocumentText(): string {
-  return serializeDocument(documentSchema.topNodeType.createAndFill()!);
-}
+/** The library's answer when a picture file of the name given is there with other bytes (document_files.rs). */
+const PICTURE_NAME_TAKEN = /^Another picture is named (.+)$/;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -338,9 +310,20 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   const libraryOpen = useDocumentLibraryStore((state) => state.open);
   const [library, setLibrary] = useState<Library | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  // The open document: its id, the text last saved (or read) and the latest text.
-  const current = useRef<{ id: string | null; saved: Node | null; latest: Node | null }>({ id: null, saved: null, latest: null });
+  // The open document: its file, the document last saved (or read) and the latest one.
+  const current = useRef<{ file: DocumentFile | null; saved: Node | null; latest: Node | null }>({ file: null, saved: null, latest: null });
   const saveTimer = useRef(0);
+  // saves run one after another: each is checked against the file the one before it wrote
+  const saving = useRef<Promise<boolean>>(Promise.resolve(true));
+  // The file changed on the disk while the document was edited here: nothing is saved until the user decides.
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
+  const setConflicted = (value: boolean) => {
+    conflictRef.current = value;
+    setConflict(value);
+  };
+  // documents of earlier versions that stay .vtxdoc, shown once
+  const [kept, setKept] = useState<Array<{ title: string; reason: string }> | null>(null);
 
   const adapterRef = useRef<MathEditorHandle | null>(null);
   useEffect(() => {
@@ -360,12 +343,16 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     noticeTimer.current = window.setTimeout(() => setNotice(null), 1800);
   };
 
-  const entryOf = (id: string | null) => (id ? library?.documents.find((doc) => doc.id === id) : undefined);
+  const entryOf = (id: string | null) => (id ? (library?.documents.find((doc) => doc.id === id) ?? library?.recent.find((doc) => doc.id === id)) : undefined);
   const withEntry = (entry: LibraryDocument) =>
-    setLibrary((old) => old && { ...old, documents: [entry, ...old.documents.filter((doc) => doc.id !== entry.id)].sort((a, b) => b.modified - a.modified) });
+    setLibrary((old) => {
+      if (!old) return old;
+      const put = (list: LibraryDocument[]) => [entry, ...list.filter((doc) => doc.id !== entry.id)].sort((a, b) => b.modified - a.modified);
+      return entry.outside ? { ...old, recent: [entry, ...old.recent.filter((doc) => doc.id !== entry.id)] } : { ...old, documents: put(old.documents) };
+    });
 
-  const fileName = (ext: string, id = current.current.id) => {
-    const entry = entryOf(id);
+  const fileName = (ext: string, id = current.current.file?.entry.id ?? null) => {
+    const entry = id === current.current.file?.entry.id ? current.current.file?.entry : entryOf(id);
     const base = (entry ? libraryDocumentName(entry, isEn) : "").trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 60) || t("Untitled document", "未命名文档");
     return base + ext;
   };
@@ -373,64 +360,111 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
   // The open document is saved a moment after each change, and at once before another one opens.
   const onChange = useCallback((doc: Node) => {
     current.current.latest = doc;
-    if (!current.current.id) return;
+    if (!current.current.file) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void ops.current.saveNow(), SAVE_DELAY_MS);
   }, []);
 
+  /** The document as a new Markdown file's content, its pictures going along. */
+  const asNewFile = (doc: Node, file: DocumentFile | null) =>
+    newDocumentContent(doc, { formulaLatex: portableFormulaLatex, labels: file?.source?.labels }, file?.imagePaths ?? new Map()).content;
+
   const ops = useRef({
-    saveNow: async (): Promise<boolean> => true,
-    open: async (_id: string): Promise<boolean> => false,
+    saveNow: async (_force?: boolean): Promise<boolean> => true,
+    open: async (_id: string, _reload?: boolean): Promise<boolean> => false,
+    openPath: async (_path: string) => {},
     create: async (_folder: string | null) => {},
-    importFile: async (_file: File, _folder?: string | null) => {},
+    importFile: async (_file: File) => {},
+    saveAs: async () => {},
     exportFile: async (_id: string, _format?: DocumentExportFormat) => {},
     afterLoss: async (_library: Library) => {},
+    checkDisk: async () => {},
+    renamed: (_from: string, _to: string, _library: Library) => {},
   });
-  ops.current = {
-    saveNow: async () => {
-      window.clearTimeout(saveTimer.current);
-      const { id, saved, latest } = current.current;
-      if (!id || !latest || (saved && saved.eq(latest))) return true;
-      current.current.saved = latest;
-      try {
-        withEntry(await api.save(id, serializeDocument(latest), documentTitle(latest)));
-        return true;
-      } catch (error) {
+  const write = async (force: boolean, renamed = false): Promise<boolean> => {
+    window.clearTimeout(saveTimer.current);
+    const { file, saved, latest } = current.current;
+    if (!file || !latest || (saved && saved.eq(latest) && !force)) return true;
+    if (conflictRef.current && !force) return false;
+    current.current.saved = latest;
+    try {
+      const content = documentContent(file, latest, { formulaLatex: portableFormulaLatex });
+      const outcome = await api.save(file.entry.id, content, file.fingerprint, force);
+      if (outcome.status === "changed") {
+        // changed on the disk too: the user chooses which stays
         if (current.current.saved === latest) current.current.saved = saved;
-        flash(t("Not saved: ", "未保存：") + errorText(error));
+        if (current.current.file === file) setConflicted(true);
         return false;
       }
+      file.fingerprint = outcome.fingerprint;
+      file.unwritten.clear();
+      file.entry = outcome.entry;
+      withEntry(outcome.entry);
+      return true;
+    } catch (error) {
+      if (current.current.saved === latest) current.current.saved = saved;
+      // another program put a file of a new picture's name beside the document meanwhile: the new pictures take
+      // other names (nothing was written)
+      const taken = PICTURE_NAME_TAKEN.exec(errorText(error))?.[1];
+      if (taken && !renamed && renameNewPictures(file, taken)) return write(force, true);
+      flash(t("Not saved: ", "未保存：") + errorText(error));
+      return false;
+    }
+  };
+  ops.current = {
+    saveNow: (force = false) => {
+      const next = saving.current.then(
+        () => write(force),
+        () => write(force),
+      );
+      saving.current = next;
+      return next;
     },
-    open: async (id) => {
-      if (id === current.current.id) {
+    // `reload`: the file as it is on the disk now, what is open of it dropped
+    open: async (id, reload = false) => {
+      if (!reload && id === current.current.file?.entry.id) {
         documentRef.current?.focus();
         return true;
       }
-      rememberPlace(current.current.id, documentRef.current?.view());
-      await ops.current.saveNow();
+      rememberPlace(current.current.file?.entry.id ?? null, documentRef.current?.view());
+      if (!reload) await ops.current.saveNow();
+      let file: DocumentFile;
       try {
-        const text = await api.read(id);
-        if (isOldLatexPointer(text)) {
-          flash(t("LaTeX documents are no longer supported", "已不再支持 LaTeX 文档"));
-          return false;
-        }
-        documentRef.current?.load(text);
+        file = await loadDocumentFile(await api.read(id));
+        documentRef.current?.open(file.doc);
       } catch (error) {
-        flash(t("Cannot open: ", "无法打开：") + errorText(error));
+        const reason = errorText(error);
+        flash(/LaTeX documents/.test(reason) ? t("LaTeX documents are no longer supported", "已不再支持 LaTeX 文档") : t("Cannot open: ", "无法打开：") + reason);
         return false;
       }
       const doc = documentRef.current?.view()?.state.doc ?? null;
-      current.current = { id, saved: doc, latest: doc };
+      current.current = { file, saved: doc, latest: doc };
+      setConflicted(false);
       setCurrentId(id);
       useDocumentLibraryStore.getState().setLastId(id);
       restorePlace(id, documentRef.current?.view());
       documentRef.current?.focus();
       return true;
     },
+    // A file anywhere on the disk, in place; an archive or a .json is taken into the documents folder.
+    openPath: async (path) => {
+      try {
+        if (/\.(zip|json)$/i.test(path)) {
+          await ops.current.importFile(new File([(await readFileBytes(path)) as BlobPart], path.split(/[\\/]/).pop() ?? path));
+          return;
+        }
+        await ops.current.saveNow();
+        const entry = await api.openFile(path);
+        setLibrary(await api.list());
+        await ops.current.open(entry.id);
+      } catch (error) {
+        flash(t("Cannot open: ", "无法打开：") + errorText(error));
+      }
+    },
     create: async (folder) => {
       await ops.current.saveNow();
       try {
-        const entry = await api.create(folder, emptyDocumentText(), null);
+        const entry = await api.create(folder, untitledName(isEn), "markdown", { bytes: new Uint8Array(), memory: null, assets: [] });
         withEntry(entry);
         const store = useDocumentLibraryStore.getState();
         if (folder && store.collapsed.includes(folder)) store.toggleFolder(folder);
@@ -439,117 +473,162 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         flash(errorText(error));
       }
     },
-    // A .vtxdoc (or .json) as it is; Markdown read into a new document (one Ctrl+Z from empty), also from a .zip.
-    importFile: async (file, folder = null) => {
+    // Into the documents folder as a new document: a Markdown export's .zip (the text and the pictures it names), a
+    // .json or .vtxdoc of an earlier version as it is; in a browser also a Markdown file (it cannot be edited in place).
+    importFile: async (file) => {
       const stem = file.name.replace(/\.[^.]+$/, "");
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        let kind: "document" | "markdown";
-        let text: string;
-        // the archive's images, for the paths its text gives them (figures/x.png, assets/x.png)
-        let images: Map<string, Uint8Array> | null = null;
-        let base = "";
+        let content: DocumentContent;
+        let kind: "markdown" | "vtxdoc" = "markdown";
         if (/\.zip$/i.test(file.name)) {
           const picture = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
           const wanted = /\.(md|markdown)$/i;
           const entries = unzipSync(bytes, { filter: (entry) => wanted.test(entry.name) || picture.test(entry.name) });
-          images = new Map(Object.entries(entries).filter(([path]) => picture.test(path)));
-          const files = Object.entries(entries).filter(([path]) => !picture.test(path)).map(([path, data]) => ({ path, bytes: data }));
-          const markdownFile = findMarkdownFile(files);
-          if (markdownFile) {
-            kind = "markdown";
-            text = decodeText(markdownFile.bytes);
-            base = markdownFile.path.includes("/") ? markdownFile.path.slice(0, markdownFile.path.lastIndexOf("/") + 1) : "";
-          } else throw new Error(t("no .md file in the archive", "压缩包中没有 .md 文件"));
+          const markdownFile = findMarkdownFile(Object.entries(entries).filter(([path]) => !picture.test(path)).map(([path, data]) => ({ path, bytes: data })));
+          if (!markdownFile) throw new Error(t("no .md file in the archive", "压缩包中没有 .md 文件"));
+          const base = markdownFile.path.includes("/") ? markdownFile.path.slice(0, markdownFile.path.lastIndexOf("/") + 1) : "";
+          // the pictures the text names, at the paths it names them by
+          const assets: DocumentContent["assets"] = [];
+          for (const path of picturePaths(decodeText(markdownFile.bytes))) {
+            const data = entries[(base + path).replace(/\/\.\//g, "/")] ?? entries[path];
+            if (data && !/^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/)/.test(path) && !path.split("/").includes("..")) assets.push({ path: picturePath(path), bytes: data });
+          }
+          content = { bytes: markdownFile.bytes, memory: null, assets };
+        } else if (/\.(md|markdown)$/i.test(file.name)) {
+          content = { bytes, memory: null, assets: [] };
         } else {
           if (/\.(tex|ltx)$/i.test(file.name)) throw new Error(t("not a VisualTeX or Markdown file", "不是 VisualTeX 或 Markdown 文件"));
-          text = decodeText(bytes);
-          kind = /\.(md|markdown)$/i.test(file.name) ? "markdown" : "document";
-          if (kind === "document") parseDocument(documentSchema, text);
+          parseDocument(documentSchema, decodeText(bytes));
+          content = { bytes, memory: null, assets: [] };
+          kind = "vtxdoc";
         }
-        // the pictures it names: from the web, the file's folder, its archive (before it is read)
-        const pictures =
-          kind === "document"
-            ? new Map<string, string>()
-            : await loadImportImages(text, kind, { archive: images, base, folder, folders: [] });
         await ops.current.saveNow();
-        const entry = await api.create(null, kind === "document" ? text : emptyDocumentText(), stem);
-        withEntry(entry);
-        if (!(await ops.current.open(entry.id))) return;
-        if (pictures.size) setImageFileResolver((path) => pictures.get(imagePathKey(path)) ?? null);
+        const name = stem || untitledName(isEn);
+        let entry: LibraryDocument;
         try {
-          if (kind === "markdown") documentRef.current?.loadMarkdown(text);
-        } finally {
-          setImageFileResolver(null);
+          entry = await api.create(null, name, kind, content);
+        } catch (error) {
+          // pictures of the same names are in the documents folder already (another export's assets/fig-1.png…):
+          // the document goes into a folder of its own with its pictures
+          if (!PICTURE_NAME_TAKEN.test(errorText(error))) throw error;
+          entry = await api.create((await api.createFolder(name)).id, name, kind, content);
         }
-        await ops.current.saveNow();
-        flash(t("Document imported", "文档已导入"));
+        setLibrary(await api.list());
+        if (await ops.current.open(entry.id)) flash(t("Document imported", "文档已导入"));
       } catch (error) {
         flash(t("Cannot open: ", "无法打开：") + errorText(error));
       }
     },
-    exportFile: async (id, format = "vtxdoc") => {
+    // The document as a Markdown file somewhere else, which becomes the open one.
+    saveAs: async () => {
+      const { file, latest } = current.current;
+      if (!file || !latest) return;
       try {
-        if (format !== "vtxdoc") {
-          // the other formats come from the editor: the document is opened (its pages laid out) first
-          if (id !== current.current.id) {
-            await ops.current.open(id);
-            await new Promise((resolve) => window.setTimeout(resolve, 400));
-          }
-          const run = { markdown: actions.current.exportMarkdown, pdf: actions.current.exportPdf }[format];
-          run();
+        if (!isTauri()) {
+          await saveTextFile(fileName(".md"), newDocumentContent(latest, { formulaLatex: portableFormulaLatex }).text, "md", "text/markdown", isEn);
           return;
         }
-        let text: string;
-        if (id === current.current.id) {
-          await ops.current.saveNow();
-          text = documentRef.current?.serialize() ?? "";
-        } else text = await api.read(id);
-        if (await saveTextFile(fileName(".vtxdoc", id), text, "vtxdoc", "application/json", isEn)) flash(t("Document exported", "文档已导出"));
+        const path = await chooseExportPath(fileName(".md"), "md", isEn);
+        if (!path) return;
+        await ops.current.saveNow();
+        const entry = await api.saveAs(path, asNewFile(latest, file));
+        setLibrary(await api.list());
+        if (await ops.current.open(entry.id)) flash(t("Saved", "已保存"));
+      } catch (error) {
+        flash(t("Not saved: ", "未保存：") + errorText(error));
+      }
+    },
+    exportFile: async (id, format = "markdown") => {
+      try {
+        // the formats come from the editor: the document is opened (its pages laid out) first
+        if (id !== current.current.file?.entry.id) {
+          await ops.current.open(id);
+          await new Promise((resolve) => window.setTimeout(resolve, 400));
+        }
+        const run = { markdown: actions.current.exportMarkdown, pdf: actions.current.exportPdf }[format];
+        run();
       } catch (error) {
         flash(errorText(error));
       }
     },
-    // The open document was deleted: the newest other one opens, or a new one.
+    // The open document is gone (deleted, forgotten, another documents folder): the newest other one opens, or a new one.
     afterLoss: async (next) => {
-      current.current = { id: null, saved: null, latest: null };
+      current.current = { file: null, saved: null, latest: null };
+      setConflicted(false);
       const other = next.documents.find((doc) => doc.trashed === null);
       if (other) await ops.current.open(other.id);
       else await ops.current.create(null);
     },
+    // The file as it is on the disk now: when another program changed it and nothing was edited here, the document
+    // is read again; when both changed, the user chooses.
+    checkDisk: async () => {
+      const { file, saved, latest } = current.current;
+      if (!file || conflictRef.current) return;
+      const state = await api.check(file.entry.id).catch(() => null);
+      if (!state || !state.exists || state.fingerprint === file.fingerprint || current.current.file !== file) return;
+      // (a save of its own may have finished meanwhile)
+      await saving.current.catch(() => undefined);
+      if (state.fingerprint === file.fingerprint || current.current.file !== file) return;
+      if (saved && current.current.latest && !saved.eq(current.current.latest)) setConflicted(true);
+      else if (latest === current.current.latest) await ops.current.open(file.entry.id, true);
+    },
+    // A document's path changed (renamed, moved): the open one and its remembered place follow.
+    renamed: (from, to, next) => {
+      setLibrary(next);
+      const place = documentPlaces.get(from);
+      if (place) {
+        documentPlaces.delete(from);
+        documentPlaces.set(to, place);
+      }
+      const file = current.current.file;
+      if (!file || file.entry.id !== from) return;
+      const entry = next.documents.find((doc) => doc.id === to) ?? next.recent.find((doc) => doc.id === to);
+      if (entry) file.entry = entry;
+      setCurrentId(to);
+      useDocumentLibraryStore.getState().setLastId(to);
+    },
   };
 
-  // The library is read once; the document last open opens. On the first start with the library the document kept
-  // before it becomes the first one.
+  // The documents of earlier versions become files once; then the library is read and the document last open
+  // opens — or the files the system handed over.
   useEffect(() => {
     let live = true;
     void (async () => {
       try {
-        let lib = await trashOldLatexDocuments(api, await api.list());
-        if (!lib.documents.some((doc) => doc.trashed === null)) {
-          let text = emptyDocumentText();
-          let title = "";
-          const kept = lib.documents.length || storage.getItem(AUTOSAVE_TAKEN_KEY) ? undefined : readAutosave();
-          if (kept) {
+        const migration = await migrateLegacyLibrary(api, {
+          formulaLatex: portableFormulaLatex,
+          untitled: untitledName(isEn),
+          differs: t("does not convert exactly", "无法精确转换"),
+        });
+        let lib = await api.list();
+        // the one document kept before there was a library becomes the first one
+        if (!lib.documents.length && !Object.keys(migration.documents).length && !storage.getItem(AUTOSAVE_TAKEN_KEY)) {
+          const before = readAutosave();
+          if (before) {
             try {
-              const doc = documentSchema.nodeFromJSON(kept);
+              const doc = documentSchema.nodeFromJSON(before);
               doc.check();
-              text = serializeDocument(doc);
-              title = documentTitle(doc);
+              await api.create(null, documentTitle(doc) || untitledName(isEn), "markdown", asNewFile(doc, null));
+              lib = await api.list();
             } catch {
-              // an unreadable autosave: an empty document
+              // an unreadable autosave: nothing to take
             }
           }
-          const entry = await api.create(null, text, null);
-          if (title) await api.save(entry.id, text, title);
-          storage.setItem(AUTOSAVE_TAKEN_KEY, "1");
-          lib = await api.list();
         }
+        storage.setItem(AUTOSAVE_TAKEN_KEY, "1");
         if (!live) return;
         setLibrary(lib);
+        if (!migration.reported) setKept(keptDocuments(migration));
+        const requested = takeOpenRequests();
+        if (requested.length) {
+          for (const path of requested) await ops.current.openPath(path);
+          if (current.current.file) return;
+        }
         const documents = lib.documents.filter((doc) => doc.trashed === null);
         const last = useDocumentLibraryStore.getState().lastId;
-        await ops.current.open((documents.find((doc) => doc.id === last) ?? documents[0]).id);
+        const target = [...documents, ...lib.recent].find((doc) => doc.id === last) ?? documents[0];
+        if (!target || !(await ops.current.open(target.id))) await ops.current.afterLoss(lib);
       } catch (error) {
         if (live) flash(t("Documents unavailable: ", "文档库不可用：") + errorText(error));
       }
@@ -557,66 +636,111 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     return () => {
       live = false;
     };
+    // (read once: the language of a new document's name is the one at the start)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
+
+  // Files the system hands over while document mode is open (while the question about the open file is asked, they
+  // wait for its answer).
+  useEffect(() => {
+    const take = () => {
+      if (conflictRef.current) return;
+      const requested = takeOpenRequests();
+      void (async () => {
+        for (const path of requested) await ops.current.openPath(path);
+      })();
+    };
+    window.addEventListener(DOCUMENT_OPEN_FILES_EVENT, take);
+    return () => window.removeEventListener(DOCUMENT_OPEN_FILES_EVENT, take);
+  }, []);
 
   // Leaving document mode: the caret's and the page's place are kept for coming back (before the editor is taken
   // down: a layout effect's cleanup runs while it is still on the page).
   useLayoutEffect(
-    () => () => rememberPlace(current.current.id, documentRef.current?.view()),
+    () => () => rememberPlace(current.current.file?.entry.id ?? null, documentRef.current?.view()),
     [],
   );
 
-  // Leaving document mode, the window or the app: what is not saved yet is saved now.
+  // Leaving document mode, the window or the app: what is not saved yet is saved now. Coming back to the window:
+  // the file may have been changed by another program meanwhile, and documents added to or taken from the documents
+  // folder.
   useEffect(() => {
     const flush = () => void ops.current.saveNow();
+    const check = () => {
+      void ops.current.checkDisk();
+      void api.list().then(setLibrary, () => undefined);
+    };
     window.addEventListener("blur", flush);
     window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", flush);
+    window.addEventListener("focus", check);
     return () => {
       window.removeEventListener("blur", flush);
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("focus", check);
       flush();
     };
-  }, []);
+  }, [api]);
 
-  // Open: the system's dialog in the app (the file's folder then finds its pictures), the file input in a browser
+  // Open: the system's dialog in the app (the file is edited where it is), the file input in a browser
   const openFile = () => {
     if (!isTauri()) {
       fileRef.current?.click();
       return;
     }
-    void chooseImportFile(isEn).then(
-      (chosen) => chosen && ops.current.importFile(chosen.file, chosen.folder),
+    void chooseDocumentFile(isEn).then(
+      (path) => {
+        if (path) void ops.current.openPath(path);
+      },
       (error) => flash(errorText(error)),
     );
   };
 
+  const isCurrent = (id: string) => id === current.current.file?.entry.id;
   const libraryActions: DocumentLibraryActions = {
     open: (id) => void ops.current.open(id),
     create: (folder) => void ops.current.create(folder),
-    importFile: () => openFile(),
-    rename: (id, title) => void api.rename(id, title).then(setLibrary, (error) => flash(errorText(error))),
+    openFile: () => openFile(),
+    rename: (id, title) =>
+      void (async () => {
+        try {
+          if (isCurrent(id)) await ops.current.saveNow();
+          const done = await api.rename(id, title);
+          ops.current.renamed(id, done.id, done.library);
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
     duplicate: (id) =>
       void (async () => {
         try {
-          if (id === current.current.id) await ops.current.saveNow();
+          if (isCurrent(id)) await ops.current.saveNow();
           const source = entryOf(id);
           const entry = await api.duplicate(id, `${source ? libraryDocumentName(source, isEn) : ""} ${t("copy", "副本")}`.trim());
-          withEntry(entry);
+          setLibrary(await api.list());
           await ops.current.open(entry.id);
         } catch (error) {
           flash(errorText(error));
         }
       })(),
-    move: (id, folder) => void api.move(id, folder).then(setLibrary, (error) => flash(errorText(error))),
+    move: (id, folder) =>
+      void (async () => {
+        try {
+          if (isCurrent(id)) await ops.current.saveNow();
+          const done = await api.move(id, folder);
+          ops.current.renamed(id, done.id, done.library);
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
     trash: (id) =>
       void (async () => {
         try {
-          if (id === current.current.id) await ops.current.saveNow();
+          if (isCurrent(id)) await ops.current.saveNow();
           const next = await api.trash(id);
           setLibrary(next);
-          if (id === current.current.id) await ops.current.afterLoss(next);
+          if (isCurrent(id)) await ops.current.afterLoss(next);
           flash(t("Moved to Recently deleted", "已移到最近删除"));
         } catch (error) {
           flash(errorText(error));
@@ -625,6 +749,17 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     restore: (id) => void api.restore(id).then(setLibrary, (error) => flash(errorText(error))),
     remove: (id) => void api.remove(id).then(setLibrary, (error) => flash(errorText(error))),
     emptyTrash: () => void api.emptyTrash().then(setLibrary, (error) => flash(errorText(error))),
+    forget: (id) =>
+      void (async () => {
+        try {
+          if (isCurrent(id)) await ops.current.saveNow();
+          const next = await api.forget(id);
+          setLibrary(next);
+          if (isCurrent(id)) await ops.current.afterLoss(next);
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
     createFolder: async () => {
       try {
         const { library: next, id } = await api.createFolder(t("New folder", "新建文件夹"));
@@ -635,12 +770,93 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         return null;
       }
     },
-    renameFolder: (id, name) => void api.renameFolder(id, name).then(setLibrary, (error) => flash(errorText(error))),
-    deleteFolder: (id) => void api.deleteFolder(id).then(setLibrary, (error) => flash(errorText(error))),
+    renameFolder: (id, name) =>
+      void (async () => {
+        try {
+          const open = current.current.file?.entry;
+          if (open && open.folder === id) await ops.current.saveNow();
+          const next = await api.renameFolder(id, name);
+          // the open document's path changes with its folder's
+          const inside = open && !open.outside && open.id.startsWith(`${id}/`) ? open.id : null;
+          const moved = inside ? next.documents.find((doc) => doc.title === open!.title && doc.id.endsWith(inside.slice(id.length)) && !next.documents.some((other) => other.id === inside)) : undefined;
+          if (inside && moved) ops.current.renamed(inside, moved.id, next);
+          else setLibrary(next);
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
+    deleteFolder: (id) =>
+      void (async () => {
+        try {
+          const open = current.current.file?.entry;
+          const inside = open && !open.outside && open.id.startsWith(`${id}/`);
+          if (inside) await ops.current.saveNow();
+          const known = new Set(library?.documents.map((doc) => doc.id));
+          const next = await api.deleteFolder(id);
+          setLibrary(next);
+          // (the open document moved to the documents folder itself, under its name or "name 2": opened again there)
+          if (inside) {
+            const moved = next.documents.find((doc) => doc.trashed === null && !doc.folder && !known.has(doc.id) && (doc.title === open!.title || doc.title.startsWith(`${open!.title} `)));
+            current.current = { file: null, saved: null, latest: null };
+            if (moved) await ops.current.open(moved.id);
+            else await ops.current.afterLoss(next);
+          }
+        } catch (error) {
+          flash(errorText(error));
+        }
+      })(),
     exportFile: (id, format) => void ops.current.exportFile(id, format),
     reveal: isTauri() ? (id) => void invoke("document_library_reveal", { id }).catch((error) => flash(errorText(error))) : null,
+    // Another documents folder: its documents are listed as they are; the open one is saved first.
+    chooseRoot: isTauri()
+      ? () =>
+          void (async () => {
+            try {
+              const path = await chooseFolder(isEn, library?.root);
+              if (!path || path === library?.root) return;
+              await ops.current.saveNow();
+              const next = await api.setRoot(path);
+              setLibrary(next);
+              await ops.current.afterLoss(next);
+            } catch (error) {
+              flash(errorText(error));
+            }
+          })()
+      : null,
     search: (query) => api.search(query),
   };
+
+  // The file changed on the disk and here: read it again, write this one over it, or keep this one as a copy.
+  const resolveConflict = (choice: "reload" | "overwrite" | "copy") =>
+    void (async () => {
+      const { file, latest } = current.current;
+      if (!file || !latest) return;
+      try {
+        if (choice === "reload") await ops.current.open(file.entry.id, true);
+        else if (choice === "overwrite") {
+          setConflicted(false);
+          if (await ops.current.saveNow(true)) flash(t("Saved", "已保存"));
+        } else {
+          const name = `${libraryDocumentName(file.entry, isEn)} ${t("copy", "副本")}`;
+          const content = file.kind === "vtxdoc" ? documentContent(file, latest) : asNewFile(latest, file);
+          let entry: LibraryDocument;
+          if (file.entry.outside && isTauri()) {
+            const path = await chooseExportPath(`${name}.${file.kind === "vtxdoc" ? "vtxdoc" : "md"}`, file.kind === "vtxdoc" ? "vtxdoc" : "md", isEn);
+            if (!path) return;
+            entry = await api.saveAs(path, content);
+          } else entry = await api.create(file.entry.folder, name, file.kind, content);
+          // the copy has what was edited here; the file itself stays as the other program left it
+          current.current = { file: null, saved: null, latest: null };
+          setConflicted(false);
+          setLibrary(await api.list());
+          await ops.current.open(entry.id);
+        }
+      } catch (error) {
+        flash(errorText(error));
+      }
+      // files the system handed over meanwhile
+      window.dispatchEvent(new Event(DOCUMENT_OPEN_FILES_EVENT));
+    })();
 
   // PDF: one at a time
   const pdfBusy = useRef(false);
@@ -649,16 +865,23 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
     save: () => {},
     open: () => {},
     create: () => {},
-    exportDocument: () => {},
+    saveAs: () => {},
     exportMarkdown: () => {},
     copyMarkdown: () => {},
     exportPdf: () => {},
   });
+  // (New, Open and Save as wait while the question about the open file is asked: its edits would be dropped)
   actions.current = {
     save: () => void ops.current.saveNow().then((done) => done && flash(t("Saved", "已保存"))),
-    open: () => openFile(),
-    create: () => void ops.current.create(entryOf(current.current.id)?.folder ?? null),
-    exportDocument: () => current.current.id && void ops.current.exportFile(current.current.id),
+    open: () => {
+      if (!conflictRef.current) openFile();
+    },
+    create: () => {
+      if (!conflictRef.current) void ops.current.create(current.current.file?.entry.folder ?? null);
+    },
+    saveAs: () => {
+      if (!conflictRef.current) void ops.current.saveAs();
+    },
     exportMarkdown: () => {
       const markdown = documentRef.current?.toMarkdown();
       if (!markdown) return;
@@ -710,7 +933,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       [DOCUMENT_SAVE_REQUEST_EVENT, () => actions.current.save()],
       [DOCUMENT_OPEN_REQUEST_EVENT, () => actions.current.open()],
       [DOCUMENT_NEW_REQUEST_EVENT, () => actions.current.create()],
-      [DOCUMENT_EXPORT_FILE_EVENT, () => actions.current.exportDocument()],
+      [DOCUMENT_SAVE_AS_EVENT, () => actions.current.saveAs()],
       [DOCUMENT_EXPORT_MARKDOWN_EVENT, () => actions.current.exportMarkdown()],
       [DOCUMENT_COPY_MARKDOWN_EVENT, () => actions.current.copyMarkdown()],
       [DOCUMENT_EXPORT_PDF_EVENT, () => actions.current.exportPdf()],
@@ -755,6 +978,33 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         />
       </div>
       {notice && <div className="mc-notice" role="status">{notice}</div>}
+      {conflict && (
+        <DocumentFileDialog
+          title={t("The file changed on disk", "文件已在磁盘上更改")}
+          lines={[current.current.file?.entry.path || libraryDocumentName(current.current.file?.entry ?? { title: "" }, isEn)]}
+          actions={[
+            { label: t("Reload", "重新载入"), run: () => resolveConflict("reload") },
+            { label: t("Overwrite", "覆盖"), run: () => resolveConflict("overwrite") },
+            { label: t("Save a copy", "另存副本"), run: () => resolveConflict("copy"), primary: true },
+          ]}
+        />
+      )}
+      {kept && kept.length > 0 && !conflict && (
+        <DocumentFileDialog
+          title={t("Kept as .vtxdoc", "仍为 .vtxdoc")}
+          lines={kept.map((doc) => `${doc.title} — ${/newer than this VisualTeX/.test(doc.reason) ? t("made by a newer VisualTeX", "由更新版本的 VisualTeX 创建") : doc.reason}`)}
+          actions={[
+            {
+              label: t("OK", "确定"),
+              primary: true,
+              run: () => {
+                setKept(null);
+                void api.legacy.state().then((state) => state && api.legacy.setState({ ...(state as object), reported: true }));
+              },
+            },
+          ]}
+        />
+      )}
       <TutorialDialog open={tutorialOpen} isEn={isEn} onClose={() => setTutorialOpen(false)} />
       <input
         ref={fileRef}

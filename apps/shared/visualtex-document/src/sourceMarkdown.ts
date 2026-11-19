@@ -1530,25 +1530,37 @@ function sourceSliceText(slice: Slice, schema: Schema): string {
   return documentToMarkdown(schema.topNodeType.create(null, content), { sourceText: true }).replace(/\n$/, "");
 }
 
-/** A table starts at row `i` of a text: a row of cells and a delimiter row under it. */
-function tableAt(rows: string[], i: number): boolean {
-  return i + 1 < rows.length && /^\s*\|/.test(rows[i]) && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1]) && rows[i + 1].includes("-");
+/** A table row's cells' count: its unescaped "|"s, the ones at its ends aside. */
+function cellCount(row: string): number {
+  const inner = row.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  return inner.split(/(?<!\\)\|/).length;
+}
+
+/**
+ * A table starts at row `i` of a text: a row of cells and a delimiter row under it. The rows may leave out the "|"
+ * at their ends (GFM): then the delimiter row has a "|" and as many cells as the row above it.
+ */
+export function tableAt(rows: string[], i: number): boolean {
+  if (i + 1 >= rows.length || !/^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1]) || !rows[i + 1].includes("-")) return false;
+  if (/^\s*\|/.test(rows[i])) return true;
+  return /(?<!\\)\|/.test(rows[i]) && rows[i + 1].includes("|") && cellCount(rows[i]) === cellCount(rows[i + 1]);
 }
 
 /** Where a table starts at row `i` or after one blank row there, or -1. */
-function tableAfter(rows: string[], i: number): number {
+export function tableAfter(rows: string[], i: number): number {
   return tableAt(rows, i) ? i : rows[i] === "" && tableAt(rows, i + 1) ? i + 1 : -1;
 }
 
-/** The row after a table that starts at row `start`. */
-function tableEnd(rows: string[], start: number): number {
+/** The row after a table that starts at row `start` (rows without a "|" at their start go on while they have one). */
+export function tableEnd(rows: string[], start: number): number {
+  const open = !/^\s*\|/.test(rows[start]);
   let j = start + 2;
-  while (j < rows.length && /^\s*\|/.test(rows[j])) j++;
+  while (j < rows.length && (/^\s*\|/.test(rows[j]) || (open && rows[j].trim() !== "" && /(?<!\\)\|/.test(rows[j])))) j++;
   return j;
 }
 
 /** A table's own caption or the note that it has none follows at row `j` (a blank row between or not). */
-function captionAfter(rows: string[], j: number): boolean {
+export function captionAfter(rows: string[], j: number): boolean {
   const k = rows[j] === "" ? j + 1 : j;
   return k < rows.length && (captionLabelLength(rows[k], "table") > 0 || NO_CAPTION.test(rows[k]));
 }

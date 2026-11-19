@@ -16,6 +16,11 @@ export function newNodeId(): string {
   return time + random + counter.toString(36).padStart(2, "0");
 }
 
+/** Whether an id is one made here (newNodeId); any other is a name a file gave (a formula's \label). */
+export function isGeneratedId(id: string): boolean {
+  return /^[0-9a-z]{10}$/.test(id);
+}
+
 function hasIdAttr(node: Node) {
   return Object.prototype.hasOwnProperty.call(node.type.spec.attrs ?? {}, "id");
 }
