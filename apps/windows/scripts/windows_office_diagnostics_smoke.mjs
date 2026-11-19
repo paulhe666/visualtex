@@ -126,6 +126,8 @@ for (const required of [
   'stage = "port-conflict"',
   "Port $port is already occupied by",
   "Port $port is owned by",
+  "Get-CompanionListeningPort",
+  "CompanionActivePort",
   "startup.log",
   "companion.log",
 ]) {
@@ -155,6 +157,8 @@ for (const required of [
   '"reg.exe"',
   '"--office-background"',
   "ProcessExited",
+  "CompanionNotListening",
+  '"CompanionActivePort"',
   "ProtocolVersionMismatch",
   "ServerCertificateMismatch",
   "InstallJsonInvalid",
@@ -182,6 +186,8 @@ for (const required of [
   '"CertificatePath"',
   '"CertificateThumbprint"',
   '"CompanionPort"',
+  '"CompanionActivePort"',
+  '"CompanionStartError"',
   '"ProtocolVersion"',
 ]) {
   assert.ok(backend.includes(required), `shared registry writer missing ${required}`);

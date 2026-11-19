@@ -24,6 +24,19 @@ $expectedProtocol = [int]$integration.ProtocolVersion
 if ($port -le 0 -or $expectedProtocol -le 0) {
     throw "OfficeIntegration companion port/protocol configuration is invalid."
 }
+
+# CompanionPort is the standard port, which install.json names too. When it is taken
+# or reserved, VisualTeX listens on another one and writes the port it bound to
+# CompanionActivePort at every start.
+function Get-CompanionListeningPort([int]$RegisteredPort) {
+    $active = 0
+    try {
+        $key = Get-Item -LiteralPath "HKCU:\Software\VisualTeX\OfficeIntegration" -ErrorAction SilentlyContinue
+        if ($null -ne $key) { $active = [int]$key.GetValue("CompanionActivePort", 0) }
+    } catch { $active = 0 }
+    if ($active -gt 0 -and $active -le 65535) { return $active }
+    return $RegisteredPort
+}
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
     $logRoot = Join-Path $env:LOCALAPPDATA "VisualTeX\office\install-logs"
     New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
@@ -55,7 +68,9 @@ function Wait-CompanionHealth([int]$Port, [int]$ProtocolVersion, [int]$TimeoutSe
         $lastError = ""
         do {
             try {
-                $raw = $client.GetStringAsync("https://127.0.0.1:$Port/health").GetAwaiter().GetResult()
+                # the port is known once VisualTeX has bound it
+                $listeningPort = Get-CompanionListeningPort $Port
+                $raw = $client.GetStringAsync("https://127.0.0.1:$listeningPort/health").GetAwaiter().GetResult()
                 $health = $raw | ConvertFrom-Json
                 if ([bool]$health.ok -and [int]$health.protocolVersion -eq $ProtocolVersion) {
                     return [pscustomobject]@{ raw = $raw; health = $health }

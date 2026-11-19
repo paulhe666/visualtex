@@ -12,17 +12,22 @@ use sha1::{Digest, Sha1};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const INTEGRATION_KEY: &str = r"HKCU\Software\VisualTeX\OfficeIntegration";
+const STANDARD_PORT: u16 = 43_127;
 const START_WAIT: Duration = Duration::from_secs(20);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone)]
 struct Config {
     port: u16,
+    /// Whether the port comes from the registry, where VisualTeX names the port it
+    /// listens on at every start (an acceptance companion has one fixed port).
+    port_from_registry: bool,
     thumbprint: String,
     office_root: PathBuf,
     executable: PathBuf,
@@ -80,10 +85,28 @@ fn acceptance_config() -> Option<Config> {
     let thumbprint = std::env::var("VISUALTEX_ACCEPTANCE_OFFICE_CERTIFICATE_THUMBPRINT").ok()?.to_ascii_uppercase();
     Some(Config {
         port,
+        port_from_registry: false,
         thumbprint,
         office_root: PathBuf::from(app_data).join("office"),
         executable: PathBuf::from(std::env::var("VISUALTEX_ACCEPTANCE_OFFICE_EXECUTABLE_PATH").unwrap_or_default()),
     })
+}
+
+/// The port VisualTeX's companion listens on: `CompanionActivePort`, written when it
+/// binds (another port than the standard one when that is taken or reserved), else the
+/// standard `CompanionPort`.
+fn companion_port(values: &std::collections::HashMap<String, String>) -> u16 {
+    let read = |name: &str| {
+        let raw = values.get(name)?;
+        let parsed = match raw.strip_prefix("0x") {
+            Some(hex) => u16::from_str_radix(hex, 16).ok(),
+            None => raw.parse().ok(),
+        };
+        parsed.filter(|port| *port != 0)
+    };
+    read("CompanionActivePort")
+        .or_else(|| read("CompanionPort"))
+        .unwrap_or(STANDARD_PORT)
 }
 
 fn load_config() -> Result<Config, String> {
@@ -92,14 +115,7 @@ fn load_config() -> Result<Config, String> {
     }
     let values = read_registry()?;
     let get = |name: &str| values.get(name).cloned().unwrap_or_default();
-    let port = {
-        let raw = get("CompanionPort");
-        let parsed = match raw.strip_prefix("0x") {
-            Some(hex) => u16::from_str_radix(hex, 16).ok(),
-            None => raw.parse().ok(),
-        };
-        parsed.filter(|port| *port != 0).unwrap_or(43_127)
-    };
+    let port = companion_port(&values);
     let thumbprint = get("CertificateThumbprint").to_ascii_uppercase();
     if thumbprint.len() != 40 {
         return Err("VisualTeX has not created its local certificate yet; start VisualTeX once".into());
@@ -110,6 +126,7 @@ fn load_config() -> Result<Config, String> {
     }
     Ok(Config {
         port,
+        port_from_registry: true,
         thumbprint,
         office_root: PathBuf::from(app_data.trim_matches('"')).join("office"),
         executable: PathBuf::from(get("ExecutablePath").trim_matches('"')),
@@ -187,6 +204,8 @@ impl Response {
 
 struct Client {
     config: Config,
+    /// The companion's port as last read; VisualTeX may listen on another one after a restart.
+    port: AtomicU16,
     tls: Arc<ClientConfig>,
 }
 
@@ -206,12 +225,29 @@ impl Client {
             .dangerous()
             .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
-        Self { config, tls: Arc::new(tls) }
+        Self { port: AtomicU16::new(config.port), config, tls: Arc::new(tls) }
+    }
+
+    /// Reads the companion's port again. True when it changed.
+    fn refresh_port(&self) -> bool {
+        if !self.config.port_from_registry {
+            return false;
+        }
+        let Ok(values) = read_registry() else {
+            return false;
+        };
+        let port = companion_port(&values);
+        let changed = self.port.swap(port, Ordering::SeqCst) != port;
+        if changed {
+            log(&format!("VisualTeX now listens on port {port}"));
+        }
+        changed
     }
 
     fn request(&self, method: &str, path: &str, headers: &[(&str, String)], body: &[u8], timeout: Duration)
         -> Result<Response, RequestError> {
-        let address = SocketAddr::from(([127, 0, 0, 1], self.config.port));
+        let port = self.port.load(Ordering::SeqCst);
+        let address = SocketAddr::from(([127, 0, 0, 1], port));
         let socket = TcpStream::connect_timeout(&address, Duration::from_secs(2))
             .map_err(|error| RequestError::NotRunning(error.to_string()))?;
         socket.set_read_timeout(Some(timeout)).ok();
@@ -221,8 +257,7 @@ impl Client {
             .map_err(|error| RequestError::Other(error.to_string()))?;
         let mut stream = StreamOwned::new(connection, socket);
         let mut head = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\nContent-Length: {}\r\n",
-            self.config.port,
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
             body.len()
         );
         for (name, value) in headers {
@@ -265,6 +300,8 @@ impl Client {
         let started = Instant::now();
         while started.elapsed() < START_WAIT {
             thread::sleep(Duration::from_millis(400));
+            // the port is known once VisualTeX has bound it
+            self.refresh_port();
             if self.healthy() {
                 return Ok(());
             }
@@ -365,6 +402,8 @@ impl Relay {
         loop {
             match client.request("POST", "/mcp", &headers, body.as_bytes(), REQUEST_TIMEOUT) {
                 Ok(response) => return Ok(response),
+                // VisualTeX was restarted and listens on another port: ask there
+                Err(RequestError::NotRunning(_)) if !started && client.refresh_port() => {}
                 Err(RequestError::NotRunning(_)) if !started => {
                     started = true;
                     client.start_visualtex()?;
@@ -512,6 +551,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn companion_port_prefers_the_port_visualtex_bound() {
+        let values = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect::<std::collections::HashMap<_, _>>()
+        };
+        // reg.exe prints DWORD values in hexadecimal
+        assert_eq!(companion_port(&values(&[("CompanionPort", "0xa877")])), 43_127);
+        assert_eq!(
+            companion_port(&values(&[("CompanionPort", "0xa877"), ("CompanionActivePort", "0x94ef")])),
+            38_127,
+        );
+        assert_eq!(
+            companion_port(&values(&[("CompanionPort", "0xa877"), ("CompanionActivePort", "0x0")])),
+            43_127,
+        );
+        assert_eq!(
+            companion_port(&values(&[("CompanionPort", "0xa877"), ("CompanionActivePort", "0x1ffff")])),
+            43_127,
+        );
+        assert_eq!(companion_port(&values(&[])), STANDARD_PORT);
+    }
 
     #[test]
     fn reads_length_chunked_and_unterminated_responses() {

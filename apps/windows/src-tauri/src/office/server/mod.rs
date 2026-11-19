@@ -9,8 +9,8 @@ use crate::office::sessions::{
     OfficeSessionStatus, SessionError, VisualTeXFormulaMetadata,
 };
 use crate::office::state::{
-    append_office_log, OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_PROTOCOL_VERSION,
-    OFFICE_UI_VERSION,
+    append_office_log, OfficeCompanionState, MAX_OFFICE_REQUEST_BYTES, OFFICE_BIND_IP,
+    OFFICE_PROTOCOL_VERSION, OFFICE_UI_VERSION,
 };
 use crate::office::word_native;
 use axum::body::Bytes;
@@ -25,7 +25,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -500,16 +500,89 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .with_state(context)
 }
 
-fn bind_listener(address: std::net::SocketAddr) -> Result<TcpListener, String> {
-    TcpListener::bind(address).map_err(|error| {
-        format!(
-            "VisualTeX Office companion cannot bind to {address}. The fixed port may already be in use: {error}"
-        )
-    })
+/// Why a port could not be bound. Windows answers "in use" (WSAEADDRINUSE) or "access
+/// denied" (WSAEACCES) both for a port another program listens on and for one inside a
+/// reserved range, which no port listing shows.
+fn describe_bind_error(error: &std::io::Error) -> String {
+    let unavailable = matches!(
+        error.kind(),
+        std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
+    );
+    if unavailable {
+        format!("in use by another program or reserved by Windows (WSL, Hyper-V): {error}")
+    } else {
+        error.to_string()
+    }
+}
+
+/// Binds the first of `ports` that can be bound (0: any free port). Returns the
+/// listener with the reasons the ports before it were skipped, or every reason when
+/// none could be bound.
+fn bind_first_available(
+    ip: [u8; 4],
+    ports: &[u16],
+) -> Result<(TcpListener, Vec<String>), String> {
+    let mut failures = Vec::new();
+    for &port in ports {
+        match TcpListener::bind(SocketAddr::from((ip, port))) {
+            Ok(listener) => return Ok((listener, failures)),
+            Err(error) => {
+                let name = if port == 0 {
+                    "any free port".to_string()
+                } else {
+                    format!("port {port}")
+                };
+                failures.push(format!("{name} is {}", describe_bind_error(&error)));
+            }
+        }
+    }
+    Err(format!(
+        "VisualTeX Office companion cannot listen on {}: {}",
+        std::net::Ipv4Addr::from(ip),
+        failures.join("; ")
+    ))
+}
+
+/// The port this process's companion had before a restart. Its stopped listener can
+/// take a moment to close, so the port gets that moment before another one is chosen.
+async fn rebind_own_port(ip: [u8; 4], port: u16, attempts: u32) -> Option<TcpListener> {
+    for attempt in 0..attempts {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        if let Ok(listener) = TcpListener::bind(SocketAddr::from((ip, port))) {
+            return Some(listener);
+        }
+    }
+    None
+}
+
+/// Makes the bound port known: to this process (URLs of the Office editor pages and
+/// their command permissions, which are per origin) and, on Windows, to the add-ins
+/// and the MCP launcher through the registry.
+fn announce_listening_port(companion: &OfficeCompanionState, port: u16) -> Result<(), String> {
+    crate::office::state::set_active_office_port(port);
+    companion.update_status(|status| status.port = port);
+    if let Some(app) = companion.app.as_ref() {
+        crate::office::state::allow_office_origin(app, port)?;
+    }
+    #[cfg(target_os = "windows")]
+    if !crate::office::state::isolated_acceptance_runtime() {
+        // Without the registry value the clients look at the standard port, which is
+        // right unless this is another one: then they need it.
+        if let Err(error) = crate::office::windows_backend::publish_companion_port(port) {
+            append_office_log(
+                &companion.paths,
+                "companion.log",
+                &format!("listening port {port} was not published: {error}"),
+            );
+        }
+    }
+    Ok(())
 }
 
 pub async fn run(companion: OfficeCompanionState) -> Result<(), String> {
-    let address = OfficeCompanionState::socket_addr();
+    let candidates = crate::office::state::office_port_candidates();
     let executable = std::env::current_exe()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|error| format!("<unresolved: {error}>"));
@@ -524,7 +597,7 @@ pub async fn run(companion: OfficeCompanionState) -> Result<(), String> {
             companion.paths.ui_root.display(),
             companion.paths.certificate.display(),
             companion.paths.private_key.display(),
-            address
+            std::net::Ipv4Addr::from(OFFICE_BIND_IP)
         ),
     );
 
@@ -546,10 +619,25 @@ pub async fn run(companion: OfficeCompanionState) -> Result<(), String> {
     append_office_log(
         &companion.paths,
         "companion.log",
-        &format!("binding TCP listener at {address}"),
+        &format!("binding TCP listener, ports in order: {candidates:?}"),
     );
-    let listener = bind_listener(address).map_err(|error| {
-        append_office_log(&companion.paths, "companion.log", &format!("bind failed: {error}"));
+    let own_port = match crate::office::state::bound_office_port() {
+        Some(port) => rebind_own_port(OFFICE_BIND_IP, port, 25).await,
+        None => None,
+    };
+    let (listener, skipped) = match own_port {
+        Some(listener) => (listener, Vec::new()),
+        None => bind_first_available(OFFICE_BIND_IP, &candidates).map_err(|error| {
+            append_office_log(&companion.paths, "companion.log", &format!("bind failed: {error}"));
+            error
+        })?,
+    };
+    for failure in &skipped {
+        append_office_log(&companion.paths, "companion.log", &format!("bind skipped: {failure}"));
+    }
+    let address = listener.local_addr().map_err(|error| {
+        let error = format!("Unable to read the Office companion listener address: {error}");
+        append_office_log(&companion.paths, "companion.log", &error);
         error
     })?;
     append_office_log(
@@ -593,10 +681,15 @@ pub async fn run(companion: OfficeCompanionState) -> Result<(), String> {
         })?;
         *stored = Some(handle.clone());
     }
+    announce_listening_port(&companion, address.port()).map_err(|error| {
+        append_office_log(&companion.paths, "companion.log", &error);
+        error
+    })?;
     companion.update_status(|status| {
         status.running = true;
         status.last_error = None;
     });
+    companion.starting.store(false, std::sync::atomic::Ordering::SeqCst);
     append_office_log(
         &companion.paths,
         "companion.log",
@@ -918,13 +1011,117 @@ mod tests {
         assert_eq!(address.port(), 43_127);
     }
 
+    fn occupied_port() -> (TcpListener, u16) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("occupying listener");
+        let port = listener.local_addr().expect("local address").port();
+        (listener, port)
+    }
+
     #[test]
-    fn occupied_port_returns_a_clear_error() {
-        let first = TcpListener::bind(("127.0.0.1", 0)).expect("first listener");
-        let address = first.local_addr().expect("local address");
-        let error = bind_listener(address).expect_err("second bind must fail");
-        assert!(error.contains("already be in use"));
-        assert!(error.contains(&address.to_string()));
+    fn free_first_port_is_bound_without_trying_the_others() {
+        let (first, free) = occupied_port();
+        drop(first);
+        let (listener, skipped) =
+            bind_first_available(OFFICE_BIND_IP, &[free, 0]).expect("free port binds");
+        assert_eq!(listener.local_addr().unwrap().port(), free);
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn unavailable_ports_fall_back_to_the_next_candidate() {
+        let (_first, first_port) = occupied_port();
+        let (_second, second_port) = occupied_port();
+        let (third, third_port) = occupied_port();
+        drop(third);
+        let (listener, skipped) =
+            bind_first_available(OFFICE_BIND_IP, &[first_port, second_port, third_port, 0])
+                .expect("third candidate binds");
+        let address = listener.local_addr().unwrap();
+        assert!(address.ip().is_loopback());
+        assert_eq!(address.port(), third_port);
+        assert_eq!(skipped.len(), 2);
+        assert!(skipped[0].starts_with(&format!("port {first_port} is in use by another program or reserved by Windows")));
+        assert!(skipped[1].starts_with(&format!("port {second_port} is ")));
+    }
+
+    #[test]
+    fn last_candidate_takes_any_free_port() {
+        let (_first, first_port) = occupied_port();
+        let (listener, skipped) =
+            bind_first_available(OFFICE_BIND_IP, &[first_port, 0]).expect("a free port binds");
+        let port = listener.local_addr().unwrap().port();
+        assert_ne!(port, 0);
+        assert_ne!(port, first_port);
+        assert_eq!(skipped.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn restart_waits_for_its_own_port_to_be_released() {
+        let (occupying, port) = occupied_port();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            drop(occupying);
+        });
+        let listener = rebind_own_port(OFFICE_BIND_IP, port, 25).await.expect("port is released");
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+        release.await.unwrap();
+
+        // a port that stays taken is given up, so that another one can be chosen
+        let (_held, held_port) = occupied_port();
+        assert!(rebind_own_port(OFFICE_BIND_IP, held_port, 2).await.is_none());
+    }
+
+    #[test]
+    fn no_bindable_port_names_every_port_and_reason() {
+        let (_first, first_port) = occupied_port();
+        let (_second, second_port) = occupied_port();
+        let error = bind_first_available(OFFICE_BIND_IP, &[first_port, second_port])
+            .expect_err("no candidate can be bound");
+        assert!(error.starts_with("VisualTeX Office companion cannot listen on 127.0.0.1: "));
+        assert!(error.contains(&format!("port {first_port} is in use by another program or reserved by Windows")));
+        assert!(error.contains(&format!("port {second_port} is in use by another program or reserved by Windows")));
+    }
+
+    #[test]
+    fn reserved_and_occupied_ports_read_the_same() {
+        let mut errors = vec![
+            std::io::Error::from(std::io::ErrorKind::AddrInUse),
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        ];
+        if cfg!(target_os = "windows") {
+            // WSAEACCES and WSAEADDRINUSE, as bind returns them
+            errors.push(std::io::Error::from_raw_os_error(10013));
+            errors.push(std::io::Error::from_raw_os_error(10048));
+        }
+        for error in errors {
+            let text = describe_bind_error(&error);
+            assert!(text.starts_with("in use by another program or reserved by Windows (WSL, Hyper-V): "), "{text}");
+        }
+        let other = describe_bind_error(&std::io::Error::other("network is down"));
+        assert_eq!(other, "network is down");
+    }
+
+    #[test]
+    fn published_editor_preferences_are_kept_for_the_next_run() {
+        let temp = TempDir::new().expect("temp dir");
+        let state = test_state(&temp);
+        assert_eq!(state.current_editor_preferences(), serde_json::json!({}));
+        assert_eq!(state.published_editor_preferences(), serde_json::json!({}));
+        let published = serde_json::json!({
+            "settings": { "language": "en", "formulaFaces": { "letters": "times" }, "zoom": 2 },
+            "commandUsage": { "alpha": 1 },
+        });
+        assert_eq!(state.set_current_editor_preferences(published.clone()), published);
+        assert_eq!(state.published_editor_preferences(), published);
+
+        // the next run serves them to the Office editor before the main window publishes
+        let restarted = test_state(&temp);
+        assert_eq!(
+            restarted.current_editor_preferences(),
+            serde_json::json!({ "settings": { "language": "en", "formulaFaces": { "letters": "times" } } }),
+        );
+        // but has sent nothing itself yet: its first publication is compared with nothing
+        assert_eq!(restarted.published_editor_preferences(), serde_json::json!({}));
     }
 
     #[tokio::test]

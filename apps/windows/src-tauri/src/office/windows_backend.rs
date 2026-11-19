@@ -19,6 +19,8 @@ const OLE_LOCAL_SERVER_KEY: &str =
     r"HKLM\Software\Classes\CLSID\{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}\LocalServer32";
 const OFFICE_MODE_KEY: &str = r"HKCU\Software\VisualTeX\OfficeIntegration";
 const APP_LANGUAGE_VALUE: &str = "Language";
+const COMPANION_ACTIVE_PORT_VALUE: &str = "CompanionActivePort";
+const COMPANION_START_ERROR_VALUE: &str = "CompanionStartError";
 const WORD_FORMULA_SHORTCUT_CONFLICTS_VALUE: &str = "WordFormulaShortcutConflicts";
 const WORD_USER_PREFERENCES_KEY: &str = r"HKCU\Software\VisualTeX\Word";
 const WORD_DEFAULT_NUMBERED_VALUE: &str = "DefaultDisplayEquationNumbered";
@@ -286,6 +288,33 @@ pub fn write_shared_configuration(
     )?;
     registry_set_dword(OFFICE_MODE_KEY, "CompanionPort", u32::from(companion_port))?;
     registry_set_dword(OFFICE_MODE_KEY, "ProtocolVersion", protocol_version)
+}
+
+/// The port the companion listens on in this run, for the add-ins and the MCP launcher
+/// (CompanionPort stays the standard port, which install.json also names), and no
+/// start error.
+pub fn publish_companion_port(port: u16) -> Result<(), String> {
+    registry_set_dword(OFFICE_MODE_KEY, COMPANION_ACTIVE_PORT_VALUE, u32::from(port))?;
+    registry_set_string(OFFICE_MODE_KEY, COMPANION_START_ERROR_VALUE, "")
+}
+
+/// Why the companion does not listen although VisualTeX runs, for the add-ins' message.
+pub fn publish_companion_start_error(error: &str) -> Result<(), String> {
+    registry_set_string(
+        OFFICE_MODE_KEY,
+        COMPANION_START_ERROR_VALUE,
+        &registry_text(error),
+    )
+}
+
+/// One line of bounded length (a registry value shown in a message box).
+fn registry_text(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(600)
+        .collect()
 }
 
 pub(crate) fn set_app_editor_language(language: &str) -> Result<(), String> {
@@ -836,4 +865,19 @@ fn registry_dword_equals_in_view(
             .is_some_and(|actual| actual == expected)
             || token.parse::<u32>().is_ok_and(|actual| actual == expected)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_text_is_one_bounded_line() {
+        assert_eq!(
+            registry_text("cannot listen:\r\n  port 43127 is in use\n"),
+            "cannot listen: port 43127 is in use",
+        );
+        assert_eq!(registry_text(&"x".repeat(2000)).chars().count(), 600);
+        assert_eq!(registry_text(""), "");
+    }
 }

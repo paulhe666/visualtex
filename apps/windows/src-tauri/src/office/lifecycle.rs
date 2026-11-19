@@ -333,8 +333,10 @@ pub fn initialize(app: &AppHandle, ocr: OcrState) -> Result<OfficeCompanionState
 }
 
 pub fn start(state: OfficeCompanionState) {
-    if state.snapshot().running {
-        append_office_log(&state.paths, "companion.log", "start skipped: companion already marked running");
+    if state.snapshot().running
+        || state.starting.swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        append_office_log(&state.paths, "companion.log", "start skipped: companion already running or starting");
         return;
     }
     append_office_log(
@@ -348,12 +350,27 @@ pub fn start(state: OfficeCompanionState) {
 
     let service = state.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = server::run(service.clone()).await {
+        let result = server::run(service.clone()).await;
+        service.starting.store(false, std::sync::atomic::Ordering::SeqCst);
+        if let Err(error) = result {
             append_office_log(
                 &service.paths,
                 "companion.log",
                 &format!("companion terminated with error: {error}"),
             );
+            // The add-ins cannot ask a companion that does not listen: leave them the reason.
+            #[cfg(target_os = "windows")]
+            if !crate::office::state::isolated_acceptance_runtime() {
+                if let Err(publish_error) =
+                    crate::office::windows_backend::publish_companion_start_error(&error)
+                {
+                    append_office_log(
+                        &service.paths,
+                        "companion.log",
+                        &format!("companion start error was not published: {publish_error}"),
+                    );
+                }
+            }
             service.update_status(|status| {
                 status.running = false;
                 status.last_error = Some(error);
@@ -385,7 +402,7 @@ pub fn set_app_editor_preferences(
 ) -> Result<serde_json::Value, String> {
     #[cfg(target_os = "windows")]
     {
-        let previous = state.current_editor_preferences();
+        let previous = state.published_editor_preferences();
         let language = preferences
             .pointer("/settings/language")
             .and_then(serde_json::Value::as_str);

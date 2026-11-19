@@ -256,6 +256,14 @@ pub fn run() {
                     "single-instance notification cwd={} args={arguments:?}",
                     cwd
                 ));
+                // An add-in or the MCP launcher starts a second VisualTeX when the
+                // companion does not answer. That process only notifies this one and
+                // ends, so the companion that is down has to be started again here.
+                if app_lifecycle::arguments_request_companion(&arguments) {
+                    if let Some(state) = app.try_state::<office::state::OfficeCompanionState>() {
+                        office::start(state.inner().clone());
+                    }
+                }
                 if !app_lifecycle::arguments_request_desktop(&arguments) {
                     app_lifecycle::append_lifecycle_log(
                         "single-instance notification does not request a desktop window",
@@ -277,10 +285,9 @@ pub fn run() {
         .manage(ocr_state)
         .setup(move |app| {
             // The template is excluded from static ACL loading. Register the
-            // same bounded commands/windows for this process's one exact port.
-            app.add_capability(office::state::office_capability_for_port(
-                office::state::office_port()
-            )?)?;
+            // same bounded commands/windows for the port the companion tries first;
+            // another port it has to bind is registered when it is bound.
+            office::state::allow_office_origin(app.handle(), office::state::office_port())?;
             if run_mode == app_lifecycle::AppRunMode::OfficeBootstrap {
                 app_lifecycle::append_lifecycle_log(
                     "office-bootstrap setup skipped all windows, companion startup and warmup tasks",

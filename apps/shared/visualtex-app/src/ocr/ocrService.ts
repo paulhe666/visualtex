@@ -687,7 +687,8 @@ export const isOfficeCompanionEnvironment = () => {
     configuredTransport?.environment === "office" &&
     window.location.protocol === "https:" &&
     window.location.hostname === "127.0.0.1" &&
-    window.location.port === "43127" &&
+    // the companion's port: 43127, or another one when that is taken or reserved
+    window.location.port !== "" &&
     typeof token === "string" &&
     token.length >= 32
   );

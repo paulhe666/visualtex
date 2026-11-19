@@ -258,6 +258,47 @@ public sealed class OfficePluginLanguageTests
     }
 
     [Fact]
+    public void OfficeErrorText_RunningVisualTeXWithoutItsServiceGivesTheReasonNotAnExitCode()
+    {
+        VisualTeX.WindowsOffice.Contracts.VisualTeXCompanionException Failure(string startError) => new(
+            new VisualTeX.WindowsOffice.Contracts.CompanionHealthDiagnostic
+            {
+                Stage = "port-listen",
+                FailureType = "CompanionNotListening",
+                Message = "VisualTeX is running, but its Office companion does not listen on 127.0.0.1:43127.",
+                CompanionPort = 43127,
+                CompanionStartError = startError,
+            });
+        const string reason = "VisualTeX Office companion cannot listen on 127.0.0.1: port 43127 is in use by another program or reserved by Windows (WSL, Hyper-V)";
+
+        var english = InLanguage("en", () => OfficeErrorText.Describe(Failure(reason)));
+        var chinese = InLanguage("cn", () => OfficeErrorText.Describe(Failure(reason)));
+        Assert.Equal(
+            $"VisualTeX is running, but its Office background service did not start ({reason}). Restart VisualTeX and try again.",
+            english);
+        Assert.Equal($"VisualTeX 正在运行，但它的 Office 后台服务没有启动（{reason}）。请重启 VisualTeX 后重试。", chinese);
+        foreach (var text in new[] { english, chinese })
+        {
+            Assert.DoesNotContain("exit code", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"stage\"", text, StringComparison.Ordinal);
+        }
+
+        // without a reason from VisualTeX the port is named
+        Assert.Contains("nothing listens on local port 43127", InLanguage("en", () => OfficeErrorText.Describe(Failure(""))), StringComparison.Ordinal);
+        Assert.Contains("本机端口 43127 无人监听", InLanguage("cn", () => OfficeErrorText.Describe(Failure(""))), StringComparison.Ordinal);
+
+        // any other companion failure keeps its diagnostic text
+        var other = new VisualTeX.WindowsOffice.Contracts.VisualTeXCompanionException(
+            new VisualTeX.WindowsOffice.Contracts.CompanionHealthDiagnostic
+            {
+                Stage = "certificate-match",
+                FailureType = "ServerCertificateMismatch",
+                Message = "The HTTPS server certificate does not match.",
+            });
+        Assert.Contains("failed at stage 'certificate-match'", InLanguage("en", () => OfficeErrorText.Describe(other)), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OfficeErrorText_ItemResultChecksAreTranslated()
     {
         var chinese = InLanguage("cn", () => OfficeErrorText.DescribeItemError("VisualTeX's result for this formula has no MathML."));

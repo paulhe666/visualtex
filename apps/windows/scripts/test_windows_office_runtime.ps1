@@ -742,6 +742,19 @@ function Start-CompanionAsInteractiveUser([string]$Executable) {
     return Start-Process -FilePath $Executable -ArgumentList "--office-background" -WindowStyle Hidden -PassThru
 }
 
+# CompanionPort is the standard port, which install.json names too. When it is taken
+# or reserved, VisualTeX listens on another one and writes the port it bound to
+# CompanionActivePort at every start.
+function Get-CompanionListeningPort([int]$RegisteredPort) {
+    $active = 0
+    try {
+        $key = Get-Item -LiteralPath "HKCU:\Software\VisualTeX\OfficeIntegration" -ErrorAction SilentlyContinue
+        if ($null -ne $key) { $active = [int]$key.GetValue("CompanionActivePort", 0) }
+    } catch { $active = 0 }
+    if ($active -gt 0 -and $active -le 65535) { return $active }
+    return $RegisteredPort
+}
+
 function Test-CompanionRuntime {
     param(
         [object]$IntegrationState,
@@ -765,7 +778,10 @@ function Test-CompanionRuntime {
     $appDataRoot = [string]$IntegrationState.AppDataRoot
     $certificatePath = [string]$IntegrationState.CertificatePath
     $expectedThumbprint = ([string]$IntegrationState.CertificateThumbprint).Replace(" ", "")
-    $port = [int]$IntegrationState.CompanionPort
+    $registeredPort = [int]$IntegrationState.CompanionPort
+    $port = Get-CompanionListeningPort $registeredPort
+    $foreignPort = 0
+    $foreignPortError = ""
     $expectedProtocol = [int]$IntegrationState.ProtocolVersion
     $installJsonPath = Join-Path $appDataRoot "office\install.json"
     $companionLogRoot = Join-Path $env:LOCALAPPDATA "VisualTeX\office\logs"
@@ -805,8 +821,8 @@ function Test-CompanionRuntime {
     } elseif (-not (Test-Path -LiteralPath $appDataRoot -PathType Container)) {
         [void]$errors.Add("The registered AppDataRoot does not exist: $appDataRoot")
     }
-    if ($port -le 0 -or $port -gt 65535) {
-        [void]$errors.Add("CompanionPort is missing or invalid: $port")
+    if ($registeredPort -le 0 -or $registeredPort -gt 65535) {
+        [void]$errors.Add("CompanionPort is missing or invalid: $registeredPort")
     }
     if ($expectedProtocol -le 0) {
         [void]$errors.Add("ProtocolVersion is missing or invalid: $expectedProtocol")
@@ -820,8 +836,8 @@ function Test-CompanionRuntime {
                 [string]$installState.installToken.Length -ne 64) {
                 [void]$errors.Add("install.json contains an invalid installToken.")
             }
-            if ([int]$installState.port -ne $port) {
-                [void]$errors.Add("install.json port=$($installState.port) does not match registry CompanionPort=$port.")
+            if ([int]$installState.port -ne $registeredPort) {
+                [void]$errors.Add("install.json port=$($installState.port) does not match registry CompanionPort=$registeredPort.")
             }
             if ([int]$installState.protocolVersion -ne $expectedProtocol) {
                 [void]$errors.Add("install.json protocolVersion=$($installState.protocolVersion) does not match registry ProtocolVersion=$expectedProtocol.")
@@ -833,8 +849,9 @@ function Test-CompanionRuntime {
     }
 
     if ($errors.Count -eq 0) {
-        # Inspect the fixed companion port before starting VisualTeX. This
-        # prevents a foreign listener from being misreported as a generic
+        # Inspect the companion port before starting VisualTeX. A foreign
+        # listener is not a failure yet: VisualTeX then binds another port and
+        # names it. It is reported if VisualTeX does not, instead of a generic
         # background-process timeout or early-exit failure.
         $portListening = Test-TcpPort "127.0.0.1" $port 750
         if ($portListening) {
@@ -844,8 +861,9 @@ function Test-CompanionRuntime {
                     [IO.Path]::GetFullPath([string]$portOwner.processPath),
                     [IO.Path]::GetFullPath($executable),
                     [StringComparison]::OrdinalIgnoreCase)) {
-                $stage = "port-conflict"
-                [void]$errors.Add("Port $port is already occupied by '$($portOwner.processPath)' PID=$($portOwner.processId) process='$($portOwner.processName)', not by '$executable'.")
+                $foreignPort = $port
+                $foreignPortError = "Port $port is already occupied by '$($portOwner.processPath)' PID=$($portOwner.processId) process='$($portOwner.processName)', not by '$executable'."
+                $portListening = $false
             } elseif ($null -ne $portOwner.processId) {
                 $matchingProcess = Get-Process -Id ([int]$portOwner.processId) -ErrorAction SilentlyContinue
             }
@@ -889,11 +907,17 @@ function Test-CompanionRuntime {
                 [void]$errors.Add("VisualTeX background PID=$($matchingProcess.Id) exited with code $startedProcessExitCode before the companion became ready.")
                 break
             }
-            $portListening = Test-TcpPort "127.0.0.1" $port 750
+            # The port is known once VisualTeX has bound it; the other program's
+            # port is not VisualTeX's.
+            $port = Get-CompanionListeningPort $registeredPort
+            $portListening = ($port -ne $foreignPort) -and (Test-TcpPort "127.0.0.1" $port 750)
             if ($portListening) { break }
             Start-Sleep -Milliseconds 250
         } while ([DateTimeOffset]::UtcNow -lt $deadline)
-        if (-not $portListening) {
+        if (-not $portListening -and $foreignPort -gt 0 -and $errors.Count -eq 0) {
+            $stage = "port-conflict"
+            [void]$errors.Add("$foreignPortError VisualTeX did not start its companion on another port within 20 seconds. Check '$startupLog' and '$companionLog'.")
+        } elseif (-not $portListening) {
             [void]$errors.Add("No process listened on 127.0.0.1:$port within 20 seconds. Check '$startupLog' and '$companionLog'.")
         }
     }

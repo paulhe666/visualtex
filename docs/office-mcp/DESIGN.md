@@ -26,9 +26,12 @@ chatbot cannot reach Office on someone's machine; only a local MCP client can).
    and SVG → PNG run in JavaScript in WebView2 windows of `visualtex.exe`. Downstream is headless C#: MathML → OMML,
    MathML → MTEF, SVG → EMF/PNG, OMML/MTEF → MathML → LaTeX.
 3. `visualtex.exe` hosts the **Office companion**: HTTPS on `127.0.0.1:43127`, pinned per-user certificate, every
-   `/api/v1/*` call needs the install token. It already has a **headless render API** (render batches through a
-   hidden converter WebView: SVG, PNG, MathML, size, baseline) used by LaTeX redraw, format conversion and bulk
-   import, and an OCR API.
+   `/api/v1/*` call needs the install token. When 43127 cannot be bound (taken, or inside a range Windows reserved
+   for WSL mirrored networking or Hyper-V) the companion binds 38127, then 33127, then any free port, and writes the
+   port it listens on to `HKCU\Software\VisualTeX\OfficeIntegration\CompanionActivePort` at every start; the
+   add-ins and the launcher read it there (`CompanionPort` stays 43127, the port `install.json` names). It already
+   has a **headless render API** (render batches through a hidden converter WebView: SVG, PNG, MathML, size,
+   baseline) used by LaTeX redraw, format conversion and bulk import, and an OCR API.
 4. The only outside entry points into the add-ins are the ribbon callbacks (`COMAddIn.Object = this`): no LaTeX
    argument, no return value, fire-and-forget, completion only visible in the document, a trace log or the status
    bar. Many operations show modal dialogs or MessageBoxes; there is no production non-interactive mode.
@@ -56,7 +59,7 @@ add-ins, already rendering — is the natural hub.
         │ stdio (JSON-RPC, MCP)
         ▼
   visualtex-mcp.exe  ── small console launcher, ships with VisualTeX
-        │ HTTPS 127.0.0.1:43127/mcp  (pinned cert, MCP bearer token)
+        │ HTTPS 127.0.0.1:<companion port>/mcp  (pinned cert, MCP bearer token)
         ▼
   visualtex.exe  — Office companion  ───────────────────────────────┐
    ├─ MCP hub: tools, policy & consent, audit log                   │ hidden converter WebView

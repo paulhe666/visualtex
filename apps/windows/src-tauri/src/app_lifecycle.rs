@@ -321,6 +321,13 @@ impl AppRunMode {
     }
 }
 
+/// A start that asks for the Office companion (an add-in or the MCP launcher).
+pub fn arguments_request_companion(arguments: &[String]) -> bool {
+    arguments
+        .iter()
+        .any(|argument| argument == OFFICE_BACKGROUND_ARGUMENT)
+}
+
 pub fn arguments_request_desktop(arguments: &[String]) -> bool {
     !arguments.iter().any(|argument| {
         argument == OFFICE_BACKGROUND_ARGUMENT || argument == OFFICE_BOOTSTRAP_ARGUMENT
@@ -661,6 +668,21 @@ mod tests {
             OFFICE_BACKGROUND_ARGUMENT.to_string(),
         ]));
         assert!(!arguments_request_desktop(&[
+            "visualtex.exe".to_string(),
+            OFFICE_BOOTSTRAP_ARGUMENT.to_string(),
+        ]));
+    }
+
+    #[test]
+    fn only_a_background_start_asks_for_the_companion() {
+        assert!(arguments_request_companion(&[
+            "visualtex.exe".to_string(),
+            OFFICE_BACKGROUND_ARGUMENT.to_string(),
+        ]));
+        assert!(!arguments_request_companion(&[
+            "C:\\VisualTeX\\visualtex.exe".to_string()
+        ]));
+        assert!(!arguments_request_companion(&[
             "visualtex.exe".to_string(),
             OFFICE_BOOTSTRAP_ARGUMENT.to_string(),
         ]));

@@ -65,6 +65,10 @@ public sealed class CompanionHealthDiagnostic
     [JsonPropertyName("startedProcessExitCode")]
     public int? StartedProcessExitCode { get; set; }
 
+    /// <summary>VisualTeX's own reason for a companion that does not listen (FailureType CompanionNotListening).</summary>
+    [JsonPropertyName("companionStartError")]
+    public string CompanionStartError { get; set; } = string.Empty;
+
     [JsonPropertyName("portListening")]
     public bool PortListening { get; set; }
 
@@ -118,7 +122,15 @@ internal sealed class CompanionConfiguration
     public string AppDataRoot { get; set; } = string.Empty;
     public string CertificatePath { get; set; } = string.Empty;
     public string CertificateThumbprint { get; set; } = string.Empty;
-    public int CompanionPort { get; set; }
+    private int _companionPort;
+    /// <summary>The port the companion listens on; read again when it does not answer there.</summary>
+    public int CompanionPort
+    {
+        get => Volatile.Read(ref _companionPort);
+        set => Volatile.Write(ref _companionPort, value);
+    }
+    /// <summary>The standard port (the registry's CompanionPort), which install.json names too; 0 outside the registry configuration.</summary>
+    public int RegisteredPort { get; set; }
     public int ProtocolVersion { get; set; }
     // Acceptance runs can read the existing identity while keeping all runtime
     // data under a distinct artifact root. Production configuration never sets
@@ -128,7 +140,7 @@ internal sealed class CompanionConfiguration
     public string InstallJsonPath => Path.Combine(
         string.IsNullOrWhiteSpace(IdentityRoot) ? AppDataRoot : IdentityRoot,
         "office", "install.json");
-    public int InstallJsonPort => IdentityPort ?? CompanionPort;
+    public int InstallJsonPort => IdentityPort ?? (RegisteredPort > 0 ? RegisteredPort : CompanionPort);
 }
 
 public sealed class VisualTeXSessionClient : IDisposable
@@ -186,7 +198,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             {
                 CompanionPort = error.Diagnostic.CompanionPort > 0
                     ? error.Diagnostic.CompanionPort
-                    : 43127,
+                    : CompanionEndpoint.StandardPort,
                 ProtocolVersion = error.Diagnostic.ExpectedProtocolVersion > 0
                     ? error.Diagnostic.ExpectedProtocolVersion
                     : 1,
@@ -216,14 +228,10 @@ public sealed class VisualTeXSessionClient : IDisposable
         // and render waits; .NET Framework allows only two connections per server.
         try { handler.MaxConnectionsPerServer = 16; }
         catch (PlatformNotSupportedException ignored) { IgnoredErrors.Ignore(ignored); }
-        try
-        {
-            var servicePoint = ServicePointManager.FindServicePoint(
-                new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"));
-            if (servicePoint.ConnectionLimit < 16) servicePoint.ConnectionLimit = 16;
-        }
-        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
-        _http = new HttpClient(handler)
+        RaiseConnectionLimit(_configuration.CompanionPort);
+        // The base address keeps the port read here; every request goes to the current one.
+        var transport = new CompanionPortHandler(handler, () => _configuration.CompanionPort);
+        _http = new HttpClient(transport)
         {
             BaseAddress = new Uri($"https://127.0.0.1:{_configuration.CompanionPort}"),
             Timeout = TimeSpan.FromSeconds(5),
@@ -232,7 +240,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         // Only the batch result wait may outlive the existing five-second API
         // timeout. Share the exact TLS/proxy handler without taking ownership.
         // RenderBatchAsync supplies a caller-owned timeout and cancellation token.
-        _renderBatchHttp = new HttpClient(handler, disposeHandler: false)
+        _renderBatchHttp = new HttpClient(transport, disposeHandler: false)
         {
             BaseAddress = _http.BaseAddress,
             Timeout = Timeout.InfiniteTimeSpan,
@@ -242,6 +250,35 @@ public sealed class VisualTeXSessionClient : IDisposable
     }
 
     public CompanionHealthDiagnostic? LastHealthDiagnostic { get; private set; }
+
+    private static void RaiseConnectionLimit(int port)
+    {
+        try
+        {
+            var servicePoint = ServicePointManager.FindServicePoint(
+                new Uri($"https://127.0.0.1:{port}"));
+            if (servicePoint.ConnectionLimit < 16) servicePoint.ConnectionLimit = 16;
+        }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+    }
+
+    /// <summary>
+    /// Takes the port VisualTeX named when it last bound its companion. True when it
+    /// is another one than the port in use: the requests then go there.
+    /// </summary>
+    private bool RefreshCompanionPort()
+    {
+        if (_configuration.RegisteredPort <= 0) return false;
+        var port = CompanionEndpoint.ResolvePort(
+            CompanionEndpoint.ReadActivePort(),
+            _configuration.RegisteredPort);
+        if (port == _configuration.CompanionPort) return false;
+        _configuration.CompanionPort = port;
+        RaiseConnectionLimit(port);
+        InvalidateHealth();
+        AppendClientLog("port-changed", null, null);
+        return true;
+    }
 
     public async Task EnsureHealthyAsync(CancellationToken cancellationToken)
     {
@@ -276,8 +313,13 @@ public sealed class VisualTeXSessionClient : IDisposable
         try
         {
             ValidateConfiguration(diagnostic);
-            if (await TryValidateRunningCompanionAsync(diagnostic, cancellationToken)
-                    .ConfigureAwait(false))
+            var healthy = await TryValidateRunningCompanionAsync(diagnostic, cancellationToken)
+                .ConfigureAwait(false);
+            // VisualTeX may listen on another port than the one last read.
+            if (!healthy && !cancellationToken.IsCancellationRequested && RefreshCompanionPort())
+                healthy = await TryValidateRunningCompanionAsync(diagnostic, cancellationToken)
+                    .ConfigureAwait(false);
+            if (healthy)
             {
                 EnsureAuthorizationHeader();
                 diagnostic.Stage = "complete";
@@ -288,21 +330,26 @@ public sealed class VisualTeXSessionClient : IDisposable
                 return;
             }
             cancellationToken.ThrowIfCancellationRequested();
+            var occupiedByOther = string.Empty;
+            var occupiedPort = 0;
             if (diagnostic.PortListening)
             {
                 if (!string.IsNullOrWhiteSpace(diagnostic.PortOwnerProcessPath)
                     && !PathsEqual(diagnostic.PortOwnerProcessPath, _configuration.ExecutablePath))
                 {
-                    diagnostic.FailureType = "PortOccupiedByOtherProcess";
-                    diagnostic.Message =
+                    // Not fatal: a VisualTeX started now takes a free port and names it.
+                    occupiedPort = _configuration.CompanionPort;
+                    occupiedByOther =
                         $"Port {_configuration.CompanionPort} is occupied by {diagnostic.PortOwnerProcessName} PID={diagnostic.PortOwnerProcessId?.ToString() ?? "unknown"} at '{diagnostic.PortOwnerProcessPath}', not by '{_configuration.ExecutablePath}'.";
+                    diagnostic.Message = occupiedByOther;
+                    AppendClientLog("port-occupied-by-other-process", diagnostic, null);
                 }
                 else
                 {
                     diagnostic.Message =
                         $"Port {_configuration.CompanionPort} is already listening, but the existing service failed stage '{diagnostic.Stage}'. Owner={diagnostic.PortOwnerProcessName} PID={diagnostic.PortOwnerProcessId?.ToString() ?? "unknown"} path='{diagnostic.PortOwnerProcessPath}'. {diagnostic.Message}";
+                    throw new VisualTeXCompanionException(diagnostic);
                 }
-                throw new VisualTeXCompanionException(diagnostic);
             }
 
             diagnostic.Stage = "process-start";
@@ -314,13 +361,23 @@ public sealed class VisualTeXSessionClient : IDisposable
                 if (started is not null && started.HasExited)
                 {
                     diagnostic.StartedProcessExitCode = started.ExitCode;
-                    diagnostic.FailureType = "ProcessExited";
-                    diagnostic.Message =
-                        $"VisualTeX background process exited before the companion became healthy (exit code {started.ExitCode}).";
-                    throw new VisualTeXCompanionException(diagnostic);
+                    if (started.ExitCode != 0 || !IsVisualTeXRunning(started.Id))
+                    {
+                        diagnostic.FailureType = "ProcessExited";
+                        diagnostic.Message =
+                            $"VisualTeX background process exited before the companion became healthy (exit code {started.ExitCode}).";
+                        throw new VisualTeXCompanionException(diagnostic);
+                    }
+                    // VisualTeX already runs: it keeps a single instance, so the
+                    // process started here told it to start its companion and ended.
+                    AppendClientLog("handed-over-to-running-visualtex", diagnostic, null);
+                    started = null;
                 }
 
-                if (await TryValidateRunningCompanionAsync(diagnostic, cancellationToken)
+                RefreshCompanionPort();
+                // The other program's port is not asked again: VisualTeX names its own.
+                if (_configuration.CompanionPort != occupiedPort
+                    && await TryValidateRunningCompanionAsync(diagnostic, cancellationToken)
                         .ConfigureAwait(false))
                 {
                     EnsureAuthorizationHeader();
@@ -334,10 +391,11 @@ public sealed class VisualTeXSessionClient : IDisposable
                 await Task.Delay(250, cancellationToken).ConfigureAwait(false);
             }
 
-            if (string.IsNullOrWhiteSpace(diagnostic.FailureType))
-                diagnostic.FailureType = "RuntimeValidationTimeout";
-            diagnostic.Message =
-                $"VisualTeX companion did not pass stage '{diagnostic.Stage}' within 20 seconds. {diagnostic.Message}".Trim();
+            DescribeStartFailure(
+                diagnostic,
+                IsVisualTeXRunning(0),
+                _configuration.RegisteredPort > 0 ? CompanionEndpoint.ReadStartError() : string.Empty,
+                occupiedByOther);
             throw new VisualTeXCompanionException(diagnostic);
         }
         catch (VisualTeXCompanionException error)
@@ -365,6 +423,39 @@ public sealed class VisualTeXSessionClient : IDisposable
     }
 
     /// <summary>
+    /// The failure after the wait for a started VisualTeX. A VisualTeX that runs
+    /// without a listening companion is named as that, with its own reason
+    /// (<paramref name="startError"/>), instead of a timeout or an exit code.
+    /// </summary>
+    internal static void DescribeStartFailure(
+        CompanionHealthDiagnostic diagnostic,
+        bool visualTeXRunning,
+        string? startError,
+        string? occupiedByOther)
+    {
+        var reason = (startError ?? string.Empty).Trim();
+        if (!diagnostic.PortListening && visualTeXRunning)
+        {
+            diagnostic.FailureType = "CompanionNotListening";
+            diagnostic.CompanionStartError = reason;
+            diagnostic.Message =
+                $"VisualTeX is running, but its Office companion does not listen on 127.0.0.1:{diagnostic.CompanionPort}."
+                + (reason.Length > 0 ? $" VisualTeX reported: {reason}" : string.Empty);
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(occupiedByOther) && diagnostic.PortListening)
+        {
+            diagnostic.FailureType = "PortOccupiedByOtherProcess";
+            diagnostic.Message = occupiedByOther!;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(diagnostic.FailureType))
+            diagnostic.FailureType = "RuntimeValidationTimeout";
+        diagnostic.Message =
+            $"VisualTeX companion did not pass stage '{diagnostic.Stage}' in time. {diagnostic.Message}".Trim();
+    }
+
+    /// <summary>
     /// One request of the agent channel (docs/office-mcp/DESIGN.md §4.3): the status
     /// and body, whatever the status. Never starts VisualTeX.
     /// </summary>
@@ -389,10 +480,15 @@ public sealed class VisualTeXSessionClient : IDisposable
     }
 
     /// <summary>Whether something listens on the companion port (no TLS, no request).</summary>
-    public Task<bool> IsCompanionListeningAsync(CancellationToken cancellationToken) =>
-        _configurationException != null
-            ? Task.FromResult(false)
-            : IsPortListeningAsync(_configuration.CompanionPort, cancellationToken);
+    public async Task<bool> IsCompanionListeningAsync(CancellationToken cancellationToken)
+    {
+        if (_configurationException != null) return false;
+        if (await IsPortListeningAsync(_configuration.CompanionPort, cancellationToken).ConfigureAwait(false))
+            return true;
+        // VisualTeX may have come back on another port
+        return RefreshCompanionPort()
+            && await IsPortListeningAsync(_configuration.CompanionPort, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<OfficeSessionDocument> CreateSessionAsync(
         CreateVstoSessionRequest request,
@@ -1004,9 +1100,12 @@ public sealed class VisualTeXSessionClient : IDisposable
             AppDataRoot = ReadRegistryString(values, "AppDataRoot").Trim().Trim('"'),
             CertificatePath = ReadRegistryString(values, "CertificatePath").Trim().Trim('"'),
             CertificateThumbprint = ReadRegistryString(values, "CertificateThumbprint"),
-            CompanionPort = ReadRegistryInteger(values, "CompanionPort"),
+            RegisteredPort = ReadRegistryInteger(values, "CompanionPort"),
             ProtocolVersion = ReadRegistryInteger(values, "ProtocolVersion"),
         };
+        configuration.CompanionPort = CompanionEndpoint.ResolvePort(
+            ReadRegistryInteger(values, "CompanionActivePort"),
+            configuration.RegisteredPort);
         diagnostic.ExecutablePath = configuration.ExecutablePath;
         diagnostic.AppDataRoot = configuration.AppDataRoot;
         diagnostic.CertificatePath = configuration.CertificatePath;
@@ -1022,7 +1121,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         if (string.IsNullOrWhiteSpace(configuration.AppDataRoot)) missing.Add("AppDataRoot");
         if (string.IsNullOrWhiteSpace(configuration.CertificatePath)) missing.Add("CertificatePath");
         if (string.IsNullOrWhiteSpace(configuration.CertificateThumbprint)) missing.Add("CertificateThumbprint");
-        if (configuration.CompanionPort <= 0 || configuration.CompanionPort > 65535) missing.Add("CompanionPort");
+        if (configuration.RegisteredPort <= 0 || configuration.RegisteredPort > 65535) missing.Add("CompanionPort");
         if (configuration.ProtocolVersion <= 0) missing.Add("ProtocolVersion");
         if (missing.Count > 0)
         {
@@ -1293,6 +1392,10 @@ public sealed class VisualTeXSessionClient : IDisposable
         CancellationToken cancellationToken)
     {
         diagnostic.Stage = "port-listen";
+        diagnostic.CompanionPort = _configuration.CompanionPort;
+        diagnostic.PortOwnerProcessId = null;
+        diagnostic.PortOwnerProcessName = string.Empty;
+        diagnostic.PortOwnerProcessPath = string.Empty;
         diagnostic.PortListening = await IsPortListeningAsync(
                 _configuration.CompanionPort,
                 cancellationToken)
@@ -1557,6 +1660,29 @@ public sealed class VisualTeXSessionClient : IDisposable
         diagnostic.Message =
             $"Started VisualTeX background process PID={process.Id} from {_configuration.ExecutablePath}.";
         return process;
+    }
+
+    // Whether a VisualTeX from the registered path runs, not counting one process (0: none).
+    private bool IsVisualTeXRunning(int exceptProcessId)
+    {
+        var name = Path.GetFileNameWithoutExtension(_configuration.ExecutablePath);
+        var running = false;
+        foreach (var candidate in Process.GetProcessesByName(name))
+        {
+            try
+            {
+                if (candidate.Id != exceptProcessId && !candidate.HasExited)
+                    running |= PathsEqual(candidate.MainModule?.FileName ?? string.Empty, _configuration.ExecutablePath);
+            }
+            catch (Exception ignored)
+            {
+                // 32-bit Office cannot read the modules of the 64-bit VisualTeX: the name decides.
+                IgnoredErrors.Ignore(ignored);
+                running = true;
+            }
+            candidate.Dispose();
+        }
+        return running;
     }
 
     // The companion explorer started for us: same executable, started after the request.

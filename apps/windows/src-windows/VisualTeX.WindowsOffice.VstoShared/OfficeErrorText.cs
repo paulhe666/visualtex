@@ -43,6 +43,8 @@ internal static class OfficeErrorText
         }
         var service = DescribeService(error);
         if (service != null) return service;
+        if (error is VisualTeXCompanionException companion && DescribeCompanion(companion) is string unavailable)
+            return unavailable;
         if (error is OperationCanceledException)
             return T("操作已被取消。", "The operation was cancelled.");
         if (error is COMException com) return DescribeCom(com);
@@ -128,6 +130,22 @@ internal static class OfficeErrorText
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// VisualTeX runs, but its Office service does not listen (VisualTeX's own reason
+    /// when it gave one); other companion failures keep their diagnostic text.
+    /// </summary>
+    private static string? DescribeCompanion(VisualTeXCompanionException error)
+    {
+        var diagnostic = error.Diagnostic;
+        if (diagnostic.FailureType != "CompanionNotListening") return null;
+        var reason = string.IsNullOrWhiteSpace(diagnostic.CompanionStartError)
+            ? T($"本机端口 {diagnostic.CompanionPort} 无人监听", $"nothing listens on local port {diagnostic.CompanionPort}")
+            : diagnostic.CompanionStartError.Trim();
+        return T(
+            $"VisualTeX 正在运行，但它的 Office 后台服务没有启动（{reason}）。请重启 VisualTeX 后重试。",
+            $"VisualTeX is running, but its Office background service did not start ({reason}). Restart VisualTeX and try again.");
     }
 
     private static string DescribeCom(COMException error)

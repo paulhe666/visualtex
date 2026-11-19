@@ -13,11 +13,20 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 pub const OFFICE_BIND_IP: [u8; 4] = [127, 0, 0, 1];
 pub const OFFICE_PORT: u16 = 43_127;
+/// Tried in this order when the standard port cannot be bound: it is in use, or lies in
+/// a range Windows reserved (WSL mirrored networking and Hyper-V take whole blocks of
+/// ports). The fixed ones are thousands of ports apart, so one reserved block cannot
+/// hold them all, and keep the Office editor page on a lasting origin; 0 lets Windows
+/// choose any free port.
+pub const OFFICE_FALLBACK_PORTS: [u16; 3] = [38_127, 33_127, 0];
+/// The port the companion is bound to in this process; 0 before the first bind.
+static ACTIVE_OFFICE_PORT: AtomicU16 = AtomicU16::new(0);
 /// Explicit, process-local source acceptance configuration. The installed identity
 /// is read-only; only the independent application data directory may be written.
 #[derive(Debug, Clone)]
@@ -79,10 +88,48 @@ pub fn isolated_acceptance_runtime() -> bool {
     acceptance_runtime().is_ok_and(|runtime| runtime.is_some())
 }
 
+/// The companion's port: the one it is bound to, and before the first bind the one it
+/// tries first.
 pub fn office_port() -> u16 {
-    // Application startup and configuration preparation reject invalid options
-    // before creating any windows, listeners or product configuration.
-    acceptance_runtime().ok().flatten().map_or(OFFICE_PORT, |runtime| runtime.port)
+    match ACTIVE_OFFICE_PORT.load(Ordering::SeqCst) {
+        // Application startup and configuration preparation reject invalid options
+        // before creating any windows, listeners or product configuration.
+        0 => acceptance_runtime().ok().flatten().map_or(OFFICE_PORT, |runtime| runtime.port),
+        port => port,
+    }
+}
+
+pub fn set_active_office_port(port: u16) {
+    ACTIVE_OFFICE_PORT.store(port, Ordering::SeqCst);
+}
+
+/// The port the companion was bound to before in this process, if it was.
+pub fn bound_office_port() -> Option<u16> {
+    Some(ACTIVE_OFFICE_PORT.load(Ordering::SeqCst)).filter(|port| *port != 0)
+}
+
+/// The ports the companion tries to bind, in order. Isolated acceptance has its one
+/// explicit port.
+pub fn office_port_candidates() -> Vec<u16> {
+    match acceptance_runtime().ok().flatten() {
+        Some(runtime) => vec![runtime.port],
+        None => port_candidates(ACTIVE_OFFICE_PORT.load(Ordering::SeqCst)),
+    }
+}
+
+fn port_candidates(active: u16) -> Vec<u16> {
+    let mut candidates = Vec::new();
+    // A restart inside this process stays on its port: the Office editor pages that
+    // are open were loaded from that origin.
+    if active != 0 {
+        candidates.push(active);
+    }
+    for port in std::iter::once(OFFICE_PORT).chain(OFFICE_FALLBACK_PORTS) {
+        if !candidates.contains(&port) {
+            candidates.push(port);
+        }
+    }
+    candidates
 }
 
 pub fn office_capability_for_port(port: u16) -> Result<String, serde_json::Error> {
@@ -93,6 +140,24 @@ pub fn office_capability_for_port(port: u16) -> Result<String, serde_json::Error
         format!("https://127.0.0.1:{port}/*")
     ]);
     Ok(capability.to_string())
+}
+
+/// Lets the Office editor windows loaded from this port's origin call their commands
+/// (capabilities are per origin). Once per port.
+pub fn allow_office_origin(app: &AppHandle, port: u16) -> Result<(), String> {
+    static ALLOWED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+    let mut allowed = ALLOWED
+        .lock()
+        .map_err(|_| "Office editor capability lock is unavailable".to_string())?;
+    if allowed.contains(&port) {
+        return Ok(());
+    }
+    let capability = office_capability_for_port(port).map_err(|error| error.to_string())?;
+    app.add_capability(capability).map_err(|error| {
+        format!("Unable to allow the Office editor pages of port {port}: {error}")
+    })?;
+    allowed.push(port);
+    Ok(())
 }
 
 pub const OFFICE_PROTOCOL_VERSION: u32 = 1;
@@ -149,6 +214,52 @@ fn persist_office_preferences(
     let temporary = target.with_extension("json.tmp");
     let payload = serde_json::to_vec_pretty(preferences)
         .map_err(|error| error.to_string())?;
+    fs::write(&temporary, payload).map_err(|error| error.to_string())?;
+    if target.exists() {
+        fs::remove_file(&target).map_err(|error| error.to_string())?;
+    }
+    fs::rename(&temporary, &target).map_err(|error| error.to_string())
+}
+
+fn editor_preferences_path(paths: &OfficePaths) -> PathBuf {
+    paths.root.join("editor-preferences.json")
+}
+
+/// The part of the main window's published preferences that is kept for the next run.
+/// The Office editor page has its own storage (the companion's origin), which is empty
+/// on a port it was never served from; with these it draws formulas in the user's fonts
+/// there too, before the main window was opened. Left out: the command counters
+/// (they change with every command typed) and what has its own channel or belongs to
+/// the Office window (theme, layout, zoom).
+fn storable_editor_preferences(preferences: &serde_json::Value) -> serde_json::Value {
+    let mut stored = preferences.clone();
+    if let Some(object) = stored.as_object_mut() {
+        object.remove("commandUsage");
+        if let Some(settings) = object.get_mut("settings").and_then(|value| value.as_object_mut()) {
+            for name in ["theme", "editorLayout", "zoom"] {
+                settings.remove(name);
+            }
+        }
+    }
+    stored
+}
+
+fn load_editor_preferences(paths: &OfficePaths) -> serde_json::Value {
+    fs::read(editor_preferences_path(paths))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn persist_editor_preferences(
+    paths: &OfficePaths,
+    preferences: &serde_json::Value,
+) -> Result<(), String> {
+    fs::create_dir_all(&paths.root).map_err(|error| error.to_string())?;
+    let target = editor_preferences_path(paths);
+    let temporary = target.with_extension("json.tmp");
+    let payload = serde_json::to_vec(preferences).map_err(|error| error.to_string())?;
     fs::write(&temporary, payload).map_err(|error| error.to_string())?;
     if target.exists() {
         fs::remove_file(&target).map_err(|error| error.to_string())?;
@@ -306,9 +417,16 @@ pub struct OfficeCompanionState {
     pub app_theme: Arc<RwLock<String>>,
     pub app_editor_layout: Arc<RwLock<String>>,
     pub app_editor_preferences: Arc<RwLock<serde_json::Value>>,
+    /// The preferences on disk (storable_editor_preferences), to write only changes.
+    stored_editor_preferences: Arc<Mutex<serde_json::Value>>,
+    /// Whether the main window published its preferences in this process.
+    editor_preferences_published: Arc<AtomicBool>,
     pub powerpoint_default_font_size_pt: Arc<RwLock<f64>>,
     pub mathtype_double_click_edit_enabled: Arc<RwLock<bool>>,
     pub server_handle: Arc<Mutex<Option<Handle<SocketAddr>>>>,
+    /// Set from a start request until the server listens or has failed, so that a
+    /// second request in between does not bind another port.
+    pub starting: Arc<AtomicBool>,
     pub session_store: SessionStore,
     pub formula_cache: FormulaMetadataCache,
     pub platform_backend: Arc<dyn OfficePlatformBackend>,
@@ -333,6 +451,7 @@ impl OfficeCompanionState {
     ) -> Self {
         let status = OfficeCompanionStatus::stopped(&paths);
         let office_preferences = load_office_preferences(&paths);
+        let editor_preferences = load_editor_preferences(&paths);
         let powerpoint_default_font_size_pt = office_preferences.powerpoint_default_font_size_pt;
         let mathtype_double_click_edit_enabled =
             office_preferences.mathtype_double_click_edit_enabled;
@@ -349,7 +468,9 @@ impl OfficeCompanionState {
             status: Arc::new(RwLock::new(status)),
             app_theme: Arc::new(RwLock::new("light".to_string())),
             app_editor_layout: Arc::new(RwLock::new("classic".to_string())),
-            app_editor_preferences: Arc::new(RwLock::new(serde_json::json!({}))),
+            app_editor_preferences: Arc::new(RwLock::new(editor_preferences.clone())),
+            stored_editor_preferences: Arc::new(Mutex::new(editor_preferences)),
+            editor_preferences_published: Arc::new(AtomicBool::new(false)),
             powerpoint_default_font_size_pt: Arc::new(RwLock::new(
                 powerpoint_default_font_size_pt,
             )),
@@ -357,6 +478,7 @@ impl OfficeCompanionState {
                 mathtype_double_click_edit_enabled,
             )),
             server_handle: Arc::new(Mutex::new(None)),
+            starting: Arc::new(AtomicBool::new(false)),
             session_store,
             formula_cache,
             platform_backend,
@@ -432,7 +554,31 @@ impl OfficeCompanionState {
         if let Ok(mut current) = self.app_editor_preferences.write() {
             *current = normalized.clone();
         }
+        self.editor_preferences_published.store(true, Ordering::SeqCst);
+        let storable = storable_editor_preferences(&normalized);
+        if let Ok(mut stored) = self.stored_editor_preferences.lock() {
+            if *stored != storable {
+                match persist_editor_preferences(&self.paths, &storable) {
+                    Ok(()) => *stored = storable,
+                    Err(error) => append_office_log(
+                        &self.paths,
+                        "companion.log",
+                        &format!("editor preferences were not stored: {error}"),
+                    ),
+                }
+            }
+        }
         normalized
+    }
+
+    /// What the main window published in this process; empty before the first time
+    /// (the stored preferences of an earlier run were not sent by this process).
+    pub fn published_editor_preferences(&self) -> serde_json::Value {
+        if self.editor_preferences_published.load(Ordering::SeqCst) {
+            self.current_editor_preferences()
+        } else {
+            serde_json::json!({})
+        }
     }
 
     pub fn powerpoint_default_font_size_pt(&self) -> f64 {
@@ -518,6 +664,88 @@ mod acceptance_tests {
         assert!(OfficeAcceptanceRuntime::from_values(
             Some("43129".into()), Some(nested.into_os_string()),
             Some(root.path().as_os_str().into()), Some("43127".into())).is_err());
+    }
+
+    #[test]
+    fn port_candidates_start_with_the_standard_port_and_end_with_any_free_port() {
+        assert_eq!(port_candidates(0), vec![OFFICE_PORT, 38_127, 33_127, 0]);
+        // a restart in the same process tries the port it had first
+        assert_eq!(port_candidates(38_127), vec![38_127, OFFICE_PORT, 33_127, 0]);
+        assert_eq!(port_candidates(51_234), vec![51_234, OFFICE_PORT, 38_127, 33_127, 0]);
+        assert_eq!(port_candidates(OFFICE_PORT), vec![OFFICE_PORT, 38_127, 33_127, 0]);
+    }
+
+    #[test]
+    fn fallback_ports_cannot_share_one_reserved_block_with_the_standard_port() {
+        // WSL mirrored networking reserves 4096 consecutive ports
+        let mut fixed = vec![OFFICE_PORT];
+        fixed.extend(OFFICE_FALLBACK_PORTS.iter().copied().filter(|port| *port != 0));
+        for (index, first) in fixed.iter().enumerate() {
+            for second in &fixed[index + 1..] {
+                assert!(first.abs_diff(*second) > 4096, "{first} and {second}");
+            }
+            // below the dynamic range, where Windows hands out ports to other programs
+            assert!(*first < 49_152);
+        }
+        assert_eq!(OFFICE_FALLBACK_PORTS.last(), Some(&0));
+    }
+
+    fn preference_paths(temp: &TempDir) -> OfficePaths {
+        let root = temp.path().join("office");
+        OfficePaths {
+            certificate: root.join("localhost-cert.pem"),
+            private_key: root.join("localhost-key.pem"),
+            certificate_metadata: root.join("certificate.json"),
+            install: root.join("install.json"),
+            sessions: root.join("sessions"),
+            recovery: root.join("recovery"),
+            formula_cache: root.join("formulas"),
+            ui_root: temp.path().join("ui"),
+            root,
+        }
+    }
+
+    #[test]
+    fn stored_editor_preferences_keep_settings_and_drop_counters_and_window_state() {
+        let published = serde_json::json!({
+            "settings": {
+                "language": "en",
+                "formulaFaces": { "letters": "times" },
+                "theme": "dark",
+                "editorLayout": "standard",
+                "zoom": 1.5,
+            },
+            "customTheme": { "accent": "#123456" },
+            "confirmEscapeKey": "Tab",
+            "commandUsage": { "alpha": 3 },
+        });
+        assert_eq!(
+            storable_editor_preferences(&published),
+            serde_json::json!({
+                "settings": { "language": "en", "formulaFaces": { "letters": "times" } },
+                "customTheme": { "accent": "#123456" },
+                "confirmEscapeKey": "Tab",
+            }),
+        );
+    }
+
+    #[test]
+    fn editor_preferences_survive_a_restart() {
+        let temp = TempDir::new().unwrap();
+        let paths = preference_paths(&temp);
+        assert_eq!(load_editor_preferences(&paths), serde_json::json!({}));
+        let stored = serde_json::json!({ "settings": { "language": "en" } });
+        persist_editor_preferences(&paths, &stored).unwrap();
+        assert_eq!(load_editor_preferences(&paths), stored);
+        // replacing an existing file works too
+        let changed = serde_json::json!({ "settings": { "language": "cn" } });
+        persist_editor_preferences(&paths, &changed).unwrap();
+        assert_eq!(load_editor_preferences(&paths), changed);
+        // a damaged file is no preferences, not an error
+        fs::write(editor_preferences_path(&paths), b"[1,").unwrap();
+        assert_eq!(load_editor_preferences(&paths), serde_json::json!({}));
+        fs::write(editor_preferences_path(&paths), b"[1]").unwrap();
+        assert_eq!(load_editor_preferences(&paths), serde_json::json!({}));
     }
 
     #[test]
