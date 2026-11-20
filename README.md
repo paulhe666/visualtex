@@ -2,7 +2,7 @@
   <img src="apps/macos/src-tauri/app-icon.svg" width="160" alt="VisualTeX" />
   <h1>VisualTeX</h1>
   <p><strong>面向科研写作的跨平台公式编辑器</strong></p>
-  <p>可视化公式编辑 · LaTeX 源码编辑 · MathType OLE · Word / PowerPoint 加载项 · 公式 OCR</p>
+  <p>可视化公式编辑 · LaTeX 源码编辑 · 文档模式 · 公式输入法 · Word / PowerPoint / WPS 加载项 · MathType OLE · 公式 OCR</p>
   <p>
     <a href="#中文">中文</a> · <a href="#english">English</a> ·
     <a href="https://visualtex.pauljianliao.com/">官方网站</a> ·
@@ -18,6 +18,7 @@
   <p>
     <img src="https://img.shields.io/badge/WORD-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="Word" />
     <img src="https://img.shields.io/badge/POWERPOINT-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="PowerPoint" />
+    <img src="https://img.shields.io/badge/WPS-SUPPORTED-0099E5?style=for-the-badge&labelColor=555555" alt="WPS" />
     <img src="https://img.shields.io/badge/LaTeX-INPUT-0099E5?style=for-the-badge&labelColor=555555" alt="LaTeX" />
     <img src="https://img.shields.io/badge/LICENSE-AGPL--3.0-55B800?style=for-the-badge&labelColor=555555" alt="AGPL-3.0 License" />
   </p>
@@ -29,7 +30,7 @@
 
 ## 产品概述
 
-VisualTeX 是适用于 macOS 和 Windows 的桌面公式编辑器，提供可视化公式输入、LaTeX 源码编辑、公式 OCR，以及 Microsoft Word 和 PowerPoint 加载项。公式可插入 Office 文档并保留后续编辑、格式转换、编号和引用所需的元数据。
+VisualTeX 是适用于 macOS 和 Windows 的桌面公式编辑器，提供可视化公式输入、LaTeX 源码编辑、公式 OCR、带公式的 Markdown 文档模式、在任意应用中输入公式的公式输入法，以及 Microsoft Word、PowerPoint 和 WPS Office 加载项。公式可插入 Office 和 WPS 文档并保留后续编辑、格式转换、编号和引用所需的元数据。
 
 <div align="center">
   <img src="docs/images/application.png" width="92%" alt="VisualTeX 应用界面" />
@@ -55,10 +56,13 @@ VisualTeX 的持续开发由用户支持。如果认为该产品帮助到了您�
 
 - 支持分式、根式、上下标、积分、求和、极限、重音、定界符、希腊字母、集合、关系、箭头和常用物理符号。
 - 支持多行公式、自定义尺寸矩阵，以及 `equation`、`align`、`aligned`、`gather`、`multline`、`split`、`cases` 等环境。
-- `align` 和 `aligned` 支持显式设置 `&` 对齐点。
+- `align` 模式下，用 Shift+Enter 换行的各行默认在第一个关系符（`=`、`<`、`\le` 等）处对齐，代码中自动写入 `&`；也可手动输入 `&` 指定对齐点。
 - 每一行可独立设置为行内公式或行间公式。文字与公式混排使用 `$...$`。
 - Enter、Tab、结构跳出、选区包裹和命令补全针对结构化公式输入进行处理。
 - 支持粗体、数学斜体和正体格式切换。
+- 字体按 AxMath 的方式设置：数学字体（Computer Modern 或 newtxmath）之外，字母、希腊字母和数字可分别使用任意已安装的字体。
+- AxMath 式 L 形光标；候选列表提供默认、卡片、横排和 AxMath 风格四种样式；公式工具栏的分组可自行排列、重命名和新建。
+- 支持中国几何的全等号 ≌ 和相似号 ∽（exam-zh 字形与写法）。
 - 支持自定义快捷键、希腊字母快捷输入、常用工具和自定义公式磁贴。
 - 普通模式与小键盘模式分别保存窗口尺寸。
 - 撤销、重做和历史记录保存公式内容、活动行、光标和选区状态。
@@ -74,6 +78,24 @@ VisualTeX 的持续开发由用户支持。如果认为该产品帮助到了您�
 - 纯 LaTeX、`$...$`、`\(...\)`、`\[...\]` 等复制格式。
 
 常用复制和导出功能不依赖 TeX Live。
+
+## 文档模式
+
+在主程序中编写带公式的文档，页面按 A4 排版，有分页、页码和页边距。
+
+- 文档就是普通的 Markdown（`.md`）文件，默认保存在“文稿/VisualTeX”中，也可直接打开和编辑别处的 Markdown 文件。VisualTeX 不向文件写入专有内容，页面、字体、编号等设置另存在 VisualTeX 自己的记录里；修改只改动对应的行，并保留原来的换行符和编码。
+- 编辑方式与 Obsidian 的实时预览相同：光标所在的行显示 Markdown 标记，其他行显示排版效果。
+- `$$` 开始行内公式，`$$$$` 开始行间公式；公式在页面中直接编辑，候选和快捷键与公式模式相同。
+- 输入 `/` 插入编号公式、公式引用、表格、脚注和参考文献；支持标题编号、摘要、图表标题、图片与图片板、任务列表、目录、代码高亮和 Mermaid 图表。
+- 文档库管理文件夹和最近删除，可导出 PDF 或 Markdown。
+
+## 公式输入法（VisualTeX Anywhere）
+
+按全局快捷键（Windows `Ctrl+Alt+M`，macOS `Control+Option+M`；加 Shift 为行间公式）即可在任意应用的输入框中输入公式，按 Return 写入。
+
+- 输出格式可选 LaTeX、Markdown、Unicode 或图片，并按应用分别记住。
+- 公式在输入框中占据实际位置并随之换行，支持 Chrome、Edge、Electron 应用和网页中的输入框。
+- 不加入系统的输入法切换列表，只在按快捷键时启用，输出后恢复原来的输入法。macOS 上无法写入的应用（备忘录、微信、QQ）在光标处显示公式条并粘贴结果。
 
 ## Microsoft Word 加载项
 
@@ -134,6 +156,18 @@ macOS 使用 PPAM 加载项，Windows 使用 VSTO 加载项。两端均支持新
 
 Windows 版使用 VisualTeX OLE 对象，并提供图片、OLE 和 OMML 格式转换。macOS 版使用本地矢量和图片公式。
 
+## WPS Office 加载项
+
+Windows 和 macOS 均支持 WPS 文字与 WPS 演示，WPS 中有按 WPS 风格排布的独立 VisualTeX 选项卡。
+
+- WPS 文字：插入和编辑 VisualTeX 公式、MathType 公式和 WPS 公式（OMML），支持行间公式编号、交叉引用和编号格式；文档可在 Word 与 WPS 之间来回编辑。
+- WPS 演示：插入和编辑 WPS 原生公式，支持字号、撤销和格式转换。
+- 统一的格式转换命令：选择目标格式后，所选或全部公式不论原来是什么格式都转换过去（Word / PowerPoint 同样提供）。
+
+## AI 助手接入（MCP）
+
+Codex、Claude 等支持 MCP 的 AI 客户端可以通过 VisualTeX 读取和修改 Word、PowerPoint 和 WPS 中的公式：列出文档和公式、读取、插入、编号、插入引用，以及识别公式图片。默认关闭，在“设置 > AI 助手（MCP）”中开启并查看各客户端的配置方法；每次操作记入审计日志。
+
 ## 公式 OCR
 
 OCR 支持文件选择、拖放、剪贴板粘贴和区域截图。识别结果写入当前编辑位置，多行结果按多行公式处理。
@@ -155,7 +189,7 @@ OCR 提供完整窗口、快捷 OCR 和静默 OCR 三种入口。静默 OCR 在�
 ## 导出与配置
 
 - 复制 LaTeX 或 PNG。
-- 导出 Markdown、SVG 和 PNG。
+- 导出 Markdown、SVG 和 PNG；文档导出 PDF 或 Markdown。
 - 设置透明背景或自定义 PNG 背景色。
 - 保存导出目录和常用输出选项。
 - 支持中英文界面、内置主题和完整配色设置。
@@ -170,11 +204,13 @@ OCR 提供完整窗口、快捷 OCR 和静默 OCR 三种入口。静默 OCR 在�
 | 桌面应用 | React、TypeScript、Tauri | React、TypeScript、Tauri |
 | Word 加载项 | DOTM、VBA、AppleScriptTask、本地 Session | VSTO Ribbon、Office 事件、COM |
 | PowerPoint 加载项 | PPAM、本地 Session | VSTO Ribbon、OLE |
+| WPS 加载项 | WPS 文字、WPS 演示 | WPS 文字、WPS 演示（COM 加载项） |
+| 公式输入法 | 不切换输入源的辅助输入法 | 在当前输入框线程中启用的 TSF 输入法 |
 | 主要公式格式 | 图片公式、Word OMML | VisualTeX OLE、Word OMML、图片公式、MathType OLE |
 | MathType OLE | 不提供原生创建与转换 | 创建、插入、渲染、编辑、转换、编号和引用 |
 | 加载项维护 | 应用内安装、更新和修复 DOTM / PPAM | 安装器部署与 Office 位数匹配的原生组件 |
 
-macOS 和 Windows 使用独立的源码、依赖、Office 加载项和构建流程。两端采用一致的公式元数据约定，用于在跨平台文档中保留 LaTeX、公式 ID 和显示模式。
+两端共用 `apps/shared` 中的编辑内核、TeX 排版和文档编辑器；Office / WPS 加载项和系统集成按平台实现。两端采用一致的公式元数据约定，用于在跨平台文档中保留 LaTeX、公式 ID 和显示模式。
 
 ## 下载与运行要求
 
@@ -182,7 +218,7 @@ macOS 和 Windows 使用独立的源码、依赖、Office 加载项和构建流�
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS 帮助手册](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-macOS 版本要求 macOS 11 或更高版本。Windows 版 Office 集成稳定支持 Microsoft Office 2021 及以上桌面版的 Word / PowerPoint。Windows 版的 MathType OLE 创建、插入、渲染和 VisualTeX 编辑功能不依赖 MathType 安装，并以 MathType 7 作为稳定兼容基线。
+macOS 版本要求 macOS 11 或更高版本。Windows 版 Office 集成稳定支持 Microsoft Office 2021 及以上桌面版的 Word / PowerPoint，以及 WPS Office。Windows 版的 MathType OLE 创建、插入、渲染和 VisualTeX 编辑功能不依赖 MathType 安装，并以 MathType 7 作为稳定兼容基线。
 
 ## 开发
 
@@ -217,7 +253,7 @@ Copyright (C) 2026 paulhe666
 
 VisualTeX 使用 [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0-only）。
 
-提交 6e4de4e（1.3.0 版）及之前发布的代码仍可按原来的 MIT License 使用；此后的所有改动只按 AGPL-3.0 提供。
+提交 6e4de4e 及之前的代码（包括 1.2.9 及更早的发布版）仍可按原来的 MIT License 使用；此后的所有改动（包括 1.3.0 正式版中在此之后加入的改动）只按 AGPL-3.0 提供。
 代码中注明来自第三方的部分（如 CodeMirror、markdown-it 的 emoji 数据）保留其原有许可。
 
 ---
@@ -226,7 +262,7 @@ VisualTeX 使用 [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0-on
 
 ## Product overview
 
-VisualTeX is a desktop formula editor for macOS and Windows. It provides visual formula editing, LaTeX source editing, formula OCR, and Microsoft Word and PowerPoint add-ins. Formulas inserted into Office documents retain the metadata required for later editing, format conversion, numbering, and references.
+VisualTeX is a desktop formula editor for macOS and Windows. It provides visual formula editing, LaTeX source editing, formula OCR, a document mode for Markdown documents with formulas, a formula input method for typing formulas in any app, and add-ins for Microsoft Word, PowerPoint and WPS Office. Formulas inserted into Office and WPS documents retain the metadata required for later editing, format conversion, numbering, and references.
 
 ## Formula editor
 
@@ -236,10 +272,13 @@ The visual editor and LaTeX source editor operate on synchronized formula conten
 
 - Fractions, roots, scripts, integrals, sums, limits, accents, delimiters, Greek letters, sets, relations, arrows, and common physics symbols.
 - Multiline formulas, custom-size matrices, and environments including `equation`, `align`, `aligned`, `gather`, `multline`, `split`, and `cases`.
-- Explicit `&` alignment points in `align` and `aligned`.
+- In `align` mode, rows started with Shift+Enter line up at their first relation (`=`, `<`, `\le` ...) and get `&` there in the code; a typed `&` sets the point by hand.
 - Independent inline or display mode for each line. Mixed text and mathematics use `$...$`.
 - Formula-aware Enter, Tab, structure exit, selection wrapping, and command completion.
 - Bold, math italic, and upright formatting.
+- Fonts set the AxMath way: besides the math font (Computer Modern or newtxmath), letters, Greek letters and digits can each use any installed font.
+- AxMath's L-shaped caret; four candidate list looks (Default, Cards, Horizontal, AxMath style); formula toolbar groups you can reorder, rename and add.
+- The congruence sign ≌ and similarity sign ∽ of Chinese geometry (exam-zh's drawings and spelling).
 - Custom shortcuts, quick Greek-letter input, favorite tools, and custom formula tiles.
 - Separate window dimensions for standard and compact keypad modes.
 - Undo, redo, and history records containing formula content, active line, cursor, and selection state.
@@ -255,6 +294,24 @@ The CodeMirror-based source editor provides:
 - Copy formats for plain LaTeX, `$...$`, `\(...\)`, and `\[...\]`.
 
 TeX Live is not required for standard copy and export operations.
+
+## Document mode
+
+Write documents with formulas in the main app, laid out on A4 pages with page breaks, page numbers and margins.
+
+- A document is a plain Markdown (`.md`) file, kept in Documents/VisualTeX by default; Markdown files made elsewhere open and are edited where they are. VisualTeX writes nothing proprietary into a file: page setup, fonts, numbering and similar settings go to its own record, and an edit changes only its own lines and keeps the file's line endings and encoding.
+- Editing works like Obsidian's Live Preview: the line with the caret shows its Markdown marks, the others the typeset result.
+- `$$` starts an inline formula and `$$$$` a display formula; formulas are edited on the page with the candidates and shortcuts of formula mode.
+- Type `/` for numbered formulas, equation references, tables, footnotes and citations; numbered headings, abstract, figure and table captions, pictures and image boards, task lists, table of contents, code highlighting and Mermaid diagrams.
+- A document library with folders and Recently deleted; export to PDF or Markdown.
+
+## Formula input method (VisualTeX Anywhere)
+
+Press the system-wide shortcut (Windows `Ctrl+Alt+M`, macOS `Control+Option+M`; add Shift for a display formula) to type a formula in any app's text field; Return writes it.
+
+- Output as LaTeX, Markdown, Unicode or an image, remembered per app.
+- The formula takes real space in the field and wraps with it; works in Chrome, Edge, Electron apps and web text fields.
+- It is not in the system's input-method switching list, is used only while the shortcut's formula is open, and gives the previous input method back afterwards. On macOS, apps it cannot write into (Notes, WeChat, QQ) get a formula strip at the caret that pastes the result.
 
 ## Microsoft Word add-in
 
@@ -315,6 +372,18 @@ macOS uses a PPAM add-in. Windows uses a VSTO add-in. Both versions support form
 
 The Windows version uses VisualTeX OLE objects and provides picture, OLE, and OMML conversion. The macOS version uses local vector and picture formulas.
 
+## WPS Office add-ins
+
+WPS Writer and WPS Presentation are supported on Windows and macOS, with a VisualTeX tab laid out in WPS's own style.
+
+- WPS Writer: insert and edit VisualTeX formulas, MathType equations and WPS equations (OMML), with numbered display formulas, cross-references and number formats; documents edit both ways between Word and WPS.
+- WPS Presentation: insert and edit native WPS equations, with font size, undo and format conversion.
+- One conversion command: pick the target format and the selected or all formulas convert from whatever they are (also in Word and PowerPoint).
+
+## AI agents (MCP)
+
+Codex, Claude and other MCP clients can read and change the formulas in Word, PowerPoint and WPS through VisualTeX: list documents and formulas, read, insert, number, insert references and recognise formula images. Off by default; turn it on under Settings > AI agents (MCP), which shows the setup for each client. Every action goes into an audit log.
+
 ## Formula OCR
 
 OCR accepts files, drag-and-drop input, clipboard images, and selected screen regions. Recognition results are inserted at the current editing position. Multiline results are handled as multiline formulas.
@@ -336,7 +405,7 @@ Supported services include OpenAI-compatible APIs, Ollama, Mathpix, PaddleOCR-VL
 ## Export and configuration
 
 - Copy LaTeX or PNG.
-- Export Markdown, SVG, and PNG.
+- Export Markdown, SVG, and PNG; documents export to PDF or Markdown.
 - Configure transparent or custom PNG backgrounds.
 - Store export directories and common output options.
 - Chinese and English interfaces, built-in themes, and complete color configuration.
@@ -351,11 +420,13 @@ Supported services include OpenAI-compatible APIs, Ollama, Mathpix, PaddleOCR-VL
 | Desktop application | React, TypeScript, Tauri | React, TypeScript, Tauri |
 | Word add-in | DOTM, VBA, AppleScriptTask, local session | VSTO Ribbon, Office events, COM |
 | PowerPoint add-in | PPAM, local session | VSTO Ribbon, OLE |
+| WPS add-ins | WPS Writer, WPS Presentation | WPS Writer, WPS Presentation (COM add-ins) |
+| Formula input method | Palette input method that never switches the input source | TSF input method enabled in the field's own thread |
 | Main formula formats | Picture formulas, Word OMML | VisualTeX OLE, Word OMML, picture formulas, MathType OLE |
 | MathType OLE | Native creation and conversion unavailable | Creation, insertion, rendering, editing, conversion, numbering, and references |
 | Add-in maintenance | In-app installation, update, and repair for DOTM / PPAM | Installer-deployed native components matched to Office bitness |
 
-The macOS and Windows versions use separate source trees, dependencies, Office add-ins, and build processes. Both versions use a common formula metadata convention to retain LaTeX, formula IDs, and display mode in cross-platform documents.
+Both versions share the editing kernel, TeX layout and document editor in `apps/shared`; the Office and WPS add-ins and the system integration are per platform. Both versions use a common formula metadata convention to retain LaTeX, formula IDs, and display mode in cross-platform documents.
 
 ## Download and requirements
 
@@ -363,7 +434,7 @@ The macOS and Windows versions use separate source trees, dependencies, Office a
 - [GitHub Releases](https://github.com/paulhe666/visualtex/releases)
 - [macOS user guide](apps/macos/docs/help/VisualTeX_帮助手册.md)
 
-The macOS version requires macOS 11 or later. The Windows Office integration is supported on Microsoft Office 2021 and later desktop versions of Word and PowerPoint. MathType OLE creation, insertion, rendering, and VisualTeX editing on Windows do not require a MathType installation, with MathType 7 used as the stable compatibility baseline.
+The macOS version requires macOS 11 or later. The Windows Office integration is supported on Microsoft Office 2021 and later desktop versions of Word and PowerPoint, and on WPS Office. MathType OLE creation, insertion, rendering, and VisualTeX editing on Windows do not require a MathType installation, with MathType 7 used as the stable compatibility baseline.
 
 ## Development
 
@@ -398,7 +469,7 @@ Copyright (C) 2026 paulhe666
 
 VisualTeX is distributed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only).
 
-Code released up to and including commit 6e4de4e (version 1.3.0) remains available under the MIT License it was published under; all changes after it are available only under AGPL-3.0.
+Code up to and including commit 6e4de4e (which covers 1.2.9 and every earlier release) remains available under the MIT License it was published under; all changes after it, including those in the 1.3.0 release made after that commit, are available only under AGPL-3.0.
 Parts marked as coming from third parties (such as CodeMirror and the markdown-it emoji data) keep their own licenses.
 
 
