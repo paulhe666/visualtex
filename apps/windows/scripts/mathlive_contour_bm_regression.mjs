@@ -32,7 +32,13 @@ async function main() {
       const started = Date.now();
       let lastValue;
       while (Date.now() - started < timeoutMs) {
-        lastValue = await evaluate(expression);
+        try {
+          lastValue = await evaluate(expression);
+        } catch (error) {
+          // the navigation and the reload below replace the document under an evaluation (late on a busy machine)
+          if (!/Inspected target navigated or closed|Execution context was destroyed|Cannot find context|Promise was collected/.test(String(error))) throw error;
+          lastValue = { ready: false, navigating: true };
+        }
         if (lastValue?.ready) return lastValue;
         await sleep(50);
       }
@@ -138,7 +144,7 @@ async function main() {
 
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(1800);
-    await evaluate(`(() => {
+    await waitForEvaluation(`(() => {
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem(
         "visualtex.onboarding.windows.desktop.v1.1.0.completed",
@@ -162,7 +168,8 @@ async function main() {
         },
       };
       localStorage.setItem(storageKey, JSON.stringify(persisted));
-    })()`);
+      return { ready: true };
+    })()`, "the stored editor state");
     await client.send("Page.reload", { ignoreCache: true });
 
     await waitForEvaluation(
