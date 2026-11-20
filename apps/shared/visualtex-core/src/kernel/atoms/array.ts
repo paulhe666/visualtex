@@ -634,11 +634,18 @@ export class ArrayAtom extends Atom {
       // covers; the cell's wrappers around its content
       if (this.rowRules[row]?.length) result.push(this.rowRules[row].join('') + ' ');
       let firstCell = true;
+      // VisualTeX: a row typed without an alignment point is written with `&` before its first relation
+      const auto = visualTexAutoAlignPoint(this, row);
       for (let col = 0; col < this._rows[row].length; col++) {
         const cell = this._rows[row][col];
         if (!cell) continue;
         if (!firstCell) result.push(' & ');
         firstCell = false;
+        if (auto && col < 2) {
+          const visible = this._rows[row][1]!.filter((x) => x.type !== 'first');
+          result.push(Atom.serialize(col === 0 ? visible.slice(0, auto.at) : visible.slice(auto.at), options));
+          continue;
+        }
         result.push(
           serializeCell(
             cell,
@@ -721,6 +728,7 @@ export class ArrayAtom extends Atom {
     );
     // VisualTeX: the rules stay with the rows they are before
     this.rowRules.splice(row, 0, []);
+    shiftProvisionalAlignRows(this, row, 1);
     adjustBranches(this);
     this.isDirty = true;
   }
@@ -736,6 +744,7 @@ export class ArrayAtom extends Atom {
       )
     );
     this.rowRules.splice(row + 1, 0, []);
+    shiftProvisionalAlignRows(this, row + 1, 1);
 
     adjustBranches(this);
     this.isDirty = true;
@@ -748,6 +757,7 @@ export class ArrayAtom extends Atom {
 
     const deleted = this._rows.splice(row, 1);
     this.rowRules.splice(row, 1);
+    shiftProvisionalAlignRows(this, row, -1);
     for (const column of deleted) {
       for (const cell of column) {
         if (cell) {
@@ -887,4 +897,51 @@ function adjustBranches(array: ArrayAtom): void {
       }
     }
   }
+}
+
+/**
+ * VisualTeX: a row typed in an `aligned` environment without an alignment point lines up at its first relation
+ * (=, \le, \to, ...), as if `&` stood before it, and is written so. Such a row is one a line break made in the
+ * editor and nothing split yet (visualTexProvisionalAlignRows): its material is in its second cell. A row whose `&`
+ * was typed or read keeps it, and LaTeX read from elsewhere keeps its own alignment. The layout draws the row by the
+ * same rule (tex-layout autoAlignPoint). Returns the index of the relation among the second cell's atoms (without
+ * the cell's start atom), or null.
+ */
+export function visualTexAutoAlignPoint(
+  array: ArrayAtom,
+  row: number
+): { at: number } | null {
+  if (
+    array.environmentName !== 'aligned' ||
+    !array.visualTexProvisionalAlignRows?.has(row)
+  )
+    return null;
+  const cells = array.rows[row] ?? [];
+  const visible = (cell: readonly Atom[] | undefined) =>
+    (cell ?? []).filter((x) => x.type !== 'first');
+  if (
+    visible(cells[0]).length > 0 ||
+    cells.slice(2).some((cell) => visible(cell).length > 0)
+  )
+    return null;
+  if (array.getCellWrappers(row, 1)?.length) return null;
+  const at = visible(cells[1]).findIndex(
+    (x) => x.type === 'mrel' && x.mode !== 'text'
+  );
+  return at > 0 ? { at } : null;
+}
+
+/**
+ * VisualTeX: the provisional align rows (visualTexAutoAlignPoint) are row numbers; a row added at `from` moves the
+ * ones from there down (delta 1), a row removed there drops its own number and moves the ones after it up (-1).
+ */
+function shiftProvisionalAlignRows(array: ArrayAtom, from: number, delta: 1 | -1): void {
+  const rows = array.visualTexProvisionalAlignRows;
+  if (!rows?.size) return;
+  const shifted = [...rows].flatMap((r) =>
+    r < from ? [r] : delta === 1 ? [r + 1] : r > from ? [r - 1] : []
+  );
+  // in place: callers keep the set they asked for
+  rows.clear();
+  for (const r of shifted) rows.add(r);
 }

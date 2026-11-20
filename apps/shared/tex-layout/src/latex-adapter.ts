@@ -3707,7 +3707,24 @@ export class LatexAdapter {
     rows.forEach((row, r) => {
       const { cells } = this.rowCells(row);
       if (this.dropsRow(a, cells, r, rows.length)) return;
+      // VisualTeX: a row typed without an alignment point lines up at its first relation (autoAlignPoint)
+      const auto = alignedat ? null : autoAlignPoint(a, r, cells);
       const lists: Node[][] = cells.map((cell, j) => {
+        if (auto && j < 2) {
+          const visible = cells[1].filter((x) => x.type !== "first");
+          if (j === 0) {
+            // the material before the relation; the empty first cell's start (where its caret stands) a box outside
+            // the formula, so it changes no spacing
+            const start = newNullBox();
+            start.firstTag = cells[0][0];
+            const f = this.cellFormula([{ type: STYLE_NODE, style: DISPLAY_STYLE, tag: a }, this.groupNoad(this.list(visible.slice(0, auto.at), ctx), a)], a);
+            return [this.hfil(a), this.amsStrut(a), ...(cells[0][0]?.type === "first" ? [start] : []), ...f];
+          }
+          const empty = newNoad(ORD_NOAD, a);
+          empty.nucleus = mlistField([]);
+          const f = this.cellFormula([{ type: STYLE_NODE, style: DISPLAY_STYLE, tag: a }, this.groupNoad([empty, ...this.list(visible.slice(auto.at), ctx)], a)], a);
+          return [...f, this.hfil(a)];
+        }
         if (j % 2 === 0) {
           // &\column@plus \hfil \strut@ $\m@th\displaystyle{##}$ \tabskip\z@skip
           const f = this.cellFormula([{ type: STYLE_NODE, style: DISPLAY_STYLE, tag: a }, this.groupNoad(this.list(cell, ctx), a)], a);
@@ -4603,3 +4620,20 @@ export class LatexAdapter {
 
 export { HLIST_NODE, VLIST_NODE, SUB_BOX, SUB_MLIST, MATH_CHAR, UNDER_NOAD, OVER_NOAD, BIN_NOAD, REL_NOAD, xOverN, remainder, div };
 export type { GlueSpec };
+
+/**
+ * VisualTeX: a row typed in an `aligned` environment without an alignment point lines up at its first relation
+ * (=, \le, \to, ...), as if `&` stood before it; visualtex-core's ArrayAtom writes the row that way
+ * (visualTexAutoAlignPoint, the same rule). Such a row is one a line break made in the editor and nothing split yet
+ * (the kernel's provisional rows): its material is in its second cell. A row whose `&` was typed or read keeps it, and
+ * LaTeX read from elsewhere keeps its own alignment. Returns the index of the relation among the second cell's atoms
+ * (without the cell's start atom), or null.
+ */
+export function autoAlignPoint(a: AtomLike, r: number, cells: AtomLike[][]): { at: number } | null {
+  if (a.environmentName !== "aligned" || !a.visualTexProvisionalAlignRows?.has?.(r)) return null;
+  const visible = (cell: AtomLike[] | undefined) => (cell ?? []).filter((x) => x.type !== "first");
+  if (visible(cells[0]).length > 0 || cells.slice(2).some((cell) => visible(cell).length > 0)) return null;
+  if (a.getCellWrappers?.(r, 1)?.length) return null;
+  const at = visible(cells[1]).findIndex((x) => x.type === "mrel" && x.mode !== "text");
+  return at > 0 ? { at } : null;
+}
