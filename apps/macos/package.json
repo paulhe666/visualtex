@@ -43,6 +43,7 @@
     "test:document-markdown-file": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/document_markdown_file_regression.mts",
     "test:document-scrollbar-style": "npm run build:desktop && node ../shared/visualtex-app/tests/document_scrollbar_style_regression.mjs",
     "test:document-tutorial-cards": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/document_tutorial_cards_regression.mts",
+    "test:document-tutorial-fit": "npm run build:desktop && node ../shared/visualtex-app/tests/document_tutorial_fit_regression.mjs",
     "test:editor-cleanup": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/command_registry_contract_regression.mts && node scripts/editor_cleanup_regression.mjs",
     "test:editor-lifecycle": "node scripts/editor_lifecycle_regression.mjs",
     "test:editor-refactor": "node --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/history_manager_smoke.mjs && tsx --import ../shared/visualtex-app/testing/node-loader.mjs ../shared/visualtex-app/tests/editor_persistence_isolation_regression.mjs && node scripts/editor_session_regression.mjs && node scripts/editor_lifecycle_regression.mjs && node scripts/editor_cleanup_regression.mjs",

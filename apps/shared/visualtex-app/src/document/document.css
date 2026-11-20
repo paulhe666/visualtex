@@ -2951,9 +2951,12 @@
   z-index: 1;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
-/* the animations are the white page */
+/* the animations are the white page; in a low window the page gives up height first (the animation shrinks inside
+   it), so the text and the buttons stay in view, and in a very low one it goes */
 .vtx-tutorial-stage {
-  flex: none;
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 0;
   aspect-ratio: 2 / 1;
   display: flex;
   align-items: center;
@@ -2964,11 +2967,17 @@
   overflow: hidden;
 }
 .vtx-tutorial-stage img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   user-select: none;
+}
+.vtx-tutorial-copy,
+.vtx-tutorial-footer {
+  flex: none;
 }
 .vtx-tutorial-file {
   display: flex;
@@ -3054,6 +3063,14 @@
 }
 .vtx-tutorial-actions button {
   border-radius: 7px;
+}
+@media (max-height: 340px) {
+  .vtx-tutorial-stage {
+    display: none;
+  }
+  .vtx-tutorial-copy {
+    padding-right: 40px;
+  }
 }
 .vtx-tutorial-button {
   margin-left: auto;
