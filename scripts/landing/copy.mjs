@@ -25,9 +25,11 @@ export const copy = {
   propLabel: { zh: "命题 2 · 它能做什么", enTex: String.raw`\textbf{Proposition 2}\ \ \text{(What it does).}` },
   feature1: { zh: "可视化编辑，LaTeX 源码实时同步", en: "Visual editing, with the LaTeX source in sync" },
   feature2: { zh: "拍下手写或截图，识别成公式", en: "Photograph handwriting or a screenshot, get the formula" },
-  feature3: { zh: "一键插入 Word 与 PowerPoint", en: "Insert into Word and PowerPoint in one step" },
+  feature3: { zh: "一键插入 Word、PowerPoint 与 WPS", en: "Insert into Word, PowerPoint and WPS in one step" },
   feature4: { zh: "原生 MathType 公式，无需安装 MathType", en: "Native MathType equations, no MathType install" },
-  feature5: { zh: "导出 LaTeX、SVG 与 PNG", en: "Export LaTeX, SVG and PNG" },
+  feature5: { zh: "文档模式：用 Markdown 写带公式的文档", en: "Document mode: Markdown documents with formulas" },
+  feature6: { zh: "在任意应用的输入框里直接输入公式", en: "Type formulas straight into any app's text field" },
+  feature7: { zh: "导出 LaTeX、SVG 与 PNG", en: "Export LaTeX, SVG and PNG" },
 
   thmLabel: { zh: "定理 3 · 下载", enTex: String.raw`\textbf{Theorem 3}\ \ \text{(Download).}` },
   macName: { zh: "macOS", en: "macOS" },

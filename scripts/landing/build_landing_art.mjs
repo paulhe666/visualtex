@@ -80,7 +80,7 @@ for (const [key, entry] of Object.entries(copy)) {
 }
 const marks = {
   eq: [1, 2, 3, 4].map((n) => tex(String.raw`(${n})`)),
-  roman: ["i", "ii", "iii", "iv", "v"].map((r) => tex(String.raw`\text{(${r})}`)),
+  roman: ["i", "ii", "iii", "iv", "v", "vi", "vii"].map((r) => tex(String.raw`\text{(${r})}`)),
 };
 
 // ---------------------------------------------------------------- hero "VisualTeX"

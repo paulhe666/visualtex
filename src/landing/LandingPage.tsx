@@ -4,7 +4,7 @@ import { layoutFormulaField } from "./formulaField";
 import { applyLandingDocumentMeta, detectLandingLang, saveLandingLang, type LandingLang } from "./i18n";
 import { SupportCodes } from "./SupportCodes";
 
-const VERSION = "1.2.9";
+const VERSION = "1.3.0";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
 const OCR_MODEL_BASE = "https://download.visualtex.pauljianliao.com/ppformula-model";
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
@@ -35,7 +35,7 @@ const ocrModels = [
   { label: "ocrL", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel` },
 ] as const satisfies readonly { label: InkKey; href: string }[];
 
-const features = ["feature1", "feature2", "feature3", "feature4", "feature5"] as const satisfies readonly InkKey[];
+const features = ["feature1", "feature2", "feature3", "feature4", "feature5", "feature6", "feature7"] as const satisfies readonly InkKey[];
 
 // Nav entries double as cross-references to the numbered sheets, like \ref in a paper.
 const navRefs = [
