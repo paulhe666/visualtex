@@ -28,6 +28,10 @@ await withAppBrowser(async ({ baseUrl, client }) => {
   await client.send("Page.reload", { ignoreCache: true });
   await sleep(1500);
   for (let t = 0; t < 200 && !(await evaluate(`Boolean(document.querySelector("math-field.visual-mathfield")?._mathfield)`)); t += 1) await sleep(50);
+  // the app focuses the active formula once it has started, the caret at its end: on a slow machine that came after
+  // the first caret this test set (the caret jumped to the end), so wait for it
+  for (let t = 0; t < 100 && !(await evaluate(`document.activeElement === document.querySelector("math-field.visual-mathfield")`)); t += 1) await sleep(50);
+  await sleep(300);
   const key = async (value, code, vk, modifiers = 0) => {
     const common = { key: value, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers };
     const text = value.length === 1 && !modifiers ? { text: value, unmodifiedText: value } : {};
