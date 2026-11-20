@@ -71,3 +71,6 @@ apps/windows/scripts/*.exe
 ~$*
 .agents/
 .codex/
+
+# The web edition's build (apps/web, served by Cloudflare from the repository root)
+/dist/

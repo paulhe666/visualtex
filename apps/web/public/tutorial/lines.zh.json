@@ -1,0 +1,84 @@
+{
+ "duration": 31,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 3.31,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "点到行尾",
+    "en": "Click the end of the row"
+   }
+  },
+  {
+   "t": 5.74,
+   "dur": 2,
+   "step": 0,
+   "kind": "keys",
+   "keys": [
+    "Enter"
+   ]
+  },
+  {
+   "t": 7.32,
+   "dur": 2.63,
+   "step": 0,
+   "kind": "type",
+   "text": "p=mv"
+  },
+  {
+   "t": 10.05,
+   "dur": 2,
+   "step": 1,
+   "kind": "keys",
+   "keys": [
+    "Ctrl",
+    "Enter"
+   ]
+  },
+  {
+   "t": 11.6,
+   "dur": 2.32,
+   "step": 1,
+   "kind": "type",
+   "text": "a^2"
+  },
+  {
+   "t": 14.33,
+   "dur": 2.63,
+   "step": 1,
+   "kind": "type",
+   "text": "+b^2"
+  },
+  {
+   "t": 17.06,
+   "dur": 2,
+   "step": 2,
+   "kind": "keys",
+   "keys": [
+    "Alt",
+    "Enter"
+   ]
+  },
+  {
+   "t": 18.62,
+   "dur": 2.62,
+   "step": 2,
+   "kind": "type",
+   "text": "F=ma"
+  },
+  {
+   "t": 22.01,
+   "dur": 2,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "点击 $$",
+    "en": "Click $$"
+   }
+  }
+ ]
+}

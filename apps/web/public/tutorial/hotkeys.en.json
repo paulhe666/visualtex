@@ -1,0 +1,90 @@
+{
+ "duration": 26.93,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 2.19,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "右键 ∞",
+    "en": "Right-click ∞"
+   }
+  },
+  {
+   "t": 5.29,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "设置快捷键…",
+    "en": "Set hotkey…"
+   }
+  },
+  {
+   "t": 7.69,
+   "dur": 2,
+   "step": 1,
+   "kind": "keys",
+   "keys": [
+    "Alt",
+    "Q"
+   ]
+  },
+  {
+   "t": 10.83,
+   "dur": 2,
+   "step": 1,
+   "kind": "click",
+   "label": {
+    "zh": "绑定快捷键",
+    "en": "Assign hotkey"
+   }
+  },
+  {
+   "t": 15.08,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "点击公式行",
+    "en": "Click the row"
+   }
+  },
+  {
+   "t": 17.18,
+   "dur": 1.71,
+   "step": 2,
+   "kind": "type",
+   "text": "x"
+  },
+  {
+   "t": 18.99,
+   "dur": 2,
+   "step": 2,
+   "kind": "keys",
+   "keys": [
+    "→"
+   ]
+  },
+  {
+   "t": 20.53,
+   "dur": 1.71,
+   "step": 2,
+   "kind": "type",
+   "text": "="
+  },
+  {
+   "t": 22.33,
+   "dur": 2,
+   "step": 2,
+   "kind": "keys",
+   "keys": [
+    "Alt",
+    "Q"
+   ]
+  }
+ ]
+}

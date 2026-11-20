@@ -1,0 +1,15 @@
+// The web edition on Cloudflare (apps/web): the site's files from `npm run build` (dist/) and the OCR relay worker.
+// Cloudflare builds the `web` branch, which tools/deploy_web.mjs sets to a commit of main.
+{
+  "$schema": "apps/web/node_modules/wrangler/config-schema.json",
+  "name": "visualtexweb",
+  "compatibility_date": "2026-07-11",
+  "main": "./apps/web/worker/index.js",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application",
+    "html_handling": "none"
+  }
+}

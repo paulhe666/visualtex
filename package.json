@@ -3,19 +3,23 @@
   "private": true,
   "version": "1.2.1",
   "license": "AGPL-3.0-only",
-  "description": "Platform-separated VisualTeX desktop applications for macOS and Windows.",
+  "description": "VisualTeX: the macOS and Windows desktop applications and the web edition, with the code they share.",
   "scripts": {
     "bootstrap:macos": "npm --prefix apps/macos ci",
     "bootstrap:windows": "npm --prefix apps/windows ci",
-    "bootstrap": "npm run bootstrap:macos && npm run bootstrap:windows",
+    "bootstrap:web": "npm --prefix apps/web ci",
+    "bootstrap": "npm run bootstrap:macos && npm run bootstrap:windows && npm run bootstrap:web",
     "build:macos": "npm --prefix apps/macos run build:desktop",
     "build:windows": "npm --prefix apps/windows run build:desktop",
-    "build": "npm run build:macos && npm run build:windows",
+    "build:web": "npm --prefix apps/web run build",
+    "build": "npm --prefix apps/web ci && npm --prefix apps/web run build",
+    "build:desktop": "npm run build:macos && npm run build:windows",
     "test:macos": "npm --prefix apps/macos run test:macos-offline-office",
     "test:windows": "npm --prefix apps/windows run test:windows-office-architecture",
     "test:repository": "node tools/verify_repository_structure.mjs",
     "check:windows": "node tools/check_app.mjs windows",
     "check:macos": "node tools/check_app.mjs macos",
-    "check": "npm run test:repository && node tools/check_app.mjs"
+    "check": "npm run test:repository && node tools/check_app.mjs",
+    "deploy:web": "node tools/deploy_web.mjs"
   }
 }

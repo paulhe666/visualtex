@@ -28,6 +28,10 @@ for (const path of [
   "apps/windows/src",
   "apps/windows/src-tauri",
   "apps/windows/src-windows",
+  "apps/web/package.json",
+  "apps/web/src/platform",
+  "apps/web/worker/index.js",
+  "wrangler.jsonc",
   "apps/shared/visualtex-core/src/kernel",
   "apps/shared/tex-layout/src",
   "apps/shared/visualtex-document/src",
@@ -99,14 +103,14 @@ if (windowsPackage.dependencies?.["@microsoft/office-js"] || windowsPackage.devD
   failures.push("The Windows native VSTO build must not depend on retired Office.js packages");
 }
 
-for (const path of ["apps/macos", "apps/windows", "apps/shared"]) {
+for (const path of ["apps/macos", "apps/windows", "apps/web", "apps/shared"]) {
   if (lstatSync(resolve(root, path)).isSymbolicLink()) {
     failures.push(`${path} must be a real directory, not a symbolic link`);
   }
 }
 
 // Stream NUL-delimited names: Unicode paths and large repositories are ordinary input.
-const git = spawn("git", ["ls-files", "-z", "apps/macos", "apps/windows", "apps/shared"], { cwd: root });
+const git = spawn("git", ["ls-files", "-z", "apps/macos", "apps/windows", "apps/web", "apps/shared"], { cwd: root });
 git.stdout.setEncoding("utf8");
 let gitError = "";
 git.stderr.setEncoding("utf8");
@@ -128,15 +132,15 @@ function relativeTargets(relativePath) {
 const platformImportPattern = /(?:from\s*|import\s*\(\s*|import\s+)["']@platform\/([^"']+)["']/g;
 function checkTrackedPath(relativePath) {
   // Shared code never reaches into an application; what it needs from one comes from "@platform/<module>",
-  // which both applications provide in src/platform.
+  // which every application (macOS, Windows, the web edition) provides in src/platform.
   if (relativePath.startsWith("apps/shared/")) {
     if (!/\.(?:ts|tsx|mts|mjs|rs)$/.test(relativePath)) return;
     for (const [specifier, target] of relativeTargets(relativePath)) {
-      if (/^apps\/(?:macos|windows)\//.test(target)) failures.push(`${relativePath} imports an application: ${specifier}`);
+      if (/^apps\/(?:macos|windows|web)\//.test(target)) failures.push(`${relativePath} imports an application: ${specifier}`);
     }
     const content = readFileSync(resolve(root, relativePath), "utf8");
     for (const [, module] of content.matchAll(platformImportPattern)) {
-      for (const app of ["windows", "macos"]) {
+      for (const app of ["windows", "macos", "web"]) {
         // a module named with its extension (styles.css) is that file; otherwise a .ts or .tsx file
         const base = resolve(root, `apps/${app}/src/platform/${module.replace(/\.tsx?$/, "")}`);
         const named = /\.[a-z]+$/.test(module) && !/\.tsx?$/.test(module);
@@ -152,13 +156,13 @@ function checkTrackedPath(relativePath) {
     failures.push(`Retired committed Office.js vendor file: ${relativePath}`);
   }
   // Check declared source dependencies, not prose, archived evidence or test launchers.
-  if (!/^apps\/(?:macos|windows)\/(?:src\/|src-tauri\/src\/|src-windows\/)/.test(relativePath)
+  if (!/^apps\/(?:macos|windows|web)\/(?:src\/|src-tauri\/src\/|src-windows\/)/.test(relativePath)
       || /\/(?:bin|obj|artifacts)\//.test(relativePath)
       || !/\.(?:ts|tsx|rs|csproj|projitems)$/.test(relativePath)) return;
   const platform = relativePath.split("/")[1];
-  const other = platform === "windows" ? "macos" : "windows";
   for (const [specifier, target] of relativeTargets(relativePath)) {
-    if (target.startsWith(`apps/${other}/`)) failures.push(`${relativePath} imports the other platform: ${specifier}`);
+    const other = ["macos", "windows", "web"].find((app) => app !== platform && target.startsWith(`apps/${app}/`));
+    if (other) failures.push(`${relativePath} imports another application (${other}): ${specifier}`);
   }
 }
 let pending = "";

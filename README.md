@@ -222,16 +222,17 @@ macOS 版本要求 macOS 11 或更高版本。Windows 版 Office 集成稳定支
 
 ## 开发
 
-macOS 与 Windows 两个应用在同一个仓库、同一条历史中开发，共用 `apps/shared` 中的代码：
+macOS、Windows 两个桌面应用和网页版在同一个仓库、同一条历史中开发，共用 `apps/shared` 中的代码：
 
 ```text
 visualtex/
 ├── apps/
-│   ├── shared/      # 两个应用共用：编辑内核、TeX 排版、文档编辑器、自定义符号设计器、共用前端代码
+│   ├── shared/      # 所有应用共用：编辑内核、TeX 排版、文档编辑器、自定义符号设计器、共用前端代码
 │   ├── macos/       # macOS 应用、Tauri、DOTM/PPAM、OCR 与测试
-│   └── windows/     # Windows 应用、Tauri、VSTO/OLE、OCR 与测试
+│   ├── windows/     # Windows 应用、Tauri、VSTO/OLE、OCR 与测试
+│   └── web/         # 网页版：首页、教程、浏览器中的编辑器、在线 OCR 转发
 ├── docs/            # 架构与设计文档、README 图片
-├── tools/           # 仓库结构检查
+├── tools/           # 仓库结构检查、网页版发布
 └── README.md
 ```
 
@@ -241,11 +242,12 @@ visualtex/
 npm run bootstrap
 npm run build:macos
 npm run build:windows
+npm run build:web
 npm run test:repository
 npm run check
 ```
 
-架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。平台构建和测试说明见 [apps/macos/README.md](apps/macos/README.md) 与 [apps/windows/README.md](apps/windows/README.md)。
+架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。平台构建和测试说明见 [apps/macos/README.md](apps/macos/README.md)、[apps/windows/README.md](apps/windows/README.md) 与 [apps/web/README.md](apps/web/README.md)。
 
 ## 开源协议
 
@@ -438,16 +440,17 @@ The macOS version requires macOS 11 or later. The Windows Office integration is 
 
 ## Development
 
-The macOS and Windows applications are developed in one repository and one history, and share the code in `apps/shared`:
+The macOS and Windows desktop applications and the web edition are developed in one repository and one history, and share the code in `apps/shared`:
 
 ```text
 visualtex/
 ├── apps/
-│   ├── shared/      # shared by both: editing kernel, TeX layout, document editor, custom symbol designer, common frontend code
+│   ├── shared/      # shared by all: editing kernel, TeX layout, document editor, custom symbol designer, common frontend code
 │   ├── macos/       # macOS application, Tauri, DOTM/PPAM, OCR, and tests
-│   └── windows/     # Windows application, Tauri, VSTO/OLE, OCR, and tests
+│   ├── windows/     # Windows application, Tauri, VSTO/OLE, OCR, and tests
+│   └── web/         # web edition: landing page, tutorial, the editor in a browser, online OCR relay
 ├── docs/            # Architecture and design documents, README images
-├── tools/           # Repository structure checks
+├── tools/           # Repository structure checks, publishing the web edition
 └── README.md
 ```
 
@@ -457,11 +460,12 @@ Common commands:
 npm run bootstrap
 npm run build:macos
 npm run build:windows
+npm run build:web
 npm run test:repository
 npm run check
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the repository architecture. Platform build and test instructions are available in [apps/macos/README.md](apps/macos/README.md) and [apps/windows/README.md](apps/windows/README.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the repository architecture. Platform build and test instructions are available in [apps/macos/README.md](apps/macos/README.md), [apps/windows/README.md](apps/windows/README.md) and [apps/web/README.md](apps/web/README.md).
 
 ## License
 

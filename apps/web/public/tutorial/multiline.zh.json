@@ -1,0 +1,58 @@
+{
+ "duration": 23.02,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 3.32,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "点击公式行",
+    "en": "Click the row"
+   }
+  },
+  {
+   "t": 5.42,
+   "dur": 2.93,
+   "step": 0,
+   "kind": "type",
+   "text": "a=b+c"
+  },
+  {
+   "t": 8.45,
+   "dur": 2,
+   "step": 0,
+   "kind": "keys",
+   "keys": [
+    "Shift",
+    "Enter"
+   ]
+  },
+  {
+   "t": 10.02,
+   "dur": 2.63,
+   "step": 0,
+   "kind": "type",
+   "text": "=d+e"
+  },
+  {
+   "t": 12.75,
+   "dur": 2,
+   "step": 0,
+   "kind": "keys",
+   "keys": [
+    "Shift",
+    "Enter"
+   ]
+  },
+  {
+   "t": 14.29,
+   "dur": 2.02,
+   "step": 0,
+   "kind": "type",
+   "text": "=f"
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+name: Web edition
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+      - "apps/shared/**"
+      - "package.json"
+      - "wrangler.jsonc"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/shared/**"
+      - "package.json"
+      - "wrangler.jsonc"
+      - ".github/workflows/web.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      # what Cloudflare runs: the web app's packages and its build into dist/
+      - run: npm run build
+      - run: npm --prefix apps/web run test:landing
+      - run: npm --prefix apps/web run test:web-ocr

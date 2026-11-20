@@ -1,0 +1,2 @@
+/* The web edition's own stylesheet, loaded after the shared ones (apps/shared/visualtex-app/src/styles/index.ts).
+   The editor uses the shared styles only; the landing and tutorial pages bring theirs (src/landing, src/tutorial). */

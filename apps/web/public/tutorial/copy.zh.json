@@ -1,0 +1,57 @@
+{
+ "duration": 23.24,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 2.1,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "复制",
+    "en": "Copy"
+   }
+  },
+  {
+   "t": 5.78,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "LaTeX 格式",
+    "en": "LaTeX format"
+   }
+  },
+  {
+   "t": 8.51,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "行间 \\[…\\]",
+    "en": "Display \\[…\\]"
+   }
+  },
+  {
+   "t": 11.96,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "行内 \\(…\\)",
+    "en": "Inline \\(…\\)"
+   }
+  },
+  {
+   "t": 17.32,
+   "dur": 2,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "右键公式",
+    "en": "Right-click a formula"
+   }
+  }
+ ]
+}
