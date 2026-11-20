@@ -1146,11 +1146,12 @@ function caretFollowsLetter(field: MathfieldElement) {
 /**
  * Applies the upright rule to the displayed formula. Letter runs (units,
  * function names, labels) are decided once finished: not while the caret
- * follows a letter, unless `finished` (the field is being left).
+ * follows a letter, unless `finished` (the field is being left). `edited`:
+ * the user changed the formula (not a value set from outside).
  */
 function normalizeCompletedUprightDisplay(
   field: MathfieldElement,
-  finished = false,
+  { finished = false, edited = true }: { finished?: boolean; edited?: boolean } = {},
 ) {
   if (field.mode === "latex" || !field.selectionIsCollapsed) return false;
 
@@ -1173,6 +1174,12 @@ function normalizeCompletedUprightDisplay(
     selectionMode: "after",
     silenceNotifications: true,
   });
+  // An edited formula stays one: setValue took the judged value for one set from outside, whose letters stay as
+  // they are, and leaving the field then finished no word (\int sinxdx: the dx typed last left sinx italic).
+  if (edited) {
+    const internal = (field as unknown as { _mathfield?: { visualTexUnjudged?: string } })._mathfield;
+    if (internal) internal.visualTexUnjudged = undefined;
+  }
   if (caret) restoreMathLiveCaret(field, caret);
   return true;
 }
@@ -2488,7 +2495,7 @@ export function FormulaField(props: FormulaFieldProps) {
     sizingZoomRef.current = props.zoom;
     sizingRowVerticalInsetRef.current = props.formulaRowVerticalInset;
 
-    normalizeCompletedUprightDisplay(field);
+    normalizeCompletedUprightDisplay(field, { edited: false });
     installCustomSymbolShadowStyle(field);
 
     // 本地输入仅因中文规范化而与 store 等值时，不重建 MathLive 模型；
