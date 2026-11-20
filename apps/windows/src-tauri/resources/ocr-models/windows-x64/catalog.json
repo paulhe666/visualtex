@@ -1,0 +1,25 @@
+{
+    "schemaVersion":  1,
+    "platform":  "windows",
+    "architecture":  "x64",
+    "entries":  [
+                    {
+                        "model":  "PP-FormulaNet_plus-S",
+                        "url":  "https://download.visualtex.pauljianliao.com/ppformula-model/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel",
+                        "size":  200050659,
+                        "sha256":  "72be4c94b0e8d94455364c0e65ca6442806e8e59a63678a554d65d454edd4cc4"
+                    },
+                    {
+                        "model":  "PP-FormulaNet_plus-M",
+                        "url":  "https://download.visualtex.pauljianliao.com/ppformula-model/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel",
+                        "size":  425830895,
+                        "sha256":  "46886dacd50ca20540c8ccb3ccbe527ddda9a022e9aad9dd68ac80bc0efb685b"
+                    },
+                    {
+                        "model":  "PP-FormulaNet_plus-L",
+                        "url":  "https://download.visualtex.pauljianliao.com/ppformula-model/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel",
+                        "size":  670293702,
+                        "sha256":  "940a875816a03feadc111bd05ba9bfe287bbe5ea2cee3dd93b3a662359f47702"
+                    }
+                ]
+}

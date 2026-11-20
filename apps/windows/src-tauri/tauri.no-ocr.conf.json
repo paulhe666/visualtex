@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "template": "./target-no-ocr/nsis-template/visualtex-installer.nsi"
+      }
+    }
+  }
+}

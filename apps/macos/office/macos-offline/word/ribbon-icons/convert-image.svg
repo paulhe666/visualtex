@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M4 22v-4h5M4 42v4h5M24 22v-4h-5M24 42v4h-5"/>
+    <path d="M21 24v17"/>
+    <path d="M27 32h10M33 27l5 5-5 5"/>
+    <rect x="40" y="21" width="20" height="22" rx="2"/>
+    <path d="M55 21v5h5"/>
+  </g>
+  <text x="9" y="38" fill="#1F638E" font-family="Times New Roman, serif" font-size="15" font-style="italic">x²</text>
+  <text x="44" y="37" fill="#1F638E" font-family="Times New Roman, serif" font-size="13" font-style="italic">x²</text>
+</svg>

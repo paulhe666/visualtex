@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M4 33h13M47 33h13"/>
+    <path d="M18 23v-4h5M18 43v4h5M46 23v-4h-5M46 43v4h-5"/>
+    <path d="M43 24v18"/>
+  </g>
+  <text x="23" y="40" fill="#1F638E" font-family="Times New Roman, serif" font-size="19" font-style="italic">x²</text>
+</svg>

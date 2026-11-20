@@ -1,0 +1,6 @@
+[[permission]]
+identifier = "allow-ocr-silent-hud-status"
+description = "Allow the local silent OCR HUD window to read only its current progress/status payload."
+commands.allow = [
+  "get_silent_ocr_hud_status"
+]

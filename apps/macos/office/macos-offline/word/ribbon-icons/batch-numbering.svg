@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M8 15h22M8 32h22M8 49h22"/>
+  </g>
+  <text x="35" y="20" fill="#1F638E" font-family="Arial, sans-serif" font-size="13">(1)</text>
+  <text x="35" y="37" fill="#1F638E" font-family="Arial, sans-serif" font-size="13">(2)</text>
+  <text x="35" y="54" fill="#1F638E" font-family="Arial, sans-serif" font-size="13">(3)</text>
+</svg>

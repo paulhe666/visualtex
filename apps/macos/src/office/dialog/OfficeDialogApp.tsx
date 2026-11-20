@@ -1,0 +1,2580 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { MathfieldElement } from "mathlive";
+import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
+import { OcrDialog } from "../../../../shared/visualtex-app/src/components/OcrDialog";
+import { installMcpRenderBridge } from "../shared/mcpRenderBridge";
+import { installFormulaFontPublisher } from "../shared/formulaFontPublisher";
+import { EditorWorkspace } from "../../../../shared/visualtex-app/src/workspace/EditorWorkspace";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../../../shared/visualtex-app/src/history/EditorSession";
+import {
+  joinFormulaLines,
+  useEditorStore,
+} from "../../../../shared/visualtex-app/src/stores/editorStore";
+import { useConfirmEscapeKeyStore } from "../../../../shared/visualtex-app/src/stores/confirmEscapeKeyStore";
+import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../../../shared/visualtex-app/src/shortcuts/confirmEscapeKey";
+import {
+  copyFormulaLinesUniversal,
+  isLatexCodeFormat,
+} from "../../../../shared/visualtex-app/src/clipboard/LatexCopyService";
+import type { LatexCodeFormat } from "../../../../shared/visualtex-app/src/types/formula";
+import { normalizeLatexFormatProfile } from "../../../../shared/visualtex-app/src/clipboard/latexFormatProfile";
+import {
+  applyDocumentTheme,
+  normalizeSynchronizedTheme,
+  readSynchronizedTheme,
+  subscribeSynchronizedTheme,
+} from "../../../../shared/visualtex-app/src/themeSync";
+import type {
+  MathEditorHandle,
+  MathEditorInsertionTarget,
+} from "../../../../shared/visualtex-app/src/editor/MathEditor";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
+import {
+  normalizeFormulaChineseFont,
+  normalizeFormulaLetterFont,
+  readPersistedFormulaFaces,
+  readPersistedFormulaFontPreferences,
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import { errorMessage } from "../../../../shared/visualtex-app/src/runtime/errorMessage";
+import {
+  readLocalStorage,
+  writeLocalStorage,
+} from "../../../../shared/visualtex-app/src/runtime/safeStorage";
+import {
+  closeCurrentTauriWindow,
+  invokeTauri,
+  onCurrentTauriWindowCloseRequested,
+} from "../shared/tauriTransport";
+import { normalizeFormulaEditorDocument } from "../shared/formulaEditorDocument";
+import type { InlineImageMathStyle } from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
+import {
+  readWorkspacePanelOpen,
+  writeWorkspacePanelOpen,
+} from "../../../../shared/visualtex-app/src/workspace/workspacePanelPreferences";
+import {
+  renderOfficeFormulaArtifacts,
+  tryRenderOfficeFormulaDraftArtifacts,
+  type OfficeFormulaRenderArtifacts,
+} from "../shared/formulaRenderArtifacts";
+import {
+  cancelMacosOfflineOfficeSession,
+  commitMacosOfflineOfficeSession,
+  getOfficeSession,
+  isMacosOfflineTauriTransport,
+  saveOfficeSessionKeepalive,
+  type OfficeExportResult,
+  type OfficeHost,
+  type UpdateOfficeSessionInput,
+} from "../api/sessionClient";
+import { useOfficeSession } from "./useOfficeSession";
+import { registerOfficeApplyShortcut } from "../../../../shared/visualtex-app/src/office/dialog/officeApplyShortcut";
+import {
+  OCR_MODELS,
+  cancelOcrRecognition,
+  fileToOcrRequest,
+  getOcrProviderConfiguration,
+  getOcrRuntimeStatus,
+  listenOcrRecognitionProgress,
+  normalizeOcrFormulaLines,
+  formatOcrError,
+  recognizeFormulaImage,
+  type OcrModelName,
+} from "../../../../shared/visualtex-app/src/ocr/ocrService";
+import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
+import {
+  captureQuickOcrScreenshot,
+  quickOcrCaptureToFile,
+} from "@platform/quickOcr";
+import { installButtonShortcuts, onButtonShortcut } from "../../../../shared/visualtex-app/src/shortcuts/buttonShortcuts";
+import { inConversionStage } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
+import { copyFormulaDocumentPngToClipboard } from "../../../../shared/visualtex-app/src/export/pngClipboard";
+import {
+  normalizeFormulaSpacingPreferences,
+  readPersistedFormulaSpacing,
+} from "../../../../shared/visualtex-app/src/editor/formulaSpacingPreferences";
+
+type InlineOcrStatus =
+  | "running"
+  | "cancelling"
+  | "success"
+  | "error"
+  | "cancelled";
+
+interface InlineOcrState {
+  status: InlineOcrStatus;
+  message: string;
+  seconds: number;
+  model: OcrModelName;
+}
+
+const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
+const OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY =
+  "visualtex-office-editor-zoom-60-migration-v1";
+const EDITOR_PERSISTENCE_STORAGE_KEY = "visualtex-editor";
+const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY =
+  "visualtex.office.word.create.numbered";
+const OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY =
+  "visualtex.office.word.inline-image-math-style";
+const USE_NATIVE_POWERPOINT_COMMIT =
+  document
+    .querySelector<HTMLMetaElement>(
+      'meta[name="visualtex-native-powerpoint-commit"]',
+    )
+    ?.content.toLowerCase() === "true";
+
+const OFFICE_COMMIT_RESULT_TIMEOUT_MS = 45_000;
+
+function readOfficeWordCreateNumberedPreference(fallback: boolean) {
+  const stored = readLocalStorage(OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY);
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return fallback;
+}
+
+function writeOfficeWordCreateNumberedPreference(numbered: boolean) {
+  writeLocalStorage(
+    OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY,
+    numbered ? "true" : "false",
+  );
+}
+
+function readOfficeWordInlineImageMathStylePreference(
+  fallback: InlineImageMathStyle,
+): InlineImageMathStyle {
+  const stored = readLocalStorage(OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY);
+  return stored === "text" || stored === "display" ? stored : fallback;
+}
+
+function writeOfficeWordInlineImageMathStylePreference(
+  style: InlineImageMathStyle,
+) {
+  writeLocalStorage(OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY, style);
+}
+
+function syncOfficeEditorSystemSettings(raw?: string | null) {
+  const source = raw === undefined
+    ? readLocalStorage(EDITOR_PERSISTENCE_STORAGE_KEY)
+    : raw;
+  if (!source) return;
+  let persisted: Record<string, unknown> | null = null;
+  try {
+    const envelope = JSON.parse(source) as { state?: unknown };
+    if (envelope.state && typeof envelope.state === "object") {
+      persisted = envelope.state as Record<string, unknown>;
+    }
+  } catch {
+    return;
+  }
+  if (!persisted) return;
+
+  const editor = useEditorStore.getState();
+  const applyNumber = (
+    key: string,
+    current: number,
+    setter: (value: number) => void,
+  ) => {
+    const value = persisted?.[key];
+    if (typeof value === "number" && Number.isFinite(value) && value !== current) {
+      setter(value);
+    }
+  };
+  const applyBoolean = (
+    key: string,
+    current: boolean,
+    setter: (value: boolean) => void,
+  ) => {
+    const value = persisted?.[key];
+    if (typeof value === "boolean" && value !== current) setter(value);
+  };
+
+  if (
+    (persisted.editorLayout === "standard" || persisted.editorLayout === "classic") &&
+    persisted.editorLayout !== editor.editorLayout
+  ) {
+    editor.setEditorLayout(persisted.editorLayout);
+  }
+  if (
+    (persisted.language === "cn" || persisted.language === "en") &&
+    persisted.language !== editor.language
+  ) {
+    editor.setLanguage(persisted.language);
+  }
+  applyNumber("zoom", editor.zoom, editor.setZoom);
+  applyBoolean("autoPairDelimiters", editor.autoPairDelimiters, editor.setAutoPairDelimiters);
+  applyBoolean("examZhSymbols", editor.examZhSymbols, editor.setExamZhSymbols);
+  applyBoolean("showLineNumbers", editor.showLineNumbers, editor.setShowLineNumbers);
+  applyBoolean("highlightActiveLine", editor.highlightActiveLine, editor.setHighlightActiveLine);
+  applyNumber("formulaInsetLeft", editor.formulaInsetLeft, editor.setFormulaInsetLeft);
+  applyNumber("formulaInsetRight", editor.formulaInsetRight, editor.setFormulaInsetRight);
+  applyNumber("formulaToolButtonSize", editor.formulaToolButtonSize, editor.setFormulaToolButtonSize);
+  applyNumber("formulaToolButtonPadding", editor.formulaToolButtonPadding, editor.setFormulaToolButtonPadding);
+  applyNumber("formulaRowVerticalInset", editor.formulaRowVerticalInset, editor.setFormulaRowVerticalInset);
+  applyBoolean("personalize", editor.personalize, editor.setPersonalize);
+  applyNumber("suggestionCount", editor.suggestionCount, editor.setSuggestionCount);
+  // the candidates' look and the usage that orders them, as the main window has them
+  if (typeof persisted.candidateStyle === "string" && persisted.candidateStyle !== editor.candidateStyle) {
+    editor.setCandidateStyle(persisted.candidateStyle as typeof editor.candidateStyle);
+  }
+  if (persisted.usage !== undefined) editor.mergeUsage(persisted.usage);
+  applyNumber("classicTileWidth", editor.classicTileWidth, editor.setClassicTileWidth);
+  applyNumber("classicDockHeight", editor.classicDockHeight, editor.setClassicDockHeight);
+  applyBoolean("keypadMinimizeOnCopy", editor.keypadMinimizeOnCopy, editor.setKeypadMinimizeOnCopy);
+
+  if (persisted.latexFormatProfile && typeof persisted.latexFormatProfile === "object") {
+    const nextProfile = normalizeLatexFormatProfile(persisted.latexFormatProfile);
+    if (JSON.stringify(nextProfile) !== JSON.stringify(editor.latexFormatProfile)) {
+      editor.setLatexFormatProfile(nextProfile);
+    }
+  }
+
+  if (persisted.buttonShortcuts !== undefined) {
+    // the chords the user gave buttons in the main app (Settings > Keyboard shortcuts)
+    editor.setButtonShortcuts(persisted.buttonShortcuts);
+  }
+
+  const persistedInputBehavior = persisted.inputBehavior;
+  if (persistedInputBehavior && typeof persistedInputBehavior === "object") {
+    const inputBehavior = persistedInputBehavior as Record<string, unknown>;
+    for (const key of Object.keys(editor.inputBehavior) as Array<keyof typeof editor.inputBehavior>) {
+      const value = inputBehavior[key];
+      if (typeof value === "boolean" && value !== editor.inputBehavior[key]) {
+        editor.setInputBehavior(key, value);
+      }
+    }
+  }
+}
+
+function officeExportResultFromArtifacts(
+  artifacts: OfficeFormulaRenderArtifacts,
+): OfficeExportResult {
+  const { svg } = artifacts;
+  const wordArtifacts = artifacts.omml;
+  return {
+    svg: svg.svg,
+    svgBase64: svg.base64,
+    ...(wordArtifacts
+      ? {
+          ommlBase64: wordArtifacts.ommlBase64,
+          ommlDocxBase64: wordArtifacts.ommlDocxBase64,
+        }
+      : {}),
+    ...(artifacts.wordMathMl ? { wordMathMl: artifacts.wordMathMl } : {}),
+    width: svg.width,
+    height: svg.height,
+    baseline: svg.baseline,
+    // the faces the layout engine drew in (always the Settings'): the formula records them, so Update Equation
+    // Format finds the formulas drawn in others
+    formulaFaces: readPersistedFormulaFaces(),
+  };
+}
+
+function normalizeOfficeFontSizePt(value: unknown, fallback: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  const resolved = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.round(Math.min(200, Math.max(5, resolved)) * 2) / 2;
+}
+
+const OFFICE_CHINESE_FONT_SIZE_OPTIONS = [
+  { name: "初号", fontSizePt: 42 },
+  { name: "小初", fontSizePt: 36 },
+  { name: "一号", fontSizePt: 26 },
+  { name: "小一", fontSizePt: 24 },
+  { name: "二号", fontSizePt: 22 },
+  { name: "小二", fontSizePt: 18 },
+  { name: "三号", fontSizePt: 16 },
+  { name: "小三", fontSizePt: 15 },
+  { name: "四号", fontSizePt: 14 },
+  { name: "小四", fontSizePt: 12 },
+  { name: "五号", fontSizePt: 10.5 },
+  { name: "小五", fontSizePt: 9 },
+  { name: "六号", fontSizePt: 7.5 },
+  { name: "小六", fontSizePt: 6.5 },
+  { name: "七号", fontSizePt: 5.5 },
+  { name: "八号", fontSizePt: 5 },
+] as const;
+
+const OFFICE_CHINESE_FONT_SIZE_POINTS = new Set<number>(
+  OFFICE_CHINESE_FONT_SIZE_OPTIONS.map((option) => option.fontSizePt),
+);
+
+const OFFICE_FONT_SIZE_OPTIONS = [
+  ...Array.from({ length: 63 }, (_, index) => 5 + index * 0.5),
+  ...Array.from({ length: 18 }, (_, index) => 38 + index * 2),
+  80,
+  90,
+  96,
+  100,
+  120,
+  144,
+  160,
+  180,
+  200,
+].filter((fontSizePt) => !OFFICE_CHINESE_FONT_SIZE_POINTS.has(fontSizePt));
+
+function officePointFontSizeOptions(currentFontSizePt: number) {
+  const current = normalizeOfficeFontSizePt(currentFontSizePt, currentFontSizePt);
+  if (OFFICE_CHINESE_FONT_SIZE_POINTS.has(current)) {
+    return OFFICE_FONT_SIZE_OPTIONS;
+  }
+  return OFFICE_FONT_SIZE_OPTIONS.includes(current)
+    ? OFFICE_FONT_SIZE_OPTIONS
+    : [...OFFICE_FONT_SIZE_OPTIONS, current].sort((left, right) => left - right);
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function waitForOfficeCommitResult(
+  sessionId: string,
+  host: OfficeHost,
+) {
+  const hostLabel = host === "word" ? "Word" : "PowerPoint";
+  const isEn = useEditorStore.getState().language === "en";
+  const deadline = Date.now() + OFFICE_COMMIT_RESULT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const current = await getOfficeSession(sessionId);
+    if (current.status === "completed") return;
+    if (current.status === "failed") {
+      throw new Error(
+        current.error ||
+          (isEn
+            ? `${hostLabel} could not write the formula.`
+            : `${hostLabel} 公式写入失败。`),
+      );
+    }
+    if (current.status === "cancelled" || current.explicitCancel) {
+      throw new Error(isEn ? `Writing the formula to ${hostLabel} was cancelled.` : `${hostLabel} 公式写入已取消。`);
+    }
+    await delay(100);
+  }
+  const seconds = Math.round(OFFICE_COMMIT_RESULT_TIMEOUT_MS / 1000);
+  throw new Error(
+    isEn
+      ? `${hostLabel} did not confirm the formula within ${seconds} seconds.`
+      : `${hostLabel} 在 ${seconds} 秒内未确认写入公式。`,
+  );
+}
+
+function documentFingerprint(
+  title: string,
+  lines: Array<{ id: string; latex: string }>,
+  codeFormat: string,
+  displayMode: "inline" | "block",
+  inlineImageMathStyle: InlineImageMathStyle,
+  numbered: boolean,
+  fontSizePt: number,
+  formulaLetterFont: string,
+  formulaChineseFont: string,
+) {
+  return JSON.stringify({
+    title,
+    lines: lines.map((line) => line.latex),
+    codeFormat,
+    displayMode,
+    inlineImageMathStyle,
+    numbered,
+    fontSizePt: normalizeOfficeFontSizePt(fontSizePt, fontSizePt),
+    formulaLetterFont,
+    formulaChineseFont,
+  });
+}
+
+export function OfficeDialogApp() {
+  // the resident editors also draw formulas for AI agents (render_latex)
+  useEffect(() => installMcpRenderBridge(), []);
+  // the resident tells the add-ins which fonts formulas are drawn in now (Update Equation Format)
+  useEffect(() => installFormulaFontPublisher(), []);
+  const tauriResidentEditor = isMacosOfflineTauriTransport();
+  const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  const { replaceDocumentWithHistory } = useDocumentSession(editorRef);
+  const loadedSessionIdRef = useRef("");
+  const nativeOriginalFingerprintRef = useRef<{
+    sessionKey: string;
+    fingerprint: string;
+  } | null>(null);
+  const skipAutosaveForSessionRef = useRef("");
+  const lastSavedFingerprintRef = useRef("");
+  const finalizingRef = useRef(false);
+  const allowNativeCloseRef = useRef(false);
+  const nativeCloseRequestInFlightRef = useRef(false);
+  const exportRunIdRef = useRef(0);
+  const activeSessionKeyRef = useRef("");
+  const readyReportedSessionKeyRef = useRef("");
+  const initialEditorFocusSessionRef = useRef("");
+  const silentCommitSessionKeyRef = useRef("");
+  const prewarmReportedRef = useRef(false);
+  const latestCompleteExportRef = useRef<{
+    fingerprint: string;
+    exportResult: OfficeExportResult;
+  } | null>(null);
+  const completeExportInFlightRef = useRef<{
+    fingerprint: string;
+    promise: Promise<OfficeExportResult | null>;
+  } | null>(null);
+  // Why the last PNG could not be made (reported when a commit needs the PNG)
+  const lastPngErrorRef = useRef<{ svgBase64: string; message: string } | null>(null);
+  // The last autosaved SVG export: the synchronous unload path reuses it
+  // (images are drawn asynchronously by the layout engine)
+  const latestDraftExportRef = useRef<{
+    fingerprint: string;
+    exportResult: OfficeExportResult | null;
+  } | null>(null);
+  const [sidebarOpen, setSidebarOpenState] = useState(() =>
+    readWorkspacePanelOpen("office-edit", "tiles"),
+  );
+  const setSidebarOpen = useCallback((open: boolean) => {
+    setSidebarOpenState(open);
+    writeWorkspacePanelOpen("office-edit", "tiles", open);
+  }, []);
+  const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
+  const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
+  const [inlineImageMathStyle, setInlineImageMathStyle] =
+    useState<InlineImageMathStyle>("text");
+  const [numbered, setNumbered] = useState(false);
+  const [officeFontSizePt, setOfficeFontSizePt] = useState(14);
+  const [toast, setToast] = useState("");
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
+    const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
+    return OCR_MODELS.some((item) => item.id === stored)
+      ? (stored as OcrModelName)
+      : DEFAULT_OCR_MODEL;
+  });
+  const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+  const [hydratedSessionKey, setHydratedSessionKey] = useState("");
+  const [presentedSessionKey, setPresentedSessionKey] = useState("");
+  const [hydratedPerformanceMs, setHydratedPerformanceMs] = useState(0);
+  const inlineOcrBusyRef = useRef(false);
+  const inlineOcrCancelRequestedRef = useRef(false);
+  const inlineOcrRunIdRef = useRef(0);
+  const inlineOcrClearTimerRef = useRef<number | null>(null);
+  const {
+    sessionId,
+    generation,
+    session,
+    loading,
+    error,
+    save,
+    flushSaves,
+    activationPerformanceMs,
+    sessionLoadedPerformanceMs,
+  } = useOfficeSession();
+  const sessionKey = sessionId ? `${generation}:${sessionId}` : "";
+  const sessionHydrated = Boolean(
+    session && sessionKey && hydratedSessionKey === sessionKey,
+  );
+  activeSessionKeyRef.current = sessionKey;
+
+  useEffect(() => {
+    if (readLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY) === "done") {
+      return;
+    }
+    useEditorStore.getState().setZoom(0.6);
+    writeLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY, "done");
+  }, []);
+
+  useEffect(() => {
+    if (!isMacosOfflineTauriTransport() || prewarmReportedRef.current) {
+      return;
+    }
+
+    let disposed = false;
+    let mountProbeTimer = 0;
+    let stableMountedChecks = 0;
+    let lastDiagnosticSignature = "";
+    const startedAt =
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    const deadline = startedAt + 30_000;
+    const reportDiagnostic = (
+      stage: "effect-start" | "waiting" | "ready" | "timeout",
+      editorReady: boolean,
+      mathfieldHosts: number,
+      now: number,
+    ) => {
+      const signature = `${stage}:${editorReady ? 1 : 0}:${mathfieldHosts}`;
+      if (signature === lastDiagnosticSignature) return;
+      lastDiagnosticSignature = signature;
+      void invokeTauri<void>(
+        "report_macos_offline_office_editor_prewarm_diagnostic",
+        {
+          input: {
+            stage,
+            editorReady,
+            mathfieldHosts,
+            elapsedMs: Math.max(0, now - startedAt),
+          },
+        },
+      ).catch((reason) => {
+        console.error("Unable to report Office editor prewarm diagnostics", reason);
+      });
+    };
+
+    reportDiagnostic("effect-start", false, 0, startedAt);
+    const reportWhenEditorMounted = () => {
+      if (disposed || prewarmReportedRef.current) return;
+      const now =
+        typeof performance === "undefined" ? Date.now() : performance.now();
+      const editorReady = Boolean(editorRef.current);
+      const mathfieldHosts = document.querySelectorAll(
+        ".formula-line .mathfield-host",
+      ).length;
+      reportDiagnostic("waiting", editorReady, mathfieldHosts, now);
+      if (editorReady && mathfieldHosts >= 1) {
+        stableMountedChecks += 1;
+      } else {
+        stableMountedChecks = 0;
+      }
+      if (stableMountedChecks < 2 && now < deadline) {
+        mountProbeTimer = window.setTimeout(reportWhenEditorMounted, 16);
+        return;
+      }
+      if (stableMountedChecks < 2) {
+        reportDiagnostic("timeout", editorReady, mathfieldHosts, now);
+        console.error("Unable to prewarm the resident Office MathLive editor");
+        return;
+      }
+
+      reportDiagnostic("ready", editorReady, mathfieldHosts, now);
+      prewarmReportedRef.current = true;
+      void invokeTauri<void>(
+        "report_macos_offline_office_editor_prewarmed",
+      ).catch((reason) => {
+        prewarmReportedRef.current = false;
+        console.error("Unable to report Office editor prewarming", reason);
+      });
+    };
+
+    mountProbeTimer = window.setTimeout(reportWhenEditorMounted, 0);
+    return () => {
+      disposed = true;
+      window.clearTimeout(mountProbeTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sync = (raw?: string | null) => syncOfficeEditorSystemSettings(raw);
+    sync();
+    // the main app's spacing configurations (stored on their own)
+    const syncSpacing = () => {
+      const spacing = normalizeFormulaSpacingPreferences(readPersistedFormulaSpacing());
+      const editor = useEditorStore.getState();
+      if (JSON.stringify(spacing) !== JSON.stringify(editor.formulaSpacing)) editor.setFormulaSpacing(spacing);
+    };
+    // the key the main app confirms quick escapes with (Settings > Keyboard shortcuts)
+    const syncEscapeKey = () => void useConfirmEscapeKeyStore.persist.rehydrate();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === EDITOR_PERSISTENCE_STORAGE_KEY) sync(event.newValue);
+      else if (event.key === CONFIRM_ESCAPE_KEY_STORAGE_KEY) syncEscapeKey();
+      else if (event.key === null || event.key === "visualtex.formula-spacing") {
+        syncSpacing();
+        if (event.key === null) syncEscapeKey();
+      }
+    };
+    const handleFocus = () => {
+      sync();
+      syncSpacing();
+      syncEscapeKey();
+    };
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    loadedSessionIdRef.current = "";
+    skipAutosaveForSessionRef.current = "";
+    lastSavedFingerprintRef.current = "";
+    readyReportedSessionKeyRef.current = "";
+    initialEditorFocusSessionRef.current = "";
+    finalizingRef.current = false;
+    allowNativeCloseRef.current = false;
+    nativeCloseRequestInFlightRef.current = false;
+    exportRunIdRef.current += 1;
+    latestCompleteExportRef.current = null;
+    completeExportInFlightRef.current = null;
+    latestDraftExportRef.current = null;
+    historyManager.clear();
+    setHydratedSessionKey("");
+    setPresentedSessionKey("");
+    setHydratedPerformanceMs(0);
+    setToast("");
+    setOcrOpen(false);
+    setInlineOcr(null);
+    inlineOcrBusyRef.current = false;
+    inlineOcrCancelRequestedRef.current = false;
+    inlineOcrRunIdRef.current += 1;
+    useEditorStore.getState().replaceDocumentState({
+      title: "",
+      lines: [{ id: createUuid(), latex: "" }],
+      activeLineId: null,
+      formulaAlignment: useEditorStore.getState().formulaAlignment,
+      selectionByLineId: {},
+    });
+    useEditorStore.getState().setLatexCodeFormat("raw");
+    setAutoCommitOnClose(true);
+    setDisplayMode("inline");
+    setInlineImageMathStyle("text");
+    setNumbered(false);
+    setOfficeFontSizePt(14);
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (!sessionId && isMacosOfflineTauriTransport()) {
+      document.title = "VisualTeX Office Formula — 待命";
+      return;
+    }
+    if (loading || (session && !sessionHydrated)) {
+      document.title = "VisualTeX Office Formula — 正在加载";
+      return;
+    }
+    if (error || !session) {
+      document.title = `VisualTeX Office Formula — 加载失败${error ? `：${error.slice(0, 80)}` : ""}`;
+      return;
+    }
+    document.title = `VisualTeX Office Formula — ${session.host === "word" ? "Word" : "PowerPoint"} 已就绪`;
+  }, [loading, error, session?.id, session?.host, sessionHydrated, sessionId]);
+
+  const title = useEditorStore((state) => state.title);
+  const lines = useEditorStore((state) => state.lines);
+  const activeLineId = useEditorStore((state) => state.activeLineId);
+  const language = useEditorStore((state) => state.language);
+  const theme = useEditorStore((state) => state.theme);
+  const setTheme = useEditorStore((state) => state.setTheme);
+  const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
+  const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
+  const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
+  const powerPointDefaultFontSizePt = useEditorStore(
+    (state) => state.powerPointDefaultFontSizePt,
+  );
+  const addHistory = useEditorStore((state) => state.addHistory);
+  const historyState = useHistorySnapshot();
+  const isEn = language === "en";
+  const latex = joinFormulaLines(lines);
+
+  useEffect(() => {
+    const applyTheme = (nextThemeValue: unknown) => {
+      const nextTheme = normalizeSynchronizedTheme(nextThemeValue);
+      applyDocumentTheme(nextTheme);
+      if (useEditorStore.getState().theme !== nextTheme) {
+        setTheme(nextTheme);
+      }
+    };
+
+    applyTheme(readSynchronizedTheme());
+    const unsubscribeBrowser = subscribeSynchronizedTheme(applyTheme);
+    let disposed = false;
+    let unsubscribeTauri: (() => void) | undefined;
+    if (isMacosOfflineTauriTransport()) {
+      void listen<unknown>("visualtex-theme-changed", (event) => {
+        applyTheme(event.payload);
+      })
+        .then((unsubscribe) => {
+          if (disposed) unsubscribe();
+          else unsubscribeTauri = unsubscribe;
+        })
+        .catch(() => undefined);
+    }
+
+    return () => {
+      disposed = true;
+      unsubscribeBrowser();
+      unsubscribeTauri?.();
+    };
+  }, [setTheme]);
+
+  useEffect(() => {
+    applyDocumentTheme(theme);
+  }, [theme]);
+  const selectedOcrModel =
+    OCR_MODELS.find((item) => item.id === ocrModel) ?? OCR_MODELS[1];
+  const inlineOcrModel =
+    OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
+  const inlineOcrIsBusy =
+    inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
+
+  const resolvedSessionFormulaFonts = useMemo(() => {
+    const current = useEditorStore.getState();
+    const persistedGlobal = readPersistedFormulaFontPreferences();
+    const globalLetterFont =
+      persistedGlobal.formulaLetterFont ?? current.formulaLetterFont;
+    const globalChineseFont =
+      persistedGlobal.formulaChineseFont ?? current.formulaChineseFont;
+    return {
+      formulaLetterFont: normalizeFormulaLetterFont(
+        session?.originalMetadata?.formulaLetterFont ??
+          (tauriResidentEditor &&
+          !(session?.nativeEquation && session?.mode === "edit")
+            ? undefined
+            : session?.formulaLetterFont) ??
+          globalLetterFont,
+      ),
+      formulaChineseFont: normalizeFormulaChineseFont(
+        session?.originalMetadata?.formulaChineseFont ??
+          (tauriResidentEditor ? undefined : session?.formulaChineseFont) ??
+          globalChineseFont,
+      ),
+    };
+  }, [
+    sessionKey,
+    session?.formulaChineseFont,
+    session?.formulaLetterFont,
+    session?.host,
+    session?.nativeEquation,
+    session?.mode,
+    session?.originalMetadata?.formulaChineseFont,
+    session?.originalMetadata?.formulaLetterFont,
+    tauriResidentEditor,
+  ]);
+
+  const editableSessionDocument = useMemo(
+    () =>
+      session
+        ? normalizeFormulaEditorDocument(session.lines, session.codeFormat)
+        : null,
+    [session],
+  );
+  const editableOriginalDocument = useMemo(() => {
+    if (!session) return null;
+    return normalizeFormulaEditorDocument(
+      session.originalMetadata?.lines ?? session.lines,
+      session.originalMetadata?.codeFormat ?? session.codeFormat,
+    );
+  }, [session]);
+
+  const originalFingerprint = useMemo(() => {
+    if (!session || !editableOriginalDocument) return "";
+    const fallbackFontSizePt = session.host === "word" ? 11 : 18;
+    const originalFontSizePt =
+      session.host === "powerpoint" &&
+      !(session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:")) &&
+      session.mode === "create" &&
+      session.status === "created" &&
+      !session.dirty
+        ? powerPointDefaultFontSizePt
+        : normalizeOfficeFontSizePt(
+            session.originalMetadata?.fontSizePt ?? session.fontSizePt,
+            fallbackFontSizePt,
+          );
+    const fingerprint = documentFingerprint(
+      session.originalMetadata?.title ?? session.title,
+      editableOriginalDocument.lines,
+      editableOriginalDocument.codeFormat,
+      session.originalMetadata?.displayMode ?? session.displayMode,
+      session.originalMetadata?.inlineImageMathStyle ??
+        session.inlineImageMathStyle ??
+        "text",
+      session.originalMetadata?.numbered ?? session.numbered ?? false,
+      originalFontSizePt,
+      resolvedSessionFormulaFonts.formulaLetterFont,
+      resolvedSessionFormulaFonts.formulaChineseFont,
+    );
+    // Office equations without stored metadata autosave their source and
+    // numbering into the Session. Preserve the imported baseline for this
+    // activation so a settled draft cannot turn a real edit into a no-op.
+    if (session.mode === "edit" && !session.originalMetadata &&
+        nativeOriginalFingerprintRef.current?.sessionKey === sessionKey) {
+      return nativeOriginalFingerprintRef.current.fingerprint;
+    }
+    return fingerprint;
+  }, [
+    editableOriginalDocument,
+    powerPointDefaultFontSizePt,
+    resolvedSessionFormulaFonts.formulaChineseFont,
+    resolvedSessionFormulaFonts.formulaLetterFont,
+    session,
+    sessionKey,
+  ]);
+
+  const currentFingerprint = useMemo(
+    () =>
+      documentFingerprint(
+        title,
+        lines,
+        latexCodeFormat,
+        displayMode,
+        inlineImageMathStyle,
+        numbered,
+        officeFontSizePt,
+        formulaLetterFont,
+        formulaChineseFont,
+      ),
+    [
+      title,
+      lines,
+      latexCodeFormat,
+      displayMode,
+      inlineImageMathStyle,
+      numbered,
+      officeFontSizePt,
+      formulaLetterFont,
+      formulaChineseFont,
+    ],
+  );
+  const dirty = Boolean(session) && currentFingerprint !== originalFingerprint;
+
+  useEffect(() => {
+    if (
+      !session ||
+      !editableSessionDocument ||
+      loadedSessionIdRef.current === sessionKey
+    ) {
+      return;
+    }
+    loadedSessionIdRef.current = sessionKey;
+    skipAutosaveForSessionRef.current = session.id;
+    const nextLines = editableSessionDocument.lines.length
+      ? editableSessionDocument.lines
+      : [{ id: createUuid(), latex: "" }];
+    useEditorStore.setState({
+      formulaLetterFont: resolvedSessionFormulaFonts.formulaLetterFont,
+      formulaChineseFont: resolvedSessionFormulaFonts.formulaChineseFont,
+    });
+    useEditorStore.getState().replaceDocumentState({
+      title: session.title || (isEn ? "Office Formula" : "Office 公式"),
+      lines: nextLines,
+      activeLineId:
+        session.activeLineId &&
+        nextLines.some((line) => line.id === session.activeLineId)
+          ? session.activeLineId
+          : nextLines[0]?.id ?? null,
+      formulaAlignment: useEditorStore.getState().formulaAlignment,
+      selectionByLineId: {},
+    });
+    if (isLatexCodeFormat(editableSessionDocument.codeFormat)) {
+      useEditorStore
+        .getState()
+        .setLatexCodeFormat(editableSessionDocument.codeFormat as LatexCodeFormat);
+    }
+    setAutoCommitOnClose(session.autoCommitOnClose);
+    setDisplayMode(session.displayMode);
+    const sessionInlineImageMathStyle =
+      session.originalMetadata?.inlineImageMathStyle ??
+      session.inlineImageMathStyle ??
+      "text";
+    const loadedInlineImageMathStyle =
+      session.host === "word" &&
+      !session.nativeEquation &&
+      session.mode === "create" &&
+      !session.originalMetadata
+        ? readOfficeWordInlineImageMathStylePreference(
+            sessionInlineImageMathStyle,
+          )
+        : sessionInlineImageMathStyle;
+    setInlineImageMathStyle(loadedInlineImageMathStyle);
+    const sessionNumbered =
+      session.displayMode === "block" && Boolean(session.numbered);
+    // A formula edited in WPS keeps the number it has (office::wps); a new one
+    // follows the same "Add equation number" preference as in Word. An AI
+    // agent's formula is numbered as the agent asked and leaves the
+    // preference as the user set it.
+    const followsNumberedPreference =
+      session.host === "word" &&
+      session.mode === "create" &&
+      session.displayMode === "block" &&
+      session.operation !== "agent";
+    const loadedNumbered = followsNumberedPreference
+      ? readOfficeWordCreateNumberedPreference(sessionNumbered)
+      : sessionNumbered;
+    setNumbered(loadedNumbered);
+    if (followsNumberedPreference) {
+      writeOfficeWordCreateNumberedPreference(loadedNumbered);
+    }
+    const requestedFontSizePt = normalizeOfficeFontSizePt(
+      session.fontSizePt ?? session.originalMetadata?.fontSizePt,
+      session.host === "word" ? 11 : 18,
+    );
+    const loadedFontSizePt =
+      session.host === "powerpoint" &&
+      !(session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:")) &&
+      session.mode === "create" &&
+      session.status === "created" &&
+      !session.dirty
+        ? powerPointDefaultFontSizePt
+        : requestedFontSizePt;
+    setOfficeFontSizePt(loadedFontSizePt);
+    const loadedFingerprint = documentFingerprint(
+      session.title,
+      nextLines,
+      editableSessionDocument.codeFormat,
+      session.displayMode,
+      session.inlineImageMathStyle ?? "text",
+      session.displayMode === "block" && Boolean(session.numbered),
+      loadedFontSizePt,
+      resolvedSessionFormulaFonts.formulaLetterFont,
+      resolvedSessionFormulaFonts.formulaChineseFont,
+    );
+    lastSavedFingerprintRef.current = loadedFingerprint;
+    if (session.mode === "edit" && !session.originalMetadata) {
+      nativeOriginalFingerprintRef.current = {
+        sessionKey,
+        fingerprint: loadedFingerprint,
+      };
+    }
+    latestCompleteExportRef.current = session.exportResult?.pngBase64
+      ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
+      : null;
+    const hydratedAt =
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    setHydratedPerformanceMs(hydratedAt);
+    setHydratedSessionKey(sessionKey);
+  }, [
+    editableSessionDocument,
+    session?.id,
+    sessionKey,
+    isEn,
+    powerPointDefaultFontSizePt,
+    resolvedSessionFormulaFonts.formulaChineseFont,
+    resolvedSessionFormulaFonts.formulaLetterFont,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isMacosOfflineTauriTransport() ||
+      !session ||
+      !editableSessionDocument ||
+      !sessionHydrated ||
+      !sessionKey ||
+      generation <= 0 ||
+      readyReportedSessionKeyRef.current === sessionKey
+    ) {
+      return;
+    }
+
+    let disposed = false;
+    let readinessCheck = 0;
+    let readinessTimer = 0;
+    let editorMountedMs = 0;
+    const origin =
+      activationPerformanceMs ||
+      sessionLoadedPerformanceMs ||
+      hydratedPerformanceMs;
+    const contentReadyDeadlineMs = origin + 5_000;
+    const hydrateMs = Math.max(0, hydratedPerformanceMs - origin);
+    const expectedLineIds = editableSessionDocument.lines.map((line) => line.id);
+    const expectedLineLatex = editableSessionDocument.lines.map((line) => line.latex);
+
+    const inspectContent = () => {
+      if (disposed || activeSessionKeyRef.current !== sessionKey) return;
+      readinessCheck += 1;
+      const now =
+        typeof performance === "undefined" ? Date.now() : performance.now();
+      if (readinessCheck === 1) {
+        editorMountedMs = Math.max(hydrateMs, now - origin);
+      }
+      const mountedLineIds = new Set(
+        Array.from(
+          document.querySelectorAll<HTMLElement>(
+            ".formula-line[data-line-id]",
+          ),
+        ).map((element) => element.dataset.lineId ?? ""),
+      );
+      const mathfields = Array.from(
+        document.querySelectorAll<MathfieldElement>(".formula-line math-field"),
+      );
+      const lineIdsMounted = expectedLineIds.every((lineId) =>
+        mountedLineIds.has(lineId),
+      );
+      const formulaContentMounted =
+        mathfields.length >= expectedLineLatex.length &&
+        expectedLineLatex.every(
+          (latex, index) => mathfields[index]?.value === latex,
+        );
+      const contentMounted =
+        Boolean(editorRef.current) &&
+        (lineIdsMounted || formulaContentMounted) &&
+        mathfields.length >= expectedLineLatex.length;
+      // The resident WebView is intentionally behind Word/PowerPoint while it
+      // hydrates. macOS can heavily throttle requestAnimationFrame for that
+      // occluded window even when WebKit background throttling is disabled.
+      // Use ordinary tasks for readiness polling so a fully mounted editor can
+      // cross the application foreground boundary immediately.
+      if (
+        readinessCheck < 2 ||
+        (!contentMounted && now < contentReadyDeadlineMs)
+      ) {
+        readinessTimer = window.setTimeout(inspectContent, 0);
+        return;
+      }
+      if (!contentMounted) {
+        readyReportedSessionKeyRef.current = "";
+        setToast(
+          isEn
+            ? "The formula editor timed out while loading."
+            : "公式编辑器加载超时。",
+        );
+        return;
+      }
+
+      // A resident MathLive field can keep geometry from the previous Office
+      // Session because its React slot intentionally survives window parking.
+      // Re-measure every live line before the native window presents it.
+      editorRef.current?.refreshLayout();
+
+      // refreshLayout() remounts resident MathLive fields synchronously. Give
+      // the custom elements one normal task turn to reconnect before the
+      // resident Office window is ordered in front.
+      document.body.style.opacity = "1";
+      readinessTimer = window.setTimeout(() => {
+        if (disposed || activeSessionKeyRef.current !== sessionKey) return;
+        const contentReadyAt =
+          typeof performance === "undefined" ? Date.now() : performance.now();
+        const contentReadyMs = Math.max(
+          editorMountedMs,
+          contentReadyAt - origin,
+        );
+        readyReportedSessionKeyRef.current = sessionKey;
+        void invokeTauri<void>(
+          "report_macos_offline_office_editor_ready",
+          {
+            input: {
+              sessionId: session.id,
+              generation,
+              frontendEpochMs: Date.now(),
+              hydrateMs,
+              editorMountedMs,
+              contentReadyMs,
+            },
+          },
+        )
+          .then(() => {
+            if (activeSessionKeyRef.current !== sessionKey) return;
+            // A same-session autosave may replace the session object and clean
+            // up this effect while AppKit is presenting. The session key, not
+            // that effect instance, owns the native presentation result.
+            // Keep the macOS foreground handshake ahead of the shared initial
+            // focus repair. A parked WebView must never delay the ready report
+            // while waiting for an animation frame or its shadow input.
+            setPresentedSessionKey(sessionKey);
+          })
+          .catch((reason) => {
+            if (activeSessionKeyRef.current !== sessionKey) return;
+            document.body.style.opacity = "0";
+            readyReportedSessionKeyRef.current = "";
+            setToast(
+              errorMessage(
+                reason,
+                isEn
+                  ? "Unable to reveal the Office formula editor"
+                  : "无法显示 Office 公式编辑器",
+              ),
+            );
+          });
+      }, 0);
+    };
+
+    readinessTimer = window.setTimeout(inspectContent, 0);
+    return () => {
+      disposed = true;
+      window.clearTimeout(readinessTimer);
+    };
+  }, [
+    activationPerformanceMs,
+    editableSessionDocument,
+    generation,
+    hydratedPerformanceMs,
+    isEn,
+    session,
+    sessionHydrated,
+    sessionKey,
+    sessionLoadedPerformanceMs,
+  ]);
+
+  useEffect(() => {
+    if (
+      !sessionHydrated ||
+      !sessionKey ||
+      (tauriResidentEditor && presentedSessionKey !== sessionKey) ||
+      initialEditorFocusSessionRef.current === sessionKey
+    ) {
+      return;
+    }
+    // Mark activation complete only after focus is acquired. React StrictMode
+    // can clean up the first effect before its animation frame runs; marking
+    // it at setup would make the second setup skip activation entirely.
+    let disposed = false;
+    const repairTimers: number[] = [];
+    let repairInterval = 0;
+    const focusFirstLine = () => {
+      if (disposed || activeSessionKeyRef.current !== sessionKey) return;
+      // AppKit handles window focus. Limit this repair to MathLive's element;
+      // window.focus() would activate the whole VisualTeX application.
+      editorRef.current?.focus({ target: "first", moveToEnd: true });
+      // Match the Windows editor activation path when the MathLive shadow
+      // input finishes mounting one frame after the imperative editor handle.
+      const field = document.querySelector<HTMLElement>("math-field");
+      if (field && document.activeElement !== field) {
+        field.focus({ preventScroll: true });
+      }
+    };
+    const formulaHasFocus = () =>
+      document.activeElement?.tagName === "MATH-FIELD" ||
+      document.activeElement?.classList.contains("vt-core-input") === true;
+    const focusWhenVisible = () => {
+      if (document.visibilityState === "visible") repairFocus();
+    };
+    const stopActivationRepair = () => {
+      window.clearInterval(repairInterval);
+      repairInterval = 0;
+      window.removeEventListener("focus", repairFocus);
+      document.removeEventListener("visibilitychange", focusWhenVisible);
+    };
+    const repairFocus = () => {
+      if (disposed || activeSessionKeyRef.current !== sessionKey) {
+        stopActivationRepair();
+        return;
+      }
+      focusFirstLine();
+      if (formulaHasFocus()) {
+        initialEditorFocusSessionRef.current = sessionKey;
+        stopActivationRepair();
+      }
+    };
+    const frame = window.requestAnimationFrame(() => {
+      repairFocus();
+      if (
+        !disposed &&
+        activeSessionKeyRef.current === sessionKey &&
+        !formulaHasFocus()
+      ) {
+        repairInterval = window.setInterval(repairFocus, 60);
+        repairTimers.push(window.setTimeout(stopActivationRepair, 3000));
+      }
+    });
+    window.addEventListener("focus", repairFocus, { once: true });
+    document.addEventListener("visibilitychange", focusWhenVisible);
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(frame);
+      repairTimers.forEach((timer) => window.clearTimeout(timer));
+      stopActivationRepair();
+    };
+  }, [presentedSessionKey, sessionHydrated, sessionKey, tauriResidentEditor]);
+
+  const generateSvgExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
+    if (!latex.trim()) return null;
+    return officeExportResultFromArtifacts(
+      await renderOfficeFormulaArtifacts({
+        lines,
+        codeFormat: latexCodeFormat,
+        displayMode,
+        inlineImageMathStyle:
+          session?.host === "word" && !session?.nativeEquation
+            ? inlineImageMathStyle
+            : "text",
+        host: session?.host,
+        fontSizePt: officeFontSizePt,
+        includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
+        numbered:
+          session?.host === "word" &&
+          displayMode === "block" &&
+          numbered,
+        formulaLetterFont,
+        formulaChineseFont,
+      }),
+    );
+  }, [
+    latex,
+    displayMode,
+    inlineImageMathStyle,
+    lines,
+    latexCodeFormat,
+    session?.host,
+    session?.nativeEquation,
+    officeFontSizePt,
+    numbered,
+    formulaLetterFont,
+    formulaChineseFont,
+  ]);
+
+  const generateDraftExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
+    if (!latex.trim()) return null;
+    const artifacts = await tryRenderOfficeFormulaDraftArtifacts({
+      lines,
+      codeFormat: latexCodeFormat,
+      displayMode,
+      inlineImageMathStyle:
+        session?.host === "word" && !session?.nativeEquation
+          ? inlineImageMathStyle
+          : "text",
+      host: session?.host,
+        fontSizePt: officeFontSizePt,
+      includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
+      numbered:
+        session?.host === "word" &&
+        displayMode === "block" &&
+        numbered,
+      formulaLetterFont,
+      formulaChineseFont,
+    });
+    return artifacts ? officeExportResultFromArtifacts(artifacts) : null;
+  }, [
+    latex,
+    displayMode,
+    inlineImageMathStyle,
+    lines,
+    latexCodeFormat,
+    session?.host,
+    session?.nativeEquation,
+    officeFontSizePt,
+    numbered,
+    formulaLetterFont,
+    formulaChineseFont,
+  ]);
+
+  const generateExportResult = useCallback(async (
+    preparedBase?: OfficeExportResult | null,
+  ): Promise<OfficeExportResult | null> => {
+    const base =
+      preparedBase === undefined ? await generateSvgExportResult() : preparedBase;
+    if (!base) return null;
+    // Numbering changes the native DOCX shell, not the formula picture.
+    // Reuse an identical raster while retaining the freshly exported OMML.
+    const cached = latestCompleteExportRef.current?.exportResult;
+    if (cached?.pngBase64 && cached.svgBase64 === base.svgBase64 &&
+        cached.width === base.width && cached.height === base.height) {
+      return {
+        ...base,
+        pngBase64: cached.pngBase64,
+        inkTopRatio: cached.inkTopRatio,
+        inkBottomRatio: cached.inkBottomRatio,
+        inkCenterYRatio: cached.inkCenterYRatio,
+      };
+    }
+    let pngBase64: string | undefined;
+    let inkTopRatio: number | undefined;
+    let inkBottomRatio: number | undefined;
+    let inkCenterYRatio: number | undefined;
+    try {
+      const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
+      const png = await svgToPng(
+        {
+          base64: base.svgBase64,
+          width: base.width,
+          height: base.height,
+        },
+        { scale: 2, background: "transparent" },
+      );
+      pngBase64 = png.base64;
+      inkTopRatio = png.inkTopRatio;
+      inkBottomRatio = png.inkBottomRatio;
+      inkCenterYRatio = png.inkCenterYRatio;
+    } catch (reason) {
+      // The SVG is still saved; an Office commit that needs the PNG reports this reason.
+      const english = useEditorStore.getState().language === "en";
+      lastPngErrorRef.current = {
+        svgBase64: base.svgBase64,
+        message: inConversionStage(
+          english,
+          `无法生成公式的 PNG 图片（${Math.round(base.width)}×${Math.round(base.height)} 像素）`,
+          `The PNG image of the formula could not be generated (${Math.round(base.width)}×${Math.round(base.height)} px)`,
+          reason,
+        ).message,
+      };
+    }
+    return {
+      ...base,
+      pngBase64,
+      inkTopRatio,
+      inkBottomRatio,
+      inkCenterYRatio,
+    };
+  }, [generateSvgExportResult]);
+
+  const getCompleteExportResult = useCallback(
+    (
+      fingerprint: string,
+      preparedBase?: OfficeExportResult | null,
+    ): Promise<OfficeExportResult | null> => {
+      const cached = latestCompleteExportRef.current;
+      if (
+        cached?.fingerprint === fingerprint &&
+        cached.exportResult.pngBase64
+      ) {
+        return Promise.resolve(cached.exportResult);
+      }
+      const inFlight = completeExportInFlightRef.current;
+      if (inFlight?.fingerprint === fingerprint) return inFlight.promise;
+
+      const promise = generateExportResult(preparedBase)
+        .then((result) => {
+          if (result?.pngBase64) {
+            latestCompleteExportRef.current = {
+              fingerprint,
+              exportResult: result,
+            };
+          }
+          return result;
+        })
+        .finally(() => {
+          if (completeExportInFlightRef.current?.promise === promise) {
+            completeExportInFlightRef.current = null;
+          }
+        });
+      completeExportInFlightRef.current = { fingerprint, promise };
+      return promise;
+    },
+    [generateExportResult],
+  );
+
+  useEffect(() => {
+    if (!session || !sessionId || !sessionHydrated || finalizingRef.current) {
+      return;
+    }
+    if (skipAutosaveForSessionRef.current === sessionId) {
+      skipAutosaveForSessionRef.current = "";
+      return;
+    }
+    if (
+      lastSavedFingerprintRef.current === currentFingerprint &&
+      session.autoCommitOnClose === autoCommitOnClose
+    ) {
+      return;
+    }
+
+    const runId = ++exportRunIdRef.current;
+    const fingerprint = currentFingerprint;
+    void (async () => {
+    // Autosave is a source-persistence path, not an explicit Office write.
+    // MathLive templates temporarily contain placeholders, unclosed groups or
+    // a partially typed command. Save those drafts without artifacts and wait
+    // for a later valid edit instead of repeatedly surfacing strict MathJax/
+    // OMML errors while the user is still typing.
+    const exportResult = await generateDraftExportResult();
+    if (runId !== exportRunIdRef.current) return;
+    latestDraftExportRef.current = { fingerprint, exportResult };
+    const draftUpdate = {
+      title,
+      lines,
+      activeLineId,
+      codeFormat: latexCodeFormat,
+      displayMode,
+      inlineImageMathStyle,
+      numbered: displayMode === "block" && numbered,
+      fontSizePt: officeFontSizePt,
+      formulaLetterFont,
+      formulaChineseFont,
+      dirty,
+      status: "editing",
+      autoCommitOnClose,
+      exportResult,
+      exportWidth: exportResult?.width ?? 0,
+      exportHeight: exportResult?.height ?? 0,
+      error: null,
+    } as const;
+    void save(draftUpdate)
+      .then((saved) => {
+        if (saved && runId === exportRunIdRef.current) {
+          lastSavedFingerprintRef.current = currentFingerprint;
+        }
+      })
+      .catch((reason) => {
+        setToast(
+          errorMessage(
+            reason,
+            isEn ? "Unable to save the Office formula" : "无法保存 Office 公式",
+          ),
+        );
+      });
+    // Windows OLE inserts a PNG file. Keep rasterization off the critical
+    // keystroke-save path, but persist the full export as soon as it is
+    // ready so the title-bar close button has a committable final draft.
+    if (
+      exportResult &&
+      !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+    ) {
+      void getCompleteExportResult(currentFingerprint, exportResult)
+        .then((completeExport) => {
+          if (
+            !completeExport?.pngBase64 ||
+            runId !== exportRunIdRef.current ||
+            finalizingRef.current
+          ) {
+            return;
+          }
+          return save({
+            ...draftUpdate,
+            exportResult: completeExport,
+            exportWidth: completeExport.width,
+            exportHeight: completeExport.height,
+          }).then((saved) => {
+            if (saved && runId === exportRunIdRef.current) {
+              lastSavedFingerprintRef.current = currentFingerprint;
+            }
+          });
+        })
+        .catch(() => {
+          // The immediate SVG save is still recoverable. The explicit
+          // insert/update path reports rasterization errors to the user.
+        });
+    } else {
+      latestCompleteExportRef.current = null;
+    }
+    })();
+  }, [
+    sessionId,
+    sessionHydrated,
+    session?.id,
+    session?.autoCommitOnClose,
+    currentFingerprint,
+    title,
+    lines,
+    activeLineId,
+    latexCodeFormat,
+    displayMode,
+    inlineImageMathStyle,
+    numbered,
+    officeFontSizePt,
+    formulaLetterFont,
+    formulaChineseFont,
+    dirty,
+    autoCommitOnClose,
+    save,
+    isEn,
+    generateDraftExportResult,
+    getCompleteExportResult,
+  ]);
+
+  useEffect(() => {
+    if (!sessionId || !sessionHydrated) return;
+    const finalDraftUpdate = (status: "editing" | "committing") => {
+      // Unload/keepalive is synchronous: only an export that already
+      // completed for this formula is used (never a fresh render here).
+      const cached = latestCompleteExportRef.current;
+      const draft = latestDraftExportRef.current;
+      const exportResult =
+        cached?.fingerprint === currentFingerprint
+          ? cached.exportResult
+          : draft?.fingerprint === currentFingerprint
+            ? draft.exportResult
+            : null;
+      return {
+        title,
+        lines,
+        activeLineId,
+        codeFormat: latexCodeFormat,
+        displayMode,
+        inlineImageMathStyle,
+        numbered: displayMode === "block" && numbered,
+        fontSizePt: officeFontSizePt,
+        formulaLetterFont,
+        formulaChineseFont,
+        dirty,
+        status,
+        autoCommitOnClose,
+        exportResult,
+        exportWidth: exportResult?.width ?? 0,
+        exportHeight: exportResult?.height ?? 0,
+        error: null,
+      } as const;
+    };
+    const persistFinalDraft = () => {
+      if (finalizingRef.current) return;
+      try {
+        void saveOfficeSessionKeepalive(
+          sessionId,
+          finalDraftUpdate("editing"),
+        ).catch(() => undefined);
+      } catch {
+        // The regular save path reports export errors while the page is open.
+      }
+    };
+    const commitFinalDraft = () => {
+      const cached = latestCompleteExportRef.current;
+      const draft = latestDraftExportRef.current;
+      const nativePowerPoint =
+        session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT;
+      if (
+        finalizingRef.current ||
+        !autoCommitOnClose ||
+        !latex.trim() ||
+        (!nativePowerPoint &&
+          (cached?.fingerprint !== currentFingerprint ||
+            !cached.exportResult.pngBase64)) ||
+        (nativePowerPoint &&
+          cached?.fingerprint !== currentFingerprint &&
+          !(draft?.fingerprint === currentFingerprint && draft.exportResult))
+      ) {
+        persistFinalDraft();
+        return;
+      }
+      try {
+        finalizingRef.current = true;
+        const update = finalDraftUpdate("committing");
+        // The hidden Office command page owns every host mutation. The dialog
+        // only persists a complete committing Session, including for native
+        // PowerPoint. Directly mutating PowerPoint from this child window used
+        // to bypass the adapter's durable name/tag decoration and produced
+        // uneditable generic `Graphic N` shapes.
+        void saveOfficeSessionKeepalive(sessionId, update).catch(
+          () => undefined,
+        );
+      } catch {
+        // Closing a dialog is best-effort; the explicit insert button reports errors.
+      }
+    };
+    const persistWhenHidden = () => {
+      if (document.visibilityState === "hidden") persistFinalDraft();
+    };
+    window.addEventListener("pagehide", commitFinalDraft);
+    window.addEventListener("beforeunload", commitFinalDraft);
+    document.addEventListener("visibilitychange", persistWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", commitFinalDraft);
+      window.removeEventListener("beforeunload", commitFinalDraft);
+      document.removeEventListener("visibilitychange", persistWhenHidden);
+    };
+  }, [
+    sessionId,
+    sessionHydrated,
+    session?.host,
+    title,
+    lines,
+    activeLineId,
+    latexCodeFormat,
+    displayMode,
+    inlineImageMathStyle,
+    numbered,
+    officeFontSizePt,
+    formulaLetterFont,
+    formulaChineseFont,
+    dirty,
+    autoCommitOnClose,
+    currentFingerprint,
+    generateDraftExportResult,
+    generateSvgExportResult,
+    latex,
+  ]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!inlineOcrIsBusy) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setInlineOcr((current) =>
+        current
+          ? {
+              ...current,
+              seconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+            }
+          : current,
+      );
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [inlineOcrIsBusy]);
+
+  useEffect(
+    () => () => {
+      if (inlineOcrClearTimerRef.current !== null) {
+        window.clearTimeout(inlineOcrClearTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleInlineOcrClear = (delay: number) => {
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+    }
+    inlineOcrClearTimerRef.current = window.setTimeout(() => {
+      setInlineOcr(null);
+      inlineOcrClearTimerRef.current = null;
+    }, delay);
+  };
+
+  const handleOcrModelChange = useCallback(
+    (nextModel: OcrModelName) => {
+      if (inlineOcrBusyRef.current || nextModel === ocrModel) return;
+      setOcrModel(nextModel);
+      writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
+    },
+    [ocrModel],
+  );
+
+  const ocrQuickSelection = useOcrQuickSelection({
+    model: ocrModel,
+    busy: inlineOcrIsBusy,
+    isEn,
+    enabled: false,
+    onModelChange: handleOcrModelChange,
+    onError: setToast,
+  });
+
+  const cancelInlineOcr = async () => {
+    if (!inlineOcrBusyRef.current) return;
+    inlineOcrCancelRequestedRef.current = true;
+    setInlineOcr((current) =>
+      current
+        ? {
+            ...current,
+            status: "cancelling",
+            message: isEn ? "Cancelling OCR…" : "正在取消 OCR…",
+          }
+        : current,
+    );
+    try {
+      await cancelOcrRecognition();
+    } catch {
+      // A worker that already exited is equivalent to successful cancellation.
+    }
+  };
+
+  const handleEditorImagePaste = async (
+    file: File,
+    target: MathEditorInsertionTarget,
+  ) => {
+    if (inlineOcrBusyRef.current) {
+      setToast(
+        isEn
+          ? "Another pasted image is being recognized"
+          : "已有一张粘贴图片正在识别",
+      );
+      return;
+    }
+
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+      inlineOcrClearTimerRef.current = null;
+    }
+
+    const runId = ++inlineOcrRunIdRef.current;
+    inlineOcrBusyRef.current = true;
+    inlineOcrCancelRequestedRef.current = false;
+    setInlineOcr({
+      status: "running",
+      message: isEn ? "Checking the OCR provider…" : "正在检查 OCR 提供器…",
+      seconds: 0,
+      model: ocrModel,
+    });
+
+    let unlisten: (() => void) | undefined;
+    try {
+      const providerConfiguration = await getOcrProviderConfiguration();
+      const usingLocalProvider = providerConfiguration.activeProvider === "local";
+      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+      if (usingLocalProvider) {
+        const runtime = await getOcrRuntimeStatus();
+        if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+        if (!runtime.installed) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? "OCR runtime not installed"
+              : "未安装 OCR 运行环境",
+          );
+        }
+
+        if (!runtime.installedModels.includes(ocrModel)) {
+          setOcrOpen(true);
+          throw new Error(
+            isEn
+              ? `${selectedOcrModel.labelEn} not installed`
+              : `未安装${selectedOcrModel.labelZh}模型`,
+          );
+        }
+      } else {
+        setInlineOcr((current) =>
+          current
+            ? {
+                ...current,
+                message: isEn
+                  ? "Sending the image to the OCR API…"
+                  : "正在将图片发送到 OCR API…",
+              }
+            : current,
+        );
+      }
+      const availableOcrModel = ocrModel;
+
+      unlisten = await listenOcrRecognitionProgress((progress) => {
+        if (
+          inlineOcrRunIdRef.current !== runId ||
+          progress.model !== ocrModel
+        ) {
+          return;
+        }
+        setInlineOcr((current) =>
+          current ? { ...current, message: progress.message } : current,
+        );
+      });
+
+      const request = await fileToOcrRequest(file, availableOcrModel);
+      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
+      const result = await recognizeFormulaImage(request);
+      if (
+        inlineOcrCancelRequestedRef.current ||
+        inlineOcrRunIdRef.current !== runId
+      ) {
+        throw new Error("OCR_CANCELLED");
+      }
+
+      const recognizedLatex = normalizeOcrFormulaLines(result.formulas).join("\n");
+      if (!recognizedLatex) {
+        throw new Error(
+          isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式",
+        );
+      }
+
+      const inserted =
+        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
+      if (!inserted) {
+        throw new Error(
+          isEn
+            ? "The formula line was deleted; nothing was inserted"
+            : "原公式行已删除，未插入",
+        );
+      }
+
+      setInlineOcr((current) => ({
+        status: "success",
+        message: result.backgroundInverted
+          ? isEn
+            ? "Inserted (inverted)"
+            : "已插入（已反色）"
+          : isEn
+            ? "Inserted"
+            : "已插入",
+        seconds: current?.seconds ?? 0,
+        model: ocrModel,
+      }));
+      setToast(
+        isEn ? "Converted to LaTeX" : "已转换为 LaTeX",
+      );
+      scheduleInlineOcrClear(1800);
+    } catch (reason) {
+      const message = errorMessage(reason, "");
+      const cancelled =
+        inlineOcrCancelRequestedRef.current || message.includes("OCR_CANCELLED");
+      if (cancelled) {
+        setInlineOcr((current) => ({
+          status: "cancelled",
+          message: isEn ? "OCR cancelled" : "OCR 已取消",
+          seconds: current?.seconds ?? 0,
+          model: ocrModel,
+        }));
+        scheduleInlineOcrClear(1200);
+      } else {
+        const visibleMessage =
+          message || (isEn ? "Image OCR failed" : "图片 OCR 失败");
+        setInlineOcr((current) => ({
+          status: "error",
+          message: visibleMessage,
+          seconds: current?.seconds ?? 0,
+          model: ocrModel,
+        }));
+        setToast(visibleMessage);
+        scheduleInlineOcrClear(4500);
+      }
+    } finally {
+      unlisten?.();
+      if (inlineOcrRunIdRef.current === runId) {
+        inlineOcrBusyRef.current = false;
+        inlineOcrCancelRequestedRef.current = false;
+      }
+    }
+  };
+
+  const buildCurrentSessionUpdate = useCallback(
+    async (
+      status: "editing" | "committing" | "cancelled",
+    ): Promise<UpdateOfficeSessionInput> => {
+      if (!session) throw new Error(isEn ? "The Office session has not loaded yet." : "Office Session 尚未加载。");
+      const exportResult =
+        status === "cancelled"
+          ? session.exportResult
+          : session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT
+            ? await generateSvgExportResult()
+            : await getCompleteExportResult(currentFingerprint);
+      if (status === "committing" && !exportResult) {
+        throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
+      }
+      // Word and PowerPoint images carry a PNG beside the SVG: without it the
+      // commit would fail later with a generic message
+      if (
+        status === "committing" &&
+        exportResult &&
+        !exportResult.pngBase64 &&
+        !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+      ) {
+        const pngError = lastPngErrorRef.current;
+        throw new Error(
+          pngError?.svgBase64 === exportResult.svgBase64
+            ? pngError.message
+            : isEn
+              ? "The PNG image of the formula was not generated."
+              : "未生成公式的 PNG 图片。",
+        );
+      }
+      return {
+        title,
+        lines,
+        activeLineId,
+        codeFormat: latexCodeFormat,
+        displayMode,
+        inlineImageMathStyle,
+        numbered: displayMode === "block" && numbered,
+        fontSizePt: officeFontSizePt,
+        formulaLetterFont,
+        formulaChineseFont,
+        dirty,
+        status,
+        autoCommitOnClose,
+        explicitCancel: status === "cancelled",
+        exportResult,
+        exportWidth: exportResult?.width ?? 0,
+        exportHeight: exportResult?.height ?? 0,
+        error: null,
+      };
+    }, [
+      session,
+      title,
+      lines,
+      activeLineId,
+      latexCodeFormat,
+      displayMode,
+      inlineImageMathStyle,
+      numbered,
+      officeFontSizePt,
+      formulaLetterFont,
+      formulaChineseFont,
+      dirty,
+      autoCommitOnClose,
+      currentFingerprint,
+      generateSvgExportResult,
+      getCompleteExportResult,
+      isEn,
+    ],
+  );
+
+  const saveCurrentSession = useCallback(
+    async (status: "editing" | "committing" | "cancelled") => {
+      const update = await buildCurrentSessionUpdate(status);
+      const next = await save(update);
+      lastSavedFingerprintRef.current = currentFingerprint;
+      return next;
+    },
+    [buildCurrentSessionUpdate, currentFingerprint, save],
+  );
+
+  const closeOfficeEditorWindow = useCallback(async () => {
+    if (!isMacosOfflineTauriTransport()) {
+      window.close();
+      return;
+    }
+
+    allowNativeCloseRef.current = true;
+    try {
+      await invokeTauri<void>("close_macos_offline_office_editor_window", {
+        sessionId,
+        generation,
+      });
+    } catch (error) {
+      allowNativeCloseRef.current = false;
+      throw error;
+    }
+  }, [generation, sessionId]);
+
+  const handleCommit = useCallback(async (): Promise<boolean> => {
+    // React state updates do not disable the button until the next render.
+    // Keep a synchronous guard as well so a rapid double-click cannot enqueue
+    // two commits for the same Office Session.
+    if (finalizingRef.current) return false;
+    const applyStartedEpochMs = Date.now();
+    historyManager.commitPendingTransaction();
+    if (!latex.trim()) {
+      setToast(isEn ? "Enter a formula before inserting" : "请输入公式后再插入");
+      return false;
+    }
+    const targetSessionKey = sessionKey;
+    finalizingRef.current = true;
+    // Invalidate unfinished draft rasterization before waiting for queued saves.
+    // An old editing PATCH must never land after the final commit.
+    ++exportRunIdRef.current;
+    try {
+      if (isMacosOfflineTauriTransport()) {
+        if (!session) throw new Error("Office Session 尚未加载。");
+        const [update] = await Promise.all([
+          buildCurrentSessionUpdate("committing"),
+          flushSaves(),
+        ]);
+        if (activeSessionKeyRef.current !== targetSessionKey) return false;
+        await commitMacosOfflineOfficeSession(
+          session.id,
+          update,
+          applyStartedEpochMs,
+        );
+        lastSavedFingerprintRef.current = currentFingerprint;
+        if (activeSessionKeyRef.current !== targetSessionKey) return false;
+        try {
+          await closeOfficeEditorWindow();
+        } catch (closeError) {
+          if (activeSessionKeyRef.current !== targetSessionKey) return false;
+          finalizingRef.current = false;
+          const detail = errorMessage(
+            closeError,
+            isEn ? "Unknown window error" : "未知窗口错误",
+          );
+          setToast(
+            isEn
+              ? `Formula inserted; the editor could not close: ${detail}`
+              : `公式已插入，编辑窗口无法关闭：${detail}`,
+          );
+        }
+        return true;
+      }
+
+      const next = await saveCurrentSession("committing");
+      // The parent bridge owns both Word and PowerPoint mutations. Keep the
+      // action busy until the host confirms the durable final state; a failed
+      // PowerPoint decoration therefore leaves this editor open with a useful
+      // error instead of closing after creating an anonymous Graphic shape.
+      await waitForOfficeCommitResult(next.id, next.host);
+      window.close();
+      return true;
+    } catch (error) {
+      if (activeSessionKeyRef.current !== targetSessionKey) return false;
+      finalizingRef.current = false;
+      setToast(
+        errorMessage(
+          error,
+          isEn ? "Unable to insert the Office formula" : "无法插入 Office 公式",
+        ),
+      );
+      return false;
+    }
+  }, [
+    buildCurrentSessionUpdate,
+    closeOfficeEditorWindow,
+    currentFingerprint,
+    flushSaves,
+    isEn,
+    latex,
+    saveCurrentSession,
+    session,
+    sessionKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      !session ||
+      !sessionHydrated ||
+      (session.operation !== "nativeToImage" &&
+        session.operation !== "imageToNative" &&
+        session.operation !== "agent") ||
+      silentCommitSessionKeyRef.current === sessionKey
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    // Conversion editors stay hidden, so WebKit may never deliver an animation
+    // frame. Use a task, as the hidden-editor readiness check does. Claim the
+    // session only when that task starts: a hydration rerender can cancel an
+    // earlier effect before it runs, and must still be able to schedule it again.
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      silentCommitSessionKeyRef.current = sessionKey;
+      void handleCommit().then(async (committed) => {
+        if (committed || cancelled) return;
+        // Direct conversion commands must never fall back to a visible editor.
+        // Leave the Word object unchanged, cancel the failed hidden Session and
+        // return the resident WebView to its parked state.
+        try {
+          await cancelMacosOfflineOfficeSession(session.id);
+          await closeOfficeEditorWindow();
+        } catch {
+          // A superseding Office Session may already have cleared this one.
+        }
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    closeOfficeEditorWindow,
+    handleCommit,
+    session,
+    sessionHydrated,
+    sessionKey,
+  ]);
+
+  useEffect(() => {
+    const handleApplyShortcut = (event: KeyboardEvent) => {
+      if (
+        event.isComposing ||
+        event.key !== "Enter" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void handleCommit();
+    };
+    window.addEventListener("keydown", handleApplyShortcut, true);
+    return () =>
+      window.removeEventListener("keydown", handleApplyShortcut, true);
+  }, [handleCommit]);
+
+  useEffect(
+    () =>
+      registerOfficeApplyShortcut({
+        onApply: async () => {
+          await handleCommit();
+        },
+        isEnabled: () =>
+          !ocrOpen &&
+          !inlineOcrBusyRef.current &&
+          !historyState.isReplaying &&
+          !finalizingRef.current,
+      }),
+    [handleCommit, historyState.isReplaying, ocrOpen],
+  );
+
+  const handleCancel = useCallback(async () => {
+    if (finalizingRef.current) return;
+    const targetSessionKey = sessionKey;
+    finalizingRef.current = true;
+    try {
+      const next = await saveCurrentSession("cancelled");
+      if (isMacosOfflineTauriTransport()) {
+        await cancelMacosOfflineOfficeSession(next.id);
+        if (activeSessionKeyRef.current !== targetSessionKey) return;
+        await closeOfficeEditorWindow();
+        return;
+      }
+      window.close();
+    } catch (error) {
+      if (activeSessionKeyRef.current !== targetSessionKey) return;
+      finalizingRef.current = false;
+      setToast(
+        errorMessage(
+          error,
+          isEn ? "Unable to cancel the Office formula" : "无法取消 Office 公式",
+        ),
+      );
+    }
+  }, [closeOfficeEditorWindow, isEn, saveCurrentSession, sessionKey]);
+
+  useEffect(() => {
+    if (!isMacosOfflineTauriTransport() || !sessionId) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onCurrentTauriWindowCloseRequested((event) => {
+      if (allowNativeCloseRef.current || disposed) return;
+      event.preventDefault();
+      if (nativeCloseRequestInFlightRef.current) return;
+      nativeCloseRequestInFlightRef.current = true;
+
+      const finalize = async () => {
+        if (latex.trim() && autoCommitOnClose) {
+          const committed = await handleCommit();
+          if (committed || allowNativeCloseRef.current || disposed) return;
+        }
+        // Closing the window must never trap the user behind a malformed or
+        // partially rendered formula. If close-to-commit cannot export the
+        // current draft, cancel this edit Session and leave the Office object
+        // unchanged instead of blocking the native close request.
+        await handleCancel();
+        if (allowNativeCloseRef.current || disposed) return;
+
+        // A stale or already-cleaned Office Session can make both commit and
+        // cancel fail. The native close request is still authoritative: allow
+        // one final close event and destroy this WebView without mutating the
+        // Office object, rather than trapping the user behind an error toast.
+        allowNativeCloseRef.current = true;
+        try {
+          await closeCurrentTauriWindow();
+        } catch {
+          allowNativeCloseRef.current = false;
+        }
+      };
+      void finalize().finally(() => {
+        nativeCloseRequestInFlightRef.current = false;
+      });
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
+      })
+      .catch((reason) => {
+        const message = errorMessage(
+          reason,
+          isEn ? "Unknown window error" : "未知窗口错误",
+        );
+        setToast(
+          isEn
+            ? `Unable to register window close handling: ${message}`
+            : `无法注册窗口关闭处理：${message}`,
+        );
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [autoCommitOnClose, handleCancel, handleCommit, isEn, latex, sessionId]);
+
+  const handleCopy = async () => {
+    try {
+      await copyFormulaLinesUniversal(lines, latexFormatProfile);
+      addHistory(latex);
+      setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
+    } catch (reason) {
+      setToast(errorMessage(reason, isEn ? "Could not copy formula source" : "无法复制公式源码"));
+    }
+  };
+
+  const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
+
+  // Quick OCR (the button and its shortcut): this window steps aside for the
+  // screenshot (src-tauri quick_ocr.rs), then the same recognition and
+  // insertion as a pasted image, at the caret.
+  const handleQuickOcr = async () => {
+    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
+      setToast(isEn ? "OCR is already running" : "另一个 OCR 任务正在进行");
+      return;
+    }
+    const target = editorRef.current?.captureInsertionTarget();
+    if (!target) {
+      setToast(isEn ? "Select a formula field first" : "请先选择公式框");
+      return;
+    }
+    setQuickOcrCaptureBusy(true);
+    try {
+      setToast(isEn ? "Select a formula area to recognize" : "请框选要识别的公式区域");
+      const capture = await captureQuickOcrScreenshot("immediate");
+      if (!capture) {
+        setToast(isEn ? "Screenshot cancelled" : "已取消截图");
+        return;
+      }
+      await handleEditorImagePaste(quickOcrCaptureToFile(capture), target);
+    } catch (error) {
+      setToast(formatOcrError(error, isEn ? "Quick OCR failed" : "快捷 OCR 失败"));
+    } finally {
+      setQuickOcrCaptureBusy(false);
+    }
+  };
+
+  // the chords the user gave the editor window's buttons in the main app (Settings > Keyboard shortcuts)
+  useEffect(
+    () => installButtonShortcuts("office", () => useEditorStore.getState().buttonShortcuts),
+    [],
+  );
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      switch (action) {
+        case "quick-ocr":
+          if (tauriResidentEditor) void handleQuickOcr();
+          break;
+        case "ocr":
+          if (!inlineOcrBusyRef.current) setOcrOpen(true);
+          break;
+        case "copy-latex":
+          void handleCopy();
+          break;
+        case "copy-image":
+          void copyFormulaDocumentPngToClipboard(
+            useEditorStore.getState().lines.map((line) => line.latex),
+            {
+              background: useEditorStore.getState().pngExportBackground,
+              formulaLetterFont,
+              formulaChineseFont,
+            },
+          )
+            .then(() => setToast(isEn ? "Copied as image" : "已复制为图片"))
+            .catch((error) => setToast(errorMessage(error, isEn ? "Copy as image failed" : "复制图片失败")));
+          break;
+        case "office-cancel":
+          void handleCancel();
+          break;
+      }
+    }),
+  );
+
+  const editorAvailable = Boolean(session && sessionHydrated);
+  const officeHeaderLeadingControls = editorAvailable && session ? (
+    <>
+      {session.host === "word" || session.nativeEquation ? (
+        <div
+          className="office-display-mode-setting"
+          role="group"
+          aria-label={isEn ? "Native formula layout" : "原生公式排版"}
+        >
+          <button
+            type="button"
+            className={displayMode === "inline" ? "is-active" : ""}
+            onClick={() => {
+              setDisplayMode("inline");
+              setNumbered(false);
+            }}
+            disabled={session.mode === "edit"}
+          >
+            {isEn ? "Inline" : "行内"}
+          </button>
+          <button
+            type="button"
+            className={displayMode === "block" ? "is-active" : ""}
+            onClick={() => {
+              setDisplayMode("block");
+              if (session.host === "word" && session.mode === "create") {
+                setNumbered(
+                  readOfficeWordCreateNumberedPreference(
+                    Boolean(session.numbered),
+                  ),
+                );
+              }
+            }}
+            disabled={session.mode === "edit"}
+          >
+            {isEn ? "Display" : "行间"}
+          </button>
+        </div>
+      ) : null}
+      {session.host === "word" &&
+      !session.nativeEquation &&
+      displayMode === "inline" ? (
+        <label
+          className="office-font-size-setting"
+          title={
+            isEn
+              ? "Inline style"
+              : "行内排版"
+          }
+        >
+          <span>{isEn ? "Inline style" : "行内样式"}</span>
+          <select
+            value={inlineImageMathStyle}
+            aria-label={isEn ? "Inline image math style" : "行内图片公式排版样式"}
+            onChange={(event) => {
+              const nextStyle = event.target.value as InlineImageMathStyle;
+              setInlineImageMathStyle(nextStyle);
+              if (session.mode === "create") {
+                writeOfficeWordInlineImageMathStylePreference(nextStyle);
+              }
+            }}
+          >
+            <option value="text">
+              {isEn ? "Text style" : "Text style（紧凑）"}
+            </option>
+            <option value="display">
+              {isEn ? "Display style" : "Display style（展开）"}
+            </option>
+          </select>
+        </label>
+      ) : null}
+      <label
+        className="office-font-size-setting"
+        title={
+          session.host === "word" && session.mode === "create"
+            ? isEn
+              ? "Font size"
+              : "字号"
+            : isEn
+              ? "Formula font size"
+              : "公式字号"
+        }
+      >
+        <span>{isEn ? "Size" : "字号"}</span>
+        <select
+          value={officeFontSizePt}
+          data-office-font-size
+          disabled={Boolean(session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:"))}
+          title={session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:") ? (isEn ? "Font size (from PowerPoint text)" : "字号（取自 PowerPoint 文本）") : undefined}
+          aria-label={isEn ? "Formula font size" : "公式字号"}
+          onChange={(event) =>
+            setOfficeFontSizePt(
+              normalizeOfficeFontSizePt(event.target.value, officeFontSizePt),
+            )
+          }
+        >
+          <optgroup label={isEn ? "Chinese sizes" : "中文字号"}>
+            {OFFICE_CHINESE_FONT_SIZE_OPTIONS.map((option) => (
+              <option key={option.name} value={option.fontSizePt}>
+                {isEn
+                  ? `${option.name} (${option.fontSizePt} pt)`
+                  : `${option.name}（${option.fontSizePt} 磅）`}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label={isEn ? "Point sizes" : "磅值"}>
+            {officePointFontSizeOptions(officeFontSizePt).map((fontSizePt) => (
+              <option key={fontSizePt} value={fontSizePt}>
+                {isEn ? `${fontSizePt} pt` : `${fontSizePt} 磅`}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+      </label>
+      {session.host === "word" &&
+      !(session.client === "wps" && session.mode === "edit") &&
+      displayMode === "block" ? (
+        <label className="office-auto-commit-setting is-numbering-setting">
+          <input
+            type="checkbox"
+            checked={numbered}
+            onChange={(event) => {
+              const nextNumbered = event.target.checked;
+              setNumbered(nextNumbered);
+              if (session.mode === "create") {
+                writeOfficeWordCreateNumberedPreference(nextNumbered);
+              }
+            }}
+            data-office-numbered
+          />
+          <span>{isEn ? "Add equation number" : "添加公式编号"}</span>
+        </label>
+      ) : null}
+    </>
+  ) : null;
+  const officeHeaderTrailingActions = editorAvailable && session ? (
+    <>
+      <button
+        type="button"
+        className="icon-button compact office-history-icon-button"
+        data-office-undo-action
+        aria-label={isEn ? "Undo" : "撤销"}
+        title={isEn ? "Undo" : "撤销"}
+        onClick={() => historyManager.requestUndo()}
+        disabled={!historyState.canUndo || historyState.isReplaying}
+      >
+        <Undo2 size={16} strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        className="icon-button compact office-history-icon-button"
+        data-office-redo-action
+        aria-label={isEn ? "Redo" : "重做"}
+        title={isEn ? "Redo" : "重做"}
+        onClick={() => historyManager.requestRedo()}
+        disabled={!historyState.canRedo || historyState.isReplaying}
+      >
+        <Redo2 size={16} strokeWidth={2} />
+      </button>
+      <span className="office-dialog-action-divider" aria-hidden="true" />
+      <button
+        type="button"
+        className="secondary-button"
+        data-office-cancel-action
+        onClick={() => void handleCancel()}
+        disabled={inlineOcrIsBusy || historyState.isReplaying}
+      >
+        {isEn ? "Cancel" : "取消"}
+      </button>
+      <button
+        type="button"
+        className="primary-button"
+        data-office-primary-action
+        onClick={() => void handleCommit()}
+        disabled={
+          inlineOcrIsBusy ||
+          historyState.isReplaying ||
+          !latex.trim()
+        }
+        aria-keyshortcuts="Control+Enter Meta+Enter"
+        title={
+          session.mode === "edit"
+            ? isEn
+              ? "Update formula (Ctrl/Command+Enter)"
+              : "更新公式（Ctrl/Command+Enter）"
+            : isEn
+              ? "Finish and insert (Ctrl/Command+Enter)"
+              : "完成并插入（Ctrl/Command+Enter）"
+        }
+      >
+        {session.mode === "edit"
+          ? isEn
+            ? "Update formula"
+            : "更新公式"
+          : isEn
+            ? "Finish and insert"
+            : "完成并插入"}
+      </button>
+    </>
+  ) : null;
+  const residentEditorWorkspace = (
+    <div
+      key="resident-office-editor-workspace"
+      className="office-resident-editor-workspace"
+      aria-hidden={!editorAvailable}
+      style={
+        editorAvailable
+          ? { position: "relative", opacity: 1, pointerEvents: "auto" }
+          : {
+              position: "absolute",
+              inset: 0,
+              opacity: 0,
+              pointerEvents: "none",
+            }
+      }
+    >
+      <EditorWorkspace
+        mode={session?.mode === "edit" ? "office-edit" : "office-create"}
+        showFileActions={false}
+        showUpdateActions={false}
+        showOfficeActions={false}
+        showOcrActions={editorAvailable}
+        officeHeaderLeadingControls={officeHeaderLeadingControls}
+        officeHeaderTrailingActions={officeHeaderTrailingActions}
+        editorRef={editorRef}
+        editorInstanceKey="resident-office-editor"
+        reuseEditorLineSlots
+        sidebarOpen={sidebarOpen}
+        onSidebarOpenChange={setSidebarOpen}
+        onPasteImage={editorAvailable ? handleEditorImagePaste : undefined}
+        onQuickOcr={editorAvailable && tauriResidentEditor ? () => void handleQuickOcr() : undefined}
+        onCopy={handleCopy}
+        onReplaceDocument={replaceDocumentWithHistory}
+        ocrRecognizer={ocrQuickSelection.selection}
+        ocrRecognizers={ocrQuickSelection.options}
+        ocrBusy={ocrQuickSelection.busy || quickOcrCaptureBusy}
+        onOcrRecognizerChange={(selection: string) =>
+          void ocrQuickSelection.handleSelectionChange(selection)
+        }
+        ocrOverlay={
+          editorAvailable && inlineOcr ? (
+            <div
+              className={`inline-ocr-progress is-${inlineOcr.status}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="inline-ocr-progress-icon">
+                {inlineOcr.status === "running" ||
+                inlineOcr.status === "cancelling" ? (
+                  <LoaderCircle size={17} className="is-spinning" />
+                ) : inlineOcr.status === "success" ? (
+                  <Check size={17} />
+                ) : inlineOcr.status === "error" ? (
+                  <AlertCircle size={17} />
+                ) : (
+                  <X size={17} />
+                )}
+              </span>
+              <div>
+                <strong>{inlineOcr.message}</strong>
+                <span>
+                  {ocrQuickSelection.activeOption
+                    ? isEn
+                      ? ocrQuickSelection.activeOption.labelEn
+                      : ocrQuickSelection.activeOption.labelZh
+                    : isEn
+                      ? inlineOcrModel.labelEn
+                      : inlineOcrModel.labelZh}
+                  {" · "}
+                  {inlineOcr.seconds}
+                  {isEn ? "s" : " 秒"}
+                </span>
+              </div>
+              {inlineOcrIsBusy ? (
+                <button
+                  type="button"
+                  className="inline-ocr-cancel"
+                  onClick={() => void cancelInlineOcr()}
+                  disabled={inlineOcr.status === "cancelling"}
+                >
+                  <X size={13} />
+                  {isEn ? "Cancel" : "取消"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-ocr-dismiss"
+                  onClick={() => setInlineOcr(null)}
+                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          ) : null
+        }
+      />
+    </div>
+  );
+
+  if (!tauriResidentEditor && (loading || (session && !sessionHydrated))) {
+    return (
+      <div className="office-dialog-state">
+        <LoaderCircle className="is-spinning" size={28} />
+        <strong>{isEn ? "Loading Office Session…" : "正在加载 Office Session…"}</strong>
+      </div>
+    );
+  }
+
+  if (!tauriResidentEditor && (error || !session)) {
+    return (
+      <div className="office-dialog-state is-error">
+        <X size={28} />
+        <strong>{isEn ? "Unable to open VisualTeX" : "无法打开 VisualTeX"}</strong>
+        <p>{error || (isEn ? "Session not found" : "Session 不存在")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="app-shell office-dialog-shell"
+      style={{ position: "relative" }}
+    >
+      {tauriResidentEditor &&
+      (loading || (session && !sessionHydrated) || error || !session) ? (
+        <div
+          className={`office-dialog-state ${error ? "is-error" : ""}`}
+          style={{ position: "absolute", inset: 0, zIndex: 2 }}
+        >
+          {error ? <X size={28} /> : <LoaderCircle className="is-spinning" size={28} />}
+          <strong>
+            {error
+              ? isEn
+                ? "Unable to open VisualTeX"
+                : "无法打开 VisualTeX"
+              : isEn
+                ? "Loading Office Session…"
+                : "正在加载 Office Session…"}
+          </strong>
+          {error ? (
+            <p>{error || (isEn ? "Session not found" : "Session 不存在")}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {residentEditorWorkspace}
+
+      <OcrDialog
+        open={ocrOpen}
+        language={language}
+        model={ocrModel}
+        onModelChange={handleOcrModelChange}
+        onClose={() => setOcrOpen(false)}
+        onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
+        onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
+        onNotify={setToast}
+      />
+
+      {toast && (
+        <div className="toast">
+          <Check size={15} />
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}

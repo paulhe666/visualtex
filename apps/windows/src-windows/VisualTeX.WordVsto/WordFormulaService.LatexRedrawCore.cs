@@ -1,0 +1,1819 @@
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
+using Range = Microsoft.Office.Interop.Word.Range;
+using static VisualTeX.WordVsto.WordDisplayInsertion;
+using static VisualTeX.WordVsto.WordMathTypeNumbering;
+using static VisualTeX.WordVsto.WordSourceFontSize;
+
+namespace VisualTeX.WordVsto;
+
+internal sealed partial class WordFormulaService
+{
+    internal WordLatexRedrawPlan CaptureLatexRedrawPlanCore(
+        bool wholeDocument)
+    {
+        var captureWatch = Stopwatch.StartNew();
+        var captureStageStart = 0L;
+        Document? document = null;
+        Selection? selection = null;
+        Range? scope = null;
+        try
+        {
+            document = _application.ActiveDocument
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
+            EnsureWritable(document);
+
+            selection = _application.Selection;
+            scope = wholeDocument
+                ? document.Content.Duplicate
+                : selection.Range.Duplicate;
+            if (!wholeDocument && scope.Start == scope.End)
+                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                    "请先选择包含 LaTeX 代码的 Word 内容。",
+                    "Select the Word content that contains the LaTeX code first."));
+
+            ReportOperationProgress(OfficePluginLanguage.Text("正在读取 Word 文本…", "Reading the Word text…"), 0, 0);
+            var sourceText = scope.Text ?? string.Empty;
+            ReportOperationProgress(OfficePluginLanguage.Text("正在扫描 LaTeX 公式…", "Scanning for LaTeX formulas…"), 0, 0);
+            var spans = WordBulkImportParser.FindFormulaSpans(
+                sourceText);
+            if (spans.Count == 0)
+                throw new InvalidDataException(
+                    wholeDocument
+                        ? OfficePluginLanguage.Text(
+                            "当前 Word 文档中没有找到可重绘的 LaTeX 公式。",
+                            "No LaTeX formulas to redraw were found in the current Word document.")
+                        : OfficePluginLanguage.Text(
+                            "所选内容中没有找到可重绘的 LaTeX 公式。",
+                            "No LaTeX formulas to redraw were found in the current selection."));
+
+            var plan = new WordLatexRedrawPlan
+            {
+                DocumentId = DocumentIdentity(document),
+                ScopeStart = scope.Start,
+                ScopeEnd = scope.End,
+                SourceText = sourceText,
+                Targets = spans.Select(span =>
+                    new WordLatexRedrawTarget
+                    {
+                        Id = span.Id,
+                        RelativeStart = span.Start,
+                        SourceLength = span.Length,
+                        Latex = span.Latex,
+                        DisplayMode = span.DisplayMode,
+                    }).ToList(),
+            };
+            plan.CaptureTimings["snapshot"] = captureWatch.ElapsedMilliseconds;
+
+            captureStageStart = captureWatch.ElapsedMilliseconds;
+            ResolveLatexRedrawTargetCoordinates(
+                document,
+                scope,
+                plan,
+                allowStoredCoordinates: false);
+            plan.CaptureTimings["coordinates"] =
+                captureWatch.ElapsedMilliseconds - captureStageStart;
+
+            captureStageStart = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress(OfficePluginLanguage.Text("正在分析公式上下文…", "Analyzing formula context…"), 0, 0);
+            var contexts =
+                BuildLatexRedrawSourceContexts(
+                    sourceText,
+                    plan.Targets);
+            plan.CaptureTimings["contexts"] =
+                captureWatch.ElapsedMilliseconds - captureStageStart;
+
+            captureStageStart = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress(OfficePluginLanguage.Text("正在读取正文和公式字号…", "Reading text and formula font sizes…"), 0, 0);
+            // Most ordinary Word redraw scopes use one body font size. Prove that
+            // cheaply once through Range.Font before asking Word to serialize the
+            // complete scope as Flat OPC merely to recover per-character sizes.
+            // Mixed-format scopes still fall back to the exact WordOpenXML index.
+            float? uniformScopeFontSize = null;
+            Microsoft.Office.Interop.Word.Font? scopeFont = null;
+            try
+            {
+                scopeFont = scope.Font;
+                if (TryResolveWordFontSize(
+                        scopeFont.Size,
+                        out var resolvedUniformSize))
+                    uniformScopeFontSize = resolvedUniformSize;
+            }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            finally { Release(scopeFont); }
+
+            var fontIndexReconstructedLength = -1;
+            var fontIndexMismatchIndex = -1;
+            var sourceFontSizes = uniformScopeFontSize.HasValue
+                ? null
+                : TryBuildWordOpenXmlFontSizeIndex(
+                    scope,
+                    sourceText,
+                    out fontIndexReconstructedLength,
+                    out fontIndexMismatchIndex);
+            plan.CaptureTimings["fontIndex"] =
+                captureWatch.ElapsedMilliseconds - captureStageStart;
+            plan.CaptureTimings["fontIndexReconstructedLength"] =
+                fontIndexReconstructedLength;
+            plan.CaptureTimings["fontIndexSourceLength"] = sourceText.Length;
+            plan.CaptureTimings["fontIndexMismatchIndex"] =
+                fontIndexMismatchIndex;
+
+            captureStageStart = captureWatch.ElapsedMilliseconds;
+            var fontFallbackCount = 0L;
+            var fontFallbackMilliseconds = 0L;
+            var fontTargetsCompleted = 0;
+            ReportOperationProgress(ReadFontSizesStage, 0, plan.Targets.Count);
+            foreach (var target in plan.Targets
+                         .OrderBy(item => item.RelativeStart))
+            {
+                var relativeEnd =
+                    target.RelativeStart
+                    + target.SourceLength;
+                if (target.RelativeStart < 0
+                    || relativeEnd > sourceText.Length)
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”超出了读取的 Word 范围。",
+                        $"The LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}” lies outside the Word range that was read."));
+
+                var context =
+                    contexts[target.Id];
+                var display = string.Equals(
+                    target.DisplayMode,
+                    "block",
+                    StringComparison.Ordinal);
+                target.PreserveDisplayParagraphBoundary =
+                    display;
+                if (display)
+                {
+                    var paragraphStart =
+                        FindSourceParagraphStart(
+                            sourceText,
+                            target.RelativeStart);
+                    var paragraphEnd =
+                        FindSourceParagraphEnd(
+                            sourceText,
+                            relativeEnd);
+                    target.DedicatedDisplayParagraph =
+                        !context.HasVisibleSurroundingText
+                        && target.RelativeStart
+                            == paragraphStart
+                        && relativeEnd
+                            == paragraphEnd;
+                }
+
+                var contextPosition =
+                    context.FontContextRelativePosition;
+                if (uniformScopeFontSize.HasValue)
+                {
+                    target.FontSizePt = uniformScopeFontSize.Value;
+                }
+                else if (sourceFontSizes is not null
+                    && contextPosition >= 0
+                    && contextPosition
+                        < sourceFontSizes.Length
+                    && sourceFontSizes[
+                        contextPosition] is double indexedSize
+                    && indexedSize > 0)
+                {
+                    target.FontSizePt = indexedSize;
+                }
+                else
+                {
+                    // The complete gap/source/tail chain above already proved the
+                    // target's exact text and Word coordinates. Create a COM Range
+                    // only when mixed formatting prevents the bulk font indexes
+                    // from resolving this target; do not re-read every source text
+                    // merely to repeat the same validation.
+                    Range? exact = null;
+                    var fallbackWatch = Stopwatch.StartNew();
+                    try
+                    {
+                        fontFallbackCount++;
+                        exact = document.Range(
+                            target.AbsoluteStart,
+                            target.AbsoluteEnd);
+                        target.FontSizePt =
+                            ResolveSourceFormulaFontSize(
+                                document,
+                                exact,
+                                display);
+                    }
+                    finally
+                    {
+                        fallbackWatch.Stop();
+                        fontFallbackMilliseconds += fallbackWatch.ElapsedMilliseconds;
+                        Release(exact);
+                    }
+                }
+                // the Ribbon's inline/display size, when one is set, instead of the text's
+                target.FontSizePt = WordFormulaFontSizeSetting.Resolve(display, target.FontSizePt);
+                ReportOperationProgress(ReadFontSizesStage, ++fontTargetsCompleted, plan.Targets.Count);
+            }
+            plan.CaptureTimings["targets"] =
+                captureWatch.ElapsedMilliseconds - captureStageStart;
+            plan.CaptureTimings["fontFallbackCount"] = fontFallbackCount;
+            plan.CaptureTimings["fontFallback"] = fontFallbackMilliseconds;
+            plan.CaptureTimings["total"] = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress(OfficePluginLanguage.Text($"已找到 {plan.Targets.Count} 个 LaTeX 公式", $"Found {plan.Targets.Count} LaTeX formula(s)"), plan.Targets.Count, plan.Targets.Count);
+
+            return plan;
+        }
+        finally
+        {
+            Release(scope);
+            Release(selection);
+            Release(document);
+        }
+    }
+
+    // LaTeX is parsed from Range.Text, whose logical-character indices
+    // are not Word story coordinates when the scope contains hidden host structure
+    // such as fields, native math, or other non-text story positions. Never infer
+    // those hidden positions here. Use direct story coordinates only when the whole
+    // scope proves both coordinate spaces have identical cardinality; otherwise ask
+    // Word's Characters collection for the logical boundaries. In both cases the
+    // mapped formulas are accepted only if the complete gap/source/tail text chain
+    // exactly reproduces the captured Range.Text snapshot.
+    private void ResolveLatexRedrawTargetCoordinates(
+        Document document,
+        Range scope,
+        WordLatexRedrawPlan plan,
+        bool allowStoredCoordinates)
+    {
+        ReportOperationProgress(LocateFormulasStage, 0, plan.Targets.Count);
+        var liveText =
+            scope.Text ?? string.Empty;
+        if (!string.Equals(
+                liveText,
+                plan.SourceText,
+                StringComparison.Ordinal))
+            throw new InvalidOperationException(OfficePluginLanguage.Text(
+                "读取 LaTeX 公式后，Word 文本发生了变化。请重新运行重绘。",
+                "The Word text changed after the LaTeX formulas were read. Run the redraw again."));
+
+        if (allowStoredCoordinates
+            && TryValidateLatexRedrawCoordinateChain(
+                document,
+                scope,
+                plan,
+                plan.Targets
+                    .Select(target =>
+                        (
+                            Target: target,
+                            Start: target.AbsoluteStart,
+                            End: target.AbsoluteEnd))
+                    .ToArray()))
+            return;
+
+        var logicalOffsets =
+            BuildWordStoryOffsetIndex(
+                plan.SourceText);
+        var logicalCharacterCount =
+            logicalOffsets[
+                plan.SourceText.Length];
+        var directCoordinatesProven =
+            scope.End - scope.Start
+            == logicalCharacterCount;
+
+        Characters? characters = null;
+        var mapped =
+            new List<(
+                WordLatexRedrawTarget Target,
+                int Start,
+                int End)>(
+                plan.Targets.Count);
+        ParagraphCoordinateMap? paragraphMap = null;
+        // Neither coordinate space could be proven for the whole scope: use the
+        // direct offsets only as a first guess and prove every formula locally.
+        var unprovenCoordinates = false;
+        try
+        {
+            if (!directCoordinatesProven)
+            {
+                characters =
+                    scope.Characters;
+                if (characters.Count
+                    != logicalCharacterCount)
+                {
+                    // One object whose text and Characters disagree (WPS counts
+                    // some native equations one short) must not make every formula
+                    // in the scope unlocatable: map paragraph by paragraph instead.
+                    Release(characters);
+                    characters = null;
+                    paragraphMap = ParagraphCoordinateMap.Build(
+                        document,
+                        scope,
+                        plan.SourceText);
+                    unprovenCoordinates = paragraphMap is null;
+                    if (unprovenCoordinates)
+                        WordDoubleClickHook.TraceMessage("latex-redraw-coordinates-unproven fallback=local-proof");
+                }
+            }
+
+            foreach (var target in plan.Targets
+                         .OrderBy(item =>
+                             item.RelativeStart))
+            {
+                var relativeEnd =
+                    target.RelativeStart
+                    + target.SourceLength;
+                if (target.RelativeStart < 0
+                    || target.SourceLength <= 0
+                    || relativeEnd
+                        > plan.SourceText.Length)
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”超出了读取的 Word 范围。",
+                        $"The LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}” lies outside the Word range that was read."));
+
+                var logicalStart =
+                    logicalOffsets[
+                        target.RelativeStart];
+                var logicalEnd =
+                    logicalOffsets[
+                        relativeEnd];
+                if (logicalEnd <= logicalStart)
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"无法在 Word 中定位 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”的字符范围。",
+                        $"Word could not locate the characters of the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”."));
+
+                int sourceStart;
+                int sourceEnd;
+                Range? first = null;
+                Range? last = null;
+                try
+                {
+                    if (directCoordinatesProven || unprovenCoordinates)
+                    {
+                        sourceStart =
+                            scope.Start
+                            + logicalStart;
+                        sourceEnd =
+                            scope.Start
+                            + logicalEnd;
+                    }
+                    else if (paragraphMap is not null)
+                    {
+                        sourceStart = paragraphMap.Map(target.RelativeStart, isEnd: false);
+                        sourceEnd = paragraphMap.Map(relativeEnd, isEnd: true);
+                        if (sourceStart < 0 || sourceEnd < 0)
+                        {
+                            plan.Skipped.Add((target.Id, target.Latex, OfficePluginLanguage.Text(
+                                $"无法在 Word 中定位 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”的字符范围。",
+                                $"Word could not locate the characters of the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”.")));
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        first =
+                            characters![
+                                logicalStart + 1];
+                        last =
+                            characters[
+                                logicalEnd];
+                        sourceStart =
+                            first.Start;
+                        sourceEnd =
+                            last.End;
+                    }
+                }
+                finally
+                {
+                    Release(last);
+                    Release(first);
+                }
+
+                if (sourceStart < scope.Start
+                    || sourceEnd <= sourceStart
+                    || sourceEnd > scope.End)
+                {
+                    plan.Skipped.Add((target.Id, target.Latex, OfficePluginLanguage.Text(
+                        $"Word 为 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”返回了无效的范围。",
+                        $"Word returned an invalid range for the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”.")));
+                    continue;
+                }
+
+                mapped.Add(
+                    (
+                        Target: target,
+                        Start: sourceStart,
+                        End: sourceEnd));
+                ReportOperationProgress(LocateFormulasStage, mapped.Count, plan.Targets.Count);
+            }
+
+            RemoveSkippedLatexRedrawTargets(plan);
+            if (!TryValidateLatexRedrawCoordinateChain(
+                    document,
+                    scope,
+                    plan,
+                    mapped))
+            {
+                // The whole-scope chain is the strongest proof, but one region
+                // whose text Word reads differently must not stop every formula.
+                // Prove each formula where it is: its own text and the text on
+                // both sides of it; skip and report only the ones that fail.
+                // Hidden story positions (fields, objects) shift every later
+                // formula by the same few positions, so a formula that is not at
+                // its mapped position is looked for nearby, keeping the shift.
+                const int maximumShift = 64;
+                var shift = 0;
+                var locallyProven = new List<(WordLatexRedrawTarget Target, int Start, int End)>(mapped.Count);
+                foreach (var item in mapped)
+                {
+                    int? found = null;
+                    foreach (var candidate in new[] { shift, 0 }.Concat(Enumerable.Range(1, maximumShift)
+                                 .SelectMany(distance => new[] { shift + distance, shift - distance })).Distinct())
+                    {
+                        if (TryVerifyLatexRedrawTargetLocally(document, scope, plan, item.Target,
+                                item.Start + candidate, item.End + candidate))
+                        {
+                            found = candidate;
+                            break;
+                        }
+                    }
+                    if (found is int proven)
+                    {
+                        shift = proven;
+                        locallyProven.Add((item.Target, item.Start + proven, item.End + proven));
+                    }
+                    else
+                        plan.Skipped.Add((item.Target.Id, item.Target.Latex, OfficePluginLanguage.Text(
+                            $"LaTeX 公式“{WordFormulaRenderException.Excerpt(item.Target.Latex, 80)}”在 Word 中的位置与读取的文本不一致，已跳过。",
+                            $"The LaTeX formula “{WordFormulaRenderException.Excerpt(item.Target.Latex, 80)}” does not match the text read at its Word position and was skipped.")));
+                }
+                mapped = locallyProven;
+                RemoveSkippedLatexRedrawTargets(plan);
+            }
+
+            foreach (var item in mapped)
+            {
+                item.Target.AbsoluteStart =
+                    item.Start;
+                item.Target.AbsoluteEnd =
+                    item.End;
+            }
+        }
+        finally
+        {
+            Release(characters);
+        }
+    }
+
+    private static void RemoveSkippedLatexRedrawTargets(WordLatexRedrawPlan plan)
+    {
+        if (plan.Skipped.Count == 0) return;
+        var skipped = new HashSet<string>(plan.Skipped.Select(item => item.TargetId), StringComparer.Ordinal);
+        plan.Targets.RemoveAll(target => skipped.Contains(target.Id));
+        if (plan.Targets.Count == 0)
+            throw new InvalidDataException(plan.Skipped[0].Error);
+    }
+
+    // One formula proven at its own position: the exact source text, plus up to
+    // 16 characters on each side counted by Word's own character movement.
+    private static bool TryVerifyLatexRedrawTargetLocally(
+        Document document,
+        Range scope,
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        int start,
+        int end)
+    {
+        const int contextLength = 16;
+        Range? source = null;
+        Range? before = null;
+        Range? after = null;
+        if (start < scope.Start || end > scope.End || end <= start) return false;
+        try
+        {
+            source = document.Range(start, end);
+            var expected = plan.SourceText.Substring(target.RelativeStart, target.SourceLength);
+            if (!string.Equals(source.Text ?? string.Empty, expected, StringComparison.Ordinal))
+                return false;
+
+            var beforeLength = Math.Min(contextLength, target.RelativeStart);
+            if (beforeLength > 0)
+            {
+                before = document.Range(start, start);
+                object unit = WdUnits.wdCharacter;
+                object count = -beforeLength;
+                before.MoveStart(ref unit, ref count);
+                if (before.Start < scope.Start
+                    || !string.Equals(
+                        before.Text ?? string.Empty,
+                        plan.SourceText.Substring(target.RelativeStart - beforeLength, beforeLength),
+                        StringComparison.Ordinal))
+                    return false;
+            }
+
+            var relativeEnd = target.RelativeStart + target.SourceLength;
+            var afterLength = Math.Min(contextLength, plan.SourceText.Length - relativeEnd);
+            if (afterLength > 0)
+            {
+                after = document.Range(end, end);
+                object unit = WdUnits.wdCharacter;
+                object count = afterLength;
+                after.MoveEnd(ref unit, ref count);
+                if (after.End > scope.End
+                    || !string.Equals(
+                        after.Text ?? string.Empty,
+                        plan.SourceText.Substring(relativeEnd, afterLength),
+                        StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            Release(after);
+            Release(before);
+            Release(source);
+        }
+    }
+
+    private bool TryValidateLatexRedrawCoordinateChain(
+        Document document,
+        Range scope,
+        WordLatexRedrawPlan plan,
+        IReadOnlyList<(
+            WordLatexRedrawTarget Target,
+            int Start,
+            int End)> mapped)
+    {
+        if (mapped.Count
+            != plan.Targets.Count)
+            return false;
+
+        var logicalCursor = 0;
+        var wordCursor =
+            scope.Start;
+        Range? gap = null;
+        Range? source = null;
+        Range? tail = null;
+        var verified = 0;
+        ReportOperationProgress(VerifyPositionsStage, 0, mapped.Count);
+        try
+        {
+            foreach (var item in mapped
+                         .OrderBy(candidate =>
+                             candidate.Target
+                                 .RelativeStart))
+            {
+                var target =
+                    item.Target;
+                var relativeEnd =
+                    target.RelativeStart
+                    + target.SourceLength;
+                if (target.RelativeStart
+                        < logicalCursor
+                    || target.RelativeStart < 0
+                    || target.SourceLength <= 0
+                    || relativeEnd
+                        > plan.SourceText.Length
+                    || item.Start < wordCursor
+                    || item.Start < scope.Start
+                    || item.End <= item.Start
+                    || item.End > scope.End)
+                    return false;
+
+                Release(gap);
+                gap = document.Range(
+                    wordCursor,
+                    item.Start);
+                var expectedGap =
+                    plan.SourceText.Substring(
+                        logicalCursor,
+                        target.RelativeStart
+                        - logicalCursor);
+                if (!string.Equals(
+                        gap.Text ?? string.Empty,
+                        expectedGap,
+                        StringComparison.Ordinal))
+                    return false;
+
+                Release(source);
+                source = document.Range(
+                    item.Start,
+                    item.End);
+                var expectedSource =
+                    plan.SourceText.Substring(
+                        target.RelativeStart,
+                        target.SourceLength);
+                if (!string.Equals(
+                        source.Text ?? string.Empty,
+                        expectedSource,
+                        StringComparison.Ordinal))
+                    return false;
+
+                logicalCursor =
+                    relativeEnd;
+                wordCursor =
+                    item.End;
+                ReportOperationProgress(VerifyPositionsStage, ++verified, mapped.Count);
+            }
+
+            tail = document.Range(
+                wordCursor,
+                scope.End);
+            var expectedTail =
+                plan.SourceText.Substring(
+                    logicalCursor);
+            return string.Equals(
+                tail.Text ?? string.Empty,
+                expectedTail,
+                StringComparison.Ordinal);
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            Release(tail);
+            Release(source);
+            Release(gap);
+        }
+    }
+
+    internal WordLatexRedrawResult ApplyLatexRedrawPlanCore(
+        WordLatexRedrawPlan plan,
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+        StreamingLatexRedrawFormulas? streamed = null)
+    {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
+        if (plan is null)
+            throw new ArgumentNullException(nameof(plan));
+        if (prepared is null)
+            throw new ArgumentNullException(nameof(prepared));
+
+        var applyWatch = Stopwatch.StartNew();
+        var applyStageStart = 0L;
+        var batchTimings = new Dictionary<string, long>(StringComparer.Ordinal);
+        Document? document = null;
+        Range? validation = null;
+        WordViewState? viewState = null;
+        NativeOmmlScreenUpdatingScope? screenUpdatingScope = null;
+        try
+        {
+            document = _application.ActiveDocument
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
+            EnsureWritable(document);
+            EnsureSourceDocument(
+                document,
+                plan.DocumentId);
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            validation = document.Range(
+                plan.ScopeStart,
+                plan.ScopeEnd);
+            if (!string.Equals(
+                    validation.Text ?? string.Empty,
+                    plan.SourceText,
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                    "渲染期间 Word 内容发生了变化。为避免替换错误位置，本次重绘已停止，没有公式被修改。",
+                    "The Word content changed while the formulas were rendering. To avoid replacing the wrong text, the redraw was stopped before any formula was changed."));
+            batchTimings["snapshotValidation"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+
+            // Capture already proved the complete logical gap/source/tail chain
+            // and stored exact Word story coordinates. Rendering does not mutate
+            // Word. Before mutation we prove the whole captured scope text is still
+            // byte-for-byte identical above, and the ordered writer verifies
+            // every target's exact source text immediately before clearing it.
+            // Re-running the full coordinate-chain COM walk here duplicated the
+            // same proof once per batch without adding a stronger postcondition.
+            batchTimings["coordinateValidation"] = 0;
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            var missing = plan.Targets
+                .Where(target => streamed is null
+                    ? !prepared.ContainsKey(target.Id)
+                    : !streamed.Contains(target.Id))
+                .ToArray();
+            if (missing.Length > 0)
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    $"{missing.Length} 个公式缺少渲染结果，重绘没有开始（第一个：{WordFormulaRenderException.Excerpt(missing[0].Latex, 80)}）。",
+                    $"{missing.Length} formula(s) have no render result, so the redraw did not start (first: {WordFormulaRenderException.Excerpt(missing[0].Latex, 80)})."));
+
+            // MathType's native materialization can temporarily activate helper
+            // documents, so retain its existing screen-update guard. VisualTeX
+            // and OMML mutate only the target document; freezing their visible
+            // window provided little benefit once mutations run in document order
+            // and can leave older Word builds without a rebuilt document surface.
+            var usesMathType = streamed is null
+                ? plan.Targets.Any(target =>
+                    ObjectModeToHostKind(
+                        prepared[target.Id].Session.ObjectMode)
+                    == WordFormulaHostKind.MathType)
+                : ObjectModeToHostKind(streamed.ObjectMode)
+                    == WordFormulaHostKind.MathType;
+            if (usesMathType)
+                screenUpdatingScope =
+                    NativeOmmlScreenUpdatingScope.Suspend(
+                        _application);
+
+            if (plan.NumberDisplayFormulas)
+                MarkLatexRedrawTargetsInTables(document, plan);
+
+            // Streamed formulas get the same per-target session values when the
+            // writer takes them.
+            if (streamed is null)
+            {
+                foreach (var target in plan.Targets)
+                    PrepareLatexRedrawTargetSession(plan, target, prepared[target.Id]);
+            }
+            batchTimings["prepareTargets"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            viewState = CaptureViewState();
+            batchTimings["captureView"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            var result =
+                ApplyLatexRedrawWithIndependentTransactions(
+                    document,
+                    plan,
+                    prepared,
+                    streamed);
+            batchTimings["transaction"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+            if (streamed is not null)
+                batchTimings["renderWait"] = streamed.WaitMilliseconds;
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            try
+            {
+                // The selection was captured before the LaTeX source shrank into
+                // formula objects; keep it on the same text, not the same numbers.
+                viewState.SelectionStart = result.CoordinateShifts.Map(viewState.SelectionStart);
+                viewState.SelectionEnd = result.CoordinateShifts.Map(viewState.SelectionEnd);
+                RestoreViewState(
+                    document,
+                    viewState,
+                    preferredSelection: null);
+            }
+            catch (Exception ignored)
+            {
+                // View restoration is transient UI state and cannot invalidate a
+                // successfully committed document mutation.
+                IgnoredErrors.Ignore(ignored);
+            }
+            batchTimings["restoreView"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+            batchTimings["total"] = applyWatch.ElapsedMilliseconds;
+            foreach (var timing in batchTimings)
+                result.BatchTimings[timing.Key] = timing.Value;
+
+            return result;
+        }
+        finally
+        {
+            screenUpdatingScope?.Dispose();
+            Release(validation);
+            Release(document);
+        }
+    }
+
+    private static string ReadFontSizesStage =>
+        OfficePluginLanguage.Text("正在读取公式字号…", "Reading formula font sizes…");
+
+    private static string LocateFormulasStage =>
+        OfficePluginLanguage.Text("正在定位公式范围…", "Locating formula ranges…");
+
+    private static string VerifyPositionsStage =>
+        OfficePluginLanguage.Text("正在核对公式位置…", "Verifying formula positions…");
+
+    private static string WriteRedrawStage =>
+        OfficePluginLanguage.Text("正在原位写入重绘公式…", "Writing redrawn formulas in place…");
+
+    // Whether a redraw target gets a number: a display formula when numbering
+    // was asked for, unless it is in a table cell - Number Display Equations
+    // skips those (DisplayNumberingCore), and the writers keep no number there.
+    private static bool NumbersLatexRedrawTarget(
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target) =>
+        plan.NumberDisplayFormulas
+        && string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+        && !target.WithinTable;
+
+    // The display targets in table cells, read before the first write (the
+    // coordinates are still the captured ones).
+    private static void MarkLatexRedrawTargetsInTables(
+        Document document,
+        WordLatexRedrawPlan plan)
+    {
+        Tables? tables = null;
+        try
+        {
+            tables = document.Tables;
+            if (tables.Count == 0)
+                return;
+        }
+        finally { Release(tables); }
+        foreach (var target in plan.Targets)
+        {
+            if (!string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                || target.AbsoluteStart < 0
+                || target.AbsoluteEnd <= target.AbsoluteStart)
+                continue;
+            Range? source = null;
+            try
+            {
+                source = document.Range(target.AbsoluteStart, target.AbsoluteEnd);
+                target.WithinTable = WordFormulaHostLookup.IsWhollyInsideTable(source);
+            }
+            finally { Release(source); }
+        }
+    }
+
+    private static void PrepareLatexRedrawTargetSession(
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        PreparedWordBulkFormula formula)
+    {
+        formula.Session.Numbered =
+            NumbersLatexRedrawTarget(plan, target);
+        formula.Session.DisplayMode =
+            target.DisplayMode;
+        formula.Session.FontSizePt =
+            FormulaFontSize.Normalize(
+                target.FontSizePt);
+    }
+
+    private WordLatexRedrawResult
+        ApplyLatexRedrawWithIndependentTransactions(
+            Document document,
+            WordLatexRedrawPlan plan,
+            IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+            StreamingLatexRedrawFormulas? streamed)
+    {
+        // A streamed batch has one object mode and its formulas may still be
+        // rendering, so the target kind comes from the stream, not the formula.
+        WordFormulaHostKind TargetKind(WordLatexRedrawTarget target) =>
+            ObjectModeToHostKind(streamed?.ObjectMode ?? prepared[target.Id].Session.ObjectMode);
+        var result = new WordLatexRedrawResult();
+        result.Failures.AddRange(plan.Skipped);
+        var successfulTargetIds =
+            new HashSet<string>(StringComparer.Ordinal);
+        var sourceMutationTotal = 0L;
+        var total = 0L;
+        var maximum = 0L;
+        var coordinateRebaseTotal = 0L;
+        var cumulativeCoordinateDelta = 0;
+        var previousMainStoryEnd = ReadMainStoryEnd(document);
+        // display tab stops and MathType widths from each formula's column
+        // (or cell), section geometry read once (WordDisplayColumns)
+        var displayColumns = new WordDisplayColumns.BatchCache();
+        var mathTypeNativeStylesPrepared = false;
+        // Numbered VisualTeX redraw: plan every number once (final order,
+        // heading scopes, ordinals) exactly like batch format conversion,
+        // instead of resolving the format and heading scope per formula.
+        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
+        var numberedVisualTeXTargets = plan.NumberDisplayFormulas
+            ? plan.Targets
+                .Where(target =>
+                    NumbersLatexRedrawTarget(plan, target)
+                    && TargetKind(target) == WordFormulaHostKind.VisualTeX)
+                .ToArray()
+            : Array.Empty<WordLatexRedrawTarget>();
+        if (numberedVisualTeXTargets.Length > 0)
+            visualTeXNumbers = WordFormulaNumberingKernel.VisualTeXConversionNumberPlan.Capture(
+                document,
+                numberedVisualTeXTargets.Select(target => (target.Id, target.AbsoluteStart)),
+                WordEquationNumberFormatAuthority.Resolve(document));
+        // Numbered native equations: format, label and heading scopes once.
+        var numberedOmmlTargets = plan.NumberDisplayFormulas
+            ? plan.Targets
+                .Where(target =>
+                    NumbersLatexRedrawTarget(plan, target)
+                    && TargetKind(target) == WordFormulaHostKind.Omml)
+                .ToArray()
+            : Array.Empty<WordLatexRedrawTarget>();
+        var numberedOmml = numberedOmmlTargets.Length > 0
+            ? WordNativeOmmlNumbering.NumberedOmmlBatch.Capture(
+                document,
+                numberedOmmlTargets.Select(target => target.AbsoluteStart))
+            : null;
+        // As in batch format conversion: prove the existing native numbers after
+        // the first numbered target before any write, retain every newly
+        // inserted numbered OMath, and refresh exactly that ordered set once at
+        // the end instead of re-indexing and re-resolving every equation.
+        WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
+        var nativeNumbersInserted = 0;
+        if (numberedOmmlTargets.Length > 0)
+        {
+            using var numberingMetric = WordOperationMetrics.Measure("Redraw.OmmlNumbering.Prepare");
+            nativeNumberRefresh = WordNativeOmmlFieldRefresh.Prepare(
+                document,
+                numberedOmmlTargets.Min(target => target.AbsoluteStart));
+        }
+        // A numbered MathType target that opens a chapter/section scope needs
+        // MathType's native section paragraph. Opening or closing the hidden
+        // staging document ends Word's active custom UndoRecord, so prepare one
+        // parameterizable section before any per-target transaction, as the
+        // MathType bulk skeleton does.
+        MathTypeSectionStaging? mathTypeSection = null;
+        try
+        {
+        if (plan.NumberDisplayFormulas
+            && plan.Targets.Any(target =>
+                NumbersLatexRedrawTarget(plan, target)
+                && TargetKind(target) == WordFormulaHostKind.MathType)
+            && EquationNumberFormat.Resolve(WordEquationNumberFormatAuthority.Resolve(document)).UsesHeading)
+            mathTypeSection = new MathTypeSectionStaging(document, CreateMathTypeSectionFlatOpc(0, 0));
+        var mathTypeInlineFinalizationTotal = 0L;
+        var mathTypeInlineIdentityIndexTotal = 0L;
+        var mathTypeInlineBoundaryMergeTotal = 0L;
+        var mathTypeInlineTypingResetTotal = 0L;
+
+        // Process in document order. Every formula owns one independent Word undo
+        // transaction. A failed target is rolled back to its exact source and does
+        // not alter accumulated batch state; a successful target contributes its
+        // result only after Word has committed the custom undo record.
+        // A stop part-way keeps what is already known: the formulas already
+        // redrawn (each committed in its own undo record) and those skipped.
+        WordLatexRedrawTarget? currentTarget = null;
+        try
+        {
+        foreach (var target in plan.Targets
+                     .OrderBy(item => item.AbsoluteStart))
+        {
+            currentTarget = target;
+            ReportOperationProgress(WriteRedrawStage, result.FormulaCount, plan.Targets.Count);
+            PreparedWordBulkFormula formula;
+            if (streamed is null)
+            {
+                formula = prepared[target.Id];
+            }
+            else
+            {
+                // A formula that failed to render is skipped exactly like a
+                // rolled-back target: Word is untouched and its source remains.
+                if (!streamed.TryTake(target.Id, TimeSpan.FromMinutes(5), out var taken, out var renderError)
+                    || taken is null)
+                {
+                    visualTeXNumbers?.Discard(target.Id);
+                    result.Failures.Add((
+                        target.Id,
+                        target.Latex,
+                        string.IsNullOrWhiteSpace(renderError)
+                            ? OfficePluginLanguage.Text(
+                                "VisualTeX 没有返回该公式的渲染结果，也没有说明原因。",
+                                "VisualTeX returned no render result for this formula and gave no reason.")
+                            : renderError!.Trim()));
+                    continue;
+                }
+                formula = taken;
+                PrepareLatexRedrawTargetSession(plan, target, formula);
+            }
+
+            // Source identity and target kind are pure preflight checks. Keep
+            // them outside the custom undo record: if the document changed under
+            // us, there is no redraw mutation to undo and therefore no risk of
+            // accidentally undoing an earlier user edit.
+            // A formula whose source is no longer exactly where it was read is
+            // left untouched and reported; nothing was written for it, so the
+            // later formulas keep their coordinates.
+            try
+            {
+                ValidateLatexRedrawTargetSourceBeforeTransaction(
+                    document,
+                    plan,
+                    target,
+                    cumulativeCoordinateDelta);
+            }
+            catch (Exception error) when (error is InvalidDataException or COMException or OverflowException)
+            {
+                visualTeXNumbers?.Discard(target.Id);
+                result.Failures.Add((target.Id, target.Latex, OfficeErrorText.Describe(error)));
+                continue;
+            }
+            var targetKind =
+                ObjectModeToHostKind(
+                    formula.Session.ObjectMode);
+
+            LatexRedrawTargetMutationResult targetResult;
+            try
+            {
+                targetResult =
+                    WordFormulaMutationTransaction.Execute(
+                        _application,
+                        document,
+                        "VisualTeX Redraw LaTeX Formula",
+                        () => ApplyLatexRedrawTargetInsideTransaction(
+                            document,
+                            target,
+                            formula,
+                            targetKind,
+                            cumulativeCoordinateDelta,
+                            displayColumns,
+                            mathTypeNativeStylesPrepared,
+                            visualTeXNumbers,
+                            numberedOmml,
+                            mathTypeSection?.Paragraph));
+            }
+            catch (Exception error)
+            {
+                visualTeXNumbers?.Discard(target.Id);
+                VerifyFailedLatexRedrawTargetRollback(
+                    document,
+                    plan,
+                    target,
+                    cumulativeCoordinateDelta,
+                    previousMainStoryEnd,
+                    error);
+
+                // Keep COM HRESULTs and every cause of an aggregated failure.
+                result.Failures.Add(
+                    (target.Id, target.Latex, OfficeErrorText.Describe(error)));
+                continue;
+            }
+
+            result.CoordinateShifts.Add(
+                target.AbsoluteEnd,
+                targetResult.MainStoryEnd - previousMainStoryEnd);
+            cumulativeCoordinateDelta = checked(
+                cumulativeCoordinateDelta
+                + targetResult.MainStoryEnd
+                - previousMainStoryEnd);
+            previousMainStoryEnd = targetResult.MainStoryEnd;
+            coordinateRebaseTotal +=
+                targetResult.CoordinateRebaseMilliseconds;
+
+            sourceMutationTotal +=
+                targetResult.SourceMutationMilliseconds;
+            total += targetResult.InsertMilliseconds;
+            maximum = Math.Max(
+                maximum,
+                targetResult.InsertMilliseconds);
+
+            result.SourceMutationMilliseconds.Add(
+                targetResult.SourceMutationMilliseconds);
+            result.InsertMilliseconds.Add(
+                targetResult.InsertMilliseconds);
+            if (targetResult.InsertMetricDetail is not null)
+                result.InsertMetricDetails.Add(
+                    targetResult.InsertMetricDetail);
+            result.FormulaIds.Add(
+                targetResult.FormulaId);
+            result.FormulaCount++;
+            ReportOperationProgress(WriteRedrawStage, result.FormulaCount, plan.Targets.Count);
+            successfulTargetIds.Add(target.Id);
+            if (plan.NumberDisplayFormulas
+                && target.WithinTable
+                && string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
+                result.UnnumberedInTables++;
+            if (nativeNumberRefresh is not null
+                && targetResult.InsertedHost is { Kind: WordFormulaHostKind.Omml } insertedNative
+                && insertedNative.Numbering.Numbered)
+            {
+                nativeNumberRefresh.AddInserted(insertedNative);
+                nativeNumbersInserted++;
+            }
+
+            if (targetResult.MathTypeNativeStylesPrepared)
+                mathTypeNativeStylesPrepared = true;
+            mathTypeInlineFinalizationTotal +=
+                targetResult.MathTypeInlineFinalizationMilliseconds;
+            mathTypeInlineIdentityIndexTotal +=
+                targetResult.MathTypeInlineIdentityIndexMilliseconds;
+            mathTypeInlineBoundaryMergeTotal +=
+                targetResult.MathTypeInlineBoundaryMergeMilliseconds;
+            mathTypeInlineTypingResetTotal +=
+                targetResult.MathTypeInlineTypingResetMilliseconds;
+        }
+        }
+        catch (Exception error) when (currentTarget is not null && error is not OperationCanceledException)
+        {
+            throw new WordLatexRedrawAbortedException(
+                result,
+                currentTarget!,
+                plan.Targets.Count - result.FormulaCount - result.Failures.Count,
+                error);
+        }
+
+        if (mathTypeInlineFinalizationTotal > 0)
+        {
+            result.BatchTimings["mathTypeInlineFinalization"] =
+                mathTypeInlineFinalizationTotal;
+            result.BatchTimings["mathTypeInlineIdentityIndex"] =
+                mathTypeInlineIdentityIndexTotal;
+            result.BatchTimings["mathTypeInlineBoundaryMerge"] =
+                mathTypeInlineBoundaryMergeTotal;
+            result.BatchTimings["mathTypeInlineTypingReset"] =
+                mathTypeInlineTypingResetTotal;
+        }
+
+        // Number only successfully committed display formulas. Number refresh is
+        // itself isolated: if Word rejects the refresh, only that refresh is
+        // rolled back while all successfully redrawn formulas remain intact.
+        if (plan.NumberDisplayFormulas
+            && result.FormulaCount > 0)
+        {
+            var finalizationMetrics = string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_REDRAW_PERF_LOG"))
+                ? null
+                : new WordOperationMetrics();
+            try
+            {
+                WordFormulaMutationTransaction.Execute(
+                    _application,
+                    document,
+                    "VisualTeX Finalize Redraw Numbering",
+                    () =>
+                    {
+                        var targetKinds =
+                            plan.Targets
+                                .Where(target =>
+                                    successfulTargetIds.Contains(target.Id)
+                                    && NumbersLatexRedrawTarget(plan, target))
+                                .Select(TargetKind)
+                                .Distinct()
+                                .ToArray();
+
+                        if (targetKinds.Any(kind =>
+                                kind == WordFormulaHostKind.MathType))
+                        {
+                            _ =
+                                MathTypeEquationNumbering
+                                    .UpdateEquationNumbers(
+                                        document);
+                        }
+
+                        var canonicalKinds = targetKinds
+                            .Where(kind =>
+                                kind is
+                                    WordFormulaHostKind.Omml
+                                    or WordFormulaHostKind.VisualTeX)
+                            .ToArray();
+                        if (canonicalKinds.Length == 1)
+                        {
+                            // Like batch format conversion: the redraw knows the
+                            // one family it numbered, and OMML and VisualTeX
+                            // count independently. Refresh only that family
+                            // (for VisualTeX one ordered field pass) instead of
+                            // re-indexing and re-resolving every formula host
+                            // of both families in the document.
+                            var numberedTargets = plan.Targets.Count(target =>
+                                successfulTargetIds.Contains(target.Id)
+                                && NumbersLatexRedrawTarget(plan, target)
+                                && TargetKind(target) == canonicalKinds[0]);
+                            if (canonicalKinds[0] == WordFormulaHostKind.Omml
+                                && nativeNumberRefresh is not null)
+                            {
+                                using var applyMetric = WordOperationMetrics.Measure("Redraw.OmmlNumbering.Apply");
+                                nativeNumberRefresh.Apply(nativeNumbersInserted);
+                                return true;
+                            }
+                            if (canonicalKinds[0] == WordFormulaHostKind.VisualTeX)
+                                using (WordOperationMetrics.Measure("Redraw.Numbering.ApplyExistingTables"))
+                                    visualTeXNumbers?.ApplyExistingTables(document);
+                            _ =
+                                WordFormulaNumberingKernel
+                                    .RefreshCanonicalNumbers(
+                                        document,
+                                        kindFilter: canonicalKinds[0],
+                                        minimumExpectedNumbered:
+                                            canonicalKinds[0] == WordFormulaHostKind.VisualTeX
+                                                ? numberedTargets
+                                                : 0,
+                                        preparedVisualTeX:
+                                            canonicalKinds[0] == WordFormulaHostKind.VisualTeX
+                                                ? visualTeXNumbers
+                                                : null);
+                        }
+                        else if (canonicalKinds.Length > 1)
+                        {
+                            _ =
+                                WordFormulaNumberingKernel
+                                    .RefreshCanonicalNumbers(
+                                        document);
+                        }
+
+                        return true;
+                    });
+            }
+            catch (Exception error)
+            {
+                result.Warnings.Add(OfficePluginLanguage.Text(
+                    $"公式编号收尾失败，编号更改已回滚（公式本身已重绘）：{OfficeErrorText.Describe(error)}",
+                    $"Equation numbering finalization failed and was rolled back (the formulas themselves were redrawn): {OfficeErrorText.Describe(error)}"));
+            }
+            finally
+            {
+                if (finalizationMetrics is not null)
+                {
+                    finalizationMetrics.Dispose();
+                    result.FinalizationMetricDetail = string.Join(
+                        " | ",
+                        finalizationMetrics.Entries
+                            .OrderBy(entry => entry.Key)
+                            .Select(entry =>
+                                $"{entry.Key}={entry.Value.Milliseconds:0.0}ms/{entry.Value.Calls}"));
+                }
+            }
+        }
+
+        result.TotalSourceMutationMilliseconds =
+            sourceMutationTotal;
+        }
+        finally
+        {
+            visualTeXNumbers?.Dispose();
+            nativeNumberRefresh?.Dispose();
+            if (mathTypeSection is not null)
+            {
+                mathTypeSection.Dispose();
+                try { document.Activate(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+        }
+        result.BatchTimings["coordinateRebase"] =
+            coordinateRebaseTotal;
+        result.TotalInsertMilliseconds = total;
+        result.MaxInsertMilliseconds = maximum;
+        return result;
+    }
+
+    private sealed class LatexRedrawTargetMutationResult
+    {
+        internal string FormulaId { get; set; } = string.Empty;
+        internal WordFormulaHostDescriptor? InsertedHost { get; set; }
+        internal int MainStoryEnd { get; set; }
+        internal long CoordinateRebaseMilliseconds { get; set; }
+        internal long SourceMutationMilliseconds { get; set; }
+        internal long InsertMilliseconds { get; set; }
+        internal string? InsertMetricDetail { get; set; }
+        internal bool MathTypeNativeStylesPrepared { get; set; }
+        internal long MathTypeInlineFinalizationMilliseconds { get; set; }
+        internal long MathTypeInlineIdentityIndexMilliseconds { get; set; }
+        internal long MathTypeInlineBoundaryMergeMilliseconds { get; set; }
+        internal long MathTypeInlineTypingResetMilliseconds { get; set; }
+    }
+
+    private LatexRedrawTargetMutationResult
+        ApplyLatexRedrawTargetInsideTransaction(
+            Document document,
+            WordLatexRedrawTarget target,
+            PreparedWordBulkFormula formula,
+            WordFormulaHostKind targetKind,
+            int cumulativeCoordinateDelta,
+            WordDisplayColumns.BatchCache displayColumns,
+            bool mathTypeNativeStylesPrepared,
+            WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null,
+            WordNativeOmmlNumbering.NumberedOmmlBatch? numberedOmml = null,
+            Range? preparedMathTypeSection = null)
+    {
+        Range? source = null;
+        Range? isolated = null;
+        Range? insertion = null;
+        WordOperationMetrics? insertionMetrics = null;
+        var deferredMathTypeInlineParagraphRepairs =
+            new List<(string FormulaId, string RightBoundaryWhitespace)>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_VSTO_REDRAW_PERF_LOG")))
+                insertionMetrics = new WordOperationMetrics();
+
+            var sourceMutationWatch = Stopwatch.StartNew();
+            using (WordOperationMetrics.Measure(
+                       "Redraw.Source.CreateRange"))
+            {
+                var adjustedStart = checked(
+                    target.AbsoluteStart
+                    + cumulativeCoordinateDelta);
+                var adjustedEnd = checked(
+                    target.AbsoluteEnd
+                    + cumulativeCoordinateDelta);
+                source = document.Range(
+                    adjustedStart,
+                    adjustedEnd);
+            }
+
+            var display = string.Equals(
+                target.DisplayMode,
+                "block",
+                StringComparison.OrdinalIgnoreCase);
+            if (display
+                && !target.DedicatedDisplayParagraph)
+            {
+                using (WordOperationMetrics.Measure(
+                           "Redraw.Source.IsolateDisplay"))
+                {
+                    isolated =
+                        IsolateDisplaySourceParagraph(
+                            document,
+                            source);
+                }
+                Release(source);
+                source = isolated;
+                isolated = null;
+            }
+
+            (float Center, float Right)? displayTabStops = null;
+            float? mathTypeDisplayColumnWidth = null;
+            if (display
+                && targetKind == WordFormulaHostKind.VisualTeX)
+            {
+                using (WordOperationMetrics.Measure(
+                           "Redraw.Source.ResolveDisplayTabStops"))
+                {
+                    displayTabStops = displayColumns.TabStopsFor(document, source);
+                }
+            }
+            else if (display
+                     && targetKind == WordFormulaHostKind.MathType)
+            {
+                using (WordOperationMetrics.Measure(
+                           "Redraw.Source.ResolveMathTypeDisplayWidth"))
+                {
+                    mathTypeDisplayColumnWidth = displayColumns.ColumnWidthFor(document, source);
+                }
+            }
+
+            var insertionStart = source.Start;
+            // Word Range.Delete can consume a following inline character under
+            // Smart Cut/Paste. The captured range is exact, so clear only it.
+            using (WordOperationMetrics.Measure(
+                       "Redraw.Source.Clear"))
+            {
+                source.Text = string.Empty;
+            }
+            using (WordOperationMetrics.Measure(
+                       "Redraw.Source.CreateInsertion"))
+            {
+                insertion = document.Range(
+                    insertionStart,
+                    insertionStart);
+            }
+            sourceMutationWatch.Stop();
+
+            var insertWatch = Stopwatch.StartNew();
+            string formulaId;
+            WordFormulaHostDescriptor? insertedHost = null;
+            var preparedMathTypeNativeStyles = false;
+            if (targetKind is
+                WordFormulaHostKind.Omml
+                or WordFormulaHostKind.VisualTeX)
+            {
+                var request =
+                    BuildHostWriteRequest(
+                        formula.Session,
+                        formula.MathMl,
+                        formula.PngPath,
+                        formula.EmfPath);
+                request.BatchMutation = true;
+                if (visualTeXNumbers is not null
+                    && targetKind == WordFormulaHostKind.VisualTeX
+                    && formula.Session.Numbered)
+                    request.PreparedVisualTeXNumbering = visualTeXNumbers.For(target.Id);
+                if (numberedOmml is not null
+                    && targetKind == WordFormulaHostKind.Omml
+                    && formula.Session.Numbered
+                    && display)
+                    request.PreparedOmml = numberedOmml.Prepare(
+                        target.AbsoluteStart,
+                        WordOmmlConverter.TransformMathMlToOmml(request.MathMl!));
+                if (displayTabStops.HasValue)
+                {
+                    request.DisplayCenterTabPoints =
+                        displayTabStops.Value.Center;
+                    request.DisplayRightTabPoints =
+                        displayTabStops.Value.Right;
+                }
+
+                // The LaTeX source line is the user's paragraph; the display
+                // writer's own layout must not replace it (WordParagraphSnapshot).
+                var sourceParagraph = display
+                    ? WordParagraphSnapshot.TryCapture(insertion)
+                    : null;
+                var inserted =
+                    WordFormulaHostMutationKernel
+                        .InsertInActiveTransaction(
+                            _application,
+                            document,
+                            insertion,
+                            request);
+                if (sourceParagraph is not null)
+                {
+                    Range? written = null;
+                    try
+                    {
+                        written = WordFormulaHostSemanticReader.CreateRange(document, inserted.Range);
+                        sourceParagraph.Restore(written);
+                    }
+                    finally { Release(written); }
+                }
+                formulaId =
+                    inserted.FormulaId
+                    ?? formula.Session.FormulaId;
+                insertedHost = inserted;
+            }
+            else if (targetKind == WordFormulaHostKind.MathType)
+            {
+                var mathMl = formula.MathMl
+                    ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                        "该公式没有可写入 MathType 的 MathML。",
+                        "This formula has no MathML to write as MathType."));
+                var session = formula.Session;
+                var oldSourceObjectId =
+                    session.SourceObjectId;
+                try
+                {
+                    session.SourceObjectId =
+                        RangeReference(insertion);
+                    var native =
+                        formula.MathTypeNativePreview;
+                    var sourceParagraph = display
+                        ? WordParagraphSnapshot.TryCapture(insertion)
+                        : null;
+                    _ = InsertMathTypeOle(
+                        session,
+                        mathMl,
+                        formula.EmfPath,
+                        isolatedNativePreviewWmfPath:
+                            native?.WmfPath,
+                        isolatedNativePreviewWidthPt:
+                            native?.WidthPt ?? 0,
+                        isolatedNativePreviewHeightPt:
+                            native?.HeightPt ?? 0,
+                        isolatedNativePreviewWordPosition:
+                            native?.WordPosition ?? 0,
+                        isolatedNativePreviewAttempted:
+                            formula.MathTypeNativePreviewAttempted,
+                        preserveExistingDisplayParagraphBoundary:
+                            display,
+                        preserveCapturedInsertion:
+                            true,
+                        boundedBatchMutation:
+                            true,
+                        exactInsertionRange:
+                            insertion,
+                        mathTypeNativeStylesPrepared:
+                            mathTypeNativeStylesPrepared,
+                        deferInlineParagraphRepair:
+                            display
+                                ? null
+                                : (id, rightWhitespace) =>
+                                    deferredMathTypeInlineParagraphRepairs.Add(
+                                        (id, rightWhitespace)),
+                        knownDisplayColumnWidth:
+                            mathTypeDisplayColumnWidth,
+                        preparedStandaloneGenerated:
+                            formula.MathTypeStandaloneGenerated,
+                        preparedStandaloneCompoundFile:
+                            formula.MathTypeStandaloneCompoundFile,
+                        preparedStandaloneSemanticSignature:
+                            formula.MathTypeStandaloneSemanticSignature,
+                        preparedBatchMathTypeSection:
+                            preparedMathTypeSection,
+                        sourceParagraph:
+                            sourceParagraph);
+                    RestoreSourceParagraphAtMathType(
+                        document,
+                        session.FormulaId,
+                        sourceParagraph);
+                    formulaId = session.FormulaId;
+                    preparedMathTypeNativeStyles = display;
+                }
+                finally
+                {
+                    session.SourceObjectId =
+                        oldSourceObjectId;
+                }
+            }
+            else
+            {
+                throw new NotSupportedException(
+                    $"Unsupported redraw target {targetKind}.");
+            }
+            insertWatch.Stop();
+
+            long finalizationMilliseconds = 0;
+            long identityIndexMilliseconds = 0;
+            long boundaryMergeMilliseconds = 0;
+            long typingResetMilliseconds = 0;
+            if (deferredMathTypeInlineParagraphRepairs.Count > 0)
+            {
+                var finalizationWatch = Stopwatch.StartNew();
+                FinalizeDeferredMathTypeInlineParagraphRepairs(
+                    document,
+                    deferredMathTypeInlineParagraphRepairs,
+                    out identityIndexMilliseconds,
+                    out boundaryMergeMilliseconds,
+                    out typingResetMilliseconds);
+                finalizationWatch.Stop();
+                finalizationMilliseconds =
+                    finalizationWatch.ElapsedMilliseconds;
+            }
+
+            var coordinateRebaseWatch = Stopwatch.StartNew();
+            var mainStoryEnd = ReadMainStoryEnd(document);
+            coordinateRebaseWatch.Stop();
+
+            string? insertMetricDetail = null;
+            if (insertionMetrics is not null)
+            {
+                insertionMetrics.Dispose();
+                insertMetricDetail =
+                    string.Join(
+                        " | ",
+                        insertionMetrics.Entries
+                            .OrderBy(entry => entry.Key)
+                            .Select(entry =>
+                                $"{entry.Key}={entry.Value.Milliseconds:0.0}ms/{entry.Value.Calls}"));
+                insertionMetrics = null;
+            }
+
+            return new LatexRedrawTargetMutationResult
+            {
+                FormulaId = formulaId,
+                InsertedHost = insertedHost,
+                MainStoryEnd = mainStoryEnd,
+                CoordinateRebaseMilliseconds =
+                    coordinateRebaseWatch.ElapsedMilliseconds,
+                SourceMutationMilliseconds =
+                    sourceMutationWatch.ElapsedMilliseconds,
+                InsertMilliseconds =
+                    insertWatch.ElapsedMilliseconds,
+                InsertMetricDetail = insertMetricDetail,
+                MathTypeNativeStylesPrepared =
+                    preparedMathTypeNativeStyles,
+                MathTypeInlineFinalizationMilliseconds =
+                    finalizationMilliseconds,
+                MathTypeInlineIdentityIndexMilliseconds =
+                    identityIndexMilliseconds,
+                MathTypeInlineBoundaryMergeMilliseconds =
+                    boundaryMergeMilliseconds,
+                MathTypeInlineTypingResetMilliseconds =
+                    typingResetMilliseconds,
+            };
+        }
+        finally
+        {
+            insertionMetrics?.Dispose();
+            Release(insertion);
+            Release(isolated);
+            Release(source);
+        }
+    }
+
+    private static void ValidateLatexRedrawTargetSourceBeforeTransaction(
+        Document document,
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        int cumulativeCoordinateDelta)
+    {
+        Range? source = null;
+        try
+        {
+            var adjustedStart = checked(
+                target.AbsoluteStart
+                + cumulativeCoordinateDelta);
+            var adjustedEnd = checked(
+                target.AbsoluteEnd
+                + cumulativeCoordinateDelta);
+            source = document.Range(
+                adjustedStart,
+                adjustedEnd);
+            var expected = plan.SourceText.Substring(
+                target.RelativeStart,
+                target.SourceLength);
+            if (!string.Equals(
+                    source.Text ?? string.Empty,
+                    expected,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "重绘前，这个公式的 LaTeX 源码在 Word 中被修改了。为避免替换错误位置，这个公式没有重绘。",
+                    "This formula's LaTeX source changed in Word before it was redrawn. To avoid replacing the wrong text, this formula was not redrawn."));
+        }
+        finally
+        {
+            Release(source);
+        }
+    }
+
+    private static void VerifyFailedLatexRedrawTargetRollback(
+        Document document,
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        int cumulativeCoordinateDelta,
+        int expectedMainStoryEnd,
+        Exception primaryError)
+    {
+        Range? restoredSource = null;
+        try
+        {
+            var restoredMainStoryEnd =
+                ReadMainStoryEnd(document);
+            if (restoredMainStoryEnd != expectedMainStoryEnd)
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "撤销失败的重绘后，Word 文档长度与重绘前不一致。",
+                    "After the failed redraw was undone, the Word document length differs from before."));
+
+            var adjustedStart = checked(
+                target.AbsoluteStart
+                + cumulativeCoordinateDelta);
+            var adjustedEnd = checked(
+                target.AbsoluteEnd
+                + cumulativeCoordinateDelta);
+            restoredSource = document.Range(
+                adjustedStart,
+                adjustedEnd);
+            var expected = plan.SourceText.Substring(
+                target.RelativeStart,
+                target.SourceLength);
+            if (!string.Equals(
+                    restoredSource.Text ?? string.Empty,
+                    expected,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "撤销失败的重绘后，没有恢复出完全相同的 LaTeX 源码。",
+                    "Undoing the failed redraw did not restore the exact LaTeX source."));
+        }
+        catch (Exception verificationError)
+        {
+            throw new AggregateException(
+                OfficePluginLanguage.Text(
+                    "该公式重绘失败，而且无法确认它已被完整撤销。为保护后续公式的位置，重绘已停止。",
+                    "Redrawing this formula failed, and its undo could not be verified. The redraw was stopped to protect the positions of later formulas."),
+                primaryError,
+                verificationError);
+        }
+        finally
+        {
+            Release(restoredSource);
+        }
+    }
+
+    private static int ReadMainStoryEnd(Document document)
+    {
+        Range? content = null;
+        try
+        {
+            content = document.Content;
+            return content.End;
+        }
+        finally
+        {
+            Release(content);
+        }
+    }
+
+    private static void FinalizeDeferredMathTypeInlineParagraphRepairs(
+        Document document,
+        IReadOnlyList<(string FormulaId, string RightBoundaryWhitespace)> repairs,
+        out long identityIndexMilliseconds,
+        out long boundaryMergeMilliseconds,
+        out long typingResetMilliseconds)
+    {
+        identityIndexMilliseconds = 0;
+        boundaryMergeMilliseconds = 0;
+        typingResetMilliseconds = 0;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? hostRange = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var repair in repairs)
+            {
+                Release(hostRange);
+                hostRange = null;
+                Release(bookmark);
+                bookmark = null;
+
+                var identityWatch = Stopwatch.StartNew();
+                var bookmarkName =
+                    WordFormulaIdentityStore.MathTypeBookmarkName(
+                        repair.FormulaId);
+                bookmark = bookmarks[bookmarkName];
+                hostRange = bookmark.Range.Duplicate;
+                if (hostRange.End <= hostRange.Start)
+                    throw new InvalidDataException(
+                        $"Deferred MathType inline repair {repair.FormulaId} has an empty identity range.");
+                identityWatch.Stop();
+                identityIndexMilliseconds += identityWatch.ElapsedMilliseconds;
+
+                var mergeWatch = Stopwatch.StartNew();
+                MergeDeferredMathTypeInlineParagraphBoundary(
+                    document,
+                    hostRange,
+                    repair.RightBoundaryWhitespace);
+                mergeWatch.Stop();
+                boundaryMergeMilliseconds += mergeWatch.ElapsedMilliseconds;
+
+                // The bounded batch path sets only the EMBED result character's
+                // vertical position. Its field instruction and surrounding prose
+                // remain at baseline, and the merge above removes the temporary
+                // InsertXML paragraph mark. The surviving paragraph mark belongs
+                // to the original prose paragraph and was never mutated, so a
+                // second paragraph/typing-format walk here adds no postcondition.
+
+                // Do not retain live Range COM objects across the next structural
+                // paragraph merge. Releasing each exact host immediately avoids a
+                // large Word resynchronization cost when many stale ranges are
+                // released together at the end of the batch.
+                Release(hostRange);
+                hostRange = null;
+                Release(bookmark);
+                bookmark = null;
+            }
+        }
+        finally
+        {
+            Release(hostRange);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static void MergeDeferredMathTypeInlineParagraphBoundary(
+        Document document,
+        Range hostRange,
+        string preservedRightBoundaryWhitespace)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? paragraphMark = null;
+        Range? followingProbe = null;
+        Range? mergeRange = null;
+        Range? content = null;
+        try
+        {
+            paragraphs = hostRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException(
+                    "A deferred MathType inline OLE spans multiple paragraphs.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (paragraphRange.End <= paragraphRange.Start)
+                throw new InvalidDataException(
+                    "A deferred MathType inline OLE paragraph has no terminal mark.");
+
+            paragraphMark = document.Range(
+                paragraphRange.End - 1,
+                paragraphRange.End);
+            if (!string.Equals(
+                    paragraphMark.Text,
+                    "\r",
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "A deferred MathType inline OLE lost its generated paragraph boundary.");
+
+            content = document.Content;
+            var probeStart = paragraphRange.End;
+            var probeEnd = Math.Min(
+                content.End,
+                probeStart + 64);
+            if (probeEnd > probeStart)
+                followingProbe = document.Range(probeStart, probeEnd);
+
+            var followingText = followingProbe?.Text ?? string.Empty;
+            var actualLeadingLength = 0;
+            while (actualLeadingLength < followingText.Length)
+            {
+                var character = followingText[actualLeadingLength];
+                if (character is not (' ' or '\t' or '\u00A0'))
+                    break;
+                actualLeadingLength++;
+            }
+
+            if (actualLeadingLength == 0
+                && preservedRightBoundaryWhitespace.Length == 0)
+            {
+                paragraphMark.Delete();
+            }
+            else
+            {
+                mergeRange = document.Range(
+                    paragraphMark.Start,
+                    paragraphRange.End + actualLeadingLength);
+                mergeRange.Text = preservedRightBoundaryWhitespace;
+            }
+        }
+        finally
+        {
+            Release(content);
+            Release(mergeRange);
+            Release(followingProbe);
+            Release(paragraphMark);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+}

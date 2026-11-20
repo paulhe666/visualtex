@@ -1,0 +1,340 @@
+@keyframes ML__caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+:host {
+  display: block;
+}
+/* The field draws its own selection (.ML__selection and the editing core's marks); the browser's selection never
+   shows in it, also while a document's selection spans the field (a formula opening in a text). */
+::selection {
+  background: transparent;
+}
+.ML__container {
+  display: inline-flex;
+  flex-flow: row;
+  justify-content: space-between;
+  align-items: flex-end;
+  min-height: 39px;
+  /* Need some room for the virtual keyboard toggle */
+  width: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+  /* This attribute is necessary to work around a Firefox issue where
+  where clicking multiple times on the border leads to a focused mathfield that cannot be edited until focus is lost and regained (also fixes the multiple cursor issue on firefox that can occur with the same sequence of events).
+  */
+  pointer-events: auto;
+  /* Prevent the browser from trying to interpret touch gestures in the field */
+  /* "Disabling double-tap to zoom removes the need for browsers to
+        delay the generation of click events when the user taps the screen." */
+  touch-action: none;
+  --_caret-color: var(--caret-color, hsl(var(--_hue), 40%, 49%));
+  --_selection-color: var(--selection-color, #000);
+  --_selection-background-color: var(--selection-background-color, hsl(var(--_hue), 70%, 85%));
+  --_text-highlight-background-color: var(--highlight-text, hsla(var(--_hue), 40%, 50%, 0.1));
+  --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 40%, 95%));
+  --_smart-fence-color: var(--smart-fence-color, currentColor);
+  --_smart-fence-opacity: var(--smart-fence-opacity, 0.5);
+  --_contains-highlight-color: var(--contains-highlight-color, var(--_caret-color));
+  --_latex-color: var(--latex-color, hsl(var(--_hue), 80%, 40%));
+  --_correct-color: var(--correct-color, #10a000);
+  --_incorrect-color: var(--incorrect-color, #a01b00);
+  --_composition-background-color: var(--composition-background-color, #fff1c2);
+  --_composition-text-color: var(--composition-text-color, black);
+  --_composition-underline-color: var(--composition-underline-color, transparent);
+  --_tooltip-border: var(--tooltip-border, 1px solid transparent);
+  --_tooltip-border-radius: var(--tooltip-border-radius, 8px);
+  --_tooltip-background-color: var(--tooltip-background-color, #616161);
+  --_tooltip-color: var(--tooltip-color, #fff);
+  --_tooltip-box-shadow: var(--tooltip-box-shadow, 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px -2px rgba(0, 0, 0, 0.2));
+}
+@media (prefers-color-scheme: dark) {
+  .ML__container {
+    --_contains-highlight-color: var(--contains-highlight-color, hsl(var(--_hue), 85%, 75%));
+    --_caret-color: var(--caret-color, hsl(var(--_hue), 65%, 55%));
+    --_selection-color: var(--selection-color, #fff);
+    --_selection-background-color: var(--selection-background-color, hsl(var(--_hue), 65%, 55%));
+    --_text-highlight-background-color: var(--text-highlight-background-color, hsla(var(--_hue), 40%, 50%, 0.6));
+    --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 5%, 34%));
+    --_latex-color: var(--latex-color, var(--primary, hsl(var(--_hue), 40%, 50%)));
+    /* (the host's own colours win here too: VisualTeX gives every one from its theme, whatever the system's appearance) */
+    --_composition-background-color: var(--composition-background-color, #69571c);
+    --_composition-text-color: var(--composition-text-color, white);
+    --_placeholder-color: var(--placeholder-color, hsl(var(--_hue), 60%, 69%));
+    --_smart-fence-color: var(--smart-fence-color, #fff);
+    --_smart-fence-opacity: var(--smart-fence-opacity, 0.7);
+  }
+}
+@media (forced-colors: active) {
+  .ML__container {
+    --_caret-color: white;
+    --_selection-color: white;
+    --_smart-fence-color: white;
+    --_latex-color: white;
+    --_correct-color: white;
+    --_incorrect-color: white;
+    --_composition-text-color: white;
+  }
+}
+@media (hover: none) and (pointer: coarse) {
+  :host(:not(:focus)) .ML__container {
+    pointer-events: none;
+  }
+}
+/* This is the actual field content (formula) */
+.ML__content {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  position: relative;
+  overflow: hidden;
+  padding: 2px 3px 2px 1px;
+  width: 100%;
+  /* Encourage the browser to use the GPU to render the field.
+     Weirdly, this is required for prompts to be rendered correctly. 
+   */
+  isolation: isolate;
+  text-shadow: var(--text-shadow);
+}
+.ML__content .ML__latex {
+  text-shadow: var(--text-shadow);
+}
+.ML__content .ML__sqrt-line {
+  box-shadow: var(--text-shadow);
+}
+.ML__content .ML__frac-line {
+  box-shadow: var(--text-shadow);
+}
+/* The invisible element used to capture keyboard events. We're just trying
+ really hard to make sure it doesn't show. */
+.ML__keyboard-sink {
+  display: inline-block;
+  resize: none;
+  outline: none;
+  border: none;
+  pointer-events: none;
+  /* Need these for Microsoft Edge */
+  position: fixed;
+  clip: rect(0 0 0 0);
+  /* Need this to prevent iOS Safari from auto-zooming */
+  font-size: 1em;
+  font-family: KaTeX_Main;
+  line-height: 0.5;
+  /* On Chromium, if this is 0, no keyboard events are received */
+  /* Preferred over clip */
+  clip-path: inset(50%);
+}
+[part='placeholder'] {
+  color: var(--neutral-400);
+}
+/* VisualTeX editing core: the layout engine places and sizes the caret element
+   (position, height, font size = its slot's scale); the bar is centred on the
+   boundary, or stands left of it against an empty slot's marker. */
+.ML__caret,
+.ML__text-caret,
+.ML__latex-caret {
+  position: absolute;
+  width: 0;
+  pointer-events: none;
+  --_caret-width: clamp(2px, 0.08em, 10px);
+}
+.ML__caret::after,
+.ML__text-caret::after,
+.ML__latex-caret::after {
+  content: '';
+  visibility: hidden;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  --_caret-width: clamp(2px, 0.08em, 10px);
+  left: calc(var(--_caret-width) / -2);
+  width: var(--_caret-width);
+  border-radius: calc(var(--_caret-width) / 2);
+  background: var(--_caret-color);
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__latex-caret::after {
+  background: var(--_latex-color);
+}
+/* AxMath's L-shaped caret: with the bar, a line along the foot of the region the caret is in (the whole slot's
+   content), one caret with the bar. The line stands just below the region's box (the caret element is the region's
+   box), a little thinner than the bar; the bar reaches down to its lower edge and its ends stand as far out as the
+   bar's half width, so the bar on the line's end is flush with it. Both blink together. */
+.ML__vtx-caret--line {
+  --_line-thickness: clamp(1px, 0.05em, 6px);
+}
+.ML__vtx-caret--line::after {
+  bottom: calc(var(--_line-thickness) * -1);
+  border-radius: calc(var(--_caret-width) / 2) calc(var(--_caret-width) / 2) 0 0;
+}
+.ML__vtx-caret--line::before {
+  content: '';
+  visibility: hidden;
+  position: absolute;
+  bottom: calc(var(--_line-thickness) * -1);
+  height: var(--_line-thickness);
+  left: calc(var(--vtx-line-left, 0px) - var(--_caret-width) / 2);
+  width: calc(var(--vtx-line-width, 0px) + var(--_caret-width));
+  background: var(--_caret-color);
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__latex-caret.ML__vtx-caret--line::before {
+  background: var(--_latex-color);
+}
+.ML__focused .ML__vtx-caret--line::before {
+  visibility: visible;
+}
+.ML__vtx-caret--before::after {
+  left: auto;
+  right: 0;
+}
+/* Empty-slot marker, drawn by the layout engine where the slot is. */
+.ML__vtx-marker {
+  border-radius: 0.075em;
+  background: var(--formula-placeholder, rgba(31, 99, 142, 0.18));
+}
+.ML__vtx-marker--selected {
+  background: var(--formula-placeholder-selected, var(--formula-placeholder, rgba(31, 99, 142, 0.3)));
+}
+.ML__focused .ML__latex-caret::after,
+.ML__focused .ML__text-caret::after,
+.ML__focused .ML__caret::after {
+  visibility: visible;
+}
+.ML__focused .ML__text {
+  background: transparent;
+}
+/* When using smartFence, the anticipated closing fence is displayed
+with this style. It fades through its text colour, not opacity: WebKit clips
+an opacity layer to the glyph's line box, and a tall delimiter (newtx in the
+Times profile) hangs far below it, so only its top end showed. currentColor is
+the glyph's own colour, the caret highlight included. */
+.ML__smart-fence__close {
+  color: var(--_smart-fence-color);
+  -webkit-text-fill-color: color-mix(
+    in srgb,
+    currentColor calc(var(--_smart-fence-opacity) * 100%),
+    transparent
+  );
+}
+.ML__focused .ML__selected,
+.ML__focused .ML__selected .ML__smart-fence__close,
+.ML__focused .ML__selected .ML__placeholder {
+  color: var(--_selection-color);
+  -webkit-text-fill-color: currentColor;
+  opacity: 1;
+}
+.ML__selection {
+  box-sizing: border-box;
+  background: transparent;
+}
+:host(:focus) .ML__selection {
+  background: var(--_selection-background-color) !important;
+}
+.ML__contains-highlight {
+  box-sizing: border-box;
+  background: transparent;
+}
+.ML__focused .ML__contains-highlight {
+  background: var(--_contains-highlight-background-color);
+}
+.ML__raw-latex {
+  font-family: 'Berkeley Mono', 'IBM Plex Mono', 'Source Code Pro', Consolas, 'Roboto Mono', Menlo, 'Bitstream Vera Sans Mono', 'DejaVu Sans Mono', Monaco, Courier, monospace;
+  font-weight: 400;
+  font-size: 0.8em;
+  letter-spacing: -0.05em;
+  color: var(--_latex-color);
+}
+.ML__suggestion {
+  color: var(--neutral-500);
+}
+/* Add an attribute 'data-tooltip' to automatically show a
+   tooltip over a element on hover.
+*/
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  display: block;
+  z-index: 2;
+  pointer-events: none;
+  right: auto;
+  top: calc(-100% - 4px);
+  width: max-content;
+  max-width: 200px;
+  padding: 8px 8px;
+  border-radius: 4px;
+  background: #616161;
+  color: #fff;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px -2px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 13px;
+  /* Phone */
+  opacity: 0;
+  transform: scale(0.5);
+}
+@media only screen and (max-width: 767px) {
+  [data-tooltip]::after {
+    padding: 8px 16px;
+    font-size: 16px;
+  }
+}
+menu [data-tooltip]::after {
+  left: 100%;
+  top: 0%;
+}
+menu .ML__base {
+  cursor: default;
+}
+/** Don't display if we're tracking, i.e. have the pointer down */
+.tracking [data-tooltip]:hover::after {
+  /* Use visibility, not display. Display will remove the after from the DOM, and the override below will not work */
+  visibility: hidden;
+}
+/** But do display if tracking and inside a menu */
+.tracking menu li[data-tooltip]:hover::after,
+[data-tooltip]:hover::after {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition-property: opacity, scale;
+  transition-duration: 0.15s;
+  transition-delay: 1s;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+.insert-matrix-submenu {
+  /* Grid doesn't work on Safari */
+  --_menu-item-size: 25px;
+  width: calc(5 * var(--_menu-item-size));
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px;
+  align-content: center;
+  justify-content: center;
+}
+.insert-matrix-submenu [part='menu-item'] {
+  width: var(--_menu-item-size);
+  height: var(--_menu-item-size);
+  font-size: 21px;
+  border: none;
+  border-radius: 0;
+  line-height: 21px;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+}
+.border-submenu [part='menu-item'] {
+  font-size: 2rem;
+  line-height: 1.2;
+  text-align: center;
+}

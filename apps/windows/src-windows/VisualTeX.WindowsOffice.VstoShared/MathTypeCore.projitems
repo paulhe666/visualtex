@@ -1,0 +1,26 @@
+<Project>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)MathSpaceContract.cs" Link="MathTypeCore\MathSpaceContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlTokenStyleContract.cs" Link="MathTypeCore\MathMlTokenStyleContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlColorContract.cs" Link="MathTypeCore\MathMlColorContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlAccentGeometry.cs" Link="MathTypeCore\MathMlAccentGeometry.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlExplicitFenceContract.cs" Link="MathTypeCore\MathMlExplicitFenceContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.cs" Link="MathTypeCore\MathTypeMtefCodec.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefAssembly.cs" Link="MathTypeCore\MathTypeMtefAssembly.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCanonicalRoot.cs" Link="MathTypeCore\MathTypeMtefCanonicalRoot.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCharacters.cs" Link="MathTypeCore\MathTypeMtefCharacters.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefFences.cs" Link="MathTypeCore\MathTypeMtefFences.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefFontSize.cs" Link="MathTypeCore\MathTypeMtefFontSize.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefGlyphs.cs" Link="MathTypeCore\MathTypeMtefGlyphs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefPrefix.cs" Link="MathTypeCore\MathTypeMtefPrefix.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefSignature.cs" Link="MathTypeCore\MathTypeMtefSignature.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefTemplates.cs" Link="MathTypeCore\MathTypeMtefTemplates.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MtefStructureReader.cs" Link="MathTypeCore\MtefStructureReader.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleInterop.cs" Link="MathTypeCore\MathTypeOleInterop.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleStorage.cs" Link="MathTypeCore\MathTypeOleStorage.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeCompObj.cs" Link="MathTypeCore\MathTypeCompObj.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleClipboardProxy.cs" Link="MathTypeCore\MathTypeOleClipboardProxy.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeNativePreviewRenderer.cs" Link="MathTypeCore\MathTypeNativePreviewRenderer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NativePreviewRetry.cs" Link="MathTypeCore\NativePreviewRetry.cs" />
+  </ItemGroup>
+</Project>

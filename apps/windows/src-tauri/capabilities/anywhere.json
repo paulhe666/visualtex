@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "anywhere",
+  "description": "Allow only VisualTeX Anywhere's formula window (anywhere.html, typing formulas into other applications through VisualTeX's input method) to run its session, read the clipboard while a formula is open, run OCR and read the formula fonts.",
+  "windows": ["anywhere"],
+  "permissions": [
+    "core:default",
+    "allow-anywhere",
+    "allow-ocr-desktop",
+    "allow-read-system-font-asset"
+  ]
+}

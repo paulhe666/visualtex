@@ -1,0 +1,2 @@
+/* macOS' own stylesheet, loaded after the shared ones (apps/shared/visualtex-app/src/styles/index.ts). Every
+   window of the macOS app uses the shared styles only. */

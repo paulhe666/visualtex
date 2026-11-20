@@ -1,0 +1,821 @@
+import assert from "node:assert/strict";
+import process from "node:process";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const defaultsOnly = process.argv.includes("--defaults-only");
+
+async function main() {
+  await withAppBrowser(async ({ baseUrl, client }) => {
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(700);
+
+    const evaluate = async (expression) => {
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (result.exceptionDetails) {
+        throw new Error(
+          result.exceptionDetails.exception?.description ||
+            result.exceptionDetails.text ||
+            "Runtime.evaluate failed",
+        );
+      }
+      return result.result.value;
+    };
+
+    const reload = async () => {
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(700);
+      await evaluate(`new Promise((resolve) => {
+        const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+        done();
+      })`);
+    };
+
+    await evaluate(`(() => {
+      localStorage.clear();
+      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+      localStorage.setItem(
+        "visualtex-custom-formula-tiles",
+        JSON.stringify([
+          "\\beta_{\\omega_1^2}",
+          "\\beta",
+          "\\int_b^a b",
+          "\\int_b^a a",
+          "\\int_b^a t",
+          "\\frac{R}{Tf}\\int_b^a t",
+          "\\frac{R}{Tf}\\int_b^a t\\,dpq",
+          "\\frac{R}{Tf}\\int_b^a t\\,dp",
+          "a^2+b^2=c^2",
+        ]),
+      );
+    })()`);
+    await reload();
+
+    const openContextMenu = async (selector) => {
+      const opened = await evaluate(`new Promise((resolve) => {
+        const button = document.querySelector(${JSON.stringify(selector)});
+        if (!button) {
+          resolve({
+            ok: false,
+            selectorFound: false,
+            templateCount: document.querySelectorAll(".template-button").length,
+            tileCount: document.querySelectorAll(".formula-tile-button").length,
+            bodyText: document.body.textContent?.slice(0, 200) ?? "",
+          });
+          return;
+        }
+        button.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 420,
+          clientY: 320,
+        }));
+        setTimeout(() => resolve({
+          ok: Boolean(document.querySelector(".formula-hotkey-context-menu")),
+          selectorFound: true,
+        }), 50);
+      })`);
+      assert.equal(opened.ok, true, `Context menu did not open for ${selector}: ${JSON.stringify(opened)}`);
+    };
+
+    const assignCurrentContext = async (code, key, modifiers) => {
+      const assigned = await evaluate(`new Promise((resolve) => {
+        const setButton = document.querySelector(".formula-hotkey-context-action");
+        if (!setButton) {
+          resolve({ ok: false, step: "context-action" });
+          return;
+        }
+        setButton.click();
+        setTimeout(() => {
+          const recorder = document.querySelector(".formula-hotkey-recorder-dialog");
+          if (!recorder) {
+            resolve({ ok: false, step: "recorder" });
+            return;
+          }
+          document.dispatchEvent(new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: ${JSON.stringify(code)},
+            key: ${JSON.stringify(key)},
+            ctrlKey: ${Boolean(modifiers.ctrlKey)},
+            altKey: ${Boolean(modifiers.altKey)},
+            shiftKey: ${Boolean(modifiers.shiftKey)},
+            metaKey: ${Boolean(modifiers.metaKey)},
+          }));
+          setTimeout(() => {
+            const save = document.querySelector(".formula-hotkey-recorder-footer .primary-button");
+            const disabled = save?.disabled ?? true;
+            if (!save || disabled) {
+              resolve({ ok: false, step: "save", disabled });
+              return;
+            }
+            const cancel = document.querySelector(".formula-hotkey-recorder-footer .secondary-button");
+            const keycap = document.querySelector(".formula-hotkey-capture-box kbd");
+            const saveRect = save.getBoundingClientRect();
+            const cancelRect = cancel?.getBoundingClientRect();
+            const keycapStyle = keycap ? getComputedStyle(keycap) : null;
+            const geometry = {
+              buttonHeightDelta: cancelRect ? Math.abs(saveRect.height - cancelRect.height) : 999,
+              keycapHeight: keycap?.getBoundingClientRect().height ?? 0,
+              keycapDisplay: keycapStyle?.display ?? "",
+              keycapLineHeight: keycapStyle?.lineHeight ?? "",
+            };
+            save.click();
+            setTimeout(() => resolve({
+              ok: true,
+              geometry,
+              bindings: JSON.parse(localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}").state?.bindings?.length ?? 0,
+            }), 30);
+          }, 40);
+        }, 50);
+      })`);
+      assert.equal(assigned.ok, true, JSON.stringify(assigned));
+      assert.ok(assigned.geometry.buttonHeightDelta <= 0.5, JSON.stringify(assigned.geometry));
+      assert.ok(assigned.geometry.keycapHeight >= 34, JSON.stringify(assigned.geometry));
+      assert.ok(
+        assigned.geometry.keycapDisplay === "inline-flex" ||
+          assigned.geometry.keycapDisplay === "flex",
+        JSON.stringify(assigned.geometry),
+      );
+      await sleep(120);
+      return assigned;
+    };
+
+    const pressInFormula = async (code, key, modifiers) =>
+      evaluate(`new Promise((resolve) => {
+        const field = document.querySelector("math-field");
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        field.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+          code: ${JSON.stringify(code)},
+          key: ${JSON.stringify(key)},
+          ctrlKey: ${Boolean(modifiers.ctrlKey)},
+          altKey: ${Boolean(modifiers.altKey)},
+          shiftKey: ${Boolean(modifiers.shiftKey)},
+          metaKey: ${Boolean(modifiers.metaKey)},
+        }));
+        setTimeout(() => resolve(field.value), 120);
+      })`);
+
+    const clearFormula = async () =>
+      evaluate(`new Promise((resolve) => {
+        const field = document.querySelector("math-field");
+        field.setValue("", { silenceNotifications: true });
+        field.position = field.lastOffset;
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "deleteContentBackward",
+        }));
+        setTimeout(() => resolve(field.value), 80);
+      })`);
+
+    const defaultHotkeys = [
+      ["KeyR", "r", { metaKey: true }, /\\sqrt/],
+      ["KeyF", "f", { metaKey: true }, /\\frac/],
+      ["KeyJ", "j", { metaKey: true }, /[_^]/],
+      ["KeyL", "l", { metaKey: true }, /_/],
+      ["KeyD", "d", { metaKey: true }, /\\circ/],
+      ["KeyP", "P", { metaKey: true, shiftKey: true }, /\\partial/],
+      ["KeyI", "I", { metaKey: true, shiftKey: true }, /\\int/],
+      ["KeyS", "S", { metaKey: true, shiftKey: true }, /\\sum/],
+      ["KeyX", "X", { altKey: true, shiftKey: true }, /\\underline\{X\}/],
+      ["KeyY", "Y", { altKey: true, shiftKey: true }, /\\underline\{Y\}/],
+    ];
+    const hasConflictingCommandH = await evaluate(`(() => {
+      const hotkeys = JSON.parse(
+        localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}",
+      );
+      return (hotkeys.state?.bindings || []).some(
+        (binding) => binding.chord?.metaKey &&
+          !binding.chord?.ctrlKey &&
+          !binding.chord?.altKey &&
+          !binding.chord?.shiftKey &&
+          binding.chord?.code === "KeyH",
+      );
+    })()`);
+    assert.equal(hasConflictingCommandH, false);
+    for (const [code, key, modifiers, expected] of defaultHotkeys) {
+      await clearFormula();
+      const value = await pressInFormula(code, key, modifiers);
+      assert.match(value, expected, `${code}: ${value}`);
+    }
+    await clearFormula();
+
+    const greekLetterHotkeys = [
+      ["KeyA", "a", /\\alpha/],
+      ["KeyB", "b", /\\beta/],
+      ["KeyG", "g", /\\gamma/],
+      ["KeyD", "d", /\\delta/],
+      ["KeyE", "e", /\\epsilon/],
+      ["KeyZ", "z", /\\zeta/],
+      ["KeyH", "h", /\\eta/],
+      ["KeyQ", "q", /\\theta/],
+      ["KeyI", "i", /\\iota/],
+      ["KeyK", "k", /\\kappa/],
+      ["KeyL", "l", /\\lambda/],
+      ["KeyM", "m", /\\mu/],
+      ["KeyN", "n", /\\nu/],
+      ["KeyX", "x", /\\xi/],
+      ["KeyO", "o", /^o$/],
+      ["KeyP", "p", /\\pi/],
+      ["KeyR", "r", /\\rho/],
+      ["KeyS", "s", /\\sigma/],
+      ["KeyT", "t", /\\tau/],
+      ["KeyU", "u", /\\upsilon/],
+      ["KeyF", "f", /\\phi/],
+      ["KeyC", "c", /\\chi/],
+      ["KeyY", "y", /\\psi/],
+      ["KeyW", "w", /\\omega/],
+    ];
+    for (const [code, key, expected] of greekLetterHotkeys) {
+      await clearFormula();
+      const armedValue = await pressInFormula("KeyG", "g", { metaKey: true });
+      assert.equal(armedValue, "", `Command+G inserted text before ${code}`);
+      const value = await pressInFormula(code, key, {});
+      assert.match(value, expected, `Command+G then ${key}: ${value}`);
+    }
+    for (const [code, key, expected] of [
+      ["KeyG", "G", /\\Gamma/],
+      ["KeyD", "D", /\\Delta/],
+      ["KeyQ", "Q", /\\Theta/],
+      ["KeyL", "L", /\\Lambda/],
+      ["KeyW", "W", /\\Omega/],
+    ]) {
+      await clearFormula();
+      await pressInFormula("KeyG", "g", { metaKey: true });
+      const value = await pressInFormula(code, key, { shiftKey: true });
+      assert.match(value, expected, `Command+G then Shift+${key}: ${value}`);
+    }
+    await clearFormula();
+
+    await openContextMenu('.template-button[data-command-id="frac"]');
+    await assignCurrentContext("KeyF", "f", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    const afterFraction = await pressInFormula("KeyF", "f", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    assert.match(afterFraction, /\\frac/);
+
+    await openContextMenu('.template-button[data-command-id="frac"]');
+    const protectedState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(".formula-hotkey-context-action")?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          code: "KeyS",
+          key: "s",
+          metaKey: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(".formula-hotkey-recorder-footer .primary-button");
+          resolve({
+            disabled: save?.disabled ?? false,
+            warning: document.querySelector(".formula-hotkey-message.is-danger")?.textContent ?? "",
+          });
+        }, 40);
+      }, 50);
+    })`);
+    assert.equal(protectedState.disabled, true);
+    assert.match(protectedState.warning, /保存|Save/);
+    await evaluate(`document.querySelector(".formula-hotkey-recorder-dialog .dialog-header .icon-button")?.click()`);
+
+    await openContextMenu('.template-button[data-command-id="frac"]');
+    const greekPrefixProtectedState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(".formula-hotkey-context-action")?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          code: "KeyG",
+          key: "g",
+          metaKey: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(".formula-hotkey-recorder-footer .primary-button");
+          resolve({
+            disabled: save?.disabled ?? false,
+            warning: document.querySelector(".formula-hotkey-message.is-danger")?.textContent ?? "",
+          });
+        }, 40);
+      }, 50);
+    })`);
+    assert.equal(greekPrefixProtectedState.disabled, true);
+    assert.match(greekPrefixProtectedState.warning, /希腊字母|Greek letter/);
+    await evaluate(`document.querySelector(".formula-hotkey-recorder-dialog .dialog-header .icon-button")?.click()`);
+
+    const managerState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(".settings-toggle")?.click();
+      setTimeout(() => {
+        document.querySelector(".settings-hotkey-button")?.click();
+        setTimeout(() => {
+          const row = document.querySelector(".formula-hotkey-binding-row");
+          const keycap = row?.querySelector(":scope > kbd");
+          const rowRect = row?.getBoundingClientRect();
+          const keycapRect = keycap?.getBoundingClientRect();
+          resolve({
+            rows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            officeActions: [...document.querySelectorAll("[data-office-hotkey-action]")]
+              .map((item) => item.getAttribute("data-office-hotkey-action")),
+            hotkey: keycap?.textContent ?? "",
+            keycapCenterDelta: rowRect && keycapRect
+              ? Math.abs(
+                  rowRect.top + rowRect.height / 2 -
+                  (keycapRect.top + keycapRect.height / 2),
+                )
+              : 999,
+          });
+        }, 80);
+      }, 80);
+    })`);
+    assert.equal(managerState.rows, 10);
+    assert.deepEqual(managerState.officeActions, [
+      "word-image-inline",
+      "word-image-display",
+      "word-omml-inline",
+      "word-omml-display",
+      "powerpoint-svg-new",
+      "powerpoint-omml-inline",
+      "powerpoint-omml-display",
+    ]);
+    assert.ok(managerState.hotkey);
+    assert.ok(managerState.keycapCenterDelta <= 1, JSON.stringify(managerState));
+
+    const officeBindingState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(
+        '[data-office-hotkey-action="word-omml-inline"] .formula-hotkey-binding-actions button',
+      )?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          code: "KeyU",
+          key: "u",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(
+            ".office-hotkey-recorder-dialog .formula-hotkey-recorder-footer .primary-button",
+          );
+          if (!save || save.disabled) {
+            resolve({
+              recorderClosed: false,
+              keycap: document.querySelector(".office-hotkey-recorder-dialog .formula-hotkey-capture-box kbd")?.textContent ?? "",
+              bindings: [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+              saveFound: Boolean(save),
+              saveDisabled: save?.disabled ?? null,
+              recorderText: document.querySelector(".office-hotkey-recorder-dialog")?.textContent ?? "",
+            });
+            return;
+          }
+          save.click();
+          setTimeout(() => {
+            const row = document.querySelector(
+              '[data-office-hotkey-action="word-omml-inline"]',
+            );
+            const stored = JSON.parse(
+              localStorage.getItem("visualtex-office-hotkeys-v1") || "{}",
+            );
+            resolve({
+              recorderClosed: !document.querySelector(".office-hotkey-recorder-dialog"),
+              keycap: row?.querySelector(":scope > kbd")?.textContent ?? "",
+              bindings: stored.state?.bindings ?? [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            });
+          }, 100);
+        }, 50);
+      }, 50);
+    })`);
+    assert.equal(officeBindingState.recorderClosed, true, JSON.stringify(officeBindingState));
+    assert.match(officeBindingState.keycap, /U/);
+    assert.equal(officeBindingState.bindings.length, 1, JSON.stringify(officeBindingState));
+    assert.equal(officeBindingState.bindings[0].actionId, "word-omml-inline");
+    assert.equal(officeBindingState.bindings[0].chord.code, "KeyU");
+    assert.equal(officeBindingState.formulaRows, 10);
+    await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
+
+    if (defaultsOnly) {
+      await evaluate(`(() => {
+        localStorage.setItem(
+          "visualtex-formula-hotkeys-v1",
+          JSON.stringify({ state: { bindings: [] }, version: 1 }),
+        );
+      })()`);
+      await reload();
+      const migratedCount = await evaluate(`new Promise((resolve) => {
+        document.querySelector(".settings-toggle")?.click();
+        setTimeout(() => {
+          document.querySelector(".settings-hotkey-button")?.click();
+          setTimeout(() => resolve(
+            document.querySelectorAll(".formula-hotkey-binding-row").length,
+          ), 80);
+        }, 80);
+      })`);
+      assert.equal(migratedCount, 10);
+
+      const removedDefault = await evaluate(`new Promise((resolve) => {
+        const row = [...document.querySelectorAll(".formula-hotkey-binding-row")]
+          .find((item) => item.querySelector("code")?.textContent === "\\\\sqrt");
+        row?.querySelector(".formula-hotkey-binding-actions .is-danger")?.click();
+        setTimeout(() => resolve({
+          rows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+          storedVersion: JSON.parse(
+            localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}",
+          ).version,
+        }), 80);
+      })`);
+      assert.equal(removedDefault.rows, 9);
+      assert.equal(removedDefault.storedVersion, 2);
+      await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
+      await reload();
+      const persistedRemovalCount = await evaluate(`new Promise((resolve) => {
+        document.querySelector(".settings-toggle")?.click();
+        setTimeout(() => {
+          document.querySelector(".settings-hotkey-button")?.click();
+          setTimeout(() => resolve(
+            document.querySelectorAll(".formula-hotkey-binding-row").length,
+          ), 80);
+        }, 80);
+      })`);
+      assert.equal(persistedRemovalCount, 9);
+      console.log("Default formula hotkey regression passed");
+      return;
+    }
+
+    const expandedCategories = await evaluate(`new Promise(async (resolve) => {
+      const result = {};
+      const categories = [
+        "common",
+        "structure",
+        "calculus",
+        "matrix",
+        "relation",
+        "greek",
+        "arrow",
+        "physics",
+        "set",
+      ];
+      for (const category of categories) {
+        document.querySelector('[data-category="' + category + '"]')?.click();
+        const section = document.querySelector(
+          '[data-toolbar-category-section="' + category + '"]',
+        );
+        const waitStartedAt = Date.now();
+        while (Date.now() - waitStartedAt < 1000) {
+          const previews = Array.from(
+            section?.querySelectorAll(".template-button .math-preview") ?? [],
+          );
+          if (previews.length > 0 && previews.every((preview) => preview.dataset.fitReady === "true")) {
+            break;
+          }
+          await new Promise((done) => setTimeout(done, 25));
+        }
+        const buttons = Array.from(
+          section?.querySelectorAll(".template-button") ?? [],
+        );
+        result[category] = {
+          count: buttons.length,
+          unifiedFitCount: buttons.filter((button) =>
+            button.classList.contains("is-unified-fit")
+          ).length,
+          errorCount: buttons.reduce(
+            (count, button) => count + button.querySelectorAll(".ML__error").length,
+            0,
+          ),
+          ids: buttons.map((button) => button.dataset.commandId || ""),
+          details: Object.fromEntries(buttons.map((button) => {
+            const preview = button.querySelector(".math-preview");
+            const content = preview?.querySelector(".math-preview-fit-content");
+            const buttonRect = button.getBoundingClientRect();
+            const previewRect = preview?.getBoundingClientRect();
+            const contentRect = content?.getBoundingClientRect();
+            const tolerance = 1.5;
+            return [
+              button.dataset.commandId || "",
+              {
+                width: Math.round(buttonRect.width),
+                fontSize: Number.parseFloat(getComputedStyle(preview).fontSize),
+                scale: Number.parseFloat(preview?.dataset.fitScale || "0"),
+                fitReady: preview?.dataset.fitReady === "true",
+                unifiedFit: button.classList.contains("is-unified-fit"),
+                wide: button.classList.contains("is-wide-preview"),
+                contained: Boolean(
+                  previewRect &&
+                  contentRect &&
+                  contentRect.left >= previewRect.left - tolerance &&
+                  contentRect.right <= previewRect.right + tolerance &&
+                  contentRect.top >= previewRect.top - tolerance &&
+                  contentRect.bottom <= previewRect.bottom + tolerance
+                ),
+              },
+            ];
+          })),
+        };
+      }
+      resolve(result);
+    })`);
+    assert.ok(expandedCategories.relation.count >= 39, JSON.stringify(expandedCategories));
+    assert.ok(expandedCategories.arrow.count >= 36, JSON.stringify(expandedCategories));
+    assert.ok(expandedCategories.physics.count >= 45, JSON.stringify(expandedCategories));
+    for (const [category, result] of Object.entries(expandedCategories)) {
+      assert.equal(result.unifiedFitCount, result.count, JSON.stringify({ category, result }));
+      assert.equal(result.errorCount, 0, JSON.stringify({ category, result }));
+      for (const [id, detail] of Object.entries(result.details)) {
+        assert.equal(detail.unifiedFit, true, JSON.stringify({ category, id, detail }));
+        assert.equal(detail.fontSize, 24, JSON.stringify({ category, id, detail }));
+        assert.ok(detail.scale > 0 && detail.scale <= 1, JSON.stringify({ category, id, detail }));
+        assert.equal(detail.contained, true, JSON.stringify({ category, id, detail }));
+      }
+    }
+    assert.ok(expandedCategories.relation.ids.includes("triangleq"));
+    assert.ok(expandedCategories.arrow.ids.includes("Longleftrightarrow"));
+    assert.ok(expandedCategories.physics.ids.includes("outerproduct"));
+    assert.ok(!expandedCategories.physics.ids.includes("time-ordering"));
+    assert.equal(expandedCategories.physics.details.matrixelement.wide, true);
+    assert.equal(expandedCategories.physics.details["expectation-operator"].wide, true);
+    assert.ok(
+      expandedCategories.physics.details.matrixelement.width >
+        expandedCategories.physics.details.outerproduct.width * 1.5,
+      JSON.stringify(expandedCategories.physics.details),
+    );
+    for (const commandId of ["intplain", "int", "iint", "sum", "series", "prod"]) {
+      assert.equal(
+        expandedCategories.calculus.details[commandId].contained,
+        true,
+        JSON.stringify({ commandId, detail: expandedCategories.calculus.details[commandId] }),
+      );
+    }
+
+    await evaluate(`(() => {
+      document.querySelector('[data-toolbar-view="tiles"]')?.click();
+      document.querySelector('[data-tile-category="common"]')?.click();
+    })()`);
+    await openContextMenu('.formula-tile-button[data-formula-tile-id="mass-energy"]');
+    await assignCurrentContext("KeyE", "e", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    const afterCommonTile = await pressInFormula("KeyE", "e", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    assert.match(afterCommonTile, /E=mc\^2/);
+
+    await evaluate(`document.querySelector('[data-tile-category="custom"]')?.click()`);
+    await sleep(180);
+    const customTileLayout = await evaluate(`(() => {
+      const buttons = Array.from(document.querySelectorAll(".formula-tile-button.is-custom"));
+      const rects = buttons.map((button) => button.getBoundingClientRect());
+      const library = JSON.parse(
+        localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+      );
+      const section = document.querySelector(".custom-formula-section");
+      const grid = document.querySelector(".custom-formula-tile-grid");
+      const list = document.querySelector(".formula-tile-list.is-custom");
+      const sectionStyle = section ? getComputedStyle(section) : null;
+      const listStyle = list ? getComputedStyle(list) : null;
+      const gridRect = grid?.getBoundingClientRect();
+      const betaButton = buttons.find(
+        (button) => button.dataset.formulaTileLatex === "\\beta",
+      );
+      const betaRect = betaButton?.getBoundingClientRect();
+      const firstTop = Math.min(...rects.map((rect) => Math.round(rect.top)));
+      const firstRow = rects.filter((rect) => Math.abs(rect.top - firstTop) <= 1);
+      return {
+        count: buttons.length,
+        widths: rects.map((rect) => Math.round(rect.width)),
+        tops: rects.map((rect) => Math.round(rect.top)),
+        weights: buttons.map((button) => Number(button.dataset.customTileWeight || 0)),
+        scales: buttons.map((button) => Number(
+          button.querySelector(".math-preview")?.dataset.fitScale || 1,
+        )),
+        betaWidth: Math.round(betaRect?.width || 0),
+        betaWeight: Number(betaButton?.dataset.customTileWeight || 0),
+        sectionWidth: Math.round(section?.getBoundingClientRect().width || 0),
+        firstRowCount: firstRow.length,
+        firstRowFill: gridRect && firstRow.length
+          ? (Math.max(...firstRow.map((rect) => rect.right)) - gridRect.left) / gridRect.width
+          : 0,
+        sectionBorderWidth: sectionStyle?.borderTopWidth || "",
+        listPaddingLeft: Number.parseFloat(listStyle?.paddingLeft || "999"),
+        listPaddingRight: Number.parseFloat(listStyle?.paddingRight || "999"),
+        version: library.version,
+        storedTiles: library.tiles?.length || 0,
+      };
+    })()`);
+    assert.equal(customTileLayout.count, 9);
+    assert.equal(customTileLayout.version, 3);
+    assert.equal(customTileLayout.storedTiles, 9);
+    assert.ok(
+      new Set(customTileLayout.widths).size >= 2,
+      JSON.stringify(customTileLayout),
+    );
+    assert.ok(
+      customTileLayout.widths.every((width) => width < customTileLayout.sectionWidth),
+      JSON.stringify(customTileLayout),
+    );
+    assert.ok(
+      customTileLayout.tops.some(
+        (top, index) => customTileLayout.tops.indexOf(top) !== index,
+      ),
+      JSON.stringify(customTileLayout),
+    );
+    assert.ok(customTileLayout.firstRowCount >= 4, JSON.stringify(customTileLayout));
+    assert.ok(customTileLayout.firstRowFill >= 0.82, JSON.stringify(customTileLayout));
+    assert.equal(customTileLayout.betaWeight, 1, JSON.stringify(customTileLayout));
+    assert.ok(customTileLayout.betaWidth <= 32, JSON.stringify(customTileLayout));
+    assert.ok(
+      customTileLayout.scales.every((scale) => scale >= 0.799 && scale <= 1.201),
+      JSON.stringify(customTileLayout),
+    );
+    assert.equal(customTileLayout.sectionBorderWidth, "0px");
+    assert.ok(customTileLayout.listPaddingLeft <= 4, JSON.stringify(customTileLayout));
+    assert.ok(customTileLayout.listPaddingRight <= 4, JSON.stringify(customTileLayout));
+
+    const renamedDefaultSection = await evaluate(`new Promise((resolve) => {
+      document.querySelector(
+        '.custom-formula-section:first-child .custom-formula-section-actions button[title="重命名分区"]',
+      )?.click();
+      setTimeout(() => {
+        const input = document.querySelector(".custom-formula-section-editor input");
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        setter?.call(input, "基础");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+        setTimeout(() => {
+          document.querySelector(".custom-formula-section-editor .icon-button")?.click();
+          setTimeout(() => {
+            const library = JSON.parse(
+              localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+            );
+            resolve({
+              name: library.sections?.[0]?.name || "",
+              header: document.querySelector(
+                ".custom-formula-section:first-child .custom-formula-section-select strong",
+              )?.textContent || "",
+            });
+          }, 80);
+        }, 30);
+      }, 50);
+    })`);
+    assert.equal(renamedDefaultSection.name, "基础");
+    assert.equal(renamedDefaultSection.header, "基础");
+
+    const createdSection = await evaluate(`new Promise((resolve) => {
+      document.querySelector(".create-formula-tile-section")?.click();
+      setTimeout(() => {
+        const input = document.querySelector(".custom-formula-section-editor input");
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        setter?.call(input, "G1");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+        setTimeout(() => {
+          document.querySelector(".custom-formula-section-editor .icon-button")?.click();
+          setTimeout(() => {
+            const library = JSON.parse(
+              localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+            );
+            resolve({
+              sectionCount: document.querySelectorAll(".custom-formula-section").length,
+              storedSections: library.sections?.length || 0,
+              sectionName: library.sections?.at(-1)?.name || "",
+            });
+          }, 80);
+        }, 30);
+      }, 50);
+    })`);
+    assert.equal(createdSection.sectionCount, 2);
+    assert.equal(createdSection.storedSections, 2);
+    assert.equal(createdSection.sectionName, "G1");
+
+    await openContextMenu('.formula-tile-button[data-formula-tile-latex="a^2+b^2=c^2"]');
+    const customizedTile = await evaluate(`new Promise((resolve) => {
+      document.querySelector('[data-custom-tile-color="#ca6f7b"]')?.click();
+      const select = document.querySelector(".custom-tile-section-picker select");
+      const option = select?.querySelector("option:last-child");
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      )?.set;
+      if (select && option) {
+        setter?.call(select, option.value);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      setTimeout(() => {
+        const tile = document.querySelector(
+          '.formula-tile-button[data-formula-tile-latex="a^2+b^2=c^2"]',
+        );
+        const library = JSON.parse(
+          localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+        );
+        const stored = library.tiles?.find((item) => item.latex === "a^2+b^2=c^2");
+        resolve({
+          color: stored?.color || "",
+          sectionId: stored?.sectionId || "",
+          renderedSectionId: tile?.closest(".custom-formula-section")?.dataset.customSectionId || "",
+          hasColorClass: tile?.classList.contains("has-custom-color") || false,
+        });
+      }, 100);
+    })`);
+    assert.equal(customizedTile.color, "#ca6f7b");
+    assert.ok(customizedTile.sectionId);
+    assert.equal(customizedTile.sectionId, customizedTile.renderedSectionId);
+    assert.equal(customizedTile.hasColorClass, true);
+    await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+
+    await openContextMenu('.formula-tile-button[data-formula-tile-latex="a^2+b^2=c^2"]');
+    await assignCurrentContext("KeyP", "p", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    const afterCustomTile = await pressInFormula("KeyP", "p", {
+      ctrlKey: true,
+      altKey: true,
+    });
+    assert.match(afterCustomTile, /a\^2\+b\^2=c\^2/);
+
+    const deletedG1 = await evaluate(`new Promise((resolve) => {
+      const section = Array.from(document.querySelectorAll(".custom-formula-section"))
+        .find((item) => item.querySelector(".custom-formula-section-select strong")?.textContent === "G1");
+      section?.querySelector(".custom-formula-section-actions button.is-danger")?.click();
+      setTimeout(() => {
+        const confirmationVisible = Boolean(
+          section?.querySelector(".custom-formula-section-delete-copy"),
+        );
+        section?.querySelector(".custom-formula-section-actions button.is-danger")?.click();
+        setTimeout(() => {
+          const library = JSON.parse(
+            localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+          );
+          const hotkeys = JSON.parse(
+            localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}"
+          );
+          const bindings = hotkeys.state?.bindings || [];
+          resolve({
+            confirmationVisible,
+            sectionNames: (library.sections || []).map((item) => item.name),
+            tileExists: (library.tiles || []).some(
+              (item) => item.latex === "a^2+b^2=c^2",
+            ),
+            bindingExists: bindings.some(
+              (binding) => binding.target?.command?.insertTemplate === "a^2+b^2=c^2",
+            ),
+          });
+        }, 100);
+      }, 50);
+    })`);
+    assert.equal(deletedG1.confirmationVisible, true);
+    assert.deepEqual(deletedG1.sectionNames, ["基础"]);
+    assert.equal(deletedG1.tileExists, false);
+    assert.equal(deletedG1.bindingExists, false);
+
+    const deletedDefaultSection = await evaluate(`new Promise((resolve) => {
+      const section = document.querySelector(".custom-formula-section");
+      section?.querySelector(".custom-formula-section-actions button.is-danger")?.click();
+      setTimeout(() => {
+        section?.querySelector(".custom-formula-section-actions button.is-danger")?.click();
+        setTimeout(() => {
+          const library = JSON.parse(
+            localStorage.getItem("visualtex-custom-formula-tiles") || "{}"
+          );
+          resolve({
+            sections: library.sections?.length || 0,
+            tiles: library.tiles?.length || 0,
+            renderedSections: document.querySelectorAll(".custom-formula-section").length,
+            saveDisabled: document.querySelector(".save-current-formula-tile")?.disabled ?? false,
+            saveCopy: document.querySelector(".save-current-formula-tile")?.textContent || "",
+          });
+        }, 100);
+      }, 50);
+    })`);
+    assert.equal(deletedDefaultSection.sections, 0);
+    assert.equal(deletedDefaultSection.tiles, 0);
+    assert.equal(deletedDefaultSection.renderedSections, 0);
+    assert.equal(deletedDefaultSection.saveDisabled, true);
+    assert.match(deletedDefaultSection.saveCopy, /新建分区|Create a section/);
+
+    console.log("Formula hotkey regression passed");
+  }, { windowSize: "1440,1000" });
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

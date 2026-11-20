@@ -1,0 +1,151 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage{xcolor}
+\usepackage[normalem]{ulem}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{mwe}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\pair}[2]{#1 and #2}
+\newenvironment{custombox}{\begin{quote}}{\end{quote}}
+\newtheorem{theorem}{Theorem}
+
+\title{VisualTeX Document Import Coverage}
+\author{VisualTeX}
+\date{2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This file is compiled by XeLaTeX and parsed by the VisualTeX Word document importer.
+\end{abstract}
+
+\section[Short title]{Common text and inline structures}
+Plain text with \textbf{bold}, \textit{italic}, \emph{emphasis},
+\underline{underline}, \sout{strike}, \texttt{inline code}, and
+\verb|a_b%$| literal content.
+
+A hyperlink is \href{https://example.com}{Example}, a URL is
+\url{https://example.com}, and this sentence has a footnote\footnote{A visible note.}.
+Colored and transformed content: \textcolor{red}{red text},
+\colorbox{yellow}{boxed text}, \fcolorbox{black}{white}{framed text},
+\scalebox{1.1}{scaled text}, \resizebox{3cm}{!}{resized text}, and
+\rotatebox{2}{rotated text}.
+
+The macros expand to $x\in\R$ and \pair{left}{right}.
+
+\section{Lists, quotations, and code}
+\begin{itemize}
+  \item First bullet with $a+b$.
+  \item Second bullet.
+\end{itemize}
+
+\begin{enumerate}[label=(\alph*)]
+  \item First numbered item.
+  \item Second numbered item.
+\end{enumerate}
+
+\begin{description}
+  \item[Term] A description-list definition.
+\end{description}
+
+\begin{quote}
+Quoted text with \textbf{formatting} and inline formula $q=1$.
+\end{quote}
+
+\begin{verbatim}
+value_1 = 20 % literal comment
+\end{verbatim}
+
+\begin{lstlisting}
+print("$not_math$")
+\end{lstlisting}
+
+\section{Mathematics}
+Inline math $E=mc^2$ and \(\alpha+\beta=\gamma\).
+
+\[
+\begin{cases}
+x^2, & x>0,\\
+0, & x\le 0
+\end{cases}
+\]
+
+\begin{equation}
+F=ma
+\end{equation}
+
+\begin{align}
+a+b &= c,\\
+d &= e+f.
+\end{align}
+
+\begin{gather}
+x=1,\\
+y=2.
+\end{gather}
+
+\begin{multline}
+p+q+r+s+t\\
+=u+v+w.
+\end{multline}
+
+\begin{flalign}
+m&=n&&
+\end{flalign}
+
+\begin{alignat}{2}
+a&=b &\qquad c&=d
+\end{alignat}
+
+\begin{eqnarray}
+r&=&s
+\end{eqnarray}
+
+\section{Tables, figures, and layout}
+\begin{table}
+\centering
+\begin{tabular}{cc}
+\toprule
+Name & Value\\
+\midrule
+Alpha & $\alpha$\\
+Beta & $\beta$\\
+\bottomrule
+\end{tabular}
+\caption{A small editable table.}
+\end{table}
+
+\begin{figure}
+\centering
+\includegraphics[width=2cm]{example-image-a}
+\caption{A figure placeholder test.}
+\end{figure}
+
+\begin{minipage}[t]{0.45\textwidth}
+Minipage body with formula $z=3$.
+\end{minipage}
+
+\begin{theorem}[Coverage theorem]
+Every supported visible structure is preserved or predictably degraded.
+\end{theorem}
+
+\begin{custombox}
+Custom environment body with $u+v$.
+\end{custombox}
+
+\section{External resources and bibliography}
+\input{document_import_input_fragment}
+\include{document_import_include_fragment}
+
+\begin{thebibliography}{9}
+\bibitem[Knuth84]{knuth}
+Donald Knuth, \emph{The TeXbook}.
+\end{thebibliography}
+
+\end{document}

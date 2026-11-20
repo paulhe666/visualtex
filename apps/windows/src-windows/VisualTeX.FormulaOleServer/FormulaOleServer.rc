@@ -1,0 +1,5 @@
+#include "resource.h"
+
+IDR_FORMULAOLESERVER REGISTRY "FormulaOleServer.rgs"
+IDR_FORMULAOLEOBJECT REGISTRY "FormulaOleObject.rgs"
+1 TYPELIB "VisualTeX.FormulaOleServer.tlb"

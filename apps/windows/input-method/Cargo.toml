@@ -1,0 +1,21 @@
+# VisualTeX's Windows input method (see README.md):
+# tip: the TSF text input processor that types formulas, loaded into the thread of a field for
+# the time of a formula.
+[workspace]
+resolver = "2"
+members = ["tip"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-core = "0.61"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"

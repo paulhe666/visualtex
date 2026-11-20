@@ -1,0 +1,147 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Platforms>x86;x64</Platforms>
+    <PlatformTarget Condition="'$(Platform)' == 'x86'">x86</PlatformTarget>
+    <PlatformTarget Condition="'$(Platform)' != 'x86'">x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyName>VisualTeX.WordVsto</AssemblyName>
+    <RootNamespace>VisualTeX.WordVsto</RootNamespace>
+    <ComVisible>true</ComVisible>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OfficeMathFontRoot>$(MSBuildThisFileDirectory)..\artifacts\office-fonts</OfficeMathFontRoot>
+    <OfficeMathFontPrepareScript>$(MSBuildThisFileDirectory)..\..\scripts\prepare_windows_office_math_font.ps1</OfficeMathFontPrepareScript>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="WordNativeOmmlSemanticComparer.cs" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Management" />
+    <Reference Include="Microsoft.CSharp" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeErrorText.cs" Link="OfficeErrorText.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeFormulaShortcutKeyboardHook.cs" Link="OfficeFormulaShortcutKeyboardHook.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\VstoDependencyResolver.cs" Link="VstoDependencyResolver.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconProvider.cs" Link="RibbonIconProvider.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeDoubleClickGesture.cs" Link="OfficeDoubleClickGesture.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationHeadings.cs" Link="WordEquationHeadings.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberFormat.cs" Link="WordEquationNumberFormat.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberReferences.cs" Link="WordEquationNumberReferences.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationParagraphLayout.cs" Link="WordEquationParagraphLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationSequenceFields.cs" Link="WordEquationSequenceFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNativeCaptions.cs" Link="WordNativeCaptions.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedDisplayLayout.cs" Link="WordNumberedDisplayLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTableDisplay.cs" Link="WordNumberedTableDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDisplayColumns.cs" Link="WordDisplayColumns.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTrueDisplay.cs" Link="WordNumberedTrueDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTypingParagraphs.cs" Link="WordNumberedTypingParagraphs.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingCleanup.cs" Link="WordNumberingCleanup.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingFields.cs" Link="WordNumberingFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingPerformance.cs" Link="WordNumberingPerformance.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingReconcile.cs" Link="WordNumberingReconcile.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingState.cs" Link="WordNumberingState.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordVisibleEquationNumbers.cs" Link="WordVisibleEquationNumbers.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlBatchSources.cs" Link="WordOmmlBatchSources.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlDocuments.cs" Link="WordOmmlDocuments.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlEquationNumbers.cs" Link="WordOmmlEquationNumbers.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFingerprints.cs" Link="WordOmmlFingerprints.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFromMathMl.cs" Link="WordOmmlFromMathMl.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertion.cs" Link="WordOmmlInsertion.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlToMathMl.cs" Link="WordOmmlToMathMl.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlMathFontPolicy.cs" Link="WordOmmlMathFontPolicy.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OmmlMathMlProjection.cs" Link="OmmlMathMlProjection.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOleObjectAccessor.cs" Link="WordOleObjectAccessor.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordBulkImportParser.cs" Link="WordBulkImportParser.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostSelection.cs" Link="OfficeHostSelection.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeAutomationAgent.cs" Link="OfficeAutomationAgent.cs" />
+    <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
+    <COMReference Include="Extensibility">
+      <Guid>{AC0714F2-3D04-11D1-AE7D-00A0C90F26F4}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>primary</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="Microsoft Office 16.0 Object Library">
+      <Guid>{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}</Guid>
+      <VersionMajor>2</VersionMajor>
+      <VersionMinor>8</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>primary</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <PackageReference Include="Microsoft.Office.Interop.Word" Version="15.0.4797.1004" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Content Include="$(OfficeMathFontRoot)\latinmodern-math.otf" Link="latinmodern-math.otf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt" Link="GUST-FONT-LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(OfficeMathFontRoot)\README-Latin-Modern-Math.txt" Link="README-Latin-Modern-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Latin Modern Math with TrueType outlines (office-fonts/README-VisualTeX-Latin-Modern-Math.txt):
+         the font Word equations use, because Word's PDF export embeds TrueType math only. -->
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\VisualTeXLatinModernMath.ttf" Link="VisualTeXLatinModernMath.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-VisualTeX-Latin-Modern-Math.txt" Link="README-VisualTeX-Latin-Modern-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The OMML Font menu's Times-style faces, TrueType for the same reason:
+         TeX Gyre Termes Math converted (office-fonts/README-VisualTeX-TeX-Gyre-Termes-Math.txt)
+         and the STIX project's own TrueType STIX Two Math (office-fonts/README-STIX-Two-Math.txt). -->
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\VisualTeXTeXGyreTermesMath.ttf" Link="VisualTeXTeXGyreTermesMath.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-VisualTeX-TeX-Gyre-Termes-Math.txt" Link="README-VisualTeX-TeX-Gyre-Termes-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\STIXTwoMath-Regular.ttf" Link="STIXTwoMath-Regular.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-STIX-Two-Math.txt" Link="README-STIX-Two-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\STIX-Two-Math-OFL.txt" Link="STIX-Two-Math-OFL.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <Import Project="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCore.projitems" />
+  <Target Name="EnsureOfficeMathFontPrepared" BeforeTargets="PrepareForBuild">
+    <Exec
+      Condition="!Exists('$(OfficeMathFontRoot)\latinmodern-math.otf') Or !Exists('$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt')"
+      Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(OfficeMathFontPrepareScript)&quot;"
+      WorkingDirectory="$(MSBuildThisFileDirectory)..\.." />
+    <Error
+      Condition="!Exists('$(OfficeMathFontRoot)\latinmodern-math.otf')"
+      Text="Latin Modern Math is not prepared. Run scripts\prepare_windows_office_math_font.ps1 before building the Word VSTO project." />
+    <Error
+      Condition="!Exists('$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt')"
+      Text="The Latin Modern Math license file is missing. Run scripts\prepare_windows_office_math_font.ps1 before building the Word VSTO project." />
+  </Target>
+</Project>

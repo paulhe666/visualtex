@@ -1,0 +1,1392 @@
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
+using Range = Microsoft.Office.Interop.Word.Range;
+
+namespace VisualTeX.WordVsto;
+
+/// <summary>
+/// Updates MathType's native Word-field numbering without introducing a second
+/// VisualTeX sequence. Numbered MathType equations remain MACROBUTTON MTPlaceRef
+/// fields backed by MTChap/MTSec/MTEqn, and native ZEqnNum references keep their
+/// bookmark names while the visible number template is rewritten.
+/// </summary>
+internal static class MathTypeEquationNumbering
+{
+    private const string SectionBreakMarker = "MACROBUTTON MTEditEquationSection2";
+    private const string ReferenceBookmarkPrefix = "ZEqnNum";
+
+    internal sealed class PlaceRefRewritePlan
+    {
+        internal int FieldStart { get; set; }
+        internal int ParagraphStart { get; set; }
+        internal bool NumberOnLeft { get; set; }
+        internal WdColor CodeColor { get; set; } = WdColor.wdColorAutomatic;
+        internal string OleProgId { get; set; } = string.Empty;
+        internal string RewrittenFlatOpc { get; set; } = string.Empty;
+        internal string[] BookmarkNames { get; set; } = Array.Empty<string>();
+    }
+
+    internal sealed class PreparedNumberFormatRewrite : IDisposable
+    {
+        private Document? _staging;
+        private readonly List<Field?> _staged = new();
+
+        internal PreparedNumberFormatRewrite(
+            Document document,
+            string formatId,
+            IReadOnlyList<PlaceRefRewritePlan> placeRefPlans)
+        {
+            FormatId = formatId;
+            PlaceRefPlans = placeRefPlans;
+            ParagraphStarts = placeRefPlans.Select(plan => plan.ParagraphStart).Distinct().ToArray();
+            if (placeRefPlans.Count == 0) return;
+            if (WordFormulaMutationTransaction.IsActiveOnCurrentThread)
+                throw new InvalidOperationException("Native number fields must be prepared before the target undo record.");
+            try
+            {
+                _staging = document.Application.Documents.Add(Visible: false);
+                _staging.TrackRevisions = false;
+                Range? seed = null;
+                try
+                {
+                    seed = _staging.Content;
+                    seed.Text = string.Concat(Enumerable.Repeat("\uE101\r", placeRefPlans.Count));
+                }
+                finally { Release(seed); }
+                for (var index = 0; index < placeRefPlans.Count; index++) _staged.Add(null);
+                // Import owned one-character slots in reverse. Earlier offsets
+                // remain fixed; actual native Field owners survive later shifts.
+                // Creating OR writing another Word document during target Undo
+                // terminates that record, so all staging is preflight-only.
+                for (var index = placeRefPlans.Count - 1; index >= 0; index--)
+                {
+                    Range? insertion = null; Range? owner = null; Fields? fields = null;
+                    try
+                    {
+                        insertion = _staging.Range(index * 2, index * 2 + 1);
+                        if (insertion.Text != "\uE101") throw new InvalidDataException("Prepared native field slot lost its owned boundary.");
+                        WpsXmlInsertion.Insert(insertion, placeRefPlans[index].RewrittenFlatOpc);
+                        owner = _staging.Range(index * 2, index * 2 + 1);
+                        owner.Expand(WdUnits.wdParagraph);
+                        fields = WordFormulaHost.GetLocalFields(owner);
+                        for (var n = 1; n <= fields.Count; n++)
+                        {
+                            Field? field = null; Range? code = null;
+                            try
+                            {
+                                field = fields[n]; code = field.Code;
+                                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text)) continue;
+                                if (_staged[index] is not null) throw new InvalidDataException("A prepared field slot contains multiple native number owners.");
+                                _staged[index] = field; field = null;
+                            }
+                            finally { Release(code); Release(field); }
+                        }
+                        if (_staged[index] is null) throw new InvalidDataException("A prepared field slot has no native number owner.");
+                    }
+                    finally { Release(fields); Release(owner); Release(insertion); }
+                }
+            }
+            catch { Dispose(); throw; }
+            finally { document.Activate(); }
+        }
+
+        internal Range ReadStagedFieldRange(int index)
+        {
+            if (_staging is null || index < 0 || index >= _staged.Count || _staged[index] is null)
+                throw new InvalidOperationException("The prepared native field is no longer available.");
+            Range? code = null; Range? result = null;
+            try
+            {
+                code = _staged[index]!.Code; result = _staged[index]!.Result;
+                return _staging.Range(code.Start - 1, ResolvePlaceRefFieldEndExclusive(_staging, code, result));
+            }
+            finally { Release(result); Release(code); }
+        }
+
+        public void Dispose()
+        {
+            foreach (var field in _staged) Release(field);
+            _staged.Clear();
+            if (_staging is null) return;
+            try { _staging.Close(WdSaveOptions.wdDoNotSaveChanges); }
+            finally { Release(_staging); _staging = null; }
+        }
+
+        internal string FormatId { get; }
+        internal IReadOnlyList<PlaceRefRewritePlan> PlaceRefPlans { get; }
+        internal IReadOnlyList<int> ParagraphStarts { get; }
+        internal int Count => PlaceRefPlans.Count;
+    }
+
+    // bulkUpdate: evaluate every MathType number field in one ordered pass (see
+    // WordNumberingFieldCollection.BulkUpdate) instead of one Update per SEQ.
+    internal static int UpdateEquationNumbers(Document document, bool bulkUpdate = false)
+    {
+        var count =
+            UpdateNumberFields(
+                document,
+                out var hasPotentialEquationReferences,
+                bulkUpdate);
+        if (count > 0
+            && hasPotentialEquationReferences)
+            WordEquationReferenceFields.UpdateReferences(
+                document);
+        return count;
+    }
+
+    // Conversion restores compatibility aliases after all target hosts exist.
+    // Number fields must be ready first; the caller then refreshes and validates
+    // references after rebinding, through the same common reference mechanism.
+    internal static int UpdateNumberFields(
+        Document document) =>
+        UpdateNumberFields(
+            document,
+            out _);
+
+    private static int UpdateNumberFields(
+        Document document,
+        out bool hasPotentialEquationReferences,
+        bool bulkUpdate = false)
+    {
+        if (document is null)
+            throw new ArgumentNullException(
+                nameof(document));
+
+        // The old implementation scanned document.Fields once to count
+        // MTPlaceRef and a second time to update MTEqn/MTChap/MTSec, then always
+        // launched another reference scan. In large conversions that made the
+        // finalization cost grow with the whole document several times.
+        //
+        // Snapshot the exact MathType sequence Field objects during one field
+        // enumeration. Only update them after we have proved that at least one
+        // MTPlaceRef exists. This preserves the old malformed-document behavior
+        // (orphan sequence fields are not touched) while removing the duplicate
+        // global scan. Also skip reference refresh entirely when the document has
+        // no REF/GOTOBUTTON field at all.
+        WordNumberingFieldCollection? fields = null;
+        var sequenceFields =
+            new List<Field>();
+        var numberedEquationCount = 0;
+        hasPotentialEquationReferences = false;
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                using var entry = fields.TakeEntry(index);
+                var type = entry.Type;
+                if (type is
+                    WdFieldType.wdFieldRef
+                    or WdFieldType.wdFieldGoToButton)
+                {
+                    hasPotentialEquationReferences = true;
+                }
+
+                if (type != WdFieldType.wdFieldMacroButton
+                    && type != WdFieldType.wdFieldSequence)
+                    continue;
+
+                if (type ==
+                    WdFieldType.wdFieldMacroButton)
+                {
+                    if (MathTypeEquationReferences
+                        .IsMathTypePlaceRefCode(
+                            entry.Instruction))
+                        numberedEquationCount++;
+                    continue;
+                }
+
+                if (!IsMathTypeSequenceFieldCode(
+                        entry.Instruction))
+                    continue;
+
+                sequenceFields.Add(entry.TakeField());
+            }
+
+            if (numberedEquationCount == 0)
+                return 0;
+
+            if (bulkUpdate)
+                WordNumberingFieldCollection.BulkUpdate(document);
+            else
+                foreach (var sequenceField in
+                         sequenceFields)
+                    sequenceField.Update();
+
+            return numberedEquationCount;
+        }
+        finally
+        {
+            foreach (var sequenceField in
+                     sequenceFields)
+                Release(sequenceField);
+            fields?.Dispose();
+        }
+    }
+
+    internal static PreparedNumberFormatRewrite PrepareEquationNumberFormat(
+        Document document,
+        string? formatId)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        var resolvedFormatId = EquationNumberFormat.Resolve(formatId).Id;
+        var plans = CreatePlaceRefRewritePlans(document, resolvedFormatId);
+        if (plans.Count > 0)
+            _ = CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(resolvedFormatId));
+        return new PreparedNumberFormatRewrite(document, resolvedFormatId, plans);
+    }
+
+    internal static IReadOnlyList<int> ValidateEquationNumberFormat(
+        Document document,
+        string? formatId)
+    {
+        using var prepared = PrepareEquationNumberFormat(document, formatId);
+        return prepared.ParagraphStarts;
+    }
+
+    internal static int SetEquationNumberFormat(Document document, string? formatId)
+    {
+        using var prepared = PrepareEquationNumberFormat(document, formatId);
+        return SetEquationNumberFormat(document, prepared);
+    }
+
+    internal static int SetEquationNumberFormat(
+        Document document,
+        PreparedNumberFormatRewrite prepared,
+        Action<IReadOnlyList<int>>? beforeCounterRefresh = null)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (prepared is null) throw new ArgumentNullException(nameof(prepared));
+        if (prepared.Count == 0) return 0;
+        var inlineShapeCountBefore = ReadDocumentInlineShapeCount(document);
+        // Every native field was materialized before this target transaction.
+        // Reverse target order preserves each earlier exact field boundary.
+        for (var index = 0; index < prepared.PlaceRefPlans.Count; index++)
+        {
+            Range? staged = null;
+            try
+            {
+                staged = prepared.ReadStagedFieldRange(index);
+                ApplyPlaceRefRewritePlan(document, staged, prepared.PlaceRefPlans[index]);
+            }
+            finally { Release(staged); }
+        }
+        {
+
+            // A heading-aware switch may need MathType section state inserted after
+            // the visible MTPlaceRef templates have been rewritten. Re-read only
+            // lightweight paragraph positions; no Flat OPC is exported here.
+            beforeCounterRefresh?.Invoke(
+                CollectPlaceRefParagraphStartsForValidation(document));
+
+            var paragraphCountBefore = ReadDocumentParagraphCount(document);
+            foreach (var counter in CreateSectionCounterPlans(
+                         document,
+                         EquationNumberFormat.Resolve(prepared.FormatId))
+                     .OrderByDescending(item => item.Start))
+            {
+                Range? range = null;
+                try
+                {
+                    range = document.Range(counter.Start, counter.Start + counter.Before.Length);
+                    if (range.Text != counter.Before)
+                        throw new InvalidDataException("MathType section counter moved before its format update.");
+                    range.Text = counter.After;
+                    if (range.Text != counter.After)
+                        throw new InvalidDataException("Word did not retain the requested MathType section counter.");
+                }
+                finally { Release(range); }
+            }
+            UpdateEquationNumbers(document);
+            if (ReadDocumentParagraphCount(document) != paragraphCountBefore)
+                throw new InvalidDataException("MathType number-format rewrite changed the document paragraph count.");
+            if (ReadDocumentInlineShapeCount(document) != inlineShapeCountBefore)
+                throw new InvalidDataException("MathType number-format rewrite changed the Equation.DSMT4 object count.");
+            return prepared.Count;
+        }
+    }
+
+    private sealed class SectionCounterPlan
+    {
+        internal int Start { get; set; }
+        internal string Before { get; set; } = string.Empty;
+        internal string After { get; set; } = string.Empty;
+    }
+
+    // Changing the visible MTPlaceRef template alone leaves native section
+    // restarts active in continuous mode. Keep the entire native section field,
+    // its chapter/section state, formatting and bookmarks; change only the
+    // nested equation counter's restart/current switch for the chosen scope.
+    private static List<SectionCounterPlan> CreateSectionCounterPlans(Document document, EquationNumberFormat format)
+    {
+        var plans = new List<SectionCounterPlan>();
+        WordNumberingFieldCollection? fields = null;
+        var previousChapter = 0;
+        var previousSection = 0;
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? owner = null;
+                Range? ownerCode = null;
+                Fields? nested = null;
+                try
+                {
+                    owner = fields[index];
+                    ownerCode = owner.Code;
+                    if (!Regex.IsMatch(ownerCode.Text ?? string.Empty,
+                            @"^\s*MACROBUTTON\s+MTEditEquationSection2\b", RegexOptions.IgnoreCase)) continue;
+                    nested = ownerCode.Fields;
+                    var counters = new Dictionary<string, (int Start, string Code)>(StringComparer.OrdinalIgnoreCase);
+                    for (var childIndex = 1 + WordFieldCode.OwnerEntries(nested, ownerCode); childIndex <= nested.Count; childIndex++)
+                    {
+                        Field? child = null;
+                        Range? childCode = null;
+                        try
+                        {
+                            child = nested[childIndex];
+                            if (!WordNumberingFieldCollection.IsCurrentField(child))
+                                continue;
+                            childCode = child.Code;
+                            var childText = childCode.Text ?? string.Empty;
+                            var match = Regex.Match(childText,
+                                @"^\s*SEQ\s+(MTEqn|MTChap|MTSec)\s", RegexOptions.IgnoreCase);
+                            if (!match.Success || childCode.StoryType != ownerCode.StoryType
+                                || childCode.Start <= ownerCode.Start || childCode.End >= ownerCode.End
+                                || counters.ContainsKey(match.Groups[1].Value))
+                                throw new InvalidDataException("MathType section state has ambiguous native counter ownership.");
+                            counters.Add(match.Groups[1].Value, (childCode.Start, childText));
+                        }
+                        finally { Release(childCode); Release(child); }
+                    }
+                    if (counters.Count != 3)
+                        throw new InvalidDataException("MathType section state must own equation, chapter and section counters.");
+                    var chapter = ReadSectionCounter(counters["MTChap"].Code, previousChapter);
+                    var section = ReadSectionCounter(counters["MTSec"].Code, previousSection);
+                    var restart = format.HeadingLevel > 0 && (chapter != previousChapter
+                        || format.HeadingLevel > 1 && section != previousSection);
+                    var equation = counters["MTEqn"];
+                    var operation = Regex.Matches(equation.Code, @"\\(?:r(?:\s+-?\d+)?|c)(?=\s|$)", RegexOptions.IgnoreCase);
+                    if (operation.Count != 1)
+                        throw new InvalidDataException("MathType section equation counter has no unique restart/current operation.");
+                    var after = restart ? @"\r" : @"\c";
+                    if (operation[0].Value != after)
+                        plans.Add(new SectionCounterPlan
+                        {
+                            Start = equation.Start + operation[0].Index,
+                            Before = operation[0].Value,
+                            After = after,
+                        });
+                    previousChapter = chapter;
+                    previousSection = section;
+                }
+                finally { Release(nested); Release(ownerCode); Release(owner); }
+            }
+            return plans;
+        }
+        finally { Release(fields); }
+    }
+
+    private static int ReadSectionCounter(string code, int previous)
+    {
+        var restart = Regex.Match(code, @"\\r(?:\s+(-?\d+))?(?=\s|$)", RegexOptions.IgnoreCase);
+        if (restart.Success) return restart.Groups[1].Success
+            ? int.Parse(restart.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
+        if (Regex.IsMatch(code, @"\\c(?=\s|$)", RegexOptions.IgnoreCase)) return previous;
+        if (Regex.IsMatch(code, @"\\s(?=\s|$)", RegexOptions.IgnoreCase))
+            throw new InvalidDataException("MathType section state uses an unsupported heading-dependent sequence switch.");
+        // SEQ increments by default; an explicit \\n has the same native meaning.
+        return checked(previous + 1);
+    }
+    private static List<PlaceRefRewritePlan> CreatePlaceRefRewritePlans(
+        Document document,
+        string? formatId)
+    {
+        var format = EquationNumberFormat.Resolve(formatId);
+        var starts = CollectPlaceRefCodeStarts(document)
+            .OrderByDescending(value => value)
+            .ToArray();
+        if (starts.Length == 0) return new List<PlaceRefRewritePlan>();
+
+        var template = MathTypeWordOpenXml.CreateVisualTeXNumberTemplate(format.Id);
+        var plans = new List<PlaceRefRewritePlan>(starts.Length);
+        foreach (var start in starts)
+        {
+            Field? placeRef = null;
+            try
+            {
+                placeRef = ResolvePlaceRefAtCodeStart(document, start)
+                    ?? throw new InvalidDataException(
+                        $"MathType MTPlaceRef at code position {start} disappeared before format preparation.");
+                plans.Add(CreatePlaceRefRewritePlan(
+                    document,
+                    placeRef,
+                    template));
+            }
+            finally { Release(placeRef); }
+        }
+        return plans;
+    }
+
+    internal static bool CanProveNoPlaceRefFields(Document document)
+    {
+        if (document is null) return false;
+        try
+        {
+            return WordDocumentXml.CanProveNoMathTypePlaceRefFields(
+                WordDocumentXml.Read(document));
+        }
+        catch
+        {
+            // This is only a negative fast path. Any incomplete export, XML error
+            // or ambiguous field representation falls back to exact COM scanning.
+            return false;
+        }
+    }
+
+    internal static bool TryInferDocumentFormat(
+        Document document,
+        int searchEnd,
+        out int start,
+        out string formatId)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+
+        start = int.MaxValue;
+        formatId = string.Empty;
+        // The earliest MathType number decides. Word's Find over field codes
+        // walks straight to each MTPlaceRef in document order, so only the
+        // paragraphs that contain one are inspected; snapshotting every field of
+        // the document cost tens of seconds beside hundreds of other numbers.
+        // A number found only from searchEnd on (where an earlier number of
+        // another family already starts) could not decide, so it is not sought.
+        Range? scope = null;
+        Range? search = null;
+        Range? unit = null;
+        TextRetrievalMode? retrieval = null;
+        Find? find = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            scope = document.Content;
+            var cursor = scope.Start;
+            var end = Math.Min(scope.End, searchEnd);
+            while (cursor < end)
+            {
+                Release(fields); fields = null;
+                Release(unit); unit = null;
+                Release(find); find = null;
+                Release(retrieval); retrieval = null;
+                Release(search);
+                search = scope.Duplicate;
+                search.SetRange(cursor, end);
+                retrieval = search.TextRetrievalMode;
+                retrieval.IncludeFieldCodes = true;
+                retrieval.IncludeHiddenText = true;
+                find = search.Find;
+                find.ClearFormatting();
+                find.Text = "MTPlaceRef";
+                find.Forward = true;
+                find.Wrap = WdFindWrap.wdFindStop;
+                find.Format = false;
+                find.MatchWildcards = false;
+                find.MatchCase = false;
+                find.MatchWholeWord = false;
+                find.MatchSoundsLike = false;
+                find.MatchAllWordForms = false;
+                bool found;
+                using (WordOperationMetrics.Measure("Numbering.Authority.InferMathType.Find"))
+                    found = find.Execute();
+                if (!found)
+                    return false;
+                using var hitMetric = WordOperationMetrics.Measure("Numbering.Authority.InferMathType.Hit");
+                unit = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                if (unit.End <= cursor || !unit.InStory(scope))
+                    throw new InvalidDataException("MathType number discovery did not advance its paragraph window.");
+                fields = WordFormulaHost.GetLocalFields(unit);
+                for (var index = 1; index <= fields.Count; index++)
+                {
+                    Release(result); result = null;
+                    Release(code); code = null;
+                    Release(field);
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldMacroButton)
+                        continue;
+                    if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction)
+                        || !MathTypeEquationReferences.IsMathTypePlaceRefCode(instruction))
+                        continue;
+                    result = field.Result;
+                    // MACROBUTTON has no field result (Result is empty at its
+                    // end): Word displays the instruction after the macro name,
+                    // nested numbers as their results. Read that visible number.
+                    if (!TryInferFormatFromVisiblePlaceRef(
+                            MathTypeEquationReferences.ReadVisibleNumberText(field),
+                            out formatId))
+                        continue;
+
+                    start = Math.Min(
+                        code!.Start,
+                        result.Start);
+                    return true;
+                }
+                cursor = unit.End;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(unit);
+            Release(find);
+            Release(retrieval);
+            Release(search);
+            Release(scope);
+        }
+    }
+
+    private static bool TryInferFormatFromVisiblePlaceRef(
+        string? text,
+        out string formatId)
+    {
+        formatId = string.Empty;
+        var match = Regex.Match(
+            text ?? string.Empty,
+            @"^\s*\(?\s*(?<a>[0-9]+)(?:(?<s1>[.\-])(?<b>[0-9]+))?(?:(?<s2>[.\-])(?<c>[0-9]+))?\s*\)?\s*$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return false;
+
+        if (!match.Groups["b"].Success)
+        {
+            formatId = EquationNumberFormat.ContinuousId;
+            return true;
+        }
+
+        if (!match.Groups["c"].Success)
+        {
+            formatId =
+                match.Groups["s1"].Value == "."
+                    ? EquationNumberFormat.Heading1DotId
+                    : EquationNumberFormat.Heading1DashId;
+            return true;
+        }
+
+        // MathType's two-level native template always uses chapter.section
+        // internally; the document preset controls only the final separator
+        // before MTEqn (1.1.1 versus 1.1-1).
+        if (match.Groups["s1"].Value != ".")
+            return false;
+        formatId =
+            match.Groups["s2"].Value == "."
+                ? EquationNumberFormat.Heading2DotId
+                : EquationNumberFormat.Heading2DashId;
+        return true;
+    }
+
+    internal static int CountPlaceRefFields(Document document)
+    {
+        if (document is null) return 0;
+        WordNumberingFieldCollection? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var count = 0;
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
+                code = field.Code;
+                if (MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    count++;
+            }
+            return count;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static IReadOnlyList<int> CollectPlaceRefParagraphStartsForValidation(Document document)
+    {
+        WordNumberingFieldCollection? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        Range? fieldRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        var starts = new List<int>();
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(paragraphRange);
+                paragraphRange = null;
+                Release(paragraph);
+                paragraph = null;
+                Release(paragraphs);
+                paragraphs = null;
+                Release(fieldRange);
+                fieldRange = null;
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
+                code = field.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    continue;
+                result = field.Result;
+                var fieldStart = code.Start - 1;
+                var fieldEnd = ResolvePlaceRefFieldEndExclusive(document, code, result);
+                fieldRange = document.Range(fieldStart, fieldEnd);
+                paragraphs = fieldRange.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidDataException(
+                        "MathType MTPlaceRef validation requires one owner paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range;
+                starts.Add(paragraphRange.Start);
+            }
+            return starts.Distinct().ToArray();
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(fieldRange);
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static List<int> CollectPlaceRefCodeStarts(Document document)
+    {
+        WordNumberingFieldCollection? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var starts = new List<int>();
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
+                code = field.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    continue;
+                starts.Add(code.Start);
+            }
+            return starts;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static Field? ResolvePlaceRefAtCodeStart(Document document, int codeStart)
+    {
+        Range? probe = null;
+        Fields? localFields = null;
+        Field? field = null;
+        Range? code = null;
+        Field? result = null;
+        try
+        {
+            // The character immediately before Field.Code.Start is the outer field
+            // begin marker. A one-character Range there exposes the containing
+            // MTPlaceRef plus its nested SEQ fields, so exact Code.Start matching
+            // resolves this field without repeatedly enumerating document.Fields.
+            if (codeStart > 0)
+            {
+                probe = document.Range(codeStart - 1, codeStart);
+                localFields = probe.Fields;
+                for (var index = 1; index <= localFields.Count; index++)
+                {
+                    Release(code);
+                    code = null;
+                    Release(field);
+                    field = localFields[index];
+                    if (!WordNumberingFieldCollection.IsCurrentField(field))
+                        continue;
+                    code = field.Code;
+                    if (code.Start != codeStart
+                        || !MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                        continue;
+                    result = field;
+                    field = null;
+                    return result;
+                }
+            }
+        }
+        catch (Exception ignored)
+        {
+            // Local field discovery is only a performance path. Preserve the exact
+            // whole-document lookup below for unusual Word range/field ownership.
+            IgnoredErrors.Ignore(ignored);
+        }
+        finally
+        {
+            Release(code);
+            code = null;
+            Release(field);
+            field = null;
+            Release(localFields);
+            localFields = null;
+            Release(probe);
+            probe = null;
+        }
+
+        WordNumberingFieldCollection? fields = null;
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                code = field.Code;
+                if (code.Start != codeStart
+                    || !MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                    continue;
+                result = field;
+                field = null;
+                break;
+            }
+            return result;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static PlaceRefRewritePlan CreatePlaceRefRewritePlan(
+        Document document,
+        Field placeRef,
+        MathTypeWordOpenXml.NumberTemplate template)
+    {
+        Range? code = null;
+        Range? result = null;
+        Range? fieldRange = null;
+        Range? paragraphRange = null;
+        Range? shapeRange = null;
+        Range? separator = null;
+        Range? bookmarkRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        OLEFormat? oleFormat = null;
+        Microsoft.Office.Interop.Word.Font? codeFont = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        var bookmarkNames = new List<string>();
+        var previousShowHidden = false;
+        try
+        {
+            code = placeRef.Code;
+            result = placeRef.Result;
+            var fieldStart = code.Start - 1;
+            var fieldEnd = ResolvePlaceRefFieldEndExclusive(
+                document,
+                code,
+                result);
+            fieldRange = document.Range(fieldStart, fieldEnd);
+            paragraphs = fieldRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef rewrite requires one owner paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            shapes = paragraphRange.InlineShapes;
+            if (shapes.Count != 1)
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef owner paragraph must contain exactly one Equation.DSMT4 object.");
+            shape = shapes[1];
+            shapeRange = shape.Range;
+
+            bool numberOnLeft;
+            if (fieldEnd <= shapeRange.Start)
+            {
+                numberOnLeft = true;
+                separator = document.Range(fieldEnd, shapeRange.Start);
+            }
+            else if (fieldStart >= shapeRange.End)
+            {
+                numberOnLeft = false;
+                separator = document.Range(shapeRange.End, fieldStart);
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef overlaps its Equation.DSMT4 object.");
+            }
+            if (!string.Equals(separator.Text, "\t", StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef is not separated from its Equation.DSMT4 object by exactly one native tab.");
+
+            oleFormat = shape.OLEFormat;
+            var progId = WordOleObjectAccessor.ReadProgId(oleFormat);
+            if (!progId.StartsWith("Equation.DSMT4", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    $"MathType MTPlaceRef owner is not Equation.DSMT4: '{progId}'.");
+
+            codeFont = code.Font;
+            var codeColor = codeFont.Color;
+            if (codeColor != WdColor.wdColorAutomatic && (int)codeColor < 0)
+                codeColor = WdColor.wdColorAutomatic;
+
+            bookmarks = document.Bookmarks;
+            try
+            {
+                previousShowHidden = bookmarks.ShowHidden;
+                bookmarks.ShowHidden = true;
+            }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmarkRange);
+                bookmarkRange = null;
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                if (!bookmark.Name.StartsWith(
+                        ReferenceBookmarkPrefix,
+                        StringComparison.OrdinalIgnoreCase)
+                    && !MathTypeWordOpenXml.IsVisualTeXNumberAlias(bookmark.Name))
+                    continue;
+                bookmarkRange = bookmark.Range;
+                if (bookmarkRange.Start < fieldStart
+                    || bookmarkRange.End > fieldEnd)
+                    continue;
+                bookmarkNames.Add(bookmark.Name);
+            }
+
+            var sourceFlatOpc = fieldRange.WordOpenXML;
+            var rewrittenFlatOpc = RewritePlaceRefFlatOpcWithTransientRetry(
+                document,
+                fieldStart,
+                fieldEnd,
+                sourceFlatOpc,
+                template);
+            return new PlaceRefRewritePlan
+            {
+                FieldStart = fieldStart,
+                ParagraphStart = paragraphRange.Start,
+                NumberOnLeft = numberOnLeft,
+                CodeColor = codeColor,
+                OleProgId = progId,
+                RewrittenFlatOpc = rewrittenFlatOpc,
+                BookmarkNames = bookmarkNames.ToArray(),
+            };
+        }
+        finally
+        {
+            if (bookmarks is not null)
+            {
+                try { bookmarks.ShowHidden = previousShowHidden; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(codeFont);
+            Release(oleFormat);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(separator);
+            Release(fieldRange);
+            Release(result);
+            Release(code);
+        }
+    }
+
+    private static string RewritePlaceRefFlatOpcWithTransientRetry(
+        Document document,
+        int fieldStart,
+        int fieldEnd,
+        string sourceFlatOpc,
+        MathTypeWordOpenXml.NumberTemplate template)
+    {
+        try
+        {
+            return MathTypeWordOpenXml.RewriteMathTypePlaceRefFieldFlatOpc(
+                sourceFlatOpc,
+                template);
+        }
+        catch (InvalidDataException error) when (string.Equals(
+                   error.Message,
+                   "MathType MTPlaceRef field package must contain exactly one owner paragraph; found 0.",
+                   StringComparison.Ordinal))
+        {
+            Field? rebound = null;
+            Range? code = null;
+            Range? result = null;
+            Range? retryRange = null;
+            try
+            {
+                rebound = ResolvePlaceRefAtCodeStart(document, fieldStart + 1)
+                    ?? throw new InvalidDataException(
+                        $"MathType MTPlaceRef at {fieldStart} disappeared before its Flat OPC retry.",
+                        error);
+                code = rebound.Code;
+                result = rebound.Result;
+                var retryEnd = ResolvePlaceRefFieldEndExclusive(document, code, result);
+                if (code.Start - 1 != fieldStart || retryEnd != fieldEnd)
+                    throw new InvalidDataException(
+                        $"MathType MTPlaceRef at {fieldStart} moved before its Flat OPC retry.",
+                        error);
+                retryRange = document.Range(fieldStart, retryEnd);
+                var retryFlatOpc = retryRange.WordOpenXML;
+                var rewritten = MathTypeWordOpenXml.RewriteMathTypePlaceRefFieldFlatOpc(
+                    retryFlatOpc,
+                    template);
+                WordDoubleClickHook.TraceMessage(
+                    $"number-format-mathtype-flatopc-retry-success field={fieldStart}:{fieldEnd}");
+                return rewritten;
+            }
+            catch (Exception retryError) when (!ReferenceEquals(retryError, error))
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"number-format-mathtype-flatopc-retry-failed field={fieldStart}:{fieldEnd} error={retryError.GetType().Name}:{retryError.Message}");
+                throw;
+            }
+            finally
+            {
+                Release(retryRange);
+                Release(result);
+                Release(code);
+                Release(rebound);
+            }
+        }
+    }
+
+    private static void ApplyPlaceRefRewritePlan(
+        Document document,
+        Range preparedField,
+        PlaceRefRewritePlan plan)
+    {
+        Field? current = null;
+        Field? rebuilt = null;
+        Range? code = null;
+        Range? result = null;
+        Range? fieldRange = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            current = ResolvePlaceRefAtCodeStart(
+                    document,
+                    plan.FieldStart + 1)
+                ?? throw new InvalidDataException(
+                    $"MathType MTPlaceRef at {plan.FieldStart} disappeared before its OpenXML transaction.");
+            code = current.Code;
+            result = current.Result;
+            var fieldEnd = ResolvePlaceRefFieldEndExclusive(
+                document,
+                code,
+                result);
+            fieldRange = document.Range(plan.FieldStart, fieldEnd);
+            fieldRange.FormattedText = preparedField;
+
+            Release(fieldRange);
+            fieldRange = null;
+            Release(result);
+            result = null;
+            Release(code);
+            code = null;
+            Release(current);
+            current = null;
+
+            rebuilt = ResolvePlaceRefAtCodeStart(
+                    document,
+                    plan.FieldStart + 1)
+                ?? throw new InvalidDataException(
+                    $"Word did not materialize the rebuilt MathType MTPlaceRef at {plan.FieldStart}.");
+            try { rebuilt.ShowCodes = false; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            code = rebuilt.Code;
+            font = code.Font;
+            font.Color = plan.CodeColor;
+            RestoreNativeBookmarkRanges(
+                document,
+                rebuilt,
+                plan.BookmarkNames);
+            ValidatePlaceRefLayout(
+                document,
+                rebuilt,
+                plan,
+                requireNativeFieldEnd: true);
+        }
+        finally
+        {
+            Release(font);
+            Release(fieldRange);
+            Release(result);
+            Release(code);
+            Release(rebuilt);
+            Release(current);
+        }
+    }
+
+    private static void ReplacePlaceRefRangeFromFlatOpc(
+        Document stagingDocument,
+        Range targetRange,
+        string fieldFlatOpc)
+    {
+        Range? stagingContent = null;
+        Range? insertion = null;
+        Range? candidateCode = null;
+        Range? stagedCode = null;
+        Range? stagedResult = null;
+        Range? stagedFieldRange = null;
+        Fields? fields = null;
+        Field? candidate = null;
+        Field? stagedField = null;
+        try
+        {
+            stagingContent = stagingDocument.Content;
+            stagingContent.Text = string.Empty;
+            Release(stagingContent);
+            stagingContent = stagingDocument.Content;
+            insertion = stagingDocument.Range(
+                stagingContent.Start,
+                stagingContent.Start);
+            WpsXmlInsertion.Insert(insertion, fieldFlatOpc);
+
+            fields = stagingDocument.Fields;
+            var placeRefCount = 0;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(candidateCode);
+                candidateCode = null;
+                Release(candidate);
+                candidate = fields[index];
+                candidateCode = candidate.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(
+                        candidateCode.Text))
+                    continue;
+                placeRefCount++;
+                if (stagedField is null)
+                {
+                    stagedField = candidate;
+                    candidate = null;
+                }
+            }
+            if (placeRefCount != 1 || stagedField is null)
+                throw new InvalidDataException(
+                    $"MathType staging document materialized {placeRefCount} MTPlaceRef fields instead of one.");
+
+            stagedCode = stagedField.Code;
+            stagedResult = stagedField.Result;
+            var stagedStart = stagedCode.Start - 1;
+            var stagedEnd = ResolvePlaceRefFieldEndExclusive(
+                stagingDocument,
+                stagedCode,
+                stagedResult);
+            stagedFieldRange = stagingDocument.Range(
+                stagedStart,
+                stagedEnd);
+
+            // Assigning only the exact staged field range avoids the paragraph
+            // split caused by inserting a Flat OPC <w:p> wrapper directly into a
+            // live MTDisplayEquation paragraph. This is pure Word automation and
+            // does not load or call MathType.
+            targetRange.FormattedText = stagedFieldRange;
+        }
+        finally
+        {
+            Release(stagedFieldRange);
+            Release(stagedResult);
+            Release(stagedCode);
+            Release(stagedField);
+            Release(candidateCode);
+            Release(candidate);
+            Release(fields);
+            Release(insertion);
+            Release(stagingContent);
+        }
+    }
+
+    private static void RestoreNativeBookmarkRanges(
+        Document document,
+        Field placeRef,
+        IReadOnlyList<string> bookmarkNames)
+    {
+        if (bookmarkNames.Count == 0) return;
+        Range? visibleRange = null;
+        try
+        {
+            if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
+                    document,
+                    placeRef,
+                    out visibleRange)
+                || visibleRange is null)
+                throw new InvalidDataException(
+                    "MathType MTPlaceRef has no visible range for its ZEqnNum bookmark.");
+
+            foreach (var name in bookmarkNames)
+                MathTypeEquationReferences.BindNumberAlias(document, visibleRange, name);
+        }
+        finally
+        {
+            Release(visibleRange);
+        }
+    }
+
+    private static void ValidatePlaceRefLayout(
+        Document document,
+        Field placeRef,
+        PlaceRefRewritePlan plan,
+        bool requireNativeFieldEnd)
+    {
+        Range? code = null;
+        Range? result = null;
+        Range? fieldRange = null;
+        Range? paragraphRange = null;
+        Range? shapeRange = null;
+        Range? separator = null;
+        Range? bookmarkRange = null;
+        Range? visibleNumberRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        OLEFormat? oleFormat = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        var previousShowHidden = false;
+        try
+        {
+            code = placeRef.Code;
+            result = placeRef.Result;
+            var fieldStart = code.Start - 1;
+            if (fieldStart != plan.FieldStart)
+                throw new InvalidDataException(
+                    $"MathType MTPlaceRef moved from {plan.FieldStart} to {fieldStart}.");
+            var fieldEnd = ResolvePlaceRefFieldEndExclusive(
+                document,
+                code,
+                result);
+            if (requireNativeFieldEnd
+                && ReadDocumentCharacter(document, code.End) != '\u0015')
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef retained an outer separator/result instead of MathType's native field end.");
+
+            fieldRange = document.Range(fieldStart, fieldEnd);
+            paragraphs = fieldRange.Paragraphs;
+            if (paragraphs.Count != 1)
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef spans more than one paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (paragraphRange.Start != plan.ParagraphStart)
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef moved to another paragraph.");
+            shapes = paragraphRange.InlineShapes;
+            if (shapes.Count != 1)
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef owner paragraph changed its OLE object count.");
+            shape = shapes[1];
+            shapeRange = shape.Range;
+            oleFormat = shape.OLEFormat;
+            if (!string.Equals(
+                    WordOleObjectAccessor.ReadProgId(oleFormat),
+                    plan.OleProgId,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef changed the Equation.DSMT4 ProgID.");
+
+            if (plan.NumberOnLeft)
+            {
+                if (fieldEnd > shapeRange.Start)
+                    throw new InvalidDataException(
+                        "Rebuilt left MathType number moved after or into its equation object.");
+                separator = document.Range(fieldEnd, shapeRange.Start);
+            }
+            else
+            {
+                if (fieldStart < shapeRange.End)
+                    throw new InvalidDataException(
+                        "Rebuilt right MathType number moved before or into its equation object.");
+                separator = document.Range(shapeRange.End, fieldStart);
+            }
+            if (!string.Equals(separator.Text, "\t", StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "Rebuilt MathType number lost its single native tab separator.");
+
+            if (!MathTypeEquationReferences.TryGetVisibleNumberRange(
+                    document,
+                    placeRef,
+                    out visibleNumberRange)
+                || visibleNumberRange is null)
+                throw new InvalidDataException(
+                    "Rebuilt MathType MTPlaceRef has no visible number range.");
+
+            bookmarks = document.Bookmarks;
+            try
+            {
+                previousShowHidden = bookmarks.ShowHidden;
+                bookmarks.ShowHidden = true;
+            }
+            catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            foreach (var bookmarkName in plan.BookmarkNames)
+            {
+                if (!bookmarks.Exists(bookmarkName))
+                    throw new InvalidDataException(
+                        $"Rebuilt MathType MTPlaceRef lost native bookmark '{bookmarkName}'.");
+                Release(bookmarkRange);
+                bookmarkRange = null;
+                Release(bookmark);
+                bookmark = bookmarks[bookmarkName];
+                bookmarkRange = bookmark.Range;
+                Range? expected = null;
+                try
+                {
+                    expected = MathTypeEquationReferences.ResolveNumberAliasRange(document, visibleNumberRange, bookmarkName);
+                    if (bookmarkRange.Start != expected.Start || bookmarkRange.End != expected.End)
+                        throw new InvalidDataException($"Rebuilt MathType bookmark '{bookmarkName}' changed its exact number range.");
+                }
+                finally { Release(expected); }
+            }
+        }
+        finally
+        {
+            if (bookmarks is not null)
+            {
+                try { bookmarks.ShowHidden = previousShowHidden; } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+            }
+            Release(bookmarkRange);
+            Release(bookmark);
+            Release(bookmarks);
+            Release(visibleNumberRange);
+            Release(oleFormat);
+            Release(separator);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(fieldRange);
+            Release(result);
+            Release(code);
+        }
+    }
+
+    private static int ResolvePlaceRefFieldEndExclusive(
+        Document document,
+        Range code,
+        Range result)
+    {
+        var codeBoundary = ReadDocumentCharacter(document, code.End);
+        if (codeBoundary == '\u0015') return code.End + 1;
+        if (codeBoundary == '\u0014'
+            && ReadDocumentCharacter(document, result.End) == '\u0015')
+            return result.End + 1;
+        throw new InvalidDataException(
+            $"MathType MTPlaceRef has an invalid outer field boundary at code={code.End}, result={result.End}.");
+    }
+
+    private static char ReadDocumentCharacter(Document document, int position)
+    {
+        Range? probe = null;
+        try
+        {
+            if (position < document.Content.Start
+                || position >= document.Content.End)
+                return '\0';
+            probe = document.Range(position, position + 1);
+            var text = probe.Text ?? string.Empty;
+            return text.Length == 1 ? text[0] : '\0';
+        }
+        finally { Release(probe); }
+    }
+
+    private static int ReadDocumentParagraphCount(Document document)
+    {
+        Paragraphs? paragraphs = null;
+        try
+        {
+            paragraphs = document.Paragraphs;
+            return paragraphs.Count;
+        }
+        finally { Release(paragraphs); }
+    }
+
+    private static int ReadDocumentInlineShapeCount(Document document)
+    {
+        InlineShapes? shapes = null;
+        try
+        {
+            shapes = document.InlineShapes;
+            return shapes.Count;
+        }
+        finally { Release(shapes); }
+    }
+
+    private static bool IsMathTypeSequenceFieldCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        var normalized = code!
+            .Replace('\t', ' ')
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .TrimStart();
+        return normalized.StartsWith("SEQ MTEqn ", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("SEQ MTSec ", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("SEQ MTChap ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsMathTypeSectionBreakCode(string? code) =>
+        !string.IsNullOrWhiteSpace(code)
+        && code!.IndexOf(SectionBreakMarker, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static void Release(WordNumberingFieldCollection? value) => value?.Dispose();
+
+    private static void Release(object? value)
+    {
+        if (value is null || !Marshal.IsComObject(value)) return;
+        try { Marshal.ReleaseComObject(value); }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+    }
+}

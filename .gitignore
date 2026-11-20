@@ -1,9 +1,76 @@
+# JavaScript
 node_modules/
-dist/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/dist-office/
+apps/*/dist-office-macos/
+apps/*/dist-office-windows-ole/
+apps/*/dist-readme/
+apps/*/dist-ocr/
+.npm-cache/
 .vite/
+
+# Rust / Tauri
+apps/*/src-tauri/target/
+apps/*/src-tauri/gen/
+apps/*/src-tauri/binaries/*.exe
+apps/*/src-tauri/resources/windows-office/*.msi
+apps/*/src-tauri/resources/windows-office/*.sha256.json
+
+# Windows native builds
+apps/windows/src-windows/**/bin/
+apps/windows/src-windows/**/obj/
+apps/windows/src-windows/**/TestResults/
+apps/windows/src-windows/artifacts/
+apps/windows/WINDOWS-BUILD-OUTPUT/
+
+# Local acceptance/build output. Acceptance executables default to the OS temp
+# tree; these rules cover historical runs that used relative checkout paths.
+/artifacts/
+/%TEMP%/
+/NUL
+apps/windows/artifacts/
+apps/windows/build-logs/
+apps/*/.check-logs/
+apps/windows/Tempvisualtex-*/
+apps/windows/src-tauri/target-perf/
+apps/windows/src-tauri/src-tauri/
+apps/windows/src-tauri/resources/ocr-python/
+
+# OCR runtimes and caches
+apps/*/.cache/
+apps/*/ocr/.venv/
+apps/*/ocr/output/
+__pycache__/
+*.py[cod]
+
+# Generated Office resources
+apps/*/office/macos/icons/
+apps/*/office/macos/licenses/
+apps/*/office/macos/vendor/
+apps/*/office/macos/manifests/VisualTeX.*.xml
+apps/*/office/windows/ole/icons/
+apps/*/office/windows/ole/licenses/
+apps/*/office/windows/ole/vendor/
+apps/*/office/windows/ole/manifests/VisualTeX.*.xml
+
+# Scratch space of local sessions and tools
+/.cache/
+apps/*/.cache-*/
+apps/*/test-results/
+apps/windows/src-windows/**/bin-*/
+apps/windows/src-windows/**/obj-*/
+apps/windows/src-windows/**/ZzTmp*.cs
+apps/windows/scripts/*.dll
+apps/windows/scripts/*.exe
+
+# Local files
 .DS_Store
 *.log
-
-# Local Codex workspace skills and metadata
+.tmp-*
+~$*
 .agents/
 .codex/
+
+# The web edition's build (apps/web, served by Cloudflare from the repository root)
+/dist/

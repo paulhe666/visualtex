@@ -1,0 +1,336 @@
+using System.Runtime.InteropServices;
+using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
+using Range = Microsoft.Office.Interop.Word.Range;
+
+namespace VisualTeX.WordVsto;
+
+/// <summary>
+/// A representation change replaces one physical OLE, not a live paragraph's
+/// current/deleted history. All WordOpenXML preparation precedes the transaction:
+/// that Word getter can close its application-wide Custom UndoRecord.
+/// </summary>
+internal static class WordOleToOmmlReplacement
+{
+    internal sealed class Prepared : IDisposable
+    {
+        private readonly Document _document;
+        private Range? _source;
+        private MathTypeLocalEditScope? _owner;
+        private readonly string _fragment;
+        private readonly bool _display;
+        private readonly string? _retiredIdentityBookmark;
+        private WordMathTypeHostAdapter.NumberedScaffold? _numberScaffold;
+        private bool _applied;
+
+        internal Prepared(Document document, Range source, MathTypeLocalEditScope owner,
+            string fragment, bool display, string? retiredIdentityBookmark,
+            WordMathTypeHostAdapter.NumberedScaffold? numberScaffold)
+        {
+            _document = document;
+            _source = source;
+            _owner = owner;
+            _fragment = fragment;
+            _display = display;
+            _retiredIdentityBookmark = retiredIdentityBookmark;
+            _numberScaffold = numberScaffold;
+        }
+
+        internal Range Apply(Range selected)
+        {
+            if (_applied || _owner is null || _source is null)
+                throw new InvalidOperationException("The exact OLE replacement plan is no longer available.");
+            if (!selected.InStory(_source) || selected.Start != _source.Start || selected.End != _source.End)
+                throw new InvalidOperationException("The exact OLE source moved outside its prepared replacement plan.");
+
+            InlineShapes? sources = null;
+            InlineShape? source = null;
+            Range? exact = null;
+            Bookmarks? bookmarks = null;
+            Bookmark? locator = null;
+            Range? component = null;
+            OMaths? maths = null;
+            OMath? math = null;
+            var trackingPaused = false;
+            try
+            {
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-apply-enter");
+                sources = selected.InlineShapes;
+                if (sources.Count != 1)
+                    throw new InvalidDataException("The prepared replacement no longer owns one source OLE.");
+                source = sources[1];
+                exact = source.Range;
+                if (source.Type is not (WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                        or WdInlineShapeType.wdInlineShapeLinkedOLEObject)
+                    || exact.Start != selected.Start || exact.End != selected.End)
+                    throw new InvalidDataException("The prepared OLE source no longer has its exact physical boundary.");
+
+                // Earlier replacements in this same paragraph can change its
+                // right-hand text and remaining OLE count. Capture those LIVE
+                // witnesses now, without exporting XML or rereading native OLE.
+                if (_document.TrackRevisions)
+                {
+                    _document.TrackRevisions = false;
+                    trackingPaused = true;
+                }
+                _applied = true;
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-scaffold");
+                _numberScaffold?.Remove();
+                if (_display && _numberScaffold is null) RemoveDisplayLayoutWhitespace(selected);
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-scaffold");
+                _owner.CaptureReplacementBoundary(selected);
+                // OMML Font choice: the imported runs carry the chosen font (Prepare),
+                // which becomes the document math font before the import.
+                WordOmmlMathFontPolicy.ApplyPreferredToDocument(_document);
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
+                var wpsInline = OfficeHostEnvironment.IsWps && !_display;
+                if (OfficeHostEnvironment.IsWps) MoveWpsSelectionAwayFromEquations(_document);
+                WpsXmlInsertion.Replace(
+                    selected,
+                    wpsInline ? WordOmmlDocuments.AppendWpsInlineSentinel(_fragment) : _fragment);
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-import");
+                bookmarks = _document.Bookmarks;
+                if (!bookmarks.Exists(_owner.LocatorName))
+                    throw new InvalidOperationException("Word lost the exact OLE replacement boundary.");
+                locator = bookmarks[_owner.LocatorName];
+                component = locator.Range;
+                if (Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH") is { Length: > 0 } tracePath)
+                {
+                    try
+                    {
+                        File.WriteAllText(tracePath + ".ole-omml-fragment-" + DateTime.Now.Ticks + ".xml", _fragment);
+                        WordDoubleClickHook.TraceMessage(
+                            $"exact-ole-imported locator={component.Start}:{component.End} text={string.Join(",", (component.Text ?? string.Empty).Take(24).Select(c => ((int)c).ToString("X4")))}");
+                    }
+                    catch (Exception error) { WordDoubleClickHook.TraceMessage($"exact-ole-trace-failed {error.Message}"); }
+                }
+                if (OfficeHostEnvironment.IsWps)
+                    math = WpsImportedEquation(_document, component,
+                        "The OLE replacement did not materialize exactly one native OMath.");
+                else
+                {
+                    maths = component.OMaths;
+                    if (maths.Count != 1)
+                        throw new InvalidOperationException("The OLE replacement did not materialize exactly one native OMath.");
+                    math = maths[1];
+                }
+                if (wpsInline)
+                {
+                    WordOmmlDocuments.RemoveWpsInlineSentinel(math);
+                    Release(math); math = null;
+                    Release(component); component = locator.Range;
+                    math = WpsImportedEquation(_document, component,
+                        "The OLE replacement lost its native OMath in WPS.");
+                }
+                // As in ordinary native OMML insertion, a lone paragraph/cell
+                // formula may be promoted to display by Word. Forcing it back
+                // to inline makes Word add a typing space and another paragraph.
+                // Explicit display is authoritative; native inline promotion is
+                // not a reason to manufacture synthetic surrounding content.
+                if (_display && math.Type != WdOMathType.wdOMathDisplay)
+                    math.Type = WdOMathType.wdOMathDisplay;
+                // InsertXML already materialized the prepared OMML tree.
+                // BuildUp reparses literal runs and can replace fixed/styled
+                // delimiters with different structures; preserve the input tree.
+                Release(component); component = locator.Range;
+                _owner.VerifyReplacementBoundary(component);
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-boundary-check");
+                _owner.RestoreContainedBookmarks(component, _retiredIdentityBookmark);
+                _numberScaffold?.RestoreNumberBookmarks(_document, component);
+                _owner.RemoveLocator();
+                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-apply-complete");
+                return math.Range.Duplicate;
+            }
+            finally
+            {
+                // The prepared fragment carries its source revision envelope.
+                // This temporary setting prevents tracking the serialization as
+                // a second delete/insert, and is restored before native rollback.
+                try { if (trackingPaused) _document.TrackRevisions = true; }
+                finally
+                {
+                    Release(math); Release(maths); Release(component); Release(locator);
+                    Release(bookmarks); Release(exact); Release(source); Release(sources);
+                }
+            }
+        }
+
+        internal void VerifyRollback() => _owner?.VerifyRollback();
+
+        public void Dispose()
+        {
+            _numberScaffold?.Dispose(); _numberScaffold = null;
+            _owner?.Dispose(); _owner = null;
+            Release(_source); _source = null;
+        }
+    }
+
+    // MathType lays out an unnumbered display equation as TAB + object in its
+    // own paragraph (the numbered layout is the NumberedScaffold). Beside
+    // display OMML that tab makes Word move the equation after a manual line
+    // break, leaving an empty first line. Only tabs/spaces sharing the paragraph
+    // with the object alone are layout; any other text keeps the paragraph as is.
+    private static void RemoveDisplayLayoutWhitespace(Range selected)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? owner = null;
+        Range? left = null;
+        Range? right = null;
+        try
+        {
+            paragraphs = selected.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            owner = paragraph.Range;
+            left = selected.Duplicate;
+            left.SetRange(owner.Start, selected.Start);
+            right = selected.Duplicate;
+            right.SetRange(selected.End, Math.Max(selected.End, owner.End - 1));
+            if (!IsLayoutWhitespace(left.Text) || !IsLayoutWhitespace(right.Text)) return;
+            if (right.End > right.Start) right.Text = string.Empty;
+            if (left.End > left.Start) left.Text = string.Empty;
+            WordFormulaMutationTransaction.TraceBoundary(selected.Application, "exact-ole-display-layout-removed");
+        }
+        finally { Release(right); Release(left); Release(owner); Release(paragraph); Release(paragraphs); }
+    }
+
+    private static bool IsLayoutWhitespace(string? text) =>
+        (text ?? string.Empty).All(character => character is '\t' or ' ');
+
+    // While the selection is in an equation, WPS reports the equations next to it with other
+    // ranges: with the equation right before the converted object selected (or the caret at its
+    // end), the new equation's range also took the character before it and the import separator
+    // after it. During the import the caret waits where no equation touches it, the end of the
+    // document or else its start; the conversion restores the user's selection afterwards.
+    private static void MoveWpsSelectionAwayFromEquations(Document document)
+    {
+        Microsoft.Office.Interop.Word.Application? application = null;
+        Selection? selection = null;
+        Range? content = null;
+        try
+        {
+            content = document.Content;
+            var target = -1;
+            foreach (var candidate in new[] { content.End - 1, content.Start })
+            {
+                Range? probe = null;
+                OMaths? maths = null;
+                try
+                {
+                    probe = document.Range(Math.Max(content.Start, candidate - 1), Math.Min(content.End, candidate + 1));
+                    maths = probe.OMaths;
+                    if (maths.Count != 0) continue;
+                    target = candidate;
+                    break;
+                }
+                finally { Release(maths); Release(probe); }
+            }
+            application = document.Application;
+            selection = application.Selection;
+            WordDoubleClickHook.TraceMessage(
+                $"exact-ole-wps-selection {selection.Start}:{selection.End} -> {target}");
+            if (target >= 0 && (selection.Start != target || selection.End != target))
+                selection.SetRange(target, target);
+        }
+        catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+        finally { Release(selection); Release(application); Release(content); }
+    }
+
+    // The equation the WPS import made: the one found at the locator's start (the lookup the
+    // other WPS insertions use), which must lie inside the locator. A range WPS reports past the
+    // locator (see MoveWpsSelectionAwayFromEquations) fails the replacement instead of taking
+    // the neighbouring text or the import separator for the equation.
+    private static OMath WpsImportedEquation(Document document, Range locator, string failure)
+    {
+        var math = WordOmmlInsertion.FindMathAtPosition(document, locator.Start, locator.End)
+            ?? throw new InvalidOperationException(failure);
+        Range? range = null;
+        var inside = false;
+        try
+        {
+            range = math.Range;
+            WordDoubleClickHook.TraceMessage(
+                $"exact-ole-wps-equation locator={locator.Start}:{locator.End} equation={range.Start}:{range.End}");
+            inside = range.Start >= locator.Start && range.End <= locator.End;
+        }
+        finally
+        {
+            Release(range);
+            if (!inside) Release(math);
+        }
+        return inside ? math : throw new InvalidOperationException(failure);
+    }
+
+    internal static Prepared? Prepare(Document document, Range selected, string omml, bool display,
+        string? retiredIdentityBookmark = null, bool replaceMathTypeNumber = false)
+    {
+        if (selected.Start == selected.End) return null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? source = null;
+        MathTypeLocalEditScope? owner = null;
+        WordMathTypeHostAdapter.NumberedScaffold? numberScaffold = null;
+        try
+        {
+            shapes = selected.InlineShapes;
+            if (shapes.Count != 1) return null;
+            shape = shapes[1];
+            if (shape.Type is not (WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                or WdInlineShapeType.wdInlineShapeLinkedOLEObject)) return null;
+            source = shape.Range.Duplicate;
+            if (source.Start != selected.Start || source.End != selected.End
+                || !source.InStory(selected)) return null;
+
+            using var metric = WordOperationMetrics.Measure("OmmlExactOleReplacement.Prepare");
+            owner = MathTypeLocalEditScope.Capture(document, source);
+            if (replaceMathTypeNumber)
+                numberScaffold = WordMathTypeHostAdapter.PrepareNumberedScaffold(document, source, owner.ParagraphXml);
+            // The runs carry the math font they are imported under (the OMML font chosen in the add-in, else the
+            // document's), as the paragraph writer gives them: Word stamps Cambria Math on imported runs that have
+            // none, and the same formula would then look different depending on what it was converted from.
+            string? documentMathFont = null;
+            try { documentMathFont = document.OMathFontName; }
+            catch (COMException) { }
+            var equation = WordOmmlDocuments.ApplyExplicitTransferMathFont(
+                WordOmmlConverter.ExtractSingleOMath(omml),
+                WordOmmlMathFontPolicy.PreferredFont ?? documentMathFont ?? string.Empty);
+            var fragment = MathTypeLocalFragment.PrepareOmmlReplacement(
+                source.WordOpenXML, owner.ParagraphXml, owner.LocatorName,
+                equation, owner.SourceOleOrdinal, owner.SourceOleCount,
+                retiredIdentityBookmark);
+            var prepared = new Prepared(document, source, owner, fragment, display, retiredIdentityBookmark, numberScaffold);
+            numberScaffold = null;
+            source = null;
+            owner = null;
+            return prepared;
+        }
+        finally
+        {
+            numberScaffold?.Dispose();
+            owner?.Dispose();
+            Release(source); Release(shape); Release(shapes);
+        }
+    }
+
+    internal static bool TryReplace(Document document, Range selected, string omml,
+        bool display, out Range replacement, Prepared? prepared = null)
+    {
+        replacement = null!;
+        if (prepared is not null)
+        {
+            replacement = prepared.Apply(selected);
+            return true;
+        }
+        using var local = Prepare(document, selected, omml, display);
+        if (local is null) return false;
+        replacement = local.Apply(selected);
+        return true;
+    }
+
+    private static void Release(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
+    }
+}

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>VisualTeX</string>
+	<key>CFBundleExecutable</key>
+	<string>VisualTeXFormula</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.visualtex.inputmethod.Formula</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>VisualTeX</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__BUILD__</string>
+	<key>ComponentInvisibleInSystemUI</key>
+	<true/>
+	<key>InputMethodConnectionName</key>
+	<string>com.visualtex.inputmethod.Formula_Connection</string>
+	<key>InputMethodServerControllerClass</key>
+	<string>VTFormulaController</string>
+	<key>InputMethodType</key>
+	<string>palette</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>TISInputSourceID</key>
+	<string>com.visualtex.inputmethod.Formula</string>
+</dict>
+</plist>

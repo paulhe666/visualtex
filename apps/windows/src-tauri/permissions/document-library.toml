@@ -1,0 +1,31 @@
+[[permission]]
+identifier = "allow-document-library"
+description = "Allow the trusted embedded VisualTeX main window to keep the documents of the document library (list, read, check and save files, Save as, files opened from elsewhere, rename, folders, recently deleted, search, show in Explorer, the documents folder, the conversion of the earlier library, files handed over by the system)."
+commands.allow = [
+  "document_library_list",
+  "document_library_read",
+  "document_library_check",
+  "document_library_create",
+  "document_library_save",
+  "document_library_save_as",
+  "document_library_open_file",
+  "document_library_forget",
+  "document_library_rename",
+  "document_library_duplicate",
+  "document_library_move",
+  "document_library_trash",
+  "document_library_restore",
+  "document_library_delete",
+  "document_library_empty_trash",
+  "document_library_create_folder",
+  "document_library_rename_folder",
+  "document_library_delete_folder",
+  "document_library_search",
+  "document_library_set_root",
+  "document_library_reveal",
+  "document_library_legacy_list",
+  "document_library_legacy_read",
+  "document_library_migration",
+  "document_library_set_migration",
+  "document_pending_files"
+]

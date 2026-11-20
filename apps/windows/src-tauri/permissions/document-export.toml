@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-document-export"
+description = "Allow the main window to export documents to PDF (through the hidden print window), to open document files and to read the pictures dropped on a document or named by a Markdown file (on the disk or the web)."
+commands.allow = [
+  "read_image_file",
+  "read_import_file",
+  "fetch_image_url",
+  "pdf_print_open",
+  "pdf_print_save",
+  "pdf_print_close"
+]

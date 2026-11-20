@@ -1,0 +1,211 @@
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using Microsoft.Office.Interop.Word;
+using Range = Microsoft.Office.Interop.Word.Range;
+
+namespace VisualTeX.WordVsto;
+
+internal static class WordDocumentXml
+{
+    internal static bool TryGetMainDocumentBody(XDocument package, out XElement body)
+    {
+        if (package is null) throw new ArgumentNullException(nameof(package));
+        XNamespace pkg = "http://schemas.microsoft.com/office/2006/xmlPackage";
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        body = null!;
+
+        // Range.WordOpenXML is normally Flat OPC. Resolve the main story from the
+        // package part identity instead of searching every WordprocessingML part:
+        // auxiliary/custom parts can legally contain another w:document/w:body.
+        if (package.Root?.Name == pkg + "package")
+        {
+            var mainParts = package.Root.Elements(pkg + "part")
+                .Where(part => string.Equals(
+                    (string?)part.Attribute(pkg + "name"),
+                    "/word/document.xml",
+                    StringComparison.Ordinal))
+                .Take(2)
+                .ToArray();
+            if (mainParts.Length != 1) return false;
+
+            var xmlData = mainParts[0].Element(pkg + "xmlData");
+            if (xmlData is null) return false;
+            var mainDocuments = xmlData.Elements(w + "document").Take(2).ToArray();
+            if (mainDocuments.Length != 1) return false;
+            var bodies = mainDocuments[0].Elements(w + "body").Take(2).ToArray();
+            if (bodies.Length != 1) return false;
+            body = bodies[0];
+            return true;
+        }
+
+        // Direct WordprocessingML payloads are still useful for diagnostics, but
+        // never fall back to a global Descendants(w:body) selection.
+        if (package.Root?.Name == w + "document")
+        {
+            var bodies = package.Root.Elements(w + "body").Take(2).ToArray();
+            if (bodies.Length != 1) return false;
+            body = bodies[0];
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static XElement GetRequiredMainDocumentBody(XDocument package)
+    {
+        if (TryGetMainDocumentBody(package, out var body)) return body;
+        throw new InvalidDataException(
+            "Word XML does not contain exactly one main /word/document.xml w:document/w:body.");
+    }
+
+    internal static bool CanProveNoMathTypePlaceRefFields(string wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return false;
+        try
+        {
+            var package = XDocument.Parse(wordOpenXml);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            if (!TryGetMainDocumentBody(package, out var body)) return false;
+            // Word may split one field instruction across several instrText runs.
+            // Concatenate without separators so MTPlace|Ref remains detectable.
+            // A false positive merely triggers the exact COM fallback; only full
+            // absence is accepted as proof that no MathType number field exists.
+            var instructions = ReadFieldInstructionEvidence(body, word);
+            return instructions.IndexOf("MTPlaceRef", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static bool CanProveNoVisualTeXEquationNumberFields(string wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return false;
+        try
+        {
+            var package = XDocument.Parse(wordOpenXml);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            if (!TryGetMainDocumentBody(package, out var body)) return false;
+            // VisualTeX-owned OMML/OLE numbering always carries the fixed,
+            // locale-neutral SEQ VisualTeXEquation field. MathType's native
+            // MTPlaceRef/MTEqn/MTChap/MTSec fields are deliberately excluded.
+            // Concatenate instruction runs because Word may split a field code
+            // across several w:instrText nodes. Any ambiguity falls back to the
+            // conservative path that still runs the VisualTeX updater.
+            var instructions = ReadFieldInstructionEvidence(body, word);
+            return !Regex.IsMatch(
+                instructions,
+                // Runs from separate fields may touch after concatenation. Do
+                // not demand token boundaries here: false positives only select
+                // the exact COM fallback; a false absence proof would skip fields.
+                @"SEQ\s+""?VisualTeXEquation",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string ReadFieldInstructionEvidence(XElement body, XNamespace word)
+    {
+        // Both encodings are legal: complex fields split their instruction across
+        // instrText runs; simple fields store it on fldSimple/@w:instr. This is a
+        // conservative absence proof, not an approximate count of live fields.
+        return string.Concat(body.Descendants(word + "instrText").Select(node => node.Value))
+            + "\n" + string.Join("\n", body.Descendants(word + "fldSimple")
+                .Select(field => (string?)field.Attribute(word + "instr")
+                    ?? throw new InvalidDataException("Cannot prove field absence from a simple field with no instruction.")));
+    }
+
+    internal static bool IsUnexpectedlyEmptyBody(XElement body, string liveText)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        if (body.Descendants(w + "t").Any(text => !string.IsNullOrWhiteSpace(text.Value))) return false;
+        return liveText.Any(c => !char.IsWhiteSpace(c) && !char.IsControl(c)
+            && c != '\u200B' && c != '\u200C' && c != '\u2060');
+    }
+
+    internal static bool IsScratchExport(int exportedMaths, int exportedOles, int liveMaths, int liveOles) =>
+        exportedMaths == 0 && exportedOles == 0 && (liveMaths > 0 || liveOles > 0);
+
+    internal static string Read(Document document, Range? ownedScope = null)
+    {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordDocumentXml.Read");
+        Range? content = null;
+        Range? export = null;
+        OMaths? maths = null;
+        InlineShapes? shapes = null;
+        try
+        {
+            content = ownedScope?.Duplicate ?? document.Content;
+            if (content.StoryType != WdStoryType.wdMainTextStory)
+                throw new InvalidDataException("Recovery XML must belong to the main Word story.");
+            var start = content.Start;
+            var end = content.End;
+            maths = content.OMaths;
+            shapes = content.InlineShapes;
+            var mathCount = maths.Count;
+            var shapeCount = shapes.Count;
+            var oleCount = 0;
+            for (var index = 1; index <= shapeCount; index++)
+            {
+                InlineShape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    if (shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                        or WdInlineShapeType.wdInlineShapeLinkedOLEObject) oleCount++;
+                }
+                finally { if (shape is not null) Marshal.ReleaseComObject(shape); }
+            }
+            // The first export immediately after an OLE/OMML replacement can
+            // return Word's empty scratch body, even from a newly bound Range.
+            // Read again only if the actual COM inventory disproves that export;
+            // no retries of document mutations or relaxed identity checks occur.
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                export = document.Range(start, end);
+                var xml = export.WordOpenXML;
+                if (export.Start != start || export.End != end || content.End != end
+                    || maths.Count != mathCount || shapes.Count != shapeCount)
+                    throw new InvalidDataException("The document changed while its Word XML was being captured.");
+                var package = XDocument.Parse(xml);
+                XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+                XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+                XNamespace o = "urn:schemas-microsoft-com:office:office";
+                var body = GetRequiredMainDocumentBody(package);
+                var exportedMaths = body.Descendants(m + "oMath").Count();
+                var exportedOles = body.Descendants(o + "OLEObject").Count();
+                // Before redraw, an all-LaTeX document contains zero OMath/OLE
+                // objects. An empty scratch export also contains zero of both,
+                // so inventory equality alone previously accepted a blank undo
+                // checkpoint for a nonempty source document.
+                var missingPlainText = mathCount == 0 && shapeCount == 0
+                    && IsUnexpectedlyEmptyBody(body, content.Text ?? string.Empty);
+                // Only the empty scratch body is rejected. COM and XML count
+                // different things (floating OLE, text boxes, AlternateContent
+                // fallbacks, tracked deletions), so other count differences
+                // are diagnostics, not a reason to refuse the operation.
+                if (!IsScratchExport(exportedMaths, exportedOles, mathCount, oleCount) && !missingPlainText)
+                {
+                    if (exportedMaths != mathCount || exportedOles != oleCount)
+                        WordDoubleClickHook.TraceMessage($"word-xml-inventory-differs document={document.FullName} maths={exportedMaths}/{mathCount} oles={exportedOles}/{oleCount}");
+                    return xml;
+                }
+                WordDoubleClickHook.TraceMessage($"word-xml-incomplete-export document={document.FullName} attempt={attempt + 1} maths={exportedMaths}/{mathCount} oles={exportedOles}/{oleCount}");
+                Marshal.ReleaseComObject(export); export = null;
+            }
+            throw new InvalidDataException("Word could not export XML matching the actual formula and OLE inventory.");
+        }
+        finally
+        {
+            if (export is not null) Marshal.ReleaseComObject(export);
+            if (shapes is not null) Marshal.ReleaseComObject(shapes);
+            if (maths is not null) Marshal.ReleaseComObject(maths);
+            if (content is not null) Marshal.ReleaseComObject(content);
+        }
+    }
+}

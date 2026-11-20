@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "silent-ocr-hud",
+  "description": "Allow only the local silent OCR HUD window to read its bounded status payload.",
+  "windows": ["silent-ocr-hud"],
+  "permissions": [
+    "core:default",
+    "allow-ocr-silent-hud-status"
+  ]
+}

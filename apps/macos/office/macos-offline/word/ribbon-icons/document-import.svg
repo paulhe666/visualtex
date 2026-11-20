@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M11 7h27l10 10v40H11z"/>
+    <path d="M38 7v11h10M18 27h17M18 35h13M18 43h17"/>
+    <path d="M49 33v18M43 45l6 6 6-6"/>
+  </g>
+  <text x="16" y="21" fill="#1F638E" font-family="Arial, sans-serif" font-size="9" letter-spacing="0.4">TeX</text>
+</svg>

@@ -1,0 +1,748 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import process from "node:process";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+
+const sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function expect(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function expectIncludes(value, fragment, message) {
+  expect(value.includes(fragment), `${message}\nMissing: ${fragment}\nActual: ${value}`);
+}
+
+const uncommonIntegralOperators = [
+  ["iint", "∬"],
+  ["iiint", "∭"],
+  ["iiiint", "⨌"],
+  ["oint", "∮"],
+  ["oiint", "∯"],
+  ["oiiint", "∰"],
+  ["intclockwise", "∱"],
+  ["varointclockwise", "∲"],
+  ["ointctrclockwise", "∳"],
+  ["sumint", "⨋"],
+  ["intbar", "⨍"],
+  ["intBar", "⨎"],
+  ["fint", "⨏"],
+  ["cirfnint", "⨐"],
+  ["awint", "⨑"],
+  ["intctrclockwise", "⨑"],
+  ["rppolint", "⨒"],
+  ["scpolint", "⨓"],
+  ["npolint", "⨔"],
+  ["pointint", "⨕"],
+  ["quatint", "⨖"],
+  ["intlarhk", "⨗"],
+  ["intx", "⨘"],
+  ["intcap", "⨙"],
+  ["intcup", "⨚"],
+  ["upint", "⨛"],
+  ["lowint", "⨜"],
+];
+
+async function main() {
+  let docxDirectory;
+  await withAppBrowser(async ({ baseUrl, client }) => {
+    const evaluateWithNavigationRetry = async (params) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          return await client.send("Runtime.evaluate", params);
+        } catch (error) {
+          if (
+            attempt >= 2 ||
+            !String(error?.message ?? error).includes("Execution context was destroyed")
+          ) {
+            throw error;
+          }
+          await sleep(250);
+          await client.send("Runtime.enable");
+        }
+      }
+      throw new Error("Runtime evaluation retry exhausted.");
+    };
+
+    // A fresh Vite server optimizes the dependencies the first import finds and reloads the page; an import made
+    // meanwhile fails ("Failed to fetch dynamically imported module"). Import once until that has settled.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const warm = await evaluateWithNavigationRetry({
+        expression: `import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)}).then(() => "ok", (error) => String(error))`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (warm.result?.value === "ok") break;
+      await sleep(1500);
+      await client.send("Page.reload", { ignoreCache: false }).catch(() => undefined);
+      await sleep(1500);
+    }
+
+    const formulas = [
+      String.raw`\frac{a}{b}+dddc`,
+      String.raw`\int_a^b x\,dy`,
+      String.raw`\differentialD x+\capitalDifferentialD y+\exponentialE^{\imaginaryI x}+\imaginaryJ`,
+      String.raw`\mathrm{x}`,
+      String.raw`\mathbf{A+1}`,
+      String.raw`\mathit{x}`,
+      String.raw`\boldsymbol{\alpha}`,
+      String.raw`\mathbb{R}`,
+      String.raw`\mathcal{G}`,
+      String.raw`\mathscr{g}`,
+      String.raw`\mathfrak{g}`,
+      String.raw`\mathsf{x}`,
+      String.raw`\mathtt{x}`,
+      String.raw`\operatorname{sin}x`,
+      String.raw`\sum_{b}^{a}xc`,
+      String.raw`\sum_{i=1}^{\infty}{a_k\left( x-x_0 \right) ^k}`,
+      String.raw`\sum_{i=1}^{\infty}{a_kP_k\left( x \right)}`,
+      String.raw`\sqrt{x}`,
+      String.raw`x_i^2`,
+      String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`,
+      String.raw`\lim_{x\to0}f(x)`,
+      String.raw`\binom{n}{k}`,
+      String.raw`\begin{cases}x,&x>0\\-x,&x<0\end{cases}`,
+      String.raw`\overline{x}+\hat{y}`,
+      String.raw`\vec{r}+\hat{L}_z+x\hat{p}_y-y\hat{p}_x`,
+      String.raw`\overrightarrow{e_{\varphi}}+\overrightarrow{e_{\theta}}`,
+      String.raw`\sin x`,
+      String.raw`\sin^2\theta+\cos(x+y)`,
+      String.raw`\log_2 x`,
+    ];
+    const expression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        return ${JSON.stringify(formulas)}.map((latex) =>
+          module.latexLinesToOmml([latex], 'block')
+        );
+      })()
+    `;
+    const evaluation = await evaluateWithNavigationRetry({
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (evaluation.exceptionDetails) {
+      throw new Error(
+        evaluation.exceptionDetails.exception?.description ??
+          evaluation.exceptionDetails.text ??
+          "OMML browser evaluation failed.",
+      );
+    }
+    const results = evaluation.result?.value;
+    expect(Array.isArray(results) && results.length === formulas.length, "OMML regression did not return every formula.");
+
+    const [
+      fraction,
+      integral,
+      uprightSymbols,
+      roman,
+      bold,
+      italic,
+      boldItalic,
+      doubleStruck,
+      calligraphic,
+      scriptVariant,
+      fraktur,
+      sansSerif,
+      monospace,
+      operatorName,
+      sum,
+      pastedPowerSeries,
+      pastedPolynomialSeries,
+      root,
+      scripts,
+      matrix,
+      limit,
+      binomial,
+      cases,
+      accents,
+      shortVectorAndHats,
+      longVectorArrows,
+      appliedSine,
+      appliedPowersAndBrackets,
+      appliedLogarithm,
+    ] = results;
+    expectIncludes(fraction, "<m:f>", "Fraction must use a structural OMML fraction node.");
+    expectIncludes(fraction, "<m:num>", "Fraction must preserve its numerator.");
+    expectIncludes(fraction, "<m:den>", "Fraction must preserve its denominator.");
+    expect(!fraction.includes("<m:t>/</m:t>"), "Fraction must not degrade to a slash glyph.");
+    expect(fraction.indexOf("</m:f>") < fraction.lastIndexOf("<m:t>"), "Fraction must remain before the trailing expression.");
+
+    expectIncludes(integral, '<m:chr m:val="∫"/>', "Integral must use an OMML n-ary operator.");
+    expectIncludes(integral, "<m:sub>", "Integral must preserve the lower limit.");
+    expectIncludes(integral, "<m:sup>", "Integral must preserve the upper limit.");
+    expectIncludes(integral, "<m:e>", "Integral must preserve the integrand as its body.");
+
+    const uncommonIntegralFormulas = uncommonIntegralOperators.map(
+      ([command]) => `\\${command}_{a}^{b} f(x)\\,\\mathrm{d}x`,
+    );
+    const uncommonIntegralExpression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        return ${JSON.stringify(uncommonIntegralFormulas)}.map((latex) =>
+          module.latexLinesToOmml([latex], 'block')
+        );
+      })()
+    `;
+    const uncommonIntegralEvaluation = await evaluateWithNavigationRetry({
+      expression: uncommonIntegralExpression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (uncommonIntegralEvaluation.exceptionDetails) {
+      throw new Error(
+        uncommonIntegralEvaluation.exceptionDetails.exception?.description ??
+          "Uncommon integral OMML generation failed.",
+      );
+    }
+    const uncommonIntegralResults = uncommonIntegralEvaluation.result?.value;
+    expect(
+      Array.isArray(uncommonIntegralResults) &&
+        uncommonIntegralResults.length === uncommonIntegralOperators.length,
+      "OMML regression did not return every uncommon integral.",
+    );
+    for (let index = 0; index < uncommonIntegralOperators.length; index += 1) {
+      const [command, character] = uncommonIntegralOperators[index];
+      const omml = uncommonIntegralResults[index];
+      expectIncludes(
+        omml,
+        `<m:chr m:val="${character}"/>`,
+        `\\${command} must use its canonical OMML n-ary character.`,
+      );
+      expect(
+        (omml.match(/<m:nary>/g) ?? []).length === 1,
+        `\\${command} must produce exactly one structural OMML n-ary object.`,
+      );
+      expectIncludes(
+        omml,
+        '<m:limLoc m:val="subSup"/>',
+        `\\${command} must keep integral limits beside the operator.`,
+      );
+      expectIncludes(omml, "<m:sub>", `\\${command} must preserve its lower limit.`);
+      expectIncludes(omml, "<m:sup>", `\\${command} must preserve its upper limit.`);
+      expectIncludes(omml, "<m:t>f</m:t>", `\\${command} must preserve its integrand.`);
+      expect(
+        !omml.includes(command),
+        `\\${command} must not leak the raw unsupported command into Word OMML.`,
+      );
+    }
+
+    expect(!uprightSymbols.includes("differentialD"), "MathLive differentialD must not leak into OMML.");
+    expect(!uprightSymbols.includes("capitalDifferentialD"), "MathLive capitalDifferentialD must not leak into OMML.");
+    expect(!uprightSymbols.includes("exponentialE"), "MathLive exponentialE must not leak into OMML.");
+    expect(!uprightSymbols.includes("imaginaryI"), "MathLive imaginaryI must not leak into OMML.");
+    expect(!uprightSymbols.includes("imaginaryJ"), "MathLive imaginaryJ must not leak into OMML.");
+    expect((uprightSymbols.match(/<m:nor\/>/g) ?? []).length >= 5, "Every canonical upright symbol must use explicit OMML normal style.");
+    for (const symbol of ["d", "D", "e", "i", "j"]) {
+      expectIncludes(uprightSymbols, `<m:t>${symbol}</m:t>`, `Upright ${symbol} must survive OMML conversion.`);
+    }
+
+    expectIncludes(roman, "<m:nor/>", "mathrm must retain Word's explicit upright marker.");
+    expectIncludes(roman, '<m:scr m:val="roman"/>', "mathrm must use the OMML roman script.");
+    expectIncludes(roman, '<m:sty m:val="p"/>', "mathrm must use plain OMML style.");
+
+    expect((bold.match(/<m:sty m:val="b"\/>/g) ?? []).length >= 3, "mathbf must preserve bold style on identifiers, operators and numbers.");
+    expectIncludes(bold, '<m:scr m:val="roman"/>', "mathbf must use the OMML roman script.");
+    expectIncludes(italic, '<m:sty m:val="i"/>', "mathit must use italic OMML style.");
+    expectIncludes(boldItalic, '<m:sty m:val="bi"/>', "boldsymbol must use bold-italic OMML style.");
+    expectIncludes(boldItalic, "<m:t>α</m:t>", "boldsymbol must preserve Greek characters.");
+
+    expectIncludes(doubleStruck, '<m:scr m:val="double-struck"/>', "mathbb must use the OMML double-struck script.");
+    expectIncludes(calligraphic, '<m:scr m:val="script"/>', "mathcal must use the OMML script alphabet.");
+    expectIncludes(scriptVariant, '<m:scr m:val="script"/>', "mathscr must use the OMML script alphabet.");
+    expectIncludes(fraktur, '<m:scr m:val="fraktur"/>', "mathfrak must use the OMML fraktur alphabet.");
+    expectIncludes(sansSerif, '<m:scr m:val="sans-serif"/>', "mathsf must use the OMML sans-serif alphabet.");
+    expectIncludes(monospace, '<m:scr m:val="monospace"/>', "mathtt must use the OMML monospace alphabet.");
+
+    expect(
+      /<m:r><m:rPr><m:scr m:val="roman"\/><m:sty m:val="p"\/><\/m:rPr><m:t>sin<\/m:t><\/m:r>/.test(operatorName),
+      "Multi-character operator names must default to upright roman OMML runs.",
+    );
+
+    // A function applied to its argument is Word's own function object, as
+    // Windows writes it and as Word's equation editor does.
+    expect(
+      /<m:func><m:fName>.*?<m:t>sin<\/m:t>.*?<\/m:fName><m:e>.*?<m:t>x<\/m:t>.*?<\/m:e><\/m:func>/.test(appliedSine),
+      `\\sin x must be an OMML function of x.\nActual: ${appliedSine}`,
+    );
+    expect(
+      (appliedPowersAndBrackets.match(/<m:func>/g) ?? []).length === 2 &&
+        /<m:func><m:fName><m:sSup>.*?<m:t>sin<\/m:t>/.test(appliedPowersAndBrackets) &&
+        /<m:t>cos<\/m:t>.*?<\/m:fName><m:e>.*?\(.*?x.*?y.*?\).*?<\/m:e><\/m:func>/.test(appliedPowersAndBrackets),
+      `\\sin^2 and \\cos(...) must be OMML functions with their whole argument.\nActual: ${appliedPowersAndBrackets}`,
+    );
+    expect(
+      /<m:func><m:fName><m:sSub>.*?<m:t>log<\/m:t>/.test(appliedLogarithm),
+      `\\log_2 x must be an OMML function.\nActual: ${appliedLogarithm}`,
+    );
+
+    expectIncludes(sum, '<m:chr m:val="∑"/>', "Summation must use an OMML n-ary operator.");
+    expectIncludes(sum, '<m:limLoc m:val="undOvr"/>', "Summation limits must use above-and-below placement.");
+    for (const [formula, label] of [
+      [pastedPowerSeries, "pasted power series"],
+      [pastedPolynomialSeries, "pasted polynomial series"],
+    ]) {
+      expectIncludes(formula, '<m:chr m:val="∑"/>', `${label} must preserve its summation operator.`);
+      expectIncludes(formula, "<m:sub>", `${label} must preserve the lower summation limit.`);
+      expectIncludes(formula, "<m:sup>", `${label} must preserve the infinite upper limit.`);
+      expect(!formula.includes("\\sum"), `${label} must not leak raw LaTeX into Word OMML.`);
+    }
+    expectIncludes(pastedPowerSeries, "<m:d>", "The pasted power series must preserve scalable parentheses.");
+    expect(
+      pastedPowerSeries.includes("<m:sSub>") || pastedPowerSeries.includes("<m:sSubSup>"),
+      "The pasted power series must preserve x_0 and a_k subscripts.",
+    );
+    expect(
+      pastedPowerSeries.includes("<m:sSup>") || pastedPowerSeries.includes("<m:sSubSup>"),
+      "The pasted power series must preserve the kth power.",
+    );
+    expectIncludes(pastedPolynomialSeries, "<m:t>P</m:t>", "The pasted polynomial series must preserve P_k(x)." );
+
+    expectIncludes(root, "<m:rad>", "Square root must use an OMML radical node.");
+    expectIncludes(scripts, "<m:sSubSup>", "Combined scripts must use an OMML subscript/superscript node.");
+    expectIncludes(matrix, "<m:m>", "Matrix must use an OMML matrix node.");
+    expect((matrix.match(/<m:mr>/g) ?? []).length === 2, "Matrix must preserve both rows.");
+
+    expectIncludes(limit, "<m:limLow>", "Limit notation must use an OMML lower-limit node.");
+    expect(
+      /<m:func><m:fName><m:limLow>.*?<m:t>lim<\/m:t>.*?<\/m:limLow><\/m:fName><m:e>.*?<m:t>f<\/m:t>.*?<\/m:e><\/m:func>/.test(limit),
+      `\\lim_{x\\to0}f(x) must be Word's function object around the limit, applied to f.\nActual: ${limit}`,
+    );
+    expectIncludes(binomial, '<m:type m:val="noBar"/>', "Binomial coefficients must use a no-bar fraction.");
+    expectIncludes(binomial, "<m:d>", "Binomial coefficients must retain their scalable parentheses.");
+    expectIncludes(cases, '<m:begChr m:val="{"/>', "Cases must retain their opening brace.");
+    expectIncludes(cases, "<m:m>", "Cases must retain their row and column structure.");
+    expectIncludes(accents, "<m:bar>", "Overline must use an OMML bar node.");
+    expectIncludes(accents, "<m:acc>", "Hat accents must use an OMML accent node.");
+    expectIncludes(
+      accents,
+      '<m:chr m:val="ˆ"/>',
+      "Hat accents must use Word's distinct modifier circumflex.",
+    );
+    expect(
+      !accents.includes('<m:chr m:val="^"/>'),
+      "Hat accents must not use a caret that touches the base glyph.",
+    );
+    // Arrows are Word's own accent object with the combining arrow, as the
+    // Windows writer produces them (WordOmmlFromMathMl.NormalizeMathMlAccents).
+    expectIncludes(
+      shortVectorAndHats,
+      '<m:chr m:val="\u20d7"/>',
+      "Short vectors must be Word accents with the combining right arrow.",
+    );
+    expectIncludes(
+      shortVectorAndHats,
+      '<m:chr m:val="ˆ"/>',
+      "Operator hats must remain distinct after subscript conversion.",
+    );
+    expect(
+      (shortVectorAndHats.match(/<m:acc>/g) ?? []).length === 4,
+      "The vector and the three hatted operators must each be one accent node.",
+    );
+    expect(
+      !shortVectorAndHats.includes("<m:groupChr>"),
+      "A short vector must not be a group character.",
+    );
+    expect(
+      (shortVectorAndHats.match(/<m:sSub>/g) ?? []).length >= 3,
+      "Hatted L/p operators must keep their subscripts outside the accent base.",
+    );
+    expect(
+      (longVectorArrows.match(/<m:chr m:val="\u20d7"\/>/g) ?? []).length === 2,
+      "Both spherical-basis vectors must be Word accents with the combining right arrow.",
+    );
+    expect(
+      !longVectorArrows.includes("<m:groupChr>"),
+      "Overrightarrow is Word's accent object, as on Windows.",
+    );
+
+    const multiLineExpression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        return module.latexLinesToOmml(['a=b', 'c=d'], 'block');
+      })()
+    `;
+    const multiLineEvaluation = await evaluateWithNavigationRetry({
+      expression: multiLineExpression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (multiLineEvaluation.exceptionDetails) {
+      throw new Error(multiLineEvaluation.exceptionDetails.exception?.description ?? "Multi-line OMML generation failed.");
+    }
+    const multiLine = multiLineEvaluation.result?.value;
+    expectIncludes(multiLine, "<m:eqArr>", "Multiple editor lines must use one OMML equation array.");
+    expect((multiLine.match(/<m:e>/g) ?? []).length >= 2, "Equation arrays must preserve every editor line.");
+
+    const alignedExpression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        const marker = String.raw\`\\class{visualtex-align-marker}{\\kern0pt}\`;
+        const explicit = module.latexLinesToOmml([
+          \`a\${marker}=b+c\`,
+          \`long\${marker}=d\`,
+        ], 'block', 'align');
+        const implicit = module.latexLinesToOmml(['a=b+c', 'long=d'], 'block', 'align');
+        return { explicit, implicit };
+      })()
+    `;
+    const alignedEvaluation = await evaluateWithNavigationRetry({
+      expression: alignedExpression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (alignedEvaluation.exceptionDetails) {
+      throw new Error(alignedEvaluation.exceptionDetails.exception?.description ?? "Aligned OMML generation failed.");
+    }
+    const aligned = alignedEvaluation.result?.value?.explicit;
+    const implicitAligned = alignedEvaluation.result?.value?.implicit;
+    expectIncludes(aligned, "<m:eqArrPr><m:baseJc m:val=\"center\"/></m:eqArrPr>", "Aligned rows must use one centered equation array.");
+    expect(
+      (aligned.match(/&amp;/g) ?? []).length === 2,
+      "Every explicit align point must expose exactly one OMML equation-array alignment control.",
+    );
+    expect(
+      (implicitAligned.match(/&amp;/g) ?? []).length === 0,
+      "Align OMML must not invent alignment controls when the user did not type &.",
+    );
+    expect(
+      (aligned.match(/<m:oMath\b/g) ?? []).length === 1,
+      "Aligned OMML must contain exactly one formula root and no empty formula objects.",
+    );
+    expect(
+      /&amp;[\s\S]*?=/.test(aligned),
+      "Each explicit OMML equation-array alignment control must remain before its relationship operator.",
+    );
+
+    const docxExpression = `
+      (async () => {
+        const module = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
+        const artifacts = module.latexLinesToOmmlArtifacts([String.raw\`\\frac{a}{b}\`], 'inline');
+        const integralArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\int_0^1 f(x)\\,\\mathrm{d}x\`,
+        ], 'block');
+        const sumFractionArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\sum_{i=1}^{\\infty}\\frac{a_i}{b_i}\`,
+        ], 'block');
+        const complexNumberingArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\sum_{i=1}^{n}\\left(\\binom{n}{i}\\right)\`,
+        ], 'block');
+        const numberedFastArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`a^2+b^2=c^2(a+b)^{n}=\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\`,
+        ], 'block', 'raw', {}, true);
+        const numberedComplexArtifacts = [
+          String.raw\`\\left[\\frac{\\left(x+\\sqrt{y}\\right)}{\\left\\{z\\right\\}}\\right]\`,
+          String.raw\`\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}\`,
+          String.raw\`f(x)=\\begin{cases}x^2,&x\\ge0\\\\-x,&x<0\\end{cases}\`,
+          String.raw\`\\begin{aligned}a&=\\frac{b}{c}\\\\d&=\\sum_{i=1}^{n}i\\end{aligned}\`,
+          String.raw\`\\int_0^1\\frac{\\sqrt{1-x^2}}{1+x^2}\\,\\mathrm{d}x+\\prod_{j=1}^{m}q_j\`,
+        ].map((latex) => module.latexLinesToOmmlArtifacts(
+          [latex], 'block', 'raw', {}, true,
+        ));
+        const fontArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`\\mathrm{x}+\\mathbf{A+1}+\\mathit{x}+\\boldsymbol{\\alpha}+\\mathbb{R}+\\mathcal{G}+\\mathscr{g}+\\mathfrak{g}+\\mathsf{x}+\\mathtt{x}\`,
+        ], 'inline');
+        const preferredArtifacts = module.latexLinesToOmmlArtifacts([
+          String.raw\`x+\\alpha+\\mathrm{A}+\\text{中文}+\\mathbb{R}+\\mathcal{L}+\\mathsf{S}\`,
+        ], 'inline', 'raw', {
+          formulaLetterFont: 'times',
+          formulaChineseFont: 'songti',
+        });
+        return {
+          ommlBase64: artifacts.ommlBase64,
+          ommlDocxBase64: artifacts.ommlDocxBase64,
+          integralOmmlDocxBase64: integralArtifacts.ommlDocxBase64,
+          sumFractionOmmlDocxBase64: sumFractionArtifacts.ommlDocxBase64,
+          complexNumberingOmmlBase64: complexNumberingArtifacts.ommlBase64,
+          complexNumberingOmmlDocxBase64: complexNumberingArtifacts.ommlDocxBase64,
+          numberedFastOmmlDocxBase64: numberedFastArtifacts.ommlDocxBase64,
+          numberedComplexOmmlDocxBase64: numberedComplexArtifacts.map(
+            (artifact) => artifact.ommlDocxBase64,
+          ),
+          fontOmmlDocxBase64: fontArtifacts.ommlDocxBase64,
+          preferredOmml: preferredArtifacts.omml,
+          preferredOmmlDocxBase64: preferredArtifacts.ommlDocxBase64,
+        };
+      })()
+    `;
+    const docxEvaluation = await evaluateWithNavigationRetry({
+      expression: docxExpression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (docxEvaluation.exceptionDetails) {
+      throw new Error(docxEvaluation.exceptionDetails.exception?.description ?? "DOCX generation failed.");
+    }
+    const artifacts = docxEvaluation.result?.value;
+    const docxBase64 = artifacts?.ommlDocxBase64;
+    const ommlBase64 = artifacts?.ommlBase64;
+    const integralDocxBase64 = artifacts?.integralOmmlDocxBase64;
+    const sumFractionDocxBase64 = artifacts?.sumFractionOmmlDocxBase64;
+    const complexNumberingOmmlBase64 = artifacts?.complexNumberingOmmlBase64;
+    const complexNumberingDocxBase64 = artifacts?.complexNumberingOmmlDocxBase64;
+    const numberedFastDocxBase64 = artifacts?.numberedFastOmmlDocxBase64;
+    const numberedComplexDocxBase64 = artifacts?.numberedComplexOmmlDocxBase64;
+    const fontDocxBase64 = artifacts?.fontOmmlDocxBase64;
+    const preferredOmml = artifacts?.preferredOmml;
+
+    const preferredOmmlDocxBase64 = artifacts?.preferredOmmlDocxBase64;
+    expect(typeof docxBase64 === "string" && docxBase64.length > 100, "OMML DOCX export is missing.");
+    expect(typeof ommlBase64 === "string" && ommlBase64.length > 100, "OMML Base64URL export is missing.");
+    expect(typeof integralDocxBase64 === "string" && integralDocxBase64.length > 100, "Integral OMML DOCX export is missing.");
+    expect(typeof sumFractionDocxBase64 === "string" && sumFractionDocxBase64.length > 100, "N-ary fraction OMML DOCX export is missing.");
+    expect(typeof complexNumberingOmmlBase64 === "string" && complexNumberingOmmlBase64.length > 100, "Complex numbered OMML export is missing.");
+    expect(typeof complexNumberingDocxBase64 === "string" && complexNumberingDocxBase64.length > 100, "Complex numbered OMML DOCX export is missing.");
+    expect(typeof numberedFastDocxBase64 === "string" && numberedFastDocxBase64.length > 100, "Numbered fast-path OMML DOCX export is missing.");
+    expect(
+      Array.isArray(numberedComplexDocxBase64) &&
+        numberedComplexDocxBase64.length === 5 &&
+        numberedComplexDocxBase64.every(
+          (encoded) => typeof encoded === "string" && encoded.length > 100,
+        ),
+      "The numbered complex-structure OMML DOCX matrix is missing.",
+    );
+    expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
+    expect(typeof preferredOmml === "string" && preferredOmml.length > 100, "Preferred-font OMML export is missing.");
+    expect(typeof preferredOmmlDocxBase64 === "string" && preferredOmmlDocxBase64.length > 100, "Preferred-font OMML DOCX export is missing.");
+    expectIncludes(preferredOmml, 'w:ascii="Times New Roman"', "Preferred math letters must carry the Times New Roman Word run font.");
+    expectIncludes(preferredOmml, 'w:hAnsi="Times New Roman"', "Preferred math letters must carry the Times New Roman high-ANSI font.");
+    expectIncludes(preferredOmml, 'w:eastAsia="Songti SC"', "Chinese OMML runs must carry the selected Songti SC East Asia font.");
+    expect(
+      !/<m:scr m:val="(?:double-struck|script|sans-serif)"\/>[\s\S]*?<w:rFonts[^>]*Times New Roman/.test(preferredOmml),
+      "Explicit mathbb/mathcal/mathsf runs must not be overridden with the global Times New Roman font.",
+    );
+    docxDirectory = await mkdtemp("/tmp/visualtex-omml-docx-");
+    const docxPath = join(docxDirectory, "fraction.docx");
+    await writeFile(docxPath, Buffer.from(docxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", docxPath]);
+    const documentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", docxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(documentXml, "<m:f>", "Generated DOCX must contain the structural fraction.");
+    expect(
+      !documentXml.includes("<m:oMathPara>"),
+      "Inline OMML staging DOCX must not introduce a display-math paragraph.",
+    );
+
+    const integralDocxPath = join(docxDirectory, "integral.docx");
+    await writeFile(integralDocxPath, Buffer.from(integralDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", integralDocxPath]);
+    const integralDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", integralDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(integralDocumentXml, "<m:nary>", "Generated integral DOCX must contain a structural n-ary object.");
+    expectIncludes(integralDocumentXml, '<m:chr m:val="∫"/>', "Generated integral DOCX must retain the integral operator.");
+    expectIncludes(
+      integralDocumentXml,
+      '<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>',
+      "Display OMML staging DOCX must preserve a native centered oMathPara.",
+    );
+
+    const sumFractionDocxPath = join(docxDirectory, "sum-fraction.docx");
+    await writeFile(sumFractionDocxPath, Buffer.from(sumFractionDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", sumFractionDocxPath]);
+    const sumFractionDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", sumFractionDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(sumFractionDocumentXml, "<m:nary>", "Generated sum DOCX must contain a structural n-ary object.");
+    expectIncludes(sumFractionDocumentXml, "<m:f>", "Generated sum DOCX must retain its structural fraction.");
+
+    const numberedFastDocxPath = join(docxDirectory, "numbered-fast.docx");
+    await writeFile(
+      numberedFastDocxPath,
+      Buffer.from(numberedFastDocxBase64, "base64url"),
+    );
+    execFileSync("/usr/bin/unzip", ["-tqq", numberedFastDocxPath]);
+    const numberedFastDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", numberedFastDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(numberedFastDocumentXml, "<m:eqArr>", "Numbered Word cache must contain its prebuilt Equation array.");
+    expectIncludes(numberedFastDocumentXml, "<m:t>#</m:t>", "Numbered Word cache must contain its Equation alignment marker.");
+    expectIncludes(numberedFastDocumentXml, "<m:t>VTNUMBERCACHE0</m:t>", "Numbered Word cache must contain its owned number placeholder.");
+    expectIncludes(numberedFastDocumentXml, "<m:f>", "Numbered Word cache must preserve the structural source formula.");
+    const numberedMarkerIndex = numberedFastDocumentXml.indexOf("<m:t>#</m:t>");
+    const formulaDelimiterIndex = numberedFastDocumentXml.indexOf("<m:d>");
+    const numberDelimiterIndex = numberedFastDocumentXml.lastIndexOf("<m:d>");
+    const numberPlaceholderIndex = numberedFastDocumentXml.indexOf(
+      "<m:t>VTNUMBERCACHE0</m:t>",
+    );
+    expect(
+      formulaDelimiterIndex >= 0 &&
+        formulaDelimiterIndex < numberedMarkerIndex &&
+        numberDelimiterIndex > numberedMarkerIndex &&
+        numberPlaceholderIndex > numberDelimiterIndex,
+      "The numbered native fixture must retain an inner formula delimiter before the owned number slot.",
+    );
+
+    const numberedComplexFixtureNames = [
+      "nested-delimiters",
+      "matrix",
+      "cases",
+      "aligned-array",
+      "nary-fraction-root",
+    ];
+    const numberedComplexFixtureIds = [
+      "23232323-2323-4323-8323-232323232323",
+      "24242424-2424-4424-8424-242424242424",
+      "25252525-2525-4525-8525-252525252525",
+      "26262626-2626-4626-8626-262626262626",
+      "27272727-2727-4727-8727-272727272727",
+    ];
+    for (let index = 0; index < numberedComplexDocxBase64.length; index += 1) {
+      const fixturePath = join(
+        docxDirectory,
+        `numbered-${numberedComplexFixtureNames[index]}.docx`,
+      );
+      await writeFile(
+        fixturePath,
+        Buffer.from(numberedComplexDocxBase64[index], "base64url"),
+      );
+      execFileSync("/usr/bin/unzip", ["-tqq", fixturePath]);
+      const fixtureXml = execFileSync(
+        "/usr/bin/unzip",
+        ["-p", fixturePath, "word/document.xml"],
+        { encoding: "utf8" },
+      );
+      expectIncludes(
+        fixtureXml,
+        "<m:t>#</m:t>",
+        `${numberedComplexFixtureNames[index]} must retain the number marker.`,
+      );
+      expectIncludes(
+        fixtureXml,
+        "<m:t>VTNUMBERCACHE0</m:t>",
+        `${numberedComplexFixtureNames[index]} must retain the owned number slot.`,
+      );
+    }
+
+    const fontDocxPath = join(docxDirectory, "font-variants.docx");
+    await writeFile(fontDocxPath, Buffer.from(fontDocxBase64, "base64url"));
+    execFileSync("/usr/bin/unzip", ["-tqq", fontDocxPath]);
+    const fontDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", fontDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    for (const script of [
+      "roman",
+      "double-struck",
+      "script",
+      "fraktur",
+      "sans-serif",
+      "monospace",
+    ]) {
+      expectIncludes(
+        fontDocumentXml,
+        `<m:scr m:val="${script}"/>`,
+        `Generated DOCX must preserve the ${script} OMML script.`,
+      );
+    }
+    for (const style of ["p", "b", "i", "bi"]) {
+      expectIncludes(
+        fontDocumentXml,
+        `<m:sty m:val="${style}"/>`,
+        `Generated DOCX must preserve the ${style} OMML style.`,
+      );
+    }
+
+    const preferredDocxPath = join(docxDirectory, "preferred-fonts.docx");
+    await writeFile(
+      preferredDocxPath,
+      Buffer.from(preferredOmmlDocxBase64, "base64url"),
+    );
+    execFileSync("/usr/bin/unzip", ["-tqq", preferredDocxPath]);
+    const preferredDocumentXml = execFileSync(
+      "/usr/bin/unzip",
+      ["-p", preferredDocxPath, "word/document.xml"],
+      { encoding: "utf8" },
+    );
+    expectIncludes(preferredDocumentXml, 'w:ascii="Times New Roman"', "Generated DOCX must preserve the selected math letter font.");
+    expectIncludes(preferredDocumentXml, 'w:eastAsia="Songti SC"', "Generated DOCX must preserve the selected Chinese font.");
+
+    const roundtripRoot = process.env.VISUALTEX_OMML_ROUNDTRIP_ROOT;
+    if (roundtripRoot) {
+      await mkdir(roundtripRoot, { recursive: true, mode: 0o700 });
+      const sourcePath = join(roundtripRoot, "font-variants-source.docx");
+      await writeFile(sourcePath, Buffer.from(fontDocxBase64, "base64url"), {
+        mode: 0o600,
+      });
+      console.log(`Font-variant Word round-trip source written to ${sourcePath}.`);
+    }
+
+    const persistentRoot = process.env.VISUALTEX_WORD_REGRESSION_ROOT;
+    if (persistentRoot) {
+      const nativeDocuments = join(persistentRoot, "NativeDocuments");
+      const tests = join(persistentRoot, "Tests");
+      await mkdir(nativeDocuments, { recursive: true, mode: 0o700 });
+      await mkdir(tests, { recursive: true, mode: 0o700 });
+      await writeFile(
+        join(nativeDocuments, "11111111-1111-4111-8111-111111111111.docx"),
+        Buffer.from(docxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "33333333-3333-4333-8333-333333333333.docx"),
+        Buffer.from(docxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "66666666-6666-4666-8666-666666666666.docx"),
+        Buffer.from(integralDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "77777777-7777-4777-8777-777777777777.docx"),
+        Buffer.from(sumFractionDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "99999999-9999-4999-8999-999999999999.docx"),
+        Buffer.from(complexNumberingDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(nativeDocuments, "22222222-2222-4222-8222-222222222222.docx"),
+        Buffer.from(numberedFastDocxBase64, "base64url"),
+        { mode: 0o600 },
+      );
+      for (let index = 0; index < numberedComplexDocxBase64.length; index += 1) {
+        await writeFile(
+          join(nativeDocuments, `${numberedComplexFixtureIds[index]}.docx`),
+          Buffer.from(numberedComplexDocxBase64[index], "base64url"),
+          { mode: 0o600 },
+        );
+      }
+      await writeFile(
+        join(tests, "word-native-regression-complex-numbering-omml.txt"),
+        complexNumberingOmmlBase64,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      await writeFile(
+        join(tests, "word-native-regression-omml.txt"),
+        ommlBase64,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      console.log(`Word native regression fixture written to ${persistentRoot}.`);
+    }
+
+    console.log("Word structural OMML regression passed.");
+  }, { server: "dev", windowSize: null }).finally(async () => {
+    if (docxDirectory) await rm(docxDirectory, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+  });
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack : error);
+  process.exitCode = 1;
+});

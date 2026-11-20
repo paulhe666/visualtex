@@ -1,0 +1,43 @@
+// Packages that code in apps/shared imports: every build resolves them from the
+// app's own node_modules (vite's dedupe), since apps/shared has none of its own.
+export const sharedPackageDedupe = [
+  "react",
+  "react-dom",
+  "lucide-react",
+  // the document editor (apps/shared/visualtex-document)
+  "prosemirror-commands",
+  "prosemirror-dropcursor",
+  "prosemirror-gapcursor",
+  "prosemirror-history",
+  "prosemirror-inputrules",
+  "prosemirror-keymap",
+  "prosemirror-model",
+  "prosemirror-schema-list",
+  "prosemirror-state",
+  "prosemirror-tables",
+  "prosemirror-transform",
+  "prosemirror-view",
+  "prosemirror-markdown",
+  "markdown-it",
+  // the source editor's Markdown parser (sourceMarkdown.ts)
+  "@lezer/markdown",
+  "@lezer/common",
+  "@lezer/highlight",
+  // apps/shared/visualtex-app: stores, Tauri calls, MathJax-based export, diagrams
+  "zustand",
+  "@tauri-apps/api",
+  "@tauri-apps/plugin-dialog",
+  "@tauri-apps/plugin-opener",
+  "mathjax-full",
+  "mermaid",
+  "fflate",
+  // the LaTeX source editor
+  "@codemirror/autocomplete",
+  "@codemirror/commands",
+  "@codemirror/language",
+  "@codemirror/state",
+  "@codemirror/view",
+  "codemirror-lang-latex",
+  // code blocks in documents
+  "shiki",
+];

@@ -1,0 +1,669 @@
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { WORD_VBA_MODULES } from "./word_vba_source.mjs";
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const offlineRoot = join(repositoryRoot, "office", "macos-offline");
+const resourcesRoot = join(offlineRoot, "resources");
+const wordRibbonIconRoot = join(offlineRoot, "word", "ribbon-icons");
+const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8")).version;
+
+function usage() {
+  process.stderr.write(
+    "Usage: node scripts/package_macos_offline_addins.mjs [--word /path/VisualTeX.dotm [--word-shell /path/known-good-VisualTeX.dotm]] (--word-only | --powerpoint-only --powerpoint /path/VisualTeX.pptm --powerpoint-shell /path/known-good-VisualTeX.ppam | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--ribbon-icons-archive /path/visualtex-icons.zip] [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--root-powerpoint-output /path/VisualTeX.ppam] [--install-macos]\n",
+  );
+}
+
+function argument(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+const wordInput = argument("--word");
+const wordShell = argument("--word-shell");
+const powerpointInput = argument("--powerpoint");
+const powerpointShell = argument("--powerpoint-shell");
+const artifactsDirectory = argument("--artifacts-dir");
+const rootWordOutput = argument("--root-word-output");
+const rootPowerPointOutput = argument("--root-powerpoint-output");
+const ribbonIconsArchive = argument("--ribbon-icons-archive");
+const installMacos = process.argv.includes("--install-macos");
+const wordOnly = process.argv.includes("--word-only");
+const powerpointOnly = process.argv.includes("--powerpoint-only");
+const invalidMode =
+  (wordOnly && powerpointOnly) ||
+  (wordOnly && Boolean(powerpointInput)) ||
+  (powerpointOnly && (!powerpointInput || !powerpointShell || Boolean(wordInput))) ||
+  (!wordOnly && !powerpointOnly && (!wordInput || !powerpointInput));
+if (invalidMode) {
+  usage();
+  process.exit(2);
+}
+
+function run(program, args, options = {}) {
+  const encoding = Object.prototype.hasOwnProperty.call(options, "encoding")
+    ? options.encoding
+    : "utf8";
+  return execFileSync(program, args, {
+    encoding: encoding === "buffer" ? null : encoding,
+    cwd: options.cwd,
+    stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
+    maxBuffer: 32 * 1024 * 1024,
+  });
+}
+
+function zipEntries(path) {
+  return run("/usr/bin/unzip", ["-Z1", path])
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function containsModuleName(buffer, moduleName) {
+  return (
+    buffer.includes(Buffer.from(moduleName, "utf8")) ||
+    buffer.includes(Buffer.from(moduleName, "utf16le"))
+  );
+}
+
+const MAIN_CONTENT_TYPES = {
+  Word: {
+    partName: "/word/document.xml",
+    contentType: "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+  },
+  PowerPoint: {
+    partName: "/ppt/presentation.xml",
+    contentType: "application/vnd.ms-powerpoint.addin.macroEnabled.main+xml",
+  },
+};
+
+function contentTypesXml(path) {
+  return run("/usr/bin/unzip", ["-p", path, "\\[Content_Types\\].xml"]);
+}
+
+function hasExpectedMainContentType(path, kind) {
+  const expected = MAIN_CONTENT_TYPES[kind];
+  const xml = contentTypesXml(path);
+  const escapedPart = expected.partName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedType = expected.contentType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `<Override\\b(?=[^>]*\\bPartName="${escapedPart}")(?=[^>]*\\bContentType="${escapedType}")[^>]*/>`,
+    "i",
+  ).test(xml);
+}
+
+function validateMacroContainer(path, kind, options = {}) {
+  const requireExpectedMainType = options.requireExpectedMainType ?? true;
+  const requireModules = options.requireModules ?? true;
+  if (!existsSync(path)) throw new Error(`${kind} add-in does not exist: ${path}`);
+  const entries = zipEntries(path);
+  const vbaEntry = kind === "Word" ? "word/vbaProject.bin" : "ppt/vbaProject.bin";
+  for (const required of ["[Content_Types].xml", "_rels/.rels", vbaEntry]) {
+    if (!entries.includes(required)) {
+      throw new Error(`${kind} add-in is missing ${required}: ${path}`);
+    }
+  }
+  const vbaProject = run("/usr/bin/unzip", ["-p", path, vbaEntry], { encoding: "buffer" });
+  const expectedModules = kind === "Word"
+    ? WORD_VBA_MODULES.map(([moduleName]) => moduleName)
+    : [
+        "VTProtocol",
+        "VTOfficePaths",
+        "VTMetadata",
+        "VTLauncher",
+        "VTErrorHandling",
+        "VTRibbonCallbacks",
+        "VTPowerPointAdapter",
+        "VTPowerPointEvents",
+        "VTPowerPointNativeTarget",
+        "VTPowerPointNativeMath",
+        "VTPowerPointRedraw",
+      ];
+  if (requireModules) {
+    if (kind === "Word") {
+      run("python3", [
+        join(repositoryRoot, "scripts", "verify_word_vba_source.py"), path,
+      ]);
+    }
+    const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
+    if (missing.length > 0) {
+      throw new Error(
+        `${kind} VBA project does not expose the required module names: ${missing.join(", ")}. Import the reviewed .bas and .cls sources before packaging.`,
+      );
+    }
+    const expectedMarkers = [
+      packageVersion,
+      ...(kind === "Word"
+        ? [
+            "word-office-performance-20260801-r130",
+            "VTNativeMathRoot",
+            "VTJoinNativeMathAtBoundary",
+            "VTRetireLegacyNativeBoundary",
+            "word-structured-document-import-20260730-r61",
+            "VTWordRibbonDocumentImport",
+            "word-latex-redraw-20260802-r1",
+            "VTWordRibbonRedrawSelectionImage",
+            "VTWordRibbonRedrawDocumentOmml",
+            "VTTraceWordDoubleClick",
+            "App_WindowSelectionChange",
+            "VisualTeX_StabilizeImageEquationNumberSelection",
+            "VTWordRibbonApplyImageFontSizePreset",
+            "VTWordRibbonApplyConversionFontSize",
+            "VTWordRibbonNumberDisplayFormulasDocument",
+            "VisualTeX_EditImageField",
+            "VisualTeX_EditSelectedImageFromNativeMonitor",
+            "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
+            "VTEnsureVisualTeXImageMacroButton",
+            "VTAppendText",
+            "VTWriteAndLaunchSession",
+            "VTPrewarmApplication",
+          ]
+        : [
+            "powerpoint-native-omml-edit-20260926-r1",
+            "VTTryResolveNativeMathZone",
+            "VisualTeX_CopyPowerPointNativeEditSource",
+            "VisualTeX_EditNativeAtScreenPoint",
+            "VisualTeX_NewInlineNativeEquation",
+            "VisualTeX_NewDisplayNativeEquation",
+            "VisualTeX_CopyNativeParagraphContext",
+            "VTDispatchPowerPointNativeEquation",
+            "VTPowerPointRibbonInlineOmml",
+            "VTPowerPointRibbonDisplayOmml",
+            "App_WindowSelectionChange",
+            "VTPowerPointRibbonApplyFormulaFontSizePreset",
+            "VisualTeX_ApplyPresentationItem",
+            "VisualTeX_CopyPresentationEquation",
+            "VTPowerPointRibbonRedrawOmmlSelection",
+          ]),
+    ];
+    const missingMarkers = expectedMarkers.filter(
+      (marker) => !containsModuleName(vbaProject, marker),
+    );
+    if (missingMarkers.length > 0) {
+      throw new Error(
+        `${kind} VBA project is stale and does not contain the required compiled markers: ${missingMarkers.join(", ")}. Recompile the add-in in Office for Mac before packaging.`,
+      );
+    }
+  }
+  if (requireExpectedMainType && !hasExpectedMainContentType(path, kind)) {
+    const expected = MAIN_CONTENT_TYPES[kind];
+    throw new Error(
+      `${kind} add-in has the wrong OOXML main content type. Expected ${expected.contentType} for ${expected.partName}. Save the file as a real ${kind} add-in instead of renaming another Office format.`,
+    );
+  }
+}
+
+function injectRootRelationship(xml) {
+  const relationshipType =
+    "http://schemas.microsoft.com/office/2007/relationships/ui/extensibility";
+  const withoutOld = xml.replace(
+    /\s*<Relationship\b[^>]*Type="http:\/\/schemas\.microsoft\.com\/office\/(?:2006\/relationships\/ui\/extensibility|2007\/relationships\/ui\/extensibility)"[^>]*\/>/gi,
+    "",
+  );
+  const closing = "</Relationships>";
+  if (!withoutOld.includes(closing)) {
+    throw new Error("OOXML root relationship file is invalid");
+  }
+  const relationship =
+    `<Relationship Id="rIdVisualTeXCustomUI14" Type="${relationshipType}" Target="customUI/customUI14.xml"/>`;
+  return withoutOld.replace(closing, `${relationship}${closing}`);
+}
+
+function ensureDefaultContentType(xml, extension, contentType) {
+  const closing = "</Types>";
+  if (!xml.includes(closing)) throw new Error("OOXML [Content_Types].xml is invalid");
+  const escapedType = contentType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const existing = new RegExp(
+    `\\bExtension="${extension}"\\s+ContentType="${escapedType}"`,
+    "i",
+  );
+  if (existing.test(xml)) return xml;
+  return xml.replace(
+    closing,
+    `<Default Extension="${extension}" ContentType="${contentType}"/>${closing}`,
+  );
+}
+
+function ensureRibbonContentTypes(xml, hasPngIcons) {
+  let next = ensureDefaultContentType(xml, "xml", "application/xml");
+  if (hasPngIcons) next = ensureDefaultContentType(next, "png", "image/png");
+  return next;
+}
+
+const RIBBON_ICON_FILES = {
+  Word: {
+    VisualTeXIcon02: "icon_02_same_subject.png",
+    VisualTeXIcon04: "icon_04_same_subject.png",
+    VisualTeXIcon06: "icon_06_same_subject.png",
+    VisualTeXIcon07: "icon_07_same_subject.png",
+    VisualTeXIcon08: "icon_08_same_subject.png",
+    VisualTeXIcon09: "icon_09_same_subject.png",
+    VisualTeXWordImageInline: { svg: "image-inline.svg" },
+    VisualTeXWordImageDisplay: { svg: "image-display.svg" },
+    VisualTeXWordOmmlInline: { svg: "omml-inline.svg" },
+    VisualTeXWordOmmlDisplay: { svg: "omml-display.svg" },
+    VisualTeXWordEditSelected: { svg: "edit-selected.svg" },
+    VisualTeXWordConvertOmml: { svg: "convert-omml.svg" },
+    VisualTeXWordConvertImage: { svg: "convert-image.svg" },
+    VisualTeXWordConvertSelection: { svg: "convert-selection.svg" },
+    VisualTeXWordConvertDocument: { svg: "convert-document.svg" },
+    VisualTeXWordUpdateFormat: { svg: "update-format.svg" },
+    VisualTeXWordOmmlFont: { svg: "omml-font.svg" },
+    VisualTeXWordDocumentImport: { svg: "document-import.svg" },
+    VisualTeXWordUpdateNumbers: { svg: "update-numbers.svg" },
+    VisualTeXWordBatchNumbering: { svg: "batch-numbering.svg" },
+    VisualTeXWordNumberingFormat: { svg: "numbering-format.svg" },
+    VisualTeXWordCrossReference: { svg: "cross-reference.svg" },
+    VisualTeXWordOpenApp: { svg: "open-visualtex.svg" },
+    VisualTeXWordRedrawSelection: { svg: "redraw-selection.svg" },
+    VisualTeXWordRedrawDocument: { svg: "redraw-document.svg" },
+  },
+  PowerPoint: {
+    VisualTeXIcon05: "icon_05_same_subject.png",
+    VisualTeXIcon07: "icon_07_same_subject.png",
+    VisualTeXPowerPointOmmlInline: { svg: "omml-inline.svg" },
+    VisualTeXPowerPointOmmlDisplay: { svg: "omml-display.svg" },
+    VisualTeXPowerPointRedrawOmml: { svg: "redraw-selection.svg" },
+    VisualTeXPowerPointRedrawImage: { svg: "redraw-document.svg" },
+    VisualTeXPowerPointToLatex: { svg: "document-import.svg" },
+    VisualTeXPowerPointUpdateFormat: { svg: "update-format.svg" },
+  },
+};
+
+function referencedRibbonImages(ribbonXml) {
+  return [...ribbonXml.matchAll(/\bimage="([A-Za-z0-9_.-]+)"/g)].map(
+    (match) => match[1],
+  );
+}
+
+function installRibbonImages(unpacked, kind, ribbonXml) {
+  const referenced = referencedRibbonImages(ribbonXml);
+  if (referenced.length === 0) return [];
+  const mapping = RIBBON_ICON_FILES[kind];
+  const unique = [...new Set(referenced)];
+  for (const imageId of unique) {
+    if (!mapping[imageId]) {
+      throw new Error(`${kind} Ribbon references an unmapped custom image: ${imageId}`);
+    }
+  }
+  const customUiDirectory = join(unpacked, "customUI");
+  const imagesDirectory = join(customUiDirectory, "images");
+  const relationshipsDirectory = join(customUiDirectory, "_rels");
+  mkdirSync(imagesDirectory, { recursive: true });
+  mkdirSync(relationshipsDirectory, { recursive: true });
+  const archivePath =
+    ribbonIconsArchive && existsSync(resolve(ribbonIconsArchive))
+      ? resolve(ribbonIconsArchive)
+      : undefined;
+  const relationships = unique.map((imageId) => {
+    const embeddedPath = join(imagesDirectory, `${imageId}.png`);
+    const source = mapping[imageId];
+    const archiveEntry = typeof source === "string" ? source : source.archive;
+    let imageBytes;
+    if (archivePath && archiveEntry) {
+      imageBytes = run(
+        "/usr/bin/unzip",
+        ["-p", archivePath, archiveEntry],
+        { encoding: "buffer" },
+      );
+      writeFileSync(embeddedPath, imageBytes);
+    } else if (typeof source === "object" && source.svg) {
+      const svgPath = join(wordRibbonIconRoot, source.svg);
+      if (!existsSync(svgPath)) {
+        throw new Error(`${kind} Ribbon SVG source is missing: ${svgPath}`);
+      }
+      run(
+        "/usr/bin/sips",
+        ["-s", "format", "png", svgPath, "--out", embeddedPath],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      imageBytes = readFileSync(embeddedPath);
+    } else if (existsSync(embeddedPath)) {
+      imageBytes = readFileSync(embeddedPath);
+    }
+    if (
+      !imageBytes ||
+      imageBytes.length < 8 ||
+      !imageBytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+    ) {
+      throw new Error(
+        archivePath && archiveEntry
+          ? `${archiveEntry} is not a valid PNG Ribbon image.`
+          : `${kind} Ribbon image ${imageId} could not be generated or read.`,
+      );
+    }
+    return `<Relationship Id="${imageId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="images/${imageId}.png"/>`;
+  });
+  writeFileSync(
+    join(relationshipsDirectory, "customUI14.xml.rels"),
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships.join("")}</Relationships>\n`,
+    "utf8",
+  );
+  return unique;
+}
+
+function packageAddin(inputPath, kind, outputName, ribbonSource, shellPath) {
+  validateMacroContainer(inputPath, kind, {
+    requireExpectedMainType: kind !== "PowerPoint" || !shellPath,
+  });
+  if (shellPath) {
+    validateMacroContainer(shellPath, kind, { requireModules: false });
+  }
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "visualtex-addin-package-"));
+  try {
+    const unpacked = join(temporaryRoot, "unpacked");
+    mkdirSync(unpacked, { recursive: true });
+    const packageSource = shellPath || inputPath;
+    run("/usr/bin/unzip", ["-qq", packageSource, "-d", unpacked]);
+    if (shellPath) {
+      const vbaEntry = kind === "Word" ? "word/vbaProject.bin" : "ppt/vbaProject.bin";
+      const vbaProject = run("/usr/bin/unzip", ["-p", inputPath, vbaEntry], {
+        encoding: "buffer",
+      });
+      writeFileSync(join(unpacked, vbaEntry), vbaProject);
+    }
+
+    const customUiDirectory = join(unpacked, "customUI");
+    mkdirSync(customUiDirectory, { recursive: true });
+    copyFileSync(ribbonSource, join(customUiDirectory, "customUI14.xml"));
+    const ribbonXml = readFileSync(ribbonSource, "utf8");
+    const installedRibbonImages = installRibbonImages(unpacked, kind, ribbonXml);
+
+    const relationshipsPath = join(unpacked, "_rels", ".rels");
+    writeFileSync(
+      relationshipsPath,
+      injectRootRelationship(readFileSync(relationshipsPath, "utf8")),
+      "utf8",
+    );
+    const contentTypesPath = join(unpacked, "[Content_Types].xml");
+    writeFileSync(
+      contentTypesPath,
+      ensureRibbonContentTypes(
+        readFileSync(contentTypesPath, "utf8"),
+        installedRibbonImages.length > 0,
+      ),
+      "utf8",
+    );
+
+    mkdirSync(resourcesRoot, { recursive: true });
+    const temporaryOutput = join(temporaryRoot, outputName);
+    run("/usr/bin/zip", ["-X", "-q", "-r", temporaryOutput, "."], { cwd: unpacked });
+    validateMacroContainer(temporaryOutput, kind);
+    const entries = zipEntries(temporaryOutput);
+    if (!entries.includes("customUI/customUI14.xml")) {
+      throw new Error(`${kind} packaged add-in is missing customUI/customUI14.xml`);
+    }
+    const installedRibbon = run(
+      "/usr/bin/unzip",
+      ["-p", temporaryOutput, "customUI/customUI14.xml"],
+    );
+    const expectedRibbon = readFileSync(ribbonSource, "utf8");
+    if (installedRibbon.trim() !== expectedRibbon.trim()) {
+      throw new Error(`${kind} packaged Ribbon differs from the reviewed source XML`);
+    }
+    for (const imageId of installedRibbonImages) {
+      if (!entries.includes(`customUI/images/${imageId}.png`)) {
+        throw new Error(`${kind} packaged Ribbon is missing ${imageId}.png`);
+      }
+    }
+    if (
+      installedRibbonImages.length > 0 &&
+      !entries.includes("customUI/_rels/customUI14.xml.rels")
+    ) {
+      throw new Error(`${kind} packaged Ribbon image relationships are missing`);
+    }
+
+    const destination = join(resourcesRoot, outputName);
+    const staged = `${destination}.staged`;
+    copyFileSync(temporaryOutput, staged);
+    renameSync(staged, destination);
+    return destination;
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+function sha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+// The OMML math fonts and their notices (office/macos-offline/fonts) are fixed
+// files pinned in addins.json next to the add-ins. Every packaging keeps their
+// pins and refuses a font that no longer matches its pin.
+function pinnedFontFiles(manifest) {
+  const pinned = Object.entries(manifest?.files ?? {}).filter(([name]) =>
+    name.startsWith("fonts/"),
+  );
+  for (const [name, entry] of pinned) {
+    const path = join(offlineRoot, name);
+    if (
+      !/^fonts\/[A-Za-z0-9._-]+$/.test(name) ||
+      typeof entry?.sha256 !== "string" ||
+      !existsSync(path) ||
+      sha256(path) !== entry.sha256.toLowerCase()
+    ) {
+      throw new Error(
+        `office/macos-offline/${name} does not match its pin in resources/addins.json`,
+      );
+    }
+  }
+  return Object.fromEntries(
+    pinned.map(([name, entry]) => [name, { sha256: entry.sha256.toLowerCase() }]),
+  );
+}
+
+function atomicCopy(source, destination, mode) {
+  mkdirSync(dirname(destination), { recursive: true });
+  const staged = `${destination}.staged`;
+  copyFileSync(source, staged);
+  if (mode !== undefined) chmodSync(staged, mode);
+  renameSync(staged, destination);
+  if (sha256(source) !== sha256(destination)) {
+    throw new Error(`Installed artifact differs from its packaged source: ${destination}`);
+  }
+  return destination;
+}
+
+function syncArtifact(source, outputDirectory) {
+  mkdirSync(outputDirectory, { recursive: true });
+  const destination = join(outputDirectory, basename(source));
+  return atomicCopy(source, destination);
+}
+
+function compileAndInstallAppleScript(source, destination, requiredMarkers) {
+  mkdirSync(dirname(destination), { recursive: true });
+  const staged = `${destination}.staged.${process.pid}.scpt`;
+  rmSync(staged, { force: true });
+  try {
+    run("/usr/bin/osacompile", ["-o", staged, source]);
+    const decompiled = run("/usr/bin/osadecompile", [staged]);
+    for (const marker of requiredMarkers) {
+      if (!decompiled.includes(marker)) {
+        throw new Error(
+          `Compiled AppleScript is missing ${marker}: ${destination}`,
+        );
+      }
+    }
+    chmodSync(staged, 0o600);
+    renameSync(staged, destination);
+    const installedSource = run("/usr/bin/osadecompile", [destination]);
+    for (const marker of requiredMarkers) {
+      if (!installedSource.includes(marker)) {
+        throw new Error(
+          `Installed AppleScript is missing ${marker}: ${destination}`,
+        );
+      }
+    }
+    return destination;
+  } finally {
+    rmSync(staged, { force: true });
+  }
+}
+
+function installMacosArtifacts(wordOutput, powerpointOutput) {
+  if (process.platform !== "darwin") {
+    throw new Error("--install-macos is available only on macOS");
+  }
+  const officeGroupContainer = join(
+    homedir(),
+    "Library",
+    "Group Containers",
+    "UBF8T346G9.Office",
+  );
+  const wordApplicationScripts = join(
+    homedir(),
+    "Library",
+    "Application Scripts",
+    "com.microsoft.Word",
+  );
+  const installed = [
+    atomicCopy(
+      wordOutput,
+      join(
+        officeGroupContainer,
+        "User Content.localized",
+        "Startup.localized",
+        "Word",
+        "VisualTeX.dotm",
+      ),
+      0o600,
+    ),
+    compileAndInstallAppleScript(
+      join(offlineRoot, "word", "VisualTeXWord.scpt"),
+      join(wordApplicationScripts, "VisualTeXWord.scpt"),
+      [
+        "on WriteAndOpenVisualTeXSession(argumentText)",
+        "on PrewarmVisualTeXApplication(hostName)",
+        "on AppendVisualTeXFile(argumentText)",
+        'property expectedHost : "word"',
+      ],
+    ),
+  ];
+  if (powerpointOutput) {
+    installed.push(
+      atomicCopy(
+        powerpointOutput,
+        join(
+          officeGroupContainer,
+          "VisualTeX",
+          "OfficeAddins",
+          "VisualTeX.ppam",
+        ),
+        0o600,
+      ),
+    );
+  }
+  return installed;
+}
+
+try {
+  let wordOutput;
+  let powerpointOutput;
+  let manifest;
+  const manifestPath = join(resourcesRoot, "addins.json");
+  // Checked before anything is packaged: a font that fails its pin leaves the
+  // resources as they were.
+  const fontPins = pinnedFontFiles(
+    existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {},
+  );
+
+  if (powerpointOnly) {
+    // A PowerPoint-only rebuild must not rewrite the verified Word DOTM. This is
+    // used for isolated PPAM VBA updates where the Word resource has a different
+    // reviewed binary identity from the currently installed Startup template.
+    powerpointOutput = packageAddin(
+      resolve(powerpointInput),
+      "PowerPoint",
+      "VisualTeX.ppam",
+      join(offlineRoot, "powerpoint", "customUI14.xml"),
+      resolve(powerpointShell),
+    );
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    manifest.pluginVersion = packageVersion;
+    manifest.files["VisualTeX.ppam"] = { sha256: sha256(powerpointOutput) };
+  } else {
+    // A newly VBE-compiled Word DOTM is already a complete, valid OOXML template.
+    // Reusing the previously packaged resources/VisualTeX.dotm as an implicit
+    // shell causes document.xml, relationships and template metadata from older
+    // builds to survive indefinitely. Use the current compiled DOTM directly
+    // unless a shell is explicitly requested by the caller.
+    const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;
+    wordOutput = packageAddin(
+      resolve(wordInput),
+      "Word",
+      "VisualTeX.dotm",
+      join(offlineRoot, "word", "customUI14.xml"),
+      resolvedWordShell,
+    );
+    if (wordOnly) {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.pluginVersion = packageVersion;
+      manifest.files["VisualTeX.dotm"] = { sha256: sha256(wordOutput) };
+    } else {
+      powerpointOutput = packageAddin(
+        resolve(powerpointInput),
+        "PowerPoint",
+        "VisualTeX.ppam",
+        join(offlineRoot, "powerpoint", "customUI14.xml"),
+        powerpointShell ? resolve(powerpointShell) : undefined,
+      );
+      manifest = {
+        schemaVersion: 1,
+        pluginVersion: packageVersion,
+        files: {
+          "VisualTeX.dotm": { sha256: sha256(wordOutput) },
+          "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
+          ...fontPins,
+        },
+      };
+    }
+  }
+
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  if (artifactsDirectory) {
+    if (wordOutput) syncArtifact(wordOutput, resolve(artifactsDirectory));
+    if (powerpointOutput) syncArtifact(powerpointOutput, resolve(artifactsDirectory));
+  }
+  if (rootWordOutput) {
+    if (!wordOutput) {
+      throw new Error("--root-word-output requires a Word package build.");
+    }
+    atomicCopy(wordOutput, resolve(rootWordOutput));
+  }
+  if (rootPowerPointOutput) {
+    if (!powerpointOutput) {
+      throw new Error("--root-powerpoint-output requires a PowerPoint package build.");
+    }
+    atomicCopy(powerpointOutput, resolve(rootPowerPointOutput));
+  }
+  if (installMacos) {
+    if (powerpointOnly) {
+      throw new Error("--install-macos is not supported with --powerpoint-only.");
+    }
+    installMacosArtifacts(wordOutput, powerpointOutput);
+  }
+  process.stdout.write(
+    powerpointOnly
+      ? "Packaged VisualTeX.ppam only; Word resources were left byte-for-byte untouched.\n"
+      : wordOnly
+        ? `Packaged ${basename(wordOutput)} with the reviewed Word Ribbon XML; PowerPoint was not touched.\n`
+        : "Packaged VisualTeX.dotm and VisualTeX.ppam with fixed filenames and reviewed Ribbon XML.\n",
+  );
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+}

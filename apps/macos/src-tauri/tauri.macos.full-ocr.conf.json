@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "ocr/worker.py": "ocr/worker.py",
+      "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
+    }
+  }
+}

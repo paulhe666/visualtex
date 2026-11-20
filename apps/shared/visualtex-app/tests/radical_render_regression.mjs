@@ -1,0 +1,264 @@
+import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { withAppBrowser } from "../testing/browser_test_runtime.mjs";
+
+const screenshotPath = "build-logs/radical-render-regression.png";
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function main() {
+  await withAppBrowser(async ({ baseUrl, client }) => {
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(650);
+
+    const evaluate = async (expression) => {
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (result.exceptionDetails) {
+        throw new Error(
+          result.exceptionDetails.exception?.description ||
+            result.exceptionDetails.text ||
+            "Runtime.evaluate failed",
+        );
+      }
+      return result.result.value;
+    };
+
+    await evaluate(`new Promise((resolve) => {
+      const done = () => {
+        if (location.origin === ${JSON.stringify(baseUrl)}) resolve(true);
+        else setTimeout(done, 30);
+      };
+      done();
+    })`);
+
+    await evaluate(`(() => {
+      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+      localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+      localStorage.setItem(
+        "visualtex.onboarding.macos.desktop.v1.2.0.completed",
+        "true",
+      );
+      localStorage.setItem(
+        "visualtex.office.macos.native-first-run.v1.2.0.completed",
+        "true",
+      );
+    })()`);
+    await client.send("Page.reload", { ignoreCache: true });
+    await sleep(700);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+      done();
+    })`);
+
+    const inspection = await evaluate(`new Promise((resolve) => {
+      const field = document.querySelector("math-field");
+      field.setValue("x=\\\\frac{-b\\\\pm\\\\sqrt{b^2-4ac}}{2a}", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.blur();
+      // Measure once the editor has finished resizing the row for the new
+      // formula (its height settles a frame or two after the render).
+      let lastHeight = -1;
+      let stableFrames = 0;
+      let waitedFrames = 0;
+      const settle = () => {
+        const height = field.getBoundingClientRect().height;
+        stableFrames = height === lastHeight ? stableFrames + 1 : 0;
+        lastHeight = height;
+        if (stableFrames < 2 && ++waitedFrames < 30) {
+          requestAnimationFrame(settle);
+          return;
+        }
+        inspect();
+      };
+      requestAnimationFrame(settle);
+      const inspect = () => {
+        const root = field.shadowRoot;
+        const sign = root?.querySelector(".ML__sqrt-sign");
+        const line = root?.querySelector(".ML__sqrt-line");
+        const readNode = (node) => {
+          if (!node) return null;
+          const box = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          return {
+            className: node.className,
+            text: node.textContent,
+            box: {
+              left: box.left,
+              top: box.top,
+              right: box.right,
+              bottom: box.bottom,
+              width: box.width,
+              height: box.height,
+            },
+            display: style.display,
+            position: style.position,
+            overflow: style.overflow,
+            color: style.color,
+            background: style.backgroundColor,
+            height: style.height,
+            minHeight: style.minHeight,
+            width: style.width,
+            transform: style.transform,
+          };
+        };
+        const readPseudo = (node, selector) => {
+          if (!node) return null;
+          const style = getComputedStyle(node, selector);
+          return {
+            content: style.content,
+            display: style.display,
+            background: style.backgroundColor,
+            minHeight: style.minHeight,
+          };
+        };
+        const fieldBox = field.getBoundingClientRect();
+        resolve({
+          value: field.value,
+          fieldBox: {
+            left: fieldBox.left,
+            top: fieldBox.top,
+            right: fieldBox.right,
+            bottom: fieldBox.bottom,
+            width: fieldBox.width,
+            height: fieldBox.height,
+          },
+          sign: readNode(sign),
+          line: readNode(line),
+          lineBefore: readPseudo(line, "::before"),
+          // the VisualTeX layout engine draws the roof itself; its
+          // ML__sqrt-line element only marks the roof's box
+          layoutEngine: Boolean(field.shadowRoot?.querySelector(".ML__vtx")),
+        });
+      };
+    })`);
+
+    const clip = {
+      x: Math.max(0, inspection.fieldBox.left),
+      y: Math.max(0, inspection.fieldBox.top),
+      width: Math.max(1, inspection.fieldBox.width),
+      height: Math.max(1, inspection.fieldBox.height),
+      scale: 1,
+    };
+    const screenshot = await client.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip,
+    });
+    await mkdir("build-logs", { recursive: true });
+    await writeFile(screenshotPath, Buffer.from(screenshot.data, "base64"));
+
+    const roofHeight = Math.max(1, inspection.line.box.height || 1);
+    const sampleRegion = {
+      x: inspection.line.box.left - inspection.fieldBox.left + 2,
+      // MathLive's nested vlist reports a layout box several pixels below the
+      // final raster position. Anchor the pixel check to the radical glyph top,
+      // which matches the visible roof in the captured image.
+      y: inspection.sign.box.top - inspection.fieldBox.top - 1,
+      width: Math.max(1, inspection.line.box.width - 4),
+      height: roofHeight + 3,
+    };
+    const visualCheck = await evaluate(`new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(image, 0, 0);
+        const scaleX = image.naturalWidth / ${clip.width};
+        const scaleY = image.naturalHeight / ${clip.height};
+        const region = ${JSON.stringify(sampleRegion)};
+        const startX = Math.max(0, Math.floor(region.x * scaleX));
+        const endX = Math.min(
+          image.naturalWidth,
+          Math.ceil((region.x + region.width) * scaleX),
+        );
+        const startY = Math.max(0, Math.floor(region.y * scaleY));
+        const endY = Math.min(
+          image.naturalHeight,
+          Math.ceil((region.y + region.height) * scaleY),
+        );
+        const pixels = context.getImageData(
+          startX,
+          startY,
+          Math.max(1, endX - startX),
+          Math.max(1, endY - startY),
+        );
+        let coveredColumns = 0;
+        for (let x = 0; x < pixels.width; x += 1) {
+          let hasDarkPixel = false;
+          for (let y = 0; y < pixels.height; y += 1) {
+            const index = (y * pixels.width + x) * 4;
+            const red = pixels.data[index];
+            const green = pixels.data[index + 1];
+            const blue = pixels.data[index + 2];
+            const alpha = pixels.data[index + 3];
+            if (alpha > 100 && red < 120 && green < 120 && blue < 120) {
+              hasDarkPixel = true;
+              break;
+            }
+          }
+          if (hasDarkPixel) coveredColumns += 1;
+        }
+
+        resolve({
+          imageWidth: image.naturalWidth,
+          imageHeight: image.naturalHeight,
+          sampledWidth: pixels.width,
+          sampledHeight: pixels.height,
+          sampledStartY: startY,
+          sampledEndY: endY,
+          coveredColumns,
+          coverage: coveredColumns / Math.max(1, pixels.width),
+        });
+      };
+      image.onerror = () => reject(new Error("Could not decode CDP screenshot"));
+      image.src = ${JSON.stringify(`data:image/png;base64,${screenshot.data}`)};
+    })`);
+
+    console.log(
+      JSON.stringify(
+        {
+          screenshotPath,
+          radicalWidth: inspection.line.box.width,
+          radicalHeight: inspection.line.box.height,
+          screenshotCoverage: visualCheck.coverage,
+        },
+        null,
+        2,
+      ),
+    );
+
+    assert.ok(inspection.sign, "MathLive did not render a radical sign");
+    assert.ok(inspection.line, "MathLive did not render a radical line node");
+    assert.ok(inspection.line.box.width > 1, JSON.stringify(inspection, null, 2));
+    if (!inspection.layoutEngine) {
+      assert.notEqual(
+        inspection.lineBefore?.background,
+        "rgba(0, 0, 0, 0)",
+        JSON.stringify(inspection, null, 2),
+      );
+      assert.ok(
+        Number.parseFloat(inspection.lineBefore?.minHeight ?? "0") >= 1,
+        JSON.stringify(inspection, null, 2),
+      );
+    }
+    assert.ok(
+      visualCheck.coverage >= 0.9,
+      `Radical roof is not visually continuous in the screenshot: ${JSON.stringify(
+        visualCheck,
+      )}`,
+    );
+  }, { windowSize: "1400,900" });
+}
+
+await main();

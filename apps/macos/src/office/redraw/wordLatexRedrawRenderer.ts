@@ -1,0 +1,328 @@
+import { wordImageReferenceGeometry } from "../shared/wordImageGeometry";
+import { createUuid } from "../../../../shared/visualtex-app/src/runtime/browserCompatibility";
+import {
+  normalizeFormulaEditorDocument,
+  serializeFormulaEditorDocument,
+} from "../shared/formulaEditorDocument";
+import {
+  createFormulaMetadata,
+  type VisualTeXFormulaMetadata,
+} from "../../../../shared/visualtex-app/src/office/shared/formulaMetadata";
+import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
+import { wordEquationMathMl } from "../wordMathMl/wordEquationMathMl";
+import type {
+  DocumentImportFormulaCommitItem,
+} from "../documentImport/documentImportClient";
+import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
+import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
+import { useEditorStore } from "../../../../shared/visualtex-app/src/stores/editorStore";
+import {
+  normalizeFormulaLetterFont,
+  type FormulaChineseFont,
+  type LegacyFormulaLetterFont,
+} from "../../../../shared/visualtex-app/src/editor/formulaFontPreferences";
+import { currentFormulaFontSettings } from "../../../../shared/visualtex-app/src/office/shared/formulaFontRefresh";
+import { describeConversionFailure } from "../../../../shared/visualtex-app/src/office/shared/conversionErrors";
+
+const WORD_LATEX_REDRAW_RENDER_CONCURRENCY = 4;
+
+export type WordLatexRedrawOutputKind = "omml" | "image";
+export type WordLatexRedrawRenderTarget = WordLatexRedrawSpan & {
+  fontSizePt: number;
+  formulaId?: string;
+  numbered?: boolean;
+  metadata?: VisualTeXFormulaMetadata;
+  sourceKind?: "omml" | "image";
+};
+
+type RenderTemplate = {
+  canonicalLatex: string;
+  /** MathML for the shared Word OMML writer (built by the app). */
+  wordMathMl: string;
+  svgBase64?: string;
+  pngBase64?: string;
+  width?: number;
+  height?: number;
+  baseline?: number;
+  inkCenterYRatio?: number;
+  renderWidthPx?: number;
+  renderHeightPx?: number;
+  referenceWidthPt?: number;
+  referenceHeightPt?: number;
+  referenceBaselinePt?: number;
+};
+
+/** The fonts a formula is drawn in and records. */
+type RenderFonts = {
+  formulaLetterFont: LegacyFormulaLetterFont;
+  formulaChineseFont: FormulaChineseFont;
+};
+
+/**
+ * A picture formula keeps the fonts it was drawn in (a conversion changes its form, not its look); a formula of
+ * Update Equation Format's font step takes the fonts of the Settings, which is what it is drawn again for.
+ */
+function renderFonts(span: WordLatexRedrawRenderTarget, fontRefresh: boolean): RenderFonts {
+  if (fontRefresh) {
+    const current = currentFormulaFontSettings();
+    return { formulaLetterFont: current.letterFont, formulaChineseFont: current.chineseFont };
+  }
+  const editorPreferences = useEditorStore.getState();
+  return {
+    formulaLetterFont: span.metadata?.formulaLetterFont ?? editorPreferences.formulaLetterFont,
+    formulaChineseFont: span.metadata?.formulaChineseFont ?? editorPreferences.formulaChineseFont,
+  };
+}
+
+async function renderTemplate(
+  span: WordLatexRedrawRenderTarget,
+  outputKind: WordLatexRedrawOutputKind,
+  host: "word" | "powerpoint",
+  fonts: RenderFonts,
+): Promise<RenderTemplate> {
+  const line = { id: createUuid(), latex: span.latex };
+  const editorDocument =
+    span.sourceKind === "image" && span.metadata
+      ? normalizeFormulaEditorDocument(span.metadata.lines, span.metadata.codeFormat)
+      : normalizeFormulaEditorDocument([line], "raw");
+  const canonicalLatex = serializeFormulaEditorDocument(editorDocument);
+
+  // formulas saved by Windows or older versions may name letter fonts no longer offered
+  const formulaLetterFont = normalizeFormulaLetterFont(fonts.formulaLetterFont);
+  const formulaChineseFont = fonts.formulaChineseFont;
+
+  if (outputKind === "omml") {
+    // Windows' MathML step rejects commands Word OMML cannot represent.
+    const wordMathMl = wordEquationMathMl(editorDocument, span.displayMode);
+    const cachedGeometry = reusableImageGeometry(span.metadata);
+    if (cachedGeometry) {
+      return {
+        canonicalLatex,
+        wordMathMl,
+        ...cachedGeometry,
+      };
+    }
+
+    // OMML output does not need SVG or PNG data. Historical image formulas can
+    // lack the geometry fields that current metadata carries, though, so render
+    // only the inexpensive vector bounds for that compatibility case. The
+    // backend must never require image bytes for an OMML-only commit.
+    const geometryArtifacts = await renderOfficeFormulaArtifacts({
+      lines: editorDocument.lines,
+      codeFormat: editorDocument.codeFormat,
+      displayMode: span.displayMode,
+      inlineImageMathStyle: span.metadata?.inlineImageMathStyle ?? "text",
+      host: "word",
+      fontSizePt: span.fontSizePt,
+      numbered: span.displayMode === "block" && Boolean(span.numbered),
+      formulaLetterFont,
+      formulaChineseFont,
+    });
+    const geometry = geometryArtifacts.svg;
+    return {
+      canonicalLatex,
+      wordMathMl,
+      width: geometry.width,
+      height: geometry.height,
+      baseline: geometry.baseline,
+      renderWidthPx: geometry.width,
+      renderHeightPx: geometry.height,
+      ...wordImageReferenceGeometry(
+        geometry.width,
+        geometry.height,
+        geometry.baseline,
+        formulaLetterFont,
+      ),
+    };
+  }
+
+  // PowerPoint pictures are display formulas sized from their 14 pt rendering
+  // (the app scales them, as calculate_powerpoint_geometry does).
+  const artifacts = await renderOfficeFormulaArtifacts({
+    lines: editorDocument.lines,
+    codeFormat: editorDocument.codeFormat,
+    displayMode: host === "powerpoint" ? "block" : span.displayMode,
+    inlineImageMathStyle: span.metadata?.inlineImageMathStyle ?? "text",
+    host,
+    fontSizePt: span.fontSizePt,
+    numbered: span.displayMode === "block" && Boolean(span.numbered),
+    formulaLetterFont,
+    formulaChineseFont,
+  });
+  if (!artifacts.wordMathMl) {
+    throw new Error("Unable to generate Word OMML for the LaTeX redraw formula.");
+  }
+  const { wordMathMl, svg } = artifacts;
+
+  const { svgToPng } = await import("../../../../shared/visualtex-app/src/export/svgToPng");
+  const png = await svgToPng(svg, { scale: 2, background: "transparent" });
+  const pngBase64 = png.base64;
+  const baseline = svg.baseline;
+  return {
+    canonicalLatex,
+    wordMathMl,
+    svgBase64: svg.base64,
+    pngBase64,
+    width: svg.width,
+    height: svg.height,
+    baseline,
+    inkCenterYRatio: png.inkCenterYRatio,
+    renderWidthPx: svg.width,
+    renderHeightPx: svg.height,
+    ...wordImageReferenceGeometry(svg.width, svg.height, baseline, formulaLetterFont),
+  };
+}
+
+function createMetadata(
+  formulaId: string,
+  span: WordLatexRedrawRenderTarget,
+  template: RenderTemplate,
+  fonts: RenderFonts,
+): VisualTeXFormulaMetadata {
+  const original = span.metadata ?? null;
+  const line = {
+    id: original?.lines[0]?.id ?? createUuid(),
+    latex: template.canonicalLatex,
+  };
+  const lines =
+    span.sourceKind === "image" && original
+      ? original.lines
+      : [line];
+  const { formulaLetterFont, formulaChineseFont } = fonts;
+  return createFormulaMetadata({
+    formulaId,
+    title:
+      original?.title ??
+      (span.displayMode === "inline"
+        ? "Redrawn inline Word formula"
+        : "Redrawn display Word formula"),
+    lines,
+    codeFormat:
+      span.sourceKind === "image" && original
+        ? original.codeFormat
+        : "raw",
+    sourceLatex: template.canonicalLatex,
+    displayMode: span.displayMode,
+    inlineImageMathStyle: original?.inlineImageMathStyle ?? "text",
+    numbered: span.numbered ?? false,
+    fontSizePt: span.fontSizePt,
+    formulaLetterFont,
+    formulaChineseFont,
+    renderWidthPx: template.renderWidthPx,
+    renderHeightPx: template.renderHeightPx,
+    referenceWidthPt: template.referenceWidthPt,
+    referenceHeightPt: template.referenceHeightPt,
+    referenceBaselinePt: template.referenceBaselinePt,
+    imageInkCenterYRatio: template.inkCenterYRatio,
+    original,
+  });
+}
+
+/**
+ * Mirrors the Windows redraw renderer: scan targets are rendered directly,
+ * templates are cached by output/display/font/source, and each Word target gets
+ * an independent formula identity. No document-import blocks or preview UI are
+ * constructed on this path.
+ */
+/** A formula the redraw skipped, with its reason (worded for the user). */
+export interface WordLatexRedrawFailure {
+  latex: string;
+  sourceStart: number;
+  reason: string;
+}
+
+/**
+ * Renders every formula. A formula that fails is skipped with its reason (as
+ * on Windows); the others are written.
+ */
+export async function prepareWindowsStyleWordLatexRedrawItems(
+  spans: WordLatexRedrawRenderTarget[],
+  outputKind: WordLatexRedrawOutputKind,
+  onProgress?: (current: number, total: number) => void,
+  host: "word" | "powerpoint" = "word",
+  options: { fontRefresh?: boolean } = {},
+): Promise<{ items: DocumentImportFormulaCommitItem[]; failures: WordLatexRedrawFailure[] }> {
+  const templates = new Map<string, RenderTemplate>();
+  const templateFailures = new Map<string, string>();
+  const isEn = useEditorStore.getState().language === "en";
+  const spanFonts = spans.map((span) => renderFonts(span, options.fontRefresh === true));
+  const spanKeys = spans.map((span, index) =>
+    [
+      outputKind,
+      span.displayMode,
+      span.metadata?.inlineImageMathStyle ?? "text",
+      String(span.fontSizePt),
+      spanFonts[index].formulaLetterFont,
+      spanFonts[index].formulaChineseFont,
+      span.sourceKind ?? "",
+      span.metadata?.codeFormat ?? "",
+      span.latex,
+    ].join("\x1f"),
+  );
+  const uniqueTargets = new Map<string, [WordLatexRedrawRenderTarget, RenderFonts]>();
+  spans.forEach((span, index) => {
+    if (!uniqueTargets.has(spanKeys[index])) uniqueTargets.set(spanKeys[index], [span, spanFonts[index]]);
+  });
+  const pendingTemplates = [...uniqueTargets.entries()];
+  let nextTemplateIndex = 0;
+  const workerCount = Math.min(
+    WORD_LATEX_REDRAW_RENDER_CONCURRENCY,
+    pendingTemplates.length,
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const templateIndex = nextTemplateIndex;
+        nextTemplateIndex += 1;
+        if (templateIndex >= pendingTemplates.length) return;
+        const [key, [span, fonts]] = pendingTemplates[templateIndex];
+        try {
+          templates.set(key, await renderTemplate(span, outputKind, host, fonts));
+        } catch (reason) {
+          templateFailures.set(key, describeConversionFailure(reason, isEn));
+        }
+      }
+    }),
+  );
+
+  const items: DocumentImportFormulaCommitItem[] = [];
+  const failures: WordLatexRedrawFailure[] = [];
+  spans.forEach((span, index) => {
+    const template = templates.get(spanKeys[index]);
+    if (!template) {
+      failures.push({
+        latex: span.latex,
+        sourceStart: span.start,
+        reason:
+          templateFailures.get(spanKeys[index]) ??
+          (isEn ? "VisualTeX returned no render result for this formula." : "VisualTeX 没有返回该公式的渲染结果。"),
+      });
+      onProgress?.(index + 1, spans.length);
+      return;
+    }
+    const formulaId = span.formulaId ?? createUuid();
+    const numbered = span.numbered ?? false;
+    const metadata = createMetadata(formulaId, span, template, spanFonts[index]);
+    const item: DocumentImportFormulaCommitItem = {
+      kind: "formula",
+      formulaId,
+      latex: template.canonicalLatex,
+      displayMode: span.displayMode,
+      numbered,
+      fontSizePt: span.fontSizePt,
+      metadata,
+      wordMathMl: template.wordMathMl,
+      svgBase64: template.svgBase64,
+      pngBase64: template.pngBase64,
+      width: template.width,
+      height: template.height,
+      baseline: template.baseline,
+      sourceStart: span.start,
+      sourceEnd: span.end,
+      sourceText: span.sourceText,
+    };
+    onProgress?.(index + 1, spans.length);
+    items.push(item);
+  });
+  return { items, failures };
+}

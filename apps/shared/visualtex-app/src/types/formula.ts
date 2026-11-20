@@ -1,0 +1,187 @@
+export type LatexCodeFormat =
+  | "raw"
+  | "mixed-inline-display"
+  | "inline-dollar"
+  | "inline-text-double-dollar"
+  | "inline-paren"
+  | "display-dollar"
+  | "display-bracket"
+  | "equation"
+  | "equation-star"
+  | "align"
+  | "align-star"
+  | "aligned"
+  | "gather"
+  | "gather-star"
+  | "multline"
+  | "multline-star"
+  | "equation-split"
+  | "equation-star-split";
+
+export type FormulaAlignment = "left" | "center" | "right";
+export type Theme =
+  | "light"
+  | "beige"
+  | "dark"
+  | "purple"
+  | "green"
+  | "codex"
+  | "notion"
+  | "one"
+  | "proof"
+  | "raycast"
+  | "rose-pine"
+  | "solarized"
+  | "vercel"
+  | "vscode-plus"
+  | "xcode"
+  | "custom";
+
+export type FormulaLineMode = "inline" | "display";
+
+export type InlineLatexWrapper = "dollar" | "paren";
+export type InlineTextPolicy = "text-command" | "outside-math";
+export type DisplayLatexWrapper = "double-dollar" | "bracket" | "equation";
+export type MultilineLatexEnvironment = "gather" | "align";
+export type FormulaDisplayStyle =
+  | "default"
+  | "double-dollar"
+  | "bracket"
+  | "equation"
+  | "equation-star";
+
+export interface LatexFormatProfile {
+  inlineWrapper: InlineLatexWrapper;
+  inlineTextPolicy: InlineTextPolicy;
+  displayWrapper: DisplayLatexWrapper;
+  numbered: boolean;
+  multilineEnvironment: MultilineLatexEnvironment;
+}
+
+export interface FormulaLine {
+  id: string;
+  latex: string;
+  mode?: FormulaLineMode;
+  displayStyle?: FormulaDisplayStyle;
+}
+
+export interface FormulaBlock {
+  id: string;
+  latex: string;
+  displayMode: "inline" | "block";
+  displayStyle?: FormulaDisplayStyle;
+  alignment: FormulaAlignment;
+  fontSize: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type WordFormulaInsertFormat = "ole" | "omml";
+
+export interface WordFormulaShortcutSetting {
+  shortcut: string | null;
+  format: WordFormulaInsertFormat;
+}
+
+export interface WordFormulaShortcutSettings {
+  inline: WordFormulaShortcutSetting;
+  display: WordFormulaShortcutSetting;
+}
+
+export type PowerPointFormulaShortcutAction =
+  | "svg"
+  | "ole"
+  | "inlineOmml"
+  | "displayOmml";
+
+export interface PowerPointFormulaShortcutSettings {
+  svg: string | null;
+  ole: string | null;
+  inlineOmml: string | null;
+  displayOmml: string | null;
+}
+
+export interface FormulaDocument {
+  version: number;
+  title: string;
+  formulas: FormulaBlock[];
+  macros: Record<string, string>;
+  settings: {
+    theme: Theme;
+    zoom: number;
+    formulaAlignment?: FormulaAlignment;
+    latexCodeFormat?: LatexCodeFormat;
+    latexFormatProfile?: LatexFormatProfile;
+    editorLayout?: "standard" | "classic";
+    language?: "cn" | "en";
+    sourceOpen?: boolean;
+    autoPairDelimiters?: boolean;
+    examZhSymbols?: boolean;
+    /** the candidates' look (stores/editorStore.ts CandidateStyle); normalized when read */
+    candidateStyle?: "list" | "card" | "row" | "bar";
+    showLineNumbers?: boolean;
+    highlightActiveLine?: boolean;
+    formulaInsetLeft?: number;
+    formulaInsetRight?: number;
+    formulaToolButtonSize?: number;
+    formulaToolButtonPadding?: number;
+    formulaRowVerticalInset?: number;
+    latexSourceFontSize?: number;
+    /** The name macOS used for latexSourceFontSize before the apps shared their code (read when importing). */
+    sourceEditorFontSize?: number;
+    pngExportBackground?: "transparent" | `#${string}`;
+    formulaLetterFont?:
+      | "katex"
+      | "times"
+      | "cambria"
+      | "stix"
+      | "palatino"
+      | "helvetica";
+    formulaChineseFont?: "system" | "pingfang" | "songti" | "kaiti" | "heiti";
+    /** spacing configurations per formula font (editor/formulaSpacingPreferences.ts); normalized when read */
+    formulaSpacing?: unknown;
+    /** letters, Greek letters and digits in fonts of their own (editor/formulaFontPreferences.ts); normalized when read */
+    formulaFaces?: unknown;
+    /** chords of common buttons (shortcuts/buttonShortcuts.ts); normalized when read */
+    buttonShortcuts?: unknown;
+    inputBehavior?: InputBehaviorSettings;
+    personalize?: boolean;
+    suggestionCount?: number;
+    checkUpdatesOnStartup?: boolean;
+    powerPointDefaultFontSizePt?: number;
+    wordFormulaShortcuts?: WordFormulaShortcutSettings;
+    powerPointFormulaShortcuts?: PowerPointFormulaShortcutSettings;
+    /** WPS Writer's own formula shortcuts (shaped as Word's). */
+    wpsWriterFormulaShortcuts?: WordFormulaShortcutSettings;
+    /** WPS Presentation's own formula shortcuts (shaped as PowerPoint's). */
+    wpsPresentationFormulaShortcuts?: PowerPointFormulaShortcutSettings;
+    classicTileWidth?: number;
+    classicDockHeight?: number;
+    keypadMinimizeOnCopy?: boolean;
+  };
+}
+
+export interface FormulaHistoryItem {
+  id: string;
+  latex: string;
+  createdAt: number;
+  lines?: FormulaLine[];
+}
+
+export interface InputBehaviorSettings {
+  autoEscapeShortcuts: boolean;
+  /** Automatic upright typography: units, function names, d, e, i, labels. */
+  autoUprightTypography: boolean;
+  autoExitSuperscript: boolean;
+  autoExitSubscript: boolean;
+  autoExitAccent: boolean;
+  autoExitWrapperCommand: boolean;
+}
+
+export type InputBehaviorSettingKey =
+  | "autoEscapeShortcuts"
+  | "autoUprightTypography"
+  | "autoExitSuperscript"
+  | "autoExitSubscript"
+  | "autoExitAccent"
+  | "autoExitWrapperCommand";

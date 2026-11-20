@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <rect x="9" y="12" width="40" height="39" rx="2"/>
+    <path d="M9 21h40M16 17h1M22 17h1"/>
+    <path d="M39 39l14-14M45 25h8v8"/>
+  </g>
+  <text x="17" y="43" fill="#1F638E" font-family="Times New Roman, serif" font-size="20" font-style="italic">V</text>
+</svg>

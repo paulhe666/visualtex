@@ -1,0 +1,391 @@
+using VisualTeX.WordVsto;
+using Xunit;
+
+namespace VisualTeX.WindowsOffice.Tests;
+
+public sealed class MathMlToLatexConverterTests
+{
+    [Theory]
+    [InlineData(
+        "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mi>a</mi><mi>b</mi></mfrac></math>",
+        @"\frac{a}{b}")]
+    [InlineData(
+        "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msqrt><mrow><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup></mrow></msqrt></math>",
+        @"\sqrt{x^{2}+y^{2}}")]
+    [InlineData(
+        "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><msup><mi>t</mi><mn>2</mn></msup><mi>d</mi><mi>t</mi></math>",
+        @"\int_{0}^{1}t^{2}dt")]
+    public void ConvertsCommonWordMathMlToEditableLatex(string mathMl, string expected)
+    {
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("<mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac>", @"\genfrac{}{}{0pt}{}{n}{k}")]
+    [InlineData("<mfrac linethickness=\"0pt\"><mi>n</mi><mi>k</mi></mfrac>", @"\genfrac{}{}{0pt}{}{n}{k}")]
+    [InlineData("<mfrac linethickness=\"1\"><mi>n</mi><mi>k</mi></mfrac>", @"\frac{n}{k}")]
+    [InlineData("<mo>[</mo><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac><mo>]</mo>", @"[\genfrac{}{}{0pt}{}{n}{k}]")]
+    public void KeepsABarlessFractionBarless(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("<mo>△</mo><mi>A</mi>", @"\triangle A")]
+    [InlineData("<mo>▲</mo><mi>A</mi>", @"\blacktriangle A")]
+    [InlineData("<mo>∵</mo>", @"\because")]
+    // Older VisualTeX equations stored \triangle in MathType's Text face.
+    [InlineData("<mtext>△</mtext><mi>A</mi>", @"\triangle A")]
+    [InlineData("<mtext>∠</mtext><mi>A</mi>", @"\angle A")]
+    public void GeometrySymbolsBecomeTheirCommands(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    // Generated reverse table: symbols read back from MathType or Word come back
+    // as the command the editor knows, not as raw Unicode.
+    [InlineData("<mo>⟶</mo>", @"\longrightarrow")]
+    [InlineData("<mo>⩽</mo>", @"\leqslant")]
+    [InlineData("<mo>⇌</mo>", @"\rightleftharpoons")]
+    [InlineData("<mo>⨁</mo>", @"\bigoplus")]
+    [InlineData("<mo>≲</mo>", @"\lesssim")]
+    [InlineData("<mo>⊊</mo>", @"\subsetneq")]
+    [InlineData("<mo>∤</mo>", @"\nmid")]
+    [InlineData("<mo>↠</mo>", @"\twoheadrightarrow")]
+    public void SymbolsReadBackAsTheirCommands(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeGreekVariantsAndDotOperatorBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mi>ε</mi><mi>ϵ</mi><mi>ϑ</mi><mi>ϖ</mi><mi>ϱ</mi><mi>ς</mi>"
+            + "<mi>φ</mi><mi>ϕ</mi><mi>ϰ</mi><mo>⋅</mo></math>";
+
+        Assert.Equal(
+            @"\varepsilon \epsilon \vartheta \varpi \varrho \varsigma \varphi \phi \varkappa \cdot",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeAmsBinaryOperatorsBackToLatexCommands()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⊎</mo><mo>⊓</mo><mo>⊔</mo><mo>≀</mo><mo>⨿</mo></math>";
+
+        Assert.Equal(
+            @"\uplus \sqcap \sqcup \wr \amalg",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeAmsSymbolFamiliesBackToLatexCommands()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⋆</mo><mo>⊲</mo><mo>⊳</mo><mo>⊏</mo><mo>⊑</mo><mo>⊐</mo><mo>⊒</mo>"
+            + "<mo>⇐</mo><mo>↗</mo><mo>↘</mo><mo>↙</mo><mo>↖</mo>"
+            + "<mo>♠</mo><mo>♣</mo><mo>♡</mo><mo>♢</mo></math>";
+
+        Assert.Equal(
+            @"\star \triangleleft \triangleright \sqsubset \sqsubseteq \sqsupset \sqsupseteq \Leftarrow \nearrow \searrow \swarrow \nwarrow \spadesuit \clubsuit \heartsuit \diamondsuit",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeLetterlikeCommandsWithoutInventingFraktur()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mi>ℵ</mi><mi mathvariant=\"normal\">℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi></math>";
+
+        Assert.Equal(
+            @"\aleph \mathrm{\wp}\Re \Im \ell",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void DistinguishesPreceqFromCurlyPrecedenceRelations()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⪯</mo><mo>⪰</mo><mo>≼</mo><mo>≽</mo></math>";
+
+        Assert.Equal(
+            @"\preceq \succeq \preccurlyeq \succcurlyeq",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeRelationSpellingsBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>∥</mo><mo>⊥</mo><mo>∝</mo><mo>~</mo><mo>≅</mo></math>";
+
+        Assert.Equal(
+            @"\parallel \perp \propto \sim \cong",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeSpecialOperatorSpellingsBackToExactLatex()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>⊕</mo><mo>⊗</mo><mo>°</mo><mo>•</mo><mo>⋄</mo>"
+            + "<mo>≪</mo><mo>≫</mo><mo>∋</mo><mo>∠</mo><mo>∴</mo><mo>∖</mo>"
+            + "<mo>…</mo><mo>⋯</mo><mo>⋮</mo><mo>⋱</mo></math>";
+
+        Assert.Equal(
+            @"\oplus \otimes \circ \bullet \diamond \ll \gg \ni \angle \therefore \setminus \dots \cdots \vdots \ddots",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    // Word's limit object (an upright lim/max/… identifier with its limit
+    // underneath) is TeX's \lim\limits: the operator itself, with the limit
+    // kept underneath even inline, as Word draws it.
+    [InlineData("lim", @"\lim\limits_{x\to 0}")]
+    [InlineData("max", @"\max\limits_{x\in A}")]
+    [InlineData("min", @"\min\limits_{x\in A}")]
+    [InlineData("sup", @"\sup\limits_{x\in A}")]
+    [InlineData("inf", @"\inf\limits_{x\in A}")]
+    [InlineData("limsup", @"\limsup\limits_{n\to \mathrm{\infty}}")]
+    [InlineData("liminf", @"\liminf\limits_{n\to \mathrm{\infty}}")]
+    public void WritesUprightLimitIdentifiersAsLimitOperatorsWithLimitsUnderneath(
+        string operatorName,
+        string expected)
+    {
+        var script = operatorName.StartsWith("lim", StringComparison.Ordinal)
+            ? "<mrow><mi>n</mi><mo>→</mo><mi mathvariant=\"normal\">∞</mi></mrow>"
+            : "<mrow><mi>x</mi><mo>∈</mo><mi>A</mi></mrow>";
+        if (operatorName == "lim")
+            script = "<mrow><mi>x</mi><mo>→</mo><mn>0</mn></mrow>";
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<munder><mi mathvariant=\"normal\">{operatorName}</mi>{script}</munder></math>";
+
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void KeepsOrdinaryMathMlUnderScriptAsUnderset()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<munder><mi>x</mi><mi>i</mi></munder></math>";
+
+        Assert.Equal(@"\underset{i}{x}", MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsLooseNoBarFractionFenceToBinomial()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>(</mo><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac><mo>)</mo>"
+            + "<mo>=</mo><mn>1</mn></math>";
+
+        Assert.Equal(
+            @"\binom{n}{k}=1",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathJaxWrappedOpenCloseNoBarFractionToBinomial()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mrow data-mjx-texclass=\"ORD\">"
+            + "<mrow data-mjx-texclass=\"OPEN\"><mo minsize=\"2.047em\" maxsize=\"2.047em\">(</mo></mrow>"
+            + "<mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac>"
+            + "<mrow data-mjx-texclass=\"CLOSE\"><mo minsize=\"2.047em\" maxsize=\"2.047em\">)</mo></mrow>"
+            + "</mrow></math>";
+
+        Assert.Equal(@"\binom{n}{k}", MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathJaxFencedNoBarFractionThroughTransparentRowToBinomial()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\"><mrow><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac></mrow></mfenced>"
+            + "</math>";
+
+        Assert.Equal(@"\binom{n}{k}", MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsLooseMathTypePileFenceToBinomial()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>(</mo><mtable data-mtef-pile=\"true\">"
+            + "<mtr><mtd><mi>n</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>k</mi></mtd></mtr>"
+            + "</mtable><mo>)</mo><mo>=</mo><mn>1</mn></math>";
+
+        Assert.Equal(
+            @"\binom{n}{k}=1",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void DoesNotConvertOrdinaryFencedFractionToBinomial()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mo>(</mo><mfrac><mi>n</mi><mi>k</mi></mfrac><mo>)</mo>"
+            + "</math>";
+
+        Assert.Equal(
+            @"(\frac{n}{k})",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsOrdinaryMultiElementFencedExpressionWithoutBinomialProbeFailure()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\" separators=\",\">"
+            + "<msub><mi>A</mi><mn>9</mn></msub><mi>B</mi>"
+            + "</mfenced></math>";
+
+        Assert.Equal(
+            @"\left( A_{9},B\right)",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("'", @"f^{\prime}")]
+    [InlineData("′", @"f^{\prime}")]
+    [InlineData("″", @"f^{\prime\prime}")]
+    public void ConvertsWordPrimeSpellingsToLatexPrime(string prime, string expected)
+    {
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<msup><mi>f</mi><mi>{prime}</mi></msup></math>";
+
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void PreservesExplicitUprightLatinIdentifiers()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mi mathvariant=\"normal\">e</mi>"
+            + "<msup><mi mathvariant=\"normal\">i</mi><mi>π</mi></msup>"
+            + "<mi>x</mi></math>";
+
+        Assert.Equal(
+            @"\mathrm{e}\mathrm{i}^{\pi}x",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("mover", "⏞", @"\overbrace{a+b}^{n}")]
+    [InlineData("munder", "⏟", @"\underbrace{a+b}_{n}")]
+    public void ConvertsAnnotatedHorizontalBracesThroughSingleTransparentWrapper(
+        string innerName,
+        string marker,
+        string expected)
+    {
+        var outerName = innerName;
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<{outerName}><mrow><{innerName}><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mo stretchy=\"true\">{marker}</mo></{innerName}></mrow><mi>n</mi></{outerName}></math>";
+
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("mover", "―", @"\overline{AB}")]
+    [InlineData("munder", "―", @"\underline{AB}")]
+    public void ConvertsMathJaxHorizontalBarAccentToLineCommands(
+        string elementName,
+        string marker,
+        string expected)
+    {
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<{elementName}><mrow><mi>A</mi><mi>B</mi></mrow><mo>{marker}</mo></{elementName}></math>";
+
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Theory]
+    [InlineData("|", "|", @"\left| x\right|")]
+    [InlineData("‖", "‖", @"\left\| x\right\|")]
+    public void ConvertsFencedAbsoluteAndNormDelimitersWithMatchingSides(
+        string open,
+        string close,
+        string expected)
+    {
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<mfenced open=\"{open}\" close=\"{close}\"><mi>x</mi></mfenced></math>";
+
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMathTypeTabPileTableBackToAligned()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mtable data-mtef-tabs=\"true\" columnalign=\"right left right left\">"
+            + "<mtr><mtd><msub><mi>p</mi><mn>0</mn></msub></mtd>"
+            + "<mtd><mo>=</mo><mi>x</mi></mtd><mtd></mtd><mtd><mtext>Low word</mtext></mtd></mtr>"
+            + "</mtable></math>";
+
+        var latex = MathMlToLatexConverter.Convert(mathMl);
+
+        Assert.StartsWith(@"\begin{aligned}", latex);
+        Assert.EndsWith(@"\end{aligned}", latex);
+        Assert.Equal(3, latex.Count(character => character == '&'));
+        Assert.Contains(@"& & \text{Low word}", latex);
+    }
+
+    [Theory]
+    [InlineData("mi")]
+    [InlineData("mo")]
+    public void PreservesBoldMathVariantOnOperatorSymbols(string elementName)
+    {
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<{elementName} mathvariant=\"bold\">∞</{elementName}></math>";
+
+        Assert.Equal(@"\mathbf{\infty}", MathMlToLatexConverter.Convert(mathMl));
+    }
+
+    [Fact]
+    public void ConvertsMatricesAndGreekSymbols()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\"><mtable>"
+            + "<mtr><mtd><mi>α</mi></mtd><mtd><mi>β</mi></mtd></mtr>"
+            + "<mtr><mtd><mi>γ</mi></mtd><mtd><mi>δ</mi></mtd></mtr>"
+            + "</mtable></mfenced></math>";
+
+        var latex = MathMlToLatexConverter.Convert(mathMl);
+
+        Assert.Contains(@"\begin{matrix}", latex);
+        Assert.Contains(@"\alpha", latex);
+        Assert.Contains(@"\delta", latex);
+        Assert.StartsWith(@"\left(", latex);
+        Assert.EndsWith(@"\right)", latex);
+    }
+}

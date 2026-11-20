@@ -1,0 +1,1341 @@
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { CommandSource, CommandUsage } from "../types/command";
+import type {
+  FormulaDocument,
+  FormulaAlignment,
+  FormulaDisplayStyle,
+  FormulaHistoryItem,
+  FormulaLine,
+  FormulaLineMode,
+  InputBehaviorSettingKey,
+  InputBehaviorSettings,
+  LatexCodeFormat,
+  LatexFormatProfile,
+  PowerPointFormulaShortcutAction,
+  PowerPointFormulaShortcutSettings,
+  Theme,
+  WordFormulaInsertFormat,
+  WordFormulaShortcutSettings,
+} from "../types/formula";
+import type { DocumentSnapshot } from "../history/historyTypes";
+import {
+  DEFAULT_LATEX_CODE_FORMAT,
+  isLatexCodeFormat,
+} from "../clipboard/LatexCopyService";
+import {
+  DEFAULT_LATEX_FORMAT_PROFILE,
+  legacyCodeFormatToProfile,
+  normalizeLatexFormatProfile,
+} from "../clipboard/latexFormatProfile";
+import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
+import { setExamZhSymbolsEnabled } from "../math/examZhSymbols";
+import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
+import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
+import { createUuid } from "../runtime/browserCompatibility";
+import { safeStorage } from "../runtime/safeStorage";
+import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
+import {
+  DEFAULT_PNG_EXPORT_BACKGROUND,
+  normalizePngExportBackground,
+  type PngExportBackground,
+} from "../export/pngBackground";
+import { isTheme } from "../themeCustomization";
+import {
+  DEFAULT_FORMULA_CHINESE_FONT,
+  DEFAULT_FORMULA_LETTER_FONT,
+  normalizeFormulaChineseFont,
+  normalizeFormulaLetterFont,
+  normalizeFormulaFaces,
+  persistFormulaChineseFontPreference,
+  persistFormulaFaces,
+  persistFormulaFontPreferences,
+  persistFormulaLetterFontPreference,
+  readPersistedFormulaFaces,
+  readPersistedFormulaFontPreferences,
+  type FormulaChineseFont,
+  type FormulaFaceRole,
+  type FormulaFaces,
+  type FormulaLetterFont,
+} from "../editor/formulaFontPreferences";
+import {
+  defaultFormulaSpacingPreferences,
+  mergeFormulaSpacingPreferences,
+  normalizeFormulaSpacingPreferences,
+  persistFormulaSpacing,
+  readPersistedFormulaSpacing,
+  type FormulaSpacingPreferences,
+} from "../editor/formulaSpacingPreferences";
+import {
+  normalizeButtonShortcutSettings,
+  withButtonShortcut,
+  type ButtonShortcutId,
+  type ButtonShortcutSettings,
+} from "../shortcuts/buttonShortcuts";
+import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
+import {
+  DEFAULT_POWERPOINT_FORMULA_SHORTCUTS,
+  DEFAULT_WORD_FORMULA_SHORTCUTS,
+  normalizeOfficeFormulaShortcut,
+  normalizePowerPointFormulaShortcutSettings,
+  normalizeWordFormulaShortcutSettings,
+} from "../office/officeFormulaShortcuts";
+
+export type Language = "cn" | "en";
+export type EditorLayout = "standard" | "classic";
+export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
+export const DEFAULT_THEME: Theme = "light";
+export const MIN_EDITOR_ZOOM = 0.2;
+export const MAX_EDITOR_ZOOM = 1.6;
+export const EDITOR_ZOOM_STEP = 0.05;
+export const DEFAULT_LATEX_SOURCE_FONT_SIZE = 12;
+export const MIN_LATEX_SOURCE_FONT_SIZE = 8;
+export const MAX_LATEX_SOURCE_FONT_SIZE = 32;
+export const DEFAULT_FORMULA_INSET = 34;
+export const MIN_FORMULA_INSET = 0;
+export const MAX_FORMULA_INSET = 96;
+export const DEFAULT_FORMULA_TOOL_BUTTON_SIZE = 52;
+export const MIN_FORMULA_TOOL_BUTTON_SIZE = 38;
+export const MAX_FORMULA_TOOL_BUTTON_SIZE = 72;
+export const DEFAULT_FORMULA_TOOL_BUTTON_PADDING = 2;
+export const MIN_FORMULA_TOOL_BUTTON_PADDING = 0;
+export const MAX_FORMULA_TOOL_BUTTON_PADDING = 12;
+export const DEFAULT_FORMULA_ROW_VERTICAL_INSET = 5;
+export const MIN_FORMULA_ROW_VERTICAL_INSET = 0;
+export const MAX_FORMULA_ROW_VERTICAL_INSET = 24;
+export const DEFAULT_CLASSIC_TILE_WIDTH = 300;
+export const MIN_CLASSIC_TILE_WIDTH = 220;
+export const MAX_CLASSIC_TILE_WIDTH = 2000;
+export const DEFAULT_CLASSIC_DOCK_HEIGHT = 240;
+export const MIN_CLASSIC_DOCK_HEIGHT = 132;
+export const MAX_CLASSIC_DOCK_HEIGHT = 2000;
+
+const legacyClassicTileWidthStorageKey = "visualtex-classic-tile-width";
+const legacyClassicDockHeightStorageKey = "visualtex-classic-dock-height";
+
+export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
+  autoEscapeShortcuts: true,
+  autoUprightTypography: true,
+  autoExitSuperscript: true,
+  autoExitSubscript: true,
+  autoExitAccent: true,
+  autoExitWrapperCommand: true,
+};
+
+function normalizeInputBehaviorSettings(
+  value: unknown,
+): InputBehaviorSettings {
+  const candidate =
+    value && typeof value === "object"
+      ? (value as Partial<InputBehaviorSettings>)
+      : {};
+  return {
+    autoEscapeShortcuts:
+      typeof candidate.autoEscapeShortcuts === "boolean"
+        ? candidate.autoEscapeShortcuts
+        : true,
+    autoUprightTypography:
+      typeof candidate.autoUprightTypography === "boolean"
+        ? candidate.autoUprightTypography
+        : true,
+    autoExitSuperscript:
+      typeof candidate.autoExitSuperscript === "boolean"
+        ? candidate.autoExitSuperscript
+        : true,
+    autoExitSubscript:
+      typeof candidate.autoExitSubscript === "boolean"
+        ? candidate.autoExitSubscript
+        : true,
+    autoExitAccent:
+      typeof candidate.autoExitAccent === "boolean"
+        ? candidate.autoExitAccent
+        : true,
+    autoExitWrapperCommand:
+      typeof candidate.autoExitWrapperCommand === "boolean"
+        ? candidate.autoExitWrapperCommand
+        : true,
+  };
+}
+
+function normalizeFormulaAlignment(value: unknown): FormulaAlignment {
+  return value === "center" || value === "right" ? value : "left";
+}
+
+export function normalizeEditorLayout(value: unknown): EditorLayout {
+  return value === "standard" ? "standard" : DEFAULT_EDITOR_LAYOUT;
+}
+
+function normalizeTheme(value: unknown): Theme {
+  return isTheme(value) ? value : DEFAULT_THEME;
+}
+
+function normalizeEditorZoom(value: unknown) {
+  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
+  const steppedZoom =
+    Math.round(
+      Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100,
+    ) / 100;
+  return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
+}
+
+export function normalizeLatexSourceFontSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_LATEX_SOURCE_FONT_SIZE;
+  return Math.min(
+    MAX_LATEX_SOURCE_FONT_SIZE,
+    Math.max(MIN_LATEX_SOURCE_FONT_SIZE, size),
+  );
+}
+
+function normalizeFormulaInset(value: unknown) {
+  const inset =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_FORMULA_INSET;
+  return Math.min(MAX_FORMULA_INSET, Math.max(MIN_FORMULA_INSET, inset));
+}
+
+function normalizeFormulaToolButtonSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_FORMULA_TOOL_BUTTON_SIZE;
+  return Math.min(
+    MAX_FORMULA_TOOL_BUTTON_SIZE,
+    Math.max(MIN_FORMULA_TOOL_BUTTON_SIZE, size),
+  );
+}
+
+function normalizeFormulaToolButtonPadding(value: unknown) {
+  const padding =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_FORMULA_TOOL_BUTTON_PADDING;
+  return Math.min(
+    MAX_FORMULA_TOOL_BUTTON_PADDING,
+    Math.max(MIN_FORMULA_TOOL_BUTTON_PADDING, padding),
+  );
+}
+
+function normalizeFormulaRowVerticalInset(value: unknown) {
+  const inset =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_FORMULA_ROW_VERTICAL_INSET;
+  return Math.min(
+    MAX_FORMULA_ROW_VERTICAL_INSET,
+    Math.max(MIN_FORMULA_ROW_VERTICAL_INSET, inset),
+  );
+}
+
+function normalizeClassicPanelSize(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : fallback;
+  return Math.min(maximum, Math.max(minimum, size));
+}
+
+function legacyClassicPanelSize(
+  storageKey: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) {
+  const stored = Number.parseFloat(safeStorage.getItem(storageKey) ?? "");
+  return normalizeClassicPanelSize(
+    Number.isFinite(stored) ? stored : fallback,
+    fallback,
+    minimum,
+    maximum,
+  );
+}
+
+function normalizeClassicTileWidth(value: unknown) {
+  return normalizeClassicPanelSize(
+    value,
+    DEFAULT_CLASSIC_TILE_WIDTH,
+    MIN_CLASSIC_TILE_WIDTH,
+    MAX_CLASSIC_TILE_WIDTH,
+  );
+}
+
+function normalizeClassicDockHeight(value: unknown) {
+  return normalizeClassicPanelSize(
+    value,
+    DEFAULT_CLASSIC_DOCK_HEIGHT,
+    MIN_CLASSIC_DOCK_HEIGHT,
+    MAX_CLASSIC_DOCK_HEIGHT,
+  );
+}
+
+function normalizeFormulaDisplayStyle(value: unknown): FormulaDisplayStyle {
+  return value === "double-dollar" ||
+    value === "bracket" ||
+    value === "equation" ||
+    value === "equation-star"
+    ? value
+    : "default";
+}
+
+function normalizeFormulaLineLatex(latex: string) {
+  const normalized = latex.replace(/\r\n?/g, "\n");
+  const trimmed = normalized.trim();
+  return normalizeChineseLatex(
+    isSingleCompleteLatexEnvironment(trimmed)
+      ? trimmed
+      : normalizeFormulaLinePhysicalWhitespace(normalized),
+  );
+}
+
+export function createFormulaLine(
+  latex = "",
+  id: string = createUuid(),
+  mode: FormulaLineMode = "display",
+  displayStyle: FormulaDisplayStyle = "default",
+): FormulaLine {
+  return {
+    id,
+    latex: normalizeFormulaLineLatex(latex.replace(/\r\n?/g, "\n")),
+    mode: mode === "inline" ? "inline" : "display",
+    displayStyle: normalizeFormulaDisplayStyle(displayStyle),
+  };
+}
+
+function uniqueLineId(candidate: unknown, usedIds: Set<string>) {
+  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  if (normalized && !usedIds.has(normalized)) {
+    usedIds.add(normalized);
+    return normalized;
+  }
+  let nextId: string = createUuid();
+  while (usedIds.has(nextId)) nextId = createUuid();
+  usedIds.add(nextId);
+  return nextId;
+}
+
+export function normalizeFormulaLines(
+  value: unknown,
+  legacyLatex?: unknown,
+): FormulaLine[] {
+  const usedIds = new Set<string>();
+  if (Array.isArray(value) && value.length) {
+    const normalized = value
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const candidate = item as Partial<FormulaLine>;
+        return {
+          id: uniqueLineId(candidate.id, usedIds),
+          latex: normalizeFormulaLineLatex(
+            typeof candidate.latex === "string"
+              ? candidate.latex.replace(/\r\n?/g, "\n")
+              : "",
+          ),
+          mode: candidate.mode === "inline" ? "inline" : "display",
+          displayStyle: normalizeFormulaDisplayStyle(candidate.displayStyle),
+        } satisfies FormulaLine;
+      })
+      .filter((line): line is NonNullable<typeof line> => line !== null);
+    if (normalized.length) return normalized;
+  }
+
+  const normalizedLatex = normalizeMultilineLatex(
+    typeof legacyLatex === "string" ? legacyLatex : "",
+  );
+  const values = normalizedLatex.split("\n");
+  return (values.length ? values : [""]).map((latex) =>
+    createFormulaLine(latex, uniqueLineId(undefined, usedIds)),
+  );
+}
+
+export function joinFormulaLines(lines: readonly FormulaLine[]): string {
+  return lines.map((line) => line.latex).join("\n");
+}
+
+export function cloneFormulaLines(lines: readonly FormulaLine[]): FormulaLine[] {
+  return lines.map((line) => ({ ...line }));
+}
+
+function validActiveLineId(
+  lines: readonly FormulaLine[],
+  candidate: unknown,
+): string | null {
+  if (
+    typeof candidate === "string" &&
+    lines.some((line) => line.id === candidate)
+  ) {
+    return candidate;
+  }
+  return lines[0]?.id ?? null;
+}
+
+interface EditorState {
+  title: string;
+  lines: FormulaLine[];
+  activeLineId: string | null;
+  formulaAlignment: FormulaAlignment;
+  editorLayout: EditorLayout;
+  theme: Theme;
+  language: Language;
+  zoom: number;
+  sourceOpen: boolean;
+  latexSourceFontSize: number;
+  latexCodeFormat: LatexCodeFormat;
+  latexFormatProfile: LatexFormatProfile;
+  autoPairDelimiters: boolean;
+  /** the user writes exam-zh's spelling of the congruence and similarity signs (math/examZhSymbols.ts) */
+  examZhSymbols: boolean;
+  showLineNumbers: boolean;
+  highlightActiveLine: boolean;
+  formulaInsetLeft: number;
+  formulaInsetRight: number;
+  formulaToolButtonSize: number;
+  formulaToolButtonPadding: number;
+  formulaRowVerticalInset: number;
+  pngExportBackground: PngExportBackground;
+  formulaLetterFont: FormulaLetterFont;
+  formulaChineseFont: FormulaChineseFont;
+  /** spacing configurations per formula font (stored on their own, not with the editor state) */
+  formulaSpacing: FormulaSpacingPreferences;
+  /** letters, Greek letters and digits in fonts of their own ("": the math font); stored on their own */
+  formulaFaces: FormulaFaces;
+  classicTileWidth: number;
+  classicDockHeight: number;
+  keypadMinimizeOnCopy: boolean;
+  inputBehavior: InputBehaviorSettings;
+  personalize: boolean;
+  suggestionCount: number;
+  /** the command candidates: a list (cards) or one row like an input method's candidate bar */
+  candidateStyle: CandidateStyle;
+  checkUpdatesOnStartup: boolean;
+  powerPointDefaultFontSizePt: number;
+  /** Word, PowerPoint and WPS shortcuts of the Windows add-ins: the Windows backend reads them from the editor
+   * preferences (the macOS app keeps its Office hotkeys in stores/officeHotkeyStore.ts) */
+  wordFormulaShortcuts: WordFormulaShortcutSettings;
+  powerPointFormulaShortcuts: PowerPointFormulaShortcutSettings;
+  wpsWriterFormulaShortcuts: WordFormulaShortcutSettings;
+  wpsPresentationFormulaShortcuts: PowerPointFormulaShortcutSettings;
+  usage: Record<string, CommandUsage>;
+  history: FormulaHistoryItem[];
+  /** chords the user gave common buttons (shortcuts/buttonShortcuts.ts); none at first */
+  buttonShortcuts: ButtonShortcutSettings;
+  setTitle: (title: string) => void;
+  setActiveLineId: (lineId: string | null) => void;
+  replaceFormulaLine: (lineId: string, latex: string, activeLineId?: string | null) => void;
+  setFormulaAlignment: (alignment: FormulaAlignment) => void;
+  setEditorLayout: (layout: EditorLayout) => void;
+  replaceDocumentState: (snapshot: DocumentSnapshot) => void;
+  setTheme: (theme: Theme) => void;
+  setLanguage: (language: Language) => void;
+  setZoom: (zoom: number) => void;
+  setSourceOpen: (open: boolean) => void;
+  setLatexSourceFontSize: (size: number) => void;
+  setLatexCodeFormat: (format: LatexCodeFormat) => void;
+  setLatexFormatProfile: (
+    update:
+      | Partial<LatexFormatProfile>
+      | ((current: LatexFormatProfile) => Partial<LatexFormatProfile>),
+  ) => void;
+  setAutoPairDelimiters: (enabled: boolean) => void;
+  setExamZhSymbols: (enabled: boolean) => void;
+  setShowLineNumbers: (enabled: boolean) => void;
+  setHighlightActiveLine: (enabled: boolean) => void;
+  setFormulaInsetLeft: (inset: number) => void;
+  setFormulaInsetRight: (inset: number) => void;
+  setFormulaToolButtonSize: (size: number) => void;
+  setFormulaToolButtonPadding: (padding: number) => void;
+  setFormulaRowVerticalInset: (inset: number) => void;
+  setPngExportBackground: (background: PngExportBackground) => void;
+  setFormulaLetterFont: (font: FormulaLetterFont) => void;
+  setFormulaChineseFont: (font: FormulaChineseFont) => void;
+  setFormulaSpacing: (spacing: FormulaSpacingPreferences) => void;
+  setFormulaFace: (role: FormulaFaceRole, family: string) => void;
+  setFormulaFaces: (faces: FormulaFaces) => void;
+  setButtonShortcut: (id: ButtonShortcutId, chord: FormulaHotkeyChord | null) => void;
+  setButtonShortcuts: (settings: unknown) => void;
+  setClassicTileWidth: (width: number) => void;
+  setClassicDockHeight: (height: number) => void;
+  setKeypadMinimizeOnCopy: (enabled: boolean) => void;
+  setInputBehavior: (
+    setting: InputBehaviorSettingKey,
+    enabled: boolean,
+  ) => void;
+  setPersonalize: (enabled: boolean) => void;
+  setSuggestionCount: (count: number) => void;
+  setCandidateStyle: (style: CandidateStyle) => void;
+  setCheckUpdatesOnStartup: (enabled: boolean) => void;
+  setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
+  setWordFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setPowerPointFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
+  ) => void;
+  setWpsWriterFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setWpsPresentationFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
+  ) => void;
+  recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
+  resetUsage: () => void;
+  /** Takes in another window's command usage (the main app's, for an Office editor): per command the record used more often. */
+  mergeUsage: (usage: unknown) => void;
+  addHistory: (latex?: string) => void;
+  clearHistory: () => void;
+  loadDocument: (document: FormulaDocument) => void;
+  toDocument: () => FormulaDocument;
+}
+
+/** Word or WPS Writer: the host's shortcuts after one kind changes (a shortcut taken over from
+ * the other kind leaves it). */
+function nextDocumentFormulaShortcuts(
+  hostSettings: WordFormulaShortcutSettings,
+  kind: keyof WordFormulaShortcutSettings,
+  update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+): WordFormulaShortcutSettings {
+  const otherKind = kind === "inline" ? "display" : "inline";
+  const shortcut =
+    update.shortcut === undefined
+      ? hostSettings[kind].shortcut
+      : normalizeOfficeFormulaShortcut(update.shortcut);
+  const format =
+    update.format === "omml"
+      ? "omml"
+      : update.format === "ole"
+        ? "ole"
+        : hostSettings[kind].format;
+  return {
+    ...hostSettings,
+    [kind]: { shortcut, format },
+    [otherKind]:
+      shortcut && hostSettings[otherKind].shortcut === shortcut
+        ? { ...hostSettings[otherKind], shortcut: null }
+        : hostSettings[otherKind],
+  };
+}
+
+/** PowerPoint or WPS Presentation: the host's shortcuts after one action changes (a shortcut
+ * taken over from another action leaves it). */
+function nextSlideFormulaShortcuts(
+  current: PowerPointFormulaShortcutSettings,
+  action: PowerPointFormulaShortcutAction,
+  value: string | null,
+): PowerPointFormulaShortcutSettings {
+  const shortcut = normalizeOfficeFormulaShortcut(value);
+  const next = { ...current, [action]: shortcut };
+  if (shortcut) {
+    for (const otherAction of ["svg", "ole", "inlineOmml", "displayOmml"] as const) {
+      if (otherAction !== action && next[otherAction] === shortcut) {
+        next[otherAction] = null;
+      }
+    }
+  }
+  return next;
+}
+
+const initialLatex = "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,\\mathrm{d}x = \\sqrt{\\pi}";
+const initialLines = [createFormulaLine(initialLatex)];
+
+/**
+ * Another window's usage records merged into these: per command the record used more often (the newer one on a tie),
+ * pinned if either is. Repeating a merge changes nothing; the same object comes back when nothing changed.
+ */
+function mergeCommandUsage(
+  current: Record<string, CommandUsage>,
+  incoming: unknown,
+): Record<string, CommandUsage> {
+  if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return current;
+  let merged: Record<string, CommandUsage> | null = null;
+  for (const [commandId, value] of Object.entries(incoming as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const other = value as Partial<CommandUsage>;
+    if (typeof other.useCount !== "number" || !Number.isFinite(other.useCount)) continue;
+    const mine = current[commandId];
+    const otherLastUsedAt = typeof other.lastUsedAt === "number" ? other.lastUsedAt : 0;
+    const otherWins =
+      !mine || other.useCount > mine.useCount || (other.useCount === mine.useCount && otherLastUsedAt > mine.lastUsedAt);
+    const pinned = Boolean(mine?.pinned) || other.pinned === true;
+    if (!otherWins && (!mine || mine.pinned === pinned)) continue;
+    const base: CommandUsage = otherWins
+      ? {
+          commandId,
+          useCount: other.useCount,
+          lastUsedAt: otherLastUsedAt,
+          recentUses: Array.isArray(other.recentUses) ? other.recentUses.filter((t) => typeof t === "number").slice(-12) : [],
+          acceptedPrefixes: other.acceptedPrefixes && typeof other.acceptedPrefixes === "object" ? { ...other.acceptedPrefixes } : {},
+          contextCounts: other.contextCounts && typeof other.contextCounts === "object" ? { ...other.contextCounts } : {},
+          pinned,
+        }
+      : { ...mine!, pinned };
+    merged ??= { ...current };
+    merged[commandId] = base;
+  }
+  return merged ?? current;
+}
+
+export const useEditorStore = create<EditorState>()(
+  persist(
+    (set, get) => ({
+      title: "未命名公式",
+      lines: initialLines,
+      activeLineId: initialLines[0].id,
+      formulaAlignment: "left",
+      editorLayout: DEFAULT_EDITOR_LAYOUT,
+      theme: DEFAULT_THEME,
+      language: "cn",
+      zoom: 0.6,
+      sourceOpen: false,
+      latexSourceFontSize: DEFAULT_LATEX_SOURCE_FONT_SIZE,
+      latexCodeFormat: "mixed-inline-display",
+      latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
+      autoPairDelimiters: true,
+      examZhSymbols: true,
+      showLineNumbers: false,
+      highlightActiveLine: false,
+      formulaInsetLeft: DEFAULT_FORMULA_INSET,
+      formulaInsetRight: DEFAULT_FORMULA_INSET,
+      formulaToolButtonSize: DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
+      formulaToolButtonPadding: DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
+      formulaRowVerticalInset: DEFAULT_FORMULA_ROW_VERTICAL_INSET,
+      pngExportBackground: DEFAULT_PNG_EXPORT_BACKGROUND,
+      formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
+      formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
+      formulaSpacing: defaultFormulaSpacingPreferences(),
+      formulaFaces: readPersistedFormulaFaces(),
+      buttonShortcuts: {},
+      classicTileWidth: legacyClassicPanelSize(
+        legacyClassicTileWidthStorageKey,
+        DEFAULT_CLASSIC_TILE_WIDTH,
+        MIN_CLASSIC_TILE_WIDTH,
+        MAX_CLASSIC_TILE_WIDTH,
+      ),
+      classicDockHeight: legacyClassicPanelSize(
+        legacyClassicDockHeightStorageKey,
+        DEFAULT_CLASSIC_DOCK_HEIGHT,
+        MIN_CLASSIC_DOCK_HEIGHT,
+        MAX_CLASSIC_DOCK_HEIGHT,
+      ),
+      keypadMinimizeOnCopy: true,
+      inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
+      personalize: true,
+      suggestionCount: 6,
+      candidateStyle: "list",
+      checkUpdatesOnStartup: true,
+      powerPointDefaultFontSizePt: 20,
+      wordFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
+      powerPointFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
+      wpsWriterFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
+      wpsPresentationFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
+      usage: {},
+      history: [],
+      setTitle: (title) => set({ title }),
+      setActiveLineId: (activeLineId) =>
+        set((state) => ({
+          activeLineId: validActiveLineId(state.lines, activeLineId),
+        })),
+      replaceFormulaLine: (lineId, latex, activeLineId) =>
+        set((state) => {
+          const normalized = normalizeFormulaLineLatex(latex);
+          const nextActive = validActiveLineId(
+            state.lines, activeLineId === undefined ? state.activeLineId : activeLineId,
+          );
+          const line = state.lines.find(item => item.id === lineId);
+          if (!line || (line.latex === normalized && state.activeLineId === nextActive)) return state;
+          return {
+            activeLineId: nextActive,
+            lines: line.latex === normalized ? state.lines : state.lines.map(item =>
+              item.id === lineId ? { ...item, latex: normalized } : item),
+          };
+        }),
+      setFormulaAlignment: (formulaAlignment) =>
+        set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
+      setEditorLayout: (editorLayout) =>
+        set({ editorLayout: normalizeEditorLayout(editorLayout) }),
+      replaceDocumentState: (snapshot) =>
+        set(() => {
+          const lines = normalizeFormulaLines(snapshot.lines);
+          return {
+            title: snapshot.title,
+            lines,
+            activeLineId: validActiveLineId(lines, snapshot.activeLineId),
+            formulaAlignment: normalizeFormulaAlignment(
+              snapshot.formulaAlignment,
+            ),
+          };
+        }),
+      setTheme: (theme) => set({ theme: normalizeTheme(theme) }),
+      setLanguage: (language) => set({ language }),
+      setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
+      setSourceOpen: (sourceOpen) => set({ sourceOpen }),
+      setLatexSourceFontSize: (latexSourceFontSize) =>
+        set({
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            latexSourceFontSize,
+          ),
+        }),
+      setLatexCodeFormat: (latexCodeFormat) =>
+        set({
+          latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
+            ? latexCodeFormat
+            : DEFAULT_LATEX_CODE_FORMAT,
+        }),
+      setLatexFormatProfile: (update) =>
+        set((state) => {
+          const patch =
+            typeof update === "function"
+              ? update(state.latexFormatProfile)
+              : update;
+          return {
+            latexFormatProfile: normalizeLatexFormatProfile({
+              ...state.latexFormatProfile,
+              ...patch,
+            }),
+          };
+        }),
+      setAutoPairDelimiters: (autoPairDelimiters) =>
+        set({ autoPairDelimiters }),
+      setExamZhSymbols: (examZhSymbols) => set({ examZhSymbols }),
+      setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
+      setHighlightActiveLine: (highlightActiveLine) =>
+        set({ highlightActiveLine }),
+      setFormulaInsetLeft: (formulaInsetLeft) =>
+        set({ formulaInsetLeft: normalizeFormulaInset(formulaInsetLeft) }),
+      setFormulaInsetRight: (formulaInsetRight) =>
+        set({ formulaInsetRight: normalizeFormulaInset(formulaInsetRight) }),
+      setFormulaToolButtonSize: (formulaToolButtonSize) =>
+        set({
+          formulaToolButtonSize: normalizeFormulaToolButtonSize(
+            formulaToolButtonSize,
+          ),
+        }),
+      setFormulaToolButtonPadding: (formulaToolButtonPadding) =>
+        set({
+          formulaToolButtonPadding: normalizeFormulaToolButtonPadding(
+            formulaToolButtonPadding,
+          ),
+        }),
+      setFormulaRowVerticalInset: (formulaRowVerticalInset) =>
+        set({
+          formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
+            formulaRowVerticalInset,
+          ),
+        }),
+      setPngExportBackground: (pngExportBackground) =>
+        set({
+          pngExportBackground: normalizePngExportBackground(
+            pngExportBackground,
+          ),
+        }),
+      setFormulaLetterFont: (formulaLetterFont) => {
+        const normalized = normalizeFormulaLetterFont(formulaLetterFont);
+        persistFormulaLetterFontPreference(normalized);
+        set({ formulaLetterFont: normalized });
+      },
+      setFormulaChineseFont: (formulaChineseFont) => {
+        const normalized = normalizeFormulaChineseFont(formulaChineseFont);
+        persistFormulaChineseFontPreference(normalized);
+        set({ formulaChineseFont: normalized });
+      },
+      setButtonShortcut: (id, chord) =>
+        set((state) => ({ buttonShortcuts: withButtonShortcut(state.buttonShortcuts, id, chord) })),
+      setButtonShortcuts: (value) =>
+        set((state) => {
+          const next = normalizeButtonShortcutSettings(value);
+          return JSON.stringify(next) === JSON.stringify(state.buttonShortcuts) ? state : { buttonShortcuts: next };
+        }),
+      setFormulaFace: (role, family) =>
+        set((state) => {
+          const formulaFaces = normalizeFormulaFaces({ ...state.formulaFaces, [role]: family });
+          persistFormulaFaces(formulaFaces);
+          return { formulaFaces };
+        }),
+      setFormulaFaces: (faces) => {
+        const formulaFaces = normalizeFormulaFaces(faces);
+        persistFormulaFaces(formulaFaces);
+        set({ formulaFaces });
+      },
+      setFormulaSpacing: (formulaSpacing) => {
+        const normalized = normalizeFormulaSpacingPreferences(formulaSpacing);
+        persistFormulaSpacing(normalized);
+        set({ formulaSpacing: normalized });
+      },
+      setClassicTileWidth: (classicTileWidth) => {
+        const normalized = normalizeClassicTileWidth(classicTileWidth);
+        safeStorage.setItem(legacyClassicTileWidthStorageKey, String(normalized));
+        set({ classicTileWidth: normalized });
+      },
+      setClassicDockHeight: (classicDockHeight) => {
+        const normalized = normalizeClassicDockHeight(classicDockHeight);
+        safeStorage.setItem(legacyClassicDockHeightStorageKey, String(normalized));
+        set({ classicDockHeight: normalized });
+      },
+      setKeypadMinimizeOnCopy: (keypadMinimizeOnCopy) =>
+        set({ keypadMinimizeOnCopy }),
+      setInputBehavior: (setting, enabled) =>
+        set((state) => ({
+          inputBehavior: {
+            ...state.inputBehavior,
+            [setting]: enabled,
+          },
+        })),
+      setPersonalize: (personalize) => set({ personalize }),
+      setSuggestionCount: (suggestionCount) =>
+        set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+      setCandidateStyle: (candidateStyle) => set({ candidateStyle: normalizeCandidateStyle(candidateStyle) }),
+      setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
+        set({ checkUpdatesOnStartup }),
+      setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
+        set({
+          powerPointDefaultFontSizePt:
+            Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
+            2,
+        }),
+      setWordFormulaShortcut: (kind, update) =>
+        set((state) => ({
+          wordFormulaShortcuts: nextDocumentFormulaShortcuts(state.wordFormulaShortcuts, kind, update),
+        })),
+      setPowerPointFormulaShortcut: (action, value) =>
+        set((state) => ({
+          powerPointFormulaShortcuts: nextSlideFormulaShortcuts(state.powerPointFormulaShortcuts, action, value),
+        })),
+      setWpsWriterFormulaShortcut: (kind, update) =>
+        set((state) => ({
+          wpsWriterFormulaShortcuts: nextDocumentFormulaShortcuts(state.wpsWriterFormulaShortcuts, kind, update),
+        })),
+      setWpsPresentationFormulaShortcut: (action, value) =>
+        set((state) => ({
+          wpsPresentationFormulaShortcuts: nextSlideFormulaShortcuts(state.wpsPresentationFormulaShortcuts, action, value),
+        })),
+      recordCommand: (commandId, prefix, source) =>
+        set((state) => {
+          const now = Date.now();
+          const normalizedPrefix = prefix.replace(/^\\/, "").toLocaleLowerCase();
+          const previous = state.usage[commandId] ?? {
+            commandId,
+            useCount: 0,
+            lastUsedAt: 0,
+            recentUses: [],
+            acceptedPrefixes: {},
+            contextCounts: {},
+            pinned: false,
+          };
+          return {
+            usage: {
+              ...state.usage,
+              [commandId]: {
+                ...previous,
+                useCount: previous.useCount + 1,
+                lastUsedAt: now,
+                recentUses: [...previous.recentUses, now].slice(-12),
+                acceptedPrefixes: {
+                  ...previous.acceptedPrefixes,
+                  [normalizedPrefix]: (previous.acceptedPrefixes[normalizedPrefix] ?? 0) + 1,
+                },
+                contextCounts: {
+                  ...(previous.contextCounts ?? {}),
+                  [source]: (previous.contextCounts?.[source] ?? 0) + 1,
+                },
+              },
+            },
+          };
+        }),
+      resetUsage: () => set({ usage: {} }),
+      mergeUsage: (incoming) =>
+        set((state) => {
+          const merged = mergeCommandUsage(state.usage, incoming);
+          return merged === state.usage ? state : { usage: merged };
+        }),
+      addHistory: (latexOverride) =>
+        set((state) => {
+          const latex = normalizeMultilineLatex(
+            latexOverride ?? joinFormulaLines(state.lines),
+          );
+          if (!latex.trim() || state.history[0]?.latex === latex) return state;
+          const next: FormulaHistoryItem = {
+            id: createUuid(),
+            latex,
+            createdAt: Date.now(),
+            lines: cloneFormulaLines(state.lines),
+          };
+          return { history: [next, ...state.history].slice(0, 30) };
+        }),
+      clearHistory: () => set({ history: [] }),
+      loadDocument: (document) =>
+        set((state) => {
+          const lines = normalizeFormulaLines(
+            document.formulas.map((formula) => ({
+              id: formula.id,
+              latex: formula.latex,
+              mode: formula.displayMode === "inline" ? "inline" : "display",
+              displayStyle: normalizeFormulaDisplayStyle(formula.displayStyle),
+            })),
+          );
+          const settings = document.settings ?? {};
+          const formulaLetterFont =
+            settings.formulaLetterFont === undefined
+              ? state.formulaLetterFont
+              : normalizeFormulaLetterFont(settings.formulaLetterFont);
+          const formulaChineseFont =
+            settings.formulaChineseFont === undefined
+              ? state.formulaChineseFont
+              : normalizeFormulaChineseFont(settings.formulaChineseFont);
+          if (
+            settings.formulaLetterFont !== undefined ||
+            settings.formulaChineseFont !== undefined
+          ) {
+            persistFormulaFontPreferences(
+              formulaLetterFont,
+              formulaChineseFont,
+            );
+          }
+          // a document's (or imported configuration's) spacing configurations
+          // join the user's, replacing those with the same id
+          const formulaSpacing =
+            settings.formulaSpacing === undefined
+              ? state.formulaSpacing
+              : mergeFormulaSpacingPreferences(state.formulaSpacing, settings.formulaSpacing);
+          if (settings.formulaSpacing !== undefined) persistFormulaSpacing(formulaSpacing);
+          const formulaFaces =
+            settings.formulaFaces === undefined ? state.formulaFaces : normalizeFormulaFaces(settings.formulaFaces);
+          if (settings.formulaFaces !== undefined) persistFormulaFaces(formulaFaces);
+          return {
+            title: document.title,
+            lines,
+            activeLineId: lines[0]?.id ?? null,
+            formulaAlignment: normalizeFormulaAlignment(
+              settings.formulaAlignment ?? document.formulas[0]?.alignment,
+            ),
+            editorLayout:
+              settings.editorLayout === undefined
+                ? state.editorLayout
+                : normalizeEditorLayout(settings.editorLayout),
+            theme:
+              settings.theme === undefined
+                ? state.theme
+                : normalizeTheme(settings.theme),
+            language:
+              settings.language === "en"
+                ? "en"
+                : settings.language === "cn"
+                  ? "cn"
+                  : state.language,
+            zoom:
+              settings.zoom === undefined
+                ? state.zoom
+                : normalizeEditorZoom(settings.zoom),
+            // Tools/source is workspace UI state, not formula-document state.
+            // Keep the user's current workspace choice when opening old files
+            // that still carry the legacy settings.sourceOpen field.
+            sourceOpen: state.sourceOpen,
+            // files the macOS app wrote before the shared code name it sourceEditorFontSize
+            latexSourceFontSize:
+              (settings.latexSourceFontSize ?? settings.sourceEditorFontSize) === undefined
+                ? state.latexSourceFontSize
+                : normalizeLatexSourceFontSize(
+                    settings.latexSourceFontSize ?? settings.sourceEditorFontSize,
+                  ),
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile:
+              settings.latexFormatProfile === undefined
+                ? state.latexFormatProfile
+                : normalizeLatexFormatProfile(settings.latexFormatProfile),
+            autoPairDelimiters:
+              typeof settings.autoPairDelimiters === "boolean"
+                ? settings.autoPairDelimiters
+                : state.autoPairDelimiters,
+            examZhSymbols:
+              typeof settings.examZhSymbols === "boolean"
+                ? settings.examZhSymbols
+                : state.examZhSymbols,
+            showLineNumbers:
+              typeof settings.showLineNumbers === "boolean"
+                ? settings.showLineNumbers
+                : state.showLineNumbers,
+            highlightActiveLine:
+              typeof settings.highlightActiveLine === "boolean"
+                ? settings.highlightActiveLine
+                : state.highlightActiveLine,
+            formulaInsetLeft:
+              settings.formulaInsetLeft === undefined
+                ? state.formulaInsetLeft
+                : normalizeFormulaInset(settings.formulaInsetLeft),
+            formulaInsetRight:
+              settings.formulaInsetRight === undefined
+                ? state.formulaInsetRight
+                : normalizeFormulaInset(settings.formulaInsetRight),
+            formulaToolButtonSize:
+              settings.formulaToolButtonSize === undefined
+                ? state.formulaToolButtonSize
+                : normalizeFormulaToolButtonSize(settings.formulaToolButtonSize),
+            formulaToolButtonPadding:
+              settings.formulaToolButtonPadding === undefined
+                ? state.formulaToolButtonPadding
+                : normalizeFormulaToolButtonPadding(
+                    settings.formulaToolButtonPadding,
+                  ),
+            formulaRowVerticalInset:
+              settings.formulaRowVerticalInset === undefined
+                ? state.formulaRowVerticalInset
+                : normalizeFormulaRowVerticalInset(
+                    settings.formulaRowVerticalInset,
+                  ),
+            pngExportBackground:
+              settings.pngExportBackground === undefined
+                ? state.pngExportBackground
+                : normalizePngExportBackground(settings.pngExportBackground),
+            formulaLetterFont,
+            formulaChineseFont,
+            formulaSpacing,
+            formulaFaces,
+            inputBehavior:
+              settings.inputBehavior === undefined
+                ? state.inputBehavior
+                : normalizeInputBehaviorSettings(settings.inputBehavior),
+            personalize:
+              typeof settings.personalize === "boolean"
+                ? settings.personalize
+                : state.personalize,
+            suggestionCount:
+              typeof settings.suggestionCount === "number" &&
+              Number.isFinite(settings.suggestionCount)
+                ? Math.min(10, Math.max(3, Math.round(settings.suggestionCount)))
+                : state.suggestionCount,
+            candidateStyle:
+              settings.candidateStyle !== undefined
+                ? normalizeCandidateStyle(settings.candidateStyle)
+                : state.candidateStyle,
+            checkUpdatesOnStartup:
+              typeof settings.checkUpdatesOnStartup === "boolean"
+                ? settings.checkUpdatesOnStartup
+                : state.checkUpdatesOnStartup,
+            powerPointDefaultFontSizePt:
+              typeof settings.powerPointDefaultFontSizePt === "number" &&
+              Number.isFinite(settings.powerPointDefaultFontSizePt)
+                ? Math.round(
+                    Math.min(
+                      200,
+                      Math.max(5, settings.powerPointDefaultFontSizePt),
+                    ) * 2,
+                  ) / 2
+                : state.powerPointDefaultFontSizePt,
+            buttonShortcuts:
+              settings.buttonShortcuts === undefined
+                ? state.buttonShortcuts
+                : normalizeButtonShortcutSettings(settings.buttonShortcuts),
+            wordFormulaShortcuts:
+              settings.wordFormulaShortcuts === undefined
+                ? state.wordFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(
+                    settings.wordFormulaShortcuts,
+                  ),
+            powerPointFormulaShortcuts:
+              settings.powerPointFormulaShortcuts === undefined
+                ? state.powerPointFormulaShortcuts
+                : normalizePowerPointFormulaShortcutSettings(
+                    settings.powerPointFormulaShortcuts,
+                  ),
+            wpsWriterFormulaShortcuts:
+              settings.wpsWriterFormulaShortcuts === undefined
+                ? state.wpsWriterFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(settings.wpsWriterFormulaShortcuts),
+            wpsPresentationFormulaShortcuts:
+              settings.wpsPresentationFormulaShortcuts === undefined
+                ? state.wpsPresentationFormulaShortcuts
+                : normalizePowerPointFormulaShortcutSettings(
+                    settings.wpsPresentationFormulaShortcuts,
+                  ),
+            classicTileWidth:
+              settings.classicTileWidth === undefined
+                ? state.classicTileWidth
+                : normalizeClassicTileWidth(settings.classicTileWidth),
+            classicDockHeight:
+              settings.classicDockHeight === undefined
+                ? state.classicDockHeight
+                : normalizeClassicDockHeight(settings.classicDockHeight),
+            keypadMinimizeOnCopy:
+              typeof settings.keypadMinimizeOnCopy === "boolean"
+                ? settings.keypadMinimizeOnCopy
+                : state.keypadMinimizeOnCopy,
+          };
+        }),
+      toDocument: () => {
+        const state = get();
+        const now = Date.now();
+        return {
+          version: 3,
+          title: state.title,
+          formulas: state.lines.map((line) => ({
+            id: line.id,
+            latex: line.latex,
+            displayMode: line.mode === "inline" ? "inline" : "block",
+            displayStyle: line.displayStyle,
+            alignment: state.formulaAlignment,
+            fontSize: Math.round(36 * state.zoom),
+            createdAt: now,
+            updatedAt: now,
+          })),
+          macros: {},
+          settings: {
+            theme: state.theme,
+            zoom: state.zoom,
+            formulaAlignment: state.formulaAlignment,
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile: { ...state.latexFormatProfile },
+            editorLayout: state.editorLayout,
+            language: state.language,
+            sourceOpen: state.sourceOpen,
+            latexSourceFontSize: state.latexSourceFontSize,
+            autoPairDelimiters: state.autoPairDelimiters,
+            examZhSymbols: state.examZhSymbols,
+            showLineNumbers: state.showLineNumbers,
+            highlightActiveLine: state.highlightActiveLine,
+            formulaInsetLeft: state.formulaInsetLeft,
+            formulaInsetRight: state.formulaInsetRight,
+            formulaToolButtonSize: state.formulaToolButtonSize,
+            formulaToolButtonPadding: state.formulaToolButtonPadding,
+            formulaRowVerticalInset: state.formulaRowVerticalInset,
+            pngExportBackground: state.pngExportBackground,
+            formulaLetterFont: state.formulaLetterFont,
+            formulaChineseFont: state.formulaChineseFont,
+            formulaSpacing: state.formulaSpacing,
+            formulaFaces: { ...state.formulaFaces },
+            inputBehavior: { ...state.inputBehavior },
+            personalize: state.personalize,
+            suggestionCount: state.suggestionCount,
+            candidateStyle: state.candidateStyle,
+            checkUpdatesOnStartup: state.checkUpdatesOnStartup,
+            powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+            buttonShortcuts: state.buttonShortcuts,
+            wordFormulaShortcuts: state.wordFormulaShortcuts,
+            powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+            wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+            wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
+            classicTileWidth: state.classicTileWidth,
+            classicDockHeight: state.classicDockHeight,
+            keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
+          },
+        };
+      },
+    }),
+    {
+      name: "visualtex-editor",
+      storage: editorPersistenceStorage,
+      partialize: (state) => ({
+        title: state.title,
+        lines: state.lines,
+        activeLineId: state.activeLineId,
+        formulaAlignment: state.formulaAlignment,
+        editorLayout: state.editorLayout,
+        theme: state.theme,
+        language: state.language,
+        zoom: state.zoom,
+        sourceOpen: state.sourceOpen,
+        latexSourceFontSize: state.latexSourceFontSize,
+        latexCodeFormat: "mixed-inline-display",
+        latexFormatProfile: state.latexFormatProfile,
+        autoPairDelimiters: state.autoPairDelimiters,
+        examZhSymbols: state.examZhSymbols,
+        showLineNumbers: state.showLineNumbers,
+        highlightActiveLine: state.highlightActiveLine,
+        formulaInsetLeft: state.formulaInsetLeft,
+        formulaInsetRight: state.formulaInsetRight,
+        formulaToolButtonSize: state.formulaToolButtonSize,
+        formulaToolButtonPadding: state.formulaToolButtonPadding,
+        formulaRowVerticalInset: state.formulaRowVerticalInset,
+        pngExportBackground: state.pngExportBackground,
+        formulaLetterFont: state.formulaLetterFont,
+        formulaChineseFont: state.formulaChineseFont,
+        classicTileWidth: state.classicTileWidth,
+        classicDockHeight: state.classicDockHeight,
+        keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
+        inputBehavior: state.inputBehavior,
+        personalize: state.personalize,
+        suggestionCount: state.suggestionCount,
+        candidateStyle: state.candidateStyle,
+        checkUpdatesOnStartup: state.checkUpdatesOnStartup,
+        powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+        wordFormulaShortcuts: state.wordFormulaShortcuts,
+        powerPointFormulaShortcuts: state.powerPointFormulaShortcuts,
+        wpsWriterFormulaShortcuts: state.wpsWriterFormulaShortcuts,
+        wpsPresentationFormulaShortcuts: state.wpsPresentationFormulaShortcuts,
+        buttonShortcuts: state.buttonShortcuts,
+        usage: state.usage,
+        history: state.history,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<EditorState> & {
+          latex?: string;
+          /** the macOS app's name for latexSourceFontSize before the shared code */
+          sourceEditorFontSize?: unknown;
+        };
+        const { latex: legacyLatex, sourceEditorFontSize: legacySourceFontSize, ...currentPersisted } = persisted;
+        const storedFormulaFonts = readPersistedFormulaFontPreferences();
+        const lines = normalizeFormulaLines(persisted.lines, legacyLatex);
+        const legacyLineAlignment = Array.isArray(persisted.lines)
+          ? (persisted.lines[0] as { alignment?: unknown } | undefined)?.alignment
+          : undefined;
+        return {
+          ...currentState,
+          ...currentPersisted,
+          lines,
+          activeLineId: validActiveLineId(lines, persisted.activeLineId),
+          formulaAlignment: normalizeFormulaAlignment(
+            persisted.formulaAlignment ?? legacyLineAlignment,
+          ),
+          editorLayout: normalizeEditorLayout(persisted.editorLayout),
+          theme: normalizeTheme(persisted.theme),
+          zoom: normalizeEditorZoom(persisted.zoom),
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            persisted.latexSourceFontSize ?? legacySourceFontSize,
+          ),
+          latexCodeFormat: "mixed-inline-display",
+          latexFormatProfile:
+            persisted.latexFormatProfile === undefined
+              ? legacyCodeFormatToProfile(
+                  isLatexCodeFormat(persisted.latexCodeFormat)
+                    ? persisted.latexCodeFormat
+                    : undefined,
+                )
+              : normalizeLatexFormatProfile(persisted.latexFormatProfile),
+          autoPairDelimiters:
+            typeof persisted.autoPairDelimiters === "boolean"
+              ? persisted.autoPairDelimiters
+              : true,
+          // exam-zh's spelling by default in the Chinese interface (where users write exam-zh), not in the English one
+          examZhSymbols:
+            typeof persisted.examZhSymbols === "boolean"
+              ? persisted.examZhSymbols
+              : persisted.language !== "en",
+          showLineNumbers:
+            typeof persisted.showLineNumbers === "boolean"
+              ? persisted.showLineNumbers
+              : false,
+          highlightActiveLine:
+            typeof persisted.highlightActiveLine === "boolean"
+              ? persisted.highlightActiveLine
+              : false,
+          formulaInsetLeft: normalizeFormulaInset(persisted.formulaInsetLeft),
+          formulaInsetRight: normalizeFormulaInset(persisted.formulaInsetRight),
+          formulaToolButtonSize: normalizeFormulaToolButtonSize(
+            persisted.formulaToolButtonSize,
+          ),
+          formulaToolButtonPadding: normalizeFormulaToolButtonPadding(
+            persisted.formulaToolButtonPadding,
+          ),
+          formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
+            persisted.formulaRowVerticalInset,
+          ),
+          pngExportBackground: normalizePngExportBackground(
+            persisted.pngExportBackground,
+          ),
+          formulaLetterFont:
+            storedFormulaFonts.formulaLetterFont ??
+            normalizeFormulaLetterFont(persisted.formulaLetterFont),
+          formulaChineseFont:
+            storedFormulaFonts.formulaChineseFont ??
+            normalizeFormulaChineseFont(persisted.formulaChineseFont),
+          formulaSpacing: readPersistedFormulaSpacing(),
+          formulaFaces: readPersistedFormulaFaces(),
+          classicTileWidth:
+            persisted.classicTileWidth === undefined
+              ? legacyClassicPanelSize(
+                  legacyClassicTileWidthStorageKey,
+                  DEFAULT_CLASSIC_TILE_WIDTH,
+                  MIN_CLASSIC_TILE_WIDTH,
+                  MAX_CLASSIC_TILE_WIDTH,
+                )
+              : normalizeClassicTileWidth(persisted.classicTileWidth),
+          classicDockHeight:
+            persisted.classicDockHeight === undefined
+              ? legacyClassicPanelSize(
+                  legacyClassicDockHeightStorageKey,
+                  DEFAULT_CLASSIC_DOCK_HEIGHT,
+                  MIN_CLASSIC_DOCK_HEIGHT,
+                  MAX_CLASSIC_DOCK_HEIGHT,
+                )
+              : normalizeClassicDockHeight(persisted.classicDockHeight),
+          keypadMinimizeOnCopy:
+            typeof persisted.keypadMinimizeOnCopy === "boolean"
+              ? persisted.keypadMinimizeOnCopy
+              : true,
+          inputBehavior: normalizeInputBehaviorSettings(
+            persisted.inputBehavior,
+          ),
+          buttonShortcuts: normalizeButtonShortcutSettings(persisted.buttonShortcuts),
+          wordFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wordFormulaShortcuts,
+          ),
+          powerPointFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
+            persisted.powerPointFormulaShortcuts,
+          ),
+          wpsWriterFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wpsWriterFormulaShortcuts,
+          ),
+          wpsPresentationFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
+            persisted.wpsPresentationFormulaShortcuts,
+          ),
+          powerPointDefaultFontSizePt:
+            typeof persisted.powerPointDefaultFontSizePt === "number" &&
+            Number.isFinite(persisted.powerPointDefaultFontSizePt)
+              ? Math.round(
+                  Math.min(200, Math.max(5, persisted.powerPointDefaultFontSizePt)) *
+                    2,
+                ) / 2
+              : 20,
+        };
+      },
+    },
+  ),
+);
+
+/**
+ * The candidates' look: a list (default: the number and command on a soft band, the picture beside it), cards (the
+ * picture in a tile, the command over its name, number keys), one row in the default colours, one row in AxMath's.
+ */
+export type CandidateStyle = "list" | "card" | "row" | "bar";
+
+function normalizeCandidateStyle(style: unknown): CandidateStyle {
+  return style === "bar" || style === "row" || style === "card" ? style : "list";
+}
+
+// The candidates' look applies to every window's popovers (the formula fields' and the document's "\" menu).
+if (typeof document !== "undefined") {
+  const applyCandidateStyle = (style: CandidateStyle) => {
+    document.documentElement.dataset.candidateStyle = normalizeCandidateStyle(style);
+  };
+  applyCandidateStyle(useEditorStore.getState().candidateStyle);
+  useEditorStore.subscribe((state) => applyCandidateStyle(state.candidateStyle));
+}
+
+// The upright switch also governs normalization outside the formula fields
+// (stored, pasted and imported LaTeX).
+setUprightJudgmentEnabled(
+  useEditorStore.getState().inputBehavior.autoUprightTypography,
+);
+useEditorStore.subscribe((state) =>
+  setUprightJudgmentEnabled(state.inputBehavior.autoUprightTypography),
+);
+
+// The exam-zh spelling of the congruence and similarity signs, read and written at the app's edges.
+setExamZhSymbolsEnabled(useEditorStore.getState().examZhSymbols);
+useEditorStore.subscribe((state) => setExamZhSymbolsEnabled(state.examZhSymbols));

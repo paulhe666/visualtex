@@ -1,0 +1,54 @@
+import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
+import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+// formulas are laid out by the shared engine; installed before any math field exists
+import "../../../shared/visualtex-app/src/editor/visualTexLayoutRuntime";
+import "../../../shared/visualtex-app/src/styles/index.ts";
+import { configureOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrService";
+import { desktopOcrTransport } from "../../../shared/visualtex-app/src/ocr/ocrTransport";
+import { OfficeDialogApp } from "./dialog/OfficeDialogApp";
+import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
+
+configureOcrTransport(desktopOcrTransport);
+applyDocumentTheme(readSynchronizedTheme());
+if (new URLSearchParams(window.location.search).get("transport") !== "tauri") {
+  document.body.style.opacity = "1";
+}
+
+class OfficeFormulaErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("VisualTeX Office formula editor crashed", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <main className="office-dialog-state is-error" role="alert">
+        <strong>VisualTeX Office 公式编辑器加载失败</strong>
+        <p>{this.state.error.stack || this.state.error.message}</p>
+      </main>
+    );
+  }
+}
+
+const root = document.getElementById("root");
+if (!root) throw new Error("Missing VisualTeX native Office editor root element.");
+
+createRoot(root).render(
+  <StrictMode>
+    <EditorSessionProvider>
+      <OfficeFormulaErrorBoundary>
+        <OfficeDialogApp />
+      </OfficeFormulaErrorBoundary>
+    </EditorSessionProvider>
+  </StrictMode>,
+);

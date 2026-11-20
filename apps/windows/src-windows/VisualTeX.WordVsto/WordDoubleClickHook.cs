@@ -1,0 +1,292 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using VisualTeX.WindowsOffice.VstoShared;
+
+namespace VisualTeX.WordVsto;
+
+internal sealed class WordDoubleClickHook : IDisposable
+{
+    private const int WhMouseLl = 14;
+    private const int WmLButtonDown = 0x0201;
+    private const int WmQuit = 0x0012;
+    private const int SmCxDoubleClick = 36;
+    private const int SmCyDoubleClick = 37;
+    private static readonly object TraceGate = new();
+    internal readonly struct NativeOleDecision
+    {
+        internal NativeOleDecision(
+            bool nativeOleTarget,
+            bool suppressSecondButtonDown,
+            bool dispatchCallback)
+        {
+            NativeOleTarget = nativeOleTarget;
+            SuppressSecondButtonDown = suppressSecondButtonDown;
+            DispatchCallback = dispatchCallback;
+        }
+
+        internal bool NativeOleTarget { get; }
+        internal bool SuppressSecondButtonDown { get; }
+        internal bool DispatchCallback { get; }
+
+        // Unknown/prose clicks still dispatch after Word settles because the same
+        // low-level hook is the fallback detector for native OMML equations.
+        internal static NativeOleDecision PassThrough => new(false, false, true);
+
+        // Native MathType mode cannot rely on Word 2021's own Equation.DSMT4
+        // double-click activation: on some installations Word consumes the gesture
+        // without ever opening MathType or raising WindowBeforeDoubleClick. Own the
+        // second click so Word cannot begin a competing OLE activation, then dispatch
+        // one callback; the add-in defers wdOLEVerbOpen to a later Office UI turn.
+        internal static NativeOleDecision OpenNativeOle => new(true, true, true);
+
+        internal static NativeOleDecision ObserveNativeOle => new(true, false, true);
+        internal static NativeOleDecision InterceptNativeOle => new(true, true, true);
+    }
+
+    private readonly Func<int, int, NativeOleDecision> _shouldHandle;
+    private readonly Action<bool, int, int> _callbackAction;
+    private readonly Thread _thread;
+    private readonly ManualResetEventSlim _ready = new(false);
+    private readonly OfficeDoubleClickPairing _pairing = new();
+    private HookProc? _hookCallback;
+    private IntPtr _hook;
+    private uint _threadId;
+    private int _ownerProcessId = Process.GetCurrentProcess().Id;
+    private bool _classifyPresses = true;
+    // Acceptance only: judge every press off the page, so that Word's own
+    // WindowBeforeDoubleClick is the only route that can open a formula.
+    private readonly bool _testRejectPresses = string.Equals(
+        Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TEST_REJECT_PRESSES"),
+        "1",
+        StringComparison.Ordinal);
+
+    public WordDoubleClickHook(
+        Func<int, int, NativeOleDecision> shouldHandle,
+        Action<bool, int, int> callbackAction)
+    {
+        _shouldHandle = shouldHandle;
+        _callbackAction = callbackAction;
+        _thread = new Thread(Run)
+        {
+            IsBackground = true,
+            Name = "VisualTeX Word Double Click",
+        };
+    }
+
+    internal void BindOwnerWindow(int windowHandle)
+    {
+        if (windowHandle == 0) return;
+        GetWindowThreadProcessId(new IntPtr(windowHandle), out var processId);
+        if (processId == 0) return;
+        var previous = Interlocked.Exchange(ref _ownerProcessId, unchecked((int)processId));
+        if (previous != unchecked((int)processId))
+            _pairing.Reset();
+    }
+
+    // Does not wait for the hook thread: in WPS installing the low-level mouse
+    // hook took ~0.4 s, all of it inside the host's timed add-in start. The
+    // thread reports its own result to the trace.
+    public void Start() => _thread.Start();
+
+    internal static void TraceMessage(string message)
+    {
+        var path = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            lock (TraceGate)
+            {
+                File.AppendAllText(
+                    path,
+                    $"{DateTimeOffset.Now:O} pid={Process.GetCurrentProcess().Id} tid={Environment.CurrentManagedThreadId} {message}{Environment.NewLine}");
+            }
+        }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+    }
+
+    private void Run()
+    {
+        _threadId = GetCurrentThreadId();
+        _classifyPresses = OfficeDocumentSurface.UsePhysicalCoordinatesOnThisThread();
+        _hookCallback = HookCallback;
+        _hook = SetWindowsHookEx(WhMouseLl, _hookCallback, IntPtr.Zero, 0);
+        _ready.Set();
+        if (_hook == IntPtr.Zero)
+        {
+            TraceMessage($"hook-start-failed error={Marshal.GetLastWin32Error()}");
+            return;
+        }
+        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X} classifyPresses={_classifyPresses} testRejectPresses={_testRejectPresses}");
+        while (GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)
+        {
+            TranslateMessage(ref message);
+            DispatchMessage(ref message);
+        }
+        UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
+    }
+
+    private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code < 0 || wParam.ToInt32() != WmLButtonDown)
+            return CallNextHookEx(_hook, code, wParam, lParam);
+
+        var input = Marshal.PtrToStructure<LowLevelMouseInput>(lParam);
+        // Never pair clicks separated by a switch to another application or
+        // another Word process, even when both windows are named WINWORD.
+        var wordForeground = IsWordForeground();
+        // Word's own dialogs, galleries, menus and task panes belong to the same
+        // process and may lie over a formula. Only presses that reach the page
+        // window itself can form a formula double-click. Should this judgement
+        // ever be wrong, WindowBeforeDoubleClick still opens the formula.
+        var press = !wordForeground
+            ? OfficePagePress.Off("word-not-foreground")
+            : _testRejectPresses
+                ? OfficePagePress.Off("rejected-by-test")
+            : !_classifyPresses
+                ? OfficePagePress.Unclassified
+                : OfficeDocumentSurface.ResolvePress(
+                    OfficeDocumentSurface.WindowAt(input.Pt.X, input.Pt.Y),
+                    OfficeDocumentSurface.WordPageClasses,
+                    Volatile.Read(ref _ownerProcessId),
+                    input.Pt.X,
+                    input.Pt.Y);
+        TraceMessage(
+            $"left-down x={input.Pt.X} y={input.Pt.Y} wordForeground={wordForeground} "
+            + $"onPage={press.OnPage} page=0x{press.Page.ToInt64():X} {press.Detail}");
+        var paired = _pairing.Register(
+            press.Page,
+            press.OnPage,
+            input.Pt.X,
+            input.Pt.Y,
+            OfficeDoubleClickPairing.NowMilliseconds(),
+            GetDoubleClickTime(),
+            GetSystemMetrics(SmCxDoubleClick),
+            GetSystemMetrics(SmCyDoubleClick));
+        if (!paired)
+            return CallNextHookEx(_hook, code, wParam, lParam);
+
+        NativeOleDecision decision;
+        try { decision = _shouldHandle(input.Pt.X, input.Pt.Y); }
+        catch (Exception error)
+        {
+            TraceMessage($"hit-test-error {error.GetType().Name}: {error.Message}");
+            decision = NativeOleDecision.PassThrough;
+        }
+        TraceMessage(
+            $"double-click nativeOleTarget={decision.NativeOleTarget} "
+            + $"suppressSecondDown={decision.SuppressSecondButtonDown} "
+            + $"dispatchCallback={decision.DispatchCallback}");
+
+        if (decision.DispatchCallback)
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                // VisualTeX OLE and native-MathType mode suppress the second
+                // button-down so Word cannot invoke an OLE verb concurrently.
+                // MathType-to-VisualTeX mode observes the native OLE and still lets
+                // Word raise WindowBeforeDoubleClick as a synchronous fallback.
+                // OMML keeps Word's native click processing and is identified from
+                // the settled Selection on the Office UI thread. Native MathType's
+                // callback only schedules a later Office UI turn; it never executes
+                // DoVerb while this hook callback is still unwinding.
+                Thread.Sleep(decision.NativeOleTarget ? 40 : 90);
+                if (!IsWordForeground()) return;
+                try
+                {
+                    TraceMessage(
+                        $"callback-begin interceptedNativeOle={decision.NativeOleTarget} "
+                        + $"x={input.Pt.X} y={input.Pt.Y}");
+                    _callbackAction(decision.NativeOleTarget, input.Pt.X, input.Pt.Y);
+                    TraceMessage("callback-end");
+                }
+                catch (Exception error)
+                {
+                    TraceMessage($"callback-error {error.GetType().Name}: {error.Message}");
+                }
+            });
+        }
+
+        if (!decision.SuppressSecondButtonDown)
+            return CallNextHookEx(_hook, code, wParam, lParam);
+
+        TraceMessage("second-button-down-suppressed");
+        return new IntPtr(1);
+    }
+
+    private bool IsWordForeground()
+    {
+        var window = GetForegroundWindow();
+        if (window == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(window, out var processId);
+        // The low-level hook is desktop-wide; it must dispatch only to the Word
+        // instance that owns this add-in. Comparing just the executable name
+        // makes every open /x instance process the same gesture and can switch
+        // editors/documents repeatedly. No process enumeration or COM on clicks.
+        return WordDoubleClickRouting.ForegroundProcessBelongsToOwner(
+            processId,
+            Volatile.Read(ref _ownerProcessId));
+    }
+
+    public void Dispose()
+    {
+        // Start no longer waits for the hook thread; let it reach its message loop.
+        if (_thread.IsAlive) _ready.Wait(TimeSpan.FromSeconds(2));
+        if (_threadId != 0)
+            PostThreadMessage(_threadId, WmQuit, IntPtr.Zero, IntPtr.Zero);
+        _thread.Join(TimeSpan.FromSeconds(2));
+        _ready.Dispose();
+    }
+
+    private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelMouseInput
+    {
+        public Point Pt;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Message
+    {
+        public IntPtr HWnd;
+        public uint Value;
+        public UIntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public Point Pt;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, HookProc callback, IntPtr module, uint threadId);
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern int GetMessage(out Message message, IntPtr window, uint min, uint max);
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref Message message);
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref Message message);
+    [DllImport("user32.dll")]
+    private static extern bool PostThreadMessage(uint threadId, int message, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern uint GetDoubleClickTime();
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}

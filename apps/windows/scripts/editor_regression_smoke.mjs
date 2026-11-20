@@ -1,0 +1,1240 @@
+import { join } from "node:path";
+import process from "node:process";
+import { withAppBrowser } from "../../shared/visualtex-app/testing/browser_test_runtime.mjs";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function main() {
+  await withAppBrowser(async ({ baseUrl, client }) => {
+
+    const evaluate = async (expression) => {
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (result.exceptionDetails) {
+        const description = result.exceptionDetails.exception?.description;
+        throw new Error(
+          description || result.exceptionDetails.text || "Runtime.evaluate failed",
+        );
+      }
+      return result.result.value;
+    };
+
+    const key = async (value, code, virtualKeyCode) => {
+      const common = {
+        key: value,
+        code,
+        windowsVirtualKeyCode: virtualKeyCode,
+        nativeVirtualKeyCode: virtualKeyCode,
+      };
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...common,
+        ...(value.length === 1 ? { text: value, unmodifiedText: value } : {}),
+      });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+      await sleep(35);
+    };
+
+    const imeKey = async (value, code, virtualKeyCode, committedText) => {
+      const common = {
+        key: value,
+        code,
+        windowsVirtualKeyCode: virtualKeyCode,
+        nativeVirtualKeyCode: virtualKeyCode,
+      };
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...common,
+      });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+      await client.send("Input.insertText", { text: committedText });
+      await sleep(120);
+    };
+
+    const waitForEvaluation = async (
+      expression,
+      description,
+      timeoutMs = 5000,
+    ) => {
+      const started = Date.now();
+      let lastValue;
+      while (Date.now() - started < timeoutMs) {
+        lastValue = await evaluate(expression);
+        if (lastValue?.ready) return lastValue;
+        await sleep(50);
+      }
+      throw new Error(
+        `Timed out waiting for ${description}: ${JSON.stringify(lastValue)}`,
+      );
+    };
+
+    const reloadEditor = async () => {
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(700);
+      await evaluate(`new Promise((resolve) => {
+        const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+        done();
+      })`);
+    };
+
+    const resetEditorDocument = async (
+      values = [""],
+      activeIndex = 0,
+      latexCodeFormat = null,
+    ) => {
+      await evaluate(`(() => {
+        const storageKey = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        const values = ${JSON.stringify(values)};
+        const lines = values.map((latex) => ({
+          id: crypto.randomUUID(),
+          latex,
+        }));
+        const activeIndex = Math.max(
+          0,
+          Math.min(${activeIndex}, Math.max(0, lines.length - 1)),
+        );
+        const latexCodeFormat = ${JSON.stringify(latexCodeFormat)};
+        persisted.state = {
+          ...(persisted.state || {}),
+          lines,
+          activeLineId: lines[activeIndex]?.id ?? null,
+          ...(latexCodeFormat ? { latexCodeFormat } : {}),
+        };
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      })()`);
+      await reloadEditor();
+    };
+
+    const replaceFocusedText = async (text) => {
+      const selectAll = {
+        key: "a",
+        code: "KeyA",
+        modifiers: process.platform === "darwin" ? 4 : 2,
+        windowsVirtualKeyCode: 65,
+        nativeVirtualKeyCode: 65,
+      };
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...selectAll,
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        ...selectAll,
+      });
+      await client.send("Input.insertText", { text });
+      await sleep(220);
+    };
+
+    await client.send("Page.navigate", { url: baseUrl });
+    await sleep(650);
+    await evaluate(`(() => {
+      localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+      localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
+    })()`);
+    await client.send("Page.reload", { ignoreCache: true });
+    await sleep(800);
+    await evaluate(`new Promise((resolve) => {
+      const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+      done();
+    })`);
+
+    // The desktop tools/source tab is a view preference, not document state.
+    // New users start on Formula tools; later choices survive reloads.
+    await evaluate(`(() => {
+      localStorage.removeItem('visualtex-desktop-editor-source-open');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
+      persisted.state = { ...(persisted.state || {}), sourceOpen: true };
+      localStorage.setItem('visualtex-editor', JSON.stringify(persisted));
+    })()`);
+    await reloadEditor();
+    const defaultDesktopPanel = await evaluate(`(() => ({
+      tools: document.querySelector('[data-classic-bottom-view="tools"]')?.getAttribute('aria-selected'),
+      source: document.querySelector('[data-classic-bottom-view="source"]')?.getAttribute('aria-selected'),
+      preference: localStorage.getItem('visualtex-desktop-editor-source-open'),
+    }))()`);
+    if (defaultDesktopPanel.tools !== 'true' || defaultDesktopPanel.source !== 'false') {
+      throw new Error(`New desktop users must start on Formula tools: ${JSON.stringify(defaultDesktopPanel)}`);
+    }
+    await evaluate(`document.querySelector('[data-classic-bottom-view="source"]')?.click()`);
+    await sleep(120);
+    if (await evaluate(`localStorage.getItem('visualtex-desktop-editor-source-open')`) !== 'true') {
+      throw new Error('Desktop source-tab selection was not persisted');
+    }
+    await reloadEditor();
+    const restoredDesktopSource = await evaluate(
+      `document.querySelector('[data-classic-bottom-view="source"]')?.getAttribute('aria-selected')`,
+    );
+    if (restoredDesktopSource !== 'true') {
+      throw new Error('Desktop source-tab selection did not survive reload');
+    }
+    await evaluate(`document.querySelector('[data-classic-bottom-view="tools"]')?.click()`);
+    await sleep(120);
+    if (await evaluate(`localStorage.getItem('visualtex-desktop-editor-source-open')`) !== 'false') {
+      throw new Error('Desktop formula-tools selection was not persisted');
+    }
+    await reloadEditor();
+    const restoredDesktopTools = await evaluate(
+      `document.querySelector('[data-classic-bottom-view="tools"]')?.getAttribute('aria-selected')`,
+    );
+    if (restoredDesktopTools !== 'true') {
+      throw new Error('Desktop formula-tools selection did not survive reload');
+    }
+
+    const setFieldAt = async (index, latex) => {
+      await evaluate(`(() => {
+        const field = document.querySelectorAll("math-field")[${index}];
+        if (!field) throw new Error("Formula field ${index} was not found");
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        field.setValue(${JSON.stringify(latex)}, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+        }));
+        return field.value;
+      })()`);
+      await sleep(180);
+    };
+
+    const setField = async (latex) => setFieldAt(0, latex);
+
+    await setField("");
+    await key("\\", "Backslash", 220);
+    // Use a real multi-item prefix. A fully typed exact command such as
+    // `\\theta` now legitimately leaves only one MathLive candidate, so it
+    // cannot verify ArrowDown navigation on current MathLive builds.
+    await key("f", "KeyF", 70);
+    const nativePopover = await waitForEvaluation(`(() => {
+      const panel = document.getElementById("mathlive-suggestion-popover");
+      if (!panel) return { ready: false, visible: false };
+      const style = getComputedStyle(panel);
+      const visible = panel.classList.contains("is-visible") && style.display !== "none";
+      return {
+        ready: visible && Boolean(panel.querySelector("li.ML__popover__current")),
+        visible,
+        background: style.backgroundColor,
+        transition: style.transitionDuration,
+        animation: style.animationDuration,
+      };
+    })()`, "MathLive recommendation popover");
+    if (!nativePopover?.visible) {
+      throw new Error("MathLive recommendation popover is not visible while typing a command");
+    }
+    if (nativePopover.background === "rgb(97, 97, 97)") {
+      throw new Error("MathLive recommendation popover still uses the old black/gray background");
+    }
+
+    const nativeBeforeArrow = await waitForEvaluation(`(() => {
+      const panel = document.getElementById("mathlive-suggestion-popover");
+      const selected = panel?.querySelector("li.ML__popover__current");
+      if (!panel || !selected) return { ready: false };
+      window.__visualtexStableNativePanel = panel;
+      const style = getComputedStyle(selected);
+      const commands = [...panel.querySelectorAll("li[data-command]")].map(
+        (item) => item.dataset.command ?? "",
+      );
+      const command = selected?.dataset.command ?? "";
+      return {
+        ready: commands.length >= 2 && Boolean(command),
+        command,
+        commands,
+        selectedIndex: commands.indexOf(command),
+        value: document.querySelector("math-field").value,
+        background: style.backgroundColor,
+        border: style.borderColor,
+        color: style.color,
+      };
+    })()`, "selected MathLive recommendation");
+    if (
+      nativeBeforeArrow.commands.length < 2 ||
+      nativeBeforeArrow.selectedIndex < 0
+    ) {
+      throw new Error(
+        `MathLive did not expose a navigable recommendation list: ${JSON.stringify(nativeBeforeArrow)}`,
+      );
+    }
+    const expectedNativeCommand =
+      nativeBeforeArrow.commands[
+        (nativeBeforeArrow.selectedIndex + 1) % nativeBeforeArrow.commands.length
+      ];
+    if (nativeBeforeArrow.background === "rgb(31, 99, 142)") {
+      throw new Error("Selected native recommendation still uses a solid dark-blue fill");
+    }
+    if (nativeBeforeArrow.border === "rgba(0, 0, 0, 0)") {
+      throw new Error("Selected native recommendation has no visible selection border");
+    }
+
+    await key("ArrowDown", "ArrowDown", 40);
+    const nativeAfterArrow = await waitForEvaluation(`(() => {
+      const panel = document.getElementById("mathlive-suggestion-popover");
+      const selected = panel?.querySelector("li.ML__popover__current");
+      if (!panel || !selected) return { ready: false };
+      const style = getComputedStyle(selected);
+      const samePanelNode = panel === window.__visualtexStableNativePanel;
+      const command = selected?.dataset.command;
+      return {
+        ready:
+          samePanelNode &&
+          command === ${JSON.stringify(expectedNativeCommand)},
+        samePanelNode,
+        command,
+        background: style.backgroundColor,
+        border: style.borderColor,
+        color: style.color,
+      };
+    })()`, "MathLive recommendation ArrowDown selection");
+    if (!nativeAfterArrow.samePanelNode) {
+      throw new Error("Arrow navigation replaced the native recommendation panel and can flicker");
+    }
+    if (nativeAfterArrow.command !== expectedNativeCommand) {
+      throw new Error(
+        `ArrowDown did not move the native recommendation selection: ${JSON.stringify({ expectedNativeCommand, nativeAfterArrow })}`,
+      );
+    }
+    if (nativeAfterArrow.background === "rgb(31, 99, 142)") {
+      throw new Error("Moved native recommendation still uses a solid dark-blue fill");
+    }
+
+    await key("Enter", "Enter", 13);
+    const nativeCommitState = await waitForEvaluation(`(() => {
+      const state = {
+        value: document.querySelector("math-field").value,
+        lineCount: document.querySelectorAll(".formula-line").length,
+        nativeVisible: document.getElementById("mathlive-suggestion-popover")?.classList.contains("is-visible") ?? false,
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+      };
+      return {
+        ...state,
+        ready:
+          state.lineCount === 1 &&
+          state.value.trim() === ${JSON.stringify(expectedNativeCommand)} &&
+          !state.nativeVisible &&
+          !state.candidateVisible,
+      };
+    })()`, "native MathLive recommendation commit");
+    if (
+      nativeCommitState.lineCount !== 1 ||
+      nativeCommitState.value.trim() !== expectedNativeCommand
+    ) {
+      throw new Error(
+        `Enter did not commit the selected native MathLive recommendation: ${JSON.stringify({ expectedNativeCommand, nativeCommitState })}`,
+      );
+    }
+    if (nativeCommitState.nativeVisible || nativeCommitState.candidateVisible) {
+      throw new Error(`Recommendation remained visible after commit: ${JSON.stringify(nativeCommitState)}`);
+    }
+
+    await waitForEvaluation(
+      `(() => {
+        const button = document.querySelector('button[aria-label="撤销"]');
+        return { ready: Boolean(button && !button.disabled), disabled: button?.disabled ?? true };
+      })()`,
+      "native candidate undo button",
+    );
+    await evaluate(`document.querySelector('button[aria-label="撤销"]').click()`);
+    const nativeUndoState = await waitForEvaluation(
+      `(() => {
+        const value = document.querySelector("math-field").value;
+        const redo = document.querySelector('button[aria-label="重做"]');
+        return {
+          ready: value.trim() === ${JSON.stringify(nativeBeforeArrow.value.trim())} && Boolean(redo && !redo.disabled),
+          value,
+          expectedValue: ${JSON.stringify(nativeBeforeArrow.value)},
+          redoDisabled: redo?.disabled ?? true,
+        };
+      })()`,
+      "native candidate undo replay",
+    );
+    const nativeUndoValue = nativeUndoState.value;
+    if (nativeUndoValue.trim() !== nativeBeforeArrow.value.trim()) {
+      throw new Error(`Global undo did not restore the native candidate input: ${JSON.stringify({ nativeBeforeArrow, nativeUndoValue })}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="重做"]').click()`);
+    const nativeRedoState = await waitForEvaluation(
+      `(() => {
+        const value = document.querySelector("math-field").value;
+        return {
+          ready: value.trim() === ${JSON.stringify(nativeCommitState.value.trim())},
+          value,
+        };
+      })()`,
+      "native candidate redo replay",
+    );
+    const nativeRedoValue = nativeRedoState.value;
+    if (nativeRedoValue.trim() !== nativeCommitState.value.trim()) {
+      throw new Error(`Global redo did not restore the native candidate result: ${JSON.stringify({ nativeCommitState, nativeRedoValue })}`);
+    }
+
+    await setField("\\alpha");
+    await key("Enter", "Enter", 13);
+    const enterAfterCommandState = await waitForEvaluation(`(() => {
+      const fields = [...document.querySelectorAll("math-field")];
+      return {
+        ready: fields.length === 2,
+        lineCount: fields.length,
+        values: fields.map((field) => field.value),
+      };
+    })()`, "new line after a command");
+    await key("Backspace", "Backspace", 8);
+    await waitForEvaluation(`(() => ({
+      ready: document.querySelectorAll("math-field").length === 1,
+      lineCount: document.querySelectorAll("math-field").length,
+    }))()`, "remove empty line after a command");
+
+    await resetEditorDocument([""]);
+    await setField("");
+    // The physical Backslash key starts a command even when a Chinese IME
+    // reports it as the ideographic comma (the kernel binds code="Backslash").
+    await imeKey("、", "Backslash", 220, "、");
+    const chineseBackslashState = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      return {
+        value: field?.value ?? "",
+        mode: field?.mode ?? "",
+        raw: Array.from(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      };
+    })()`);
+    if (
+      chineseBackslashState.mode !== "latex" ||
+      chineseBackslashState.raw !== "\\" ||
+      chineseBackslashState.value.includes("、")
+    ) {
+      throw new Error(
+        `The Backslash key under a Chinese IME should start one command: ${JSON.stringify(chineseBackslashState)}`,
+      );
+    }
+
+    await resetEditorDocument(["\\alpha", "\\beta"], 1);
+    await evaluate(`(() => {
+      const field = document.querySelectorAll("math-field")[1];
+      if (!field) throw new Error("Second formula field was not found");
+      field.position = field.lastOffset;
+      field.focus();
+      field.shadowRoot
+        ?.querySelector('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+    })()`);
+    await key("ArrowUp", "ArrowUp", 38);
+    const arrowUpLineState = await waitForEvaluation(`(() => {
+      const rows = [...document.querySelectorAll(".formula-line")];
+      const fields = [...document.querySelectorAll("math-field")];
+      const surface = document.querySelector(".multi-line-editor");
+      const firstLineId = rows[0]?.dataset.lineId ?? "";
+      return {
+        ready:
+          rows.length === 2 &&
+          rows[0]?.classList.contains("is-active") &&
+          fields[0]?.matches(":focus-within") &&
+          surface?.dataset.activeLineId === firstLineId,
+        activeLineId: surface?.dataset.activeLineId ?? "",
+        firstLineId,
+        firstFocused: fields[0]?.matches(":focus-within") ?? false,
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+      };
+    })()`, "ArrowUp switches to previous formula line");
+
+    if (arrowUpLineState.candidateVisible) {
+      await key("Escape", "Escape", 27);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector(".suggestion-popup") }))()`,
+        "dismiss command candidate before formula-line navigation",
+      );
+    }
+
+    // Row navigation reinforces focus at 0 ms and 80 ms. Let the ArrowUp
+    // callbacks settle before testing the reverse direction, otherwise the
+    // delayed first-row focus can overwrite a valid ArrowDown transition.
+    await sleep(140);
+    await key("ArrowDown", "ArrowDown", 40);
+    const arrowDownLineState = await waitForEvaluation(`(() => {
+      const rows = [...document.querySelectorAll(".formula-line")];
+      const fields = [...document.querySelectorAll("math-field")];
+      const surface = document.querySelector(".multi-line-editor");
+      const secondLineId = rows[1]?.dataset.lineId ?? "";
+      return {
+        ready:
+          rows.length === 2 &&
+          rows[1]?.classList.contains("is-active") &&
+          fields[1]?.matches(":focus-within") &&
+          surface?.dataset.activeLineId === secondLineId,
+        activeLineId: surface?.dataset.activeLineId ?? "",
+        secondLineId,
+        secondFocused: fields[1]?.matches(":focus-within") ?? false,
+        candidateVisible: Boolean(document.querySelector(".suggestion-popup")),
+        nativeVisible:
+          document
+            .getElementById("mathlive-suggestion-popover")
+            ?.classList.contains("is-visible") ?? false,
+        activeTag: document.activeElement?.tagName ?? "",
+        activeClass: document.activeElement?.className ?? "",
+        firstFocused: fields[0]?.matches(":focus-within") ?? false,
+      };
+    })()`, "ArrowDown switches to next formula line");
+
+    const multiLineAlignment = await evaluate(`(() => {
+      const fields = [...document.querySelectorAll(".formula-line math-field")];
+      const leftEdges = fields.map((field) => field.getBoundingClientRect().left);
+      const textAlignments = fields.map((field) => getComputedStyle(field).textAlign);
+      return {
+        count: fields.length,
+        leftEdges,
+        textAlignments,
+        aligned:
+          fields.length === 2 &&
+          Math.abs(leftEdges[0] - leftEdges[1]) <= 1 &&
+          textAlignments.every((value) => value !== "right"),
+      };
+    })()`);
+    if (!multiLineAlignment.aligned) {
+      throw new Error(
+        `Multi-line formulas are not left-aligned: ${JSON.stringify(multiLineAlignment)}`,
+      );
+    }
+
+    // OCR align/aligned output is stored as independent FormulaLines with one
+    // zero-width marker per row. Verify the actual rendered marker coordinates,
+    // not merely the presence of marker text or equal math-field left edges.
+    const ocrAlignmentMarker = "\\class{visualtex-align-marker}{\\kern0pt}";
+    const ocrAlignedRows = [
+      `x${ocrAlignmentMarker}=a+b+c`,
+      `y${ocrAlignmentMarker}=\\frac{p}{q}`,
+      `z${ocrAlignmentMarker}=r`,
+    ];
+    await resetEditorDocument(ocrAlignedRows, 0, "aligned");
+    const ocrAlignmentState = await waitForEvaluation(
+      `(() => {
+        const fields = [...document.querySelectorAll(".formula-line math-field")];
+        const entries = fields.map((field) => {
+          const host = field.closest(".mathfield-host");
+          const marker = field.shadowRoot?.querySelector(".visualtex-align-marker");
+          const fieldBounds = field.getBoundingClientRect();
+          const markerBounds = marker?.getBoundingClientRect();
+          return {
+            value: field.value,
+            fieldLeft: fieldBounds.left,
+            markerLeft: markerBounds?.left ?? null,
+            marginLeft: Number.parseFloat(field.style.marginLeft || "0") || 0,
+            hostAligned: host?.classList.contains("has-explicit-align-marker") ?? false,
+          };
+        });
+        const markerLefts = entries
+          .map((entry) => entry.markerLeft)
+          .filter((value) => Number.isFinite(value));
+        const markerSpread = markerLefts.length
+          ? Math.max(...markerLefts) - Math.min(...markerLefts)
+          : Number.POSITIVE_INFINITY;
+        const markerTextPreserved = entries.every((entry) =>
+          entry.value.includes("visualtex-align-marker"),
+        );
+        return {
+          ready:
+            fields.length === 3 &&
+            markerLefts.length === 3 &&
+            entries.every((entry) => entry.hostAligned) &&
+            markerTextPreserved &&
+            markerSpread <= 1,
+          count: fields.length,
+          entries,
+          markerSpread,
+          markerTextPreserved,
+        };
+      })()`,
+      "OCR x/y/z alignment markers share one rendered anchor",
+      10000,
+    );
+    if (!ocrAlignmentState.ready || ocrAlignmentState.markerSpread > 1) {
+      throw new Error(
+        `OCR FormulaLines do not share one rendered alignment anchor: ${JSON.stringify(ocrAlignmentState)}`,
+      );
+    }
+    console.log(
+      `OCR editor alignment acceptance: markerSpread=${ocrAlignmentState.markerSpread}px, entries=${JSON.stringify(ocrAlignmentState.entries)}`,
+    );
+    await resetEditorDocument([""], 0, "raw");
+
+    for (const operatorCase of [
+      { latex: "\\sum_{i=0}^{n} a_i", command: "\\sum", label: "sum" },
+      { latex: "\\prod_{k=1}^{m} b_k", command: "\\prod", label: "product" },
+      { latex: "\\int_{0}^{1} f(x)\\,\\mathrm{d}x", command: "\\int", label: "integral" },
+    ]) {
+      await resetEditorDocument([operatorCase.latex]);
+      const navigationStart = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const command = ${JSON.stringify(operatorCase.command)};
+        // the end of the operator's lower limit, from the editing model (the
+        // order of offsets around an operator is the kernel's own business)
+        const model = field._mathfield?.model;
+        const operator = model?.atoms.find((atom) => atom.command === command && atom.subscript?.length);
+        if (!operator) {
+          throw new Error("Structured operator was not found: " + command);
+        }
+        const operatorOffset = model.offsetOf(operator);
+        const lowerOffset = model.offsetOf(operator.subscript[operator.subscript.length - 1]);
+        field.position = lowerOffset;
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        const beforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        field.addEventListener("input", () => {
+          window.__visualtexNavigationInputEvents += 1;
+        });
+        return {
+          moved: field.position === lowerOffset,
+          operatorOffset,
+          lowerOffset,
+          beforeLatex,
+          position: field.position,
+        };
+      })()`);
+      if (!navigationStart.moved) {
+        throw new Error(
+          `${operatorCase.label} lower-limit navigation could not start: ${JSON.stringify(navigationStart)}`,
+        );
+      }
+      const lowerStart = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return {
+            ready: false,
+            region: null,
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            selection: field?.selection ?? null,
+          };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return { ready: region === "lower", region, value: field.value };
+        })()`,
+        `${operatorCase.label} caret starts in lower limit`,
+      );
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        window.__visualtexNavigationBeforeLatex = field.value;
+        window.__visualtexNavigationInputEvents = 0;
+        return field.value;
+      })()`);
+      await key("ArrowUp", "ArrowUp", 38);
+      const upperState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "upper" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowUp enters upper limit without changing LaTeX`,
+      );
+      await key("ArrowDown", "ArrowDown", 40);
+      const lowerState = await waitForEvaluation(
+        `(() => {
+          const field = document.querySelector("math-field");
+          const markers = [...(field?.shadowRoot?.querySelectorAll(
+            ".ML__placeholder-selected, .ML__selected, .ML__caret",
+          ) ?? [])];
+          const caret = markers.find((marker) => marker.closest(".ML__msubsup, .ML__op-group"));
+          const script = caret?.closest(".ML__msubsup, .ML__op-group");
+          if (!field || !caret || !script) return { ready: false, region: null, value: field?.value ?? "" };
+          const caretBounds = (caret.parentElement ?? caret).getBoundingClientRect();
+          const scriptBounds = script.getBoundingClientRect();
+          const region = caretBounds.top + caretBounds.height / 2 < scriptBounds.top + scriptBounds.height / 2 ? "upper" : "lower";
+          return {
+            ready:
+              region === "lower" &&
+              field.value === window.__visualtexNavigationBeforeLatex &&
+              window.__visualtexNavigationInputEvents === 0,
+            region,
+            value: field.value,
+            beforeLatex: window.__visualtexNavigationBeforeLatex,
+            inputEvents: window.__visualtexNavigationInputEvents,
+          };
+        })()`,
+        `${operatorCase.label} ArrowDown returns to lower limit without changing LaTeX`,
+      );
+      if (
+        upperState.value !== lowerStart.value ||
+        lowerState.value !== lowerStart.value ||
+        upperState.inputEvents !== 0 ||
+        lowerState.inputEvents !== 0
+      ) {
+        throw new Error(
+          `${operatorCase.label} navigation unexpectedly changed LaTeX`,
+        );
+      }
+    }
+
+    await resetEditorDocument(["\\alpha"]);
+    await setField("\\alpha");
+    const simpleMetrics = await waitForEvaluation(`(() => {
+      const line = document.querySelector(".formula-line");
+      const field = document.querySelector("math-field");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const lineRect = line.getBoundingClientRect();
+      return {
+        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
+        lineHeight: lineRect.height,
+        fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        centerDelta: Math.abs((top + bottom) / 2 - (lineRect.top + lineRect.bottom) / 2),
+      };
+    })()`, "simple formula row sizing");
+
+    await setField("\\frac{a}{b}");
+    const tallMetrics = await waitForEvaluation(`(() => {
+      const line = document.querySelector(".formula-line");
+      const field = document.querySelector("math-field");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const lineRect = line.getBoundingClientRect();
+      return {
+        ready:
+          !field.classList.contains("is-simple-formula") &&
+          rects.length > 0 &&
+          top >= lineRect.top - 1 &&
+          bottom <= lineRect.bottom + 1,
+        lineHeight: lineRect.height,
+        fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        topOverflow: Math.max(0, lineRect.top - top),
+        bottomOverflow: Math.max(0, bottom - lineRect.bottom),
+      };
+    })()`, "unclipped tall formula row sizing");
+    if (
+      tallMetrics.contentHeight > simpleMetrics.contentHeight + 2 &&
+      tallMetrics.lineHeight <= simpleMetrics.lineHeight + 2
+    ) {
+      throw new Error(`Formula row did not expand for taller rendered content: ${JSON.stringify({ simpleMetrics, tallMetrics })}`);
+    }
+    if (tallMetrics.topOverflow > 1 || tallMetrics.bottomOverflow > 1) {
+      throw new Error(`Tall formula is clipped by its row: ${JSON.stringify(tallMetrics)}`);
+    }
+    if (simpleMetrics.centerDelta > 10) {
+      throw new Error(`Simple formula is not vertically centered (delta ${simpleMetrics.centerDelta})`);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="缩小公式"]').click()`);
+      await sleep(70);
+    }
+    await setField("\\alpha");
+    const compactZoomMetrics = await waitForEvaluation(`(() => {
+      const field = document.querySelector("math-field");
+      const line = document.querySelector(".formula-line");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const surface = document.querySelector(".editor-surface");
+      const stack = document.querySelector(".mathfield-stack");
+      const surfaceRect = surface.getBoundingClientRect();
+      const stackRect = stack.getBoundingClientRect();
+      return {
+        ready: field.classList.contains("is-simple-formula") && rects.length > 0,
+        zoomLabel: document.querySelector(".canvas-controls > span")?.textContent?.trim(),
+        zoomOutDisabled: document.querySelector('button[aria-label="缩小公式"]')?.disabled,
+        fontSize: Number.parseFloat(getComputedStyle(field).fontSize),
+        lineHeight: line.getBoundingClientRect().height,
+        fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        surfaceWidth: surfaceRect.width,
+        stackWidth: stackRect.width,
+        leftGap: stackRect.left - surfaceRect.left,
+        rightGap: surfaceRect.right - stackRect.right,
+      };
+    })()`, "compact simple formula sizing");
+    if (
+      compactZoomMetrics.zoomLabel !== "20%" ||
+      !compactZoomMetrics.zoomOutDisabled ||
+      compactZoomMetrics.fontSize > 11.2 ||
+      compactZoomMetrics.lineHeight > 36
+    ) {
+      throw new Error(`20% zoom did not produce a compact formula row: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+    if (
+      compactZoomMetrics.leftGap > 70 ||
+      compactZoomMetrics.rightGap > 70 ||
+      compactZoomMetrics.stackWidth < compactZoomMetrics.surfaceWidth - 140
+    ) {
+      throw new Error(`Formula stack did not fill the wide editor surface: ${JSON.stringify(compactZoomMetrics)}`);
+    }
+
+    await setField("\\frac{a}{b}");
+    const compactTallMetrics = await waitForEvaluation(`(() => {
+      const line = document.querySelector(".formula-line");
+      const field = document.querySelector("math-field");
+      const content = field.shadowRoot.querySelector('[part="content"]');
+      const rects = [...content.querySelectorAll("[data-atom-id]")]
+        .map((atom) => atom.getBoundingClientRect())
+        .filter((rect) => rect.height > 0);
+      const top = rects.length ? Math.min(...rects.map((rect) => rect.top)) : 0;
+      const bottom = rects.length ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+      const lineRect = line.getBoundingClientRect();
+      return {
+        ready:
+          !field.classList.contains("is-simple-formula") &&
+          rects.length > 0 &&
+          top >= lineRect.top - 1 &&
+          bottom <= lineRect.bottom + 1,
+        lineHeight: lineRect.height,
+        fieldHeight: field.getBoundingClientRect().height,
+        contentHeight: bottom - top,
+        topOverflow: Math.max(0, lineRect.top - top),
+        bottomOverflow: Math.max(0, bottom - lineRect.bottom),
+      };
+    })()`, "unclipped compact tall formula sizing");
+    if (
+      compactTallMetrics.contentHeight > compactZoomMetrics.contentHeight + 2 &&
+      compactTallMetrics.lineHeight <= compactZoomMetrics.lineHeight + 2
+    ) {
+      throw new Error(`Tall formula did not expand at 20% zoom: ${JSON.stringify({ compactZoomMetrics, compactTallMetrics })}`);
+    }
+    if (compactTallMetrics.topOverflow > 1 || compactTallMetrics.bottomOverflow > 1) {
+      throw new Error(`Compact tall formula is clipped: ${JSON.stringify(compactTallMetrics)}`);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      await evaluate(`document.querySelector('button[aria-label="放大公式"]').click()`);
+      await sleep(70);
+    }
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("a\\\\int_{x}^{y}", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.position = field.lastOffset;
+      field.focus();
+      field.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    })()`);
+    await sleep(150);
+    const deletionStates = [];
+    for (let index = 0; index < 12; index += 1) {
+      await key("Backspace", "Backspace", 8);
+      deletionStates.push(
+        await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          return { value: field.value, position: field.position };
+        })()`),
+      );
+    }
+    const skippedOperator = deletionStates.some(
+      (state) => !state.value.includes("a") && /\\\\int/.test(state.value),
+    );
+    if (skippedOperator) {
+      throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
+    }
+
+    const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
+      const button = document.querySelector(
+        'button[aria-label="图片公式识别"], button[aria-label="Recognize formula image"]',
+      );
+      if (!button) {
+        const labels = Array.from(document.querySelectorAll("button")).map((item) => ({
+          ariaLabel: item.getAttribute("aria-label"),
+          text: item.textContent?.trim().slice(0, 80) ?? "",
+          className: item.className,
+        }));
+        reject(new Error(
+          "OCR toolbar button was not found; viewport=" +
+            window.innerWidth +
+            "x" +
+            window.innerHeight +
+            "; buttons=" +
+            JSON.stringify(labels),
+        ));
+        return;
+      }
+      const startedAt = performance.now();
+      const finish = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const backdrop = document.querySelector(".ocr-modal-backdrop");
+        if (!dialog || !backdrop) return false;
+        resolve({
+          elapsedMs: performance.now() - startedAt,
+          backdropFilter: getComputedStyle(backdrop).backdropFilter,
+          webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+        });
+        return true;
+      };
+      const observer = new MutationObserver(() => {
+        if (finish()) observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      button.click();
+      if (finish()) observer.disconnect();
+      window.setTimeout(() => {
+        observer.disconnect();
+        reject(new Error("OCR dialog did not appear within 500 ms"));
+      }, 500);
+    })`);
+    if (ocrOpenMetrics.elapsedMs > 250) {
+      throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    if (
+      ocrOpenMetrics.backdropFilter !== "none" &&
+      ocrOpenMetrics.webkitBackdropFilter !== "none"
+    ) {
+      throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    const ocrCenterMetrics = await evaluate(`new Promise((resolve) => {
+      const startedAt = performance.now();
+      const sample = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const rect = dialog.getBoundingClientRect();
+        const metrics = {
+          dialogCenterX: (rect.left + rect.right) / 2,
+          dialogCenterY: (rect.top + rect.bottom) / 2,
+          viewportCenterX: window.innerWidth / 2,
+          viewportCenterY: window.innerHeight / 2,
+          horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+          verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+          elapsedMs: performance.now() - startedAt,
+          animations: dialog.getAnimations().map((animation) => ({
+            currentTime: animation.currentTime,
+            playState: animation.playState,
+          })),
+        };
+        if (
+          (metrics.horizontalDelta <= 2 && metrics.verticalDelta <= 2) ||
+          metrics.elapsedMs >= 800
+        ) {
+          resolve(metrics);
+          return;
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    })`);
+    if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
+      throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
+    await sleep(120);
+
+    await setField("a=b");
+    await key("Enter", "Enter", 13);
+    await sleep(180);
+    await setFieldAt(1, "c=d");
+    // One universal LaTeX format (the profile menu) serves the source panel and copying.
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(120);
+    const formatMenuState = await evaluate(`(() => {
+      const menu = document.querySelector(".latex-profile-menu");
+      if (!menu) return { open: false };
+      const rect = menu.getBoundingClientRect();
+      const firstOption = menu.querySelector(".latex-profile-segments button");
+      const optionRect = firstOption?.getBoundingClientRect();
+      return {
+        open: true,
+        rows: menu.querySelectorAll(".latex-profile-row").length,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        frontmostAtHeader: menu.contains(
+          document.elementFromPoint(
+            Math.min(rect.right - 12, rect.left + 24),
+            Math.min(rect.bottom - 12, rect.top + 24),
+          ),
+        ),
+        frontmostAtFirstOption: optionRect
+          ? menu.contains(
+              document.elementFromPoint(
+                optionRect.left + optionRect.width / 2,
+                optionRect.top + optionRect.height / 2,
+              ),
+            )
+          : false,
+      };
+    })()`);
+    if (!formatMenuState.open || formatMenuState.rows < 3) {
+      throw new Error(`The LaTeX format menu did not open: ${JSON.stringify(formatMenuState)}`);
+    }
+    if (
+      formatMenuState.left < 0 ||
+      formatMenuState.top < 0 ||
+      formatMenuState.right > formatMenuState.viewportWidth + 1 ||
+      formatMenuState.bottom > formatMenuState.viewportHeight + 1
+    ) {
+      throw new Error(`The LaTeX format menu is outside the viewport: ${JSON.stringify(formatMenuState)}`);
+    }
+    if (!formatMenuState.frontmostAtHeader || !formatMenuState.frontmostAtFirstOption) {
+      throw new Error(`The LaTeX format menu is covered by the workspace: ${JSON.stringify(formatMenuState)}`);
+    }
+    await evaluate(`document.querySelector(".code-format-primary").click()`);
+    await sleep(100);
+
+    if (!(await evaluate(`Boolean(document.querySelector(".source-panel"))`))) {
+      await evaluate(`document.querySelector('[data-classic-bottom-view="source"]')?.click()`);
+      await sleep(140);
+    }
+    const displaySourceState = await evaluate(`(() => {
+      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
+      return {
+        source,
+        sourceVisible: Boolean(document.querySelector(".source-panel")),
+        blocks: (source.match(/\\$\\$/g) || []).length,
+      };
+    })()`);
+    if (
+      !displaySourceState.sourceVisible ||
+      displaySourceState.blocks !== 4 ||
+      !displaySourceState.source.includes("a=b") ||
+      !displaySourceState.source.includes("c=d")
+    ) {
+      throw new Error(`The source panel does not show the rows as $$ blocks: ${JSON.stringify(displaySourceState)}`);
+    }
+
+    // a profile change rewrites the source of rows that use the default display
+    // wrapper (a row read from a $$ block keeps its own) and keeps the formulas
+    const switchDisplayWrapper = async (wrapper) => {
+      await evaluate(`document.querySelector(".code-format-primary").click()`);
+      await sleep(100);
+      await evaluate(`document.querySelector('[data-latex-display-wrapper="${wrapper}"]')?.click()`);
+      await sleep(320);
+      await evaluate(`document.querySelector(".code-format-primary").click()`);
+      await sleep(100);
+    };
+    await switchDisplayWrapper("bracket");
+    const profileSwitchState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+    }))()`);
+    await switchDisplayWrapper("double-dollar");
+    if (
+      !profileSwitchState.source.includes("\\[") ||
+      !profileSwitchState.source.includes("a=b") ||
+      profileSwitchState.formulas[0] !== "a=b" ||
+      profileSwitchState.formulas[1] !== "c=d"
+    ) {
+      throw new Error(`The format profile did not rewrite the source: ${JSON.stringify(profileSwitchState)}`);
+    }
+
+    const editedSource = ["$$", "a=q", "$$", "", "$$", "c=d", "$$"].join("\n");
+    const incompleteSource = [
+      "$$",
+      "a+b+\\frac{a}{b}+\\mathbb{H}+\\p",
+      "$$",
+      "",
+      "$$",
+      "c=d",
+      "$$",
+    ].join("\n");
+    await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
+    await replaceFocusedText(incompleteSource);
+    const incompleteSourceState = await waitForEvaluation(`(() => {
+      const editor = document.querySelector(
+        ".multi-line-editor.is-read-only-preview",
+      );
+      const fields = [...document.querySelectorAll("math-field")];
+      const first = fields[0];
+      const content = first?.shadowRoot?.querySelector('[part="content"]');
+      return {
+        ready:
+          Boolean(editor) &&
+          !document.querySelector(".source-draft-fallback") &&
+          editor?.getAttribute("data-source-draft-error") === "unknown-command" &&
+          Boolean(document.querySelector(".source-error-chip")) &&
+          fields.length === 2 &&
+          first?.value.includes("\\\\frac{a}{b}") &&
+          first?.value.includes("\\\\mathbb{H}") &&
+          first?.value.endsWith("+\\\\p") &&
+          content?.textContent?.includes("\\\\p") &&
+          Boolean(first?.shadowRoot?.querySelector(".ML__mfrac")),
+        value: first?.value ?? "",
+        contentText: content?.textContent ?? "",
+        error: editor?.getAttribute("data-source-draft-error") ?? "",
+        formulaCount: fields.length,
+        hasFraction: Boolean(first?.shadowRoot?.querySelector(".ML__mfrac")),
+        fallbackVisible: Boolean(document.querySelector(".source-draft-fallback")),
+      };
+    })()`, "incomplete command keeps the valid formula prefix rendered");
+
+    await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
+    await replaceFocusedText(editedSource);
+    const liveSourceState = await waitForEvaluation(`(() => {
+      const formulas = [...document.querySelectorAll("math-field")].map((field) => field.value);
+      return {
+        ready:
+          !document.querySelector(".source-draft-fallback") &&
+          !document.querySelector(".source-error-chip") &&
+          formulas[0] === "a=q" &&
+          formulas[1] === "c=d",
+        formulas,
+        fallbackVisible: Boolean(document.querySelector(".source-draft-fallback")),
+      };
+    })()`, "valid source updates formulas without Apply");
+    const liveSourceSyncState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+      applyButtonVisible: [...document.querySelectorAll(".source-panel button")].some(
+        (button) => /同步到公式|Apply/.test(button.textContent ?? ""),
+      ),
+    }))()`);
+    if (
+      !liveSourceSyncState.source.includes("a=q") ||
+      liveSourceSyncState.formulas[0] !== "a=q" ||
+      liveSourceSyncState.formulas[1] !== "c=d" ||
+      liveSourceSyncState.applyButtonVisible
+    ) {
+      throw new Error(`CodeMirror live edit was not synchronized: ${JSON.stringify(liveSourceSyncState)}`);
+    }
+
+    // rows read back from $$ blocks (the profile's own wrapper) still follow the profile after the edit
+    await switchDisplayWrapper("bracket");
+    const editedProfileSwitchState = await evaluate(`(() => ({
+      source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
+      formulas: [...document.querySelectorAll("math-field")].map((field) => field.value),
+    }))()`);
+    await switchDisplayWrapper("double-dollar");
+    if (
+      (editedProfileSwitchState.source.match(/\\\[/g) || []).length !== 2 ||
+      editedProfileSwitchState.source.includes("$$") ||
+      editedProfileSwitchState.formulas[0] !== "a=q" ||
+      editedProfileSwitchState.formulas[1] !== "c=d"
+    ) {
+      throw new Error(`Rows edited in the source stopped following the format profile: ${JSON.stringify(editedProfileSwitchState)}`);
+    }
+
+    await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
+    await replaceFocusedText(["$$", "a=", "$$"].join("\n"));
+    await key("ArrowUp", "ArrowUp", 38);
+    await key("q", "KeyQ", 81);
+    const continuousSourceFocusState = await waitForEvaluation(`(() => {
+      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
+      const field = document.querySelector("math-field");
+      return {
+        ready:
+          source.trim() === "$$\\na=q\\n$$" &&
+          field?.value === "a=q" &&
+          Boolean(document.querySelector(".source-panel .cm-editor.cm-focused")),
+        source,
+        value: field?.value ?? "",
+        sourceFocused: Boolean(document.querySelector(".source-panel .cm-editor.cm-focused")),
+      };
+    })()`, "source focus survives a valid live update");
+
+    // text outside the math (the default profile): the row keeps it as \text
+    const mixedSource = String.raw`速度$v=x^{\text{中文}}$`;
+    await evaluate(`document.querySelector(".source-panel .cm-content").focus()`);
+    await replaceFocusedText(mixedSource);
+    const inlineTextFormatState = await waitForEvaluation(`(() => {
+      const source = document.querySelector(".source-panel .cm-content")?.innerText ?? "";
+      const value = document.querySelector("math-field")?.value ?? "";
+      return {
+        ready:
+          source.trim() === ${JSON.stringify(mixedSource)} &&
+          value === "\\\\text{速度}v=x^{\\\\text{中文}}",
+        source,
+        value,
+      };
+    })()`, "inline text outside the math");
+
+    await evaluate(`(() => {
+      localStorage.removeItem("visualtex.onboarding.v3.completed");
+      localStorage.removeItem("visualtex.onboarding.windows.desktop.v1.1.0.completed");
+      location.reload();
+    })()`);
+    await sleep(850);
+    const removedOnboardingState = await evaluate(`(() => ({
+      dialogVisible: Boolean(document.querySelector(".onboarding-dialog")),
+      menuText: document.querySelector(".app-menu")?.textContent ?? "",
+      editorVisible: Boolean(document.querySelector("math-field")),
+    }))()`);
+    if (
+      removedOnboardingState.dialogVisible ||
+      removedOnboardingState.menuText.includes("新手教程") ||
+      removedOnboardingState.menuText.includes("Quick tour") ||
+      !removedOnboardingState.editorVisible
+    ) {
+      throw new Error(`Removed onboarding is still exposed: ${JSON.stringify(removedOnboardingState)}`);
+    }
+
+    if (process.env.VISUALTEX_TEST_QUIET !== "1") console.log(JSON.stringify({
+      enterAfterCommandState,
+      nativePopover,
+      nativeCommitState,
+      simpleMetrics,
+      tallMetrics,
+      compactZoomMetrics,
+      compactTallMetrics,
+      ocrOpenMetrics,
+      ocrCenterMetrics,
+      deletionStates,
+      formatMenuState,
+      displaySourceState,
+      incompleteSourceState,
+      liveSourceState,
+      liveSourceSyncState,
+      profileSwitchState,
+      editedProfileSwitchState,
+      continuousSourceFocusState,
+      inlineTextFormatState,
+      chineseBackslashState,
+      arrowUpLineState,
+      arrowDownLineState,
+      removedOnboardingState,
+    }, null, 2));
+    console.log("Editor regression smoke test passed");
+  });
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack : error);
+  process.exitCode = 1;
+});

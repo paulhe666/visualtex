@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VisualTeX Validation",
+  "identifier": "com.visualtex.studio.validation",
+  "bundle": {
+    "macOS": {
+      "infoPlist": "Info.validation.plist",
+      "signingIdentity": "-"
+    }
+  }
+}

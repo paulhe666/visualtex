@@ -1,0 +1,28 @@
+[[permission]]
+identifier = "allow-ocr-desktop"
+description = "Allow the trusted embedded VisualTeX main window to configure, install, manage and run OCR, including Windows quick and silent OCR entry points."
+commands.allow = [
+  "get_ocr_provider_configuration",
+  "save_ocr_provider_configuration",
+  "get_ocr_runtime_status",
+  "configure_ocr_storage_location",
+  "open_ocr_storage_location",
+  "install_ocr_runtime",
+  "get_ocr_install_status",
+  "cancel_ocr_install",
+  "open_ocr_install_logs",
+  "recognize_formula_image",
+  "cancel_ocr_recognition",
+  "restart_ocr_worker",
+  "warmup_ocr_model",
+  "reset_ocr_runtime",
+  "install_optional_ocr_model",
+  "remove_optional_ocr_model",
+  "get_ocr_model_catalog",
+  "get_ocr_model_download_status",
+  "download_ocr_model",
+  "cancel_ocr_model_download",
+  "capture_windows_quick_ocr",
+  "write_windows_ocr_clipboard_text",
+  "configure_silent_ocr"
+]

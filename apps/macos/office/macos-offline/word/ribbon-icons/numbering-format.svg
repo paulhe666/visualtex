@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M9 15h16M9 32h16M9 49h16"/>
+    <path d="M39 14h16M39 31h16M39 48h16"/>
+    <path d="M30 12v40"/>
+  </g>
+  <text x="7" y="12" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">1</text>
+  <text x="7" y="29" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">2</text>
+  <text x="7" y="46" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">3</text>
+  <text x="36" y="12" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">1.1</text>
+  <text x="36" y="29" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">1.2</text>
+  <text x="36" y="46" fill="#1F638E" font-family="Arial, sans-serif" font-size="9">1.3</text>
+</svg>

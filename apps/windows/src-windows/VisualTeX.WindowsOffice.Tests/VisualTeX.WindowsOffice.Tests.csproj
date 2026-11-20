@@ -1,0 +1,134 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>VisualTeX.WindowsOffice.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <Reference Include="office">
+      <HintPath>$(MSBuildProgramFiles32)\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15\Office.dll</HintPath>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Microsoft.Office.Interop.Word" Version="15.0.4797.1004" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\test-fixtures\mathtype-real\*.native" Link="mathtype-real\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\test-fixtures\document-import-heading-hierarchy.json" Link="document-import-heading-hierarchy.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeErrorText.cs" Link="OfficeErrorText.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathSpaceContract.cs" Link="MathSpaceContract.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlTokenStyleContract.cs" Link="MathMlTokenStyleContract.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlColorContract.cs" Link="MathMlColorContract.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlAccentGeometry.cs" Link="MathMlAccentGeometry.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlExplicitFenceContract.cs" Link="MathMlExplicitFenceContract.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeDoubleClickGesture.cs" Link="OfficeDoubleClickGesture.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationHeadings.cs" Link="WordEquationHeadings.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberFormat.cs" Link="WordEquationNumberFormat.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumberReferences.cs" Link="WordEquationNumberReferences.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationParagraphLayout.cs" Link="WordEquationParagraphLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationSequenceFields.cs" Link="WordEquationSequenceFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNativeCaptions.cs" Link="WordNativeCaptions.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedDisplayLayout.cs" Link="WordNumberedDisplayLayout.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTableDisplay.cs" Link="WordNumberedTableDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDisplayColumns.cs" Link="WordDisplayColumns.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTrueDisplay.cs" Link="WordNumberedTrueDisplay.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberedTypingParagraphs.cs" Link="WordNumberedTypingParagraphs.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingCleanup.cs" Link="WordNumberingCleanup.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingFields.cs" Link="WordNumberingFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingPerformance.cs" Link="WordNumberingPerformance.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingReconcile.cs" Link="WordNumberingReconcile.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordNumberingState.cs" Link="WordNumberingState.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordVisibleEquationNumbers.cs" Link="WordVisibleEquationNumbers.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordEquationReferenceFields.cs" Link="WordEquationReferenceFields.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointCellMath.cs" Link="PowerPointCellMath.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFieldCode.cs" Link="WordFieldCode.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WpsFieldXml.cs" Link="WpsFieldXml.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WpsXmlInsertion.cs" Link="WpsXmlInsertion.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WpsOleDisplayRefresh.cs" Link="WpsOleDisplayRefresh.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordNumberingFieldCollection.cs" Link="WordNumberingFieldCollection.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldCodes.cs" Link="WordVisualTeXParagraphNumbering.FieldCodes.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldLookup.cs" Link="WordVisualTeXParagraphNumbering.FieldLookup.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.NumberFont.cs" Link="WordVisualTeXParagraphNumbering.NumberFont.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordNativeNumberingAdoptionPlan.Labels.cs" Link="WordNativeNumberingAdoptionPlan.Labels.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordCharacterFormatting.cs" Link="WordCharacterFormatting.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFormulaHost.cs" Link="WordFormulaHost.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\MathTypeFieldLocator.cs" Link="MathTypeFieldLocator.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\MathTypeSourceHost.cs" Link="MathTypeSourceHost.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\MathTypeLocalFragment.cs" Link="MathTypeLocalFragment.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.cs" Link="MathTypeMtefCodec.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefAssembly.cs" Link="MathTypeMtefAssembly.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCanonicalRoot.cs" Link="MathTypeMtefCanonicalRoot.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCharacters.cs" Link="MathTypeMtefCharacters.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefFences.cs" Link="MathTypeMtefFences.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefFontSize.cs" Link="MathTypeMtefFontSize.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefGlyphs.cs" Link="MathTypeMtefGlyphs.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefPrefix.cs" Link="MathTypeMtefPrefix.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefSignature.cs" Link="MathTypeMtefSignature.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefTemplates.cs" Link="MathTypeMtefTemplates.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MtefStructureReader.cs" Link="MtefStructureReader.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordNativeOmmlSemanticComparer.cs" Link="WordNativeOmmlSemanticComparer.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordMathTypePresentation.cs" Link="WordMathTypePresentation.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordRecoveryXmlEquivalence.cs" Link="WordRecoveryXmlEquivalence.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordLocalEditSnapshot.cs" Link="WordLocalEditSnapshot.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\OleCompoundFileDigest.cs" Link="OleCompoundFileDigest.cs" />
+    <None Include="..\..\test-fixtures\ole-container\*.bin" Link="ole-container\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\VisualTeX.WordVsto\WordBookmarkRecoverySnapshot.cs" Link="WordBookmarkRecoverySnapshot.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordInlineObjectGeometry.cs" Link="WordInlineObjectGeometry.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlBatchSources.cs" Link="WordOmmlBatchSources.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlDocuments.cs" Link="WordOmmlDocuments.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlEquationNumbers.cs" Link="WordOmmlEquationNumbers.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFingerprints.cs" Link="WordOmmlFingerprints.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFromMathMl.cs" Link="WordOmmlFromMathMl.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertion.cs" Link="WordOmmlInsertion.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlToMathMl.cs" Link="WordOmmlToMathMl.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlMathFontPolicy.cs" Link="WordOmmlMathFontPolicy.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OmmlMathMlProjection.cs" Link="OmmlMathMlProjection.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointMathClipboard.cs" Link="PowerPointMathClipboard.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\WpsMathText.cs" Link="WpsMathText.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\WpsEquationSlide.cs" Link="WpsEquationSlide.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOleObjectAccessor.cs" Link="WordOleObjectAccessor.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordBulkImportParser.cs" Link="WordBulkImportParser.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeFormulaShortcutKeyboardHook.cs" Link="OfficeFormulaShortcutKeyboardHook.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFormulaShortcutPolicy.cs" Link="WordFormulaShortcutPolicy.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordShortcutConflictRecord.cs" Link="WordShortcutConflictRecord.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointFormulaConversionModel.cs" Link="PowerPointFormulaConversionModel.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointLatexText.cs" Link="PowerPointLatexText.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointUndoHistory.cs" Link="PowerPointUndoHistory.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\NativePreviewRetry.cs" Link="NativePreviewRetry.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCompObj.cs" Link="MathTypeCompObj.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordCoordinateShifts.cs" Link="WordCoordinateShifts.cs" />
+    <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
+  </ItemGroup>
+</Project>

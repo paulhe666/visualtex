@@ -1,0 +1,787 @@
+.doc-import-shell {
+  --doc-import-radius: 12px;
+  /* the preview page in the theme's colours (as the main window's document page): a fixed warm white page with dark
+     text ignored a dark or coloured theme */
+  --doc-import-page: var(--formula-surface);
+  --doc-import-page-ink: var(--text-primary, var(--text));
+  --doc-import-page-muted: var(--text-secondary, var(--text-muted));
+  --doc-import-page-rule: var(--border-default, var(--border));
+  --doc-import-page-soft: color-mix(in srgb, var(--doc-import-page-ink) 4%, var(--doc-import-page));
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.doc-import-toolbar,
+.doc-import-footer {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 16px;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg));
+}
+
+.doc-import-toolbar {
+  min-height: 62px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.doc-import-footer {
+  min-height: 54px;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.doc-import-title-block {
+  min-width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.doc-import-title-block > svg {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-border) 70%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-soft) 74%, var(--surface));
+  color: var(--accent);
+}
+
+.doc-import-title-block > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.doc-import-title-block strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.15px;
+}
+
+.doc-import-title-block span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-import-options,
+.doc-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.doc-import-options {
+  justify-content: flex-end;
+}
+
+.doc-import-options label {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.doc-import-options label:focus-within,
+.doc-import-options label:hover {
+  border-color: var(--border-strong);
+}
+
+.doc-import-options select,
+.doc-import-secondary,
+.doc-import-primary {
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.doc-import-options select {
+  min-width: 124px;
+  height: 28px;
+  padding: 0 28px 0 9px;
+  border: 0;
+  border-radius: 6px;
+  outline: 0;
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.doc-import-options .doc-import-numbering-option {
+  padding: 0 11px;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.doc-import-numbering-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.doc-import-numbering-option input:disabled {
+  cursor: default;
+}
+
+.doc-import-secondary,
+.doc-import-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.doc-import-secondary {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.doc-import-secondary:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.doc-import-file-button {
+  min-width: 148px;
+  font-weight: 650;
+}
+
+.doc-import-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+
+.doc-import-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.doc-import-secondary:disabled,
+.doc-import-primary:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.doc-import-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.05fr);
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 84%, var(--surface-sunken));
+}
+
+.doc-import-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 58px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--doc-import-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.doc-import-pane-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 95%, var(--bg-elevated));
+}
+
+.doc-import-pane-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.doc-import-pane-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent-border) 52%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
+  color: var(--accent);
+}
+
+.doc-import-pane-icon.is-preview {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
+  color: var(--success);
+}
+
+.doc-import-pane-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.doc-import-pane-heading strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-import-pane-heading small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-import-source-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.doc-import-file-chip {
+  min-width: 0;
+  max-width: min(250px, 28vw);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-border) 55%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 44%, var(--surface));
+  color: var(--text);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.doc-import-file-chip > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.doc-import-file-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-import-file-chip > small {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.doc-import-pane-stat,
+.doc-import-preview-counts > span {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.doc-import-preview-counts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.doc-import-preview-counts > span:first-child {
+  border-color: color-mix(in srgb, var(--accent-border) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 50%, var(--surface));
+  color: var(--accent);
+}
+
+.source-pane textarea {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  resize: none;
+  padding: 22px 24px 52px;
+  overflow: auto;
+  border: 0;
+  outline: 0;
+  background:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--accent) 3%, transparent),
+      transparent 72px
+    ),
+    var(--surface);
+  color: var(--text);
+  caret-color: var(--accent);
+  font: 13px/1.78 "Cascadia Code", "Consolas", monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.source-pane textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 0.76;
+}
+
+.source-pane textarea::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.doc-import-preview-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  background: var(--doc-import-page);
+  scrollbar-gutter: stable;
+}
+
+.doc-import-preview-stage {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.doc-import-preview-caption {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--doc-import-page-rule);
+  background: var(--doc-import-page);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.doc-import-preview-caption > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.doc-import-preview-caption > span:first-child {
+  color: var(--text-muted);
+}
+
+.doc-import-preview-document {
+  width: 100%;
+  min-height: max(620px, calc(100vh - 230px));
+  margin: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 20px 24px 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--doc-import-page);
+  color: var(--doc-import-page-ink);
+  box-shadow: none;
+  font-family: "Cambria", "Times New Roman", "Microsoft YaHei", serif;
+  font-size: 13pt;
+  line-height: 1.58;
+}
+
+.doc-import-paper-content {
+  min-width: 0;
+}
+
+.doc-import-page-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 38px;
+  padding-top: 11px;
+  border-top: 1px solid var(--doc-import-page-rule);
+  color: var(--doc-import-page-muted);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+}
+
+.doc-import-paper-empty {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--doc-import-page-muted);
+  text-align: center;
+}
+
+.doc-import-paper-empty > svg {
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--doc-import-page-muted) 72%, var(--doc-import-page));
+}
+
+.doc-import-paper-empty strong {
+  color: var(--doc-import-page-ink);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+}
+
+.doc-import-paper-empty span {
+  max-width: 360px;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.doc-import-heading {
+  color: var(--doc-import-page-ink);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  line-height: 1.34;
+  letter-spacing: -0.2px;
+}
+
+h1.doc-import-heading {
+  margin: 0 0 0.82em;
+  padding-bottom: 0.42em;
+  border-bottom: 1px solid var(--doc-import-page-rule);
+  font-size: 20pt;
+  font-weight: 700;
+}
+
+h2.doc-import-heading {
+  margin: 1.45em 0 0.68em;
+  font-size: 17pt;
+  font-weight: 700;
+}
+
+h3.doc-import-heading {
+  margin: 1.3em 0 0.58em;
+  font-size: 15pt;
+  font-weight: 700;
+}
+
+h4.doc-import-heading,
+h5.doc-import-heading,
+h6.doc-import-heading {
+  margin: 1.15em 0 0.52em;
+  font-size: 13pt;
+  font-weight: 700;
+}
+
+.doc-import-heading:first-child {
+  margin-top: 0;
+}
+
+.doc-import-paragraph {
+  min-height: 1.58em;
+  margin: 0 0 0.72em;
+  color: var(--doc-import-page-ink);
+}
+
+.doc-import-quote {
+  margin: 1.1em 0;
+  padding: 0.72em 1em 0.72em 1.08em;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--doc-import-page));
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--accent) 5%, var(--doc-import-page));
+  color: var(--doc-import-page-muted);
+}
+
+.doc-import-code-block {
+  margin: 1.15em 0;
+  padding: 15px 17px;
+  overflow: auto;
+  border: 1px solid var(--doc-import-page-rule);
+  border-radius: 8px;
+  background: var(--doc-import-page-soft);
+  color: var(--doc-import-page-ink);
+  font: 9px/1.55 "Cascadia Code", "Consolas", monospace;
+  white-space: pre-wrap;
+}
+
+.doc-import-list-row {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  margin: 0.34em 0;
+  color: var(--doc-import-page-ink);
+}
+
+.doc-import-list-marker {
+  width: 1.45em;
+  flex: 0 0 1.45em;
+  color: var(--accent);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-weight: 700;
+  text-align: right;
+}
+
+.doc-import-display-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0.82em 0 0.96em;
+  padding: 7px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--doc-import-page-rule);
+  border-radius: 8px;
+  background: var(--doc-import-page-soft);
+}
+
+.doc-import-formula {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: -0.2em;
+}
+
+.doc-import-formula.display {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  vertical-align: initial;
+}
+
+.doc-import-formula svg {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  color: var(--doc-import-page-ink);
+}
+
+.doc-import-formula-error {
+  display: inline-grid;
+  gap: 2px;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--doc-import-page));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--doc-import-page));
+  color: var(--danger);
+  font-family: "Cascadia Code", "Consolas", monospace;
+}
+
+.doc-import-formula-error.display {
+  padding: 8px 10px;
+}
+
+.doc-import-formula-error small {
+  font-family: inherit;
+  opacity: 0.8;
+}
+
+.doc-import-preview-document .bold {
+  font-weight: 700;
+}
+
+.doc-import-preview-document .italic {
+  font-style: italic;
+}
+
+.doc-import-preview-document .strike {
+  text-decoration: line-through;
+}
+
+.doc-import-preview-document .underline {
+  text-decoration: underline;
+}
+
+.doc-import-preview-document .code {
+  padding: 0.12em 0.34em;
+  border: 1px solid var(--doc-import-page-rule);
+  border-radius: 4px;
+  background: var(--doc-import-page-soft);
+  color: var(--doc-import-page-ink);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.88em;
+}
+
+.doc-import-preview-error,
+.doc-import-loading {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.doc-import-preview-error {
+  min-height: 260px;
+  flex-direction: column;
+  padding: 28px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.doc-import-preview-error > svg {
+  color: var(--warning);
+}
+
+.doc-import-loading {
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.doc-import-loading.error,
+.doc-import-messages .error {
+  color: var(--danger);
+}
+
+.doc-import-messages {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.doc-import-messages > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.doc-import-messages .warning {
+  color: var(--warning, #b56b13);
+}
+
+.doc-import-messages .ok {
+  color: var(--success);
+}
+
+.spin {
+  animation: doc-import-spin 0.8s linear infinite;
+}
+
+@keyframes doc-import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1180px) {
+  .doc-import-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .doc-import-title-block,
+  .doc-import-options {
+    width: 100%;
+  }
+
+  .doc-import-options {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 980px) {
+  .doc-import-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .doc-import-workspace {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .doc-import-options label {
+    width: calc(50% - 5px);
+  }
+
+  .doc-import-options select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .doc-import-pane-header {
+    padding-inline: 10px;
+  }
+
+  .doc-import-pane-heading small,
+  .doc-import-preview-counts > span:not(:first-child),
+  .doc-import-file-chip > small {
+    display: none;
+  }
+
+  .doc-import-file-button {
+    flex: 1 1 100%;
+  }
+
+  .doc-import-file-chip {
+    max-width: 150px;
+  }
+
+  .doc-import-preview-scroll {
+    padding: 0;
+  }
+
+  .doc-import-preview-document {
+    min-height: 520px;
+    padding: 16px 18px 14px;
+  }
+}

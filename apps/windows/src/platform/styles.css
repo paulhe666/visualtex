@@ -1,0 +1,913 @@
+/* Windows' own stylesheet, loaded after the shared ones (apps/shared/visualtex-app/src/styles/index.ts): the
+   components and windows only the Windows app has. Its Office and WPS settings, MathType options and Office
+   formula shortcuts; the quick and silent OCR windows; the confirmation dialogs of the Office add-ins; the
+   horizontal dock's matrix builder (the delimiter rail beside the size grid, wrapped into as many columns as the
+   dock height needs: FormulaToolbar sets --matrix-delimiter-columns/rows); and the stable copy of the candidate
+   list WebView2 shows while typing a command (#visualtex-native-input-suggestion-popover,
+   editor/mathLiveKernelCommands.ts; its candidate looks and colours are the shared ones, app.css). */
+
+/* The Office editor header's collapse levels (responsive.css) for the Windows controls: 6: undo and redo leave
+   (Ctrl+Z still works); 7: the OCR button keeps its icon, the equation-number box loses its caption. */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="6"]
+  .office-inline-history-actions
+  > :is(.office-history-icon-button, .office-inline-action-divider),
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="7"]
+  .office-inline-history-actions
+  > .secondary-button:not(.office-inline-cancel)
+  > span,
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="7"] .office-auto-commit-setting > span {
+  display: none;
+}
+
+:root.visualtex-source-editor-focused
+  #visualtex-native-input-suggestion-popover {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html body #visualtex-native-input-suggestion-popover li {
+  flex: 0 0 auto;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__index {
+  flex: 0 0 1.1em;
+  align-self: center;
+  color: var(--text-faint);
+  font: 600 12px/1 system-ui, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+html body #visualtex-native-input-suggestion-popover li.ML__popover__current .ML__popover__index {
+  color: var(--accent);
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__command {
+  flex: 0 0 auto;
+}
+
+html body #visualtex-native-input-suggestion-popover .visualtex-native-preview-unavailable {
+  color: var(--text-faint);
+  font: 12px/1.2 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+html body #visualtex-native-input-suggestion-popover .visualtex-native-preview-placeholder {
+  width: 0.72em;
+  min-width: 0.72em;
+  height: 0.86em;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 0.08em;
+  background: var(--formula-placeholder);
+  color: transparent;
+  line-height: 0;
+  vertical-align: -0.08em;
+}
+
+html body #visualtex-native-input-suggestion-popover {
+  min-width: 250px;
+  max-width: min(380px, calc(100vw - 24px));
+  position: fixed;
+  z-index: var(--suggestion-zindex, 190);
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+html body #visualtex-native-input-suggestion-popover.is-visible {
+  display: flex;
+}
+
+html body #visualtex-native-input-suggestion-popover.top-tip::after {
+  content: "";
+  position: absolute;
+  top: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-right: 15px solid transparent;
+  border-bottom: 15px solid var(--surface);
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover.bottom-tip::after {
+  content: "";
+  position: absolute;
+  bottom: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-top: 15px solid var(--surface);
+  border-right: 15px solid transparent;
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover ul {
+  max-height: min(320px, var(--visualtex-suggestion-max-height, 320px));
+  display: flex;
+  flex-flow: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--surface);
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+html body #visualtex-native-input-suggestion-popover li {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+html body #visualtex-native-input-suggestion-popover li + li {
+  margin-top: 3px;
+}
+
+html body #visualtex-native-input-suggestion-popover li:hover,
+html body #visualtex-native-input-suggestion-popover li.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+html body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: var(--accent-border);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__command {
+  min-width: 72px;
+  color: var(--text);
+  font-size: 1.3rem;
+}
+
+html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
+  min-width: 126px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  padding-block: 3px;
+  font-size: 1.1rem;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover ul {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li:hover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-active {
+  background: #f4f9ff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: #9fc8e5;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
+}
+
+.office-settings-diagnostic {
+  min-width: 0;
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: inherit;
+}
+
+.office-wps-installation {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.office-wps-installation > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.office-wps-help {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.office-wps-help summary {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.office-wps-help p {
+  margin: 6px 0 4px;
+}
+
+.office-wps-help ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
+
+.office-settings-heading-simple {
+  align-items: center;
+}
+
+.office-settings-heading-simple h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.office-settings-heading-simple p {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.office-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.office-summary-card.is-ready {
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+  background: color-mix(in srgb, var(--success) 7%, var(--bg-elevated));
+}
+
+.office-summary-card.is-pending {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
+}
+
+.office-summary-card.needs-attention {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-elevated));
+}
+
+.office-summary-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-faint);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.office-summary-card.is-ready .office-summary-icon {
+  color: var(--success);
+}
+
+.office-summary-card.is-pending .office-summary-icon {
+  color: var(--accent);
+}
+
+.office-summary-card.needs-attention .office-summary-icon {
+  color: var(--warning);
+}
+
+.office-summary-card > div {
+  min-width: 0;
+}
+
+.office-summary-card strong {
+  display: block;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.office-summary-card p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.office-mathtype-double-click-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+}
+
+.office-mathtype-double-click-setting > div {
+  min-width: 0;
+}
+
+.office-mathtype-double-click-setting strong {
+  display: block;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.office-mathtype-double-click-setting p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.office-mathtype-double-click-toggle {
+  flex: 0 0 auto;
+  min-width: 86px;
+  justify-content: center;
+}
+
+.office-primary-actions,
+.office-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.office-primary-actions .primary-button,
+.office-primary-actions .secondary-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 10px;
+}
+
+.office-primary-actions .office-action-main {
+  flex: 1 1 190px;
+}
+
+.office-advanced-settings {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 74%, transparent);
+  overflow: hidden;
+}
+
+.office-advanced-settings > summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 11px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.office-advanced-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.office-advanced-settings > summary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.office-advanced-settings > summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.office-details-chevron {
+  transition: transform 160ms ease;
+}
+
+.office-advanced-settings[open] .office-details-chevron {
+  transform: rotate(180deg);
+}
+
+.office-advanced-content {
+  display: grid;
+  gap: 10px;
+  padding: 0 11px 11px;
+  border-top: 1px solid var(--border);
+}
+
+.office-status-grid-compact {
+  padding-top: 11px;
+}
+
+.office-status-grid-compact .office-status-card {
+  padding: 10px;
+  gap: 6px;
+}
+
+.office-status-grid-compact .office-platform-status-line {
+  font-size: 9px;
+}
+
+.office-diagnostic-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  padding: 0 2px;
+  color: var(--text-faint);
+  font: 8px/1.45 "JetBrains Mono", ui-monospace, monospace;
+}
+
+.office-secondary-actions .secondary-button,
+.office-secondary-actions .danger-subtle {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 9px;
+}
+
+.office-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-confirm, 340);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 10, 18, 0.52);
+  backdrop-filter: blur(4px);
+}
+
+.office-confirm-dialog {
+  width: min(430px, calc(100vw - 40px));
+  display: grid;
+  gap: 16px;
+  padding: 17px;
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.office-confirm-dialog > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 11px;
+}
+
+.office-confirm-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-elevated));
+  color: var(--danger);
+}
+
+.office-confirm-icon.is-verification {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  color: var(--accent);
+}
+
+.office-confirm-dialog strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.office-confirm-dialog p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.office-force-close-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.office-force-close-option input {
+  margin: 2px 0 0;
+}
+
+.office-force-close-option > span {
+  display: grid;
+  gap: 3px;
+}
+
+.office-force-close-option strong {
+  font-size: 10px;
+}
+
+.office-force-close-option small {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.office-confirm-inline-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-elevated));
+  color: var(--text-muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.office-confirm-inline-warning svg {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.office-confirm-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.danger-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, var(--danger) 68%, var(--border));
+  border-radius: 7px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.danger-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.office-formula-shortcut-hosts {
+  display: grid;
+  gap: 12px;
+}
+
+.shortcut-settings-group {
+  display: grid;
+  gap: 12px;
+}
+
+.shortcut-settings-group + .shortcut-settings-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.office-formula-shortcut-host {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+}
+
+.office-formula-shortcut-host-header {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.office-formula-shortcut-host-header strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.office-formula-shortcut-host-header small {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.office-formula-shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.office-formula-shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 66px 100px;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.office-formula-shortcut-row.is-format-fixed {
+  grid-template-columns: minmax(0, 1fr) 132px 66px;
+}
+
+.office-formula-shortcut-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.office-formula-shortcut-copy strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.office-formula-shortcut-copy .office-formula-shortcut-warning {
+  color: var(--warning);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.office-formula-shortcut-copy small,
+.office-formula-shortcut-help,
+.office-formula-format-select span {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.office-formula-shortcut-clear {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.office-formula-shortcut-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 9px;
+}
+
+.office-formula-shortcut-clear:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.office-formula-format-select {
+  display: grid;
+  gap: 3px;
+}
+
+.office-formula-format-select select {
+  width: 100%;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 9px;
+}
+
+.office-formula-shortcut-help {
+  min-height: 13px;
+  margin: 7px 2px 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .office-formula-shortcut-row {
+    grid-template-columns: minmax(0, 1fr) 118px 62px;
+  }
+}
+
+@media (max-width: 620px) {
+
+  .office-formula-format-select {
+    grid-column: 2 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+
+  .office-formula-shortcut-row.is-format-fixed {
+    grid-template-columns: minmax(0, 1fr) 118px 62px;
+  }
+}
+
+.formula-row-hotkey-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.formula-row-hotkey-off {
+  justify-self: center;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.windows-quick-ocr-hud {
+  position: fixed;
+  z-index: 5200;
+  left: 50%;
+  bottom: 28px;
+  max-width: min(520px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  padding: 9px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.windows-quick-ocr-hud.is-busy {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--accent);
+}
+
+.windows-quick-ocr-hud.is-success {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--border));
+  color: var(--success);
+}
+
+.windows-quick-ocr-hud.is-error {
+  border-color: color-mix(in srgb, var(--danger) 46%, var(--border));
+  color: var(--danger);
+}
+
+.silent-ocr-hud-page {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: transparent;
+}
+
+.silent-ocr-hud-page .windows-quick-ocr-hud {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  width: min(356px, calc(100vw - 20px));
+  max-width: none;
+  transform: none;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+}
+
+.silent-ocr-hud-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 10%, var(--surface));
+}
+
+.silent-ocr-hud-page .windows-quick-ocr-hud.is-busy .silent-ocr-hud-icon svg {
+  animation: visualtex-silent-ocr-spin 0.9s linear infinite;
+}
+
+.silent-ocr-hud-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.silent-ocr-hud-copy > strong {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.silent-ocr-hud-message {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.silent-ocr-hud-progress {
+  height: 3px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.silent-ocr-hud-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 180ms ease-out;
+}
+
+.silent-ocr-hud-page .windows-quick-ocr-hud.is-success .silent-ocr-hud-progress,
+.silent-ocr-hud-page .windows-quick-ocr-hud.is-error .silent-ocr-hud-progress {
+  opacity: 0.72;
+}
+
+@keyframes visualtex-silent-ocr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

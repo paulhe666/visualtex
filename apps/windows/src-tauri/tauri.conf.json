@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VisualTeX",
+  "version": "1.3.0",
+  "identifier": "com.visualtex.studio",
+  "build": {
+    "beforeDevCommand": "node scripts/build_office_for_platform.mjs && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "node scripts/verify_frontend_dist.mjs",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": ["default", "silent-ocr-hud", "anywhere", "pdf-print"],
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "专业的 LaTeX 可视化公式编辑器",
+    "longDescription": "使用可视化结构、智能命令候选、PaddleOCR 公式识别和实时源码共同编辑 LaTeX 数学公式。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../shared/visualtex-app/src/math/STIXTwoMath-OFL-1.1.txt": "licenses/STIXTwoMath-OFL-1.1.txt",
+      "resources/formula-fonts/KaTeX-LICENSE.txt": "licenses/formula-fonts/KaTeX-LICENSE.txt",
+      "resources/formula-fonts/MathLive-font-distribution-LICENSE.txt": "licenses/formula-fonts/MathLive-font-distribution-LICENSE.txt",
+      "resources/formula-fonts/STIXTwoMath-OFL.txt": "licenses/formula-fonts/STIXTwoMath-OFL.txt",
+      "resources/formula-fonts/GUST-FONT-LICENSE.txt": "licenses/formula-fonts/GUST-FONT-LICENSE.txt",
+      "resources/formula-fonts/NotoSansCJK-OFL.txt": "licenses/formula-fonts/NotoSansCJK-OFL.txt",
+      "resources/formula-fonts/NotoSerifCJK-OFL.txt": "licenses/formula-fonts/NotoSerifCJK-OFL.txt",
+      "resources/formula-fonts/LXGWWenKai-OFL.txt": "licenses/formula-fonts/LXGWWenKai-OFL.txt"
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "nsis": {
+        "template": "./target/nsis-template/visualtex-installer.nsi",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
+  }
+}

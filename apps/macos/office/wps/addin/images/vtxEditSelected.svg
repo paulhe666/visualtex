@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="geometricPrecision">
+  <g fill="none" stroke="#1F638E" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M12 19h30v28H12z"/>
+    <path d="M36 19v6h6"/>
+    <path d="M34 46l4-10 12-12 6 6-12 12-10 4z"/>
+    <path d="M46 28l6 6M36 43l5 5"/>
+  </g>
+  <text x="18" y="39" fill="#1F638E" font-family="Times New Roman, serif" font-size="17" font-style="italic">x²</text>
+</svg>

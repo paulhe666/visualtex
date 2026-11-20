@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "noEmit": true
+  },
+  "include": [
+    "src/office/dialog/**/*.ts",
+    "src/office/dialog/**/*.tsx",
+    "src/office/api/**/*.ts",
+    "src/office/shared/**/*.ts",
+    "src/workspace/**/*.ts",
+    "src/workspace/**/*.tsx",
+    "../shared/visualtex-core/src/kernel/*.d.ts",
+    "../shared/visualtex-app/src/*.d.ts"
+  ],
+  "references": []
+}

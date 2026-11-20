@@ -1,0 +1,134 @@
+[package]
+name = "visualtex"
+version = "1.3.0"
+description = "A visual LaTeX formula editor"
+authors = ["paulhe666"]
+license = "AGPL-3.0-only"
+edition = "2021"
+default-run = "visualtex"
+
+[features]
+runtime-handle-acceptance = []
+ocr-install-acceptance = []
+ocr-python-bundle-acceptance = []
+ocr-model-acceptance = []
+ocr-storage-acceptance = []
+ocr-provider-connectivity-acceptance = []
+system-font-asset-acceptance = []
+
+[[bin]]
+name = "runtime_handle_acceptance"
+path = "src/bin/runtime_handle_acceptance.rs"
+required-features = ["runtime-handle-acceptance"]
+
+[[bin]]
+name = "ocr_install_acceptance"
+path = "src/bin/ocr_install_acceptance.rs"
+required-features = ["ocr-install-acceptance"]
+
+[[bin]]
+name = "ocr_python_bundle_acceptance"
+path = "src/bin/ocr_python_bundle_acceptance.rs"
+required-features = ["ocr-python-bundle-acceptance"]
+
+[[bin]]
+name = "ocr_model_acceptance"
+path = "src/bin/ocr_model_acceptance.rs"
+required-features = ["ocr-model-acceptance"]
+
+[[bin]]
+name = "ocr_storage_acceptance"
+path = "src/bin/ocr_storage_acceptance.rs"
+required-features = ["ocr-storage-acceptance"]
+
+[[bin]]
+name = "ocr_provider_connectivity_acceptance"
+path = "src/bin/ocr_provider_connectivity_acceptance.rs"
+required-features = ["ocr-provider-connectivity-acceptance"]
+
+[[bin]]
+name = "system_font_asset_acceptance"
+path = "src/bin/system_font_asset_acceptance.rs"
+required-features = ["system-font-asset-acceptance"]
+
+[lib]
+name = "visualtex_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+libc = "0.2"
+tauri-plugin-opener = "2.5.4"
+axum = { version = "0.8.9", features = ["json", "tokio"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+tokio = { version = "1", features = ["fs", "net", "rt-multi-thread", "sync", "time"] }
+tower-http = { version = "0.7.0", features = ["fs", "limit", "set-header"] }
+time = "0.3"
+getrandom = "0.3"
+hex = "0.4"
+flate2 = "1.1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
+sha1 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+tauri-plugin-dialog = "2.7.1"
+tauri-plugin-single-instance = "2.4.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "multipart", "system-proxy"] }
+ttf-parser = "0.25"
+png = "0.17"
+webview2-com = "0.38"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.61"
+features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_System_IO",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Pipes",
+  "Win32_System_Registry",
+  "Win32_System_Services",
+  "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_TextServices",
+  "Win32_UI_WindowsAndMessaging",
+]
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+rcgen = "0.14.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", features = ["NSEvent", "NSRunningApplication", "NSWorkspace", "block2"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString"] }
+
+[dev-dependencies]
+tempfile = "3"
+x509-parser = "0.18.1"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+# Keep the locked runtime version; fix cross-thread ownership of its Tao context.
+[patch.crates-io]
+tauri-runtime-wry = { path = "vendor/tauri-runtime-wry" }

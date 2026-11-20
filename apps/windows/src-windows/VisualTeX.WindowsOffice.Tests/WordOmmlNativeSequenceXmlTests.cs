@@ -1,0 +1,609 @@
+using System.Xml.Linq;
+using VisualTeX.WordVsto;
+using Xunit;
+
+namespace VisualTeX.WindowsOffice.Tests;
+
+public sealed class WordOmmlNativeSequenceXmlTests
+{
+    private const string MathNamespace =
+        "http://schemas.openxmlformats.org/officeDocument/2006/math";
+    private const string WordNamespace =
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+    [Fact]
+    public void DirectVisualTeXSequenceWrapperIsRecognizedAndStrippedAtomically()
+    {
+        var formulaId = "00112233445566778899aabbccddeeff";
+        var omml = BuildDirectSequenceOmml(formulaId, includeVisualTeXAliases: true);
+
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml);
+        var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+
+        Assert.Empty(document.Descendants(math + "eqArr"));
+        Assert.Equal("x+1", string.Concat(document.Descendants(math + "t").Select(node => node.Value)));
+        Assert.Empty(document.Descendants(word + "fldChar"));
+        Assert.Empty(document.Descendants(word + "instrText"));
+    }
+
+    [Fact]
+    public void WordNormalizedMathRunSequenceInstructionRemainsRecognized()
+    {
+        var omml = BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff",
+            includeVisualTeXAliases: true);
+        var document = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var instruction = document.Descendants(word + "instrText").Single();
+        instruction.ReplaceWith(
+            new XElement(
+                math + "t",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                instruction.Value));
+        var normalized = document.Root!.ToString(SaveOptions.DisableFormatting);
+
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(normalized));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(normalized);
+        var semanticDocument = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
+        Assert.Empty(semanticDocument.Descendants(math + "eqArr"));
+        Assert.Equal(
+            "x+1",
+            string.Concat(semanticDocument.Descendants(math + "t").Select(node => node.Value)));
+    }
+
+    [Fact]
+    public void SplitMathematicalSequenceInstructionRemainsMigrationInput()
+    {
+        var omml = BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff",
+            includeVisualTeXAliases: true);
+        var document = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var instructionRun = document
+            .Descendants(word + "instrText")
+            .Single()
+            .Parent!;
+        instructionRun.ReplaceWith(
+            FieldRun(math, word, new XElement(math + "t", " SEQ ")),
+            FieldRun(math, word, new XElement(math + "t", "VisualTeXEquation ")),
+            FieldRun(math, word, new XElement(math + "t", "\\* ARABIC ")));
+        var split = document.Root!.ToString(SaveOptions.DisableFormatting);
+
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(split));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(split);
+        var semanticDocument = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
+        Assert.Empty(semanticDocument.Descendants(math + "eqArr"));
+        Assert.Equal(
+            "x+1",
+            string.Concat(semanticDocument.Descendants(math + "t").Select(node => node.Value)));
+    }
+
+    [Fact]
+    public void DirectSequenceStructureDoesNotRequireVisualTeXAliases()
+    {
+        var omml = BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff",
+            includeVisualTeXAliases: false);
+
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(omml));
+        var semantic = XDocument.Parse(
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml));
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+        Assert.Empty(semantic.Descendants(math + "eqArr"));
+        Assert.Empty(semantic.Descendants(word + "fldChar"));
+        Assert.Empty(semantic.Descendants(word + "instrText"));
+        Assert.Equal("x+1",
+            string.Concat(semantic.Descendants(math + "t").Select(node => node.Value)));
+    }
+
+    [Theory]
+    [InlineData("trailing-math", false)]
+    [InlineData("trailing-math", true)]
+    [InlineData("root-sibling", false)]
+    [InlineData("root-sibling", true)]
+    [InlineData("non-parenthesis", false)]
+    [InlineData("non-parenthesis", true)]
+    public void DirectSequenceInsideMathematicsIsNeverStrippedAsANumber(
+        string invalidHost, bool includeAliases)
+    {
+        XNamespace math = MathNamespace;
+        var equation = XElement.Parse(BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff", includeAliases));
+        if (invalidHost == "trailing-math")
+            equation.Element(math + "eqArr")!.Element(math + "e")!
+                .Add(MathRun(math, "+"), MathRun(math, "y"));
+        else if (invalidHost == "root-sibling")
+            equation.Add(MathRun(math, "+"), MathRun(math, "y"));
+        else
+            equation.Descendants(math + "d").Single().AddFirst(
+                new XElement(math + "dPr",
+                    new XElement(math + "begChr", new XAttribute(math + "val", "[")),
+                    new XElement(math + "endChr", new XAttribute(math + "val", "]"))));
+        var source = equation.ToString(SaveOptions.DisableFormatting);
+        var unchanged = WordOmmlConverter.ExtractSingleOMath(source);
+
+        Assert.False(WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(source));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(source));
+        Assert.False(WordOmmlEquationNumbers.HasVisualTeXDirectSequenceEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlEquationNumbers.StripManagedVisualTeXNativeEquationNumber(source));
+    }
+
+    [Fact]
+    public void PureWordNativeHashNumberIsSemanticHostWithoutVisualTeXOwnership()
+    {
+        var omml = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: false);
+
+        Assert.False(
+            WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(omml));
+
+        var semantic =
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(omml);
+        var document =
+            XDocument.Parse(
+                semantic,
+                LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+
+        Assert.Empty(document.Descendants(math + "eqArr"));
+        Assert.Equal(
+            "x+1",
+            string.Concat(
+                document
+                    .Descendants(math + "t")
+                    .Select(node => node.Value)));
+    }
+
+    [Fact]
+    public void HashDelimiterFollowedByMoreMathematicsIsNotClaimedAsNativeNumber()
+    {
+        var omml = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: true);
+
+        Assert.False(
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(omml));
+        Assert.Equal(
+            WordOmmlConverter.ExtractSingleOMath(omml),
+            WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(omml));
+    }
+
+    [Fact]
+    public void FieldFreeWordNativeNumberSuffixSurvivesSemanticBodyReplacement()
+    {
+        var math = (XNamespace)MathNamespace;
+        var original = BuildWordNativeStaticNumberOmml(
+            appendMathematicsAfterNumber: false);
+        var replacement = new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                MathRun(math, "y"),
+                MathRun(math, "+"),
+                MathRun(math, "2"))
+            .ToString(SaveOptions.DisableFormatting);
+
+        var merged =
+            WordOmmlEquationNumbers.ReplaceWordNativeEquationNumberHostBody(
+                original,
+                replacement);
+
+        Assert.True(
+            WordOmmlEquationNumbers.HasWordNativeEquationNumberHost(merged));
+        var semantic =
+            XDocument.Parse(
+                WordOmmlEquationNumbers.StripWordNativeEquationNumberHost(merged),
+                LoadOptions.PreserveWhitespace);
+        Assert.Equal(
+            "y+2",
+            string.Concat(
+                semantic.Descendants(math + "t")
+                    .Select(node => node.Value)));
+
+        var originalDocument =
+            XDocument.Parse(original, LoadOptions.PreserveWhitespace);
+        var mergedDocument =
+            XDocument.Parse(merged, LoadOptions.PreserveWhitespace);
+        Assert.Equal(
+            originalDocument.Descendants(math + "d").Single()
+                .ToString(SaveOptions.DisableFormatting),
+            mergedDocument.Descendants(math + "d").Single()
+                .ToString(SaveOptions.DisableFormatting));
+    }
+
+    [Fact]
+    public void BothSemanticStripPathsRecognizeDirectSequenceAfterAliasesAreLost()
+    {
+        var omml = BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff",
+            includeVisualTeXAliases: false);
+
+        // Alias loss does not change the current native host's topology.
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        var semantic = WordOmmlEquationNumbers
+            .StripManagedVisualTeXNativeEquationNumber(omml);
+        Assert.Equal(
+            WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml),
+            semantic);
+        var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+        Assert.Empty(document.Descendants(math + "eqArr"));
+        Assert.Equal(
+            "x+1",
+            string.Concat(document.Descendants(math + "t").Select(node => node.Value)));
+    }
+
+    [Fact]
+    public void DocumentFieldCodeExtractionReassemblesSplitRefAndMathSeqRuns()
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var root = new XElement(
+            "root",
+            new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+            new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "begin"))),
+            FieldRun(
+                math,
+                word,
+                new XElement(word + "instrText", " REF ")),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "instrText",
+                    "\"VTEqNum_00112233445566778899aabbccddeeff\" \\h")),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "separate"))),
+            FieldRun(math, word, new XElement(word + "t", "RESULT_REF_ONLY")),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "end"))),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "begin"))),
+            FieldRun(math, word, new XElement(math + "t", " SEQ ")),
+            FieldRun(math, word, new XElement(math + "t", "VisualTeXEquation ")),
+            FieldRun(math, word, new XElement(math + "t", "\\* ARABIC ")),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "separate"))),
+            FieldRun(math, word, new XElement(math + "t", "RESULT_SEQ_ONLY")),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "end"))));
+
+        var method = typeof(WordNumberingState).GetMethod(
+            "ExtractFieldCodesFromWordOpenXml",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "The document field-code XML extractor is missing.");
+        var codes = (IReadOnlyList<string>?)method.Invoke(
+            null,
+            new object[] { root.ToString(SaveOptions.DisableFormatting) })
+            ?? throw new InvalidOperationException(
+                "The document field-code XML extractor returned null.");
+
+        Assert.Contains(
+            codes,
+            code => code.Contains(
+                "REF \"VTEqNum_00112233445566778899aabbccddeeff\" \\h",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            codes,
+            code => code.Contains(
+                "SEQ VisualTeXEquation \\* ARABIC",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            codes,
+            code => code.Contains("RESULT_REF_ONLY", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            codes,
+            code => code.Contains("RESULT_SEQ_ONLY", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void VisibleNumberExtractionSkipsSequenceInstructionRuns(
+        bool wordUsesInstructionText)
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var instructionContent = wordUsesInstructionText
+            ? new XElement(
+                word + "instrText",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                " SEQ VisualTeXEquation \\s 1 \\* ARABIC ")
+            : new XElement(
+                math + "t",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                " SEQ VisualTeXEquation \\s 1 \\* ARABIC ");
+        var segment = string.Concat(
+            MathRun(math, "2.").ToString(SaveOptions.DisableFormatting),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "begin")))
+                .ToString(SaveOptions.DisableFormatting),
+            FieldRun(math, word, instructionContent)
+                .ToString(SaveOptions.DisableFormatting),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "separate")))
+                .ToString(SaveOptions.DisableFormatting),
+            FieldRun(math, word, new XElement(math + "t", "3"))
+                .ToString(SaveOptions.DisableFormatting),
+            FieldRun(
+                math,
+                word,
+                new XElement(
+                    word + "fldChar",
+                    new XAttribute(word + "fldCharType", "end")))
+                .ToString(SaveOptions.DisableFormatting));
+
+        var method = typeof(WordNumberingState).GetMethod(
+            "ExtractVisibleEquationNumberTextFromOpenXmlSegment",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "The visible native-number XML extractor is missing.");
+        var result = (string?)method.Invoke(null, new object[] { segment });
+
+        Assert.Equal("2.3", result);
+    }
+
+    [Fact]
+    public void RetiredMathematicalRefWrapperRemainsMigrationInput()
+    {
+        var formulaId = "00112233445566778899aabbccddeeff";
+        var omml = BuildRetiredReferenceOmml(formulaId);
+
+        Assert.True(WordOmmlEquationNumbers.HasVisualTeXNativeEquationNumber(omml));
+        var semantic = WordOmmlEquationNumbers.StripVisualTeXNativeEquationNumber(omml);
+        var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+
+        Assert.Empty(document.Descendants(math + "eqArr"));
+        Assert.Equal("x+1", string.Concat(document.Descendants(math + "t").Select(node => node.Value)));
+        Assert.Empty(document.Descendants(word + "instrText"));
+    }
+
+    private static string BuildWordNativeStaticNumberOmml(
+        bool appendMathematicsAfterNumber)
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var body = new List<object>
+        {
+            MathRun(math, "x"),
+            MathRun(math, "+"),
+            MathRun(math, "1"),
+            MathRun(math, "#"),
+            new XElement(
+                math + "d",
+                new XElement(
+                    math + "dPr",
+                    new XElement(
+                        math + "begChr",
+                        new XAttribute(math + "val", "(")),
+                    new XElement(
+                        math + "endChr",
+                        new XAttribute(math + "val", ")")),
+                    new XElement(
+                        math + "grow",
+                        new XAttribute(math + "val", "0"))),
+                new XElement(
+                    math + "e",
+                    MathRun(math, "2"))),
+        };
+        if (appendMathematicsAfterNumber)
+        {
+            body.Add(MathRun(math, "+"));
+            body.Add(MathRun(math, "y"));
+        }
+
+        // Current Word 16 appends m:ctrlPr after the native number delimiter in
+        // a display OMath created through its own '#(2)' equation UI.
+        body.Add(
+            new XElement(
+                math + "ctrlPr",
+                new XElement(
+                    word + "rPr",
+                    new XElement(word + "noProof"))));
+
+        return new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+                new XElement(
+                    math + "eqArr",
+                    new XElement(
+                        math + "eqArrPr",
+                        new XElement(
+                            math + "maxDist",
+                            new XAttribute(math + "val", "1"))),
+                    new XElement(
+                        math + "e",
+                        body)))
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static string BuildDirectSequenceOmml(
+        string normalizedFormulaId,
+        bool includeVisualTeXAliases)
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var numberName = "VTEqNum_" + normalizedFormulaId;
+        var visibleName = "VTEq_" + normalizedFormulaId;
+        var captionName = "VTEqCap_" + normalizedFormulaId;
+
+        var numberContent = new List<object>();
+        if (includeVisualTeXAliases)
+        {
+            numberContent.Add(new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "11"),
+                new XAttribute(word + "name", numberName)));
+            numberContent.Add(new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "12"),
+                new XAttribute(word + "name", visibleName)));
+            numberContent.Add(new XElement(
+                word + "bookmarkStart",
+                new XAttribute(word + "id", "13"),
+                new XAttribute(word + "name", captionName)));
+        }
+        numberContent.Add(FieldRun(
+            math,
+            word,
+            new XElement(
+                word + "fldChar",
+                new XAttribute(word + "fldCharType", "begin"))));
+        numberContent.Add(FieldRun(
+            math,
+            word,
+            new XElement(
+                word + "instrText",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                " SEQ VisualTeXEquation \\* ARABIC ")));
+        numberContent.Add(FieldRun(
+            math,
+            word,
+            new XElement(
+                word + "fldChar",
+                new XAttribute(word + "fldCharType", "separate"))));
+        numberContent.Add(FieldRun(math, word, new XElement(math + "t", "1")));
+        numberContent.Add(FieldRun(
+            math,
+            word,
+            new XElement(
+                word + "fldChar",
+                new XAttribute(word + "fldCharType", "end"))));
+        if (includeVisualTeXAliases)
+        {
+            numberContent.Add(new XElement(word + "bookmarkEnd", new XAttribute(word + "id", "13")));
+            numberContent.Add(new XElement(word + "bookmarkEnd", new XAttribute(word + "id", "12")));
+            numberContent.Add(new XElement(word + "bookmarkEnd", new XAttribute(word + "id", "11")));
+        }
+
+        return new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+                new XElement(
+                    math + "eqArr",
+                    new XElement(
+                        math + "e",
+                        MathRun(math, "x"),
+                        MathRun(math, "+"),
+                        MathRun(math, "1"),
+                        MathRun(math, "#"),
+                        new XElement(
+                            math + "d",
+                            new XElement(math + "e", numberContent)))))
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static string BuildRetiredReferenceOmml(string normalizedFormulaId)
+    {
+        var math = (XNamespace)MathNamespace;
+        var word = (XNamespace)WordNamespace;
+        var numberName = "VTEqNum_" + normalizedFormulaId;
+        return new XElement(
+                math + "oMath",
+                new XAttribute(XNamespace.Xmlns + "m", MathNamespace),
+                new XAttribute(XNamespace.Xmlns + "w", WordNamespace),
+                new XElement(
+                    math + "eqArr",
+                    new XElement(
+                        math + "e",
+                        MathRun(math, "x"),
+                        MathRun(math, "+"),
+                        MathRun(math, "1"),
+                        MathRun(math, "#"),
+                        new XElement(
+                            math + "d",
+                            new XElement(
+                                math + "e",
+                                FieldRun(
+                                    math,
+                                    word,
+                                    new XElement(
+                                        word + "fldChar",
+                                        new XAttribute(word + "fldCharType", "begin"))),
+                                FieldRun(
+                                    math,
+                                    word,
+                                    new XElement(
+                                        word + "instrText",
+                                        new XAttribute(XNamespace.Xml + "space", "preserve"),
+                                        $" REF {numberName} \\h ")),
+                                FieldRun(
+                                    math,
+                                    word,
+                                    new XElement(
+                                        word + "fldChar",
+                                        new XAttribute(word + "fldCharType", "separate"))),
+                                FieldRun(math, word, new XElement(math + "t", "1")),
+                                FieldRun(
+                                    math,
+                                    word,
+                                    new XElement(
+                                        word + "fldChar",
+                                        new XAttribute(word + "fldCharType", "end"))))))))
+            .ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static XElement MathRun(XNamespace math, string text) =>
+        new(math + "r", new XElement(math + "t", text));
+
+    private static XElement FieldRun(
+        XNamespace math,
+        XNamespace word,
+        XElement content) =>
+        new(
+            math + "r",
+            new XElement(math + "rPr", new XElement(math + "nor")),
+            new XElement(word + "rPr", new XElement(word + "noProof")),
+            content);
+}
