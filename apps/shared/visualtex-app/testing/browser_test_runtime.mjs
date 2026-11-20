@@ -226,6 +226,17 @@ const blankPagePlugin = {
   },
 };
 
+// A test's dev server watches no files. Files it was still taking in when the test closed it got their watchers
+// after the close, and those kept the finished test's process alive (a test that passed and never exited).
+// `server.watch: null` is Vite's no-watching mode; a null passed in the inline config is lost when Vite merges
+// configs, so it is set on the resolved config.
+const noFileWatchingPlugin = {
+  name: "visualtex-test-no-file-watching",
+  configResolved(config) {
+    config.server.watch = null;
+  },
+};
+
 function serveBlankPage(request, response, next) {
   if (request.url !== BLANK_PAGE_PATH) return next();
   response.setHeader("Content-Type", "text/html");
@@ -240,7 +251,7 @@ export async function startAppServer({ server = "preview", outDir } = {}) {
   const listen = { host: "127.0.0.1", port: 0, strictPort: false };
   const http =
     server === "dev"
-      ? await vite.createServer({ logLevel: "error", server: listen, plugins: [blankPagePlugin] })
+      ? await vite.createServer({ logLevel: "error", server: listen, plugins: [blankPagePlugin, noFileWatchingPlugin] })
       : await vite.preview({
           logLevel: "error",
           preview: listen,
@@ -288,7 +299,7 @@ export async function withBrowserTest(run) {
   const server = await vite.createServer({
     logLevel: "error",
     server: { host: "127.0.0.1", port: 0, strictPort: false },
-    plugins: [blankPagePlugin],
+    plugins: [blankPagePlugin, noFileWatchingPlugin],
   });
   let browser;
   try {
