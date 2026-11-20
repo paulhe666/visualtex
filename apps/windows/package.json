@@ -129,7 +129,6 @@
       "test:editor-scenarios": 3600
     },
     "skip": {
-      "test:windows-resource-ownership": "uses the clipboard of the signed-in session",
       "test:ocr-install": "installs and warms up the OCR runtime",
       "test:ocr-models": "needs the OCR model packs",
       "verify:windows-release": "checks the artifacts of a release build (npm run tauri:build)",
