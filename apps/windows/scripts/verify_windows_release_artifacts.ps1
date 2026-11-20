@@ -420,6 +420,11 @@ if ([string]$tauriConfig.bundle.windows.nsis.template -ne "./target/nsis-templat
 
 $nsisHooksPath = Join-Path $root "src-tauri\windows\hooks.nsh"
 $nsisHooksSource = Get-Content -LiteralPath $nsisHooksPath -Raw -Encoding UTF8
+# Apps & Features shows this version when the hooks repair the uninstall entry.
+$hooksVersionMatch = [regex]::Match($nsisHooksSource, '!define VISUALTEX_INSTALLER_VERSION "([^"]+)"')
+if (-not $hooksVersionMatch.Success -or $hooksVersionMatch.Groups[1].Value -ne [string]$tauriConfig.version) {
+    throw "hooks.nsh VISUALTEX_INSTALLER_VERSION must equal the tauri.conf.json version ($($tauriConfig.version))."
+}
 if ($nsisHooksSource.Contains('$INSTDIR\VisualTeX.exe')) {
     throw "NSIS Office integration hooks must not hard-code VisualTeX.exe; use the Tauri MAINBINARYNAME macro."
 }

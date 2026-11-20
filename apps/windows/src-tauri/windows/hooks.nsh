@@ -2,7 +2,9 @@
 ; The production path installs the per-user Ribbon COM add-ins and ATL OLE
 ; LocalServer. Legacy Office.js Trusted Catalog resources are not installed.
 
-!define VISUALTEX_INSTALLER_VERSION "1.2.7"
+; Tauri defines its VERSION only after it includes this file; the release check
+; (verify_windows_release_artifacts.ps1) keeps this equal to tauri.conf.json.
+!define VISUALTEX_INSTALLER_VERSION "1.3.0"
 !define VISUALTEX_RUNTIME_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\manage_private_mathtype_runtime.ps1"
 !define VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\office_process_guard.ps1"
 
