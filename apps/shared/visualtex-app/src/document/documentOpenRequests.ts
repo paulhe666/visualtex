@@ -39,7 +39,12 @@ export function watchSystemOpenRequests(): () => void {
   let disposed = false;
   const disposers: Array<() => void> = [];
   const keep = (dispose: () => void) => (disposed ? dispose() : disposers.push(dispose));
-  const take = () => void invoke<string[]>("document_pending_files").then(requestOpenDocuments, () => undefined);
+  // (an answer that is not a list opens nothing: a stand-in bridge answers null, and a throw here is a page error)
+  const take = () =>
+    void invoke<string[] | null>("document_pending_files").then(
+      (paths) => requestOpenDocuments(Array.isArray(paths) ? paths : []),
+      () => undefined,
+    );
   take();
   void listen("document-open-files", take).then(keep, () => undefined);
   void getCurrentWebview()
