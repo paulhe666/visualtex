@@ -5,7 +5,7 @@ import {
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
 } from "./formulaHotkeys";
-import { APP_PLATFORM } from "@platform/appInfo";
+import { APP_FEATURES, KEYBOARD_PLATFORM } from "@platform/appInfo";
 
 // Button shortcuts (Settings > Keyboard shortcuts): the user may give the
 // common buttons of the main window and of the Office editor window a key
@@ -37,7 +37,7 @@ export interface ButtonShortcutDefinition {
   labelEn: string;
 }
 
-export const BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = [
+const ALL_BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = [
   { id: "quick-ocr", scope: "both", labelZh: "快捷截图识别（快捷 OCR）", labelEn: "Quick screenshot OCR" },
   { id: "ocr", scope: "both", labelZh: "打开 OCR 识别窗口", labelEn: "Open OCR" },
   { id: "copy-latex", scope: "both", labelZh: "复制 LaTeX", labelEn: "Copy LaTeX" },
@@ -51,6 +51,13 @@ export const BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = [
   { id: "help", scope: "main", labelZh: "帮助", labelEn: "Help" },
   { id: "office-cancel", scope: "office", labelZh: "取消编辑（编辑器窗口）", labelEn: "Cancel editing (editor window)" },
 ];
+
+/** The buttons this app has: no screenshot OCR or Office editor window where the app lacks them (APP_FEATURES). */
+export const BUTTON_SHORTCUT_ACTIONS: readonly ButtonShortcutDefinition[] = ALL_BUTTON_SHORTCUT_ACTIONS.filter(
+  (action) =>
+    (APP_FEATURES.screenOcr || (action.id !== "quick-ocr" && action.id !== "silent-ocr")) &&
+    (APP_FEATURES.office || action.scope !== "office"),
+);
 
 const ACTION_IDS = new Set<string>(BUTTON_SHORTCUT_ACTIONS.map((a) => a.id));
 
@@ -130,7 +137,7 @@ export function buttonShortcutWithChord(
  * Command on macOS, where the system's own Command chords are kept as well.
  */
 function reservedChordAction(chord: FormulaHotkeyChord, language: "cn" | "en"): string | null {
-  const mac = APP_PLATFORM === "macos";
+  const mac = KEYBOARD_PLATFORM === "macos";
   const only = (primary: boolean, alt: boolean, shift: boolean) =>
     (mac ? chord.metaKey : chord.ctrlKey) === primary &&
     chord.altKey === alt &&
@@ -159,7 +166,7 @@ export function buttonShortcutChordProblem(
   language: "cn" | "en" = "cn",
 ): string | null {
   if (!formulaHotkeyHasModifier(chord)) {
-    if (APP_PLATFORM === "macos") {
+    if (KEYBOARD_PLATFORM === "macos") {
       return language === "en"
         ? "Add Command, Option or Control; Shift can be used in addition."
         : "请加入 Command、Option 或 Control；Shift 可作为附加修饰键。";

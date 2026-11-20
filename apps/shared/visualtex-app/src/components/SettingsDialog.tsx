@@ -83,6 +83,7 @@ import {
 } from "../themeCustomization";
 import { publishSynchronizedTheme } from "../themeSync";
 import { writeExportFile } from "@platform/exportFile";
+import { APP_FEATURES } from "@platform/appInfo";
 
 const THEME_CORE_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, string][] = [
   ["accent", "Accent", "强调色"],
@@ -178,6 +179,11 @@ const SETTINGS_PAGES = [
 ] as const;
 
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];
+
+/** The pages this app has: no Office or AI agents pages where the app has no Office add-ins (APP_FEATURES). */
+const VISIBLE_SETTINGS_PAGES = SETTINGS_PAGES.filter(
+  (item) => APP_FEATURES.office || (item.id !== "office" && item.id !== "agents"),
+);
 
 export function SettingsDialog({
   open,
@@ -580,7 +586,7 @@ export function SettingsDialog({
 
         <div className="settings-layout">
           <nav className="settings-nav" aria-label={isEn ? "Settings" : "设置"}>
-            {SETTINGS_PAGES.map((item) => {
+            {VISIBLE_SETTINGS_PAGES.map((item) => {
               const Icon = item.icon;
               return (
                 <button
@@ -631,7 +637,7 @@ export function SettingsDialog({
                   </button>
                 </div>
               </div>
-              <div className="settings-group">
+              {APP_FEATURES.updates && <div className="settings-group">
                 <h4>{isEn ? "Updates" : "更新"}</h4>
                 <label className="switch-row">
                   <span>
@@ -654,7 +660,7 @@ export function SettingsDialog({
                   <RefreshCw size={15} />
                   {isEn ? "Check now" : "立即检查"}
                 </button>
-              </div>
+              </div>}
               <div className="settings-group">
                 <h4>{isEn ? "Configuration" : "配置备份"}</h4>
                 <div className="configuration-transfer-actions">
@@ -1043,6 +1049,7 @@ export function SettingsDialog({
                   <span className="switch-control" />
                 </label>
 
+                {APP_FEATURES.keypadWindow && (
                 <label className="switch-row">
                   <span>
                     <strong>
@@ -1061,6 +1068,7 @@ export function SettingsDialog({
                   />
                   <span className="switch-control" />
                 </label>
+                )}
               </div>
               <div className="settings-group">
                 <h4>{isEn ? "Formula area" : "公式区"}</h4>

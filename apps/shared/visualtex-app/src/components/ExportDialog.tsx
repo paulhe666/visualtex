@@ -333,6 +333,8 @@ export function ExportDialog({
           </button>
         </div>
 
+        {/* a browser downloads the file: no path to choose */}
+        {nativeTauri && (
         <label className="export-path-field">
           <span>{isEn ? "Export path" : "导出路径"}</span>
           <div>
@@ -354,6 +356,7 @@ export function ExportDialog({
             </button>
           </div>
         </label>
+        )}
 
         {error && <div className="export-error" role="alert">{error}</div>}
 

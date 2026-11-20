@@ -18,6 +18,7 @@ import { useEditorStore } from "../stores/editorStore";
 import { storedLatexToUser } from "../math/examZhSymbols";
 // each system's Office shortcuts: system-wide hotkeys on macOS, the add-ins' own shortcuts on Windows
 import { OfficeShortcutsTab } from "@platform/OfficeShortcutsTab";
+import { APP_FEATURES } from "@platform/appInfo";
 import {
   FORMULA_ROW_HOTKEY_ACTIONS,
   formulaRowHotkeyActionLabel,
@@ -31,6 +32,11 @@ const SHORTCUT_TABS = [
   { id: "office", en: "Office", zh: "Office" },
   { id: "editor", en: "Formula editor", zh: "公式编辑" },
 ] as const;
+
+/** The groups this app has: no formula input method or Office where the app lacks them (APP_FEATURES). */
+const VISIBLE_SHORTCUT_TABS = SHORTCUT_TABS.filter(
+  (item) => (item.id !== "global" || APP_FEATURES.anywhere) && (item.id !== "office" || APP_FEATURES.office),
+);
 
 /** Settings → Keyboard shortcuts: every shortcut group, with the recorders they open. */
 export function KeyboardShortcutsPanel() {
@@ -143,7 +149,7 @@ export function KeyboardShortcutsPanel() {
     <>
       <div className="shortcut-manager-scroll">
         <div className="theme-segment shortcut-tabs" role="tablist" aria-label={isEn ? "Shortcut groups" : "快捷键分组"}>
-          {SHORTCUT_TABS.map((item) => (
+          {VISIBLE_SHORTCUT_TABS.map((item) => (
             <button
               key={item.id}
               type="button"

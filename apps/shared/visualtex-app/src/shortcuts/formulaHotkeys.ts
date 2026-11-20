@@ -1,6 +1,6 @@
 import { commandRegistry } from "../autocomplete/commandRegistry";
 import type { LatexCommand } from "../types/command";
-import { APP_PLATFORM } from "@platform/appInfo";
+import { KEYBOARD_PLATFORM } from "@platform/appInfo";
 import { primaryModifierOnly } from "../runtime/platformConventions";
 
 export type FormulaHotkeyTargetKind =
@@ -64,7 +64,7 @@ function defaultHotkeyCommand(
 
 /** The app's own modifier with a key: Ctrl on Windows, ⌘ on macOS. */
 function primaryChord(code: string, shiftKey = false): FormulaHotkeyChord {
-  const macos = APP_PLATFORM === "macos";
+  const macos = KEYBOARD_PLATFORM === "macos";
   return {
     code,
     key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
@@ -412,7 +412,7 @@ export function protectedFormulaHotkeyAction(
   }
   if (key === ",") return labels.settings;
   // macOS: ⌘⇧K toggles keypad mode
-  if (APP_PLATFORM === "macos" && key === "k" && chord.shiftKey) return labels.keypadMode;
+  if (KEYBOARD_PLATFORM === "macos" && key === "k" && chord.shiftKey) return labels.keypadMode;
   if (key === "0") return labels.resetZoom;
   if (key === "=" || key === "+") return labels.zoomIn;
   if (key === "-") return labels.zoomOut;

@@ -7,8 +7,7 @@ import {
 } from "react";
 import { BookOpenText, X } from "lucide-react";
 import { HELP_MANUAL_MARKDOWN } from "@platform/helpManual";
-import { APP_VERSION } from "@platform/appInfo";
-import { onPlatform } from "../runtime/platformConventions";
+import { APP_LABEL, APP_VERSION } from "@platform/appInfo";
 
 interface Props {
   open: boolean;
@@ -310,7 +309,7 @@ export function HelpManualDialog({ open, language, onClose }: Props) {
             <BookOpenText size={18} />
             <span>
               <strong>{isEn ? "Help Manual" : "帮助手册"}</strong>
-              <small>VisualTeX {APP_VERSION} · {onPlatform("Windows", "macOS")}</small>
+              <small>VisualTeX {APP_VERSION} · {APP_LABEL}</small>
             </span>
           </div>
           <button

@@ -54,7 +54,7 @@ import { DOCUMENT_OPEN_FILES_EVENT, takeOpenRequests } from "./documentOpenReque
 import { DocumentFileDialog } from "./DocumentFileDialog";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
-import { documentToPdf } from "./documentPdf";
+import { documentToPdf, printDocumentInBrowser } from "./documentPdf";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
   DOCUMENT_EXPORT_MARKDOWN_EVENT,
@@ -913,6 +913,11 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       pdfBusy.current = true;
       void (async () => {
         try {
+          // in a browser (the web edition): its print dialog ("Save as PDF")
+          if (!isTauri()) {
+            await printDocumentInBrowser(view, fileName(""));
+            return;
+          }
           const path = await chooseExportPath(fileName(".pdf"), "pdf", isEn);
           if (!path) return;
           flash(t("Exporting PDF…", "正在导出 PDF…"));

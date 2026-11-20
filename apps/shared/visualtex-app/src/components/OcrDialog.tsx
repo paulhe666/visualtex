@@ -92,7 +92,7 @@ import {
   validateOcrImage,
 } from "../ocr/ocrService";
 
-interface OcrDialogProps {
+export interface OcrDialogProps {
   open: boolean;
   language: "cn" | "en";
   model: OcrModelName;

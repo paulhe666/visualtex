@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { OCR_BACKEND } from "@platform/ocrBackend";
+import { APP_FEATURES } from "@platform/appInfo";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers";
 import {
   decodeBooleanOcrResult,
@@ -23,7 +24,9 @@ export interface OcrTransportEvent<T> {
 }
 
 export interface OcrTransport {
-  environment: "desktop" | "office";
+  /** desktop: the app's backend; office: the Office editor's companion; web: the browser (apps/web), online
+   *  services only */
+  environment: "desktop" | "office" | "web";
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   listen<T>(
     eventName: string,
@@ -41,6 +44,8 @@ export interface OcrBackendFeatures {
   storageLocation: boolean;
   /** the model catalog with verified downloads */
   modelDownloads: boolean;
+  /** the online services this app can reach (the recognizer menu lists them); all of them when absent */
+  remoteProviders?: readonly RemoteOcrProviderId[];
 }
 
 let configuredTransport: OcrTransport | null = null;
@@ -731,8 +736,24 @@ export async function fileToOcrRequest(
   };
 }
 
+/** Whether this app can recognize formulas at all: the desktop app, the Office editor, or the web edition's online
+ *  services. */
+export function isOcrAvailable() {
+  return isTauriEnvironment() || isOfficeCompanionEnvironment() || configuredTransport?.environment === "web";
+}
+
+/** The recognizers this app offers: the local models where it runs them, and the online services it reaches. */
+export function availableOcrRecognizerOptions(): readonly OcrRecognizerOption[] {
+  return OCR_RECOGNIZER_OPTIONS.filter((option) =>
+    option.group === "local"
+      ? APP_FEATURES.localOcr
+      : !OCR_BACKEND.remoteProviders ||
+        OCR_BACKEND.remoteProviders.some((provider) => option.id === `provider:${provider}`),
+  );
+}
+
 function requireOcrEnvironment() {
-  if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
+  if (!isOcrAvailable()) {
     throw new Error(
       "OCR 只在 VisualTeX 桌面应用或本地 Office 编辑器中可用。",
     );

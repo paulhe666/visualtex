@@ -53,7 +53,8 @@ import {
 import { SettingsDialog } from "./components/SettingsDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
-import { OcrDialog } from "./components/OcrDialog";
+// each app's OCR window: the shared one in the desktop apps, the online services' one on the web
+import { OcrDialog } from "@platform/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
@@ -84,11 +85,12 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
-  OCR_RECOGNIZER_OPTIONS,
+  availableOcrRecognizerOptions,
   cancelOcrRecognition,
   fileToOcrRequest,
   formatOcrError,
   getOcrProviderConfiguration,
+  isOcrAvailable,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
@@ -112,6 +114,7 @@ import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollaps
 import { onPlatform } from "./runtime/platformConventions";
 // each system's part in the Office integration (add-in setup and hotkeys on macOS, preferences for the add-ins on Windows)
 import { AppOfficeIntegration } from "@platform/AppOfficeIntegration";
+import { APP_FEATURES } from "@platform/appInfo";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 import {
   captureQuickOcrScreenshot,
@@ -384,7 +387,7 @@ function App() {
   }, [anywhereDisplayChord]);
 
   useEffect(() => {
-    if (!isTauriEnvironment()) {
+    if (!isOcrAvailable()) {
       setOcrProviderLoaded(true);
       return;
     }
@@ -598,7 +601,7 @@ function App() {
       setToast(isEn ? "Another pasted image is being recognized" : "已有一张粘贴图片正在识别");
       return;
     }
-    if (!isTauriEnvironment()) {
+    if (!isOcrAvailable()) {
       setToast(isEn ? "OCR is available in the desktop app" : "OCR 仅在桌面应用中可用");
       return;
     }
@@ -1086,6 +1089,7 @@ function App() {
 
   useEffect(() => {
     if (
+      !APP_FEATURES.updates ||
       !checkUpdatesOnStartup ||
       platformModalOpen ||
       automaticUpdateCheckRef.current
@@ -1177,6 +1181,7 @@ function App() {
       // a key the document editor used (Markdown input: the primary key with 0, = or - sets heading levels, as in Typora)
       if (event.defaultPrevented) return;
       if (key === "k" && event.shiftKey) {
+        if (!APP_FEATURES.keypadWindow) return;
         event.preventDefault();
         void handleKeypadModeToggle();
       } else if (key === "n") {
@@ -1492,7 +1497,7 @@ function App() {
   const desktopHeaderControls = (
     <>
       {keypadMode ? codeFormatControl : null}
-      {keypadToggleControl}
+      {APP_FEATURES.keypadWindow ? keypadToggleControl : null}
     </>
   );
 
@@ -1705,14 +1710,16 @@ function App() {
                 <BookOpenText size={16} />
                 <span>{isEn ? "Help Manual" : "帮助手册"}</span>
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runMenuAction(() => void runUpdateCheck(true))}
-              >
-                <RefreshCw size={16} />
-                <span>{isEn ? "Check for updates" : "检查更新"}</span>
-              </button>
+              {APP_FEATURES.updates && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => runMenuAction(() => void runUpdateCheck(true))}
+                >
+                  <RefreshCw size={16} />
+                  <span>{isEn ? "Check for updates" : "检查更新"}</span>
+                </button>
+              )}
               <div className="app-menu-divider" />
               <div className="app-menu-language">
                 <span>
@@ -1848,7 +1855,7 @@ function App() {
         desktopHeaderControls={desktopHeaderControls}
         desktopTopToolsMount={desktopTopToolsMount}
         keypadMode={keypadMode}
-        showUpdateActions
+        showUpdateActions={APP_FEATURES.updates}
         showOfficeActions={false}
         showOcrActions
         onOpenExport={() => setExportOpen(true)}
@@ -1863,14 +1870,14 @@ function App() {
         onReplaceDocument={replaceDocumentWithHistory}
         sourceDocumentRevision={sourceDocumentRevision}
         ocrRecognizer={selectedOcrRecognizer}
-        ocrRecognizers={OCR_RECOGNIZER_OPTIONS}
+        ocrRecognizers={availableOcrRecognizerOptions()}
         ocrBusy={inlineOcrIsBusy || quickOcrCaptureBusy}
         onOcrRecognizerChange={(recognizer) =>
           void handleOcrRecognizerChange(recognizer)
         }
-        onQuickOcr={() => void handleQuickOcr()}
+        onQuickOcr={APP_FEATURES.screenOcr ? () => void handleQuickOcr() : undefined}
         quickOcrCaptureMode={quickOcrCaptureMode}
-        onQuickOcrCaptureModeChange={handleQuickOcrCaptureModeChange}
+        onQuickOcrCaptureModeChange={APP_FEATURES.screenOcr ? handleQuickOcrCaptureModeChange : undefined}
         silentOcrEnabled={silentOcrEnabled}
         silentOcrShortcut={silentOcrShortcut}
         onSilentOcrEnabledChange={handleSilentOcrEnabledChange}
