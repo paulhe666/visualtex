@@ -23,6 +23,8 @@ import {
   registerCustomSymbol,
   replaceCustomSymbolLibrary,
 } from "../../shared/visualtex-app/src/math/customSymbolRegistry.ts";
+import { createSafeStorage, safeStorage } from "../../shared/visualtex-app/src/runtime/safeStorage.ts";
+import { memoryStorage } from "../../shared/visualtex-app/tests/memory_storage.ts";
 import {
   clearsOfficeEditorActivation,
   isOfficeEditorActivation,
@@ -48,6 +50,9 @@ if (!("children" in elementPrototype)) {
   });
 }
 
+// the custom symbol library is saved in the page's storage: Node has none, so it is kept in memory
+const storage = memoryStorage();
+Object.assign(safeStorage, createSafeStorage(() => storage));
 replaceCustomSymbolLibrary({ version: 1, symbols: [] });
 const customSymbolNow = Date.now();
 registerCustomSymbol({
@@ -149,8 +154,10 @@ assert.match(
   "PowerPoint SVG must preserve custom-symbol transparent eraser masks",
 );
 assert.equal(powerpointErasedCustomSymbol.omml, null);
-assert.match(reopenedCustomSymbolRendered.omml?.omml ?? "", /≈/);
-assert.doesNotMatch(reopenedCustomSymbolRendered.omml?.omml ?? "", /selfdefa/);
+// Word's equation is written from MathML by the shared OMML writer (wordMathMl): the symbol is its fallback there
+assert.equal(reopenedCustomSymbolRendered.omml, null);
+assert.match(reopenedCustomSymbolRendered.wordMathMl ?? "", /≈|&#x2248;/);
+assert.doesNotMatch(reopenedCustomSymbolRendered.wordMathMl ?? "", /selfdefa/);
 replaceCustomSymbolLibrary({ version: 1, symbols: [] });
 
 const warmActivation = {
@@ -257,7 +264,8 @@ assert.equal(
 );
 await assert.rejects(
   async () => renderOfficeFormulaArtifacts(placeholderDraftInput),
-  /placeholder/,
+  // the message is in the app's language; its cause names the empty placeholder
+  (error) => error?.cause?.name === "UnfilledPlaceholderError",
   "explicit Office apply must remain strict while a placeholder is still present",
 );
 assert.ok(
@@ -657,7 +665,12 @@ assert.ok(
   "whole-row align edits must recover their missing relationship markers",
 );
 assert.match(recoveredEditedAlignment.canonicalLatex, /1 &= 22 \+ 333 \+ q/);
-assert.match(recoveredEditedAlignment.omml?.omml ?? "", /<m:eqArr>/);
+// Word's equation is written from MathML (wordMathMl): a table of the rows, each split at its relation, which the
+// shared OMML writer makes an equation array
+const recoveredAlignmentMathMl = recoveredEditedAlignment.wordMathMl ?? "";
+assert.equal(recoveredEditedAlignment.omml, null);
+assert.match(recoveredAlignmentMathMl, /<mtable\b[^>]*columnalign="right left"/);
+assert.equal(recoveredAlignmentMathMl.match(/<mtr>/g)?.length, 2);
 
 const embeddedEnvironment = normalize(
   String.raw`prefix \begin{align}a&=b\end{align} suffix`,
@@ -765,8 +778,8 @@ assert.match(
 );
 assert.match(
   editorWorkspaceSource,
-  /aria-keyshortcuts="Meta\+Backslash"/,
-  "The LaTeX source control must expose the formula/source focus shortcut",
+  /sourceShortcutKeys = onPlatform\("Control\+Backslash", "Meta\+Backslash"\)[\s\S]*aria-keyshortcuts=\{sourceShortcutKeys\}/,
+  "The LaTeX source control must expose the formula/source focus shortcut (Command+Backslash on macOS)",
 );
 
 console.log("Office formula editor regression passed");
