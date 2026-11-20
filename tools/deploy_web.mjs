@@ -13,7 +13,8 @@ const remote = args.includes("--remote") ? args[args.indexOf("--remote") + 1] : 
 const dryRun = args.includes("--dry-run");
 const git = (...command) => execFileSync("git", command, { encoding: "utf8" }).trim();
 
-git("fetch", "--quiet", remote, "main", "web");
+// both branches by name: a clone made with one branch does not track web
+git("fetch", "--quiet", remote, `+refs/heads/main:refs/remotes/${remote}/main`, `+refs/heads/web:refs/remotes/${remote}/web`);
 const main = git("rev-parse", `${remote}/main`);
 const web = git("rev-parse", `${remote}/web`);
 if (git("rev-parse", `${web}^{tree}`) === git("rev-parse", `${main}^{tree}`)) {
