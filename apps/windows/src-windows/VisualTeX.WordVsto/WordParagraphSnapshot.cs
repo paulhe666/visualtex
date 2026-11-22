@@ -305,7 +305,12 @@ internal sealed class WordParagraphSnapshot
         {
             start = range.Duplicate;
             start.SetRange(range.Start, Math.Min(range.End, range.Start + 1));
-            return start.get_Information(WdInformation.wdWithInTable) is true;
+            // Word's Information(wdWithInTable) lays the document out up to the
+            // paragraph first (hundreds of ms per formula in a batch); the table
+            // holding the paragraph's first character is structure.
+            return VisualTeX.WindowsOffice.VstoShared.OfficeHostEnvironment.IsWps
+                ? start.get_Information(WdInformation.wdWithInTable) is true
+                : WordFormulaHostLookup.IsWhollyInsideTable(start);
         }
         catch (COMException) { return false; }
         finally { Release(start); }
