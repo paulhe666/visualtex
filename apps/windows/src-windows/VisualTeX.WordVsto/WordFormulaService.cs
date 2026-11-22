@@ -34,7 +34,6 @@ internal sealed partial class WordFormulaService
     internal const string LegacyInlineBaselineSentinel = "\u2060";
     internal const string LegacyInlineNonbreakingBaselineSentinel = "\u00A0";
     internal const string BulkInlineFormulaPlaceholder = "\uE000";
-    internal const float ParagraphBeforeOleDisplaySpaceAfterPoints = 0f;
     private static int inlineTypingCaretNormalizationActive;
     private readonly Application _application;
     private readonly Dictionary<string, string> _unownedOmmlSessionFormulaIds =
@@ -1684,7 +1683,6 @@ internal sealed partial class WordFormulaService
             }
             else
             {
-                CompactParagraphBeforeOleDisplayFormula(document, insertion);
                 var displayInsertion = ResolveDisplayInsertionRange(document, insertion);
                 Release(insertion);
                 insertion = displayInsertion;
@@ -1971,7 +1969,6 @@ internal sealed partial class WordFormulaService
         Document? document = null;
         Selection? selection = null;
         Range? insertion = null;
-        Range? displaySpacingAnchor = null;
         // Reserved for the Range-only compatibility path. The current batch writer
         // resolves one concrete InlineShape first; keeping this null makes all
         // downstream structural work use that same proven local host.
@@ -2172,8 +2169,6 @@ internal sealed partial class WordFormulaService
                            "MathType.Insert.ParagraphCountBeforeDisplay"))
                     paragraphCountBeforeDisplayPreparation = insertionLocalScope?.ReadParagraphCount()
                         ?? ReadDocumentParagraphCount(document);
-                if (!preserveExistingDisplayParagraphBoundary)
-                    displaySpacingAnchor = insertion.Duplicate;
                 Range displayInsertion;
                 using (WordOperationMetrics.Measure(
                            "MathType.Insert.ResolveDisplayInsertion"))
@@ -2732,12 +2727,6 @@ internal sealed partial class WordFormulaService
             }
 
             TraceInsertPerf("typing-paragraph-selection");
-            if (!inline && displaySpacingAnchor is not null)
-            {
-                stage = "finalize-display-spacing";
-                CompactParagraphBeforeOleDisplayFormula(document, displaySpacingAnchor);
-            }
-            TraceInsertPerf("display-spacing");
             if (!string.IsNullOrWhiteSpace(createdObjectBookmarkName))
             {
                 stage = "bind-created-object-identity";
@@ -2917,7 +2906,6 @@ internal sealed partial class WordFormulaService
             batchHostRange = null;
             Release(shape);
             TraceInsertPerf("finally-shape");
-            Release(displaySpacingAnchor);
             Release(insertion);
             TraceInsertPerf("finally-ranges");
             Release(selection);

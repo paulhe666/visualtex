@@ -185,12 +185,10 @@ internal static class WordEquationParagraphLayout
                 var current = paragraph.Format;
                 try { format = current.Duplicate; }
                 finally { Release(current); }
-                // Prepare the same six values on a detached format, then apply
+                // Prepare alignment and indents on a detached format, then apply
                 // them once. Live setters individually invalidate Word layout.
                 format.Alignment =
                     WdParagraphAlignment.wdAlignParagraphJustify;
-                format.SpaceBefore = 0f;
-                format.SpaceAfter = 0f;
                 ZeroIndents(format);
                 paragraph.Format = format;
             }
@@ -267,14 +265,8 @@ internal static class WordEquationParagraphLayout
             ZeroIndents(format);
             if (!nativeOmmlParagraph)
             {
-                // OLE/picture formulas carry their own transparent preview
-                // margins, so their host paragraph must stay compact. Native
-                // OMML formulas have no image padding and should retain the
-                // document paragraph style exactly as a formula inserted by
-                // Word itself would.
-                format.SpaceBefore = 0f;
-                format.SpaceAfter = 0f;
-                format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                // Line spacing and the space before/after stay the paragraph's own, for every format: Word's
+                // equations and MathType's display equations keep the document's paragraph spacing too.
                 format.BaseLineAlignment =
                     (WdBaselineAlignment)(int)WordInlineHostAlignment.Automatic;
             }

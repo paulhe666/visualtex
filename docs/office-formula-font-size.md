@@ -89,6 +89,12 @@ E14. Layout: an inline formula stays on the text baseline with the spaces around
      changes (16 → 9 → 10.5 pt gives the original layout back).
      A display formula's line has no first-line indent, whatever the body text's style (「首行缩进 2 字符」): on a
      line placed by tab stops Word moves the formula and the number by that indent.
+     Line spacing as Word and MathType do it: a display formula's paragraph keeps the body text's line spacing
+     and space before/after (the paragraph it is written into, or Normal for a new one), in every format and for
+     inserts, redraws and conversions alike. VisualTeX changes neither the paragraph above nor the one typed after
+     it. The MTDisplayEquation style VisualTeX creates, like MathType's own, adds only the centre and right tabs to
+     the body text's formatting; an existing MTDisplayEquation style is left as it is. Exact line spacing smaller
+     than a formula therefore clips it, as it does for Word's and MathType's own equations.
      Not covered: a formula too wide to leave room for its number pushes the number to the next line (Word's tab
      rule; it comes back at a smaller size), and exact line spacing clips a formula taller than the line (Word).
 
@@ -129,6 +135,7 @@ source variants carry a document grid with a 2-character first-line indent, plai
 | E13 (Ribbon) | 增大 once, 减小 twice on the selected formula; Undo | pass: 16 → 18 → 16 → 15 (VisualTeX and MathType), one Undo per press |
 | E12, E13 | one display (18 pt) and one inline (16 pt) formula through `formula_id`, VisualTeX and MathType; Undo | pass: only that formula and its number; one Undo restores both (MathType too) |
 | E14 | geometry after every step above | pass: display formulas within ±0.2 pt of the centre tab, numbers on the formula's baseline at 9, 10.5, 16 and 18 pt in all formats; 16 → 9 → 10.5 gives back the original positions. Before the fix a resized MathType display formula moved above (larger) or below (smaller) its tabs and number. At 16 pt the widest two-column formula (191 pt in a 215 pt column) leaves no room for its number, which goes to the next line |
+| E14 spacing | body text 1.5 lines + 3 pt before / 6 pt after, and exactly 20 pt + 3/6 pt (grid, 2-character indent): LaTeX redraw (numbered) and new display formulas (numbered and not) in each format | pass: every display paragraph has the body's line spacing and space before/after; MathType's through MTDisplayEquation (tabs only); centres within ±0.2 pt. Before: MathType lines single spacing with 0/0 (VisualTeX created MTDisplayEquation that way), new Word-equation and VisualTeX display formulas 0/0, and inserting an OLE display formula set the paragraph above to 0 pt after |
 | — | older VisualTeX objects without Word's cached data (AlternativeText cleared), 行间 14, 行内 12, 跟随正文 | pass: 8 display / 13 inline. Before the fix their display formulas were counted as inline |
 | E14 | grid + 2-character first-line indent (plain, exactly 20 pt, 1.5 lines): LaTeX redraw to VisualTeX, MathType and Word equations, OMML → VisualTeX conversion, then 16 pt and 跟随正文 | pass: display formulas within ±0.2 pt of the centre tab, numbers at the right margin. Before the fix every VisualTeX display formula written there (redraw, conversion, renumbering) kept the paragraph's 21 pt first-line indent, and formula and number both sat 21 pt to the left, before any size change. With exactly 20 pt line spacing (kept from the source paragraph) Word clips formulas taller than the line |
 | E14 | a document written by the previous build in that layout: 更新公式格式 | pass: first-line indents cleared, every display formula back on the centre tab |
@@ -167,6 +174,5 @@ reference):
 - The Mac add-ins (Word, WPS) have their own size code; not compared (the Mac was not reachable).
 - The kind choice is kept per user (HKCU), not per document: opening another document keeps the choice, but does not
   apply it to that document's formulas until a box is used.
-- Exact line spacing on a display formula's line is the source paragraph's (LaTeX redraw and conversion keep the
-  user's paragraph); a formula taller than the line is clipped by Word. A freshly inserted display formula gets
-  single spacing.
+- VisualTeX's table number format (formula and number in a borderless 1×3 table) keeps its compact cells; it has
+  no Word or MathType counterpart.

@@ -2877,8 +2877,6 @@ internal static partial class WordFormulaNumberingKernel
             format = paragraphRange.ParagraphFormat;
             format.Alignment =
                 WdParagraphAlignment.wdAlignParagraphLeft;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
             WordEquationParagraphLayout.ZeroIndents(format);
             tabs = format.TabStops;
             tabs.ClearAll();
@@ -2909,8 +2907,6 @@ internal static partial class WordFormulaNumberingKernel
             format = paragraphRange.ParagraphFormat;
             format.Alignment =
                 WdParagraphAlignment.wdAlignParagraphCenter;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
             WordEquationParagraphLayout.ZeroIndents(format);
         }
         finally { Release(format); }

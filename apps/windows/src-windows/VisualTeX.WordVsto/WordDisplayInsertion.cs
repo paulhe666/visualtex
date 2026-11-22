@@ -12,120 +12,6 @@ namespace VisualTeX.WordVsto;
 /// </summary>
 internal static class WordDisplayInsertion
 {
-    internal static void CompactParagraphBeforeOleDisplayFormula(
-        Document document,
-        Range insertion)
-    {
-        Range? anchor = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
-        ParagraphFormat? format = null;
-        try
-        {
-            var contentStart = document.Content.Start;
-            var contentEnd = Math.Max(contentStart, document.Content.End - 1);
-            var position = Math.Min(Math.Max(insertion.Start, contentStart), contentEnd);
-            anchor = document.Range(position, position);
-            paragraphs = anchor.Paragraphs;
-            if (paragraphs.Count == 0) return;
-            paragraph = paragraphs[1];
-            paragraphRange = paragraph.Range;
-
-            // A caret at the start of an empty paragraph belongs to that empty
-            // paragraph, while the display formula will still be visually tied
-            // to the preceding prose. Resolve the preceding paragraph mark in
-            // that case so the local spacing adjustment is applied to the text
-            // the reader actually sees above the equation.
-            if (!ContainsVisibleBodyText(paragraphRange.Text)
-                && position > contentStart)
-            {
-                Release(paragraphRange);
-                paragraphRange = null;
-                Release(paragraph);
-                paragraph = null;
-                Release(paragraphs);
-                paragraphs = null;
-                Release(anchor);
-                anchor = null;
-
-                anchor = document.Range(position - 1, position - 1);
-                paragraphs = anchor.Paragraphs;
-                if (paragraphs.Count == 0) return;
-                paragraph = paragraphs[1];
-                paragraphRange = paragraph.Range;
-            }
-
-            if (!ContainsVisibleBodyText(paragraphRange.Text)) return;
-            format = paragraph.Format;
-            if (Math.Abs(format.SpaceAfter - ParagraphBeforeOleDisplaySpaceAfterPoints) > 0.01f)
-                format.SpaceAfter = ParagraphBeforeOleDisplaySpaceAfterPoints;
-        }
-        finally
-        {
-            Release(format);
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(anchor);
-        }
-    }
-
-    private static Range DuplicateContainingParagraphRange(Range sourceRange)
-    {
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
-        try
-        {
-            paragraphs = sourceRange.Paragraphs;
-            if (paragraphs.Count == 0)
-                throw new InvalidDataException("Word 未能定位行间公式所在段落。");
-            paragraph = paragraphs[1];
-            paragraphRange = paragraph.Range.Duplicate;
-            var result = paragraphRange;
-            paragraphRange = null;
-            return result;
-        }
-        finally
-        {
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
-        }
-    }
-
-    private static Range? DuplicateFollowingParagraphRange(
-        Document document,
-        Range paragraphRange)
-    {
-        Range? probe = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? result = null;
-        try
-        {
-            if (paragraphRange.End >= document.Content.End) return null;
-            var start = paragraphRange.End;
-            var end = Math.Min(document.Content.End, start + 1);
-            probe = document.Range(start, end);
-            paragraphs = probe.Paragraphs;
-            if (paragraphs.Count != 1) return null;
-            paragraph = paragraphs[1];
-            result = paragraph.Range.Duplicate;
-            var value = result;
-            result = null;
-            return value;
-        }
-        finally
-        {
-            Release(result);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(probe);
-        }
-    }
-
     internal static void RemoveGeneratedParagraphAfterMathTypeRedraw(
         Document document,
         Range preservedFormulaParagraphRange,
@@ -1242,26 +1128,6 @@ internal static class WordDisplayInsertion
         }
     }
 
-    private static void FormatExistingDisplayParagraph(
-        Range paragraphRange,
-        bool preserveNativeOmmlSpacing)
-    {
-        ParagraphFormat? format = null;
-        try
-        {
-            format = paragraphRange.ParagraphFormat;
-            format.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
-            if (!preserveNativeOmmlSpacing)
-            {
-                format.SpaceBefore = 0;
-                format.SpaceAfter = 0;
-                format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            }
-            try { paragraphRange.ListFormat.RemoveNumbers(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
-        }
-        finally { Release(format); }
-    }
-
     private static bool CanUseDedicatedDisplayParagraphFastPath(
         Document document,
         Range source)
@@ -1387,39 +1253,6 @@ internal static class WordDisplayInsertion
         finally
         {
             Release(frames); Release(bookmarks); Release(fields); Release(shapes); Release(maths);
-        }
-    }
-
-    private static void EnsureBlankDisplayParagraph(
-        Selection selection,
-        bool preserveNativeOmmlSpacing)
-    {
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? range = null;
-        try
-        {
-            paragraphs = selection.Paragraphs;
-            if (paragraphs.Count > 0)
-            {
-                paragraph = paragraphs[1];
-                range = paragraph.Range;
-                if (ContainsVisibleBodyText(range.Text))
-                    selection.TypeParagraph();
-            }
-            selection.ParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
-            if (!preserveNativeOmmlSpacing)
-            {
-                selection.ParagraphFormat.SpaceBefore = 0;
-                selection.ParagraphFormat.SpaceAfter = 0;
-                selection.ParagraphFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            }
-        }
-        finally
-        {
-            Release(range);
-            Release(paragraph);
-            Release(paragraphs);
         }
     }
 

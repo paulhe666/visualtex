@@ -127,8 +127,6 @@ internal static class WordFormulaHostLayout
             paragraphRange = paragraph.Range;
             format = paragraphRange.ParagraphFormat;
             format.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
             WordEquationParagraphLayout.ZeroIndents(format);
         }
         finally

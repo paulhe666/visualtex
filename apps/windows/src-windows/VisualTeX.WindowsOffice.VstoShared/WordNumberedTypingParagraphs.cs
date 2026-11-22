@@ -935,9 +935,7 @@ internal static class WordNumberedTypingParagraphs
             font.Color = WdColor.wdColorAutomatic;
             format = paragraphRange.ParagraphFormat;
             format.Reset();
-            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
+            // Normal's own line spacing and space before/after, as a paragraph typed after a display equation has.
             try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
             catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
@@ -1164,9 +1162,7 @@ internal static class WordNumberedTypingParagraphs
             font.Color = WdColor.wdColorAutomatic;
             format = paragraphRange.ParagraphFormat;
             format.Reset();
-            format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
+            // Normal's own line spacing and space before/after, as a paragraph typed after a display equation has.
             try { format.OutlineLevel = WdOutlineLevel.wdOutlineLevelBodyText; }
             catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
 
