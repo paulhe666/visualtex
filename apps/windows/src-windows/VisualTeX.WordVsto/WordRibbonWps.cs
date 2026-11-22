@@ -84,10 +84,10 @@ public sealed partial class ThisAddIn
               <button id="VisualTeX.WordVsto.FontSizeIncrease" label="增大" imageMso="IncreaseFontSize" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
             </box>
             <box id="VisualTeX.WordVsto.KindSizeBox" boxStyle="vertical">
-              <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="行内" sizeString="初号（42 磅）" screentip="行内公式字号" supertip="选择字号后，当前文档中所有行内公式立即改为这个字号，可撤销；之后 LaTeX 重绘、批量导入和格式转换生成的行内公式也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+              <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="行内" sizeString="初号（42 磅）" screentip="行内公式字号" supertip="选择字号后，当前文档中所有行内公式立即改为这个字号，可撤销；之后插入的和 LaTeX 重绘、批量导入、格式转换生成的行内公式也使用这个字号。选“跟随正文”时，每个行内公式改为它旁边正文的字号，之后的新公式也跟随正文。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
                 __INLINE_FONT_SIZE_ITEMS__
               </comboBox>
-              <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="行间" sizeString="初号（42 磅）" screentip="行间公式字号" supertip="选择字号后，当前文档中所有行间公式（含编号公式）立即改为这个字号，可撤销；之后 LaTeX 重绘、批量导入和格式转换生成的行间公式（含编号公式）也使用这个字号。选“跟随正文”不改动现有公式。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+              <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="行间" sizeString="初号（42 磅）" screentip="行间公式字号" supertip="选择字号后，当前文档中所有行间公式（含编号公式，编号与公式同字号）立即改为这个字号，可撤销；之后插入的和 LaTeX 重绘、批量导入、格式转换生成的行间公式也使用这个字号。选“跟随正文”时，每个行间公式改为它前面正文的字号，之后的新公式也跟随正文。" getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
                 __DISPLAY_FONT_SIZE_ITEMS__
               </comboBox>
               <menu id="VisualTeX.WordVsto.OmmlMathFont" label="WPS 公式字体" imageMso="batch_set_font_kd" tag="menu" screentip="WPS 公式字体" supertip="VisualTeX 写入 WPS 公式（OMML）时使用的数学字体。WPS 没有文档数学字体：所选字体用于之后 VisualTeX 插入、编辑或转换得到的 WPS 公式，已有公式在再次编辑后改用它。" getEnabled="GetOmmlMathFontEnabled">

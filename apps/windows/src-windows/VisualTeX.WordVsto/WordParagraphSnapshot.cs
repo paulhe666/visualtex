@@ -8,8 +8,10 @@ namespace VisualTeX.WordVsto;
 /// A conversion replaces only the formula: its paragraph keeps the style,
 /// indents, spacing and page flow it had. The target writer owns just the
 /// alignment and tab stops that place the new formula; every other value
-/// it changed is put back. Values are compared before writing, so nothing
-/// inherited from a style becomes direct formatting.</summary>
+/// it changed is put back, except a first-line indent on a line placed by
+/// tab stops (it would move the formula off them). Values are compared
+/// before writing, so nothing inherited from a style becomes direct
+/// formatting.</summary>
 internal sealed class WordParagraphSnapshot
 {
     private const float Tolerance = 0.05f;
@@ -147,7 +149,11 @@ internal sealed class WordParagraphSnapshot
             Release(format);
             format = paragraph.Format;
             if (keepStyle) RestoreSpacing(format);
-            RestoreIndent(format, keepStyle);
+            // A display formula's line is placed by its centre and right tab stops: a first-line indent (2 characters
+            // of Chinese body text) would move the formula and its number off them, so it is not put back.
+            var tabLaid = HasCenterTab(format);
+            RestoreIndent(format, keepStyle && !tabLaid);
+            if (tabLaid) WordEquationParagraphLayout.ZeroIndents(format, firstLineOnly: true);
             Trace("after", format);
         }
         finally
@@ -282,6 +288,28 @@ internal sealed class WordParagraphSnapshot
         WordDoubleClickHook.TraceMessage(
             $"paragraph-restore {stage} style={styleName} default={UsesDefaultStyle} numbered={numbered}"
             + $" want=L{leftIndent:0.#}/R{rightIndent:0.#}/F{firstLineIndent:0.#}/B{spaceBefore:0.#}/A{spaceAfter:0.#}{current}");
+    }
+
+    private static bool HasCenterTab(ParagraphFormat format)
+    {
+        TabStops? tabs = null;
+        try
+        {
+            tabs = format.TabStops;
+            for (var index = 1; index <= tabs.Count; index++)
+            {
+                TabStop? tab = null;
+                try
+                {
+                    tab = tabs[index];
+                    if (tab.Alignment == WdTabAlignment.wdAlignTabCenter) return true;
+                }
+                finally { Release(tab); }
+            }
+            return false;
+        }
+        catch (COMException) { return false; }
+        finally { Release(tabs); }
     }
 
     private static bool IsNumbered(Range range)

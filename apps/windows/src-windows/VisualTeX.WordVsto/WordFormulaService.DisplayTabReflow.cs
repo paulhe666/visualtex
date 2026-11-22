@@ -9,7 +9,8 @@ namespace VisualTeX.WordVsto;
 // A display formula keeps the tab stops of the column it was written in. When its column is another one now (the
 // section got columns, the formula moved to the other column, the margins changed), Update Equation Format and
 // renumbering set just those stops again from the column (or cell) the formula is in (WordDisplayColumns): the
-// centre stop, and the right stop where the formula has one. Nothing else of the formula changes.
+// centre stop, and the right stop where the formula has one. A first-line indent left on the formula's paragraph
+// (2 characters of Chinese body text, which older writers could not clear) goes too. Nothing else changes.
 internal sealed partial class WordFormulaService
 {
     /// <summary>How many VisualTeX display formulas of the active document have stops their column does not give.</summary>
@@ -89,13 +90,17 @@ internal sealed partial class WordFormulaService
                 // a display formula without the centre stop is not in the tab layout: left as it is
                 if (center is null) continue;
                 if (columns.ColumnWidthFor(document, paragraphRange) is not { } width) continue;
-                var expected = DisplayColumnGeometry.TabStops(
-                    width, format.LeftIndent, format.FirstLineIndent, format.RightIndent);
-                if (Math.Abs(center.Value - expected.Center) <= 0.5f
+                // A first-line indent (one an older writer could not clear: WordEquationParagraphLayout.ZeroIndents)
+                // moves a tab-laid line off its stops: it goes, and the stops are those of a line without one.
+                var indented = Math.Abs(format.FirstLineIndent) > 0.05f;
+                var expected = DisplayColumnGeometry.TabStops(width, format.LeftIndent, 0f, format.RightIndent);
+                if (!indented
+                    && Math.Abs(center.Value - expected.Center) <= 0.5f
                     && (right is null || Math.Abs(right.Value - expected.Right) <= 0.5f))
                     continue;
                 count++;
                 if (!apply) continue;
+                if (indented) WordEquationParagraphLayout.ZeroIndents(format, firstLineOnly: true);
                 tabs.ClearAll();
                 Release(tabs);
                 tabs = format.TabStops;

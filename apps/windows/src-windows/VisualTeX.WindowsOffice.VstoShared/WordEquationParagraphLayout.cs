@@ -131,6 +131,33 @@ internal static class WordEquationParagraphLayout
             metadata);
     }
 
+    /// <summary>
+    /// No indents on a paragraph laid out by tab stops (a display formula's line). An indent given in character
+    /// units (「首行缩进 2 字符」, the usual Chinese body text) wins over one given in points: FirstLineIndent = 0
+    /// alone leaves such a paragraph indented, and on a tab-laid line a first-line indent moves the formula and
+    /// its number off their stops (measured in Word: both 21 pt to the left with 2 characters at 10.5 pt). The
+    /// character units go first. <paramref name="firstLineOnly"/>: the left and right indents stay.
+    /// </summary>
+    internal static void ZeroIndents(ParagraphFormat format, bool firstLineOnly = false)
+    {
+        ZeroCharacterUnits(() => format.CharacterUnitFirstLineIndent, value => format.CharacterUnitFirstLineIndent = value);
+        format.FirstLineIndent = 0f;
+        if (firstLineOnly) return;
+        ZeroCharacterUnits(() => format.CharacterUnitLeftIndent, value => format.CharacterUnitLeftIndent = value);
+        format.LeftIndent = 0f;
+        ZeroCharacterUnits(() => format.CharacterUnitRightIndent, value => format.CharacterUnitRightIndent = value);
+        format.RightIndent = 0f;
+    }
+
+    private static void ZeroCharacterUnits(Func<float> read, Action<float> write)
+    {
+        try
+        {
+            if (Math.Abs(read()) > 0.001f) write(0f);
+        }
+        catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
+    }
+
     internal static void PrepareVisualTeXDisplayHostLayout(
         Document document,
         Range formulaRange,
@@ -164,9 +191,7 @@ internal static class WordEquationParagraphLayout
                     WdParagraphAlignment.wdAlignParagraphJustify;
                 format.SpaceBefore = 0f;
                 format.SpaceAfter = 0f;
-                format.LeftIndent = 0f;
-                format.RightIndent = 0f;
-                format.FirstLineIndent = 0f;
+                ZeroIndents(format);
                 paragraph.Format = format;
             }
         }
@@ -239,9 +264,7 @@ internal static class WordEquationParagraphLayout
                     && !(bool)formulaRange.get_Information(WdInformation.wdWithInTable);
             }
             catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            ZeroIndents(format);
             if (!nativeOmmlParagraph)
             {
                 // OLE/picture formulas carry their own transparent preview

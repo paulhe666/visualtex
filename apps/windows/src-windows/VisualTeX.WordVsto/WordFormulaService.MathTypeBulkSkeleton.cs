@@ -346,9 +346,7 @@ internal sealed partial class WordFormulaService
                 listFormat.RemoveNumbers();
                 paragraphFormat = freshParagraphs.ParagraphFormat;
                 paragraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
-                paragraphFormat.LeftIndent = 0;
-                paragraphFormat.RightIndent = 0;
-                paragraphFormat.FirstLineIndent = 0;
+                WordEquationParagraphLayout.ZeroIndents(paragraphFormat);
             }
             font = skeleton.Font;
             ResetTransientFont(font);

@@ -1310,9 +1310,7 @@ internal static class WordNumberedTableDisplay
             anchorFormat = anchorParagraphRange.ParagraphFormat;
             try { anchorFormat.Reset(); } catch (Exception ignored) { IgnoredErrors.Ignore(ignored); }
             anchorFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
-            anchorFormat.LeftIndent = 0f;
-            anchorFormat.RightIndent = 0f;
-            anchorFormat.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(anchorFormat);
             anchorFormat.SpaceBefore = 0f;
             anchorFormat.SpaceAfter = 0f;
             anchorFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
@@ -2595,9 +2593,7 @@ internal static class WordNumberedTableDisplay
             format.LineSpacing = CompactTypingTailLineSpacingPoints;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(format);
             format.KeepTogether = 0;
             format.KeepWithNext = 0;
         }
@@ -3368,10 +3364,8 @@ internal static class WordNumberedTableDisplay
             rightFormat = rightRange.ParagraphFormat;
             centerFormat.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
             rightFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
-            centerFormat.LeftIndent = centerFormat.RightIndent = 0f;
-            centerFormat.FirstLineIndent = 0f;
-            rightFormat.LeftIndent = rightFormat.RightIndent = 0f;
-            rightFormat.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(centerFormat);
+            WordEquationParagraphLayout.ZeroIndents(rightFormat);
             centerFormat.SpaceBefore = 0f;
             centerFormat.SpaceAfter = NativeOmmlDisplayInkClearance(
                 formulaRange,
@@ -4774,9 +4768,7 @@ internal static class WordNumberedTableDisplay
             format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(format);
             result = paragraphRange.Duplicate;
             result.Collapse(WdCollapseDirection.wdCollapseStart);
             var returned = result;

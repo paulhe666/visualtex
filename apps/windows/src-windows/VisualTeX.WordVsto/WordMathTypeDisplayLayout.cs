@@ -244,9 +244,7 @@ internal static class WordMathTypeDisplayLayout
             else if (preservedLayout is null)
             {
                 format.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
-                format.LeftIndent = 0;
-                format.RightIndent = 0;
-                format.FirstLineIndent = 0;
+                WordEquationParagraphLayout.ZeroIndents(format);
                 format.SpaceBefore = 0;
                 format.SpaceAfter = 0;
                 format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;

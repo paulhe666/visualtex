@@ -1348,6 +1348,47 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    /// The visible number of the MathType equation numbered in the paragraph at <paramref name="paragraphPosition"/>
+    /// gets this font size (the number's own characters and the SEQ results inside it).
+    internal static void ApplyNumberFontSize(Document document, int paragraphPosition, float size)
+    {
+        Range? paragraph = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? number = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            paragraph = document.Range(paragraphPosition, paragraphPosition);
+            paragraph.Expand(WdUnits.wdParagraph);
+            fields = WordFormulaHost.GetLocalFields(paragraph);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
+                code = field.Code;
+                if (!IsMathTypePlaceRefCode(code.Text)) continue;
+                if (!TryGetVisibleNumberRange(document, field, out number) || number is null) return;
+                font = number.Font;
+                if (Math.Abs(font.Size - size) > 0.01f) font.Size = size;
+                return;
+            }
+        }
+        finally
+        {
+            Release(font);
+            Release(number);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraph);
+        }
+    }
+
     internal static bool IsMathTypePlaceRefCode(string? code) =>
         !string.IsNullOrWhiteSpace(code)
         && code!.IndexOf(PlaceRefMarker, StringComparison.OrdinalIgnoreCase) >= 0;

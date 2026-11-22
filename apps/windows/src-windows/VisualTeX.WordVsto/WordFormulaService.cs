@@ -1231,22 +1231,38 @@ internal sealed partial class WordFormulaService
             if (shapes.Count == 1)
             {
                 shape = shapes[1];
-                if ((shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
-                        or WdInlineShapeType.wdInlineShapeLinkedOLEObject)
-                    && ReadOleHostKindWithoutContent(shape) != SelectedOleKind.VisualTeX)
+                var oleKind = shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                        or WdInlineShapeType.wdInlineShapeLinkedOLEObject
+                    ? ReadOleHostKindWithoutContent(shape)
+                    : SelectedOleKind.None;
+                if (oleKind is SelectedOleKind.MathType or SelectedOleKind.Unresolved)
                 {
-                    // Even IsMathTypeOle can export WordOpenXML when ProgID is
-                    // unavailable. That semantic fallback belongs to commands,
-                    // never to passive observation of another owner's OLE.
-                    if (!allowMathTypeContent || !MathTypeOleInterop.IsMathTypeOle(shape))
+                    // A MathType object's size is in its MTEF, read through its
+                    // WordOpenXML, which makes Word save the OLE data: re-entrant
+                    // while MathType's own program builds or edits the object.
+                    // Observation (the Ribbon's size box) reads it only for an
+                    // object its ProgID names MathType while no MathType program
+                    // runs (MathTypeServerProcess); commands always may. Even
+                    // IsMathTypeOle can export WordOpenXML when the ProgID is
+                    // unavailable: that fallback belongs to commands.
+                    var observable = oleKind == SelectedOleKind.MathType
+                        && !MathTypeServerProcess.IsRunning();
+                    if (!allowMathTypeContent && !observable)
+                        return null;
+                    var readWatch = System.Diagnostics.Stopwatch.StartNew();
+                    if (!MathTypeOleInterop.IsMathTypeOle(shape))
                         return null;
                     if (!MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
                             shape,
                             out var mathTypeCompound))
                         return null;
                     var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
-                    return FormulaFontSize.Normalize(
+                    var mathTypeSize = FormulaFontSize.Normalize(
                         MathTypeMtefFontSize.ReadEquationNativeFullFontSizeOrDefault(equationNative));
+                    if (!allowMathTypeContent)
+                        WordDoubleClickHook.TraceMessage(
+                            $"ribbon-mathtype-size-read size={mathTypeSize} ms={readWatch.ElapsedMilliseconds}");
+                    return mathTypeSize;
                 }
                 var metadata = WordFormulaMetadataReader.TryRead(shape);
                 if (metadata is not null)
@@ -2741,6 +2757,28 @@ internal sealed partial class WordFormulaService
                 finally { Release(verificationRange); }
             }
 
+            // The number in the formula's size, as VisualTeX and Word equation
+            // numbers are (the template takes the paragraph's size where it is
+            // written; a formula written at the Ribbon's 行间 size differs).
+            if (!inline && session.Numbered)
+            {
+                stage = "number-font-size";
+                Range? numberAnchor = null;
+                try
+                {
+                    numberAnchor = batchHostRange is not null
+                        ? batchHostRange.Duplicate
+                        : shape!.Range;
+                    MathTypeEquationReferences.ApplyNumberFontSize(
+                        document,
+                        numberAnchor.Start,
+                        FormulaFontSize.Normalize(session.FontSizePt));
+                }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+                finally { Release(numberAnchor); }
+                TraceInsertPerf("number-font-size");
+            }
+
             // Keep VisualTeX ownership outside Equation.DSMT4/MTEF. The bookmark
             // is a locator only; MathType storage remains completely native.
             stage = "bind-mathtype-host-identity";
@@ -3771,10 +3809,12 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    /// <param name="numberFontSizePt">a size change: the equation's number takes this size, in the same Undo step</param>
     public OfficeObjectResult ReplaceMathTypeOle(
         OfficeSessionDocument session,
         string mathMl,
-        string? emfPath)
+        string? emfPath,
+        float? numberFontSizePt = null)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
@@ -3950,9 +3990,7 @@ internal sealed partial class WordFormulaService
                 // and may also store a different intrinsic OLE extent in
                 // dxaOrig/dyaOrig. Both relationships belong to the document's
                 // presentation. Preserve them across the edit; only the rewritten
-                // mathematical bounds come from MathPage. The existing Word run
-                // position is likewise presentation state and must not be replaced
-                // by MathPage's intrinsic baseline for an already placed object.
+                // mathematical bounds come from MathPage.
                 var widthScale = CalculateMathTypeNativePresentationScale(
                     sourceFragment.WidthPt,
                     sourceNativePreview.WidthPt);
@@ -3969,7 +4007,20 @@ internal sealed partial class WordFormulaService
                     sourceFragment.OriginalHeightPt,
                     sourceFragment.HeightPt,
                     targetHeightPt);
-                targetWordPosition = originalWordPosition;
+                // The run position follows the equation's own baseline, which
+                // MathPage gives for the source and for the rewritten MTEF: what
+                // the document added to the source's own position (a user's nudge,
+                // a scaled drawing) is kept, and the change of the equation's
+                // depth (a new size, a fraction below the line) moves the object
+                // with it. Keeping the old position as it was put a resized
+                // display formula above or below the line of its tabs and number
+                // (higher when larger, lower when smaller) and an edited inline
+                // formula off the text baseline.
+                targetWordPosition = MathTypeRunPosition.Rewritten(
+                    originalWordPosition,
+                    sourceNativePreview.WordPosition,
+                    nativePreview.WordPosition,
+                    heightScale);
                 WordDoubleClickHook.TraceMessage(
                     $"mathtype-replace-native-preview formulaId={session.FormulaId} "
                     + $"sourceWord={sourceFragment.WidthPt:0.###}x{sourceFragment.HeightPt:0.###}@{originalWordPosition} "
@@ -4121,6 +4172,17 @@ internal sealed partial class WordFormulaService
             SetInlineOleWordPosition(replacement, targetWordPosition);
             if (alignInline)
                 RestoreTypingBaselineAfter(replacement);
+            if (numberFontSizePt is { } numberSize && session.Numbered)
+            {
+                Range? numberAnchor = null;
+                try
+                {
+                    numberAnchor = replacement.Range;
+                    MathTypeEquationReferences.ApplyNumberFontSize(document, numberAnchor.Start, numberSize);
+                }
+                catch (COMException ignored) { IgnoredErrors.Ignore(ignored); }
+                finally { Release(numberAnchor); }
+            }
 
             // Complete view/baseline changes inside the same Undo item. The final
             // materialized XML read remains mandatory but happens after that item

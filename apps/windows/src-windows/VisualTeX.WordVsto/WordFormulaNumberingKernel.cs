@@ -2790,9 +2790,7 @@ internal static partial class WordFormulaNumberingKernel
                 WdParagraphAlignment.wdAlignParagraphCenter;
             centerFormat.SpaceBefore = 0f;
             centerFormat.SpaceAfter = 0f;
-            centerFormat.LeftIndent = 0f;
-            centerFormat.RightIndent = 0f;
-            centerFormat.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(centerFormat);
 
             rightRange = rightCell.Range;
             rightFormat = rightRange.ParagraphFormat;
@@ -2800,9 +2798,7 @@ internal static partial class WordFormulaNumberingKernel
                 WdParagraphAlignment.wdAlignParagraphRight;
             rightFormat.SpaceBefore = 0f;
             rightFormat.SpaceAfter = 0f;
-            rightFormat.LeftIndent = 0f;
-            rightFormat.RightIndent = 0f;
-            rightFormat.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(rightFormat);
         }
         finally
         {
@@ -2851,9 +2847,7 @@ internal static partial class WordFormulaNumberingKernel
                 WdParagraphAlignment.wdAlignParagraphLeft;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(format);
             tabs = format.TabStops;
             tabs.ClearAll();
 
@@ -2885,9 +2879,7 @@ internal static partial class WordFormulaNumberingKernel
                 WdParagraphAlignment.wdAlignParagraphLeft;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(format);
             tabs = format.TabStops;
             tabs.ClearAll();
 
@@ -2919,9 +2911,7 @@ internal static partial class WordFormulaNumberingKernel
                 WdParagraphAlignment.wdAlignParagraphCenter;
             format.SpaceBefore = 0f;
             format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            WordEquationParagraphLayout.ZeroIndents(format);
         }
         finally { Release(format); }
     }

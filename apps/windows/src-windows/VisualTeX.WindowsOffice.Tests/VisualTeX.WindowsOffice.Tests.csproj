@@ -66,6 +66,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeHostEnvironment.cs" Link="OfficeHostEnvironment.cs" />
     <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointCellMath.cs" Link="PowerPointCellMath.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordFieldCode.cs" Link="WordFieldCode.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\MathTypeRunPosition.cs" Link="MathTypeRunPosition.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WpsFieldXml.cs" Link="WpsFieldXml.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WpsXmlInsertion.cs" Link="WpsXmlInsertion.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WpsOleDisplayRefresh.cs" Link="WpsOleDisplayRefresh.cs" />

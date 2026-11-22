@@ -126,6 +126,7 @@ internal sealed partial class WordFormulaService
             var fontFallbackCount = 0L;
             var fontFallbackMilliseconds = 0L;
             var fontTargetsCompleted = 0;
+            IReadOnlyList<(int Start, int End)>? sourceSpans = null;
             ReportOperationProgress(ReadFontSizesStage, 0, plan.Targets.Count);
             foreach (var target in plan.Targets
                          .OrderBy(item => item.RelativeStart))
@@ -208,6 +209,22 @@ internal sealed partial class WordFormulaService
                         fontFallbackMilliseconds += fallbackWatch.ElapsedMilliseconds;
                         Release(exact);
                     }
+                }
+                // A display formula alone on its line right below a heading follows the body text, not the
+                // heading (as 「跟随正文」 sizes an existing display formula).
+                if (display
+                    && target.DedicatedDisplayParagraph
+                    && !uniformScopeFontSize.HasValue
+                    && WordFormulaFontSizeSetting.Get(display: true) is null)
+                {
+                    sourceSpans ??= WordFormulaTextSize.Spans(
+                        plan.Targets.Select(item => (item.AbsoluteStart, item.AbsoluteEnd)));
+                    if (WordFormulaTextSize.TrySizeBelowHeading(
+                            document,
+                            target.AbsoluteStart,
+                            sourceSpans,
+                            out var belowHeading))
+                        target.FontSizePt = belowHeading;
                 }
                 // the Ribbon's inline/display size, when one is set, instead of the text's
                 target.FontSizePt = WordFormulaFontSizeSetting.Resolve(display, target.FontSizePt);

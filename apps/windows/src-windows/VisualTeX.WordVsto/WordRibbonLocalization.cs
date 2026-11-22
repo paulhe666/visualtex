@@ -98,7 +98,7 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.WordVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="Increase" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
-          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current document takes this size at once (undoable), and new inline formulas (inserted, or written by LaTeX redraw, bulk import and format conversion) get it too. Follow Text gives every inline formula the size of the text beside it, and new ones follow the text." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
             <item id="VisualTeX.WordVsto.InlineFontSizeFollow" label="Follow Text" />
             <item id="VisualTeX.WordVsto.InlineFontSizeChu" label="42 pt (CN preset)" />
             <item id="VisualTeX.WordVsto.InlineFontSizeXiaoChu" label="36 pt (CN preset)" />
@@ -132,7 +132,7 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.WordVsto.InlineFontSize48" label="48" />
             <item id="VisualTeX.WordVsto.InlineFontSize72" label="72" />
           </comboBox>
-          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula (numbered ones included) of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula of the current document (numbered ones included, their numbers with them) takes this size at once (undoable), and new display formulas (inserted, or written by LaTeX redraw, bulk import and format conversion) get it too. Follow Text gives every display formula the size of the text before it, and new ones follow the text." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
             <item id="VisualTeX.WordVsto.DisplayFontSizeFollow" label="Follow Text" />
             <item id="VisualTeX.WordVsto.DisplayFontSizeChu" label="42 pt (CN preset)" />
             <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoChu" label="36 pt (CN preset)" />

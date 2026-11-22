@@ -86,10 +86,12 @@ internal sealed partial class WordFormulaService
                 shape = null;
                 Release(mathTypeDocument);
                 mathTypeDocument = null;
+                // its number in the formula's size, as VisualTeX and Word equation numbers are
                 _ = ReplaceMathTypeOle(
                     resizeSession,
                     sourceMathMl,
-                    emfPath: null);
+                    emfPath: null,
+                    numberFontSizePt: metadata.Numbered ? target : null);
                 return target;
             }
             finally
