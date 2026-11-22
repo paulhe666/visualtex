@@ -329,10 +329,12 @@ public sealed partial class ThisAddIn
             }
             var chosen = matches[0];
             selection.SetRange(start, end);
-            if (chosen.Source == EquationReferenceSource.MathType)
-                MathTypeEquationReferences.InsertReference(document, selection, chosen, color);
-            else
-                service.InsertEquationReference(document, selection, chosen, EquationReferenceStyle.Parenthesized, color);
+            // (the dialog's own path, undo record included: a MathType reference keeps MathType's number format)
+            service.InsertEquationReference(document, selection, chosen,
+                chosen.Source == EquationReferenceSource.MathType
+                    ? EquationReferenceStyle.NumberOnly
+                    : EquationReferenceStyle.Parenthesized,
+                color);
             TraceReferenceMetrics(metrics, "inserted");
             return $"Inserted a reference to equation ({number}).";
         }

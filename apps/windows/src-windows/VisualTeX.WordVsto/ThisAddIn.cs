@@ -6503,6 +6503,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             var inserted = await dispatcher.InvokeAsync(() =>
             {
+                WordDoubleClickHook.TraceMessage("reference-command-start");
                 Document? document = null;
                 Selection? selection = null;
                 Window? window = null;
@@ -6521,22 +6522,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     var referenceInsertionStart = selection.Start;
                     var referenceInsertionEnd = selection.End;
                     var referenceInsertionColor = selection.Font.Color;
-                    // (the picker shows at once and fills the LaTeX previews in while it shows)
-                    var allTargets = service.GetEquationReferenceTargets(document, deferPreviews: true);
-                    var visualTexTargets = allTargets
-                        .Where(target => target.Source == EquationReferenceSource.VisualTeX)
-                        .ToArray();
-                    var wordOmmlTargets = allTargets
-                        .Where(target => target.Source == EquationReferenceSource.WordOmml)
-                        .ToArray();
-                    IReadOnlyList<EquationReferenceTarget> mathTypeTargets = allTargets
-                        .Where(target => target.Source == EquationReferenceSource.MathType)
-                        .ToArray();
-                    TraceReferenceMetrics(metrics, "listed");
-                    if (visualTexTargets.Length == 0
-                        && wordOmmlTargets.Length == 0
-                        && mathTypeTargets.Count == 0)
-                    {
+                    void ShowNoTargets() =>
                         AutomationMessageBox.Show(
                             T(
                                 "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX、Word OMML 或 MathType 行间公式。",
@@ -6544,8 +6530,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             "VisualTeX",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Information);
-                        return string.Empty;
-                    }
 
                     static string DescribeReferenceTarget(EquationReferenceTarget target) =>
                         target.Source switch
@@ -6563,6 +6547,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             "1",
                             StringComparison.Ordinal))
                     {
+                        var allTargets = service.GetEquationReferenceTargets(document, deferPreviews: true);
+                        var visualTexTargets = allTargets
+                            .Where(target => target.Source == EquationReferenceSource.VisualTeX)
+                            .ToArray();
+                        var wordOmmlTargets = allTargets
+                            .Where(target => target.Source == EquationReferenceSource.WordOmml)
+                            .ToArray();
+                        IReadOnlyList<EquationReferenceTarget> mathTypeTargets = allTargets
+                            .Where(target => target.Source == EquationReferenceSource.MathType)
+                            .ToArray();
+                        TraceReferenceMetrics(metrics, "listed");
+                        if (allTargets.Count == 0)
+                        {
+                            ShowNoTargets();
+                            return string.Empty;
+                        }
                         var requestedSource = Environment.GetEnvironmentVariable(
                             "VISUALTEX_VSTO_REFERENCE_SOURCE");
                         IReadOnlyList<EquationReferenceTarget> targets =
@@ -6599,40 +6599,46 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             out requestedIndex);
                         requestedIndex = Math.Max(0, Math.Min(targets.Count - 1, requestedIndex));
                         var target = targets[requestedIndex];
-                        if (target.Source == EquationReferenceSource.MathType)
-                        {
-                            selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
-                            MathTypeEquationReferences.InsertReference(
-                                document,
-                                selection,
-                                target,
-                                referenceInsertionColor);
-                        }
-                        else
-                        {
-                            service.InsertEquationReference(
-                                document,
-                                selection,
-                                target,
-                                EquationReferenceStyle.Parenthesized,
-                                referenceInsertionColor);
-                        }
+                        // (the same insertion as the dialog's, so acceptance runs measure what users run)
+                        selection.SetRange(referenceInsertionStart, referenceInsertionEnd);
+                        service.InsertEquationReference(
+                            document,
+                            selection,
+                            target,
+                            target.Source == EquationReferenceSource.MathType
+                                ? EquationReferenceStyle.NumberOnly
+                                : EquationReferenceStyle.Parenthesized,
+                            referenceInsertionColor);
+                        TraceReferenceMetrics(metrics, "inserted");
                         return DescribeReferenceTarget(target);
                     }
 
-                    using var dialog = new EquationReferenceDialog(
-                        visualTexTargets,
-                        wordOmmlTargets,
-                        mathTypeTargets);
+                    // The picker shows at once: it reads the document's numbered equations right after it
+                    // has been drawn (a long document takes seconds) and fills the LaTeX previews in while
+                    // it shows.
+                    var listedDocument = document;
+                    using var dialog = new EquationReferenceDialog(() =>
+                    {
+                        var listed = service.GetEquationReferenceTargets(listedDocument, deferPreviews: true);
+                        TraceReferenceMetrics(metrics, "listed");
+                        return listed;
+                    });
                     System.Windows.Forms.DialogResult result;
                     try
                     {
                         window = application.ActiveWindow;
                         result = dialog.ShowDialog(new NativeWindowOwner(new IntPtr(window.Hwnd)));
                     }
-                    catch
+                    catch when (dialog.LoadError is null && !dialog.LoadStarted)
                     {
                         result = dialog.ShowDialog();
+                    }
+                    if (dialog.LoadError is not null)
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(dialog.LoadError).Throw();
+                    if (dialog.NoTargets)
+                    {
+                        ShowNoTargets();
+                        return string.Empty;
                     }
                     if (result != System.Windows.Forms.DialogResult.OK
                         || dialog.SelectedTarget is null)

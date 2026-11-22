@@ -207,18 +207,20 @@ internal sealed partial class WordFormulaService
         if (target.Source ==
             EquationReferenceSource.MathType)
         {
-            ExecuteDocumentEdit(
+            // A MathType reference adds one field at the caret and, the first time an equation is
+            // referenced, one bookmark on its number. Its own undo entries are the whole rollback.
+            // (This edit used to take the whole-document recovery snapshot: the complete document
+            // exported as Word XML and parsed three times, and every inline object walked twice,
+            // before each reference - a minute and more in a long thesis full of MathType objects.)
+            ExecuteLocalReferenceEdit(
                 document,
                 "VisualTeX Insert MathType Equation Reference",
                 () =>
-                {
                     MathTypeEquationReferences.InsertReference(
                         document,
                         selection,
                         target,
-                        color);
-                    return 0;
-                });
+                        color));
             return;
         }
 
@@ -332,6 +334,66 @@ internal sealed partial class WordFormulaService
                             color);
                 return true;
             });
+    }
+
+    /// One Word undo record around a local reference edit. On failure every entry the edit left in
+    /// Word's undo list is undone (Field.Update inside the record can make Word split it into
+    /// several entries) and the story length is checked; no copy of the document is taken first.
+    private void ExecuteLocalReferenceEdit(
+        Document document,
+        string name,
+        System.Action edit)
+    {
+        Range? content = null;
+        int storyEnd;
+        try
+        {
+            content = document.Content;
+            storyEnd = content.End;
+        }
+        finally { Release(content); }
+        WordUndoHistorySnapshot history;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Insert.UndoHistory"))
+            history = new WordUndoHistorySnapshot(document);
+        var undo = BeginUndoRecord(name)
+            ?? throw new InvalidOperationException($"Word could not establish an independent transaction for '{name}'.");
+        var ended = false;
+        try
+        {
+            edit();
+            EndUndoRecord(undo);
+            ended = true;
+        }
+        catch (Exception editError)
+        {
+            try
+            {
+                if (!ended)
+                {
+                    EndUndoRecord(undo);
+                    ended = true;
+                }
+                history.UndoChanges(document);
+                Range? restored = null;
+                try
+                {
+                    restored = document.Content;
+                    if (restored.End != storyEnd)
+                        throw new InvalidDataException("Word undo did not restore the document's length.");
+                }
+                finally { Release(restored); }
+            }
+            catch (Exception recoveryError)
+            {
+                throw new AggregateException($"'{name}' failed and recovery could not be verified.", editError, recoveryError);
+            }
+            throw;
+        }
+        finally
+        {
+            if (!ended) EndUndoRecord(undo);
+            Release(undo);
+        }
     }
 
     private static void EnsureVisualTeXReferenceTargetExists(

@@ -43,21 +43,33 @@ internal static class WordFormulaHostResolver
         };
     }
 
-    internal static WordFormulaDocumentIndex CaptureDocumentIndex(Document document)
+    internal static WordFormulaDocumentIndex CaptureDocumentIndex(Document document) =>
+        CaptureDocumentIndex(document, referenceResultsChecked: true);
+
+    /// <paramref name="referenceResultsChecked"/> false: OMath copies cached in REF field results are
+    /// not sorted out (that is a pass over every field of the document); the caller checks the
+    /// equations it keeps itself (<see cref="IsCachedReferenceResultOmml"/>).
+    internal static WordFormulaDocumentIndex CaptureDocumentIndex(Document document, bool referenceResultsChecked)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
         Range? content = null;
         try
         {
             content = document.Content;
-            return CaptureScopeIndex(document, content);
+            return CaptureScopeIndex(document, content, referenceResultsChecked);
         }
         finally { Release(content); }
     }
 
     internal static WordFormulaDocumentIndex CaptureScopeIndex(
         Document document,
-        Range scope)
+        Range scope) =>
+        CaptureScopeIndex(document, scope, referenceResultsChecked: true);
+
+    private static WordFormulaDocumentIndex CaptureScopeIndex(
+        Document document,
+        Range scope,
+        bool referenceResultsChecked)
     {
         using var operationMetric =
             VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
@@ -78,7 +90,8 @@ internal static class WordFormulaHostResolver
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.Omml"))
             omml = CaptureOmmlIndex(
                 scope,
-                tableRanges);
+                tableRanges,
+                referenceResultsChecked);
         IReadOnlyList<WordFormulaHostDescriptor> visualTeX;
         bool foreignOle;
         using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX"))
@@ -376,7 +389,8 @@ internal static class WordFormulaHostResolver
 
     private static IReadOnlyList<WordFormulaHostDescriptor> CaptureOmmlIndex(
         Range scope,
-        IReadOnlyList<WordFormulaRangeAddress> tableRanges)
+        IReadOnlyList<WordFormulaRangeAddress> tableRanges,
+        bool referenceResultsChecked = true)
     {
         var result = new List<WordFormulaHostDescriptor>();
         OMaths? maths = null;
@@ -394,7 +408,9 @@ internal static class WordFormulaHostResolver
                 return result;
             IReadOnlyList<WordFormulaRangeAddress> referenceResults;
             using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.ReferenceResults"))
-                referenceResults = CaptureReferenceResultRanges(scope);
+                referenceResults = referenceResultsChecked
+                    ? CaptureReferenceResultRanges(scope)
+                    : Array.Empty<WordFormulaRangeAddress>();
             for (var index = 1; index <= count; index++)
             {
                 math = maths[index];
@@ -509,15 +525,13 @@ internal static class WordFormulaHostResolver
     {
         var result =
             new List<WordFormulaRangeAddress>();
-        // (bounded windows: an indexed pass over scope.Fields is O(n^2) in a long document)
+        // (bounded windows: an indexed pass over scope.Fields is O(n^2) in a long document;
+        // only the REF fields' code ranges are read)
         WordNumberingFieldCollection.ForEachFieldInScope(
             scope,
+            WdFieldType.wdFieldRef,
             field =>
             {
-                if (field.Type !=
-                    WdFieldType.wdFieldRef)
-                    return true;
-
                 Range? fieldResult = null;
                 try
                 {
@@ -563,6 +577,45 @@ internal static class WordFormulaHostResolver
                 return true;
         }
         return false;
+    }
+
+    /// The REF field results of the document's main story: a pass over every field of the document.
+    internal static IReadOnlyList<WordFormulaRangeAddress> CaptureDocumentReferenceResults(Document document)
+    {
+        Range? content = null;
+        try
+        {
+            content = document.Content;
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.ReferenceResults"))
+                return CaptureReferenceResultRanges(content);
+        }
+        finally { Release(content); }
+    }
+
+    /// Whether a main-story span lies inside one of the given REF field results.
+    internal static bool IsInsideReferenceResult(
+        int start,
+        int end,
+        IReadOnlyList<WordFormulaRangeAddress> referenceResults) =>
+        referenceResults.Any(result =>
+            result.StoryType == WdStoryType.wdMainTextStory
+            && result.Start <= start
+            && result.End >= end);
+
+    /// Whether an indexed OMath is a copy Word caches in a REF field's result, read in the
+    /// equation's own paragraphs (Range.Fields of a paragraph holds a REF whose result begins or ends
+    /// in it). A copy in the middle of a result that spans three or more paragraphs is not seen here.
+    internal static bool IsCachedReferenceResultOmml(
+        Document document,
+        WordFormulaRangeAddress equation)
+    {
+        Range? range = null;
+        try
+        {
+            range = WordFormulaHostSemanticReader.CreateRange(document, equation);
+            return IsNativeReferenceResultOmml(range);
+        }
+        finally { Release(range); }
     }
 
     private static bool IsNativeReferenceResultOmml(

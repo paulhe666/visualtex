@@ -434,6 +434,40 @@ internal static partial class WordFormulaNumberingKernel
         using var metric =
             VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
                 scope is null ? "Reference.CanonicalTargets" : "Reference.CanonicalTargets.Scoped");
+        // The whole document's listing does not read every field of the document to find the OMath
+        // copies Word caches in REF field results: each numbered Word equation it keeps is checked in
+        // its own paragraphs. Such a copy repeats its equation's number, so when two Word equations
+        // show one number the REF results of the whole document are read after all (a copy in the
+        // middle of a REF result that spans three or more paragraphs is only seen there).
+        if (scope is null)
+        {
+            var quick = GetCanonicalReferenceTargetsCore(
+                document, scope, deferPreviews, referenceResultsChecked: false, out hasForeignOle);
+            var repeated = quick
+                .Where(target => target.Source == EquationReferenceSource.WordOmml)
+                .GroupBy(target => target.NumberText, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1);
+            if (!repeated) return quick;
+            var referenceResults =
+                WordFormulaHostResolver.CaptureDocumentReferenceResults(document);
+            return quick
+                .Where(target => target.Source != EquationReferenceSource.WordOmml
+                    || !WordFormulaHostResolver.IsInsideReferenceResult(
+                        target.Position, target.EndPosition, referenceResults))
+                .ToArray();
+        }
+        return GetCanonicalReferenceTargetsCore(
+            document, scope, deferPreviews, referenceResultsChecked: true, out hasForeignOle);
+    }
+
+    private static IReadOnlyList<EquationReferenceTarget>
+        GetCanonicalReferenceTargetsCore(
+            Document document,
+            Range? scope,
+            bool deferPreviews,
+            bool referenceResultsChecked,
+            out bool hasForeignOle)
+    {
         // (listing reads only; a deferred preview is read later, outside this scope, with the full checks)
         using var noRevisions =
             WordNumberingFieldCollection.AssumeNoRevisionsWhileReading(
@@ -441,7 +475,8 @@ internal static partial class WordFormulaNumberingKernel
         var index =
             scope is null
                 ? WordFormulaHostResolver.CaptureDocumentIndex(
-                    document)
+                    document,
+                    referenceResultsChecked)
                 : WordFormulaHostResolver.CaptureScopeIndex(
                     document,
                     scope);
@@ -517,6 +552,14 @@ internal static partial class WordFormulaNumberingKernel
                                 host);
                     if (!nativeNumber)
                         continue;
+                    if (!referenceResultsChecked)
+                    {
+                        bool cachedCopy;
+                        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.Canonical.LocalReferenceResult"))
+                            cachedCopy = WordFormulaHostResolver.IsCachedReferenceResultOmml(document, host.Range);
+                        if (cachedCopy)
+                            continue;
+                    }
 
                     targets.Add(
                         Target(

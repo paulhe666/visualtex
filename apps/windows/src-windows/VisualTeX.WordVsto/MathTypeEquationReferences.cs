@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -47,8 +48,26 @@ internal static class MathTypeEquationReferences
         {
             content = document.Content;
             var contentStart = content.Start;
-            // (bounded windows: an indexed pass over document.Fields is O(n^2) in a long document)
-            WordNumberingFieldCollection.ForEachFieldInScope(content, field =>
+            // Word: Word finds the MTPlaceRef macros in the field codes itself and only the paragraphs
+            // it hits are read field by field (a thesis has thousands of fields, every inline MathType
+            // object being an EMBED field, and a few dozen MathType numbers). WPS, and Word when its
+            // search cannot make its way through the document: the MACROBUTTON fields of the whole
+            // document, read in bounded windows (an indexed pass over document.Fields is O(n^2)).
+            void EveryMacroButton(Func<Field, bool> visit) =>
+                WordNumberingFieldCollection.ForEachFieldInScope(content, WdFieldType.wdFieldMacroButton, visit);
+            Action<Func<Field, bool>> forEachCandidate = OfficeHostEnvironment.IsWps
+                ? EveryMacroButton
+                : visit =>
+                {
+                    try { ForEachFieldInPlaceRefParagraphs(document, content, visit); }
+                    catch (Exception searchError) when (searchError is InvalidDataException or COMException)
+                    {
+                        IgnoredErrors.Ignore(searchError);
+                        targets.Clear();
+                        EveryMacroButton(visit);
+                    }
+                };
+            forEachCandidate(field =>
             {
                 Range? code = null;
                 Range? numberRange = null;
@@ -59,6 +78,9 @@ internal static class MathTypeEquationReferences
                     if (field.Type != WdFieldType.wdFieldMacroButton) return true;
                     code = field.Code;
                     if (!IsMathTypePlaceRefCode(code.Text)) return true;
+                    using var readMetric =
+                        VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                            "Reference.MathTypeTargets.Read");
 
                     var position = Math.Max(contentStart, code.Start - 1);
                     if (!TryGetVisibleNumberRange(document, field, out numberRange)
@@ -103,6 +125,70 @@ internal static class MathTypeEquationReferences
             .ToArray();
     }
 
+    /// Every field of each paragraph holding an MTPlaceRef macro, paragraph by paragraph through the
+    /// scope: Word's own field-code search (MathTypeFieldLocator) jumps from one MathType number to the
+    /// next, so the fields of all other paragraphs are never marshalled.
+    private static void ForEachFieldInPlaceRefParagraphs(
+        Document document,
+        Range scope,
+        Func<Field, bool> visit)
+    {
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.MathTypeTargets.Find");
+        var cursor = scope.Start;
+        var end = scope.End;
+        Range? search = null;
+        Field? hit = null;
+        Range? hitCode = null;
+        Range? paragraph = null;
+        Fields? local = null;
+        try
+        {
+            while (cursor < end)
+            {
+                Release(search);
+                search = scope.Duplicate;
+                search.SetRange(cursor, end);
+                Release(hit);
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.MathTypeTargets.Search"))
+                    hit = MathTypeFieldLocator.Find(search, MathTypeFieldLocator.PlaceRef, forward: true);
+                if (hit is null) return;
+                Release(hitCode);
+                hitCode = hit.Code;
+                Release(paragraph);
+                paragraph = scope.Duplicate;
+                paragraph.SetRange(hitCode.Start - 1, hitCode.Start - 1);
+                paragraph.Expand(WdUnits.wdParagraph);
+                var next = paragraph.End;
+                if (next <= cursor)
+                    throw new InvalidDataException("The MathType number search made no forward progress.");
+                Release(local);
+                local = WordFormulaHost.GetLocalFields(paragraph);
+                var count = local.Count;
+                for (var index = 1; index <= count; index++)
+                {
+                    Field? field = null;
+                    try
+                    {
+                        field = local[index];
+                        if (!visit(field)) return;
+                    }
+                    finally { Release(field); }
+                }
+                cursor = next;
+            }
+        }
+        finally
+        {
+            Release(local);
+            Release(paragraph);
+            Release(hitCode);
+            Release(hit);
+            Release(search);
+        }
+    }
+
     internal static void InsertReference(
         Document document,
         Selection selection,
@@ -126,8 +212,9 @@ internal static class MathTypeEquationReferences
             if (!TryGetVisibleNumberRange(document, placeRef, out numberRange) || numberRange is null)
                 throw new InvalidDataException("The MathType reference target has no visible number.");
             var bookmarkName = EnsureNativeMathTypeNumberBookmark(document, numberRange);
-            WordEquationReferenceFields.InsertNavigableReference(document, selection, bookmarkName,
-                string.Empty, string.Empty, preferredInsertionColor);
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Reference.MathType.Field"))
+                WordEquationReferenceFields.InsertNavigableReference(document, selection, bookmarkName,
+                    string.Empty, string.Empty, preferredInsertionColor);
         }
         finally { Release(numberRange); Release(placeRef); }
     }
@@ -952,10 +1039,20 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    // The target was listed at its MTPlaceRef's start, so only the paragraph(s) around that position are
+    // searched. (An indexed pass over document.Fields walks the collection from its start at every index:
+    // O(n^2) in a long document, where every inline MathType object is an EMBED field too.)
+    private const int PlaceRefTolerance = 8;
+
     private static Field? ResolvePlaceRef(
         Document document,
         EquationReferenceTarget target)
     {
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.MathType.ResolvePlaceRef");
+        Range? content = null;
+        Range? scope = null;
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
@@ -963,18 +1060,26 @@ internal static class MathTypeEquationReferences
         var bestDistance = int.MaxValue;
         try
         {
-            fields = document.Fields;
+            content = document.Content;
+            var contentStart = content.Start;
+            var contentEnd = content.End;
+            var from = Math.Max(contentStart, Math.Min(contentEnd, target.Position - PlaceRefTolerance));
+            var to = Math.Max(from, Math.Min(contentEnd, target.Position + PlaceRefTolerance));
+            scope = document.Range(from, to);
+            scope.Expand(WdUnits.wdParagraph);
+            fields = WordFormulaHost.GetLocalFields(scope);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
                 code = null;
                 Release(field);
                 field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton) continue;
                 code = field.Code;
                 if (!IsMathTypePlaceRefCode(code.Text)) continue;
-                var position = Math.Max(document.Content.Start, code.Start - 1);
+                var position = Math.Max(contentStart, code.Start - 1);
                 var distance = Math.Abs(position - target.Position);
-                if (distance > 8 || distance >= bestDistance) continue;
+                if (distance > PlaceRefTolerance || distance >= bestDistance) continue;
 
                 Range? numberRange = null;
                 try
@@ -1004,6 +1109,8 @@ internal static class MathTypeEquationReferences
             Release(code);
             Release(field);
             Release(fields);
+            Release(scope);
+            Release(content);
         }
     }
 
@@ -1192,18 +1299,24 @@ internal static class MathTypeEquationReferences
         Document document,
         Range numberRange)
     {
+        using var metric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "Reference.MathType.NumberBookmark");
         Bookmarks? bookmarks = null;
+        Bookmarks? local = null;
         Bookmark? bookmark = null;
         Range? bookmarkRange = null;
         try
         {
-            bookmarks = document.Bookmarks;
-            for (var index = 1; index <= bookmarks.Count; index++)
+            // An existing ZEqnNum bookmark on exactly this number lies inside it: Word reads only the
+            // number's own bookmarks, not every bookmark of the document. (WPS keeps the document's list.)
+            local = OfficeHostEnvironment.IsWps ? document.Bookmarks : numberRange.Bookmarks;
+            for (var index = 1; index <= local.Count; index++)
             {
                 Release(bookmarkRange);
                 bookmarkRange = null;
                 Release(bookmark);
-                bookmark = bookmarks[index];
+                bookmark = local[index];
                 if (!bookmark.Name.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase))
                     continue;
                 bookmarkRange = bookmark.Range;
@@ -1212,6 +1325,7 @@ internal static class MathTypeEquationReferences
                     return bookmark.Name;
             }
 
+            bookmarks = document.Bookmarks;
             var seed = 100000 + Math.Abs(numberRange.Start % 900000);
             for (var offset = 0; offset < 900000; offset++)
             {
@@ -1229,6 +1343,7 @@ internal static class MathTypeEquationReferences
         {
             Release(bookmarkRange);
             Release(bookmark);
+            Release(local);
             Release(bookmarks);
         }
     }

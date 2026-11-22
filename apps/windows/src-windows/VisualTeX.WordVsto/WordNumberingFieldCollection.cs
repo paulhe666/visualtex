@@ -1041,6 +1041,59 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         finally { Release(window); }
     }
 
+    /// <summary>
+    /// The fields of one type in the scope, in the same bounded windows as the overload above. Each
+    /// field's type is read first; only a field of the wanted type has its code range read (to skip a
+    /// field that two windows share). A thesis has thousands of fields, mostly EMBED (every inline
+    /// MathType object), citations and the table of contents, and the callers want a few REF or
+    /// MACROBUTTON fields: reading every field's code range doubled the pass.
+    /// </summary>
+    internal static void ForEachFieldInScope(Range scope, WdFieldType type, Func<Field, bool> visit)
+    {
+        if (scope is null) throw new ArgumentNullException(nameof(scope));
+        if (visit is null) throw new ArgumentNullException(nameof(visit));
+        using var metric = WordOperationMetrics.Measure("Fields.ScopePass." + type);
+        var start = scope.Start;
+        var end = scope.End;
+        var lastCodeStart = int.MinValue;
+        Range? window = null;
+        try
+        {
+            for (var cursor = start; cursor < end;)
+            {
+                Release(window);
+                window = CaptureFieldWindow(scope, cursor, end);
+                Fields? local = null;
+                try
+                {
+                    local = WordFormulaHost.GetLocalFields(window);
+                    var count = local.Count;
+                    for (var index = 1; index <= count; index++)
+                    {
+                        Field? field = null;
+                        Range? code = null;
+                        try
+                        {
+                            field = local[index];
+                            if (field.Type != type) continue;
+                            code = field.Code;
+                            var codeStart = code.Start;
+                            // (windows can overlap at a boundary: a field already given is skipped)
+                            if (codeStart <= lastCodeStart || codeStart < start || codeStart > end)
+                                continue;
+                            lastCodeStart = codeStart;
+                            if (!visit(field)) return;
+                        }
+                        finally { Release(code); Release(field); }
+                    }
+                }
+                finally { Release(local); }
+                cursor = window.End;
+            }
+        }
+        finally { Release(window); }
+    }
+
     internal static bool HasVisualTeXNumbering(Document document)
     {
         using var fields = Capture(document);
