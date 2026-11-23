@@ -455,48 +455,11 @@ FunctionEnd
     IfFileExists "$INSTDIR\scripts\manage_windows_native_render.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-NativeRender-x64.msi" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-NativeRender-x64.sha256.json" 0 visualtex_office_missing
-    IfFileExists "$INSTDIR\scripts\install_windows_vsto_runtime.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\scripts\test_windows_office_runtime.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x64.sha256.json" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.sha256.json" 0 visualtex_office_missing
-    IfFileExists "$INSTDIR\windows-office\vstor_redist.exe" 0 visualtex_office_missing
-    IfFileExists "$INSTDIR\windows-office\vstor_redist.sha256.json" 0 visualtex_office_missing
-
-    DetailPrint "Checking Microsoft Visual Studio Tools for Office Runtime..."
-    nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto_runtime.ps1" -RuntimeInstallerPath "$INSTDIR\windows-office\vstor_redist.exe" -ManifestPath "$INSTDIR\windows-office\vstor_redist.sha256.json" -CheckOnly`
-    Pop $1
-    Pop $2
-    StrCmp $1 "0" visualtex_vsto_runtime_ready 0
-    DetailPrint "Microsoft VSTO Runtime is missing. Detection output: $2"
-    IfSilent visualtex_vsto_runtime_install 0
-    MessageBox MB_ICONQUESTION|MB_YESNO "此电脑尚未安装 Microsoft Visual Studio Tools for Office Runtime。VisualTeX 的 Word/PowerPoint 原生 Ribbon 插件必须依赖该微软组件。$\r$\n$\r$\n安装包已内置微软官方、数字签名有效的 VSTO Runtime。是否现在安装并继续配置 Office 集成？安装过程中会出现 Windows UAC 管理员权限确认。$\r$\n$\r$\n选择“否”仍会保留 VisualTeX 主程序，但会跳过 Office 插件安装。" IDYES visualtex_vsto_runtime_install IDNO visualtex_vsto_runtime_declined
-
-visualtex_vsto_runtime_declined:
-    DetailPrint "The user declined Microsoft VSTO Runtime installation. VisualTeX Office integration was skipped."
-    Goto visualtex_office_done
-
-visualtex_vsto_runtime_install:
-    DetailPrint "Installing the bundled Microsoft VSTO Runtime. A UAC elevation prompt may appear."
-    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto_runtime.ps1" -RuntimeInstallerPath "$INSTDIR\windows-office\vstor_redist.exe" -ManifestPath "$INSTDIR\windows-office\vstor_redist.sha256.json"`
-    Pop $1
-    StrCmp $1 "0" visualtex_vsto_runtime_ready visualtex_vsto_runtime_failed
-
-visualtex_vsto_runtime_failed:
-    DetailPrint "Microsoft VSTO Runtime installation failed or the UAC prompt was cancelled. Native Office integration was skipped."
-    IfSilent 0 visualtex_vsto_runtime_failed_interactive
-    ; An unattended native-Office install must never report success when the
-    ; requested Office integration was not installed. Preserve the desktop
-    ; payload, but return a non-zero process exit code to the caller.
-    SetErrorLevel 1
-    Goto visualtex_office_done
-visualtex_vsto_runtime_failed_interactive:
-    MessageBox MB_ICONEXCLAMATION "Microsoft VSTO Runtime 安装失败，或管理员权限确认被取消。VisualTeX 主程序已经安装，但本次将跳过 Word/PowerPoint 原生插件。$\r$\n$\r$\n请查看 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-runtime 日志。"
-    Goto visualtex_office_done
-
-visualtex_vsto_runtime_ready:
-    DetailPrint "Microsoft VSTO Runtime is installed and verified."
 
     nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\ensure_windows_office_certificate.ps1" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
     Pop $0
@@ -525,7 +488,18 @@ visualtex_office_late_guard_declined_interactive:
 
     nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -PackageDirectory "$INSTDIR\windows-office" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
     Pop $0
-    StrCmp $0 "0" visualtex_office_static_installed visualtex_office_failed
+    StrCmp $0 "0" visualtex_office_static_installed 0
+    ; exit code 3: .NET Framework older than 4.7.2 (Windows 7/8.1, early Windows 10), which the add-ins run on
+    StrCmp $0 "3" visualtex_office_netfx_missing visualtex_office_failed
+
+visualtex_office_netfx_missing:
+    DetailPrint "The Word/PowerPoint add-ins need .NET Framework 4.7.2 or later; Office integration was skipped."
+    IfSilent 0 visualtex_office_netfx_missing_interactive
+    SetErrorLevel 1
+    Goto visualtex_office_done
+visualtex_office_netfx_missing_interactive:
+    MessageBox MB_ICONEXCLAMATION "Word/PowerPoint 插件需要 .NET Framework 4.7.2 或更高版本。请安装 .NET Framework 4.8 后重新运行安装包。VisualTeX 主程序已安装。$\r$\n$\r$\nThe Word/PowerPoint add-ins need .NET Framework 4.7.2 or later. Install .NET Framework 4.8, then run the installer again. VisualTeX itself is installed."
+    Goto visualtex_office_done
 
 visualtex_office_static_installed:
     DetailPrint "Machine-wide Office files and registrations passed. Office bootstrap completed without leaving a resident VisualTeX process."

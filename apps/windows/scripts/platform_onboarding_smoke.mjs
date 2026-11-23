@@ -55,7 +55,9 @@ assert(!windowsBundleSource.includes('"../office/windows/ole/manifests/"'));
 assert(windowsBundleSource.includes('"../scripts/test_windows_office_runtime.ps1"'));
 assert(installVstoSource.includes("Assert-NoOfficeProcesses"));
 assert(installVstoSource.includes("MSIRESTARTMANAGERCONTROL=Disable"));
-assert(installVstoSource.includes("Assert-VstoRuntimeInstalled"));
+// the add-ins are .NET COM add-ins: Office loads them without Microsoft's VSTO Runtime, which is not shipped
+assert(!installVstoSource.includes("Assert-VstoRuntimeInstalled"));
+assert(!windowsBundleSource.includes("vstor_redist"));
 assert(installVstoSource.includes("Assert-NetFramework472Installed"));
 assert(installVstoSource.includes("$minimumRelease = 461808"));
 assert(installVstoSource.includes("Resolve-MachineOfficeInstallRoot"));

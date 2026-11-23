@@ -38,7 +38,7 @@ function Invoke-DependencyProbe([string]$AssemblyPath, [string]$ClassName) {
     foreach ($file in $requiredFiles) {
         $candidate = Join-Path $directory $file
         if (-not (Test-Path $candidate)) {
-            throw "Required VSTO runtime dependency is missing: $candidate"
+            throw "Required add-in dependency is missing: $candidate"
         }
     }
 

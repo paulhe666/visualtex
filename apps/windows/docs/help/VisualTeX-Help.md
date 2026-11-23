@@ -1230,7 +1230,7 @@ MathType 每次启动时都会把它的 VBA 模板“MathType Commands 2016.dotm
 - MathType OLE 稳定兼容基线为 MathType 7。
 - **Office 集成** 页：**仅 VisualTeX（不安装 Office 插件）** 或 **VisualTeX + 原生 Office 集成（推荐）**。
 - **OCR 离线资源** 页：**安装 OCR 离线资源（推荐）**，包含本地 OCR 的私有 Python、依赖和 Worker；S / M / L 模型在应用内按需安装。
-- 电脑未安装 Microsoft Visual Studio Tools for Office Runtime 时，安装器会询问是否安装内置的 VSTO Runtime（需要 UAC 确认）；选择“否”时跳过 Office 插件。
+- Office 插件需要 .NET Framework 4.7.2 或更高版本（Windows 10 1803 起及 Windows 11 自带）；更早的系统请先安装 .NET Framework 4.8。
 - 安装 Office 集成时若检测到 Office 正在运行，可选择强制关闭后继续。
 - 安装 VisualTeX 输入法（VisualTeX Anywhere 使用）时会出现一次 UAC 确认（见 12.1）。
 

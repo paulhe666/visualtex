@@ -174,6 +174,8 @@ $script:resolvedOfficePlatform = $null
 $script:resolvedVisualTeXPath = $null
 $script:resolvedMsiPath = $null
 $script:staticInstallVerified = $false
+# set by a prerequisite check whose failure the installer reports itself (3: .NET Framework older than 4.7.2)
+$script:failureExitCode = $null
 $script:runtimeVerified = $false
 $transcriptStarted = $false
 
@@ -458,28 +460,6 @@ function Assert-OfficeApplicationsInstalled([string]$Architecture) {
     Add-DiagnosticCheck "WPS Office present" $true (($wps | ForEach-Object { "$($_.Path) ($($_.Architecture))" }) -join "; ") "prerequisite"
 }
 
-function Assert-VstoRuntimeInstalled([string]$Architecture) {
-    $subKey = "SOFTWARE\Microsoft\VSTO Runtime Setup\v4R"
-    $candidateViews = @($Architecture, "x86", "x64") | Select-Object -Unique
-    foreach ($registryArchitecture in $candidateViews) {
-        if (-not (Test-RegistryKey ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey $registryArchitecture)) {
-            continue
-        }
-        $install = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Install" $registryArchitecture -Optional
-        $clr40 = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "VSTORFeature_CLR40" $registryArchitecture -Optional
-        $version = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Version" $registryArchitecture -Optional
-        $installed =
-            ($null -ne $install -and [int]$install -eq 1) -or
-            ($null -ne $clr40 -and [int]$clr40 -eq 1) -or
-            (-not [string]::IsNullOrWhiteSpace([string]$version))
-        if ($installed) {
-            Add-DiagnosticCheck "VSTO Runtime" $true "HKLM\$subKey; Install=$install; VSTORFeature_CLR40=$clr40; Version=$version; registryView=$registryArchitecture; Office=$Architecture" "prerequisite"
-            return
-        }
-    }
-    throw "Microsoft Visual Studio Tools for Office Runtime is missing or incomplete at HKLM\$subKey. Checked x86 and x64 registry views for Office $Architecture."
-}
-
 function Assert-NetFramework472Installed {
     $releaseValues = @()
     foreach ($architecture in @("x64", "x86")) {
@@ -492,11 +472,13 @@ function Assert-NetFramework472Installed {
         if ($null -ne $release) { $releaseValues += [int]$release }
     }
     if ($releaseValues.Count -eq 0) {
+        $script:failureExitCode = 3
         throw ".NET Framework 4 Full installation was not found. VisualTeX Office integration targets .NET Framework 4.7.2."
     }
     $releaseValue = ($releaseValues | Measure-Object -Maximum).Maximum
     $minimumRelease = 461808
     if ($releaseValue -lt $minimumRelease) {
+        $script:failureExitCode = 3
         throw ".NET Framework 4.7.2 or newer is required. Detected Release=$releaseValue; expected at least $minimumRelease."
     }
     Add-DiagnosticCheck ".NET Framework 4.7.2" $true "Release=$releaseValue" "prerequisite"
@@ -948,7 +930,6 @@ try {
     $script:resolvedOfficePlatform = Resolve-OfficePlatform $OfficePlatform
     Write-Host "Detected Office platform: $script:resolvedOfficePlatform"
     Assert-OfficeApplicationsInstalled $script:resolvedOfficePlatform
-    Assert-VstoRuntimeInstalled $script:resolvedOfficePlatform
     Assert-NetFramework472Installed
     Assert-CurrentUserCertificateTrusted
     $sharedConfiguration = Assert-SharedCompanionConfiguration $script:resolvedVisualTeXPath
@@ -1131,9 +1112,12 @@ try {
     try {
         Write-DiagnosticReport $false $script:staticInstallVerified $script:runtimeVerified $_.Exception.Message
     } catch { }
-    throw
+    # a missing prerequisite with its own exit code (3: .NET Framework older than 4.7.2) is reported by the caller
+    if (-not $script:failureExitCode) { throw }
+    Write-Host $_.Exception.Message
 } finally {
     if ($transcriptStarted) {
         try { Stop-Transcript | Out-Null } catch { }
     }
 }
+if ($script:failureExitCode) { exit $script:failureExitCode }

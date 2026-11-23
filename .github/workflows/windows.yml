@@ -52,7 +52,7 @@ jobs:
         run: |
           $resourceDir = "src-tauri/resources/windows-office"
           New-Item -ItemType Directory -Force $resourceDir | Out-Null
-          foreach ($name in @("VisualTeX-WindowsOffice-VSTO-x64.msi", "VisualTeX-WindowsOffice-VSTO-x86.msi", "VisualTeX-NativeRender-x64.msi", "vstor_redist.exe")) {
+          foreach ($name in @("VisualTeX-WindowsOffice-VSTO-x64.msi", "VisualTeX-WindowsOffice-VSTO-x86.msi", "VisualTeX-NativeRender-x64.msi")) {
             $path = Join-Path $resourceDir $name
             if (-not (Test-Path $path)) { New-Item -ItemType File $path | Out-Null }
             $metadata = @{
