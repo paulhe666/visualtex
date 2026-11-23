@@ -780,6 +780,12 @@ export class FormulaView implements NodeView {
   };
 
   private onMouseDown = (event: MouseEvent) => {
+    // a right click in the open formula: its own selection stays for the menu (WebKit moved the page's selection to
+    // the word under the pointer, which closed the formula)
+    if (this.session && !this.passive && event.button !== 0) {
+      event.preventDefault();
+      return;
+    }
     if (this.session && !this.passive && event.button === 0 && !event.shiftKey && this.editorBox) {
       // Beside the open formula's editor (on a display formula's line, left or right of it): the caret goes to the
       // nearest place in the formula, as a click beside a formula row does.

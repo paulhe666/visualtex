@@ -19,7 +19,7 @@ import {
 } from "mathlive";
 import { flushSync } from "react-dom";
 import { APP_PLATFORM } from "@platform/appInfo";
-import { ClipboardCopy } from "lucide-react";
+import { ClipboardCopy, FileCode2 } from "lucide-react";
 import {
   formatFormulaLinesUniversal,
   formatFormulaSelectionUniversal,
@@ -120,6 +120,7 @@ import {
 } from "./mathLiveKernelCommands";
 import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
+import { copyFormulasAsMathMl, type MathMlFormula } from "../export/mathMlClipboard";
 import {
   formulaChineseFallbackFamily,
   formulaChineseFontFamily,
@@ -324,6 +325,8 @@ interface Props {
   draftError?: string;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
   onCopyPng?: () => Promise<void>;
+  /** Formulas copied as MathML (the right-click menu): the app copies them and says so; unset, the editor copies. */
+  onCopyMathMl?: (formulas: MathMlFormula[]) => Promise<void>;
   onHistoryBusyChange?: (busy: boolean) => void;
   overlay?: ReactNode;
 }
@@ -2647,6 +2650,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       draftError,
       onPasteImage,
       onCopyPng,
+      onCopyMathMl,
       overlay,
     },
     ref,
@@ -2705,6 +2709,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const [contextMenu, setContextMenu] = useState<{
       left: number;
       top: number;
+      /** the row right-clicked (its formula is the line's MathML) */
+      lineId: string | null;
+      /** what was selected when the menu opened, as formulas (null: nothing) */
+      selection: MathMlFormula[] | null;
     } | null>(null);
     const [contextMenuBusy, setContextMenuBusy] = useState(false);
     const queryRef = useRef("");
@@ -6005,14 +6013,71 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (previewOnly) setContextMenu(null);
     }, [previewOnly]);
 
-    const openContextMenu = (clientX: number, clientY: number) => {
+    /** A row's formula (or part of it, `latex`) for MathML: display unless the row is inline. */
+    const mathMlFormula = (line: FormulaLine, latex = line.latex): MathMlFormula => {
+      const stored = normalizeChineseLatex(latex);
+      return {
+        latex: stored,
+        display: isMultilineFormulaLatex(line.latex) || line.mode !== "inline",
+        tex: storedLatexToUser(toPortableBoldLatex(stored)),
+      };
+    };
+
+    /** The selection as formulas: the rows' parts of a selection across rows, or one row's own selection. */
+    const selectedMathMlFormulas = (lineId: string | null): MathMlFormula[] | null => {
+      const partOf = (field: MathfieldElement) =>
+        captureSelection(field).ranges
+          .map(([start, end]) => field.getValue(Math.min(start, end), Math.max(start, end), "latex"))
+          .join("");
+      if (multiLineSelectionRef.current && multiLineSelectedIdsRef.current.size > 0) {
+        const formulas = linesRef.current.flatMap((line) => {
+          if (!multiLineSelectedIdsRef.current.has(line.id)) return [];
+          const field = fieldRefs.current.get(line.id);
+          const part = field?.isConnected ? partOf(field) : "";
+          return part.trim() ? [mathMlFormula(line, part)] : [];
+        });
+        if (formulas.length) return formulas;
+      }
+      const id = lineId ?? activeLineIdRef.current;
+      const line = linesRef.current.find((item) => item.id === id);
+      const field = id ? fieldRefs.current.get(id) : undefined;
+      if (!line || !field?.isConnected || field.selectionIsCollapsed) return null;
+      const part = partOf(field);
+      return part.trim() ? [mathMlFormula(line, part)] : null;
+    };
+
+    const openContextMenu = (clientX: number, clientY: number, lineId: string | null = null) => {
       if (previewOnly) return;
-      const menuWidth = 188;
-      const menuHeight = 42;
+      const selection = selectedMathMlFormulas(lineId);
+      const menuWidth = 208;
+      const menuHeight = selection ? 170 : 136;
       setContextMenu({
         left: Math.max(8, Math.min(clientX, window.innerWidth - menuWidth - 8)),
         top: Math.max(8, Math.min(clientY, window.innerHeight - menuHeight - 8)),
+        lineId: lineId ?? activeLineIdRef.current,
+        selection,
       });
+    };
+
+    /** MathML of all rows, the row right-clicked, or what was selected, to the clipboard. */
+    const copyMathMlFromContextMenu = async (scope: "all" | "line" | "selection") => {
+      const menu = contextMenu;
+      setContextMenu(null);
+      if (!menu) return;
+      const formulas =
+        scope === "selection"
+          ? menu.selection ?? []
+          : linesRef.current
+              .filter((line) => scope === "all" || line.id === menu.lineId)
+              .filter((line) => line.latex.trim())
+              .map((line) => mathMlFormula(line));
+      if (!formulas.length) return;
+      try {
+        if (onCopyMathMl) await onCopyMathMl(formulas);
+        else await copyFormulasAsMathMl(formulas);
+      } catch (error) {
+        console.error("Unable to copy MathML from the context menu", error);
+      }
     };
 
     const copyPngFromContextMenu = async () => {
@@ -6205,7 +6270,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                       }
                       onVerticalExit={moveToAdjacentLine}
                       onPasteImage={onPasteImage}
-                      onContextMenu={openContextMenu}
+                      onContextMenu={(clientX, clientY) => openContextMenu(clientX, clientY, lineId)}
                       onPasteLatexLines={pasteLatexLines}
                       selectionDrag={rowSelectionDrag}
                     />
@@ -6236,6 +6301,34 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   ? "Copy PNG to Clipboard"
                   : "复制 PNG 到剪贴板"}
               </span>
+            </button>
+            {contextMenu.selection && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void copyMathMlFromContextMenu("selection")}
+              >
+                <FileCode2 size={15} />
+                <span>{language === "en" ? "Copy Selection as MathML" : "复制所选 MathML"}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!linesRef.current.some((line) => line.id === contextMenu.lineId && line.latex.trim())}
+              onClick={() => void copyMathMlFromContextMenu("line")}
+            >
+              <FileCode2 size={15} />
+              <span>{language === "en" ? "Copy Line as MathML" : "复制本行 MathML"}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!linesRef.current.some((line) => line.latex.trim())}
+              onClick={() => void copyMathMlFromContextMenu("all")}
+            >
+              <FileCode2 size={15} />
+              <span>{language === "en" ? "Copy All as MathML" : "复制全部 MathML"}</span>
             </button>
           </div>
         )}

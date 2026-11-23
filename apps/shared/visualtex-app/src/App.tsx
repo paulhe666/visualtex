@@ -81,6 +81,7 @@ import type {
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { formulaExportErrorMessage } from "./math/latexCompatibility";
+import { copyFormulasAsMathMl, type MathMlFormula } from "./export/mathMlClipboard";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,
@@ -959,6 +960,21 @@ function App() {
       );
     } finally {
       pngClipboardBusyRef.current = false;
+    }
+  };
+
+  const handleCopyMathMl = async (formulas: MathMlFormula[]) => {
+    try {
+      const count = await copyFormulasAsMathMl(formulas);
+      if (!count) return;
+      setToast(
+        isEn
+          ? count > 1 ? `MathML of ${count} formulas copied` : "MathML copied"
+          : count > 1 ? `已复制 ${count} 个公式的 MathML` : "MathML 已复制",
+      );
+    } catch (cause) {
+      const message = formulaExportErrorMessage(cause, isEn);
+      setToast(isEn ? `Unable to copy MathML: ${message}` : `复制 MathML 失败：${message}`);
     }
   };
 
@@ -1864,6 +1880,7 @@ function App() {
         onSidebarOpenChange={setSidebarOpen}
         onPasteImage={handleEditorImagePaste}
         onCopyPng={handleCopyPng}
+        onCopyMathMl={handleCopyMathMl}
         onCopy={async () => {
           await handleCopy();
         }}

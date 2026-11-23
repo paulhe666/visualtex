@@ -972,6 +972,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         <DocumentEditor
           ref={documentRef}
           onChange={onChange}
+          onNotice={flash}
           onImage={
             onPasteImage
               ? (file) => {

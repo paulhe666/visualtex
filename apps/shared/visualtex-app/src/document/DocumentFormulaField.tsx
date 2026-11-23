@@ -725,6 +725,13 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       }}
       selectionDrag={selectionDrag}
       onPasteImage={onPasteImage ? (file) => onPasteImage(file) : undefined}
+      // a right click in the formula: the document's menu (copy what is selected in it as MathML, …), from the
+      // formula's own box (outside the field, which takes a right click as its own)
+      onContextMenu={(clientX, clientY) =>
+        fieldRef.current
+          ?.closest(".vtx-formula-editor")
+          ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX, clientY }))
+      }
     />
   );
 }
