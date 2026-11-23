@@ -23,6 +23,10 @@
   var WD_HORIZONTAL_POSITION_RELATIVE_TO_PAGE = 5;
   var WD_ALIGN_TAB_CENTER = 1;
   var WD_ALIGN_TAB_RIGHT = 2;
+  var WD_LINE_SPACE_AT_LEAST = 3;
+  var WD_LINE_SPACE_EXACTLY = 4;
+  var WD_LIST_NO_NUMBERING = 0;
+  var WD_NUMBER_PARAGRAPH = 1;
   var WD_COLOR_AUTOMATIC = -16777216;
   var NUMBERED_IMAGE_STYLE = "VisualTeX Numbered Equation";
   var IMAGE_PLACE_REF = "VisualTeXPlaceRef";
@@ -1111,6 +1115,238 @@
       stops.Add(repair.positions.right, WD_ALIGN_TAB_RIGHT, 0);
     });
     return repairs.length;
+  }
+
+  /* "修复行间公式" (VTRepairDisplayFormulaLayout; Windows WordFormulaService
+     .RepairDisplayFormulaLayout, docs/office-display-formula-layout.md).
+     Changes made to a whole document move display formulas off their line:
+     an indent (in points or characters) shifts a numbered picture and its
+     number, exact line spacing cuts off a formula taller than the line,
+     cleared formatting, a style or the format painter take the centre/right
+     tab stops away (and cleared character formatting the offset that lowers
+     a picture), bullets put a list indent on the line. Every display formula
+     is checked and only what is wrong is put back: no list numbering or
+     indents; a numbered picture justified (left is accepted) on the centre
+     and right stops of its column or cell alone, behind a TAB; an unnumbered
+     picture and a WPS equation centred; exact spacing "at least" the same
+     value; a picture lowered as VisualTeX lowers it (one within a point of
+     that keeps its offset). Numbers keep their formatting. */
+  var DISPLAY_REPAIR_FAULTS = ["indents", "tabStops", "lineSpacing", "alignment", "listNumbering", "leadingTab", "baseline"];
+  var DISPLAY_REPAIR_NAMES = {
+    indents: ["缩进", "indents"], tabStops: ["制表位", "tab stops"], lineSpacing: ["固定行距", "exact line spacing"],
+    alignment: ["对齐方式", "alignment"], listNumbering: ["项目符号或编号", "bullets or numbering"],
+    leadingTab: ["公式前的制表符", "tab before the formula"], baseline: ["基线位置", "baseline offset"]
+  };
+  var INDENT_PAIRS = [["CharacterUnitFirstLineIndent", "FirstLineIndent"], ["CharacterUnitLeftIndent", "LeftIndent"],
+    ["CharacterUnitRightIndent", "RightIndent"]];
+
+  /* The display formulas VisualTeX lays out, from the end of the document
+     (the one text change, a missing TAB, moves only what follows it): a
+     numbered picture with its number in its paragraph, an unnumbered picture
+     alone in its paragraph (a numbered one without its number there is an
+     older numbered table, laid out by its table), a display equation once
+     for its paragraph. */
+  function displayRepairTargets(doc) {
+    var targets = [];
+    var shapes = doc.InlineShapes;
+    for (var index = shapes.Count; index >= 1; index--) {
+      var shape = shapes.Item(index);
+      if (!isFormulaPicture(shape)) continue;
+      var reference = parseFormulaReference(safe(function () { return shape.Title; }, ""));
+      if (!reference || reference.displayMode !== "block") continue;
+      var paragraph = shape.Range.Paragraphs.Item(1).Range;
+      if (Number(paragraph.InlineShapes.Count) !== 1 || Number(paragraph.OMaths.Count) !== 0) continue;
+      var fields = paragraph.Fields;
+      var numbered = false;
+      for (var k = 1; k <= fields.Count && !numbered; k++) numbered = isImagePlaceRef(fields.Item(k));
+      /* the text around the picture (displayNumberingCandidates) */
+      var others = numbered ? "" : textOf(doc.Range(paragraph.Start, shape.Range.Start)) +
+        textOf(doc.Range(shape.Range.End, paragraph.End));
+      if (!numbered && (reference.numbered || others.length > 0)) continue;
+      targets.push({ kind: numbered ? "numbered" : "picture", shape: shape, reference: reference });
+    }
+    var seen = {};
+    var maths = doc.OMaths;
+    for (var m = maths.Count; m >= 1; m--) {
+      var omath = maths.Item(m);
+      if (safe(function () { return equationDisplayMode(doc, omath); }, "inline") !== "block") continue;
+      var start = omath.Range.Paragraphs.Item(1).Range.Start;
+      if (seen[start]) continue;
+      seen[start] = true;
+      targets.push({ kind: "equation", omath: omath });
+    }
+    return targets;
+  }
+
+  function indentOf(format, name) {
+    var value = Number(safe(function () { return format[name]; }, 0));
+    return value > -5000 && value < 5000 ? value : 0;
+  }
+
+  function hasIndent(format) {
+    return INDENT_PAIRS.some(function (pair) {
+      return Math.abs(indentOf(format, pair[0])) > 0.05 || Math.abs(indentOf(format, pair[1])) > 0.05;
+    });
+  }
+
+  /* The indents in characters first: a first-line indent of 2 characters
+     stays when only its points are set to 0. */
+  function zeroIndents(format) {
+    INDENT_PAIRS.forEach(function (pair) {
+      if (Math.abs(indentOf(format, pair[0])) > 0.001) safe(function () { format[pair[0]] = 0; });
+      format[pair[1]] = 0;
+    });
+  }
+
+  /* Where VisualTeX lowers a display picture (resizeFormulaPicture): its ink
+     centre on its number's, or the body text's, for the height VisualTeX gave
+     it (WPS reports sizes in half points); null without its ink centre. */
+  function pictureDisplayPosition(doc, shape, reference, numbered) {
+    var key = String(reference.formulaId).replace(/-/g, "_");
+    var stored = variableValue(doc, "VT_ImageInkCenter_" + key);
+    var ratio = Number(stored);
+    if (stored === null || !(ratio >= 0 && ratio <= 1)) return null;
+    var scale = imageScale(doc, shape, reference.formulaId);
+    return displayPosition(doc, shape, {
+      formulaId: reference.formulaId, numbered: numbered, inkCenterYRatio: ratio,
+      heightPoints: scale.height * scale.size / IMAGE_REFERENCE_FONT_SIZE
+    });
+  }
+
+  /* Whether a formula's line is wrong; with counts, it is put back and its
+     faults counted. */
+  function repairDisplayLine(doc, target, uniform, counts) {
+    var range = target.shape ? target.shape.Range : target.omath.Range;
+    var paragraph = range.Paragraphs.Item(1).Range;
+    var format = paragraph.ParagraphFormat;
+    var tabLaid = target.kind === "numbered";
+    var faults = 0;
+    var fault = function (name, fix) {
+      faults++;
+      if (counts) {
+        fix();
+        counts[name]++;
+      }
+    };
+    /* bullets or list numbering (they bring a list indent too) */
+    if (Number(safe(function () { return paragraph.ListFormat.ListType; }, 0)) !== WD_LIST_NO_NUMBERING) {
+      fault("listNumbering", function () { paragraph.ListFormat.RemoveNumbers(WD_NUMBER_PARAGRAPH); });
+    }
+    if (hasIndent(format)) fault("indents", function () { zeroIndents(format); });
+    var alignment = Number(safe(function () { return format.Alignment; }, -1));
+    var aligned = tabLaid ? alignment === WD_ALIGN_PARAGRAPH_JUSTIFY || alignment === WD_ALIGN_PARAGRAPH_LEFT
+      : alignment === WD_ALIGN_PARAGRAPH_CENTER;
+    if (!aligned) {
+      fault("alignment", function () {
+        format.Alignment = tabLaid ? WD_ALIGN_PARAGRAPH_JUSTIFY : WD_ALIGN_PARAGRAPH_CENTER;
+      });
+    }
+    /* the centre and right stops of the column or cell alone, for a line
+       without indents (configureNumberedParagraph) */
+    if (tabLaid) {
+      var width = cellContentWidth(paragraph) || (uniform > 2 ? uniform : textColumnWidth(doc, paragraph));
+      var positions = { center: width / 2, right: width - 1, width: width };
+      if (!displayTabsMatch(paragraph, positions)) {
+        fault("tabStops", function () {
+          var stops = format.TabStops;
+          stops.ClearAll();
+          stops.Add(positions.center, WD_ALIGN_TAB_CENTER, 0);
+          stops.Add(positions.right, WD_ALIGN_TAB_RIGHT, 0);
+        });
+      }
+    }
+    if (Number(safe(function () { return format.LineSpacingRule; }, 0)) === WD_LINE_SPACE_EXACTLY) {
+      fault("lineSpacing", function () {
+        var value = Number(format.LineSpacing);
+        format.LineSpacingRule = WD_LINE_SPACE_AT_LEAST;
+        format.LineSpacing = value;
+      });
+    }
+    /* the TAB a numbered picture stands behind (text before it is the
+       user's: left as it is) */
+    if (tabLaid) {
+      var leading = doc.Range(paragraph.Start, Math.max(paragraph.Start, target.shape.Range.Start));
+      var text = String(safe(function () { return leading.Text; }, "") || "").replace(/\x0b/g, "");
+      if ((!text.length || text.replace(/\t/g, "").length) && !hasMeaningfulText(leading)) {
+        fault("leadingTab", function () {
+          var at = leading.Start;
+          leading.Text = "\t";
+          var font = doc.Range(at, at + 1).Font;
+          safe(function () { font.Superscript = 0; font.Subscript = 0; });
+          font.Position = 0;
+        });
+      }
+    }
+    if (target.shape) {
+      var expected = pictureDisplayPosition(doc, target.shape, target.reference, tabLaid);
+      var font = target.shape.Range.Font;
+      var raised = !!safe(function () { return font.Superscript; }, 0) || !!safe(function () { return font.Subscript; }, 0);
+      if (expected !== null && (Math.abs(Number(font.Position) - expected) > 1 || raised)) {
+        fault("baseline", function () {
+          safe(function () { font.Superscript = 0; font.Subscript = 0; });
+          font.Position = expected;
+          /* the paragraph mark of an unnumbered picture stays on the text baseline (insertPicture) */
+          if (!tabLaid) safe(function () { doc.Range(paragraph.End - 1, paragraph.End).Font.Position = 0; });
+        });
+      }
+    }
+    return faults > 0;
+  }
+
+  /* Checks every display formula, then puts the faulty ones back in one Undo
+     step (none when nothing is wrong); returns the counts. */
+  function repairDisplayFormulas(doc) {
+    var targets = displayRepairTargets(doc);
+    var counts = { checked: targets.length, repaired: 0, skipped: 0 };
+    DISPLAY_REPAIR_FAULTS.forEach(function (name) { counts[name] = 0; });
+    if (!targets.length) return counts;
+    var setup = safe(function () { return doc.Sections.Item(1).PageSetup; }, null) || doc.PageSetup;
+    var uniform = Number(safe(function () { return doc.Sections.Count; }, 0)) === 1 ? uniformColumnWidth(setup) : 0;
+    var faulty = targets.filter(function (target) {
+      return safe(function () { return repairDisplayLine(doc, target, uniform, null); }, false);
+    });
+    if (!faulty.length) return counts;
+    var record = openUndo("VisualTeX 修复行间公式");
+    try {
+      faulty.forEach(function (target) {
+        try {
+          if (repairDisplayLine(doc, target, uniform, counts)) counts.repaired++;
+        } catch (error) {
+          counts.skipped++;
+          log("display repair left a formula as it is: " + (error && error.message || error));
+        }
+      });
+    } finally {
+      record.end();
+    }
+    return counts;
+  }
+
+  /* What the repair did, in one statement (the Windows add-in's
+     DisplayLayoutRepairMessage): Chinese for the ribbon, English for agents. */
+  function displayRepairMessage(counts, english) {
+    var say = function (zh, en) { return english ? en : zh; };
+    if (!counts.checked) return say("本文档没有行间公式。", "This document has no display formulas.");
+    var skipped = counts.skipped
+      ? say(counts.skipped + " 个无法读取，未修改。", " " + counts.skipped + " could not be read and were left as they are.") : "";
+    if (!counts.repaired) {
+      return say("已检查 " + counts.checked + " 个行间公式，位置正确。",
+        "Checked " + counts.checked + " display formulas; all are in place.") + skipped;
+    }
+    var parts = DISPLAY_REPAIR_FAULTS.filter(function (name) { return counts[name] > 0; }).map(function (name) {
+      return DISPLAY_REPAIR_NAMES[name][english ? 1 : 0] + " " + counts[name];
+    });
+    return say("已修复 " + counts.repaired + " 个行间公式（共 " + counts.checked + " 个）：" + parts.join("、") + "。",
+      "Repaired " + counts.repaired + " of " + counts.checked + " display formulas: " + parts.join(", ") + ".") + skipped;
+  }
+
+  function repairDisplayFormulasCommand() {
+    var doc = safe(function () { return app().ActiveDocument; }, null);
+    if (!doc) {
+      notify("请先打开一个 WPS 文字文档。");
+      return;
+    }
+    notify(displayRepairMessage(repairDisplayFormulas(doc), false));
   }
 
   function numberedImageStyle(doc) {
@@ -4410,6 +4646,10 @@
       });
     },
 
+    repair_display_formulas: function (args) {
+      return agentDone(displayRepairMessage(repairDisplayFormulas(agentWritable(args)), true));
+    },
+
     set_equation_number_format: function (args) {
       var style = NUMBER_FORMATS[args.format_id];
       if (!style) agentFail("invalid_arguments", "Unknown format_id " + args.format_id + ".");
@@ -4586,7 +4826,8 @@
     vtxRedrawDocumentOmml: function () { redrawLatex(true, "omml"); },
     vtxRedrawDocumentImage: function () { redrawLatex(true, "image"); },
     vtxDocumentImport: importDocument,
-    vtxUpdateEquationFormat: updateEquationFormat
+    vtxUpdateEquationFormat: updateEquationFormat,
+    vtxRepairDisplayFormulas: repairDisplayFormulasCommand
   };
 
   window.VisualTeXWpsModule = {

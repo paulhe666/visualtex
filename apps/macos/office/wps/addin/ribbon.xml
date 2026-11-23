@@ -79,6 +79,9 @@
           </box>
           <dynamicMenu id="vtxOmmlFont" label="WPS公式字体" size="large" screentip="WPS 公式字体" supertip="VisualTeX 写入 WPS 公式时使用的数学字体。WPS 没有文档数学字体：所选字体用于之后 VisualTeX 插入、编辑、转换或重绘得到的 WPS 公式，已有公式在再次编辑后改用它。与 Word 的“OMML 字体”是同一个设置，对所有文档生效。STIX Two Math、Latin Modern Math 和 TeX Gyre Termes Math 随 VisualTeX 安装，新装后重新启动 WPS 即可使用。" imageMso="GroupFontSetting" getContent="OnVisualTeXMenuContent" invalidateContentOnDrop="true" />
         </group>
+        <group id="VisualTeXRepairGroup" label="兼容修复">
+          <button id="vtxRepairDisplayFormulas" label="修复行间" size="large" screentip="修复行间公式" imageMso="AlignCenter" onAction="OnVisualTeXAction" />
+        </group>
       </tab>
     </tabs>
   </ribbon>

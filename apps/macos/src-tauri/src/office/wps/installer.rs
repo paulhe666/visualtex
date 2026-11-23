@@ -850,6 +850,7 @@ mod tests {
                 vec!["C3", "C3", "C3"],
                 vec!["L", "L"],
                 vec!["C3", "L"],
+                vec!["L"],
             ]
         );
     }

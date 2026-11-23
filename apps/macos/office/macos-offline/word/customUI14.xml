@@ -242,6 +242,15 @@
                           onAction="VTWordRibbonSelectOmmlFont"/>
           </menu>
         </group>
+
+        <group id="VisualTeX.Mac.Word.RepairGroup" label="兼容修复">
+          <button id="VisualTeX.Mac.Word.RepairDisplayFormulas"
+                  label="修复&#8203;行间公式"
+                  size="large"
+                  image="VisualTeXWordRepairDisplay"
+                  onAction="VTWordRibbonRepairDisplayFormulas"
+                  screentip="修复行间公式"/>
+        </group>
       </tab>
     </tabs>
   </ribbon>

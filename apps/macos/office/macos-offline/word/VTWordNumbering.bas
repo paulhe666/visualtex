@@ -11,6 +11,26 @@ Public Const VT_WORD_NATIVE_NUMBER_CACHE_PLACEHOLDER As String = _
 ' How many numbered equations before the insertion point the plan reads at a time (VTV2NumberedEquationsAround).
 Private Const VT_V2_PLAN_WINDOW As Long = 12
 
+' Repair Display Formulas (VTRepairDisplayFormulaLayout): the counts it keeps - formulas checked, repaired and
+' skipped, then how many lines had each kind of fault.
+Public Const VT_DISPLAY_REPAIR_CHECKED As Long = 0
+Public Const VT_DISPLAY_REPAIR_REPAIRED As Long = 1
+Public Const VT_DISPLAY_REPAIR_SKIPPED As Long = 2
+Public Const VT_DISPLAY_REPAIR_INDENTS As Long = 3
+Public Const VT_DISPLAY_REPAIR_TAB_STOPS As Long = 4
+Public Const VT_DISPLAY_REPAIR_LINE_SPACING As Long = 5
+Public Const VT_DISPLAY_REPAIR_ALIGNMENT As Long = 6
+Public Const VT_DISPLAY_REPAIR_LIST_NUMBERING As Long = 7
+Public Const VT_DISPLAY_REPAIR_LEADING_TAB As Long = 8
+Public Const VT_DISPLAY_REPAIR_BASELINE As Long = 9
+Public Const VT_DISPLAY_REPAIR_LAST As Long = 9
+' The lines it puts back: a numbered picture formula on its centre/right tab stops, an unnumbered picture formula
+' centred, a Word equation (centred by Word).
+Private Const VT_DISPLAY_LINE_NONE As Long = 0
+Private Const VT_DISPLAY_LINE_NUMBERED_PICTURE As Long = 1
+Private Const VT_DISPLAY_LINE_PICTURE As Long = 2
+Private Const VT_DISPLAY_LINE_EQUATION As Long = 3
+
 Public Function VTNumberedDisplayTableNearRange( _
     ByVal selectedRange As Range) As Table
 
@@ -3899,6 +3919,402 @@ Public Function VTV2DisplayTabRepairs( _
     Next candidate
     VTV2DisplayTabRepairs = repairs
 End Function
+
+' Repair Display Formulas: the Windows add-ins' WordFormulaService.RepairDisplayFormulaLayout for the formulas of
+' the Mac add-in (docs/office-display-formula-layout.md). Changes users make to a whole document move display
+' formulas off their line: an indent (in points or characters) shifts a numbered picture formula and its number;
+' exact line spacing cuts off a formula taller than the line; Clear Formatting, the Normal style or the format
+' painter take the centre/right tab stops away, and clearing the character formatting drops the offset that lowers
+' a picture onto the line; bullets put a list indent on it. Every display formula of the main text is checked and
+' only what is wrong is put back:
+' - bullets or list numbering removed, indents (points and character units) zeroed;
+' - a numbered picture formula (TAB, picture, TAB, number) justified (left is accepted), with the centre and right
+'   stops of its column or table cell alone and a TAB before the picture; an unnumbered picture formula and a Word
+'   equation centred;
+' - exact line spacing becomes "at least" the same value (a taller formula gets its room, a shorter one keeps the
+'   line's height); other line spacing stays the paragraph's own;
+' - a picture lowered as VisualTeX lowers it (its ink centre on its number's, or the body text's); a picture within
+'   a point of that keeps its offset.
+' Numbers keep their formatting. With apply False nothing changes and the result is how many formulas have a fault;
+' with apply True they are put back from the end of the document (the caller owns the Undo record) and the result is
+' how many were. counts (0 To VT_DISPLAY_REPAIR_LAST) receives the VT_DISPLAY_REPAIR_* counts.
+Public Function VTRepairDisplayFormulaLayout( _
+    ByVal doc As Document, _
+    ByVal apply As Boolean, _
+    ByRef counts() As Long) As Long
+
+    Dim shapeIndex As Long
+    Dim mathIndex As Long
+    Dim formulaShape As InlineShape
+    Dim formulaMath As OMath
+    Dim lineKind As Long
+    Dim uniformWidth As Single
+    Dim hasUniformWidth As Boolean
+    Dim seenParagraphs As Collection
+    Dim faulty As Long
+
+    If doc Is Nothing Then Exit Function
+    ' One section with one column or equal columns: one width for every formula outside a table.
+    If doc.Sections.Count = 1 Then hasUniformWidth = _
+        VTEquationUniformColumnWidth(doc.Sections(1).PageSetup, uniformWidth)
+    ' From the end of the document: the one text change (a missing TAB) moves only what follows it.
+    For shapeIndex = doc.InlineShapes.Count To 1 Step -1
+        Set formulaShape = doc.InlineShapes(shapeIndex)
+        lineKind = VTDisplayRepairPictureKind(formulaShape)
+        If lineKind <> VT_DISPLAY_LINE_NONE Then
+            counts(VT_DISPLAY_REPAIR_CHECKED) = counts(VT_DISPLAY_REPAIR_CHECKED) + 1
+            If VTRepairDisplayLine(doc, formulaShape.Range, formulaShape, lineKind, _
+                   hasUniformWidth, uniformWidth, apply, counts) Then faulty = faulty + 1
+        End If
+    Next shapeIndex
+    Set seenParagraphs = New Collection
+    For mathIndex = doc.OMaths.Count To 1 Step -1
+        Set formulaMath = doc.OMaths(mathIndex)
+        If VTDisplayRepairIsDisplayEquation(formulaMath, seenParagraphs) Then
+            counts(VT_DISPLAY_REPAIR_CHECKED) = counts(VT_DISPLAY_REPAIR_CHECKED) + 1
+            If VTRepairDisplayLine(doc, formulaMath.Range, Nothing, VT_DISPLAY_LINE_EQUATION, _
+                   hasUniformWidth, uniformWidth, apply, counts) Then faulty = faulty + 1
+        End If
+    Next mathIndex
+    VTRepairDisplayFormulaLayout = faulty
+End Function
+
+' The line a picture formula stands on when it is a display formula VisualTeX lays out: numbered (its number in the
+' same paragraph) or unnumbered and alone in its paragraph. A numbered picture without its number in the line (an
+' older numbered table) is laid out by its table and left alone. (Word for Mac reads a picture in a paragraph's text
+' as "/": the text around the picture is what counts.)
+Private Function VTDisplayRepairPictureKind(ByVal formulaShape As InlineShape) As Long
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim paragraphRange As Range
+    Dim containerRange As Range
+    Dim candidate As Field
+
+    On Error GoTo NotDisplay
+    If Not VTTryParseFormulaReference(formulaShape.Title, formulaId, displayMode, numbered) Then Exit Function
+    If displayMode <> "block" Then Exit Function
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range
+    If paragraphRange.InlineShapes.Count <> 1 Then Exit Function
+    If paragraphRange.OMaths.Count <> 0 Then Exit Function
+    For Each candidate In paragraphRange.Fields
+        If VTIsImagePlaceRef(candidate) Then
+            VTDisplayRepairPictureKind = VT_DISPLAY_LINE_NUMBERED_PICTURE
+            Exit Function
+        End If
+    Next candidate
+    If numbered Then Exit Function
+    Set containerRange = VTVisualTeXImageContainerRange(formulaShape)
+    If VTWordRangeHasMeaningfulText(paragraphRange.Document.Range( _
+        Start:=paragraphRange.Start, End:=containerRange.Start)) Then Exit Function
+    If VTWordRangeHasMeaningfulText(paragraphRange.Document.Range( _
+        Start:=containerRange.End, End:=paragraphRange.End)) Then Exit Function
+    VTDisplayRepairPictureKind = VT_DISPLAY_LINE_PICTURE
+    Exit Function
+NotDisplay:
+    VTDisplayRepairPictureKind = VT_DISPLAY_LINE_NONE
+End Function
+
+' A display Word equation, once for its paragraph (a paragraph can hold more than one). An equation in a list
+' paragraph is an inline one for Word.
+Private Function VTDisplayRepairIsDisplayEquation( _
+    ByVal formulaMath As OMath, _
+    ByVal seenParagraphs As Collection) As Boolean
+
+    Dim paragraphStart As Long
+
+    On Error GoTo NotDisplay
+    If formulaMath.Type <> wdOMathDisplay Then Exit Function
+    paragraphStart = formulaMath.Range.Paragraphs(1).Range.Start
+    ' a paragraph seen before: Add fails
+    seenParagraphs.Add True, "p" & CStr(paragraphStart)
+    VTDisplayRepairIsDisplayEquation = True
+    Exit Function
+NotDisplay:
+    VTDisplayRepairIsDisplayEquation = False
+End Function
+
+' Whether one display formula's line is wrong; with apply, it is put back and its faults counted. A line Word cannot
+' describe now is left as it is (counted as skipped when applying).
+Private Function VTRepairDisplayLine( _
+    ByVal doc As Document, _
+    ByVal formulaRange As Range, _
+    ByVal formulaShape As InlineShape, _
+    ByVal lineKind As Long, _
+    ByVal hasUniformWidth As Boolean, _
+    ByVal uniformWidth As Single, _
+    ByVal apply As Boolean, _
+    ByRef counts() As Long) As Boolean
+
+    Dim paragraphRange As Range
+    Dim leadingRange As Range
+    Dim leadingText As String
+    Dim tabLaid As Boolean
+    Dim faults As Long
+    Dim lineAlignment As Long
+    Dim layoutWidth As Single
+    Dim centerPosition As Single
+    Dim rightPosition As Single
+    Dim exactSpacing As Single
+    Dim expectedPosition As Long
+
+    On Error GoTo LineFailed
+    Set paragraphRange = formulaRange.Paragraphs(1).Range.Duplicate
+    tabLaid = (lineKind = VT_DISPLAY_LINE_NUMBERED_PICTURE)
+
+    ' bullets or list numbering (they bring a list indent too)
+    If paragraphRange.ListFormat.ListType <> wdListNoNumbering Then
+        faults = faults + 1
+        If apply Then
+            paragraphRange.ListFormat.RemoveNumbers NumberType:=wdNumberParagraph
+            counts(VT_DISPLAY_REPAIR_LIST_NUMBERING) = counts(VT_DISPLAY_REPAIR_LIST_NUMBERING) + 1
+        End If
+    End If
+
+    ' indents, in points or in characters (a first-line indent of 2 characters): the line starts at the margin
+    If VTDisplayRepairHasIndent(paragraphRange.ParagraphFormat) Then
+        faults = faults + 1
+        If apply Then
+            VTDisplayRepairZeroIndents paragraphRange.ParagraphFormat
+            counts(VT_DISPLAY_REPAIR_INDENTS) = counts(VT_DISPLAY_REPAIR_INDENTS) + 1
+        End If
+    End If
+
+    ' alignment: a numbered picture's line justified (left is accepted), the other lines centred
+    lineAlignment = paragraphRange.ParagraphFormat.Alignment
+    If tabLaid Then
+        If lineAlignment <> wdAlignParagraphJustify And lineAlignment <> wdAlignParagraphLeft Then
+            faults = faults + 1
+            If apply Then
+                paragraphRange.ParagraphFormat.Alignment = wdAlignParagraphJustify
+                counts(VT_DISPLAY_REPAIR_ALIGNMENT) = counts(VT_DISPLAY_REPAIR_ALIGNMENT) + 1
+            End If
+        End If
+    ElseIf lineAlignment <> wdAlignParagraphCenter Then
+        faults = faults + 1
+        If apply Then
+            paragraphRange.ParagraphFormat.Alignment = wdAlignParagraphCenter
+            counts(VT_DISPLAY_REPAIR_ALIGNMENT) = counts(VT_DISPLAY_REPAIR_ALIGNMENT) + 1
+        End If
+    End If
+
+    ' the centre and right stops of the column or table cell alone, for a line without indents
+    ' (VTConfigureNumberedEquationParagraph)
+    If tabLaid Then
+        If Not VTEquationCellContentWidth(paragraphRange, layoutWidth) Then
+            If hasUniformWidth Then
+                layoutWidth = uniformWidth
+            Else
+                layoutWidth = VTEquationColumnWidth(paragraphRange)
+            End If
+        End If
+        centerPosition = layoutWidth / 2!
+        rightPosition = layoutWidth - 1!
+        If Not VTEquationDisplayTabsMatch(paragraphRange, layoutWidth, centerPosition, rightPosition) Then
+            faults = faults + 1
+            If apply Then
+                With paragraphRange.ParagraphFormat
+                    .TabStops.ClearAll
+                    .TabStops.Add Position:=centerPosition, _
+                        Alignment:=wdAlignTabCenter, Leader:=wdTabLeaderSpaces
+                    .TabStops.Add Position:=rightPosition, _
+                        Alignment:=wdAlignTabRight, Leader:=wdTabLeaderSpaces
+                End With
+                counts(VT_DISPLAY_REPAIR_TAB_STOPS) = counts(VT_DISPLAY_REPAIR_TAB_STOPS) + 1
+            End If
+        End If
+    End If
+
+    ' exact line spacing: "at least" the same value
+    If paragraphRange.ParagraphFormat.LineSpacingRule = wdLineSpaceExactly Then
+        faults = faults + 1
+        If apply Then
+            exactSpacing = paragraphRange.ParagraphFormat.LineSpacing
+            paragraphRange.ParagraphFormat.LineSpacingRule = wdLineSpaceAtLeast
+            paragraphRange.ParagraphFormat.LineSpacing = exactSpacing
+            counts(VT_DISPLAY_REPAIR_LINE_SPACING) = counts(VT_DISPLAY_REPAIR_LINE_SPACING) + 1
+        End If
+    End If
+
+    ' the TAB a numbered picture stands behind (text before it is the user's: left as it is)
+    If tabLaid Then
+        Set leadingRange = VTDisplayRepairLeadingRange(doc, formulaShape, paragraphRange)
+        leadingText = Replace$(leadingRange.Text, Chr$(11), "")
+        If Len(leadingText) = 0 Or Len(Replace$(leadingText, vbTab, "")) > 0 Then
+            If Not VTWordRangeHasMeaningfulText(leadingRange) Then
+                faults = faults + 1
+                If apply Then
+                    ' as the numbered layout writes it (VTWriteSingleParagraphImageNumber), on the text baseline
+                    leadingRange.Text = vbTab
+                    With leadingRange.Font
+                        .Superscript = False
+                        .Subscript = False
+                        .Position = 0
+                    End With
+                    counts(VT_DISPLAY_REPAIR_LEADING_TAB) = counts(VT_DISPLAY_REPAIR_LEADING_TAB) + 1
+                End If
+            End If
+        End If
+    End If
+
+    ' the picture's offset on the line
+    If Not formulaShape Is Nothing Then
+        If VTDisplayRepairPicturePosition(doc, formulaShape, tabLaid, expectedPosition) Then
+            If Abs(formulaShape.Range.Font.Position - expectedPosition) > 1 Or _
+               formulaShape.Range.Font.Superscript <> False Or _
+               formulaShape.Range.Font.Subscript <> False Then
+                faults = faults + 1
+                If apply Then
+                    If tabLaid Then
+                        VTApplyWordImagePosition formulaShape, expectedPosition
+                    Else
+                        ' the picture, and the paragraph mark back on the text baseline
+                        VTApplyUnnumberedImageFormulaVerticalAlignment formulaShape.Range
+                    End If
+                    counts(VT_DISPLAY_REPAIR_BASELINE) = counts(VT_DISPLAY_REPAIR_BASELINE) + 1
+                End If
+            End If
+        End If
+    End If
+
+    If apply And faults > 0 Then counts(VT_DISPLAY_REPAIR_REPAIRED) = counts(VT_DISPLAY_REPAIR_REPAIRED) + 1
+    VTRepairDisplayLine = (faults > 0)
+    Exit Function
+
+LineFailed:
+    If apply Then counts(VT_DISPLAY_REPAIR_SKIPPED) = counts(VT_DISPLAY_REPAIR_SKIPPED) + 1
+    VTRepairDisplayLine = False
+End Function
+
+' Whether a line has an indent, in points or in characters.
+Private Function VTDisplayRepairHasIndent(ByVal lineFormat As Object) As Boolean
+    Dim which As Long
+
+    For which = 0 To 5
+        If Abs(VTDisplayRepairIndent(lineFormat, which)) > 0.05 Then
+            VTDisplayRepairHasIndent = True
+            Exit Function
+        End If
+    Next which
+End Function
+
+' One of a line's indents: 0-2 first-line, left and right in points, 3-5 the same in characters; 0 where Word has
+' none to give. (Late bound: the character units are read where the object model has them.)
+Private Function VTDisplayRepairIndent(ByVal lineFormat As Object, ByVal which As Long) As Single
+    Dim indentValue As Single
+
+    On Error GoTo NoValue
+    Select Case which
+        Case 0: indentValue = lineFormat.FirstLineIndent
+        Case 1: indentValue = lineFormat.LeftIndent
+        Case 2: indentValue = lineFormat.RightIndent
+        Case 3: indentValue = lineFormat.CharacterUnitFirstLineIndent
+        Case 4: indentValue = lineFormat.CharacterUnitLeftIndent
+        Case 5: indentValue = lineFormat.CharacterUnitRightIndent
+    End Select
+    If indentValue > 5000! Or indentValue < -5000! Then indentValue = 0!
+    VTDisplayRepairIndent = indentValue
+    Exit Function
+NoValue:
+    VTDisplayRepairIndent = 0!
+End Function
+
+' A line without indents. The ones in characters go first: Word keeps a first-line indent of 2 characters when
+' only its points are set to 0.
+Private Sub VTDisplayRepairZeroIndents(ByVal lineFormat As Object)
+    On Error Resume Next
+    If Abs(VTDisplayRepairIndent(lineFormat, 3)) > 0.001 Then lineFormat.CharacterUnitFirstLineIndent = 0!
+    lineFormat.FirstLineIndent = 0!
+    If Abs(VTDisplayRepairIndent(lineFormat, 4)) > 0.001 Then lineFormat.CharacterUnitLeftIndent = 0!
+    lineFormat.LeftIndent = 0!
+    If Abs(VTDisplayRepairIndent(lineFormat, 5)) > 0.001 Then lineFormat.CharacterUnitRightIndent = 0!
+    lineFormat.RightIndent = 0!
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+' The part of a numbered picture's line before the picture.
+Private Function VTDisplayRepairLeadingRange( _
+    ByVal doc As Document, _
+    ByVal formulaShape As InlineShape, _
+    ByVal paragraphRange As Range) As Range
+
+    Dim containerStart As Long
+
+    containerStart = VTVisualTeXImageContainerRange(formulaShape).Start
+    If containerStart < paragraphRange.Start Then containerStart = paragraphRange.Start
+    Set VTDisplayRepairLeadingRange = doc.Range(Start:=paragraphRange.Start, End:=containerStart)
+End Function
+
+' Where VisualTeX lowers a display picture: its ink centre on the centre of its number as the number is drawn
+' (VTExpectedNumberedImageFormulaPosition), or of the body text for an unnumbered picture
+' (VTApplyUnnumberedImageFormulaVerticalAlignment). False when it is not known (no number found).
+Private Function VTDisplayRepairPicturePosition( _
+    ByVal doc As Document, _
+    ByVal formulaShape As InlineShape, _
+    ByVal numbered As Boolean, _
+    ByRef picturePosition As Long) As Boolean
+
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim referenceNumbered As Boolean
+    Dim numberRange As Range
+    Dim numberSize As Double
+
+    On Error GoTo Unknown
+    If numbered Then
+        If Not VTTryParseFormulaReference( _
+           formulaShape.Title, formulaId, displayMode, referenceNumbered) Then Exit Function
+        Set numberRange = VTStaticImageEquationNumberRange(formulaShape.Range, formulaId)
+        If numberRange Is Nothing Then Exit Function
+        numberSize = CDbl(numberRange.Font.Size)
+        If numberSize <= 0# Or numberSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
+            numberSize = CDbl(VTVisibleEquationNumberFontSize(doc))
+        End If
+        picturePosition = VTExpectedImageFormulaPosition(formulaShape, numberSize, _
+            "The numbered image Equation repair", CStr(numberRange.Font.Name))
+    Else
+        picturePosition = VTExpectedImageFormulaPosition(formulaShape, _
+            CDbl(VTVisibleEquationNumberFontSize(doc)), "The unnumbered image Equation repair")
+    End If
+    VTDisplayRepairPicturePosition = True
+    Exit Function
+Unknown:
+    VTDisplayRepairPicturePosition = False
+End Function
+
+' What Repair Display Formulas did, in one message (the Windows add-ins' DisplayLayoutRepairMessage).
+Public Function VTDisplayRepairMessage(ByRef counts() As Long) As String
+    Dim parts As String
+    Dim skipped As String
+
+    If counts(VT_DISPLAY_REPAIR_CHECKED) = 0 Then
+        VTDisplayRepairMessage = "This document has no display formulas."
+        Exit Function
+    End If
+    If counts(VT_DISPLAY_REPAIR_SKIPPED) > 0 Then skipped = " " & _
+        CStr(counts(VT_DISPLAY_REPAIR_SKIPPED)) & " could not be read and were left as they are."
+    If counts(VT_DISPLAY_REPAIR_REPAIRED) = 0 Then
+        VTDisplayRepairMessage = "Checked " & CStr(counts(VT_DISPLAY_REPAIR_CHECKED)) & _
+            " display formulas; all are in place." & skipped
+        Exit Function
+    End If
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_INDENTS), "indents"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_TAB_STOPS), "tab stops"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_LINE_SPACING), "exact line spacing"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_ALIGNMENT), "alignment"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_LIST_NUMBERING), "bullets or numbering"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_LEADING_TAB), "tab before the formula"
+    VTDisplayRepairAddPart parts, counts(VT_DISPLAY_REPAIR_BASELINE), "baseline offset"
+    VTDisplayRepairMessage = "Repaired " & CStr(counts(VT_DISPLAY_REPAIR_REPAIRED)) & " of " & _
+        CStr(counts(VT_DISPLAY_REPAIR_CHECKED)) & " display formulas: " & parts & "." & skipped
+End Function
+
+Private Sub VTDisplayRepairAddPart(ByRef parts As String, ByVal faultCount As Long, ByVal faultName As String)
+    If faultCount <= 0 Then Exit Sub
+    If Len(parts) > 0 Then parts = parts & ", "
+    parts = parts & faultName & " " & CStr(faultCount)
+End Sub
 
 ' Word for Mac can refuse a paragraph's Style once right after the picture in
 ' it was resized ("Method 'Style' of object 'Range' failed") and accept it on

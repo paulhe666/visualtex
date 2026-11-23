@@ -68,6 +68,7 @@ Public Sub VisualTeX_AgentRun()
         Case "number_display_formulas": data = VTAgentNumberDisplayFormulas()
         Case "update_equation_numbers": data = VTAgentUpdateEquationNumbers()
         Case "set_equation_number_format": data = VTAgentSetNumberFormat()
+        Case "repair_display_formulas": data = VTAgentRepairDisplayFormulas()
         Case "insert_equation_reference": data = VTAgentInsertReference()
         Case "latex_text_to_formulas", "formulas_to_latex_text", "convert_formulas"
             data = VTAgentDocumentOperation(operation)
@@ -962,6 +963,10 @@ End Sub
 
 Public Sub VTWordRibbonUpdateEquationFormat(ByVal control As IRibbonControl)
     VisualTeX_UpdateEquationFormat
+End Sub
+
+Public Sub VTWordRibbonRepairDisplayFormulas(ByVal control As IRibbonControl)
+    VisualTeX_RepairDisplayFormulas
 End Sub
 
 Public Sub VTWordRibbonNumberDisplayFormulasSelection( _
@@ -2914,6 +2919,50 @@ Public Sub VTWordRibbonSelectOmmlFont( _
 Failed:
     VTInvalidateOmmlFontControls
     VTShowError "OMML font", Err.Number, Err.Description
+End Sub
+
+' Ribbon: Repair Display Formulas. Puts back every display formula whose line a whole-document change broke
+' (indents, exact line spacing, bullets, a style, Clear Formatting: VTRepairDisplayFormulaLayout) as one Undo step,
+' read first so that a document without a fault gets no Undo step; a message says what was checked and put back.
+Public Sub VisualTeX_RepairDisplayFormulas()
+    Dim doc As Document
+    Dim counts() As Long
+    Dim recordStarted As Boolean
+    Dim mutationStarted As Boolean
+    Dim failureNumber As Long
+    Dim failureDescription As String
+
+    On Error GoTo Failed
+    VTRequireWritableWordDocument
+    Set doc = ActiveDocument
+    ReDim counts(0 To VT_DISPLAY_REPAIR_LAST)
+    If VTRepairDisplayFormulaLayout(doc, False, counts) > 0 Then
+        ReDim counts(0 To VT_DISPLAY_REPAIR_LAST)
+        Application.UndoRecord.StartCustomRecord "VisualTeX Repair Display Formulas"
+        recordStarted = True
+        VTBeginWordInternalMutation
+        mutationStarted = True
+        VTRepairDisplayFormulaLayout doc, True, counts
+        VTEndWordInternalMutation
+        mutationStarted = False
+        Application.UndoRecord.EndCustomRecord
+        recordStarted = False
+    End If
+    VTShowInformation VTDisplayRepairMessage(counts)
+    Exit Sub
+
+Failed:
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    If mutationStarted Then VTEndWordInternalMutation
+    If recordStarted Then
+        Application.UndoRecord.EndCustomRecord
+        ' only a record that holds a change: Undo would otherwise revert the user's own last action
+        If counts(VT_DISPLAY_REPAIR_REPAIRED) + counts(VT_DISPLAY_REPAIR_SKIPPED) > 0 Then doc.Undo 1
+    End If
+    On Error GoTo 0
+    VTShowError "Repair Display Formulas", failureNumber, failureDescription
 End Sub
 
 Public Sub VisualTeX_NumberDisplayFormulasDocument()
