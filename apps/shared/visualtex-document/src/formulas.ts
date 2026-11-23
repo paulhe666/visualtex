@@ -96,6 +96,8 @@ export interface FormulaSession {
   stopPointerTracking?(): void;
   /** Report an edit the editor has made but not reported yet. */
   flush?(): void;
+  /** The editor holds something: its formula, an edit not reported yet, or a command still being typed. */
+  holdsInput?(): boolean;
   destroy(): void;
   /** The part of the formula a selection through the text takes, shown selected (null: none yet). */
   showPart?(range: [number, number] | null): void;
@@ -1045,6 +1047,11 @@ export class FormulaView implements NodeView {
     else reveal();
   }
 
+  /** The live editor holds something, reported to the document or not (a command still being typed). */
+  holdsInput(): boolean {
+    return !!this.session?.holdsInput?.();
+  }
+
   /** The formula has something to show (an empty one keeps its dashed box until it is opened). */
   hasContent(): boolean {
     return !!String(this.node.attrs.latex ?? "").trim();
@@ -1361,8 +1368,18 @@ function leaveFormula(view: EditorView, pos: number, node: Node, how: FormulaExi
 
 /** The formula plugin: open/close state, node views, the open formula's decoration. */
 export function formulaPlugin(host: FormulaHost, commands: FormulaCommands): Plugin<FormulaPluginState> {
+  // the editor view (an empty formula's editor is asked whether it is still empty)
+  let editorView: EditorView | null = null;
   return new Plugin<FormulaPluginState>({
     key: formulaKey,
+    view(view) {
+      editorView = view;
+      return {
+        destroy() {
+          if (editorView === view) editorView = null;
+        },
+      };
+    },
     state: {
       init: () => ({ openId: null, entry: { kind: "end" }, generation: 0, parts: [] }),
       apply(tr, value) {
@@ -1392,12 +1409,15 @@ export function formulaPlugin(host: FormulaHost, commands: FormulaCommands): Plu
       },
     },
     // An inline formula left empty goes away, however it was left (Backspace in it does the same). Outside the
-    // history: undo does not bring an empty formula back.
+    // history: undo does not bring an empty formula back. Empty is what its editor holds, not only what it has
+    // reported: a command still being typed ("$$\alpha", then a click elsewhere) is the formula's once finished, and
+    // an edit's report may still be due (the formula, with what was typed in it, went, 2026-11-22).
     appendTransaction(_transactions, oldState, newState) {
       const closed = formulaKey.getState(oldState)?.openId;
       if (!closed || formulaKey.getState(newState)?.openId === closed) return null;
       const found = findNodeById(newState.doc, closed);
       if (!found || found.node.type.name !== "math_inline" || String(found.node.attrs.latex).trim()) return null;
+      if (editorView && formulaViewOf(editorView, closed)?.holdsInput()) return null;
       return newState.tr.delete(found.pos, found.pos + found.node.nodeSize).setMeta("addToHistory", false);
     },
     props: {

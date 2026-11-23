@@ -89,8 +89,10 @@ export {
   markdownSourceOf,
   readMarkdown,
   rebaseMarkdownSource,
+  sourceTextLayout,
   type MarkdownExportOptions,
   type MarkdownSource,
+  type SourceTextLayout,
 } from "./markdown.ts";
 export { documentDragKey, documentDragPlugin } from "./documentDrag.ts";
 export { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
@@ -104,6 +106,7 @@ export {
   sourcePlaceOf,
   sourceProblem,
   sourceTransaction,
+  lineHunks,
   type SourceFormat,
   type SourceLoss,
   type SourceProblem,

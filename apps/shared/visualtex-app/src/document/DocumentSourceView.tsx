@@ -18,6 +18,7 @@ import {
   markdownSourceOf,
   sourcePlaceOf,
   sourceProblem,
+  sourceTextLayout,
   sourceTransaction,
   type SourceLoss,
   type SourceProblem,
@@ -99,6 +100,11 @@ const APPLY_DELAY_MS = 400;
 /** The Markdown the document gives (what Copy and Export write). */
 function documentSource(state: DocumentState, references: "eqref" | "plain"): string {
   return documentToMarkdown(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state), sourceText: true });
+}
+
+/** The same text with the lines each of the document's blocks is written on (what is read back is only what changed). */
+function documentSourceLayout(state: DocumentState, references: "eqref" | "plain") {
+  return sourceTextLayout(state.doc, { formulaLatex: portableFormulaLatex, references, source: markdownSourceOf(state) });
 }
 
 function problemText(problem: SourceProblem, isEn: boolean): string {
@@ -212,9 +218,9 @@ export function DocumentSourceView(props: { theme: Theme }) {
         mark(unfinished, []);
         return false;
       }
-      const written = documentSource(documentView.state, referencesRef.current);
+      const written = documentSourceLayout(documentView.state, referencesRef.current);
       try {
-        const tr = sourceTransaction(documentView.state, text, "markdown", written);
+        const tr = sourceTransaction(documentView.state, text, "markdown", written.text, written);
         if (tr) documentView.dispatch(tr);
       } catch (error) {
         console.error("source not read", error);

@@ -13,8 +13,9 @@ import { Fragment, Slice, type Mark, type Node, type ResolvedPos, type Schema } 
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { OBJECT, writeInline, type InlineMark, type WriteUnit } from "./inlineMarkdown.ts";
-import { blockLanguage, documentToMarkdown, NO_CAPTION, readMarkdown } from "./markdown.ts";
+import { blockLanguage, documentToMarkdown, isSourceObject, NO_CAPTION, readMarkdown } from "./markdown.ts";
 import { captionLabelLength } from "./figures.ts";
+import { parsePageCommand } from "./pageCommands.ts";
 import { CODE_LANGUAGES } from "./codeBlocks.ts";
 import { homeInLine, renumberLists } from "./sourceKeys.ts";
 import { copyState, startState, stateKey, tokenizeLine, type LineFacts, type MarkdownState, type MarkdownToken } from "./cm5Markdown.ts";
@@ -444,13 +445,6 @@ function checkboxDOM(checked: boolean) {
   };
 }
 
-function quoteBorder() {
-  const border = document.createElement("span");
-  border.className = "md-quote-border";
-  border.textContent = ">";
-  return border;
-}
-
 function pictureWidget(src: string, alt: string) {
   return () => {
     const box = document.createElement("span");
@@ -518,6 +512,103 @@ interface LineContext {
 const hide = (from: number, to: number) => Decoration.inline(from, to, { class: "md-hidden" }, { md: "hide" });
 
 /**
+ * Where a quote's and a list item's marks end in a line, for laying the line out (lineDecorations): the quote's ">"s
+ * (and the space after the last), the list's indentation, its marker (and the spaces after it but the last), an item's
+ * task box. Indexes into the line's text.
+ */
+interface LineShape {
+  /** how many ">" */
+  quote: number;
+  /** after the quote's marks (and the space after them) */
+  quoteEnd: number;
+  list: {
+    /** the marker's start (after the indentation) */
+    markerStart: number;
+    /** the marker's own characters' end ("-", "1.") */
+    glyphEnd: number;
+    /** the marker and the spaces after it, the last one excepted (unless a task box follows) */
+    markerEnd: number;
+    /** the indentation in steps: a tab one, four spaces one */
+    level: number;
+    /** a numbered item */
+    ordered: boolean;
+    /** a task's box: the character in it ("x", " "), null: not a task */
+    task: string | null;
+  } | null;
+  /** the item's or quote's text starts after a space that stays in the line (its room taken off the indentation) */
+  space: boolean;
+}
+
+function lineShape(text: string, list: boolean, quote: boolean): LineShape {
+  let at = 0;
+  let depth = 0;
+  let space = false;
+  if (quote) {
+    const marks = /^(?:[ \t]*>)+/.exec(text);
+    if (marks) {
+      depth = (marks[0].match(/>/g) ?? []).length;
+      at = marks[0].length;
+      if (text[at] === " ") {
+        at++;
+        space = true;
+      } else if (text[at] === "\t") at++;
+    }
+  }
+  if (!list) return { quote: depth, quoteEnd: at, list: null, space };
+  const item = /^([ \t]*)([*+-]|\d{1,9}[.)])([ \t]+)(\[.\](?= ))?/.exec(text.slice(at));
+  if (!item) return { quote: depth, quoteEnd: at, list: null, space };
+  let columns = 0;
+  for (const ch of item[1]) columns += ch === "\t" ? 4 : 1;
+  const markerStart = at + item[1].length;
+  const afterMarker = markerStart + item[2].length + item[3].length;
+  // with a task box the space after the box stays in the line; otherwise the marker's last space
+  const task = !!item[4];
+  const ordered = /\d/.test(item[2]);
+  const lastSpace = task ? text[afterMarker + 3] === " " : item[3].endsWith(" ");
+  return {
+    quote: depth,
+    quoteEnd: at,
+    list: {
+      markerStart,
+      glyphEnd: markerStart + item[2].length,
+      markerEnd: task ? afterMarker : afterMarker - (lastSpace ? 1 : 0),
+      level: columns / 4,
+      ordered,
+      task: task ? item[4]![1] : null,
+    },
+    // (a numbered task's box stays in the line, where the text starts: the space after it is between the two)
+    space: lastSpace && !(task && ordered),
+  };
+}
+
+/** The end of the marks a line lays out of the line (lineDecorations): its quote's ">"s, its list's marker; 0: none. */
+function hungMarksEnd(node: Node): number {
+  if (!node.isTextblock) return 0;
+  const { text, facts } = blockSyntax(node);
+  if (facts.codeBegin || facts.codeInside || facts.codeEnd || !(facts.list || facts.quote)) return 0;
+  const shape = lineShape(text, !!facts.list, !!facts.quote);
+  if (shape.list) return shape.list.markerEnd;
+  return shape.quoteEnd - (shape.space ? 1 : 0);
+}
+
+/**
+ * Backspace or Delete at a character of the marks laid out of the line (">" before the text, a marker): taken off
+ * here — the browser's own deletion does not reach a character out of the line (">rs": Backspace after ">" did
+ * nothing, 2026-11-22).
+ */
+function deleteHungMark(view: EditorView, dir: -1 | 1): boolean {
+  const sel = view.state.selection;
+  if (!sel.empty || !(sel instanceof TextSelection)) return false;
+  const $head = sel.$head;
+  const end = hungMarksEnd($head.parent);
+  const at = dir < 0 ? $head.parentOffset - 1 : $head.parentOffset;
+  if (at < 0 || at >= end || at >= $head.parent.content.size) return false;
+  const from = $head.start() + at;
+  view.dispatch(view.state.tr.delete(from, from + 1).scrollIntoView());
+  return true;
+}
+
+/**
  * A line's decorations, as Obsidian's Live Preview draws its tokens (FINDINGS.md "The reveal rule"): styles for every
  * token; formatting tokens grouped with the span they belong to, hidden unless the selection touches the group.
  */
@@ -536,16 +627,41 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
     lineClasses.push("md-codeline");
     if (facts.codeBegin) lineClasses.push("md-codeline-begin");
     if (facts.codeEnd) lineClasses.push("md-codeline-end");
-  } else if (facts.list) {
-    const prefix = /^([>\s]*)(([*+-] |(\d+)([.)] ))(?:\[(.)\] )?)?/.exec(text);
-    const indent = prefix ? prefix[0].replace(/\t/g, "    ").length : 0;
-    lineClasses.push("md-listline");
-    if (prefix?.[6] && prefix[6] !== " ") lineClasses.push("md-task-done");
-    lineStyle.push(`padding-left:${indent}ch`, `text-indent:-${indent}ch`);
   }
-  if (facts.quote) {
-    lineClasses.push("md-quoteline", `md-quote-${Math.min(facts.quote, 6)}`);
-    if (cx.inCallout) lineClasses.push("md-calloutline", `md-callout-${cx.inCallout}`);
+  // A quote's and a list item's text starts one step in for each level of a list or quote (Markdown's 2em, the
+  // browsers' list indent: two characters in a Chinese document, where the body's first line starts), its lines
+  // wrapping under it; the marks hang before it out of the line (a bullet or number just before the text, a number's
+  // end where the others' do, as the browsers' list markers and LaTeX's labels; the ">"s, shown, just before the text
+  // or the list's step). (The hanging indent was the marks' characters in "ch": an item's text started at 0.58
+  // characters after "- ", 1 after "1.", its wrapped lines elsewhere again, a quote's at 1.6, 2026-11-22.)
+  const shape = facts.codeBegin || facts.codeInside || facts.codeEnd ? null : facts.list || facts.quote ? lineShape(text, !!facts.list, !!facts.quote) : null;
+  if (shape && (shape.list || shape.quote)) {
+    const steps = shape.quote + (shape.list ? shape.list.level + 1 : 0);
+    lineStyle.push(
+      `--md-q:${shape.quote}`,
+      `--md-l1:${shape.list ? shape.list.level + 1 : 0}`,
+      `--md-sp:${shape.space ? 1 : 0}`,
+      `padding-left:calc(var(--vtx-indent, 0) * 2em + ${steps} * var(--vtx-step, 2em))`,
+      `text-indent:${shape.space ? "calc(-1 * var(--vtx-space, 0.25em))" : "0"}`,
+    );
+    if (shape.list) {
+      lineClasses.push("md-listline");
+      if (shape.list.ordered) lineClasses.push("md-ordered");
+      if (shape.list.task && shape.list.task !== " ") lineClasses.push("md-task-done");
+      // the indentation, the marker and the spaces after it, out of the line (the marker's end the same however many
+      // spaces follow it)
+      if (shape.list.markerStart > shape.quoteEnd) out.push(Decoration.inline(start + shape.quoteEnd, start + shape.list.markerStart, { class: "md-list-indent" }));
+      out.push(Decoration.inline(start + shape.list.markerStart, start + shape.list.glyphEnd, { class: "md-list-marker" }));
+      if (shape.list.markerEnd > shape.list.glyphEnd) out.push(Decoration.inline(start + shape.list.glyphEnd, start + shape.list.markerEnd, { class: "md-list-indent" }));
+    }
+    if (shape.quote) {
+      lineClasses.push("md-quoteline", `md-quote-${Math.min(shape.quote, 6)}`);
+      if (cx.inCallout) lineClasses.push("md-calloutline", `md-callout-${cx.inCallout}`);
+      // the ">"s (and, before a list's marker, the space after them), out of the line: shown, just before the text or
+      // the marker, while the selection touches the line
+      const hang = shape.list ? shape.quoteEnd : shape.quoteEnd - (shape.space ? 1 : 0);
+      if (hang > 0) out.push(Decoration.inline(start, start + hang, { class: lineTouched ? "md-quote-prefix" : "md-quote-prefix md-transparent" }));
+    }
   }
   if (facts.hr) lineClasses.push("md-ruleline");
   if (lineClasses.length || lineStyle.length) {
@@ -655,12 +771,8 @@ function lineDecorations(line: SourceLine, cx: LineContext): Decoration[] {
       return;
     }
     if (has(token, "formatting-quote")) {
+      // (the ">"s are laid out with the line: out of it, its borders drawn by the line, above)
       if (!lineTouched) {
-        if (has(token, "formatting-quote-1")) out.push(Decoration.inline(start + x, start + x + 1, { class: "md-transparent" }, { md: "mark" }));
-        else {
-          out.push(hide(start + x, start + x + 1));
-          out.push(Decoration.widget(start + x, quoteBorder, { side: 1, md: "widget", key: "quote" }));
-        }
         // a callout's "[!TYPE] Title": its type drawn as the title
         if (cx.callout && has(token, "formatting-quote-1")) {
           const m = /^>\s*(\[!(\w+)\][+-]?)\s*/.exec(text);
@@ -1090,6 +1202,7 @@ export function sourceLivePlugin(options: { enabled: () => boolean } = { enabled
         // Home in an item: to its text first (Obsidian)
         if (event.key === "Home" && !event.shiftKey && homeInLine(view.state, view.dispatch, view)) return true;
         if (event.key === "Home" || event.key === "End") return stepLineEdge(view, event.key === "Home" ? -1 : 1, event.shiftKey);
+        if ((event.key === "Backspace" || event.key === "Delete") && !event.shiftKey) return deleteHungMark(view, event.key === "Backspace" ? -1 : 1);
         return false;
       },
       // what is pasted (from a web page, a word processor, the app's own copy) comes in as source lines
@@ -1409,15 +1522,36 @@ export function withHeadings(doc: Node): Node {
 /** Formulas typed in a line of Markdown text as `$…$` (Pandoc's rule: no space inside the dollars, no digit after). */
 const INLINE_MATH = /(?<![\\$])\$(?!\$)([^\s$](?:[^$\n]*?[^\s$\\])?)\$(?![$\d])/g;
 
+/** A line of pictures as the source text writes it (HTML, with their widths): an image line, a board. */
+const HTML_PICTURE_ROW = /^\s*(?:<p align="(?:left|center|right)">\s*<img\s[^>]*>(?:\s*(?:&emsp;)?\s*<img\s[^>]*>)*\s*<\/p>|<div data-vtx-board="1"[^>]*>.*<\/div>)\s*$/;
+/** A centred line under a picture: its caption ("Figure 1: …"). */
+const HTML_CAPTION_ROW = /^\s*<p align="center">.*<\/p>\s*$/;
+/** Whether a block holds pictures (an image line, a board, a figure of them). */
+function showsPictures(node: Node): boolean {
+  let found = false;
+  node.descendants((child) => {
+    if (child.type.name === "image" || child.type.name === "board_image") found = true;
+    return !found;
+  });
+  return found;
+}
+
+/** The title, an author or the date line as the source text writes them. */
+const HTML_TITLE_ROW = /^\s*(?:<h1 align="center">.*<\/h1>|<p align="center" class="(?:author|date)">.*<\/p>)\s*$/;
+
 /**
  * Markdown text as the source editor's document: a line of text per line (headings typed per their "#"); display
- * formulas (`$$` lines), tables (a header and a delimiter row) and lines of only pictures become the document's
- * objects as `readBlock` (Markdown read into the document's nodes) gives them; `$…$` in a line a formula.
+ * formulas (`$$` lines), tables (a header and a delimiter row) and lines of only pictures (Markdown's, or the HTML
+ * the source text writes: with a caption under it, a figure) become the document's objects as `readBlock` (Markdown
+ * read into the document's nodes) gives them; `$…$` in a line a formula. A blank line between an object and the
+ * block next to it is the text's spacing (written so, as the file is: markdownFile.ts), not a line of the document.
  */
 export function sourceTextToDocument(schema: Schema, text: string, readBlock: (markdown: string) => Node = (markdown) => readMarkdown(schema, markdown).doc): Node {
   const rows = text.replace(/\r\n?/g, "\n").split("\n");
   if (rows.length > 1 && rows[rows.length - 1] === "") rows.pop();
   const out: Node[] = [];
+  // the nodes that are blank rows (outside code)
+  const blank = new Set<Node>();
   let fence: string | null = null;
   const objects = (markdown: string) => {
     const read = readBlock(markdown);
@@ -1491,6 +1625,46 @@ export function sourceTextToDocument(schema: Schema, text: string, readBlock: (m
         continue;
       }
     }
+    // a line of pictures as HTML (the source text's own), with its caption under it a figure (pictures whose files
+    // are not found stay the line's text)
+    if (HTML_PICTURE_ROW.test(row)) {
+      if (rows[i + 1] === "" && i + 2 < rows.length && HTML_CAPTION_ROW.test(rows[i + 2])) {
+        const nodes = objects(rows.slice(i, i + 3).join("\n"));
+        if (nodes.length === 1 && nodes[0].type.name === "figure" && showsPictures(nodes[0])) {
+          out.push(nodes[0]);
+          i += 2;
+          continue;
+        }
+      }
+      const nodes = objects(row);
+      if (nodes.length === 1 && isSourceObject(nodes[0]) && showsPictures(nodes[0])) {
+        out.push(nodes[0]);
+        continue;
+      }
+    }
+    if (HTML_TITLE_ROW.test(row)) {
+      const nodes = objects(row);
+      if (nodes.length === 1 && ["title", "author", "date"].includes(nodes[0].type.name)) {
+        out.push(nodes[0]);
+        continue;
+      }
+    }
+    // a page command's line and the table of contents, as the file reads them (markdownFile.ts)
+    const command = row[0] === "\\" || /^\s+\\/.test(row) ? parsePageCommand(row) : null;
+    if (command && schema.nodes.page_command) {
+      out.push(schema.nodes.page_command.create(command));
+      continue;
+    }
+    if (/^\s*\[toc\]\s*$/i.test(row) && schema.nodes.toc) {
+      out.push(schema.nodes.toc.create());
+      continue;
+    }
+    if (!row) {
+      const node = schema.nodes.paragraph.create();
+      blank.add(node);
+      out.push(node);
+      continue;
+    }
     // a line of pictures
     if (/^\s*(!\[[^\]]*\]\([^)]*\)\s*)+$/.test(row)) {
       const nodes = objects(row);
@@ -1501,8 +1675,16 @@ export function sourceTextToDocument(schema: Schema, text: string, readBlock: (m
     }
     out.push(lineNode(row));
   }
-  if (!out.length) out.push(schema.nodes.paragraph.create());
-  return withHeadings(schema.topNodeType.create(null, out));
+  // a blank row beside an object is spacing (one on each side; not the text's first or last row)
+  const spacing = new Set<number>();
+  out.forEach((node, k) => {
+    if (blank.has(node) || !isSourceObject(node)) return;
+    if (k - 1 >= 1 && blank.has(out[k - 1])) spacing.add(k - 1);
+    if (k + 1 <= out.length - 2 && blank.has(out[k + 1])) spacing.add(k + 1);
+  });
+  const blocks = spacing.size ? out.filter((_node, k) => !spacing.has(k)) : out;
+  if (!blocks.length) blocks.push(schema.nodes.paragraph.create());
+  return withHeadings(schema.topNodeType.create(null, blocks));
 }
 
 /**

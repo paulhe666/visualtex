@@ -40,6 +40,8 @@ export interface DocumentFormulaFieldApi {
   update(latex: string, selection: FormulaSelection | null): void;
   /** Report the field's LaTeX if the document does not have it yet. */
   flush(): void;
+  /** The field holds something (a formula left with it is not empty, whatever the document has been told yet). */
+  holdsInput(): boolean;
   typeKey(key: FormulaKey): void;
   focus(): void;
   /** The formula opened: the field takes the focus, the caret where `entry` says. */
@@ -86,6 +88,34 @@ function captureSelection(field: MathfieldElement): FormulaSelection {
 
 function hasRawLatexInput(field: MathfieldElement) {
   return Boolean(field.shadowRoot?.querySelector(".ML__raw-latex"));
+}
+
+/** The LaTeX command being typed (raw input, "\alpha" before Space takes it), as typed; "" when none. */
+function rawLatexInput(field: MathfieldElement) {
+  return Array.from(field.shadowRoot?.querySelectorAll<HTMLElement>(".ML__raw-latex") ?? [])
+    .filter((node) => !node.classList.contains("ML__suggestion"))
+    .map((node) => node.textContent ?? "")
+    .join("");
+}
+
+/** A command name is being typed: raw input with more than its backslash. */
+function typingCommand(field: MathfieldElement) {
+  return field.mode === "latex" && /^\\[^\s]/.test(rawLatexInput(field));
+}
+
+/**
+ * The command being typed is finished as typed, as moving the caret out of it finishes it: the formula holds it from
+ * then on (until then it is not part of the formula's LaTeX). A lone backslash is dropped. Returns whether there was one.
+ */
+function finishRawLatex(field: MathfieldElement): boolean {
+  if (field.mode !== "latex") return false;
+  field.executeCommand(["complete", typingCommand(field) ? "accept" : "reject"]);
+  return true;
+}
+
+/** The field holds something: what is in its formula, or a command being typed (which the formula gets once finished). */
+function holdsInput(field: MathfieldElement) {
+  return !!field.getValue("latex-without-placeholders").trim() || typingCommand(field);
 }
 
 type KernelField = Parameters<typeof visualTexEditingCore.caretRect>[0];
@@ -214,10 +244,14 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
   const leftRef = useRef(false);
   // The LaTeX the document has (the field's edits are reported on the kernel's input events).
   const reportedRef = useRef(latex);
-  /** Report the field's LaTeX if the document does not have it yet (an edit whose input event is still due). */
+  /**
+   * Report the field's LaTeX if the document does not have it yet (an edit whose input event is still due, a command
+   * still being typed: finished first).
+   */
   const flush = () => {
     const field = fieldRef.current;
     if (!field || incomingRef.current !== null) return;
+    finishRawLatex(field);
     const value = normalizeChineseLatex(field.value);
     if (value === reportedRef.current) return;
     reportedRef.current = value;
@@ -289,7 +323,9 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       greekPrefixRef.current = false;
       const field = fieldRef.current;
       if (!field) return;
-      flush();
+      // (reported after the document's update that closed the formula: a change dispatched from inside it would
+      // interleave with it; the formula stayed because the field holds something, formulas.ts)
+      queueMicrotask(flush);
       setOpenDocumentFormula(null, field);
       if (field.shadowRoot?.activeElement) field.blur();
       showPart(field, null);
@@ -341,6 +377,10 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       return mutate(field, () => toggleMathLiveSelectionStyle(field, "bold", field.selection));
     },
     flush,
+    holdsInput() {
+      const field = fieldRef.current;
+      return !!field && holdsInput(field);
+    },
     typeKey(key) {
       const field = fieldRef.current;
       // a field at rest (a formula just made again, not yet entered) keeps the keys for when it is entered
@@ -491,6 +531,14 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
         else splitAtCaret(field);
         return;
       }
+      // "$" while a command is typed ("$$\alpha$$"): the command finished, then the closing dollar ("\$" alone is
+      // the dollar sign, the field's own)
+      if (event.key === "$" && !mod && !event.altKey && typingCommand(field)) {
+        stop();
+        finishRawLatex(field);
+        typedDollar(field);
+        return;
+      }
       if (rawLatex || field.mode === "latex") return;
       if (event.key === "$" && !mod && !event.altKey && field.mode === "math") {
         stop();
@@ -586,9 +634,11 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
         if (input.data) heldDollarRef.current = false;
         return;
       }
-      if (field.mode !== "math" || hasRawLatexInput(field)) return;
+      const command = typingCommand(field);
+      if (!command && (field.mode !== "math" || hasRawLatexInput(field))) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (command) finishRawLatex(field);
       typedDollarRef.current(field);
     };
     field.addEventListener("beforeinput", onBeforeInput, true);

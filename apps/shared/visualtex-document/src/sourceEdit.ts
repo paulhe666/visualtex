@@ -8,7 +8,7 @@ import { Fragment, type Node, type Schema } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { closeHistory } from "prosemirror-history";
 import { latexToMarkdown } from "./latexImport.ts";
-import { markdownSourceKey, readMarkdown, rebaseMarkdownSource, type MarkdownSource } from "./markdown.ts";
+import { markdownSourceKey, readMarkdown, rebaseMarkdownSource, type MarkdownSource, type SourceTextLayout } from "./markdown.ts";
 import { withoutMarkdownSyntax } from "./markdownLive.ts";
 import { closeFormula, openFormulaId } from "./formulas.ts";
 import { DEFAULT_DOCUMENT_SETTINGS, PAPER_SIZES, SINGLE_LINE_HEIGHT, CHINESE_FONT_SIZES, documentSettings, type DocumentSettings, type PaperName } from "./settings.ts";
@@ -322,17 +322,139 @@ interface JsonNode {
 /** A block as it compares: its content without ids. */
 const blockKey = (node: Node) => JSON.stringify(node.toJSON(), (key, value) => (key === "id" ? undefined : value));
 
+/** The runs of lines that differ between two lists of lines: [a0, a1) of `a` became [b0, b1) of `b`. */
+export function lineHunks(a: readonly string[], b: readonly string[]): Array<{ a0: number; a1: number; b0: number; b1: number }> {
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0;
+  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  const n = a.length - p - q;
+  const m = b.length - p - q;
+  if (!n && !m) return [];
+  // the lines between two edits kept (the longest common run of lines), unless that is a big job
+  if (!n || !m || n * m > 250_000) return [{ a0: p, a1: p + n, b0: p, b1: p + m }];
+  const common: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      common[i][j] = a[p + i] === b[p + j] ? common[i + 1][j + 1] + 1 : Math.max(common[i + 1][j], common[i][j + 1]);
+    }
+  }
+  const hunks: Array<{ a0: number; a1: number; b0: number; b1: number }> = [];
+  let open: { a0: number; b0: number } | null = null;
+  let i = 0;
+  let j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && a[p + i] === b[p + j]) {
+      if (open) hunks.push({ a0: p + open.a0, a1: p + i, b0: p + open.b0, b1: p + j });
+      open = null;
+      i++;
+      j++;
+      continue;
+    }
+    open ??= { a0: i, b0: j };
+    if (j < m && (i >= n || common[i][j + 1] >= common[i + 1][j])) j++;
+    else i++;
+  }
+  if (open) hunks.push({ a0: p + open.a0, a1: p + n, b0: p + open.b0, b1: p + m });
+  return hunks;
+}
+
+/**
+ * The source editor's text read back by its lines (`layout`: the document's source text and the lines each block is
+ * written on): only the blocks whose lines the user changed are read again and replaced; every other block stays
+ * exactly as it is, whatever its lines would read back as (a picture written as HTML, a centred line, a caption).
+ * Null: nothing changed; "whole": the change reaches what lines do not map to blocks (the footnotes' definitions).
+ */
+function sourceLinesChange(state: EditorState, text: string, layout: SourceTextLayout): Array<{ from: number; to: number; nodes: Node[] }> | null | "whole" {
+  const current = state.doc;
+  if (layout.blocks.length !== current.childCount) return "whole";
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const hunks = lineHunks(layout.lines, lines);
+  if (!hunks.length) return null;
+  if (hunks.some((h) => h.a1 > layout.trailer || h.a0 >= layout.trailer)) return "whole";
+  // each run of changed lines widened to the blocks it reaches; runs that reach one block together are one
+  const runs: Array<{ a0: number; a1: number; b0: number; b1: number; first: number; last: number }> = [];
+  for (const h of hunks) {
+    let first = -1;
+    let last = -1;
+    layout.blocks.forEach(([start, end], index) => {
+      if (end <= start) return;
+      const reached = h.a0 === h.a1 ? start < h.a0 && h.a0 < end : end > h.a0 && start < h.a1;
+      if (!reached) return;
+      if (first < 0) first = index;
+      last = index;
+    });
+    const a0 = first < 0 ? h.a0 : Math.min(h.a0, layout.blocks[first][0]);
+    const a1 = first < 0 ? h.a1 : Math.max(h.a1, layout.blocks[last][1]);
+    const run = { a0, a1, b0: h.b0 - (h.a0 - a0), b1: h.b1 + (a1 - h.a1), first, last };
+    const previous = runs[runs.length - 1];
+    if (previous && (run.a0 < previous.a1 || (run.first >= 0 && previous.last >= 0 && run.first <= previous.last))) {
+      previous.a1 = Math.max(previous.a1, run.a1);
+      previous.b1 = Math.max(previous.b1, run.b1);
+      if (run.first >= 0) {
+        previous.first = previous.first < 0 ? run.first : Math.min(previous.first, run.first);
+        previous.last = Math.max(previous.last, run.last);
+      }
+    } else runs.push(run);
+  }
+  const starts: number[] = [];
+  let pos = 0;
+  current.forEach((node) => {
+    starts.push(pos);
+    pos += node.nodeSize;
+  });
+  starts.push(pos);
+  return runs.map((run) => {
+    let from: number;
+    let to: number;
+    if (run.first >= 0) {
+      from = starts[run.first];
+      to = starts[run.last + 1];
+    } else {
+      // between blocks: before the first block written after the run (at the end: after the last)
+      let index = layout.blocks.findIndex(([start, end]) => end > start && start >= run.a1);
+      if (index < 0) index = current.childCount;
+      from = to = starts[index];
+    }
+    let nodes: Node[] = [];
+    if (run.b1 > run.b0) {
+      const read = toSourceDocument(matchIds(readSource(state.schema, lines.slice(run.b0, run.b1).join("\n"), "markdown", current).doc, current));
+      read.forEach((node) => nodes.push(node));
+    }
+    // (a run of only blank spacing lines removed: nothing)
+    if (run.first < 0 && run.b1 <= run.b0) nodes = [];
+    return { from, to, nodes };
+  });
+}
+
 /**
  * The change that makes the document what the source says: the top-level blocks from the first that differs to the
  * last that differs replaced (one step in the history of its own); the preamble's settings; for Markdown, the file
  * kept for writing back. A block differs when it reads otherwise than the document's block and than what the
  * document's own source (`written`, what the source tab shows for it) reads as — a block the user did not touch
- * stays as it is even when its source does not read back exactly (an image whose file is elsewhere). Null: the
- * source says what the document is.
+ * stays as it is even when its source does not read back exactly (an image whose file is elsewhere). With the source
+ * text's `layout` (Markdown), the blocks compared are those of the lines the user changed (sourceLinesChange). Null:
+ * the source says what the document is.
  */
-export function sourceTransaction(state: EditorState, text: string, format: SourceFormat, written: string): Transaction | null {
+export function sourceTransaction(state: EditorState, text: string, format: SourceFormat, written: string, layout: SourceTextLayout | null = null): Transaction | null {
   const { schema } = state;
   const current = state.doc;
+  if (format === "markdown" && layout && layout.text === written) {
+    const change = sourceLinesChange(state, text, layout);
+    if (change !== "whole") {
+      const tr = state.tr;
+      // (from the last: the positions of the ones before stay)
+      for (const { from, to, nodes } of [...(change ?? [])].reverse()) {
+        if (from === to && !nodes.length) continue;
+        tr.replaceWith(from, to, Fragment.from(nodes));
+      }
+      if (!tr.doc.childCount) tr.insert(0, schema.nodes.paragraph.create());
+      tr.setMeta(markdownSourceKey, null);
+      if (!tr.docChanged) return tr.setMeta("addToHistory", false);
+      if (openFormulaId(state)) closeFormula(tr);
+      return closeHistory(tr);
+    }
+  }
   const read = readSource(schema, text, format, current);
   // (the document's text is its Markdown source: what was read, as source)
   let doc = toSourceDocument(matchIds(read.doc, current));

@@ -261,6 +261,7 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
         flush() {
           apiRef.current?.flush();
         },
+        holdsInput: () => apiRef.current?.holdsInput() ?? false,
         destroy() {
           liveFormulaResizers.delete(resize);
           // Outside ProseMirror's update cycle: an edit not yet reported is stored, then the field unmounts.
@@ -687,6 +688,26 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     if (view && settings) refreshPagination(view);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom, settings, layoutKey]);
+  // the width of a space in the body's font at the page's size: a list item's or quote's text follows one, whose room
+  // its line's start gives back (document.css, sourceMarkdown.ts lineDecorations); measured again when fonts load
+  const [spaceWidth, setSpaceWidth] = useState<number | null>(null);
+  const fontKey = settings ? `${bodyFontFamily(settings)}|${layout?.fontSize}|${zoom}` : "";
+  useLayoutEffect(() => {
+    if (!sheet || !fontKey) return;
+    const measure = () => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;left:0;top:0;visibility:hidden;white-space:pre;font-family:var(--vtx-body-font);font-size:inherit;line-height:1";
+      probe.textContent = " ";
+      sheet.appendChild(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      if (width > 0) setSpaceWidth((current) => (current !== null && Math.abs(current - width) < 0.01 ? current : width));
+    };
+    measure();
+    const fonts = document.fonts;
+    fonts?.addEventListener?.("loadingdone", measure);
+    return () => fonts?.removeEventListener?.("loadingdone", measure);
+  }, [sheet, fontKey]);
   const sheetStyle = useMemo<CSSProperties>(() => {
     if (!settings || !layout) return { fontSize: DOCUMENT_TEXT_SIZE * zoom };
     const mm = PX_PER_MM * zoom;
@@ -715,13 +736,18 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-size" as string]: `${layout.fontSize * (96 / 72) * zoom}px`,
       ["--vtx-baseline" as string]: `${layout.lineHeight * layout.fontSize * (96 / 72) * zoom}px`,
       ["--vtx-parindent" as string]: `${layout.parindent}em`,
+      // a list's, a quote's and code's indent per level: Markdown's (the browsers' 2em that GitHub, Typora and
+      // Obsidian keep; two characters in a Chinese document, where the body's first line starts too), as a length
+      // (a code line's smaller text keeps the body's), and the width of a space before a list item's text
+      ["--vtx-step" as string]: `${2 * layout.fontSize * (96 / 72) * zoom}px`,
+      ...(spaceWidth !== null ? { ["--vtx-space" as string]: `${spaceWidth}px` } : {}),
       // \linewidth (a table's p{} column of blocks takes its share)
       ["--vtx-linewidth" as string]: `${(paper.width - settings.marginLeft - settings.marginRight) * mm}px`,
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
     } as CSSProperties;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, layoutKey, zoom, lang, canvasWidth]);
+  }, [settings, layoutKey, zoom, lang, canvasWidth, spaceWidth]);
 
   const view = viewRef.current;
   const writeText = (text: string) => void navigator.clipboard.writeText(text);

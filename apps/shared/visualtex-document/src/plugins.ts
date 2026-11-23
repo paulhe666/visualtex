@@ -2,7 +2,7 @@
 // paste, ids, formulas, numbering, tables, gap cursor, history.
 import { mixedSelectionPlugin, toggleDocumentBold } from "./mixedSelection.ts";
 import { Fragment, Slice, type Node, type Schema } from "prosemirror-model";
-import { EditorState, NodeSelection, Plugin, PluginKey, type Command } from "prosemirror-state";
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { closeHistory, history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
@@ -22,7 +22,7 @@ import {
   insertInlineFormula,
   openSelectedFormula,
 } from "./commands.ts";
-import { CLOSED_BY_DOLLAR, findNodeById, formulaPlugin, openFormulaId, type FormulaHost } from "./formulas.ts";
+import { CLOSED_BY_DOLLAR, findNodeById, formulaPlugin, openFormula, openFormulaId, type FormulaHost } from "./formulas.ts";
 import { assignIds, idsPlugin, newNodeId } from "./ids.ts";
 import { hasMathDelimiters, parseMathText, type MathTextBlock } from "./mathText.ts";
 import {
@@ -46,10 +46,10 @@ import {
 import { commandMenuPlugin, type MathCommandProvider } from "./suggest.ts";
 import { codeBlockKeys, codeBlockPlugin, type CodeBlockOptions, type CodeHighlighter } from "./codeBlocks.ts";
 import { richBlocksPlugin } from "./richBlocks.ts";
-import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
+import { looksLikeMarkdown, looksLikeMarkdownDocument, markdownSourceKey, markdownSourcePlugin, markdownToSlice } from "./markdown.ts";
 import { ALL_RULES, markdownEnter, markdownHeadingEnter, markdownInputPlugin, markdownKeymap, type InputMode, type MarkdownRuleSwitches } from "./markdownInput.ts";
 import { markdownRedo, markdownUndo, sliceWithoutMarkdownSyntax } from "./markdownLive.ts";
-import { blockSyntax, clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
+import { blockSyntax, clearSourceFormat, inSourceCode, insertSourceLink, setSourceHeading, sourceLiveKey, sourceLivePlugin, toggleSourceFormat, toSourceSlice } from "./sourceMarkdown.ts";
 import { codeLineEnter, indentLines, outdentLines, sourceEnter, sourcePlainEnter, sourceShiftEnter } from "./sourceKeys.ts";
 import { documentDragPlugin } from "./documentDrag.ts";
 import { latexToMarkdown, looksLikeLatexSource } from "./latexImport.ts";
@@ -71,9 +71,86 @@ interface DollarState {
   closing: number;
   /** Markdown input: the position of a "$" typed as a character, waiting for what comes after it */
   pending: number | null;
+  /** Markdown input: "$…$" an edit made in a line (not by typing its closing "$"), a formula once the caret leaves it */
+  waiting: ReadonlyArray<{ from: number; to: number }>;
 }
 
 type DollarMeta = { closing: number } | { pending: number | null };
+
+/** "$…$" in a line's text (Pandoc's rule, as Markdown is read: sourceMarkdown.ts INLINE_MATH); objects are "￼". */
+const DOLLAR_SPAN = /(?<![\\$])\$(?!\$)([^\s$￼](?:[^$\n￼]*?[^\s$\\￼])?)\$(?![$\d])/g;
+
+/** An edit the user made (typing, a deletion, a cut): not undo, a paste or drop, a composition, the source tab. */
+function userEdit(tr: Transaction): boolean {
+  if (!tr.docChanged || tr.getMeta("history$") || tr.getMeta("composition") !== undefined) return false;
+  if (tr.getMeta("appendedTransaction") || tr.getMeta("addToHistory") === false || tr.getMeta(markdownSourceKey) !== undefined) return false;
+  const ui = tr.getMeta("uiEvent");
+  return ui !== "paste" && ui !== "drop";
+}
+
+/** The ranges a transaction changed, in its resulting document, and whether each was only a deletion. */
+function changedRanges(tr: Transaction): Array<{ from: number; to: number; deleted: boolean }> {
+  const ranges: Array<{ from: number; to: number; deleted: boolean }> = [];
+  tr.mapping.maps.forEach((map, index) => {
+    map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      // into the transaction's final document
+      const rest = tr.mapping.slice(index + 1);
+      ranges.push({ from: rest.map(newStart, -1), to: rest.map(newEnd, 1), deleted: newEnd === newStart && oldEnd > oldStart });
+    });
+  });
+  return ranges;
+}
+
+/** Whether a position of a textblock is where "$" are characters: code (a fence, a code span, the code mark). */
+function inDollarCode(state: EditorState, pos: number): boolean {
+  const $pos = state.doc.resolve(pos);
+  if (!$pos.parent.isTextblock || $pos.parent.type.spec.code || inSourceCode($pos)) return true;
+  return $pos.marks().some((m) => m.type.spec.code || m.type.name === "code");
+}
+
+/** The "$…$" spans of the textblock around `pos` that reach into [from, to] (document positions). */
+function dollarSpansNear(state: EditorState, pos: number, from: number, to: number): Array<{ from: number; to: number }> {
+  const $pos = state.doc.resolve(pos);
+  const block = $pos.parent;
+  if (!block.isTextblock || inDollarCode(state, pos)) return [];
+  const start = $pos.start();
+  const text = block.textBetween(0, block.content.size, undefined, "￼");
+  const spans: Array<{ from: number; to: number }> = [];
+  for (const m of text.matchAll(DOLLAR_SPAN)) {
+    const a = start + m.index!;
+    const b = a + m[0].length;
+    if (b < from || a > to) continue;
+    // (not in a code span)
+    if ((text.slice(0, m.index!).match(/`/g) ?? []).length % 2 === 1) continue;
+    spans.push({ from: a, to: b });
+  }
+  return spans;
+}
+
+/** A span still "$…$" by the rule, whole, in a line where "$" makes formulas. */
+function stillDollarSpan(state: EditorState, span: { from: number; to: number }): string | null {
+  if (span.to > state.doc.content.size || span.from >= span.to) return null;
+  const $from = state.doc.resolve(span.from);
+  if (!$from.sameParent(state.doc.resolve(span.to)) || inDollarCode(state, span.from)) return null;
+  const found = dollarSpansNear(state, span.from, span.from, span.to).find((s) => s.from === span.from && s.to === span.to);
+  return found ? state.doc.textBetween(span.from + 1, span.to - 1) : null;
+}
+
+/**
+ * The caret between two dollars a deletion left side by side ("$ $" with its space deleted, "$x$" with its x): their
+ * position, the "$$" that opens an inline formula when typed. Not "\$", a "$" of "$$$", code.
+ */
+function caretBetweenDollars(state: EditorState): number | null {
+  const sel = state.selection;
+  if (!(sel instanceof TextSelection) || !sel.empty || inDollarCode(state, sel.head)) return null;
+  const $head = sel.$head;
+  const text = $head.parent.textBetween(0, $head.parent.content.size, undefined, "￼");
+  const before = text.slice(0, $head.parentOffset);
+  const after = text.slice($head.parentOffset);
+  if (!/[$￥]$/.test(before) || !/^[$￥]/.test(after) || /[$￥]{2}$/.test(before) || /^[$￥]{2}/.test(after)) return null;
+  if (/(?:^|[^\\])(?:\\\\)*\\[$￥]$/.test(before) || (before.match(/`/g) ?? []).length % 2 === 1) return null;
+  return sel.head;
+}
 
 /**
  * Formulas typed with dollars. In Markdown input "$$" opens an inline formula and "$$$$" a display formula: the
@@ -92,16 +169,72 @@ function dollarPlugin(inputMode: () => InputMode) {
   return new Plugin<DollarState>({
     key,
     state: {
-      init: () => ({ closing: 0, pending: null }),
-      apply: (tr, value) => {
+      init: () => ({ closing: 0, pending: null, waiting: [] }),
+      apply: (tr, value, _old, state) => {
+        // "$…$" made by an edit wait for the caret to leave them (mapped; ones the edit reaches added)
+        let waiting = value.waiting;
+        if (inputMode() !== "markdown") waiting = waiting.length ? [] : waiting;
+        else if (tr.docChanged) {
+          if (waiting.length) {
+            waiting = waiting
+              .map((s) => ({ from: tr.mapping.map(s.from, 1), to: tr.mapping.map(s.to, -1) }))
+              .filter((s) => stillDollarSpan(state, s) !== null);
+          }
+          if (userEdit(tr)) {
+            for (const range of changedRanges(tr)) {
+              for (const span of dollarSpansNear(state, range.from, range.from, range.to)) {
+                if (!waiting.some((s) => s.from === span.from && s.to === span.to)) waiting = [...waiting, span];
+              }
+            }
+          }
+        }
+        const next = (closing: number, pending: number | null): DollarState =>
+          closing === value.closing && pending === value.pending && waiting === value.waiting ? value : { closing, pending, waiting };
         const meta = tr.getMeta(key) as DollarMeta | undefined;
         const closed = tr.getMeta(CLOSED_BY_DOLLAR) as number | undefined;
-        if (closed) return { closing: closed, pending: null };
-        if (meta && "closing" in meta) return { ...value, closing: meta.closing };
-        if (meta && "pending" in meta) return { closing: 0, pending: meta.pending };
-        if (tr.getMeta("appendedTransaction") || !(tr.docChanged || tr.selectionSet)) return value;
-        return value.closing || value.pending !== null ? { closing: 0, pending: null } : value;
+        if (closed) return next(closed, null);
+        if (meta && "closing" in meta) return next(meta.closing, value.pending);
+        if (meta && "pending" in meta) return next(0, meta.pending);
+        if (tr.getMeta("appendedTransaction") || !(tr.docChanged || tr.selectionSet)) return next(value.closing, value.pending);
+        return next(0, null);
       },
+    },
+    /**
+     * Dollars an edit leaves in a line that are not typed as "$" (only a typed "$" was looked at: "$ $" with its space
+     * then deleted stayed text, and a "$x$" made so stayed text until the file was read again, 2026-11-22): a deletion
+     * that leaves the caret between two "$" opens an inline formula there, as typing "$$" does; "$…$" an edit makes
+     * becomes a formula once the caret is outside it, as the closing "$" typed would make it.
+     */
+    appendTransaction(transactions, _oldState, newState) {
+      if (inputMode() !== "markdown" || openFormulaId(newState)) return null;
+      // (never while an input method composes: the line's text is not touched under it)
+      // (nor while the mouse button is held: a selection being dragged; the release converts)
+      const live = sourceLiveKey.getState(newState);
+      if (transactions.some((tr) => tr.getMeta("composition") !== undefined) || live?.composing || live?.pointer) return null;
+      const edits = transactions.filter(userEdit);
+      const caret = edits.length ? caretBetweenDollars(newState) : null;
+      if (caret !== null && edits.some((tr) => changedRanges(tr).some((r) => r.deleted && r.from === caret))) {
+        const tr = newState.tr.delete(caret - 1, caret + 1);
+        tr.insert(caret - 1, newState.schema.nodes.math_inline.create({ id: newNodeId(), latex: "" }));
+        return openFormula(tr.setMeta(key, { pending: null } satisfies DollarMeta), caret - 1, { kind: "end" }).scrollIntoView();
+      }
+      const { waiting } = key.getState(newState)!;
+      if (!waiting.length) return null;
+      const head = newState.selection.head;
+      const ready = waiting
+        .filter((span) => head < span.from || head > span.to)
+        .map((span) => ({ span, latex: stillDollarSpan(newState, span) }))
+        .filter((item): item is { span: { from: number; to: number }; latex: string } => item.latex !== null)
+        .sort((a, b) => b.span.from - a.span.from);
+      if (!ready.length) return null;
+      const tr = newState.tr;
+      let limit = Infinity;
+      for (const { span, latex } of ready) {
+        if (span.to > limit) continue;
+        tr.replaceWith(span.from, span.to, newState.schema.nodes.math_inline.create({ id: newNodeId(), latex }));
+        limit = span.from;
+      }
+      return tr;
     },
     props: {
       handleTextInput(view, from, to, text) {
