@@ -82,12 +82,62 @@ pub(super) fn runtime_paths_from_resolution(
     }
 }
 
+/// Where the OCR environment the user chose may still be when its configuration is gone: the folders
+/// users pick under their profile, and two levels of every fixed drive (the app creates VisualTeX-OCR
+/// inside the chosen folder). Only looked at without a configuration.
+pub(super) fn ocr_discovery_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    for variable in ["APPDATA", "LOCALAPPDATA", "USERPROFILE"] {
+        if let Some(root) = env::var_os(variable) {
+            let root = PathBuf::from(root);
+            candidates.push(root.join(storage::STORAGE_DIRECTORY_NAME));
+            if variable == "USERPROFILE" {
+                candidates.push(root.join("Documents").join(storage::STORAGE_DIRECTORY_NAME));
+            }
+        }
+    }
+    let folders_in = |parent: &Path| -> Vec<(PathBuf, String)> {
+        fs::read_dir(parent)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+                    .map(|entry| (entry.path(), entry.file_name().to_string_lossy().to_lowercase()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for drive in storage::fixed_drive_roots() {
+        candidates.push(drive.join(storage::STORAGE_DIRECTORY_NAME));
+        for (folder, name) in folders_in(&drive) {
+            if matches!(
+                name.as_str(),
+                "windows" | "$recycle.bin" | "system volume information" | "programdata" | "recovery"
+            ) {
+                continue;
+            }
+            candidates.push(folder.join(storage::STORAGE_DIRECTORY_NAME));
+            candidates.push(folder.join("ocr-runtime"));
+            if name.contains("visualtex") || name.contains("ocr") {
+                for (child, _) in folders_in(&folder) {
+                    candidates.push(child.join(storage::STORAGE_DIRECTORY_NAME));
+                    candidates.push(child.join("ocr-runtime"));
+                    candidates.push(child);
+                }
+            }
+            candidates.push(folder);
+        }
+    }
+    candidates
+}
+
 pub(super) fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
-    let resolution = storage::resolve(
+    let resolution = storage::resolve_with_discovery(
         &ocr_storage_config_path(app)?,
         &legacy_ocr_runtime_root(app)?,
         &default_ocr_runtime_root(app)?,
         &protected_ocr_storage_roots(app),
+        &ocr_discovery_candidates,
     )?;
     Ok(runtime_paths_from_resolution(resolution))
 }

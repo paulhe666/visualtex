@@ -2122,7 +2122,7 @@ export function OcrDialog({
                           : `可用 ${readableBytes(storageAvailableBytes)}`}
                     </span>
                     <span>
-                      {runtime.storageSource === "legacy"
+                      {runtime.storageSource === "legacy" || runtime.storageSource === "discovered"
                         ? isEn
                           ? "Existing environment adopted"
                           : "已接管原有环境"

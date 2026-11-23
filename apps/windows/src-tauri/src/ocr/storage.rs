@@ -390,11 +390,87 @@ pub fn ensure_marker(root: &Path) -> Result<(), String> {
     write_atomic(&marker_path(&root), &bytes)
 }
 
+/// The newest sign of use of a working VisualTeX OCR environment (VisualTeX's marker and its private
+/// Python), or None for anything else.
+fn usable_existing_root(root: &Path, protected_roots: &[PathBuf]) -> Option<SystemTime> {
+    let root = normalized_absolute(root).ok()?;
+    if validate_not_protected(&root, protected_roots).is_err()
+        || reject_reparse_root(&root).is_err()
+        || !marker_is_valid(&root)
+    {
+        return None;
+    }
+    let python = [
+        root.join("python").join("python.exe"),
+        root.join("venv").join("Scripts").join("python.exe"),
+        root.join("python").join("bin").join("python3"),
+        root.join("venv").join("bin").join("python"),
+    ];
+    if !python.iter().any(|path| path.is_file()) {
+        return None;
+    }
+    ["runtime-status.json", "install-status.json", STORAGE_MARKER_FILE]
+        .iter()
+        .filter_map(|name| fs::metadata(root.join(name)).and_then(|metadata| metadata.modified()).ok())
+        .max()
+}
+
+/// The OCR environment the user chose, when the configuration naming it is gone (a forced uninstall
+/// deletes %APPDATA%\VisualTeX with it) but the environment is not: the most recently used working
+/// environment among the candidates.
+pub fn discover_existing_root(candidates: &[PathBuf], protected_roots: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            usable_existing_root(candidate, protected_roots).map(|used| (candidate, used))
+        })
+        .max_by_key(|(_, used)| *used)
+        .and_then(|(root, _)| normalized_absolute(root).ok())
+}
+
+/// Every fixed drive's root ("C:\\", "D:\\", ...), where users put the OCR environment.
+#[cfg(windows)]
+pub fn fixed_drive_roots() -> Vec<PathBuf> {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetLogicalDrives() -> u32;
+        fn GetDriveTypeW(root_path_name: *const u16) -> u32;
+    }
+    const DRIVE_FIXED: u32 = 3;
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u8)
+        .filter(|index| mask & (1u32 << index) != 0)
+        .filter_map(|index| {
+            let root = format!("{}:\\", (b'A' + index) as char);
+            let wide = root.encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>();
+            (unsafe { GetDriveTypeW(wide.as_ptr()) } == DRIVE_FIXED).then(|| PathBuf::from(root))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+pub fn fixed_drive_roots() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 pub fn resolve(
     config_path: &Path,
     legacy_root: &Path,
     default_root: &Path,
     protected_roots: &[PathBuf],
+) -> Result<StorageResolution, String> {
+    resolve_with_discovery(config_path, legacy_root, default_root, protected_roots, &Vec::new)
+}
+
+/// The OCR storage root: the configured one; without a configuration, the legacy root, a working
+/// environment at the default root, the user's environment found among `discovery_candidates` (only
+/// computed then), else the default root. The result becomes the configuration.
+pub fn resolve_with_discovery(
+    config_path: &Path,
+    legacy_root: &Path,
+    default_root: &Path,
+    protected_roots: &[PathBuf],
+    discovery_candidates: &dyn Fn() -> Vec<PathBuf>,
 ) -> Result<StorageResolution, String> {
     let config_path = normalized_absolute(config_path)?;
     let legacy_root = normalized_absolute(legacy_root)?;
@@ -422,6 +498,10 @@ pub fn resolve(
         && (has_payload(&legacy_root) || looks_like_runtime_root(&legacy_root))
     {
         (legacy_root, "legacy")
+    } else if usable_existing_root(&default_root, protected_roots).is_some() {
+        (default_root, "default")
+    } else if let Some(found) = discover_existing_root(&discovery_candidates(), protected_roots) {
+        (found, "discovered")
     } else {
         (default_root, "default")
     };
@@ -642,6 +722,87 @@ mod tests {
         let second = resolve(&config, &legacy, &default, &[]).unwrap();
         assert_eq!(second.root, resolved.root);
         assert_eq!(second.source, "configured");
+    }
+
+    fn working_environment(root: &Path) {
+        fs::create_dir_all(root.join("python")).unwrap();
+        fs::write(root.join("python/python.exe"), b"python").unwrap();
+        ensure_marker(root).unwrap();
+    }
+
+    #[test]
+    fn a_lost_configuration_finds_the_users_environment_again() {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join("config/ocr-storage.json");
+        let legacy = temp.path().join("legacy/ocr-runtime");
+        let default = temp.path().join("default/ocr-runtime");
+        let chosen = temp.path().join("d-drive/VisualTeX-OCR");
+        working_environment(&chosen);
+        // a Python without VisualTeX's marker is not an OCR environment of VisualTeX
+        let unmarked = temp.path().join("other/VisualTeX-OCR");
+        fs::create_dir_all(unmarked.join("python")).unwrap();
+        fs::write(unmarked.join("python/python.exe"), b"python").unwrap();
+        let candidates = vec![temp.path().join("missing/VisualTeX-OCR"), unmarked, chosen.clone()];
+
+        let resolved =
+            resolve_with_discovery(&config, &legacy, &default, &[], &|| candidates.clone()).unwrap();
+        assert_eq!(resolved.root, chosen);
+        assert_eq!(resolved.source, "discovered");
+        let again = resolve(&config, &legacy, &default, &[]).unwrap();
+        assert_eq!(again.root, chosen);
+        assert_eq!(again.source, "configured");
+    }
+
+    #[test]
+    fn without_an_environment_anywhere_the_default_is_used() {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join("config/ocr-storage.json");
+        let legacy = temp.path().join("legacy/ocr-runtime");
+        let default = temp.path().join("default/ocr-runtime");
+        let candidates = vec![temp.path().join("missing/VisualTeX-OCR")];
+        let resolved =
+            resolve_with_discovery(&config, &legacy, &default, &[], &|| candidates.clone()).unwrap();
+        assert_eq!(resolved.root, default);
+        assert_eq!(resolved.source, "default");
+    }
+
+    #[test]
+    fn a_working_default_environment_is_kept_and_not_searched_past() {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join("config/ocr-storage.json");
+        let legacy = temp.path().join("legacy/ocr-runtime");
+        let default = temp.path().join("default/ocr-runtime");
+        working_environment(&default);
+        let chosen = temp.path().join("d-drive/VisualTeX-OCR");
+        working_environment(&chosen);
+        let resolved = resolve_with_discovery(&config, &legacy, &default, &[], &|| {
+            panic!("no search while the default root works")
+        })
+        .unwrap();
+        assert_eq!(resolved.root, default);
+        assert_eq!(resolved.source, "default");
+        let _ = chosen;
+    }
+
+    #[test]
+    fn an_environment_inside_the_program_folder_is_never_adopted() {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join("config/ocr-storage.json");
+        let legacy = temp.path().join("legacy/ocr-runtime");
+        let default = temp.path().join("default/ocr-runtime");
+        let program = temp.path().join("program");
+        let inside = program.join("VisualTeX-OCR");
+        working_environment(&inside);
+        let candidates = vec![inside];
+        let resolved = resolve_with_discovery(
+            &config,
+            &legacy,
+            &default,
+            std::slice::from_ref(&program),
+            &|| candidates.clone(),
+        )
+        .unwrap();
+        assert_eq!(resolved.root, default);
     }
 
     #[test]

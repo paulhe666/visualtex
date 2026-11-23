@@ -135,7 +135,8 @@ export interface OcrRuntimeStatus {
   // A backend without a managed storage folder, model downloads or quarantine leaves the next fields out; the
   // payload check fills them in ("", "default", false, null, []).
   storageConfigPath: string;
-  storageSource: "configured" | "legacy" | "default" | string;
+  /** "discovered": found again by its marker after its configuration was lost */
+  storageSource: "configured" | "legacy" | "default" | "discovered" | string;
   storageManaged: boolean;
   storageAvailableBytes: number | null;
   storagePersistentAcrossUninstall: boolean;
