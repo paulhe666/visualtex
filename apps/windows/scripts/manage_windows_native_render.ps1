@@ -11,6 +11,17 @@ $programFiles64=[Environment]::GetEnvironmentVariable('ProgramW6432')
 if (!$programFiles64) { $programFiles64=[Environment]::GetFolderPath('ProgramFiles') }
 $installRoot=[IO.Path]::GetFullPath((Join-Path $programFiles64 'VisualTeX\NativeRender'))
 $expectedExe=Join-Path $installRoot 'VisualTeX.NativeRenderService.exe'
+$upgradeCode='{D51CF2F8-0CF2-4A79-BA25-80E7A77FD548}'
+# Precise causes for failures (Windows Installer's own error, a stuck or vanished service).
+$diagnosisScript=Join-Path $PSScriptRoot 'windows_office_diagnosis.ps1'
+if (Test-Path -LiteralPath $diagnosisScript -PathType Leaf) { . $diagnosisScript }
+function Get-ServiceTroubleText {
+    if (Get-Command Get-NativeRenderServiceTrouble -ErrorAction SilentlyContinue) {
+        $trouble=Get-NativeRenderServiceTrouble
+        if ($trouble) { return ' '+$trouble }
+    }
+    return ''
+}
 if ($Action -ne 'Verify') {
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
     $principal=New-Object Security.Principal.WindowsPrincipal($identity)
@@ -23,22 +34,62 @@ function Get-OwnedService {
     }
     return $service
 }
+# The installed package: from VisualTeX's own record of it, or (when a forced uninstall deleted that record, or the
+# record outlived its package) from Windows Installer's list of this package's upgrade code, only a product with
+# this package's name and publisher.
 function Get-OwnedProduct {
     $hive=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
     try {
         $key=$hive.OpenSubKey('Software\VisualTeX\NativeRender')
-        if (!$key) { return $null }
-        try {
-            if ([IO.Path]::GetFullPath([string]$key.GetValue('InstallPath')).TrimEnd('\') -ine $installRoot) { throw 'Unexpected native-render installation root.' }
-            $code=[string]$key.GetValue('ProductCode')
-            if ($code -notmatch '^\{[0-9A-Fa-f-]{36}\}$') { throw 'Invalid native-render product identity.' }
-            $installer=New-Object -ComObject WindowsInstaller.Installer
+        if ($key) {
             try {
-                if ($installer.ProductInfo($code,'ProductName') -cne 'VisualTeX Native Rendering' -or $installer.ProductInfo($code,'Publisher') -cne 'VisualTeX') { throw 'Native-render MSI ownership mismatch.' }
-            } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($installer) }
-            return $code
-        } finally { $key.Dispose() }
+                $path=[string]$key.GetValue('InstallPath')
+                $code=[string]$key.GetValue('ProductCode')
+                # The service keeps a value of its own in this key (PrivateDataVersion) and writes it again after
+                # a forced uninstall deleted the key: a key without the package's two values is no record.
+                if ($path -and $code) {
+                    if ([IO.Path]::GetFullPath($path).TrimEnd('\') -ine $installRoot) { throw 'Unexpected native-render installation root.' }
+                    if ($code -notmatch '^\{[0-9A-Fa-f-]{36}\}$') { throw 'Invalid native-render product identity.' }
+                    $identity=Get-ProductIdentity $code
+                    if ($identity) {
+                        if ($identity.Name -cne 'VisualTeX Native Rendering' -or $identity.Publisher -cne 'VisualTeX') { throw 'Native-render MSI ownership mismatch.' }
+                        return $code
+                    }
+                }
+            } finally { $key.Dispose() }
+        }
     } finally { $hive.Dispose() }
+    $installer=New-Object -ComObject WindowsInstaller.Installer
+    try {
+        $related=@($installer.GetType().InvokeMember('RelatedProducts',[Reflection.BindingFlags]::GetProperty,$null,$installer,@($upgradeCode)))
+    } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($installer) }
+    foreach ($code in $related) {
+        $identity=Get-ProductIdentity ([string]$code)
+        if ($identity -and $identity.Name -ceq 'VisualTeX Native Rendering' -and $identity.Publisher -ceq 'VisualTeX') { return [string]$code }
+    }
+    return $null
+}
+# Name and publisher of an installed product; nothing when Windows Installer does not know it.
+function Get-ProductIdentity([string]$Code) {
+    $installer=New-Object -ComObject WindowsInstaller.Installer
+    try {
+        try {
+            return [pscustomobject]@{ Name=[string]$installer.ProductInfo($Code,'ProductName'); Publisher=[string]$installer.ProductInfo($Code,'Publisher') }
+        } catch { return $null }
+    } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($installer) }
+}
+# The service of an earlier VisualTeX whose package is gone: a forced uninstall deletes the program's records but not
+# its service. Its binary path and virtual account are this package's (Get-OwnedService checked them, and only an
+# administrator can write that folder), so it is removed instead of blocking every later install and uninstall.
+function Remove-OrphanedService {
+    Write-Warning 'Removing the native-render service an earlier VisualTeX installation left without its package.'
+    try { Stop-Service -Name $serviceName -Force -ErrorAction Stop } catch { }
+    & sc.exe delete $serviceName | Out-Null
+    for ($attempt=0; $attempt -lt 60; $attempt++) {
+        if (!(Get-CimInstance Win32_Service -Filter "Name='VisualTeX.NativeRender'")) { return }
+        Start-Sleep -Milliseconds 250
+    }
+    throw ('The native-render service an earlier VisualTeX installation left behind could not be removed.'+(Get-ServiceTroubleText))
 }
 # MathType equations in Word, PowerPoint and WPS are drawn by this service. Windows restarts
 # it after a crash, and the signed-in user may start it (the add-ins and VisualTeX start it
@@ -62,7 +113,10 @@ function Set-ServiceRecovery {
 function Invoke-OwnedMsi([string[]]$Arguments) {
     $process=Start-Process -FilePath "$env:windir\System32\msiexec.exe" -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try { $process.WaitForExit(); $code=$process.ExitCode } finally { $process.Dispose() }
-    if ($code -notin @(0,3010)) { throw "Native-render MSI failed with exit code $code. Log: $LogPath" }
+    if ($code -notin @(0,3010)) {
+        $cause=if (Get-Command Get-MsiFailureCause -ErrorAction SilentlyContinue) { Get-MsiFailureCause $code $LogPath } else { "exit code $code" }
+        throw "The VisualTeX renderer service package (MathType equations) failed: $cause. Log: $LogPath"
+    }
     if ($code -eq 3010) { Write-Warning 'Windows reports a restart is required; no restart was requested.' }
 }
 function Assert-Payload($Manifest) {
@@ -263,12 +317,18 @@ if ($Action -ne 'Verify' -and !$LogPath) {
     $LogPath=Join-Path $logRoot ('native-render-'+$Action.ToLowerInvariant()+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.log')
 }
 if ($Action -eq 'Install') {
-    if ($service -and !$product) { throw 'The existing service is not managed by this MSI; refusing to adopt it.' }
-    Invoke-OwnedMsi @('/i',('"'+[IO.Path]::GetFullPath($msi)+'"'),'/qn','/norestart','REBOOT=ReallySuppress','/L*v',('"'+$LogPath+'"'))
+    if ($service -and !$product) { Remove-OrphanedService; $service=$null }
+    $arguments=@('/i',('"'+[IO.Path]::GetFullPath($msi)+'"'),'/qn','/norestart','REBOOT=ReallySuppress','/L*v',('"'+$LogPath+'"'))
+    # This very package is registered already. A plain /i would only reconfigure it and put back nothing a
+    # forced uninstall or a cleaner removed (the files, the service, its record, Windows Installer's copy
+    # of the package), so everything is reinstalled from the package.
+    $packageCode=if (Get-Command Get-MsiProductCode -ErrorAction SilentlyContinue) { Get-MsiProductCode ([IO.Path]::GetFullPath($msi)) } else { '' }
+    if ($product -and $packageCode -and $product -ieq $packageCode) { $arguments+=@('REINSTALL=ALL','REINSTALLMODE=vamus') }
+    Invoke-OwnedMsi $arguments
     $product=Get-OwnedProduct
     $service=Get-OwnedService
     if (!$product -or !$service) {
-        throw 'The native-render MSI completed without an owned service registration.'
+        throw ('The native-render MSI completed without an owned service registration.'+(Get-ServiceTroubleText))
     }
     if ($service.State -ne 'Running') {
         # A same-version MSI maintenance install does not necessarily rerun the
@@ -297,7 +357,7 @@ if ($Action -eq 'EnsureFonts') {
     return
 }
 if ($Action -in @('Install','Verify')) {
-    if (!$product -or !$service -or $service.State -ne 'Running') { throw 'The private native-render service is not installed and running.' }
+    if (!$product -or !$service -or $service.State -ne 'Running') { throw ('The private native-render service is not installed and running.'+(Get-ServiceTroubleText)) }
     $sid=(New-Object Security.Principal.NTAccount($expectedAccount)).Translate([Security.Principal.SecurityIdentifier]).Value
     if ($sid -cne $expectedSid) { throw 'The service virtual-account identity does not match the protected data ACL.' }
     if ($manifest) { Assert-Payload $manifest }
@@ -305,9 +365,9 @@ if ($Action -in @('Install','Verify')) {
     return
 }
 if ($Action -eq 'Uninstall') {
-    if (!$product -and $service) { throw 'Unmanaged service found; refusing to remove it.' }
+    if (!$product -and $service) { Remove-OrphanedService }
     if ($product) { Invoke-OwnedMsi @('/x',$product,'/qn','/norestart','REBOOT=ReallySuppress','/L*v',('"'+$LogPath+'"')) }
-    if (Get-CimInstance Win32_Service -Filter "Name='VisualTeX.NativeRender'") { throw 'Native-render service remains after uninstall.' }
+    if (Get-CimInstance Win32_Service -Filter "Name='VisualTeX.NativeRender'") { throw ('Native-render service remains after uninstall.'+(Get-ServiceTroubleText)) }
     # Windows owns profile/hive lifetime. Do not force-unload an active hive or
     # delete shared MathType fonts, public COM registrations, or user settings.
     $profile=Get-CimInstance Win32_UserProfile -Filter "SID='$expectedSid'"

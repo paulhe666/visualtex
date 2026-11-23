@@ -911,3 +911,12 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
     transform: rotate(360deg);
   }
 }
+
+/* The repair prompt for a WPS Office the add-ins do not reach. */
+.wps-repair-prompt {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.wps-repair-prompt .office-settings-warning {
+  font-size: 12px;
+}

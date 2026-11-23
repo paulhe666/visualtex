@@ -478,6 +478,7 @@ pub fn run() {
             office::lifecycle::test_windows_office_runtime,
             office::lifecycle::open_windows_office_logs,
             office::lifecycle::get_wps_integration_status,
+            office::lifecycle::diagnose_wps_integration,
             office::lifecycle::set_wps_host_enabled,
             office::lifecycle::get_native_render_status,
             office::lifecycle::start_native_render_service,

@@ -177,6 +177,36 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
   }
   template = template.replace(oldReinstallUninstallAnchor, newReinstallUninstallAnchor);
 
+  // An earlier uninstaller that fails sent the user back to this page with no way forward (a same-version
+  // reinstall always uninstalls first). Releases before 1.3.1 stop, and return 1 as a cancelled uninstall
+  // does, whenever they cannot remove the Office integration - for example after a forced uninstall left
+  // the renderer service behind. Say why, from that uninstaller's own log, and offer to install over it:
+  // this installer replaces every file and installs the Office integration again.
+  const oldPreviousUninstallFailure = [
+    "      ; User cancelled NSIS uninstaller? return to select un/reinstall page",
+    "      ${If} $0 = 1",
+    "        Abort",
+    "      ${EndIf}",
+    "",
+    "      ; Other erros? show generic error message and return to select un/reinstall page",
+    '      MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"',
+    "      Abort",
+  ].join("\n");
+  const newPreviousUninstallFailure = [
+    "      ; VisualTeX: the earlier uninstaller failed or was cancelled. Name the cause it logged and",
+    "      ; offer to install over it; No returns to this page.",
+    "      Call VisualTeXExplainPreviousUninstall",
+    "      Pop $1",
+    '      MessageBox MB_ICONEXCLAMATION|MB_YESNO "$1" IDYES reinst_done',
+    "      Abort",
+  ].join("\n");
+  if (!template.includes(oldPreviousUninstallFailure)) {
+    throw new Error(
+      "The Tauri NSIS previous-uninstaller failure block changed unexpectedly; refusing an installer that would leave users of a failing uninstaller without a way to install",
+    );
+  }
+  template = template.replace(oldPreviousUninstallFailure, newPreviousUninstallFailure);
+
   const oldUninstallOrdering = [
     "Section Uninstall",
     "",

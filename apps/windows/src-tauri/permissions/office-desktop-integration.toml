@@ -26,6 +26,7 @@ commands.allow = [
   "test_windows_office_runtime",
   "open_windows_office_logs",
   "get_wps_integration_status",
+  "diagnose_wps_integration",
   "set_wps_host_enabled",
   "get_native_render_status",
   "start_native_render_service",

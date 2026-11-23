@@ -11,6 +11,7 @@
       "../scripts/test_windows_office_runtime.ps1": "scripts/test_windows_office_runtime.ps1",
       "../scripts/uninstall_windows_vsto.ps1": "scripts/uninstall_windows_vsto.ps1",
       "../scripts/windows_wps_companion.ps1": "scripts/windows_wps_companion.ps1",
+      "../scripts/windows_office_diagnosis.ps1": "scripts/windows_office_diagnosis.ps1",
       "../scripts/manage_windows_native_render.ps1": "scripts/manage_windows_native_render.ps1",
         "../scripts/install_windows_input_method.ps1": "scripts/install_windows_input_method.ps1",
         "../input-method/build/VisualTeX Input/": "input-method/",

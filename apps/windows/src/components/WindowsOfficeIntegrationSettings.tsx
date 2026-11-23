@@ -33,6 +33,14 @@ import {
   type WpsHostLoad,
   type WpsIntegrationStatus,
 } from "./windowsOfficeStatusValidation";
+import { wpsProblem } from "./wpsProblem";
+import {
+  decodeWpsDiagnosis,
+  wpsDiagnosisAllFine,
+  wpsDiagnosisLines,
+  type WpsDiagnosis,
+} from "./wpsDiagnosis";
+import { officeScriptReason } from "./officeScriptReason";
 
 export type { WindowsOfficeMode } from "./windowsOfficeStatusValidation";
 
@@ -55,70 +63,6 @@ function StatusLine({ ok, children }: { ok: boolean; children: React.ReactNode }
   );
 }
 
-// What keeps VisualTeX out of WPS, most basic first; null when nothing does.
-function wpsProblem(wps: WpsIntegrationStatus, isEn: boolean) {
-  if (wps.installations.length === 0) return null;
-  if (!wps.hostEnabled) {
-    return {
-      repair: false,
-      text: isEn
-        ? "VisualTeX is turned off for WPS: WPS shows no VisualTeX tab. Turn it on, then reopen WPS."
-        : "WPS 中的 VisualTeX 已关闭，WPS 不显示 VisualTeX 选项卡。开启后重新打开 WPS。",
-    };
-  }
-  if (wps.companionError) {
-    return {
-      repair: true,
-      text: (isEn ? "Registering the add-ins for WPS failed: " : "为 WPS 注册加载项失败：") +
-        wps.companionError,
-    };
-  }
-  const unregistered = wps.installations.find(
-    (installation) =>
-      !installation.writerRegistered || !installation.presentationRegistered,
-  );
-  if (unregistered) {
-    const bits = unregistered.architecture === "x86" ? "32" : "64";
-    return {
-      repair: true,
-      text: isEn
-        ? `The VisualTeX add-ins are not registered for ${bits}-bit WPS ${unregistered.version}.`
-        : `VisualTeX 加载项没有注册到 ${bits} 位 WPS ${unregistered.version}。`,
-    };
-  }
-  if (
-    wps.installations.some(
-      (installation) =>
-        !installation.writerWhitelisted || !installation.presentationWhitelisted,
-    )
-  ) {
-    return {
-      repair: true,
-      text: isEn
-        ? "VisualTeX is not in the WPS add-in whitelist."
-        : "VisualTeX 不在 WPS 加载项白名单中。",
-    };
-  }
-  if (!wps.writerLoaded && !wps.presentationLoaded) {
-    return {
-      repair: false,
-      text: isEn
-        ? "WPS has not loaded VisualTeX yet. Quit WPS completely and open it again; if there is still no VisualTeX tab, tick VisualTeX under COM Add-ins in WPS."
-        : "WPS 尚未加载 VisualTeX。请完全退出 WPS 后重新打开；仍没有 VisualTeX 选项卡时，在 WPS 的“COM 加载项”中勾选 VisualTeX。",
-    };
-  }
-  const lastLoad = [wps.writerLoaded, wps.presentationLoaded].find(Boolean);
-  if (lastLoad && !lastLoad.enabled) {
-    return {
-      repair: false,
-      text: isEn
-        ? "Reopen WPS to show the VisualTeX tab."
-        : "重新打开 WPS 后显示 VisualTeX 选项卡。",
-    };
-  }
-  return null;
-}
-
 function hostLoadText(load: WpsHostLoad | null, host: string, isEn: boolean) {
   if (!load) return isEn ? `${host} has not loaded VisualTeX` : `${host}尚未加载 VisualTeX`;
   const off = load.enabled ? "" : isEn ? " (turned off)" : "（未启用）";
@@ -132,6 +76,8 @@ export function WindowsOfficeIntegrationSettings() {
   const [status, setStatus] = useState<OfficePlatformStatus | null>(null);
   const [companion, setCompanion] = useState<OfficeCompanionStatus | null>(null);
   const [wps, setWps] = useState<WpsIntegrationStatus | null>(null);
+  // why WPS does not show VisualTeX, looked up when the WPS card reports a problem
+  const [wpsDiagnosis, setWpsDiagnosis] = useState<WpsDiagnosis | null>(null);
   const [renderer, setRenderer] = useState<NativeRenderStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -212,12 +158,13 @@ export function WindowsOfficeIntegrationSettings() {
         }
         return true;
       } catch (error) {
-        setMessage(
-          errorMessage(
-            error,
-            isEn ? "Windows Office operation failed." : "Windows Office 操作失败。",
-          ),
+        const details = errorMessage(
+          error,
+          isEn ? "Windows Office operation failed." : "Windows Office 操作失败。",
         );
+        // the script's own cause first, then everything it printed
+        const reason = officeScriptReason(error);
+        setMessage(reason ? `${reason}\n\n${details}` : details);
         return false;
       } finally {
         setBusy(null);
@@ -320,6 +267,28 @@ export function WindowsOfficeIntegrationSettings() {
   ]);
 
   const wpsIssue = wps ? wpsProblem(wps, isEn) : null;
+  const wpsNeedsDiagnosis = Boolean(wps && wps.hostEnabled && wpsProblem(wps, false));
+  useEffect(() => {
+    setWpsDiagnosis(null);
+    if (!wpsNeedsDiagnosis) return;
+    let cancelled = false;
+    void invoke<unknown>("diagnose_wps_integration")
+      .then((value) => {
+        if (!cancelled) setWpsDiagnosis(decodeWpsDiagnosis(value));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [wps, wpsNeedsDiagnosis]);
+  // the precise causes replace the summary; with none found, the summary says what is wrong and that the
+  // registration, the whitelist and the load test are fine
+  const wpsLines = (() => {
+    if (!wpsIssue) return [];
+    if (!wpsDiagnosis) return [wpsIssue.text];
+    const causes = wpsDiagnosisLines(wpsDiagnosis, isEn);
+    return causes.length > 0 ? causes : [wpsIssue.text, wpsDiagnosisAllFine(isEn)];
+  })();
 
   const diagnosticMessage =
     message ||
@@ -695,7 +664,9 @@ export function WindowsOfficeIntegrationSettings() {
           {wpsIssue && (
             <div className="office-settings-warning" role="alert">
               <ShieldAlert size={15} />
-              <span className="office-settings-diagnostic">{wpsIssue.text}</span>
+              <span className="office-settings-diagnostic">
+                {wpsLines.join("\n")}
+              </span>
             </div>
           )}
           {wpsIssue?.repair && (

@@ -7,6 +7,8 @@
 !define VISUALTEX_INSTALLER_VERSION "1.3.1"
 !define VISUALTEX_RUNTIME_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\manage_private_mathtype_runtime.ps1"
 !define VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\office_process_guard.ps1"
+; Why an Office step or the copy of files failed (windows_office_diagnosis.ps1 describes each cause).
+!define VISUALTEX_OFFICE_DIAGNOSIS_SOURCE "${__FILEDIR__}\..\..\scripts\windows_office_diagnosis.ps1"
 
 Var VisualTeXOfficeChoice
 Var VisualTeXMsOfficeCheckbox
@@ -20,6 +22,9 @@ Var VisualTeXOcrChoice
 Var VisualTeXOcrCheckbox
 Var VisualTeXOcrResourcePrefix
 Var VisualTeXAcceptanceMode
+; reading the one-line reasons the Office scripts and the diagnosis write for the installer
+Var VisualTeXReasonFile
+Var VisualTeXReasonChar
 
 ; The generated Tauri PageReinstall function is patched after bundling so the
 ; same-version maintenance page defaults to "Uninstall VisualTeX" directly at
@@ -29,6 +34,8 @@ Var VisualTeXAcceptanceMode
 !macro VisualTeXRunOfficeProcessGuard MODE
   InitPluginsDir
   File "/oname=$PLUGINSDIR\visualtex-office-process-guard.ps1" "${VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE}"
+  ; the guard also names the programs (WPS Office above all) that have VisualTeX's add-ins loaded
+  File "/oname=$PLUGINSDIR\windows_office_diagnosis.ps1" "${VISUALTEX_OFFICE_DIAGNOSIS_SOURCE}"
   nsExec::ExecToStack /TIMEOUT=20000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-office-process-guard.ps1" -Mode ${MODE}`
   Pop $0
   Pop $1
@@ -48,7 +55,7 @@ visualtex_office_guard_check:
   ${EndIf}
 
   IfSilent visualtex_office_guard_silent_blocked 0
-  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "检测到 Microsoft Office 进程仍在运行：$\r$\n$\r$\n$1$\r$\n$\r$\n其中可能包含没有任何可见窗口的后台 COM/OLE 进程（例如 POWERPNT.EXE -Embedding）。强制关闭会立即结束这些 Office 进程，未保存的 Office 文档可能丢失。$\r$\n$\r$\n是否强制关闭这些 Office 进程并继续安装？选择“否”不会关闭任何进程。$\r$\n$\r$\nMicrosoft Office processes are still running, including possible hidden COM/OLE instances. Force close them and continue?" IDYES visualtex_office_guard_force_close IDNO visualtex_office_guard_declined
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "以下 Office 或 WPS 程序正在运行，安装 Office 插件前需要关闭：$\r$\n$\r$\n$1$\r$\n$\r$\n其中可能包含没有任何可见窗口的后台 COM/OLE 进程（例如 POWERPNT.EXE -Embedding）。强制关闭会立即结束这些程序，未保存的文档可能丢失。$\r$\n$\r$\n是否强制关闭这些程序并继续安装？选择“否”不会关闭任何程序。$\r$\n$\r$\nOffice or WPS processes that hold the add-ins are still running, including possible hidden COM/OLE instances. Force close them and continue?" IDYES visualtex_office_guard_force_close IDNO visualtex_office_guard_declined
 
 visualtex_office_guard_force_close:
   !insertmacro VisualTeXRunOfficeProcessGuard Stop
@@ -57,7 +64,7 @@ visualtex_office_guard_force_close:
     Return
   ${EndIf}
   IfSilent visualtex_office_guard_silent_failure 0
-  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完全关闭所有 Office 进程：$\r$\n$\r$\n$1$\r$\n$\r$\n可重试，或取消本次 Office 集成。$\r$\n$\r$\nThe installer could not close every Office process. Retry or cancel Office integration." IDRETRY visualtex_office_guard_check IDCANCEL visualtex_office_guard_declined
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完全关闭这些 Office 或 WPS 程序：$\r$\n$\r$\n$1$\r$\n$\r$\n可重试，或取消本次 Office 集成。$\r$\n$\r$\nThe installer could not close every Office or WPS process. Retry or cancel Office integration." IDRETRY visualtex_office_guard_check IDCANCEL visualtex_office_guard_declined
 
 visualtex_office_guard_declined:
   Push "1"
@@ -69,6 +76,109 @@ visualtex_office_guard_silent_blocked:
 visualtex_office_guard_silent_failure:
   DetailPrint "Office process guard failed: ExitCode=$0 Output=$1"
   Push "3"
+FunctionEnd
+
+; Drops the line break FileRead leaves at the end of VAR.
+!macro VisualTeXTrimLineEnd VAR
+  ${Do}
+    StrCpy $VisualTeXReasonChar ${VAR} 1 -1
+    ${If} $VisualTeXReasonChar == "$\r"
+    ${OrIf} $VisualTeXReasonChar == "$\n"
+      StrCpy ${VAR} ${VAR} -1
+    ${Else}
+      ${ExitDo}
+    ${EndIf}
+  ${Loop}
+!macroend
+
+; VAR: the first line of FILE, which an Office script or the diagnosis wrote in the system code page;
+; "" when there is none.
+!macro VisualTeXReadFirstLine FILE VAR
+  StrCpy ${VAR} ""
+  ClearErrors
+  FileOpen $VisualTeXReasonFile "${FILE}" r
+  ${IfNot} ${Errors}
+    FileRead $VisualTeXReasonFile ${VAR}
+    FileClose $VisualTeXReasonFile
+  ${EndIf}
+  !insertmacro VisualTeXTrimLineEnd ${VAR}
+  ; a message built around it stays within NSIS's 1024-character strings
+  StrCpy ${VAR} ${VAR} 420
+!macroend
+
+; The copy of files stops with "Error opening file for writing" and no reason when the installation
+; folder, or a file in it, cannot be written. Before anything is copied the diagnosis checks the folder
+; and every file an update replaces (read-only files are made writable on the way) and names the cause:
+; the owner when this account may not write (an installation made as administrator or by another
+; account), or the programs that have the file open.
+Function VisualTeXEnsureInstallFolderWritable
+visualtex_install_folder_check:
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\windows_office_diagnosis.ps1" "${VISUALTEX_OFFICE_DIAGNOSIS_SOURCE}"
+  Delete "$PLUGINSDIR\visualtex-install-folder.txt"
+  nsExec::ExecToStack /TIMEOUT=60000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\windows_office_diagnosis.ps1" -DiagnosisMode InstallFolder -DiagnosisPath "$INSTDIR" -DiagnosisResultPath "$PLUGINSDIR\visualtex-install-folder.txt"`
+  Pop $0
+  Pop $1
+  ; 0: the folder takes the files. Anything but 10 means PowerShell itself failed: the copy goes ahead.
+  ${If} $0 != "10"
+    Return
+  ${EndIf}
+  ; three lines: the kind of problem, the path, and the owner or the programs
+  StrCpy $2 ""
+  StrCpy $3 ""
+  StrCpy $4 ""
+  ClearErrors
+  FileOpen $VisualTeXReasonFile "$PLUGINSDIR\visualtex-install-folder.txt" r
+  ${IfNot} ${Errors}
+    FileRead $VisualTeXReasonFile $2
+    FileRead $VisualTeXReasonFile $3
+    FileRead $VisualTeXReasonFile $4
+    FileClose $VisualTeXReasonFile
+  ${EndIf}
+  !insertmacro VisualTeXTrimLineEnd $2
+  !insertmacro VisualTeXTrimLineEnd $3
+  !insertmacro VisualTeXTrimLineEnd $4
+  StrCpy $3 $3 300
+  StrCpy $4 $4 300
+  SetDetailsView show
+  DetailPrint "Installation folder check: $2; $3; $4"
+  ${If} $2 == "InUse"
+    ${If} $4 == ""
+      StrCpy $4 "另一个程序（Windows 没有说明是哪个）"
+    ${EndIf}
+    StrCpy $5 "安装文件夹中的这个文件正在被使用，无法替换：$\r$\n$3$\r$\n$\r$\n使用它的程序：$4$\r$\n$\r$\n关闭这些程序后点“重试”。"
+  ${ElseIf} $2 == "FolderDenied"
+    StrCpy $5 "当前帐户不能在这个文件夹中创建文件：$\r$\n$3$\r$\n$\r$\n文件夹所有者：$4$\r$\n$\r$\n请取消，然后重新运行安装程序并选择其他安装位置（默认位置即可）。"
+  ${ElseIf} $2 == "AccessDenied"
+  ${OrIf} $2 == "ReadOnly"
+    StrCpy $5 "当前帐户不能修改安装文件夹中的这个文件：$\r$\n$3$\r$\n$\r$\n文件所有者：$4。它可能是以管理员身份或由另一个帐户安装的。$\r$\n$\r$\n删除安装文件夹 $INSTDIR 后点“重试”，或取消后重新运行安装程序并选择其他安装位置。"
+  ${Else}
+    StrCpy $5 "无法写入安装文件夹中的这个文件：$\r$\n$3$\r$\n$\r$\n$4"
+  ${EndIf}
+  IfSilent visualtex_install_folder_silent 0
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "$5" IDRETRY visualtex_install_folder_check
+  SetErrorLevel 1
+  Abort
+visualtex_install_folder_silent:
+  SetErrorLevel 1
+  Abort "Installation folder check: $2; $3; $4"
+FunctionEnd
+
+; Pushes the question shown when the uninstaller of the installed VisualTeX (run by this installer) failed,
+; with the cause the diagnosis reads from that uninstaller's log. $0: its exit code.
+Function VisualTeXExplainPreviousUninstall
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\windows_office_diagnosis.ps1" "${VISUALTEX_OFFICE_DIAGNOSIS_SOURCE}"
+  Delete "$PLUGINSDIR\visualtex-previous-uninstall.txt"
+  nsExec::ExecToStack /TIMEOUT=30000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\windows_office_diagnosis.ps1" -DiagnosisMode PreviousUninstall -DiagnosisResultPath "$PLUGINSDIR\visualtex-previous-uninstall.txt"`
+  Pop $2
+  Pop $2
+  !insertmacro VisualTeXReadFirstLine "$PLUGINSDIR\visualtex-previous-uninstall.txt" $2
+  ${If} $2 == ""
+    Push "已安装的 VisualTeX 没有卸载完成（返回值 $0）。$\r$\n$\r$\n是否直接覆盖安装？新版本会替换全部文件，并重新安装 Office 插件。"
+  ${Else}
+    Push "已安装的 VisualTeX 没有卸载完成（返回值 $0）：$\r$\n$\r$\n$2$\r$\n$\r$\n是否直接覆盖安装？新版本会替换全部文件，并重新安装 Office 插件。"
+  ${EndIf}
 FunctionEnd
 
 Function VisualTeXRepairMainUninstallRegistration
@@ -252,6 +362,13 @@ visualtex_native_renderer_stop_retry:
     Return
   ${EndIf}
   SetDetailsView show
+  !if "${PREFIX}" == "un."
+    ; Uninstalling: the renderer's files are not in the folder being removed, and removing its package
+    ; stops it again. A service that will not stop must not keep VisualTeX installed; the Office step
+    ; reports why if it cannot remove the service either.
+    DetailPrint "The VisualTeX native-render service did not stop (ExitCode=$0); continuing the uninstall."
+    Return
+  !endif
   IfSilent visualtex_native_renderer_stop_abort 0
   MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法停止 VisualTeX 私有公式渲染服务，尚未继续覆盖文件。$\r$\n返回值：$0$\r$\n$1$\r$\n$\r$\n该操作只管理 VisualTeX.NativeRender 服务，不会枚举、关闭或修改独立安装的 MathType。$\r$\n$\r$\nUnable to stop the VisualTeX native-render service. Retry or cancel without replacing files. Standalone MathType is never enumerated or terminated." IDRETRY visualtex_native_renderer_stop_retry IDCANCEL visualtex_native_renderer_stop_abort
 visualtex_native_renderer_stop_abort:
@@ -303,6 +420,8 @@ FunctionEnd
   ${EndIf}
 
   !insertmacro VisualTeXStopAgentLauncher
+
+  Call VisualTeXEnsureInstallFolderWritable
 
   ; Builds before 1.2.7 could leave MathType's canonical per-user COM class
   ; pointing at VisualTeX's reduced renderer after a native sidecar crash. That
@@ -461,6 +580,14 @@ FunctionEnd
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x86.sha256.json" 0 visualtex_office_missing
 
+    ; Neither Microsoft Office nor WPS Office (exit 5): nothing would load the add-ins, so no certificate,
+    ; no add-ins and no administrator prompt.
+    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -DetectOnly`
+    Pop $0
+    StrCmp $0 "5" visualtex_office_no_host 0
+
+    InitPluginsDir
+    Delete "$PLUGINSDIR\visualtex-office-install-reason.txt"
     nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\ensure_windows_office_certificate.ps1" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
     Pop $0
     StrCmp $0 "0" 0 visualtex_office_failed
@@ -486,32 +613,59 @@ visualtex_office_late_guard_declined_interactive:
       Goto visualtex_office_done
     ${EndIf}
 
-    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -PackageDirectory "$INSTDIR\windows-office" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
+    ; The script writes why it failed to the reason file (also when the copy it starts as administrator fails).
+    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -PackageDirectory "$INSTDIR\windows-office" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe" -ReasonPath "$PLUGINSDIR\visualtex-office-install-reason.txt"`
     Pop $0
     StrCmp $0 "0" visualtex_office_static_installed 0
     ; exit code 3: .NET Framework older than 4.7.2 (Windows 7/8.1, early Windows 10), which the add-ins run on
-    StrCmp $0 "3" visualtex_office_netfx_missing visualtex_office_failed
+    StrCmp $0 "3" visualtex_office_netfx_missing 0
+    ; exit code 5: neither Microsoft Office nor WPS Office (found again by the script itself)
+    StrCmp $0 "5" visualtex_office_no_host visualtex_office_failed
 
 visualtex_office_netfx_missing:
-    DetailPrint "The Word/PowerPoint add-ins need .NET Framework 4.7.2 or later; Office integration was skipped."
+    DetailPrint "The Office and WPS add-ins need .NET Framework 4.7.2 or later; Office integration was skipped."
     IfSilent 0 visualtex_office_netfx_missing_interactive
     SetErrorLevel 1
     Goto visualtex_office_done
 visualtex_office_netfx_missing_interactive:
-    MessageBox MB_ICONEXCLAMATION "Word/PowerPoint 插件需要 .NET Framework 4.7.2 或更高版本。请安装 .NET Framework 4.8 后重新运行安装包。VisualTeX 主程序已安装。$\r$\n$\r$\nThe Word/PowerPoint add-ins need .NET Framework 4.7.2 or later. Install .NET Framework 4.8, then run the installer again. VisualTeX itself is installed."
+    MessageBox MB_ICONEXCLAMATION "Office 和 WPS 插件需要 .NET Framework 4.7.2 或更高版本。请安装 .NET Framework 4.8 后重新运行安装包。VisualTeX 主程序已安装。$\r$\n$\r$\nThe Office and WPS add-ins need .NET Framework 4.7.2 or later. Install .NET Framework 4.8, then run the installer again. VisualTeX itself is installed."
+    Goto visualtex_office_done
+
+visualtex_office_no_host:
+    DetailPrint "Neither Microsoft Office nor WPS Office is installed; the Office add-ins were not installed."
+    IfSilent visualtex_office_done 0
+    MessageBox MB_ICONINFORMATION "没有检测到 Microsoft Office 或 WPS Office，因此没有安装 Office 插件。VisualTeX 主程序已安装。$\r$\n$\r$\n以后安装 Office 或 WPS 后，可在 VisualTeX 的“设置 > Office”中安装插件。"
     Goto visualtex_office_done
 
 visualtex_office_static_installed:
     DetailPrint "Machine-wide Office files and registrations passed. Office bootstrap completed without leaving a resident VisualTeX process."
     WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "RuntimeVerificationPending" 1
     DetailPrint "Companion and Word/PowerPoint connection verification are deferred until VisualTeX is launched from Finish or by the user."
+    ; WPS reads its add-in list when it starts and keeps running in the background after its windows
+    ; close: a WPS running now has not seen the add-ins until it is quit completely.
+    StrCpy $2 ""
+    nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process -Name wps, wpp, et -ErrorAction SilentlyContinue) { exit 10 }; exit 0"`
+    Pop $0
+    Pop $1
+    ${If} $0 == "10"
+      DetailPrint "WPS Office is running: it shows VisualTeX only after it is quit completely and opened again."
+      StrCpy $2 "$\r$\n$\r$\nWPS 正在运行：完全退出 WPS（包括通知区域中的 WPS 图标）后重新打开，VisualTeX 才会出现。"
+    ${EndIf}
     IfSilent visualtex_office_done 0
-    MessageBox MB_ICONINFORMATION "Office 集成及独立公式渲染服务已安装。$\r$\n$\r$\n请重新打开 Word 或 PowerPoint。"
+    MessageBox MB_ICONINFORMATION "Office 集成及独立公式渲染服务已安装。$\r$\n$\r$\n请重新打开 Word、PowerPoint 或 WPS。$2"
     Goto visualtex_office_done
 
 visualtex_office_failed:
     SetDetailsView show
-    DetailPrint "VisualTeX main application installed, but the machine-wide Office files, registry entries, COM classes or OLE server failed static installation verification. See the newest vsto-bootstrap and vsto-diagnostic reports under %LOCALAPPDATA%\VisualTeX\office\install-logs."
+    ; the cause in the script's words; 4 is the administrator prompt answered No
+    !insertmacro VisualTeXReadFirstLine "$PLUGINSDIR\visualtex-office-install-reason.txt" $2
+    ${If} $0 == "4"
+      StrCpy $2 "没有获得管理员权限：Windows 的用户帐户控制提示被拒绝。"
+    ${ElseIf} $2 == ""
+      StrCpy $2 "原因见安装详情，以及 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-bootstrap 和 vsto-diagnostic 报告。"
+    ${EndIf}
+    DetailPrint "VisualTeX main application installed, but the Office integration failed (exit code $0): $2"
+    DetailPrint "See the newest vsto-bootstrap and vsto-diagnostic reports under %LOCALAPPDATA%\VisualTeX\office\install-logs."
     IfSilent 0 visualtex_office_failed_interactive
     ; /S with native Office integration is used by deployment/acceptance too.
     ; Returning 0 here previously made a stale VSTO DLL look like a successful
@@ -519,7 +673,7 @@ visualtex_office_failed:
     SetErrorLevel 1
     Goto visualtex_office_done
 visualtex_office_failed_interactive:
-    MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但 Office 插件的文件、注册信息、COM 类或 OLE 服务未通过静态安装验证。请查看安装详情，以及 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-bootstrap 和 vsto-diagnostic 报告。"
+    MessageBox MB_ICONEXCLAMATION "VisualTeX 主程序已安装，但 Office 插件没有安装成功：$\r$\n$\r$\n$2$\r$\n$\r$\n解决后，可在 VisualTeX 的“设置 > Office”中点“修复 Office 集成”。"
     Goto visualtex_office_done
   ${ElseIf} $VisualTeXOfficeChoice == "none"
     IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_office_done
@@ -632,13 +786,40 @@ visualtex_postinstall_cleanup_done:
   Pop $0
 visualtex_input_method_uninstall_done:
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_preuninstall_done
-  nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
+  InitPluginsDir
+visualtex_office_uninstall_retry:
+  Delete "$PLUGINSDIR\visualtex-office-uninstall-reason.txt"
+  nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1" -ReasonPath "$PLUGINSDIR\visualtex-office-uninstall-reason.txt"`
   Pop $0
   Pop $1
   ${If} $0 != "0"
     SetDetailsView show
     DetailPrint "VisualTeX Office integration uninstall failed. ExitCode=$0 Output=$1"
-    MessageBox MB_ICONSTOP "无法卸载 VisualTeX Office 集成或 HTTPS 证书。主程序尚未删除，您可以关闭 Word 和 PowerPoint 后重试。$\r$\n$\r$\n请查看 %LOCALAPPDATA%\VisualTeX\office\install-logs 中最新的 vsto-uninstall-bootstrap 和 certificate-remove 日志。"
+    DetailPrint "See the newest vsto-uninstall-bootstrap and certificate-remove logs under %LOCALAPPDATA%\VisualTeX\office\install-logs."
+    ; A failed removal of the Office integration never keeps VisualTeX itself installed: a newer installer
+    ; that runs this uninstaller installs the integration again, and the next installation of VisualTeX
+    ; replaces whatever is left (the add-in packages, the renderer service).
+    ReadEnvStr $2 VISUALTEX_REINSTALL
+    ${If} $2 == "1"
+      DetailPrint "Continuing: the installer that started this uninstaller installs the Office integration again."
+      Goto visualtex_preuninstall_done
+    ${EndIf}
+    IfSilent 0 visualtex_office_uninstall_ask
+    DetailPrint "Silent uninstall: VisualTeX is removed; its Office integration is left for the next installation to replace."
+    SetErrorLevel 3
+    Goto visualtex_preuninstall_done
+visualtex_office_uninstall_ask:
+    !insertmacro VisualTeXReadFirstLine "$PLUGINSDIR\visualtex-office-uninstall-reason.txt" $2
+    ${If} $0 == "4"
+      StrCpy $2 "没有获得管理员权限：Windows 的用户帐户控制提示被拒绝。"
+    ${ElseIf} $2 == ""
+      StrCpy $2 "$1"
+      StrLen $3 $2
+      ${If} $3 > 420
+        StrCpy $2 $2 "" -420
+      ${EndIf}
+    ${EndIf}
+    MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE|MB_DEFBUTTON2 "未能移除 VisualTeX 的 Office 插件：$\r$\n$\r$\n$2$\r$\n$\r$\n重试：再试一次。$\r$\n忽略：仍然卸载 VisualTeX；Office 插件留在系统中，下次安装 VisualTeX 时会被替换。$\r$\n中止：不卸载。" IDRETRY visualtex_office_uninstall_retry IDIGNORE visualtex_preuninstall_done
     SetErrorLevel 1
     Quit
   ${EndIf}

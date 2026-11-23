@@ -823,6 +823,8 @@ pub fn install_windows_ole_integration(
     {
         let executable = current_visualtex_executable()?;
         let arguments = vec!["-VisualTeXPath".to_string(), executable];
+        // Neither Microsoft Office nor WPS Office: say so before a certificate or an administrator prompt.
+        run_windows_script(&app, "install_windows_vsto.ps1", &["-DetectOnly".to_string()])?;
         run_windows_script(
             &app,
             "ensure_windows_office_certificate.ps1",
@@ -868,6 +870,8 @@ pub fn repair_windows_office_integration(
     {
         let executable = current_visualtex_executable()?;
         let arguments = vec!["-VisualTeXPath".to_string(), executable];
+        // Neither Microsoft Office nor WPS Office: say so before a certificate or an administrator prompt.
+        run_windows_script(&app, "install_windows_vsto.ps1", &["-DetectOnly".to_string()])?;
         run_windows_script(
             &app,
             "ensure_windows_office_certificate.ps1",
@@ -942,6 +946,38 @@ pub async fn get_wps_integration_status() -> Result<serde_json::Value, String> {
     #[cfg(not(target_os = "windows"))]
     {
         Err("WPS Office status is available only on Windows".to_string())
+    }
+}
+
+/// Why each WPS Office does or does not show VisualTeX (windows_office_diagnosis.ps1 -DiagnosisMode Wps): the
+/// registration in WPS's own registry view, the whitelist, WPS processes older than the registration, and the
+/// add-in created as WPS creates it. Settings > Office and the WPS repair prompt show it under the problem.
+#[tauri::command]
+pub async fn diagnose_wps_integration(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = tauri::async_runtime::spawn_blocking(move || {
+            run_windows_script(
+                &app,
+                "windows_office_diagnosis.ps1",
+                &["-DiagnosisMode".to_string(), "Wps".to_string()],
+            )
+        })
+        .await
+        .map_err(|error| format!("Unable to diagnose WPS Office: {error}"))??;
+        let json = output
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|line| line.starts_with('{'))
+            .unwrap_or_default();
+        return serde_json::from_str(json)
+            .map_err(|error| format!("Unable to read the WPS Office diagnosis: {error}"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("WPS Office diagnosis is available only on Windows".to_string())
     }
 }
 
