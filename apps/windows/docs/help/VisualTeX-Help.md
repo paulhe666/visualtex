@@ -1,6 +1,6 @@
 # VisualTeX 使用手册
 
-**适用版本：Windows 1.3.0**
+**适用版本：Windows 1.3.1**
 
 ---
 

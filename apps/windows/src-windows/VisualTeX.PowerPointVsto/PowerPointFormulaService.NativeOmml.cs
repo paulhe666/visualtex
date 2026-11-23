@@ -359,7 +359,7 @@ public sealed partial class PowerPointFormulaService
                 CodeFormat = "raw", DisplayMode = "block", Numbered = false,
                 FontSizePt = size, RenderFontSizePt = size,
                 RenderWidthPx = shape.Width / 0.75, RenderHeightPx = shape.Height / 0.75,
-                CreatedWithVersion = "1.3.0", UpdatedWithVersion = "1.3.0",
+                CreatedWithVersion = "1.3.1", UpdatedWithVersion = "1.3.1",
                 CreatedAt = now, UpdatedAt = now,
             };
             metadata.Validate();

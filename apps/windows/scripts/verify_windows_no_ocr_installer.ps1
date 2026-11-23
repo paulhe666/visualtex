@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallerPath,
-    [string]$ExpectedAppVersion = "1.3.0"
+    [string]$ExpectedAppVersion = "1.3.1"
 )
 
 $ErrorActionPreference = "Stop"
