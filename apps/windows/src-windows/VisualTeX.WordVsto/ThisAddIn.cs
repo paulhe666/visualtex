@@ -209,6 +209,9 @@ public interface IWordRibbonCallbacks
     [DispId(67)]
     void OnOmmlMathFontSelected(Office.IRibbonControl control, string selectedId, int selectedIndex);
 
+    [DispId(68)]
+    void OnRepairDisplayFormulas(object control);
+
 }
 
 [ComVisible(true)]
@@ -412,6 +415,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           </menu>
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="兼容修复">
+          <button id="VisualTeX.WordVsto.RepairDisplayFormulas" label="修复行间公式" size="large" screentip="修复行间公式" tag="repairDisplay" getImage="GetRibbonImage" onAction="OnRepairDisplayFormulas" />
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="修复公式偏移" size="large" screentip="扫描并修复行内公式垂直偏移" supertip="扫描全文中的 MathType / VisualTeX 行内 OLE；VisualTeX 公式优先按自身保存的渲染基线校准，MathType 公式按文档稳定基线检测上浮或下沉。确认后仅修复垂直偏移，不修改公式内容、字号、编号或引用。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
           <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="修复公式显示" size="large" screentip="用 MathType 自身排版重新生成公式图像" supertip="扫描全文 MathType 公式，用 VisualTeX 内置的 MathType 排版服务按公式原有数据重新生成显示图像，修复缺少 MathType 字体时生成的错误符号。只替换显示图像并按 MathType 基线重新对齐，公式数据、编号和引用保持不变。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairMathTypeDisplays" />
         </group>
@@ -827,6 +831,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     public void OnUpdateEquationNumbers(object control) => _ = UpdateEquationNumbersAsync();
     public void OnUpdateEquationFormat(object control) => _ = UpdateEquationFormatAsync();
     public void OnRepairInlineFormulaBaselines(object control) => _ = RepairInlineFormulaBaselinesAsync();
+    public void OnRepairDisplayFormulas(object control) => _ = RepairDisplayFormulasAsync();
     public void OnRepairMathTypeDisplays(object control) => _ = RepairMathTypeDisplaysAsync();
     public bool GetEquationNumberFormatPressed(Office.IRibbonControl control)
     {
@@ -6131,6 +6136,96 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             _operationGate.Release();
         }
+    }
+
+    /// <summary>
+    /// One click: every display formula whose line a paragraph change broke is put back (WordFormulaService
+    /// .RepairDisplayFormulaLayout), in one Undo step; a message says what was found.
+    /// </summary>
+    private async Task RepairDisplayFormulasAsync()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        var lifetime = _lifetime;
+        if (dispatcher is null || service is null || lifetime is null || lifetime.IsCancellationRequested)
+            return;
+        if (!await _operationGate.WaitAsync(TimeSpan.FromSeconds(2), lifetime.Token).ConfigureAwait(false))
+        {
+            SetStatus(T(
+                "VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Please try again shortly."));
+            return;
+        }
+        var title = T("VisualTeX 修复行间公式", "VisualTeX Repair Display Formulas");
+        try
+        {
+            SetStatus(T("正在检查行间公式…", "Checking display formulas…"));
+            WordDisplayLayoutRepairReport report;
+            BeginFormulaFormatMutation();
+            try
+            {
+                report = await dispatcher.InvokeAsync(service.RepairDisplayFormulaLayout).ConfigureAwait(false);
+            }
+            finally { EndFormulaFormatMutation(); }
+            var message = DisplayLayoutRepairMessage(report);
+            SetStatus(message);
+            await dispatcher.InvokeAsync(() =>
+            {
+                AutomationMessageBox.Show(
+                    message,
+                    title,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                return 0;
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(T("已取消修复行间公式。", "Display formula repair was cancelled."));
+        }
+        catch (Exception error)
+        {
+            SetStatus(T(
+                $"修复行间公式失败：{error.Message}",
+                $"Display formula repair failed: {error.Message}"));
+            await ShowWordOperationErrorAsync(
+                    dispatcher,
+                    T("修复行间公式", "Repair Display Formulas"),
+                    error)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    /// <summary>What the display-formula repair did, as one short statement.</summary>
+    internal static string DisplayLayoutRepairMessage(WordDisplayLayoutRepairReport report)
+    {
+        if (report.Checked == 0)
+            return T("本文档没有行间公式。", "This document has no display formulas.");
+        var skipped = report.Skipped > 0
+            ? T($"{report.Skipped} 个无法读取，未修改。", $" {report.Skipped} could not be read and were left as they are.")
+            : string.Empty;
+        if (report.Repaired == 0)
+            return T($"已检查 {report.Checked} 个行间公式，位置正确。", $"Checked {report.Checked} display formulas; all are in place.") + skipped;
+        var parts = new List<string>();
+        void Add(int count, string zh, string en)
+        {
+            if (count > 0) parts.Add(T($"{zh} {count}", $"{en} {count}"));
+        }
+        Add(report.Indents, "缩进", "indents");
+        Add(report.TabStops, "制表位", "tab stops");
+        Add(report.LineSpacing, "固定行距", "exact line spacing");
+        Add(report.Alignment, "对齐方式", "alignment");
+        Add(report.ListNumbering, "项目符号或编号", "bullets or numbering");
+        Add(report.LeadingTab, "公式前的制表符", "tab before the formula");
+        Add(report.Baseline, "基线位置", "baseline offset");
+        return T(
+                $"已修复 {report.Repaired} 个行间公式（共 {report.Checked} 个）：{string.Join("、", parts)}。",
+                $"Repaired {report.Repaired} of {report.Checked} display formulas: {string.Join(", ", parts)}.")
+            + skipped;
     }
 
     private async Task RepairMathTypeDisplaysAsync()

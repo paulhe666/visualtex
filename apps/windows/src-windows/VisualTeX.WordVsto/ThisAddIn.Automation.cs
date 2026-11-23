@@ -22,7 +22,7 @@ public sealed partial class ThisAddIn
         "insert_formula", "update_formula", "delete_formula", "select_formula", "set_formula_font_size",
         "convert_formulas", "latex_text_to_formulas", "formulas_to_latex_text", "insert_rich_text",
         "insert_equation_reference", "number_display_formulas", "update_equation_numbers",
-        "set_equation_number_format",
+        "set_equation_number_format", "repair_display_formulas",
     };
 
     internal Task<object?>? ExecuteAutomationWrite(string operation, JsonElement arguments) =>
@@ -252,6 +252,11 @@ public sealed partial class ThisAddIn
             case "update_equation_numbers":
                 await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
                 await UpdateEquationNumbersAsync().ConfigureAwait(false);
+                return run.Finish();
+
+            case "repair_display_formulas":
+                await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
+                await RepairDisplayFormulasAsync().ConfigureAwait(false);
                 return run.Finish();
 
             case "set_equation_number_format":

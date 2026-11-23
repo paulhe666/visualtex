@@ -101,6 +101,7 @@ public sealed partial class ThisAddIn
           </box>
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="兼容修复">
+          <button id="VisualTeX.WordVsto.RepairDisplayFormulas" label="修复&#10;行间公式" size="large" enableLineBreak="true" screentip="修复行间公式" imageMso="CenterAlignTabs" onAction="OnRepairDisplayFormulas" />
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="修复&#10;公式偏移" size="large" enableLineBreak="true" screentip="扫描并修复行内公式垂直偏移" supertip="扫描全文中的 MathType / VisualTeX 行内公式；VisualTeX 公式按自身保存的渲染基线校准，MathType 公式按文档稳定基线检测上浮或下沉。确认后仅修复垂直偏移，不修改公式内容、字号、编号或引用。" imageMso="VAlignCenter" onAction="OnRepairInlineFormulaBaselines" />
           <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="修复&#10;公式显示" size="large" enableLineBreak="true" screentip="用 MathType 自身排版重新生成公式图像" supertip="扫描全文 MathType 公式，按公式原有数据重新生成显示图像，修复缺少 MathType 字体时出现的错误符号。只替换显示图像并按 MathType 基线重新对齐，公式数据、编号和引用保持不变。" imageMso="exporttopicture32" onAction="OnRepairMathTypeDisplays" />
         </group>
@@ -193,6 +194,7 @@ public sealed partial class ThisAddIn
           </box>
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="Compatibility Repair">
+          <button id="VisualTeX.WordVsto.RepairDisplayFormulas" label="Repair Display &#10;Formulas" size="large" enableLineBreak="true" screentip="Repair Display Formulas" imageMso="CenterAlignTabs" onAction="OnRepairDisplayFormulas" />
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="Repair Formula &#10;Baselines" size="large" enableLineBreak="true" screentip="Scan and repair inline equation offsets" supertip="Scan the inline MathType / VisualTeX equations of the document; VisualTeX equations are calibrated from their own saved render baseline, MathType equations against a stable document baseline. After you confirm, only their vertical offsets are repaired, not content, size, numbers or references." imageMso="VAlignCenter" onAction="OnRepairInlineFormulaBaselines" />
           <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="Repair Formula &#10;Display" size="large" enableLineBreak="true" screentip="Redraw MathType equation pictures with MathType's own layout" supertip="Scan the MathType equations of the document and redraw their pictures from their data, fixing wrong symbols drawn when MathType fonts were missing. Only the pictures are replaced and realigned on MathType's baseline; equation data, numbers and references stay as they are." imageMso="exporttopicture32" onAction="OnRepairMathTypeDisplays" />
         </group>

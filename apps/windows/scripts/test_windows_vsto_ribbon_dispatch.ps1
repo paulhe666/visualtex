@@ -211,7 +211,7 @@ function Test-RibbonComDispatch(
                 $wpsIcons = @('EquationScriptGallery', 'EquationFractionGallery', 'EquationProfessional', 'EquationInsertGallery',
                     'KSEquationEditor', 'UpdateField', 'Numbering', 'EquationTransferLaTex', 'EquationInsertLaTex', 'EquationOptions',
                     'VAlignCenter', 'InsertPictureFromFile', 'EquationTransferOMML', 'OpenFile', 'CrossReference', 'exporttopicture32',
-                    'Refresh', 'DecreaseFontSize', 'IncreaseFontSize', 'batch_set_font_kd', 'page_number_format_kd')
+                    'Refresh', 'DecreaseFontSize', 'IncreaseFontSize', 'batch_set_font_kd', 'page_number_format_kd', 'CenterAlignTabs')
                 if (@($parsed.SelectNodes('//*[@getImage or @image]')).Count -gt 0) {
                     throw "$ClassName $constName uses add-in pictures, which WPS draws as small grey squares."
                 }
