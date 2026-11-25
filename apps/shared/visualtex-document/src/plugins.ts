@@ -340,10 +340,41 @@ function htmlShowsSource(html: string, text: string, types: readonly string[]): 
  *  display formula); headings and paragraphs are their text in the source editor. */
 const MARKDOWN_BLOCKS = /^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|>|```|~~~|\||\$\$|(?:[-*_][ \t]*){3,}$)/m;
 
+/** Whether text is one display formula and nothing else ("$$…$$" or "\[…\]", on one line or several). */
+function isDisplayFormulaOnly(text: string): boolean {
+  const whole = text.trim();
+  const [open, close] = whole.startsWith("$$") ? ["$$", "$$"] : whole.startsWith("\\[") ? ["\\[", "\\]"] : ["", ""];
+  if (!open || whole.length <= open.length + close.length || !whole.endsWith(close)) return false;
+  const body = whole.slice(open.length, -close.length);
+  return !!body.trim() && !body.includes(close) && !body.startsWith("$");
+}
+
+/**
+ * A paste that leaves an object last in the document (a display formula, a table pasted into the last line): a text line
+ * below it for the caret, as leaving a display formula makes one. The object stayed selected, so the next paste or key
+ * went over it (of two formulas pasted one after the other one was lost, 2026-11-24).
+ */
+function withLineAfterObject(tr: Transaction): Transaction {
+  const sel = tr.selection;
+  if (!(sel instanceof NodeSelection) || !sel.node.isBlock || sel.node.isTextblock) return tr;
+  const $end = tr.doc.resolve(sel.to);
+  const paragraph = tr.doc.type.schema.nodes.paragraph;
+  if ($end.nodeAfter || !$end.parent.canReplaceWith($end.index(), $end.index(), paragraph)) return tr;
+  const at = sel.to;
+  tr.insert(at, paragraph.create());
+  return tr.setSelection(TextSelection.create(tr.doc, at + 1));
+}
+
 /** Pasted plain text with math delimiters becomes text with formulas. */
 function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource: boolean) {
   return new Plugin({
     key: new PluginKey("visualtex-document-math-paste"),
+    // (the editor's own paste: what it reads from the clipboard; the pastes below do the same themselves)
+    appendTransaction(transactions, _oldState, state) {
+      if (!transactions.some((tr) => tr.getMeta("paste"))) return null;
+      const tr = withLineAfterObject(state.tr);
+      return tr.docChanged ? tr : null;
+    },
     props: {
       handlePaste(view, event) {
         const data = event.clipboardData;
@@ -359,26 +390,33 @@ function mathPastePlugin(schema: Schema, inputMode: () => InputMode, latexSource
         const asSource = (slice: Slice) => (inputMode() === "markdown" ? toSourceSlice(slice) : slice);
         if (latexSource && source && looksLikeLatexSource(text)) {
           const keys = new Map(bibliographyEntries(view.state.doc).map((entry) => [entry.key, entry.id]));
-          view.dispatch(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, latexToMarkdown(text), keys))).scrollIntoView());
+          view.dispatch(withLineAfterObject(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, latexToMarkdown(text), keys)))).scrollIntoView());
           return true;
         }
         // In the source editor pasted text is its lines (sourceMarkdown.ts clipboardTextParser: formulas, tables and
-        // pictures as objects; a formatted copy — HTML — comes in through transformPasted)
-        if (inputMode() === "markdown" && (source || !html)) return false;
+        // pictures as objects; a formatted copy — HTML — comes in through transformPasted): text alone, and text whose
+        // HTML only shows it as it is (a chat message, a code editor), which ProseMirror would read from the HTML (a
+        // chat message's "$$…$$" stayed text, 2026-11-24). A block of code on a page (<pre>) stays code, unless all it
+        // holds is a display formula.
+        if (inputMode() === "markdown" && !html) return false;
+        if (inputMode() === "markdown" && source) {
+          const codeBlock = /<pre[\s>]/i.test(html) && !data.types.includes("vscode-editor-data") && !isDisplayFormulaOnly(text);
+          return codeBlock ? false : view.pasteText(text);
+        }
         // Pasted Markdown keeps its structure (headings, lists, tables, math, marks): in Markdown input whenever it reads
         // as Markdown, in LaTeX input when it is unmistakably a Markdown document (an AI answer, a README).
         // (the source editor takes Markdown text as it is, unless it has blocks to build: lists, quotes, code, tables)
         const markdown =
           inputMode() === "markdown" ? looksLikeMarkdown(text) && MARKDOWN_BLOCKS.test(text) : looksLikeMarkdownDocument(text);
         if (markdown && source) {
-          view.dispatch(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, text))).scrollIntoView());
+          view.dispatch(withLineAfterObject(view.state.tr.replaceSelection(asSource(markdownToSlice(schema, text)))).scrollIntoView());
           return true;
         }
         if (!hasMathDelimiters(text)) return false;
         const blocks = parseMathText(text);
         if (!blocks.some((b) => b.kind === "display" || b.parts.some((p) => p.kind === "math"))) return false;
         const slice = mathTextToSlice(schema, blocks);
-        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+        view.dispatch(withLineAfterObject(view.state.tr.replaceSelection(slice)).scrollIntoView());
         return true;
       },
     },
