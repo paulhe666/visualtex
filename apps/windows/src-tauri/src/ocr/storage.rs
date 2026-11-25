@@ -390,6 +390,18 @@ pub fn ensure_marker(root: &Path) -> Result<(), String> {
     write_atomic(&marker_path(&root), &bytes)
 }
 
+/// Whether a folder holds an OCR environment's private Python (the current layout or the older venv one).
+fn has_runtime_python(root: &Path) -> bool {
+    [
+        root.join("python").join("python.exe"),
+        root.join("venv").join("Scripts").join("python.exe"),
+        root.join("python").join("bin").join("python3"),
+        root.join("venv").join("bin").join("python"),
+    ]
+    .iter()
+    .any(|path| path.is_file())
+}
+
 /// The newest sign of use of a working VisualTeX OCR environment (VisualTeX's marker and its private
 /// Python), or None for anything else.
 fn usable_existing_root(root: &Path, protected_roots: &[PathBuf]) -> Option<SystemTime> {
@@ -397,16 +409,8 @@ fn usable_existing_root(root: &Path, protected_roots: &[PathBuf]) -> Option<Syst
     if validate_not_protected(&root, protected_roots).is_err()
         || reject_reparse_root(&root).is_err()
         || !marker_is_valid(&root)
+        || !has_runtime_python(&root)
     {
-        return None;
-    }
-    let python = [
-        root.join("python").join("python.exe"),
-        root.join("venv").join("Scripts").join("python.exe"),
-        root.join("python").join("bin").join("python3"),
-        root.join("venv").join("bin").join("python"),
-    ];
-    if !python.iter().any(|path| path.is_file()) {
         return None;
     }
     ["runtime-status.json", "install-status.json", STORAGE_MARKER_FILE]
@@ -462,9 +466,10 @@ pub fn resolve(
     resolve_with_discovery(config_path, legacy_root, default_root, protected_roots, &Vec::new)
 }
 
-/// The OCR storage root: the configured one; without a configuration, the legacy root, a working
-/// environment at the default root, the user's environment found among `discovery_candidates` (only
-/// computed then), else the default root. The result becomes the configuration.
+/// The OCR storage root: the configured one; without a configuration, a legacy root with a Python in
+/// it, a working environment at the default root, the user's environment found among
+/// `discovery_candidates` (only computed then), a legacy root with other OCR data, else the default
+/// root. The result becomes the configuration.
 pub fn resolve_with_discovery(
     config_path: &Path,
     legacy_root: &Path,
@@ -494,14 +499,18 @@ pub fn resolve_with_discovery(
         });
     }
 
-    let (root, source) = if legacy_root.exists()
-        && (has_payload(&legacy_root) || looks_like_runtime_root(&legacy_root))
-    {
+    // Moving the storage away leaves VisualTeX's marker, logs and empty caches in the old root. Such a
+    // legacy root must not hide a working environment elsewhere: it comes first only with a Python in it.
+    let legacy_has_data = legacy_root.exists()
+        && (has_payload(&legacy_root) || looks_like_runtime_root(&legacy_root));
+    let (root, source) = if legacy_root.exists() && has_runtime_python(&legacy_root) {
         (legacy_root, "legacy")
     } else if usable_existing_root(&default_root, protected_roots).is_some() {
         (default_root, "default")
     } else if let Some(found) = discover_existing_root(&discovery_candidates(), protected_roots) {
         (found, "discovered")
+    } else if legacy_has_data {
+        (legacy_root, "legacy")
     } else {
         (default_root, "default")
     };
@@ -751,6 +760,33 @@ mod tests {
         let again = resolve(&config, &legacy, &default, &[]).unwrap();
         assert_eq!(again.root, chosen);
         assert_eq!(again.source, "configured");
+    }
+
+    #[test]
+    fn what_a_move_left_in_the_legacy_root_does_not_hide_the_users_environment() {
+        // moving the storage away from the legacy root leaves its marker, logs and empty caches there
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join("config/ocr-storage.json");
+        let legacy = temp.path().join("legacy/ocr-runtime");
+        let default = temp.path().join("default/ocr-runtime");
+        fs::create_dir_all(legacy.join("cache/paddlex/official_models")).unwrap();
+        fs::create_dir_all(legacy.join("logs")).unwrap();
+        fs::write(legacy.join("logs/ocr-install.log"), b"log").unwrap();
+        ensure_marker(&legacy).unwrap();
+        let chosen = temp.path().join("roaming/VisualTeX-OCR");
+        working_environment(&chosen);
+        let candidates = vec![chosen.clone()];
+
+        let resolved =
+            resolve_with_discovery(&config, &legacy, &default, &[], &|| candidates.clone()).unwrap();
+        assert_eq!(resolved.root, chosen);
+        assert_eq!(resolved.source, "discovered");
+
+        // with no environment anywhere, that root is used as before
+        fs::remove_file(&config).unwrap();
+        let fallback = resolve_with_discovery(&config, &legacy, &default, &[], &Vec::new).unwrap();
+        assert_eq!(fallback.root, legacy);
+        assert_eq!(fallback.source, "legacy");
     }
 
     #[test]
