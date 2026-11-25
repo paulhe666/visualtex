@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
+import type { NativeUpdateStatus } from "../update/nativeUpdate";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
 import wechatPayImageUrl from "../../../../../docs/images/wechat-pay.jpg";
@@ -25,6 +26,21 @@ import {
 
 const QQ_GROUP_NUMBER = VISUALTEX_QQ_GROUP_NUMBER;
 const QQ_GROUP_IMAGE_URL = VISUALTEX_QQ_GROUP_QR_DATA_URL;
+
+/** In-app installation (Windows): the dialog downloads and installs instead of opening the release page. */
+export interface UpdateDialogInstall {
+  status: NativeUpdateStatus | null;
+  /** Office programs to close before the installer runs */
+  runningApps: string[];
+  /** the last update did not finish */
+  unfinished: boolean;
+  onDownload: () => void;
+  onCancel: () => void;
+  onInstall: (force: boolean) => void;
+}
+
+const megabytes = (bytes: number) =>
+  `${(bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0)} MB`;
 
 interface Props {
   open: boolean;
@@ -39,6 +55,7 @@ interface Props {
   onOpenRelease: () => void;
   onOpenProject: () => void;
   onClose: () => void;
+  install?: UpdateDialogInstall | null;
 }
 
 export function UpdateDialog({
@@ -54,6 +71,7 @@ export function UpdateDialog({
   onOpenRelease,
   onOpenProject,
   onClose,
+  install = null,
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -103,6 +121,19 @@ export function UpdateDialog({
   if (!open) return null;
 
   const updateAvailable = Boolean(result?.updateAvailable);
+  const installer = install && updateAvailable && result?.install?.canInstall ? install : null;
+  const phase = installer?.status?.phase ?? "idle";
+  const installerSize = result?.install?.size ?? 0;
+  const downloaded = installer?.status?.downloaded ?? 0;
+  const downloadTotal = installer?.status?.total || installerSize;
+  const percent =
+    downloadTotal > 0 ? Math.min(100, Math.floor((downloaded * 100) / downloadTotal)) : 0;
+  const transferring = phase === "downloading" || phase === "verifying";
+  const installError = phase === "failed" ? (installer?.status?.error ?? "") : "";
+  const closeFirst = phase === "ready" ? (installer?.runningApps ?? []) : [];
+  const showInstallPanel = Boolean(
+    installer && (installer.unfinished || transferring || installError || closeFirst.length > 0),
+  );
   const hasReleaseNotes =
     releaseNotes.features.length > 0 ||
     releaseNotes.fixes.length > 0 ||
@@ -190,6 +221,43 @@ export function UpdateDialog({
 
               {updateAvailable ? (
                 <>
+                  {showInstallPanel && installer && (
+                    <div className="update-install-panel">
+                      {installer.unfinished && (
+                        <p className="update-install-note">
+                          {isEn ? "The last update did not finish." : "上次更新没有完成。"}
+                        </p>
+                      )}
+                      {transferring && (
+                        <>
+                          <div
+                            className="update-progress"
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={phase === "verifying" ? 100 : percent}
+                          >
+                            <span style={{ width: `${phase === "verifying" ? 100 : percent}%` }} />
+                          </div>
+                          <span className="update-progress-text">
+                            {phase === "verifying"
+                              ? isEn
+                                ? "Checking the installer"
+                                : "正在校验安装包"
+                              : `${percent}% · ${megabytes(downloaded)} / ${megabytes(downloadTotal)}`}
+                          </span>
+                        </>
+                      )}
+                      {installError && <code>{installError}</code>}
+                      {closeFirst.length > 0 && (
+                        <p className="update-install-note">
+                          {isEn ? "Close first: " : "请先关闭："}
+                          {closeFirst.join(isEn ? ", " : "、")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="update-release-heading">
                     <strong>{result.releaseName}</strong>
                     {publishedDate && (
@@ -367,6 +435,59 @@ export function UpdateDialog({
             <button type="button" className="primary-button" onClick={onRetry}>
               <RefreshCw size={15} /> {isEn ? "Try again" : "重新检查"}
             </button>
+          ) : installer ? (
+            transferring ? (
+              <>
+                <button type="button" className="secondary-button" onClick={installer.onCancel}>
+                  {isEn ? "Cancel download" : "取消下载"}
+                </button>
+                <button type="button" className="primary-button" disabled>
+                  <LoaderCircle size={15} className="is-spinning" />
+                  {phase === "verifying" ? (isEn ? "Checking…" : "校验中…") : `${percent}%`}
+                </button>
+              </>
+            ) : closeFirst.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => installer.onInstall(true)}
+                >
+                  {isEn ? "Install anyway" : "仍然安装"}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => installer.onInstall(false)}
+                >
+                  <RefreshCw size={15} /> {isEn ? "Check again" : "重新检查"}
+                </button>
+              </>
+            ) : phase === "ready" ? (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => installer.onInstall(false)}
+              >
+                <Download size={15} /> {isEn ? "Install and restart" : "安装并重启"}
+              </button>
+            ) : phase === "installing" ? (
+              <button type="button" className="primary-button" disabled>
+                <LoaderCircle size={15} className="is-spinning" />
+                {isEn ? "Installing…" : "正在安装…"}
+              </button>
+            ) : (
+              <button type="button" className="primary-button" onClick={installer.onDownload}>
+                <Download size={15} />{" "}
+                {phase === "failed"
+                  ? isEn
+                    ? "Download again"
+                    : "重新下载"
+                  : isEn
+                    ? `Download (${megabytes(installerSize)})`
+                    : `下载更新（${megabytes(installerSize)}）`}
+              </button>
+            )
           ) : updateAvailable ? (
             <button type="button" className="primary-button" onClick={onOpenRelease}>
               <Download size={15} /> {isEn ? "Open download page" : "打开下载页面"}

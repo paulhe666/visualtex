@@ -13,6 +13,7 @@
       "../scripts/windows_wps_companion.ps1": "scripts/windows_wps_companion.ps1",
       "../scripts/windows_office_diagnosis.ps1": "scripts/windows_office_diagnosis.ps1",
       "../scripts/manage_windows_native_render.ps1": "scripts/manage_windows_native_render.ps1",
+      "../scripts/remove_visualtex_leftovers.ps1": "scripts/remove_visualtex_leftovers.ps1",
         "../scripts/install_windows_input_method.ps1": "scripts/install_windows_input_method.ps1",
         "../input-method/build/VisualTeX Input/": "input-method/",
       "resources/windows-office/VisualTeX-NativeRender-x64.msi": "windows-office/VisualTeX-NativeRender-x64.msi",

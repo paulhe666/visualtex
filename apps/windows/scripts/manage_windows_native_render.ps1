@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('Install','Verify','Uninstall','EnsureFonts')][string]$Action,
+    [Parameter(Mandatory=$true)][ValidateSet('Install','Verify','Uninstall','EnsureFonts','RemoveFonts')][string]$Action,
     [string]$PackageDirectory='', [string]$LogPath=''
 )
 $ErrorActionPreference='Stop'
@@ -135,10 +135,11 @@ function Assert-Payload($Manifest) {
 # "MT Extra (TrueType)", so an install-if-missing rule leaves Office's copy in
 # charge and symbols such as a triangle, bowtie or parallel bars show as boxes.
 # Make Windows resolve every MathType font to a copy that has all of MathType's
-# glyphs. Files are only added, never overwritten or deleted, and nothing is
-# removed on uninstall. A registration of an older copy (one missing glyphs that
-# MathType's copy has) is pointed at MathType's copy instead; MathType's MT Extra
-# keeps every code and width of Office's copy, so nothing that used it moves.
+# glyphs. Files are only added, never overwritten or deleted while installed. A
+# registration of an older copy (one missing glyphs that MathType's copy has) is
+# pointed at MathType's copy instead; MathType's MT Extra keeps every code and
+# width of Office's copy, so nothing that used it moves. Uninstalling undoes it
+# (Remove-VisualTeXFonts): the fonts are as they were before VisualTeX.
 function Get-FontApi {
     if (-not ('VisualTeX.MathTypeFontApi' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -149,6 +150,7 @@ namespace VisualTeX {
 public static class MathTypeFontApi {
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern int AddFontResourceW(string file);
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool RemoveFontResourceW(string file);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern bool MoveFileExW(string existing, string replacement, int flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
@@ -301,6 +303,47 @@ function Ensure-MathTypeFonts {
     Write-Output "MathType fonts verified: $($bundled.Count) fonts."
 }
 
+# Undoes Ensure-MathTypeFonts: every font file it added (<name>_visualtex[_n].ttf) goes. A registration
+# it took over points back to the copy it replaced (the same font under the file name without the suffix),
+# or goes too when there is none: the fonts are as they were before VisualTeX was installed.
+function Remove-VisualTeXFonts {
+    $fontsRoot=Join-Path $env:windir 'Fonts'
+    $keyPath='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+    $ours=@(Get-ChildItem -LiteralPath $fontsRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -match '_visualtex(_\d+)?$' })
+    if ($ours.Count -eq 0) { return }
+    Add-Type -AssemblyName PresentationCore
+    Get-FontApi
+    $values=@((Get-ItemProperty -LiteralPath $keyPath).PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' })
+    foreach($file in $ours) {
+        $info=Read-FontInfo $file.FullName
+        $replaced=$null
+        if ($info) {
+            $replaced=@(Get-ChildItem -LiteralPath $fontsRoot -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.BaseName -notmatch '_visualtex' -and (Get-StemKey $_.FullName) -eq (Get-StemKey $file.FullName) } |
+                ForEach-Object { Read-FontInfo $_.FullName } |
+                Where-Object { $_ -and $_.Family -ieq $info.Family -and $_.Style -ieq $info.Style }) | Select-Object -First 1
+        }
+        foreach($value in @($values | Where-Object { [IO.Path]::GetFileName([string]$_.Value) -ieq $file.Name })) {
+            if ($replaced) {
+                Set-ItemProperty -LiteralPath $keyPath -Name $value.Name -Value ([IO.Path]::GetFileName($replaced.Path))
+                [void][VisualTeX.MathTypeFontApi]::AddFontResourceW($replaced.Path)
+            } else {
+                Remove-ItemProperty -LiteralPath $keyPath -Name $value.Name -ErrorAction SilentlyContinue
+            }
+        }
+        for ($i=0; $i -lt 16 -and [VisualTeX.MathTypeFontApi]::RemoveFontResourceW($file.FullName); $i++) { }
+        try { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop }
+        catch { [void][VisualTeX.MathTypeFontApi]::MoveFileExW($file.FullName, [NullString]::Value, 4) }
+        Write-Output ("MathType fonts: removed $($file.Name)" + $(if ($replaced) { "; $([IO.Path]::GetFileName($replaced.Path)) is registered again" } else { '' }))
+    }
+    [VisualTeX.MathTypeFontApi]::BroadcastFontChange()
+}
+
+if ($Action -eq 'RemoveFonts') {
+    Remove-VisualTeXFonts
+    return
+}
+
 $service=Get-OwnedService
 $product=Get-OwnedProduct
 $manifest=$null
@@ -368,8 +411,10 @@ if ($Action -eq 'Uninstall') {
     if (!$product -and $service) { Remove-OrphanedService }
     if ($product) { Invoke-OwnedMsi @('/x',$product,'/qn','/norestart','REBOOT=ReallySuppress','/L*v',('"'+$LogPath+'"')) }
     if (Get-CimInstance Win32_Service -Filter "Name='VisualTeX.NativeRender'") { throw ('Native-render service remains after uninstall.'+(Get-ServiceTroubleText)) }
+    # The fonts this renderer added go with it; a failure there must not undo the uninstall.
+    try { Remove-VisualTeXFonts } catch { Write-Warning ("MathType fonts: " + $_.Exception.Message) }
     # Windows owns profile/hive lifetime. Do not force-unload an active hive or
-    # delete shared MathType fonts, public COM registrations, or user settings.
+    # delete public COM registrations or user settings.
     $profile=Get-CimInstance Win32_UserProfile -Filter "SID='$expectedSid'"
     if ($profile) {
         $expectedProfile=Join-Path $env:windir 'ServiceProfiles\VisualTeX.NativeRender'

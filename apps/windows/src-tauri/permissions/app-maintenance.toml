@@ -1,0 +1,12 @@
+[[permission]]
+identifier = "allow-app-maintenance"
+description = "Allow the trusted embedded VisualTeX main window to keep a copy of its settings in VisualTeX's settings folder and to check for, download and install signed VisualTeX updates."
+commands.allow = [
+  "save_settings_snapshot",
+  "check_for_update",
+  "download_update",
+  "cancel_update_download",
+  "install_update",
+  "get_update_status",
+  "take_update_outcome",
+]

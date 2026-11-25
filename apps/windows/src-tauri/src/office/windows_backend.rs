@@ -441,6 +441,45 @@ pub fn set_wps_host_enabled(enabled: bool) -> Result<(), String> {
     registry_set_dword(OFFICE_MODE_KEY, "Wps", u32::from(enabled))
 }
 
+/// The hosts the add-ins are installed for, as the installer recorded them: (Microsoft Office, WPS Office).
+pub(crate) fn office_hosts_chosen() -> (bool, bool) {
+    (
+        !registry_dword_equals(OFFICE_MODE_KEY, "MicrosoftOffice", 0),
+        !registry_dword_equals(OFFICE_MODE_KEY, "Wps", 0),
+    )
+}
+
+/// The Office preferences an uninstall kept (office\office-preferences.json in the settings folder, which
+/// remove_visualtex_leftovers.ps1 writes before it deletes the registry key): language, shortcuts, formula
+/// formats, the Office and WPS switches. Values the registry does not have are put back; values it has
+/// (the installer's or the user's since) stay.
+pub fn restore_kept_office_preferences(settings_root: &Path) {
+    let Ok(text) = fs::read_to_string(settings_root.join("office").join("office-preferences.json")) else {
+        return;
+    };
+    let Ok(serde_json::Value::Object(values)) =
+        serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}'))
+    else {
+        return;
+    };
+    for (name, value) in values {
+        let preference = name.ends_with("Shortcut")
+            || name.ends_with("Format")
+            || matches!(name.as_str(), "Language" | "MicrosoftOffice" | "Wps");
+        if !preference || registry_value_exists(OFFICE_MODE_KEY, &name) {
+            continue;
+        }
+        let _ = match value {
+            serde_json::Value::String(text) => registry_set_string(OFFICE_MODE_KEY, &name, &text),
+            serde_json::Value::Number(number) => match number.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                Some(dword) => registry_set_dword(OFFICE_MODE_KEY, &name, dword),
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        };
+    }
+}
+
 pub fn background_start_enabled() -> bool {
     registry_value_exists(WINDOWS_RUN_KEY, WINDOWS_RUN_VALUE)
 }

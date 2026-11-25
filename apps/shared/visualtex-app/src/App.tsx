@@ -110,12 +110,14 @@ import {
   PROJECT_URL,
   type UpdateCheckResult,
 } from "./update/updateService";
+import type { NativeUpdateStatus } from "./update/nativeUpdate";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import { onPlatform } from "./runtime/platformConventions";
 // each system's part in the Office integration (add-in setup and hotkeys on macOS, preferences for the add-ins on Windows)
 import { AppOfficeIntegration } from "@platform/AppOfficeIntegration";
 import { APP_FEATURES } from "@platform/appInfo";
+import { nativeUpdater } from "@platform/appUpdate";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "./stores/anywhereHotkeyStore";
 import {
   captureQuickOcrScreenshot,
@@ -180,6 +182,11 @@ function App() {
   const [updateError, setUpdateError] = useState("");
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
+  // in-app updates (Windows): the download and installation, the Office programs to close first, an
+  // update that did not finish
+  const [nativeUpdateStatus, setNativeUpdateStatus] = useState<NativeUpdateStatus | null>(null);
+  const [updateRunningApps, setUpdateRunningApps] = useState<string[]>([]);
+  const [updateUnfinished, setUpdateUnfinished] = useState(false);
   const [toast, setToast] = useState("");
   // a dialog of the platform's Office integration is open (it holds the keyboard and the update check)
   const [platformModalOpen, setPlatformModalOpen] = useState(false);
@@ -1074,6 +1081,7 @@ function App() {
     if (manual) {
       setAutomaticUpdatePrompt(false);
       setUpdateResult(null);
+      setUpdateRunningApps([]);
       setUpdateOpen(true);
     }
     setUpdateChecking(true);
@@ -1133,6 +1141,38 @@ function App() {
       window.removeEventListener("online", runWhenOnline);
     };
   }, [checkUpdatesOnStartup, platformModalOpen, runUpdateCheck]);
+
+  // In-app updates: the download's progress, and once per start what the last update did.
+  useEffect(() => {
+    const updater = nativeUpdater;
+    if (!updater || !APP_FEATURES.updates) return;
+    const stop = updater.onStatus(setNativeUpdateStatus);
+    void updater.status().then(setNativeUpdateStatus, () => undefined);
+    void updater.takeOutcome().then((outcome) => {
+      if (!outcome) return;
+      if (outcome.kind === "updated") {
+        setToast(isEn ? `Updated to v${outcome.version}` : `已更新到 v${outcome.version}`);
+        return;
+      }
+      // the installer did not finish: the update is offered again
+      setUpdateUnfinished(true);
+      automaticUpdateCheckRef.current = true;
+      void runUpdateCheck(true);
+    }, () => undefined);
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const nativeUpdateFailed = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    setNativeUpdateStatus((status) => ({
+      phase: "failed",
+      version: status?.version ?? "",
+      downloaded: 0,
+      total: status?.total ?? 0,
+      error: message,
+    }));
+  }, []);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -2062,7 +2102,35 @@ function App() {
             );
           });
         }}
-        onClose={() => setUpdateOpen(false)}
+        onClose={() => {
+          setUpdateOpen(false);
+          setUpdateUnfinished(false);
+        }}
+        install={
+          nativeUpdater
+            ? {
+                status: nativeUpdateStatus,
+                runningApps: updateRunningApps,
+                unfinished: updateUnfinished,
+                onDownload: () => {
+                  setUpdateRunningApps([]);
+                  setUpdateUnfinished(false);
+                  void nativeUpdater?.download().then(setNativeUpdateStatus, nativeUpdateFailed);
+                },
+                onCancel: () => {
+                  void nativeUpdater?.cancel().then(setNativeUpdateStatus, nativeUpdateFailed);
+                },
+                onInstall: (force) => {
+                  void nativeUpdater
+                    ?.install(force)
+                    .then(
+                      (start) => setUpdateRunningApps(start.started ? [] : start.runningApps),
+                      nativeUpdateFailed,
+                    );
+                },
+              }
+            : null
+        }
       />
 
       {historyOpen && (

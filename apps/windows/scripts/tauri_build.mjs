@@ -310,6 +310,93 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
   }
   template = template.replace(oldResourceCopy, newResourceCopy);
 
+  // The sidecars are listed in installed-files.txt like the resources (hooks.nsh
+  // VisualTeXRecordInstalledFile): the next version deletes what only this one wrote.
+  const oldBinaryCopy = [
+    "  ; Copy external binaries",
+    "  {{#each binaries}}",
+    '    File /a "/oname={{this}}" "{{no-escape @key}}"',
+    "  {{/each}}",
+  ].join("\n");
+  const newBinaryCopy = [
+    "  ; Copy external binaries, listed like the resources",
+    "  {{#each binaries}}",
+    '    File /a "/oname={{this}}" "{{no-escape @key}}"',
+    '    !insertmacro VisualTeXRecordInstalledFile "{{this}}"',
+    "  {{/each}}",
+  ].join("\n");
+  if (!template.includes(oldBinaryCopy)) {
+    throw new Error(
+      "The Tauri NSIS external binary copy block changed unexpectedly; the installed-files list would miss the sidecars",
+    );
+  }
+  template = template.replace(oldBinaryCopy, newBinaryCopy);
+
+  // The uninstaller's first page: two boxes instead of Tauri's "delete app data",
+  // both off: the OCR environment, and settings with formula documents. Caches and
+  // everything else go anyway; remove_visualtex_leftovers.ps1 (hooks.nsh
+  // PREUNINSTALL) does it, so Tauri's own deletion of the app-data folders goes.
+  const oldConfirmBoxes = [
+    "  IntOp $5 100 * $2",
+    "  IntOp $6 400 * $2",
+    "  IntOp $7 25 * $2",
+    "  IntOp $4 $4 / 96",
+    "  IntOp $5 $5 / 96",
+    "  IntOp $6 $6 / 96",
+    "  IntOp $7 $7 / 96",
+    "  System::Call 'user32::CreateWindowEx(i r3, w \"${__NSD_CheckBox_CLASS}\", w \"$(deleteAppData)\", i ${__NSD_CheckBox_STYLE}, i r4, i r5, i r6, i r7, p r1, i0, i0, i0) i .s'",
+    "  Pop $DeleteAppDataCheckbox",
+    "  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1",
+    "  SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $1 1",
+    "FunctionEnd",
+    "!define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave",
+    "Function un.ConfirmLeave",
+    "  SendMessage $DeleteAppDataCheckbox ${BM_GETCHECK} 0 0 $DeleteAppDataCheckboxState",
+    "FunctionEnd",
+  ].join("\n");
+  const newConfirmBoxes = [
+    "  IntOp $5 100 * $2",
+    "  IntOp $6 460 * $2",
+    "  IntOp $7 25 * $2",
+    "  IntOp $4 $4 / 96",
+    "  IntOp $5 $5 / 96",
+    "  IntOp $6 $6 / 96",
+    "  IntOp $7 $7 / 96",
+    "  System::Call 'user32::CreateWindowEx(i r3, w \"${__NSD_CheckBox_CLASS}\", w \"${VISUALTEX_UNINSTALL_REMOVE_OCR_LABEL}\", i ${__NSD_CheckBox_STYLE}, i r4, i r5, i r6, i r7, p r1, i0, i0, i0) i .s'",
+    "  Pop $VisualTeXRemoveOcrCheckbox",
+    "  IntOp $5 130 * $2",
+    "  IntOp $5 $5 / 96",
+    "  System::Call 'user32::CreateWindowEx(i r3, w \"${__NSD_CheckBox_CLASS}\", w \"${VISUALTEX_UNINSTALL_REMOVE_SETTINGS_LABEL}\", i ${__NSD_CheckBox_STYLE}, i r4, i r5, i r6, i r7, p r1, i0, i0, i0) i .s'",
+    "  Pop $DeleteAppDataCheckbox",
+    "  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1",
+    "  SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $1 1",
+    "  SendMessage $VisualTeXRemoveOcrCheckbox ${WM_SETFONT} $1 1",
+    "FunctionEnd",
+    "!define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave",
+    "Function un.ConfirmLeave",
+    "  SendMessage $DeleteAppDataCheckbox ${BM_GETCHECK} 0 0 $DeleteAppDataCheckboxState",
+    "  SendMessage $VisualTeXRemoveOcrCheckbox ${BM_GETCHECK} 0 0 $VisualTeXRemoveOcrState",
+    "FunctionEnd",
+  ].join("\n");
+  if (!template.includes(oldConfirmBoxes)) {
+    throw new Error("The Tauri NSIS uninstall confirmation page changed unexpectedly; the OCR and settings choices cannot be added");
+  }
+  template = template.replace(oldConfirmBoxes, newConfirmBoxes);
+
+  const oldAppDataRemoval = [
+    "    SetShellVarContext current",
+    '    RmDir /r "$APPDATA\\${BUNDLEID}"',
+    '    RmDir /r "$LOCALAPPDATA\\${BUNDLEID}"',
+  ].join("\n");
+  const newAppDataRemoval = [
+    "    ; VisualTeX: the app-data folders hold settings and formula documents besides caches;",
+    "    ; remove_visualtex_leftovers.ps1 removes what the first page chose (hooks.nsh PREUNINSTALL)",
+  ].join("\n");
+  if (!template.includes(oldAppDataRemoval)) {
+    throw new Error("The Tauri NSIS app-data removal changed unexpectedly; it would delete settings and formula documents");
+  }
+  template = template.replace(oldAppDataRemoval, newAppDataRemoval);
+
   const output = resolve(
     targetRoot ?? resolve("src-tauri", noOcrBundle ? "target-no-ocr" : "target"),
     "nsis-template",
@@ -362,6 +449,19 @@ if (process.platform !== "win32") {
   run(node, ["scripts/verify_frontend_dist.mjs"]);
   run(tauri, ["build", ...forwarded]);
   process.exit(0);
+}
+
+// In-app updates check signatures against the key compiled into the program (src-tauri/update-public-key.txt,
+// the .pub file `tauri signer generate` writes; VISUALTEX_UPDATE_PUBLIC_KEY for a test build). A build without
+// one could never update itself, so it stops here, before anything is cleaned.
+const updateKeyFile = resolve("src-tauri", "update-public-key.txt");
+const updateKey =
+  (process.env.VISUALTEX_UPDATE_PUBLIC_KEY ?? "").trim() ||
+  (existsSync(updateKeyFile) ? readFileSync(updateKeyFile, "utf8").trim() : "");
+if (!updateKey && process.env.VISUALTEX_ALLOW_NO_UPDATE_KEY !== "1") {
+  throw new Error(
+    "No update key: put the release key's .pub content into src-tauri/update-public-key.txt, or set VISUALTEX_UPDATE_PUBLIC_KEY for a test build (VISUALTEX_ALLOW_NO_UPDATE_KEY=1 builds without in-app updates)",
+  );
 }
 
 const noOcrTargetRoot = resolve("src-tauri", "target-no-ocr");

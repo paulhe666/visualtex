@@ -166,6 +166,9 @@ function Get-InstallFolderProblem([string]$Root) {
     }
     $files = @(Get-ChildItem -LiteralPath $root -File -Force -ErrorAction SilentlyContinue)
     foreach ($folder in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue)) {
+        # updates\ holds the in-app update's installer, which is the program running this check: nothing
+        # there is replaced (it was taken for a file in use, and the update stopped at Retry/Cancel)
+        if ($folder.Name -ieq 'updates') { continue }
         $files += @(Get-ChildItem -LiteralPath $folder.FullName -File -Force -ErrorAction SilentlyContinue)
     }
     foreach ($file in $files) {

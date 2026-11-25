@@ -528,7 +528,7 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         "creating main window from WebviewUrl::App(index.html) at {}x{}",
         saved_size.width, saved_size.height
     ));
-    let window = WebviewWindowBuilder::new(
+    let mut builder = WebviewWindowBuilder::new(
         app,
         "main",
         WebviewUrl::App("index.html".into()),
@@ -539,7 +539,13 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     .resizable(true)
     .center()
     .focused(true)
-    .visible(true)
+    .visible(true);
+    // settings the WebView storage lost (an uninstall deletes that folder) come back from the copy in the
+    // settings folder before the page's scripts run
+    if let Some(script) = crate::settings_snapshot::restore_script(app) {
+        builder = builder.initialization_script(&script);
+    }
+    let window = builder
     .on_page_load(|_window, payload| {
         append_lifecycle_log(format!(
             "main window page-load event={:?} url={}",

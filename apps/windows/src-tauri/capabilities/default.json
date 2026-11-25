@@ -12,6 +12,7 @@
     "allow-document-library",
     "allow-document-export",
     "allow-anywhere",
+    "allow-app-maintenance",
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",

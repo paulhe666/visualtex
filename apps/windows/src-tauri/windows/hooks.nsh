@@ -22,9 +22,86 @@ Var VisualTeXOcrChoice
 Var VisualTeXOcrCheckbox
 Var VisualTeXOcrResourcePrefix
 Var VisualTeXAcceptanceMode
+; installed-files.txt while this installation writes it (VisualTeXRecordInstalledFile)
+Var VisualTeXFileList
+; the uninstaller's first page (tauri_build.mjs adds the boxes): delete the OCR environment; the second box,
+; settings and formula documents, is Tauri's DeleteAppDataCheckbox. Both start unticked; a silent uninstall
+; keeps both.
+Var VisualTeXRemoveOcrCheckbox
+Var VisualTeXRemoveOcrState
+!define VISUALTEX_UNINSTALL_REMOVE_OCR_LABEL "删除 OCR 环境 / Delete the OCR environment"
+!define VISUALTEX_UNINSTALL_REMOVE_SETTINGS_LABEL "删除设置和公式文档 / Delete settings and formula documents"
 ; reading the one-line reasons the Office scripts and the diagnosis write for the installer
 Var VisualTeXReasonFile
 Var VisualTeXReasonChar
+
+; The components chosen last time, so a reinstall's components page starts from them and an update (which
+; shows no page) keeps them: installer-choices.ini in VisualTeX's settings folder, which an uninstall keeps
+; (later versions read the same keys). The Microsoft Office and WPS switches are read from the registry
+; first, where Settings > Office changes them.
+!define VISUALTEX_CHOICES_FILE "$APPDATA\com.visualtex.studio\installer-choices.ini"
+
+Function VisualTeXLoadStoredChoices
+  Push $0
+  ${If} $VisualTeXMsOfficeChoice == ""
+    ClearErrors
+    ReadRegDWORD $0 HKCU "Software\VisualTeX\OfficeIntegration" "MicrosoftOffice"
+    ${If} ${Errors}
+      ReadINIStr $0 "${VISUALTEX_CHOICES_FILE}" "components" "MicrosoftOffice"
+    ${EndIf}
+    ${If} $0 == "0"
+    ${OrIf} $0 == "1"
+      StrCpy $VisualTeXMsOfficeChoice $0
+    ${EndIf}
+  ${EndIf}
+  ${If} $VisualTeXWpsChoice == ""
+    ClearErrors
+    ReadRegDWORD $0 HKCU "Software\VisualTeX\OfficeIntegration" "Wps"
+    ${If} ${Errors}
+      ReadINIStr $0 "${VISUALTEX_CHOICES_FILE}" "components" "Wps"
+    ${EndIf}
+    ${If} $0 == "0"
+    ${OrIf} $0 == "1"
+      StrCpy $VisualTeXWpsChoice $0
+    ${EndIf}
+  ${EndIf}
+  ${If} $VisualTeXImeChoice == ""
+    ReadINIStr $0 "${VISUALTEX_CHOICES_FILE}" "components" "InputMethod"
+    ${If} $0 == "0"
+    ${OrIf} $0 == "1"
+      StrCpy $VisualTeXImeChoice $0
+    ${EndIf}
+  ${EndIf}
+!ifndef VISUALTEX_NO_OCR_BUNDLE
+  ${If} $VisualTeXOcrChoice == ""
+    ReadINIStr $0 "${VISUALTEX_CHOICES_FILE}" "components" "Ocr"
+    ${If} $0 == "install"
+    ${OrIf} $0 == "none"
+      StrCpy $VisualTeXOcrChoice $0
+    ${EndIf}
+  ${EndIf}
+!endif
+  Pop $0
+FunctionEnd
+
+; What this installation chose, for the next install or update. Office left out entirely also turns the
+; Microsoft Office and WPS switches off, so the choice reads back the same way.
+Function VisualTeXStoreChoices
+  ${If} $VisualTeXOfficeChoice == "none"
+    StrCpy $VisualTeXMsOfficeChoice "0"
+    StrCpy $VisualTeXWpsChoice "0"
+    WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "MicrosoftOffice" 0
+    WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "Wps" 0
+  ${EndIf}
+  CreateDirectory "$APPDATA\com.visualtex.studio"
+  WriteINIStr "${VISUALTEX_CHOICES_FILE}" "components" "MicrosoftOffice" $VisualTeXMsOfficeChoice
+  WriteINIStr "${VISUALTEX_CHOICES_FILE}" "components" "Wps" $VisualTeXWpsChoice
+  WriteINIStr "${VISUALTEX_CHOICES_FILE}" "components" "InputMethod" $VisualTeXImeChoice
+!ifndef VISUALTEX_NO_OCR_BUNDLE
+  ; the lightweight installer leaves this alone: installing the full one later means OCR is wanted
+  WriteINIStr "${VISUALTEX_CHOICES_FILE}" "components" "Ocr" $VisualTeXOcrChoice
+!endif
+FunctionEnd
 
 ; The generated Tauri PageReinstall function is patched after bundling so the
 ; same-version maintenance page defaults to "Uninstall VisualTeX" directly at
@@ -223,6 +300,16 @@ FunctionEnd
 ; host whose box is clear (HKCU\Software\VisualTeX\OfficeIntegration MicrosoftOffice / Wps).
 Function VisualTeXOfficePageCreate
   Call VisualTeXRepairMainUninstallRegistration
+  ; An update VisualTeX starts (/UPDATE /P) asks nothing: PREINSTALL installs the parts chosen last time.
+  ; ($PassiveMode is declared after this file is included, so the command line is read here.)
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/P" $R1
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+  ; the boxes start as the user left them last time
+  Call VisualTeXLoadStoredChoices
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
@@ -333,6 +420,49 @@ FunctionEnd
     DetailPrint "Skipping optional OCR resource: ${DESTINATION}"
   ${Else}
     File /a "/oname=${DESTINATION}" "${SOURCE}"
+    !insertmacro VisualTeXRecordInstalledFile "${DESTINATION}"
+  ${EndIf}
+!macroend
+
+; Every file this installation writes into the install folder is listed in installed-files.txt (UTF-16).
+; The list of the version it replaces is kept as installed-files.previous.txt, and VisualTeX deletes the
+; files only that version had when it next starts: an update overwrites files but never removes any, and
+; names of web assets change with every build. The new list is written as installed-files.new.txt and
+; takes over only once every file is in place, so an installation that stops halfway leaves both complete
+; lists as they were.
+!macro VisualTeXRecordInstalledFile PATH
+  ${If} $VisualTeXFileList != ""
+    FileWriteUTF16LE $VisualTeXFileList "${PATH}$\r$\n"
+  ${EndIf}
+!macroend
+
+Function VisualTeXOpenFileList
+  ClearErrors
+  FileOpen $VisualTeXFileList "$INSTDIR\installed-files.new.txt" w
+  ${If} ${Errors}
+    StrCpy $VisualTeXFileList ""
+  ${Else}
+    FileWriteWord $VisualTeXFileList 0xFEFF
+  ${EndIf}
+FunctionEnd
+
+; a macro: MAINBINARYNAME is defined only after this file is included
+!macro VisualTeXCloseFileList
+  ; written outside the resource macros: the program and the uninstaller
+  !insertmacro VisualTeXRecordInstalledFile "${MAINBINARYNAME}.exe"
+  !insertmacro VisualTeXRecordInstalledFile "uninstall.exe"
+  ${If} $VisualTeXFileList != ""
+    FileClose $VisualTeXFileList
+    StrCpy $VisualTeXFileList ""
+    ${If} ${FileExists} "$INSTDIR\installed-files.txt"
+      ${IfNot} ${FileExists} "$INSTDIR\installed-files.previous.txt"
+        Rename "$INSTDIR\installed-files.txt" "$INSTDIR\installed-files.previous.txt"
+      ${Else}
+        ; an earlier update was not cleaned up yet: its older list is the one to compare with
+        Delete "$INSTDIR\installed-files.txt"
+      ${EndIf}
+    ${EndIf}
+    Rename "$INSTDIR\installed-files.new.txt" "$INSTDIR\installed-files.txt"
   ${EndIf}
 !macroend
 
@@ -419,6 +549,25 @@ FunctionEnd
     StrCpy $INSTDIR "$LOCALAPPDATA\VisualTeX"
   ${EndIf}
 
+  ; An update VisualTeX started (/UPDATE): VisualTeX quits right after starting it. Wait for that (up to
+  ; 15 s) before the folder check below, which would find its program file in use.
+  ${If} $UpdateMode = 1
+    StrCpy $R9 0
+    ${Do}
+      nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
+      Pop $R8
+      ${If} $R8 <> 0
+        ${ExitDo}
+      ${EndIf}
+      IntOp $R9 $R9 + 1
+      ${If} $R9 >= 60
+        DetailPrint "VisualTeX is still running after 15 s; the installer closes it."
+        ${ExitDo}
+      ${EndIf}
+      Sleep 250
+    ${Loop}
+  ${EndIf}
+
   !insertmacro VisualTeXStopAgentLauncher
 
   Call VisualTeXEnsureInstallFolderWritable
@@ -441,8 +590,10 @@ FunctionEnd
   ; Custom pages are skipped by NSIS /S. A release acceptance install may use
   ; /VISUALTEXOFFICE=skip to leave the machine's existing Office integration
   ; untouched while testing the exact installed desktop executable. Interactive
-  ; installs retain the page choice; ordinary unattended installs default to
-  ; the recommended native Office mode.
+  ; installs retain the page choice; unattended installs and updates take the
+  ; choices of the last installation, else the recommended native Office mode;
+  ; options on the command line win over both.
+  Call VisualTeXLoadStoredChoices
   ${GetParameters} $0
   ClearErrors
   ${GetOptions} $0 "/VISUALTEXOFFICE=" $1
@@ -465,27 +616,27 @@ FunctionEnd
   ; sets them interactively). Office or WPS alone still installs the shared add-ins.
   ${If} $VisualTeXMsOfficeChoice == ""
     StrCpy $VisualTeXMsOfficeChoice "1"
-    ClearErrors
-    ${GetOptions} $0 "/VISUALTEXMSOFFICE=" $1
-    ${IfNot} ${Errors}
-      StrCpy $VisualTeXMsOfficeChoice $1
-    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $0 "/VISUALTEXMSOFFICE=" $1
+  ${IfNot} ${Errors}
+    StrCpy $VisualTeXMsOfficeChoice $1
   ${EndIf}
   ${If} $VisualTeXWpsChoice == ""
     StrCpy $VisualTeXWpsChoice "1"
-    ClearErrors
-    ${GetOptions} $0 "/VISUALTEXWPS=" $1
-    ${IfNot} ${Errors}
-      StrCpy $VisualTeXWpsChoice $1
-    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $0 "/VISUALTEXWPS=" $1
+  ${IfNot} ${Errors}
+    StrCpy $VisualTeXWpsChoice $1
   ${EndIf}
   ${If} $VisualTeXImeChoice == ""
     StrCpy $VisualTeXImeChoice "1"
-    ClearErrors
-    ${GetOptions} $0 "/VISUALTEXIME=" $1
-    ${IfNot} ${Errors}
-      StrCpy $VisualTeXImeChoice $1
-    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $0 "/VISUALTEXIME=" $1
+  ${IfNot} ${Errors}
+    StrCpy $VisualTeXImeChoice $1
   ${EndIf}
   ${If} $VisualTeXOfficeChoice == "native"
   ${AndIf} $VisualTeXMsOfficeChoice == "0"
@@ -524,6 +675,8 @@ FunctionEnd
   ${Else}
     DetailPrint "OCR offline resources were disabled by the user; no ocr*, wheel or private-Python resources will be written to the installation directory."
   ${EndIf}
+  ; last step before the files are written: start the list of what this installation writes
+  Call VisualTeXOpenFileList
 !macroend
 
 ; "Open with" for Markdown files (.md, .markdown): VisualTeX is listed for them. The program that opens them by
@@ -551,6 +704,7 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro VisualTeXCloseFileList
   !insertmacro VisualTeXRemoveLegacyOfficeBridge
   !insertmacro VisualTeXRegisterMarkdownOpenWith
   DetailPrint "Applying the selected VisualTeX Office integration mode: $VisualTeXOfficeChoice"
@@ -726,6 +880,9 @@ visualtex_office_done:
     ${EndIf}
   ${EndIf}
 visualtex_input_method_done:
+  ${If} $VisualTeXAcceptanceMode != "1"
+    Call VisualTeXStoreChoices
+  ${EndIf}
   ${If} $VisualTeXAcceptanceMode == "1"
     DetailPrint "Installed-release acceptance mode: legacy install roots are untouched."
     Goto visualtex_postinstall_cleanup_done
@@ -824,6 +981,24 @@ visualtex_office_uninstall_ask:
     Quit
   ${EndIf}
 visualtex_preuninstall_done:
+  ; What the regular steps leave behind (caches, logs, the WebView folder, records in WPS and Office,
+  ; program-folder remains, leftovers of older versions) goes; settings, formula documents and the OCR
+  ; environment stay unless the first page chose otherwise. Not when a newer installer runs this
+  ; uninstaller or an update replaces files: that installation keeps using all of it.
+  ReadEnvStr $2 VISUALTEX_REINSTALL
+  ${If} $UpdateMode <> 1
+  ${AndIf} $2 != "1"
+  ${AndIf} ${FileExists} "$INSTDIR\scripts\remove_visualtex_leftovers.ps1"
+    StrCpy $3 ""
+    ${If} $VisualTeXRemoveOcrState = 1
+      StrCpy $3 "$3 -RemoveOcr"
+    ${EndIf}
+    ${If} $DeleteAppDataCheckboxState = 1
+      StrCpy $3 "$3 -RemoveSettings"
+    ${EndIf}
+    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\remove_visualtex_leftovers.ps1" -InstallDir "$INSTDIR"$3`
+    Pop $0
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
@@ -838,8 +1013,22 @@ visualtex_preuninstall_done:
   DeleteRegKey HKCU "Software\visualtex\VisualTeX"
   !insertmacro VisualTeXUnregisterMarkdownOpenWith
   RMDir /r "$PROFILE\AppData\VisualTeX"
-  RMDir /r "$INSTDIR"
 
-  System::Call 'kernel32::GetCurrentProcessId() i .r0'
-  Exec `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Wait-Process -Id $0 -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Remove-Item -LiteralPath '$INSTDIR' -Recurse -Force -ErrorAction SilentlyContinue"`
+  ; All that is left in the install folder goes (files of older versions, logs, the installed-files lists,
+  ; downloaded updates), but only from a folder named VisualTeX: a folder typed on the directory page
+  ; (D:\Tools, say) can hold other programs, so there only what VisualTeX writes itself goes.
+  StrCpy $R0 "$INSTDIR" "" -10
+  ${If} $R0 == "\VisualTeX"
+    RMDir /r "$INSTDIR"
+    System::Call 'kernel32::GetCurrentProcessId() i .r0'
+    Exec `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Wait-Process -Id $0 -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Remove-Item -LiteralPath '$INSTDIR' -Recurse -Force -ErrorAction SilentlyContinue"`
+  ${Else}
+    RMDir /r "$INSTDIR\updates"
+    RMDir /r "$INSTDIR\logs"
+    Delete "$INSTDIR\input-method-install.log"
+    Delete "$INSTDIR\installed-files.txt"
+    Delete "$INSTDIR\installed-files.previous.txt"
+    Delete "$INSTDIR\installed-files.new.txt"
+    RMDir "$INSTDIR"
+  ${EndIf}
 !macroend
