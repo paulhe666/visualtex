@@ -46,11 +46,33 @@ export interface InputJudgmentOptions {
    */
   deferLetterRuns?: boolean;
   /**
-   * Produce the same judgment with every converted word restored as typed
-   * and marked explicit (\mathit{...}), so it is never converted again.
-   * Backspace right after a conversion applies this.
+   * Produce the same judgment with every converted word marked as
+   * \mathnormal{word}: which words a judgment converts (revertedWords). The
+   * editor puts the typed letters back as they were (plain, no command around
+   * them) and keeps those words (`keep`).
    */
   revert?: boolean;
+  /**
+   * Words (letter runs, "d" for the differential) left as typed: the ones the
+   * user turned back with Backspace in this formula, and the plain words it
+   * had when it was opened. (Backspace used to leave \mathit{ln}, the text
+   * italic, as the mark that kept a word from being converted again,
+   * 2026-11-24.)
+   */
+  keep?: ReadonlySet<string>;
+}
+
+/** The words a judgment converts: those its revert form (revert: true) marks, less the marks `before` had already. */
+export function revertedWords(before: string, revertForm: string): string[] {
+  const marked = (latex: string) => [...latex.matchAll(/\\mathnormal\{([A-Za-z]+)\}/g)].map((match) => match[1]);
+  const had = marked(before);
+  const words: string[] = [];
+  for (const word of marked(revertForm)) {
+    const index = had.indexOf(word);
+    if (index >= 0) had.splice(index, 1);
+    else if (!words.includes(word)) words.push(word);
+  }
+  return words;
 }
 
 /** The LaTeX a typed word escapes to (alpha -> \alpha); cong and sim in the spelling the user writes (exam-zh's \cong is ≌). */
@@ -83,6 +105,7 @@ interface RuleContext {
   typed: boolean;
   deferLetterRuns: boolean;
   revert: boolean;
+  keep: ReadonlySet<string> | undefined;
 }
 
 type Part = string | { content: string; child: Partial<RuleContext> };
@@ -572,9 +595,10 @@ function classify(items: Item[], context: RuleContext) {
   const replacements = new Map<number, string>();
   const exponentialScripts = new Set<number>();
   const decided = new Set<number>();
-  // Revert mode restores what was typed, marked explicit so it stays.
+  // Revert mode marks what a conversion would replace (revertedWords); a kept word stays as typed.
   const convert = (index: number, latex: string) => {
-    replacements.set(index, context.revert ? `\\mathit{${items[index].raw}}` : latex);
+    if (context.keep?.has(items[index].raw)) return;
+    replacements.set(index, context.revert ? `\\mathnormal{${items[index].raw}}` : latex);
   };
 
   // Units: a group of unit symbols joined by /, \cdot or a space, each with
@@ -756,7 +780,7 @@ function processBranch(source: string, context: RuleContext): string {
     .join("");
 }
 
-// The replacement for a differential d; \mathit{d} in revert mode.
+// The replacement for a differential d; \mathnormal{d} in revert mode.
 let differentialReplacement = "\\mathrm{d}";
 
 /** The input judgment for a formula's LaTeX. Idempotent. */
@@ -774,6 +798,7 @@ export function applyInputJudgment(
     typed: Boolean(options.typed),
     deferLetterRuns: Boolean(options.deferLetterRuns),
     revert: Boolean(options.revert),
+    keep: options.keep?.size ? options.keep : undefined,
   };
   if (!context.upright && !context.escapes) return source;
   let letters = processBranch(source, context);
@@ -784,8 +809,9 @@ export function applyInputJudgment(
     if (again === letters) break;
     letters = again;
   }
-  if (!context.upright) return letters;
-  differentialReplacement = context.revert ? "\\mathit{d}" : "\\mathrm{d}";
+  // (a differential the user turned back to the letter d keeps every d of the formula as typed)
+  if (!context.upright || context.keep?.has("d")) return letters;
+  differentialReplacement = context.revert ? "\\mathnormal{d}" : "\\mathrm{d}";
   try {
     return transformOutsideProtectedCommands(letters, normalizeContextualDifferentialOperators);
   } finally {

@@ -41,11 +41,10 @@ public sealed partial class ThisAddIn
             || text == "跟随正文"
             || string.Equals(text, "Follow Text", StringComparison.OrdinalIgnoreCase))
         {
+            // every formula of the kind takes the text size at its place, and new ones follow the text
             WordFormulaFontSizeSetting.Save(display, null);
             InvalidateFormulaKindFontSizeControls();
-            SetStatus(display
-                ? T("行间公式字号：跟随正文。", "Display formulas: follow the text.")
-                : T("行内公式字号：跟随正文。", "Inline formulas: follow the text."));
+            _ = ApplyFormulaKindFontSizeAsync(display, null);
             return;
         }
         if (!FormulaFontSize.TryParse(text, out var size))
@@ -61,7 +60,8 @@ public sealed partial class ThisAddIn
         _ = ApplyFormulaKindFontSizeAsync(display, size);
     }
 
-    private async Task ApplyFormulaKindFontSizeAsync(bool display, float size)
+    /// <paramref name="size"/> null: every formula of the kind follows the text at its place.
+    private async Task ApplyFormulaKindFontSizeAsync(bool display, float? size)
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
@@ -78,22 +78,19 @@ public sealed partial class ThisAddIn
                 "VisualTeX is busy with another Word operation. Please try again shortly."));
             return;
         }
-        var kind = display ? T("行间公式", "display formula(s)") : T("行内公式", "inline formula(s)");
         try
         {
             BeginFormulaFormatMutation();
             var result = await dispatcher.InvokeAsync(
                     () => service.ApplyFontSizeToDocumentFormulas(display, size))
                 .ConfigureAwait(false);
-            var message = T(
-                $"已把 {result.Resized} 个{kind}改为 {FormulaFontSize.Describe(size)}。",
-                $"{result.Resized} {kind} set to {FormulaFontSize.Describe(size, english: true)}.");
+            var message = DescribeKindFontSizeResult(display, size, result.Resized);
             if (result.Failures.Count > 0)
                 message += T(
                     $"{result.Failures.Count} 个未能更改：{result.Failures[0]}",
                     $" {result.Failures.Count} could not be changed: {result.Failures[0]}");
             WriteRedrawAcceptanceLog(
-                $"formula-kind-font-size display={display} size={size} resized={result.Resized} failed={result.Failures.Count} {result.MetricDetail}");
+                $"formula-kind-font-size display={display} size={(size.HasValue ? size.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "follow")} resized={result.Resized} failed={result.Failures.Count} {result.MetricDetail}");
             SetStatus(message);
         }
         catch (Exception error)
@@ -111,6 +108,16 @@ public sealed partial class ThisAddIn
             _operationGate.Release();
             InvalidateFormulaFontControls();
         }
+    }
+
+    private static string DescribeKindFontSizeResult(bool display, float? size, int resized)
+    {
+        var kind = display ? T("行间公式", "display formula(s)") : T("行内公式", "inline formula(s)");
+        return size.HasValue
+            ? T($"已把 {resized} 个{kind}改为 {FormulaFontSize.Describe(size.Value)}。",
+                $"{resized} {kind} set to {FormulaFontSize.Describe(size.Value, english: true)}.")
+            : T($"已让 {resized} 个{kind}跟随正文字号。",
+                $"{resized} {kind} now follow the text size.");
     }
 
     private void InvalidateFormulaKindFontSizeControls()

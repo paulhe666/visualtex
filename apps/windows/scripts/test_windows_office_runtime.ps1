@@ -264,59 +264,6 @@ function Test-CertificateTrusted {
     }
 }
 
-function Get-VstoRuntimeState([string]$Architecture) {
-    $subKey = "SOFTWARE\Microsoft\VSTO Runtime Setup\v4R"
-    $registryState = $null
-    foreach ($registryArchitecture in @($Architecture, "x86", "x64") | Select-Object -Unique) {
-        $install = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Install" $registryArchitecture
-        $clr40 = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "VSTORFeature_CLR40" $registryArchitecture
-        $version = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Version" $registryArchitecture
-        $registered =
-            ($null -ne $install -and [int]$install -eq 1) -or
-            ($null -ne $clr40 -and [int]$clr40 -eq 1) -or
-            (-not [string]::IsNullOrWhiteSpace([string]$version))
-        if ($registered -and $null -eq $registryState) {
-            $registryState = [pscustomobject]@{
-                install = $install
-                clr40 = $clr40
-                version = $version
-                registryView = $registryArchitecture
-            }
-        }
-    }
-
-    $commonFiles = if ($Architecture -eq "x86") {
-        [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonProgramFilesX86)
-    } else {
-        [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonProgramFiles)
-    }
-    $loaderPath = if ([string]::IsNullOrWhiteSpace($commonFiles)) {
-        ""
-    } else {
-        Join-Path $commonFiles "Microsoft Shared\VSTO\10.0\VSTOLoader.dll"
-    }
-    $loaderPresent =
-        -not [string]::IsNullOrWhiteSpace($loaderPath) -and
-        (Test-Path -LiteralPath $loaderPath -PathType Leaf)
-    $loaderVersion = if ($loaderPresent) {
-        [string](Get-Item -LiteralPath $loaderPath).VersionInfo.ProductVersion
-    } else { "" }
-
-    return [pscustomobject]@{
-        installed = $null -ne $registryState
-        architectureRuntimePresent = $loaderPresent
-        install = if ($null -ne $registryState) { $registryState.install } else { $null }
-        clr40 = if ($null -ne $registryState) { $registryState.clr40 } else { $null }
-        version = if ($null -ne $registryState) { $registryState.version } else { $null }
-        registryView = if ($null -ne $registryState) { $registryState.registryView } else { "none" }
-        key = "HKLM\$subKey"
-        targetArchitecture = $Architecture
-        loaderPath = $loaderPath
-        loaderPresent = $loaderPresent
-        loaderVersion = $loaderVersion
-    }
-}
-
 function Get-MsiInstalledStateOnce {
     $codes = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
     $sources = New-Object System.Collections.Generic.List[string]
@@ -1316,7 +1263,6 @@ function Write-Report {
         [object]$WordResult,
         [object]$PowerPointResult,
         [object]$CertificateState,
-        [object]$VstoRuntime,
         [object]$MsiState,
         [object]$OleState,
         [object]$CompanionState,
@@ -1335,7 +1281,6 @@ function Write-Report {
         word = $WordResult
         powerPoint = $PowerPointResult
         certificate = $CertificateState
-        vstoRuntime = $VstoRuntime
         msi = $MsiState
         oleLocalServer = $OleState
         companion = $CompanionState
@@ -1353,7 +1298,6 @@ function Write-Report {
 $wordResult = $null
 $powerPointResult = $null
 $certificateState = $null
-$vstoRuntime = $null
 $msiState = $null
 $oleState = $null
 $companionState = $null
@@ -1432,12 +1376,6 @@ try {
         Add-Check "Companion certificate" ([bool]$companionState.certificateMatches) "Registry=$($companionState.expectedThumbprint); File=$($companionState.localThumbprint); Server=$($companionState.remoteThumbprint); TLS=$($companionState.tlsPolicyErrors)"
         Add-Check "Companion protocol" ([bool]$companionState.protocolMatches) "Expected=$($companionState.expectedProtocol); Actual=$($companionState.health.protocolVersion); Response=$($companionState.healthRaw)"
     }
-
-    $vstoRuntime = Get-VstoRuntimeState $script:resolvedOfficePlatform
-    $vstoRuntimeHealthy =
-        [bool]$vstoRuntime.installed -and
-        [bool]$vstoRuntime.architectureRuntimePresent
-    Add-Check "VSTO Runtime" $vstoRuntimeHealthy "$($vstoRuntime.key); Install=$($vstoRuntime.install); VSTORFeature_CLR40=$($vstoRuntime.clr40); Version=$($vstoRuntime.version); registryView=$($vstoRuntime.registryView); Target=$($vstoRuntime.targetArchitecture); Loader=$($vstoRuntime.loaderPath); LoaderVersion=$($vstoRuntime.loaderVersion)"
 
     $msiState = Test-MsiInstalled 10
     Add-Check "Office MSI installed" ([bool]$msiState.installed) "ProductCode=$($msiState.productCode); Source=$($msiState.source)"
@@ -1533,7 +1471,7 @@ try {
     New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeError" -PropertyType String -Value $(if ($script:failures.Count -eq 0) { "" } else { $script:failures -join "; " }) -Force | Out-Null
     New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeReport" -PropertyType String -Value $ReportPath -Force | Out-Null
 
-    Write-Report $wordResult $powerPointResult $certificateState $vstoRuntime $msiState $oleState $companionState $wordComRegistration $powerPointComRegistration $wordDisabledItems $powerPointDisabledItems $events
+    Write-Report $wordResult $powerPointResult $certificateState $msiState $oleState $companionState $wordComRegistration $powerPointComRegistration $wordDisabledItems $powerPointDisabledItems $events
     if ($script:failures.Count -gt 0) {
         throw "Office runtime verification failed: $($script:failures -join '; ')"
     }
@@ -1555,7 +1493,6 @@ try {
         $powerPointResult = [pscustomobject]@{ host = "PowerPoint"; progId = "VisualTeX.PowerPointVsto"; connected = $false; description = ""; error = $_.Exception.Message }
     }
     if ($null -eq $certificateState) { $certificateState = [pscustomobject]@{ passed = $false; details = "Not evaluated" } }
-    if ($null -eq $vstoRuntime) { $vstoRuntime = [pscustomobject]@{ installed = $false; install = $null; clr40 = $null; version = $null; registryView = "none"; key = "Not evaluated" } }
     if ($null -eq $msiState) { $msiState = [pscustomobject]@{ installed = $false; productCode = "" } }
     if ($null -eq $oleState) { $oleState = [pscustomobject]@{ healthy = $false; server = ""; clsid = "{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}"; embeddingProbe = $false; error = "Not evaluated" } }
     if ($null -eq $companionState) { $companionState = [pscustomobject]@{ executable = ""; appDataRoot = ""; port = 0; expectedProtocol = 0; processRunning = $false; portListening = $false; httpsHealthy = $false; certificateMatches = $false; protocolMatches = $false; certificatePath = ""; expectedThumbprint = ""; localThumbprint = ""; remoteThumbprint = ""; health = $null; errors = @("Not evaluated") } }
@@ -1583,7 +1520,7 @@ try {
         $runtimeError = if ($script:failures.Count -gt 0) { $script:failures -join "; " } else { $_.Exception.Message }
         New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeError" -PropertyType String -Value $runtimeError -Force | Out-Null
         New-ItemProperty -LiteralPath $modeKey -Name "LastRuntimeReport" -PropertyType String -Value $ReportPath -Force | Out-Null
-        Write-Report $wordResult $powerPointResult $certificateState $vstoRuntime $msiState $oleState $companionState $wordComRegistration $powerPointComRegistration $wordDisabledItems $powerPointDisabledItems $events
+        Write-Report $wordResult $powerPointResult $certificateState $msiState $oleState $companionState $wordComRegistration $powerPointComRegistration $wordDisabledItems $powerPointDisabledItems $events
     } catch { }
     throw
 }

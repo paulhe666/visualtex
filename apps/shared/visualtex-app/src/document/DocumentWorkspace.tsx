@@ -14,12 +14,14 @@ import {
   documentSchema,
   findMarkdownFile,
   hasMathDelimiters,
+  insertDisplayFormula,
   insertDisplayLatex,
   insertInlineFormula,
   insertInlineLatex,
   mathTextToSlice,
   parseDocument,
   parseMathText,
+  openFormulaId,
   picturePath,
   picturePaths,
 } from "../../../visualtex-document/src/index.ts";
@@ -54,6 +56,8 @@ import { DOCUMENT_OPEN_FILES_EVENT, takeOpenRequests } from "./documentOpenReque
 import { DocumentFileDialog } from "./DocumentFileDialog";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
+import { englishWhileFormulaOpen, typingOutside, watchFormulaShortcut } from "./documentFormulaShortcut";
+import { useDocumentModeStore } from "../stores/documentModeStore";
 import { documentToPdf, printDocumentInBrowser } from "./documentPdf";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
@@ -336,6 +340,25 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       if (editorRef.current === adapter) editorRef.current = null;
     };
   }, [editorRef]);
+
+  // The formula input method's shortcut, pressed while this window has the keyboard (documentFormulaShortcut.ts): an
+  // inline or a display formula at the caret, opened for typing (in English while it is open, when the setting says
+  // so). An open formula keeps the keyboard, and so does another text field of the window that has it (the source
+  // panel, a search box).
+  useEffect(
+    () =>
+      watchFormulaShortcut((display) => {
+        const editor = documentRef.current;
+        if (!editor || !window.document.hasFocus() || useDocumentModeStore.getState().content !== "document") return;
+        if (openDocumentFormula() || typingOutside(editor.view()?.dom)) return;
+        if (!editor.run(display ? insertDisplayFormula : insertInlineFormula)) return;
+        englishWhileFormulaOpen(() => {
+          const view = documentRef.current?.view();
+          return !!view && !!openFormulaId(view.state);
+        });
+      }),
+    [],
+  );
 
   const flash = (message: string) => {
     setNotice(message);
@@ -972,6 +995,7 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
         <DocumentEditor
           ref={documentRef}
           onChange={onChange}
+          onNotice={flash}
           onImage={
             onPasteImage
               ? (file) => {

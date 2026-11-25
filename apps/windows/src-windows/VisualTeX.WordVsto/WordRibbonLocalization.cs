@@ -98,7 +98,7 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.WordVsto.FontSize72" label="72" />
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="Increase" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
-          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+          <comboBox id="VisualTeX.WordVsto.InlineFontSize" label="Inline" sizeString="Follow Text" screentip="Inline formula size" supertip="Once chosen, every inline formula of the current document takes this size at once (undoable), and new inline formulas (inserted, or written by LaTeX redraw, bulk import and format conversion) get it too. Follow Text gives every inline formula the size of the text beside it, and new ones follow the text." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
             <item id="VisualTeX.WordVsto.InlineFontSizeFollow" label="Follow Text" />
             <item id="VisualTeX.WordVsto.InlineFontSizeChu" label="42 pt (CN preset)" />
             <item id="VisualTeX.WordVsto.InlineFontSizeXiaoChu" label="36 pt (CN preset)" />
@@ -132,7 +132,7 @@ public sealed partial class ThisAddIn
             <item id="VisualTeX.WordVsto.InlineFontSize48" label="48" />
             <item id="VisualTeX.WordVsto.InlineFontSize72" label="72" />
           </comboBox>
-          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula (numbered ones included) of the current document takes this size at once (undoable), and LaTeX redraw, bulk import and format conversion give their new ones this size. Follow Text leaves existing formulas as they are." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
+          <comboBox id="VisualTeX.WordVsto.DisplayFontSize" label="Display" sizeString="Follow Text" screentip="Display formula size" supertip="Once chosen, every display formula of the current document (numbered ones included, their numbers with them) takes this size at once (undoable), and new display formulas (inserted, or written by LaTeX redraw, bulk import and format conversion) get it too. Follow Text gives every display formula the size of the text before it, and new ones follow the text." getText="GetFormulaKindFontSizeText" getEnabled="GetFormulaKindFontSizeEnabled" onChange="OnFormulaKindFontSizeChanged">
             <item id="VisualTeX.WordVsto.DisplayFontSizeFollow" label="Follow Text" />
             <item id="VisualTeX.WordVsto.DisplayFontSizeChu" label="42 pt (CN preset)" />
             <item id="VisualTeX.WordVsto.DisplayFontSizeXiaoChu" label="36 pt (CN preset)" />
@@ -175,6 +175,7 @@ public sealed partial class ThisAddIn
           </menu>
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="Compatibility Repair">
+          <button id="VisualTeX.WordVsto.RepairDisplayFormulas" label="Repair Display Formulas" size="large" screentip="Repair Display Formulas" tag="repairDisplay" getImage="GetRibbonImage" onAction="OnRepairDisplayFormulas" />
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="Repair Formula Baselines" size="large" screentip="Scan and repair inline equation offsets" supertip="Scan inline MathType / VisualTeX OLE equations across the document. VisualTeX formulas are calibrated from their own saved render baseline; MathType formulas use a stable document baseline profile. After confirmation, only vertical offsets are repaired; formula content, font size, numbering and references are not changed." tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
           <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="Repair Formula Display" size="large" screentip="Redraw equation pictures with MathType's own layout" supertip="Scan the MathType equations in the document and redraw their display pictures from their stored data with VisualTeX's built-in MathType renderer. This fixes wrong symbols drawn while MathType's fonts were missing. Only the pictures are replaced and realigned on MathType's baseline; equation data, numbering and references are not changed." tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairMathTypeDisplays" />
         </group>

@@ -26,7 +26,11 @@ mod document_export;
 mod document_files;
 #[path = "../../../shared/visualtex-backend/src/document_library.rs"]
 mod document_library;
+mod install_files;
 mod office;
+mod settings_snapshot;
+#[cfg(windows)]
+mod updater;
 #[cfg(windows)]
 mod windows_quick_ocr;
 #[cfg(windows)]
@@ -286,6 +290,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(ocr_state)
+        .manage(updater::UpdaterState::default())
         .setup(move |app| {
             // The template is excluded from static ACL loading. Register the
             // same bounded commands/windows for the port the companion tries first;
@@ -296,6 +301,20 @@ pub fn run() {
                     "office-bootstrap setup skipped all windows, companion startup and warmup tasks",
                 );
                 return Ok(());
+            }
+
+            // the files only the version an update replaced had (installed-files lists), and the Office
+            // preferences an uninstall kept in the settings folder
+            if !isolated {
+                install_files::start();
+                // what the last in-app update did, and the downloads it no longer needs
+                updater::start(app.handle());
+                #[cfg(windows)]
+                if let Ok(settings_root) = app.path().app_data_dir() {
+                    std::thread::spawn(move || {
+                        office::windows_backend::restore_kept_office_preferences(&settings_root)
+                    });
+                }
             }
 
             let office_state = office::initialize(app.handle(), office_ocr_state.clone())
@@ -378,6 +397,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             write_export_file,
+            settings_snapshot::save_settings_snapshot,
+            updater::check_for_update,
+            updater::download_update,
+            updater::cancel_update_download,
+            updater::install_update,
+            updater::get_update_status,
+            updater::take_update_outcome,
             document_export::read_image_file,
             document_export::read_import_file,
             document_export::fetch_image_url,
@@ -444,6 +470,9 @@ pub fn run() {
             anywhere::anywhere_configure_hotkey,
             anywhere::anywhere_formula_shortcuts,
             anywhere::anywhere_status,
+            anywhere::anywhere_english_input,
+            anywhere::anywhere_set_english_input,
+            anywhere::anywhere_own_formula_input,
             windows_quick_ocr::capture_windows_quick_ocr,
             windows_quick_ocr::minimize_visualtex_main_window,
             windows_quick_ocr::write_windows_ocr_clipboard_text,
@@ -478,6 +507,7 @@ pub fn run() {
             office::lifecycle::test_windows_office_runtime,
             office::lifecycle::open_windows_office_logs,
             office::lifecycle::get_wps_integration_status,
+            office::lifecycle::diagnose_wps_integration,
             office::lifecycle::set_wps_host_enabled,
             office::lifecycle::get_native_render_status,
             office::lifecycle::start_native_render_service,

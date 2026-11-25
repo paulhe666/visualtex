@@ -52,6 +52,7 @@ import {
 import {
   applyInputJudgment as visualTexApplyInputJudgment,
   escapeWordAtEnd as visualTexEscapeWordAtEnd,
+  revertedWords as visualTexRevertedWords,
   visualTexSourceWrapperKindsData,
   visualTexSourceWrapperCanonicalTargetsData,
 } from 'virtual:visualtex-kernel-host';
@@ -752,32 +753,71 @@ export function visualTexJudgeInput(
     upright: settings.upright,
     escapes: false,
     typed,
-    deferLetterRuns: !(options?.finishing) && visualTexWordBeforeCaret(model) !== ""
+    deferLetterRuns: !(options?.finishing) && visualTexWordBeforeCaret(model) !== "",
+    // the words the user turned back to letters, and those the formula had when it was opened, stay as typed
+    keep: mathfield.visualTexKeptWords
   };
   const before = model.getValue();
   // a formula not edited since it was set keeps its letters as they are
   if (before === mathfield.visualTexUnjudged) return false;
+  visualTexForgetGoneWords(mathfield, before);
   const after = visualTexApplyInputJudgment(before, judgment);
   if (after === before) return false;
   const revert = visualTexApplyInputJudgment(before, { ...judgment, revert: true });
   visualTexSetJudgedValue(mathfield, after);
   mathfield.visualTexLastJudgment = {
     after: model.getValue(),
+    before,
     revert,
     position: model.position
   };
   return true;
 }
-// Backspace right after a conversion restores the typed word, marked
-// explicit (\mathit) so the judgment leaves it alone from then on.
+// Backspace right after a conversion puts back the letters as they were typed
+// (plain ln, no command around them) and keeps those words as typed in this
+// formula from then on (visualTexKeptWords). (It used to leave \mathit{ln}:
+// the text italic, not the letters' own, as the mark that kept them.)
+function visualTexPutBackTypedLetters(mathfield: _Mathfield, last: NonNullable<_Mathfield["visualTexLastJudgment"]>): void {
+  const words = visualTexRevertedWords(last.before, last.revert);
+  mathfield.visualTexKeptWords = new Set([...(mathfield.visualTexKeptWords ?? []), ...words]);
+  visualTexSetJudgedValue(mathfield, last.before);
+}
 export function visualTexRevertLastJudgment(mathfield: _Mathfield): boolean {
   const last = mathfield.visualTexLastJudgment;
   mathfield.visualTexLastJudgment = void 0;
   const model = mathfield.model;
-  if (!last || !model.selectionIsCollapsed || model.getValue() !== last.after || model.position !== last.position)
-    return false;
-  visualTexSetJudgedValue(mathfield, last.revert);
+  if (!last || !model.selectionIsCollapsed) return false;
+  if (model.getValue() === last.after && model.position === last.position) {
+    visualTexPutBackTypedLetters(mathfield, last);
+    return true;
+  }
+  // "ln_": the "_" that finished the word opened a subscript on the converted word. Backspace in that script, still
+  // empty, gives the letters back with the script open (ln_{}): what is typed next is the script, as was meant.
+  // (Backspace there deleted the converted function and its script, the letters too.)
+  const script = last.script;
+  if (!script || !last.atom) return false;
+  const branch = script === "_" ? "subscript" : "superscript";
+  const here = model.at(model.position);
+  if (here?.type !== "first" || here.parent !== last.atom || here.parentBranch !== branch) return false;
+  if ((last.atom.branch(branch) ?? []).some((atom) => atom.type !== "first")) return false;
+  if (model.getValue().replace(`${script}{}`, "") !== last.after) return false;
+  visualTexPutBackTypedLetters(mathfield, last);
+  mathfield.executeCommand(script === "_" ? "moveToSubscript" : "moveToSuperscript");
   return true;
+}
+// A kept word the formula no longer has is forgotten: typed again later, it is judged as any word is (a row emptied
+// and typed anew is a new formula). The differential's "d" stays while a d is there.
+export function visualTexForgetGoneWords(mathfield: _Mathfield, latex: string): void {
+  const kept = mathfield.visualTexKeptWords;
+  if (!kept?.size) return;
+  for (const word of [...kept]) {
+    const present = word === "d" ? /(?<![A-Za-z\\])d/ : new RegExp(`(?<![A-Za-z\\\\])${word}(?![A-Za-z])`);
+    if (!/^[A-Za-z]+$/.test(word) || !present.test(latex)) kept.delete(word);
+  }
+}
+// (read through a function: the caller cleared it just before a call that may set it again)
+function visualTexLastJudgmentOf(mathfield: _Mathfield) {
+  return mathfield.visualTexLastJudgment;
 }
 // The atom is a digit, or a space right after one (30 deg).
 function visualTexFollowsNumber(atom: Atom | undefined): boolean {
@@ -873,6 +913,13 @@ export function visualTexJudgeKeystroke(
   if (/^[A-Za-z]$/.test(key) || key === "Delete") return false;
   const wordBefore = visualTexWordBeforeCaret(model);
   if (!visualTexJudgeInput(mathfield, { finishing: true })) return false;
+  // "_" or "^" goes on to open that script on the converted word: Backspace in it, while it is empty, still gives
+  // the letters back (visualTexRevertLastJudgment).
+  const judged = visualTexLastJudgmentOf(mathfield);
+  if (judged && (key === "_" || key === "^")) {
+    judged.script = key;
+    judged.atom = model.at(model.position);
+  }
   // The word became a function name (sin x): the Space that finished it is
   // not inserted. A unit keeps its letters (3 km h) and its Space.
   if (!wordBefore || visualTexLettersBeforeCaret(model).endsWith(wordBefore)) return false;

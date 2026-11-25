@@ -96,6 +96,8 @@ export interface FormulaSession {
   stopPointerTracking?(): void;
   /** Report an edit the editor has made but not reported yet. */
   flush?(): void;
+  /** The editor holds something: its formula, an edit not reported yet, or a command still being typed. */
+  holdsInput?(): boolean;
   destroy(): void;
   /** The part of the formula a selection through the text takes, shown selected (null: none yet). */
   showPart?(range: [number, number] | null): void;
@@ -696,6 +698,7 @@ export class FormulaView implements NodeView {
     this.registeredId = node.attrs.id ?? null;
     if (this.registeredId) formulaViewsOf(view).set(this.registeredId, this);
     this.renderStatic();
+    this.dom.classList.toggle("is-blank", !this.hasContent());
     this.applyDecorations(decorations);
     // near the screen it keeps a live editor (Residency)
     queueMicrotask(() => !this.destroyed && residencyOf(view).watch(this));
@@ -778,6 +781,12 @@ export class FormulaView implements NodeView {
   };
 
   private onMouseDown = (event: MouseEvent) => {
+    // a right click in the open formula: its own selection stays for the menu (WebKit moved the page's selection to
+    // the word under the pointer, which closed the formula)
+    if (this.session && !this.passive && event.button !== 0) {
+      event.preventDefault();
+      return;
+    }
     if (this.session && !this.passive && event.button === 0 && !event.shiftKey && this.editorBox) {
       // Beside the open formula's editor (on a display formula's line, left or right of it): the caret goes to the
       // nearest place in the formula, as a click beside a formula row does.
@@ -936,6 +945,9 @@ export class FormulaView implements NodeView {
     this.dom.classList.remove("is-open");
     this.dom.classList.toggle("is-partial", !!part);
     if (this.editorBox) this.editorBox.inert = true;
+    // An empty formula at rest shows its dashed box (document.css: is-blank), drawn for what it holds now (it may have
+    // been emptied while open).
+    if (!this.hasContent()) this.renderStatic();
     if (!this.passive) {
       this.passive = true;
       session.rest?.();
@@ -1045,6 +1057,11 @@ export class FormulaView implements NodeView {
     else reveal();
   }
 
+  /** The live editor holds something, reported to the document or not (a command still being typed). */
+  holdsInput(): boolean {
+    return !!this.session?.holdsInput?.();
+  }
+
   /** The formula has something to show (an empty one keeps its dashed box until it is opened). */
   hasContent(): boolean {
     return !!String(this.node.attrs.latex ?? "").trim();
@@ -1124,6 +1141,7 @@ export class FormulaView implements NodeView {
     }
     // (a live formula's picture is drawn again when its editor goes)
     if (!this.session) this.renderStatic();
+    this.dom.classList.toggle("is-blank", !this.hasContent());
     this.applyDecorations(decorations);
     return true;
   }
@@ -1391,15 +1409,9 @@ export function formulaPlugin(host: FormulaHost, commands: FormulaCommands): Plu
         return value;
       },
     },
-    // An inline formula left empty goes away, however it was left (Backspace in it does the same). Outside the
-    // history: undo does not bring an empty formula back.
-    appendTransaction(_transactions, oldState, newState) {
-      const closed = formulaKey.getState(oldState)?.openId;
-      if (!closed || formulaKey.getState(newState)?.openId === closed) return null;
-      const found = findNodeById(newState.doc, closed);
-      if (!found || found.node.type.name !== "math_inline" || String(found.node.attrs.latex).trim()) return null;
-      return newState.tr.delete(found.pos, found.pos + found.node.nodeSize).setMeta("addToHistory", false);
-    },
+    // A formula left empty stays, however it was left, as its source keeps the dollars that were typed ("$$" for an
+    // inline formula, "$$" "$$" around an empty line for a display one): only Backspace in it removes it. (An inline
+    // formula left empty went away: what was typed vanished, 2026-11-24.)
     props: {
       // With formulas partly selected the text caret is not shown (the selection is a range, drawn in them).
       attributes(state): Record<string, string> {

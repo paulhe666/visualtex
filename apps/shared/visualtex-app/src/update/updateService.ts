@@ -1,5 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { APP_VERSION } from "@platform/appInfo";
+import { nativeUpdater } from "@platform/appUpdate";
+import { NATIVE_UPDATE_KEY_MISSING } from "./nativeUpdate";
 import { stripPersonalAuthorNames } from "./releaseNotes";
 
 const LATEST_RELEASE_API =
@@ -18,6 +20,8 @@ export interface UpdateCheckResult {
   releaseNotes: string;
   publishedAt: string;
   updateAvailable: boolean;
+  /** in-app installation (Windows): an installer for this build and its size */
+  install?: { canInstall: boolean; size: number };
 }
 
 interface GitHubReleaseResponse {
@@ -120,7 +124,30 @@ export function isNewerVersion(candidate: string, current: string): boolean {
   return false;
 }
 
+/** The platform's signed update manifest (Windows); null when this build has no update key. */
+async function checkNativeUpdate(): Promise<UpdateCheckResult | null> {
+  if (!nativeUpdater) return null;
+  try {
+    const check = await nativeUpdater.check();
+    return {
+      currentVersion: check.currentVersion,
+      latestVersion: check.latestVersion,
+      releaseUrl: check.releaseUrl,
+      releaseName: stripPersonalAuthorNames(check.releaseName),
+      releaseNotes: stripPersonalAuthorNames(check.releaseNotes),
+      publishedAt: check.publishedAt,
+      updateAvailable: check.updateAvailable,
+      install: { canInstall: check.canInstall, size: check.size },
+    };
+  } catch (error) {
+    if (String(error) === NATIVE_UPDATE_KEY_MISSING) return null;
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
+  const native = await checkNativeUpdate();
+  if (native) return native;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8000);
   try {

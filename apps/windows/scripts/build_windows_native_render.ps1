@@ -17,6 +17,8 @@ $sdk=Get-ChildItem (Join-Path $env:DOTNET_ROOT 'sdk') -Directory | Where-Object 
 $env:MSBuildSDKsPath=Join-Path $sdk.FullName 'Sdks'
 $env:MSBuildEnableWorkloadResolver='false'
 $targetRoot=Join-Path $windowsRoot 'src-tauri\target'
+# The stage is only needed while the MSI is built (its cab is embedded); remove stages earlier runs left behind.
+Get-ChildItem -LiteralPath $targetRoot -Directory -Filter 'native-render-package-*' -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 $stage=Join-Path $targetRoot ('native-render-package-'+[guid]::NewGuid().ToString('N'))
 $payload=Join-Path $stage 'payload'
 [void][IO.Directory]::CreateDirectory($payload)
@@ -83,8 +85,9 @@ Copy-Item -LiteralPath $msi -Destination $resources -Force
 $files=@(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object {
     [ordered]@{path=$_.FullName.Substring($payload.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 })
-$manifest=[ordered]@{schema=1;version='1.3.0';service='VisualTeX.NativeRender';package=[ordered]@{name=[IO.Path]::GetFileName($msi);sha256=(Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash};files=$files}
+$manifest=[ordered]@{schema=1;version='1.3.1';service='VisualTeX.NativeRender';package=[ordered]@{name=[IO.Path]::GetFileName($msi);sha256=(Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash};files=$files}
 $manifestPath=Join-Path $resources 'VisualTeX-NativeRender-x64.sha256.json'
 [IO.File]::WriteAllText($manifestPath,($manifest | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
+Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "Native-render MSI: $msi"
 Write-Output "Native-render manifest: $manifestPath"

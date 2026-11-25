@@ -17,7 +17,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const INTEGRATION_KEY: &str = r"HKCU\Software\VisualTeX\OfficeIntegration";
+#[cfg_attr(not(windows), allow(dead_code))]
+const INTEGRATION_SUBKEY: &str = r"Software\VisualTeX\OfficeIntegration";
 const STANDARD_PORT: u16 = 43_127;
 const START_WAIT: Duration = Duration::from_secs(20);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
@@ -53,28 +54,102 @@ fn log(message: &str) {
     }
 }
 
-/// `reg.exe query` output: `    Name    REG_SZ    value`.
+/// The Office integration values, read through the Windows registry API, which returns text as UTF-16. (Parsing
+/// `reg.exe query` output garbled every non-ASCII value: reg.exe prints in the system code page, GBK on Chinese
+/// Windows, so a data folder under a Chinese user name was never found.) DWORD and QWORD values come back in
+/// reg.exe's `0x..` form, the form `companion_port` reads.
+#[cfg(windows)]
 fn read_registry() -> Result<std::collections::HashMap<String, String>, String> {
-    let mut command = std::process::Command::new("reg.exe");
-    command.args(["query", INTEGRATION_KEY]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegOpenKeyExW(key: isize, sub_key: *const u16, options: u32, desired: u32, result: *mut isize) -> i32;
+        fn RegEnumValueW(
+            key: isize,
+            index: u32,
+            name: *mut u16,
+            name_length: *mut u32,
+            reserved: *mut u32,
+            kind: *mut u32,
+            data: *mut u8,
+            data_length: *mut u32,
+        ) -> i32;
+        fn RegCloseKey(key: isize) -> i32;
     }
-    let output = command.output().map_err(|error| format!("reg.exe failed: {error}"))?;
-    if !output.status.success() {
+    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+    const KEY_READ: u32 = 0x0002_0019;
+    const ERROR_SUCCESS: i32 = 0;
+    const ERROR_MORE_DATA: i32 = 234;
+    const ERROR_NO_MORE_ITEMS: i32 = 259;
+
+    let sub_key: Vec<u16> = INTEGRATION_SUBKEY.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut key: isize = 0;
+    if unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, sub_key.as_ptr(), 0, KEY_READ, &mut key) } != ERROR_SUCCESS {
         return Err("VisualTeX is not installed for this Windows user (no Office integration registry key)".into());
     }
-    let text = String::from_utf8_lossy(&output.stdout);
     let mut values = std::collections::HashMap::new();
-    for line in text.lines() {
-        let parts: Vec<&str> = line.trim().splitn(3, "    ").collect();
-        if parts.len() == 3 && parts[1].starts_with("REG_") {
-            values.insert(parts[0].trim().to_string(), parts[2].trim().to_string());
+    let mut name = vec![0u16; 16_384];
+    let mut data = vec![0u8; 4_096];
+    let mut index = 0u32;
+    let result = loop {
+        let mut name_length = name.len() as u32;
+        let mut data_length = data.len() as u32;
+        let mut kind = 0u32;
+        let status = unsafe {
+            RegEnumValueW(
+                key,
+                index,
+                name.as_mut_ptr(),
+                &mut name_length,
+                std::ptr::null_mut(),
+                &mut kind,
+                data.as_mut_ptr(),
+                &mut data_length,
+            )
+        };
+        match status {
+            ERROR_SUCCESS => {
+                let value_name = String::from_utf16_lossy(&name[..name_length as usize]);
+                if let Some(text) = registry_value_text(kind, &data[..data_length as usize]) {
+                    values.insert(value_name, text);
+                }
+                index += 1;
+            }
+            // The data did not fit: read the same value again with a buffer of the size Windows named.
+            ERROR_MORE_DATA => data.resize((data_length as usize).max(data.len() * 2), 0),
+            ERROR_NO_MORE_ITEMS => break Ok(values),
+            other => break Err(format!("reading the Office integration registry key failed (error {other})")),
         }
+    };
+    unsafe { RegCloseKey(key) };
+    result
+}
+
+#[cfg(not(windows))]
+fn read_registry() -> Result<std::collections::HashMap<String, String>, String> {
+    Err("VisualTeX's Office integration registry key exists only on Windows".into())
+}
+
+/// A registry value as text: strings as they are (UTF-16, up to the first NUL), DWORD / QWORD as `0x..`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn registry_value_text(kind: u32, data: &[u8]) -> Option<String> {
+    const REG_SZ: u32 = 1;
+    const REG_EXPAND_SZ: u32 = 2;
+    const REG_DWORD: u32 = 4;
+    const REG_QWORD: u32 = 11;
+    match kind {
+        REG_SZ | REG_EXPAND_SZ => {
+            let units: Vec<u16> = data.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+            let end = units.iter().position(|unit| *unit == 0).unwrap_or(units.len());
+            Some(String::from_utf16_lossy(&units[..end]))
+        }
+        REG_DWORD if data.len() >= 4 => Some(format!("0x{:x}", u32::from_le_bytes([data[0], data[1], data[2], data[3]]))),
+        REG_QWORD if data.len() >= 8 => {
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&data[..8]);
+            Some(format!("0x{:x}", u64::from_le_bytes(bytes)))
+        }
+        _ => None,
     }
-    Ok(values)
 }
 
 /// A source acceptance companion (scripts/start_isolated_source_companion.ps1) on its own
@@ -560,7 +635,7 @@ mod tests {
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect::<std::collections::HashMap<_, _>>()
         };
-        // reg.exe prints DWORD values in hexadecimal
+        // DWORD values come as 0x.. (registry_value_text, as reg.exe prints them)
         assert_eq!(companion_port(&values(&[("CompanionPort", "0xa877")])), 43_127);
         assert_eq!(
             companion_port(&values(&[("CompanionPort", "0xa877"), ("CompanionActivePort", "0x94ef")])),
@@ -575,6 +650,18 @@ mod tests {
             43_127,
         );
         assert_eq!(companion_port(&values(&[])), STANDARD_PORT);
+    }
+
+    #[test]
+    fn registry_values_keep_non_ascii_paths() {
+        let wide = |text: &str| text.encode_utf16().chain([0]).flat_map(|unit| unit.to_le_bytes()).collect::<Vec<u8>>();
+        let path = "C:\\Users\\\u{5f20}\u{4e09}\\AppData\\Roaming\\com.visualtex.studio";
+        assert_eq!(registry_value_text(1, &wide(path)).as_deref(), Some(path));
+        assert_eq!(registry_value_text(2, &wide("%LOCALAPPDATA%\\VisualTeX")).as_deref(), Some("%LOCALAPPDATA%\\VisualTeX"));
+        // DWORD in reg.exe's form, which companion_port reads
+        assert_eq!(registry_value_text(4, &43_127u32.to_le_bytes()).as_deref(), Some("0xa877"));
+        assert_eq!(registry_value_text(11, &5u64.to_le_bytes()).as_deref(), Some("0x5"));
+        assert_eq!(registry_value_text(3, &[1, 2, 3]), None);
     }
 
     #[test]

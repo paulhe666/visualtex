@@ -8,12 +8,19 @@ param(
     [string]$OfficePlatform = "auto",
     [string]$VisualTeXPath,
     [string]$DiagnosticReportPath,
+    # A file that receives the reason when the installation fails (the VisualTeX installer shows it).
+    [string]$ReasonPath,
+    # Only find Microsoft Office or WPS Office: exit 5 when neither is installed, 0 otherwise.
+    [switch]$DetectOnly,
     [switch]$Elevated,
     [switch]$ArchitectureRelaunched
 )
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "windows_wps_companion.ps1")
+# Precise causes for failures: programs holding the add-ins, Windows Installer's own error, quarantined files.
+$diagnosisScript = Join-Path $PSScriptRoot "windows_office_diagnosis.ps1"
+if (Test-Path -LiteralPath $diagnosisScript -PathType Leaf) { . $diagnosisScript }
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -53,29 +60,33 @@ function Resolve-EarlyOfficePlatform {
         } finally { $baseKey.Dispose() }
     }
 
-    foreach ($candidate in @(
-        @{ Platform = "x64"; View = [Microsoft.Win32.RegistryView]::Registry64 },
-        @{ Platform = "x86"; View = [Microsoft.Win32.RegistryView]::Registry32 }
-    )) {
-        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
-            [Microsoft.Win32.RegistryHive]::LocalMachine,
-            $candidate.View)
-        try {
-            $word = $baseKey.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE")
-            $powerPoint = $baseKey.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\POWERPNT.EXE")
+    # Word and PowerPoint of one bitness first, then Word or PowerPoint alone.
+    foreach ($requireBoth in @($true, $false)) {
+        foreach ($candidate in @(
+            @{ Platform = "x64"; View = [Microsoft.Win32.RegistryView]::Registry64 },
+            @{ Platform = "x86"; View = [Microsoft.Win32.RegistryView]::Registry32 }
+        )) {
+            $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+                [Microsoft.Win32.RegistryHive]::LocalMachine,
+                $candidate.View)
             try {
-                if ($null -ne $word -and $null -ne $powerPoint) { return $candidate.Platform }
-            } finally {
-                if ($null -ne $word) { $word.Dispose() }
-                if ($null -ne $powerPoint) { $powerPoint.Dispose() }
-            }
-        } finally { $baseKey.Dispose() }
+                $word = $baseKey.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE")
+                $powerPoint = $baseKey.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\POWERPNT.EXE")
+                try {
+                    if ($requireBoth -and $null -ne $word -and $null -ne $powerPoint) { return $candidate.Platform }
+                    if (-not $requireBoth -and ($null -ne $word -or $null -ne $powerPoint)) { return $candidate.Platform }
+                } finally {
+                    if ($null -ne $word) { $word.Dispose() }
+                    if ($null -ne $powerPoint) { $powerPoint.Dispose() }
+                }
+            } finally { $baseKey.Dispose() }
+        }
     }
 
     # No Microsoft Office: the add-ins are for WPS Office alone, in its bitness.
     $wps = @(Get-WpsInstallations)
     if ($wps.Count -gt 0) { return $wps[0].Architecture }
-    return $(if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" })
+    return $null
 }
 
 function Resolve-PowerShellExecutable([string]$TargetPlatform) {
@@ -93,6 +104,30 @@ function Resolve-PowerShellExecutable([string]$TargetPlatform) {
     return Join-Path $windowsRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 }
 
+# The reason this run failed, as one line: written to -ReasonPath for the installer, and printed as a
+# "REASON: " line for VisualTeX. The output of a copy started elevated reaches nobody, so the process
+# that started it prints the reason again (Invoke-SelfProcess).
+function Write-FailureReason([string]$Reason) {
+    $line = ($Reason -replace '[\r\n]+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($ReasonPath)) {
+        try { [IO.File]::WriteAllText($ReasonPath, $line, [Text.Encoding]::Default) } catch { }
+    }
+    return $line
+}
+
+function Stop-WithReason([string]$Reason, [int]$ExitCode = 1) {
+    Write-Output ("REASON: " + (Write-FailureReason $Reason))
+    exit $ExitCode
+}
+
+# Windows reports the declined administrator prompt as ERROR_CANCELLED (1223).
+function Test-ElevationDeclined([Exception]$Exception) {
+    for ($current = $Exception; $null -ne $current; $current = $current.InnerException) {
+        if ($current -is [ComponentModel.Win32Exception] -and $current.NativeErrorCode -eq 1223) { return $true }
+    }
+    return $false
+}
+
 function Invoke-SelfProcess {
     param(
         [string]$TargetProcessPlatform,
@@ -100,6 +135,10 @@ function Invoke-SelfProcess {
         [bool]$RunAsAdministrator,
         [bool]$MarkArchitectureRelaunched
     )
+    $reasonFile = $ReasonPath
+    if ([string]::IsNullOrWhiteSpace($reasonFile)) {
+        $reasonFile = Join-Path ([IO.Path]::GetTempPath()) ("visualtex-office-install-" + [Guid]::NewGuid().ToString("N") + ".txt")
+    }
     $arguments = New-Object System.Collections.Generic.List[string]
     foreach ($value in @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", (Quote-ProcessArgument $PSCommandPath))) {
         [void]$arguments.Add($value)
@@ -113,19 +152,26 @@ function Invoke-SelfProcess {
         @{ Name = "HashManifestPath"; Value = (Resolve-ElevationPath $HashManifestPath) },
         @{ Name = "OfficePlatform"; Value = $TargetOfficePlatform },
         @{ Name = "VisualTeXPath"; Value = (Resolve-ElevationPath $VisualTeXPath) },
-        @{ Name = "DiagnosticReportPath"; Value = (Resolve-ElevationPath $DiagnosticReportPath) }
+        @{ Name = "DiagnosticReportPath"; Value = (Resolve-ElevationPath $DiagnosticReportPath) },
+        @{ Name = "ReasonPath"; Value = (Resolve-ElevationPath $reasonFile) }
     )) {
         if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) { continue }
         [void]$arguments.Add("-$($entry.Name)")
         [void]$arguments.Add((Quote-ProcessArgument ([string]$entry.Value)))
     }
-    $startParameters = @{
-        FilePath = Resolve-PowerShellExecutable $TargetProcessPlatform
-        ArgumentList = ($arguments -join " ")
-        PassThru = $true
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = Resolve-PowerShellExecutable $TargetProcessPlatform
+    $startInfo.Arguments = $arguments -join " "
+    $startInfo.UseShellExecute = $true
+    if ($RunAsAdministrator) { $startInfo.Verb = "runas" }
+    try {
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+    } catch {
+        if (Test-ElevationDeclined $_.Exception) {
+            Stop-WithReason "Windows did not grant administrator permission: the User Account Control prompt was declined." 4
+        }
+        Stop-WithReason ("Unable to start PowerShell: " + $_.Exception.Message)
     }
-    if ($RunAsAdministrator) { $startParameters.Verb = "RunAs" }
-    $process = Start-Process @startParameters
     try {
         # Start-Process -Wait waits for the entire descendant process tree on Windows.
         # The installation intentionally starts the long-lived VisualTeX companion, so
@@ -136,17 +182,36 @@ function Invoke-SelfProcess {
     } finally {
         $process.Dispose()
     }
+    if ($exitCode -ne 0) {
+        $reason = ""
+        try { $reason = [IO.File]::ReadAllText($reasonFile, [Text.Encoding]::Default).Trim() } catch { }
+        if ([string]::IsNullOrWhiteSpace($reason)) {
+            $reason = "VisualTeX Office integration installation failed with exit code $exitCode."
+            [void](Write-FailureReason $reason)
+        }
+        Write-Output ("REASON: " + $reason)
+    }
+    if ($reasonFile -ne $ReasonPath) { Remove-Item -LiteralPath $reasonFile -Force -ErrorAction SilentlyContinue }
     exit $exitCode
 }
 
 $earlyOfficePlatform = Resolve-EarlyOfficePlatform
+if (-not $earlyOfficePlatform) {
+    # Nothing on this computer would load the add-ins: install nothing and ask for no administrator
+    # permission (exit 5; the installer and VisualTeX say so instead of reporting a failure).
+    Stop-WithReason "Neither Microsoft Office nor WPS Office is installed on this computer, so the Office add-ins were not installed." 5
+}
+if ($DetectOnly) {
+    Write-Output "Office add-ins platform: $earlyOfficePlatform"
+    exit 0
+}
 $requiresArchitectureRelaunch =
     ($earlyOfficePlatform -eq "x64" -and -not [Environment]::Is64BitProcess) -or
     ($earlyOfficePlatform -eq "x86" -and [Environment]::Is64BitProcess)
 
 if (-not (Test-IsAdministrator)) {
     if ($Elevated) {
-        throw "VisualTeX Office integration requires administrator privileges for machine-wide COM registration."
+        Stop-WithReason "VisualTeX Office integration requires administrator privileges for machine-wide COM registration."
     }
     $elevationProcessPlatform = if ([Environment]::Is64BitProcess) { "x64" } else { "x86" }
     Invoke-SelfProcess $elevationProcessPlatform $earlyOfficePlatform $true $false
@@ -154,7 +219,7 @@ if (-not (Test-IsAdministrator)) {
 
 if ($requiresArchitectureRelaunch) {
     if ($ArchitectureRelaunched) {
-        throw "Unable to relaunch the installer in a PowerShell process matching $earlyOfficePlatform Office."
+        Stop-WithReason "Unable to relaunch the installer in a PowerShell process matching $earlyOfficePlatform Office."
     }
     Invoke-SelfProcess $earlyOfficePlatform $earlyOfficePlatform $false $true
 }
@@ -174,6 +239,8 @@ $script:resolvedOfficePlatform = $null
 $script:resolvedVisualTeXPath = $null
 $script:resolvedMsiPath = $null
 $script:staticInstallVerified = $false
+# set by a prerequisite check whose failure the installer reports itself (3: .NET Framework older than 4.7.2)
+$script:failureExitCode = $null
 $script:runtimeVerified = $false
 $transcriptStarted = $false
 
@@ -458,28 +525,6 @@ function Assert-OfficeApplicationsInstalled([string]$Architecture) {
     Add-DiagnosticCheck "WPS Office present" $true (($wps | ForEach-Object { "$($_.Path) ($($_.Architecture))" }) -join "; ") "prerequisite"
 }
 
-function Assert-VstoRuntimeInstalled([string]$Architecture) {
-    $subKey = "SOFTWARE\Microsoft\VSTO Runtime Setup\v4R"
-    $candidateViews = @($Architecture, "x86", "x64") | Select-Object -Unique
-    foreach ($registryArchitecture in $candidateViews) {
-        if (-not (Test-RegistryKey ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey $registryArchitecture)) {
-            continue
-        }
-        $install = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Install" $registryArchitecture -Optional
-        $clr40 = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "VSTORFeature_CLR40" $registryArchitecture -Optional
-        $version = Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) $subKey "Version" $registryArchitecture -Optional
-        $installed =
-            ($null -ne $install -and [int]$install -eq 1) -or
-            ($null -ne $clr40 -and [int]$clr40 -eq 1) -or
-            (-not [string]::IsNullOrWhiteSpace([string]$version))
-        if ($installed) {
-            Add-DiagnosticCheck "VSTO Runtime" $true "HKLM\$subKey; Install=$install; VSTORFeature_CLR40=$clr40; Version=$version; registryView=$registryArchitecture; Office=$Architecture" "prerequisite"
-            return
-        }
-    }
-    throw "Microsoft Visual Studio Tools for Office Runtime is missing or incomplete at HKLM\$subKey. Checked x86 and x64 registry views for Office $Architecture."
-}
-
 function Assert-NetFramework472Installed {
     $releaseValues = @()
     foreach ($architecture in @("x64", "x86")) {
@@ -492,11 +537,13 @@ function Assert-NetFramework472Installed {
         if ($null -ne $release) { $releaseValues += [int]$release }
     }
     if ($releaseValues.Count -eq 0) {
+        $script:failureExitCode = 3
         throw ".NET Framework 4 Full installation was not found. VisualTeX Office integration targets .NET Framework 4.7.2."
     }
     $releaseValue = ($releaseValues | Measure-Object -Maximum).Maximum
     $minimumRelease = 461808
     if ($releaseValue -lt $minimumRelease) {
+        $script:failureExitCode = 3
         throw ".NET Framework 4.7.2 or newer is required. Detected Release=$releaseValue; expected at least $minimumRelease."
     }
     Add-DiagnosticCheck ".NET Framework 4.7.2" $true "Release=$releaseValue" "prerequisite"
@@ -715,9 +762,59 @@ function Invoke-MsiExec {
     $process = Start-Process msiexec.exe -ArgumentList $effectiveArguments -Wait -PassThru
     Write-Host "$Operation exit code: $($process.ExitCode)"
     if ($process.ExitCode -notin $AllowedExitCodes) {
-        throw "$Operation failed with exit code $($process.ExitCode). See the verbose MSI log."
+        $logIndex = [Array]::IndexOf([string[]]$Arguments, "/L*v")
+        $msiLog = if ($logIndex -ge 0 -and $logIndex + 1 -lt $Arguments.Count) { ([string]$Arguments[$logIndex + 1]).Trim('"') } else { "" }
+        $cause = if (Get-Command Get-MsiFailureCause -ErrorAction SilentlyContinue) { Get-MsiFailureCause $process.ExitCode $msiLog } else { "exit code $($process.ExitCode)" }
+        throw "$Operation failed: $cause. See the verbose MSI log: $msiLog"
     }
     return $process.ExitCode
+}
+
+# The ProductCode of an MSI file; empty when it cannot be read.
+function Get-MsiProductCode([string]$Path) {
+    $installer = $null
+    $database = $null
+    $view = $null
+    $record = $null
+    try {
+        $installer = New-Object -ComObject WindowsInstaller.Installer
+        $database = $installer.GetType().InvokeMember("OpenDatabase", [Reflection.BindingFlags]::InvokeMethod, $null, $installer, @($Path, 0))
+        $view = $database.GetType().InvokeMember("OpenView", [Reflection.BindingFlags]::InvokeMethod, $null, $database, @("SELECT Value FROM Property WHERE Property = 'ProductCode'"))
+        [void]$view.GetType().InvokeMember("Execute", [Reflection.BindingFlags]::InvokeMethod, $null, $view, $null)
+        $record = $view.GetType().InvokeMember("Fetch", [Reflection.BindingFlags]::InvokeMethod, $null, $view, $null)
+        if ($null -eq $record) { return "" }
+        return [string]$record.GetType().InvokeMember("StringData", [Reflection.BindingFlags]::GetProperty, $null, $record, @(1))
+    } catch {
+        return ""
+    } finally {
+        foreach ($comObject in @($record, $view, $database, $installer)) {
+            if ($null -ne $comObject -and [Runtime.InteropServices.Marshal]::IsComObject($comObject)) {
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($comObject)
+            }
+        }
+    }
+}
+
+# Windows Installer removes a product with the copy of its package it kept at installation, and refuses
+# (1612) when a cleaner has deleted that copy. The Office packages next to this one have the same
+# ProductCode, so one of them is cached again first by a small reinstall from it.
+function Restore-CachedOfficePackage([string]$ProductCode, [string]$PackageDirectory) {
+    $localPackage = ""
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    try {
+        try { $localPackage = [string]$installer.ProductInfo($ProductCode, "LocalPackage") } catch { }
+    } finally {
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($localPackage) -and (Test-Path -LiteralPath $localPackage -PathType Leaf)) { return }
+    foreach ($package in @(Get-ChildItem -LiteralPath $PackageDirectory -Filter "VisualTeX-WindowsOffice-VSTO-*.msi" -ErrorAction SilentlyContinue)) {
+        if ((Get-MsiProductCode $package.FullName) -ine $ProductCode) { continue }
+        $recacheLog = Join-Path $logRoot "vsto-recache-$($ProductCode.Trim('{}'))-$stamp.log"
+        Write-Host "Windows Installer no longer has the package of $ProductCode ('$localPackage'); caching $($package.Name) again."
+        [void](Invoke-MsiExec @("/i", ('"{0}"' -f $package.FullName), "REINSTALL=ALL", "REINSTALLMODE=vomus", "/passive", "/norestart", "/L*v", ('"{0}"' -f $recacheLog)) "MSI recache $ProductCode" @(0, 3010))
+        return
+    }
+    Write-Host "Windows Installer no longer has the package of $ProductCode ('$localPackage') and $PackageDirectory has no package with that ProductCode."
 }
 
 function Get-RelatedProductCodes {
@@ -782,6 +879,33 @@ function Remove-VisualTeXOfficeResiliencyEntries {
                 }
             }
         }
+    }
+}
+
+# WPS remembers add-ins it gave up on, apart from the Office registration: those it turned off for slowing its
+# start (6.0\<app>\DiagDisabledAddins), those that failed to load (<app>\AddinsLF, stored by CLSID) and its
+# other lists. A reinstall keeps the same ProgIDs and CLSIDs, so WPS would keep skipping VisualTeX: an
+# installation (or Repair) starts WPS afresh with it. The whitelist (AddinsWL) is VisualTeX's own and stays.
+function Remove-VisualTeXWpsLoadRecords {
+    $pattern = 'VisualTeX|F1B68342-F9C6-4E7D-A9C6-A2F64C3558A1|7E586D2D-57B0-4D14-AB24-EBA9021A5E6D|8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B'
+    $removed = New-Object System.Collections.Generic.List[string]
+    $keys = @()
+    foreach ($app in @("WPS", "WPP", "ET")) { foreach ($list in @("AddinsBL", "AddinsCL", "AddinsLF")) { $keys += "HKCU:\Software\Kingsoft\Office\$app\$list" } }
+    foreach ($app in @("wps", "wpp", "et")) { $keys += "HKCU:\Software\Kingsoft\Office\6.0\$app\DiagDisabledAddins" }
+    foreach ($key in $keys) {
+        if (-not (Test-Path -LiteralPath $key)) { continue }
+        $item = Get-Item -LiteralPath $key
+        foreach ($name in $item.GetValueNames()) {
+            $value = $item.GetValue($name)
+            $text = if ($value -is [byte[]]) { [Text.Encoding]::Unicode.GetString($value) + " " + [Text.Encoding]::ASCII.GetString($value) } else { [string]$value }
+            if ($name -match $pattern -or $text -match $pattern) {
+                Remove-ItemProperty -LiteralPath $key -Name $name -Force -ErrorAction SilentlyContinue
+                [void]$removed.Add("$key\$name")
+            }
+        }
+    }
+    if ($removed.Count -gt 0) {
+        Add-DiagnosticCheck "WPS records cleared" $true ("WPS had stopped loading VisualTeX: " + ($removed -join "; ")) "wps"
     }
 }
 
@@ -913,6 +1037,13 @@ function Stop-VisualTeXProcessesForRepair {
         Write-Host "Stopping stale VisualTeX process PID=$($process.Id) Path=$path before Office integration repair."
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     }
+    # VisualTeX's Formula OLE server, started by Word, PowerPoint or WPS for an equation object: the MSI
+    # replaces its executable.
+    foreach ($server in @(Get-Process VisualTeX.FormulaOleServer -ErrorAction SilentlyContinue)) {
+        Write-Host "Stopping the Formula OLE server PID=$($server.Id) before Office integration repair."
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+        $processes += $server
+    }
     if ($processes.Count -gt 0) { Start-Sleep -Milliseconds 700 }
     $remaining = @(Get-Process visualtex -ErrorAction SilentlyContinue)
     if ($remaining.Count -gt 0) {
@@ -945,10 +1076,18 @@ try {
     Add-DiagnosticCheck "VisualTeX executable" $true $script:resolvedVisualTeXPath "prerequisite"
     Assert-NoOfficeProcesses
     Stop-VisualTeXProcessesForRepair
+    # WPS Office (or any other program) with the add-ins loaded: Windows would replace them only at the
+    # next restart, and the files checked below would still be the old ones.
+    if (Get-Command Get-OfficeAddinUsers -ErrorAction SilentlyContinue) {
+        $addinUsers = @(Get-OfficeAddinUsers)
+        if ($addinUsers.Count -gt 0) {
+            throw "Close these programs, which have the VisualTeX Office add-ins loaded, then try again: $(Format-ProcessList $addinUsers). No changes were made."
+        }
+        Add-DiagnosticCheck "Add-ins not in use" $true "No program has the installed add-ins loaded." "prerequisite"
+    }
     $script:resolvedOfficePlatform = Resolve-OfficePlatform $OfficePlatform
     Write-Host "Detected Office platform: $script:resolvedOfficePlatform"
     Assert-OfficeApplicationsInstalled $script:resolvedOfficePlatform
-    Assert-VstoRuntimeInstalled $script:resolvedOfficePlatform
     Assert-NetFramework472Installed
     Assert-CurrentUserCertificateTrusted
     $sharedConfiguration = Assert-SharedCompanionConfiguration $script:resolvedVisualTeXPath
@@ -1010,6 +1149,7 @@ try {
     $oldProducts = @(Get-RelatedProductCodes)
     Write-Host "Related VisualTeX MSI products before install: $($oldProducts.Count)"
     foreach ($productCode in $oldProducts) {
+        Restore-CachedOfficePackage $productCode (Split-Path -Parent $MsiPath)
         $uninstallLog = Join-Path $logRoot "vsto-uninstall-$($productCode.Trim('{}'))-$stamp.log"
         [void](Invoke-MsiExec @("/x", $productCode, "/passive", "/norestart", "/L*v", ('"{0}"' -f $uninstallLog)) "MSI uninstall $productCode" @(0, 1605, 3010))
     }
@@ -1021,6 +1161,7 @@ try {
     Add-DiagnosticCheck "MSI product registration" $true ($installedProducts -join ", ") "package"
 
     Remove-VisualTeXOfficeResiliencyEntries
+    Remove-VisualTeXWpsLoadRecords
     $installRoot = Resolve-MachineOfficeInstallRoot $script:resolvedOfficePlatform
     $verifiedEntries = @($hashManifest.word, $hashManifest.powerPoint, $hashManifest.formulaOleServer)
     if ($null -ne $hashManifest.dependencies) {
@@ -1029,7 +1170,8 @@ try {
     foreach ($entry in $verifiedEntries) {
         $installedFile = Join-Path $installRoot $entry.file
         if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) {
-            throw "Installed Office integration file is missing: $installedFile"
+            $removed = if (Get-Command Get-QuarantineCause -ErrorAction SilentlyContinue) { Get-QuarantineCause $installedFile } else { "" }
+            throw ("Installed Office integration file is missing: $installedFile" + $(if ($removed) { " ($removed)" } else { "" }))
         }
         $actualHash = (Get-FileHash -LiteralPath $installedFile -Algorithm SHA256).Hash
         if ($actualHash -ne $entry.sha256) {
@@ -1127,13 +1269,17 @@ try {
     Write-DiagnosticReport $true $true $false
     Write-Host "Static Office integration installed and verified. Companion runtime verification is deferred to the non-elevated installer stage."
 } catch {
+    Write-Output ("REASON: " + (Write-FailureReason $_.Exception.Message))
     Add-DiagnosticCheck "Installation result" $false $_.Exception.Message "result"
     try {
         Write-DiagnosticReport $false $script:staticInstallVerified $script:runtimeVerified $_.Exception.Message
     } catch { }
-    throw
+    # a missing prerequisite with its own exit code (3: .NET Framework older than 4.7.2) is reported by the caller
+    if (-not $script:failureExitCode) { throw }
+    Write-Host $_.Exception.Message
 } finally {
     if ($transcriptStarted) {
         try { Stop-Transcript | Out-Null } catch { }
     }
 }
+if ($script:failureExitCode) { exit $script:failureExitCode }

@@ -1,6 +1,6 @@
 # VisualTeX 帮助手册
 
-**适用版本：网页版（VisualTeX 1.3.0）**
+**适用版本：网页版（VisualTeX 1.3.1）**
 
 VisualTeX 网页版在浏览器中可视化编辑 LaTeX 公式和带公式的 Markdown 文档，无需安装。Word / PowerPoint / WPS 加载项、本地 OCR、快捷 OCR 和公式输入法（VisualTeX Anywhere）需要桌面版：https://visualtex.pauljianliao.com/#download 。
 

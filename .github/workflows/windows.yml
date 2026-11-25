@@ -44,22 +44,29 @@ jobs:
       - run: npm run build:office:windows-native
       - run: python -m pip install "Pillow>=10.4,<12" "numpy>=1.26,<3"
       - run: python -m unittest ocr.tests.test_worker_preprocess
-      - name: Prepare Tauri test-only VSTO resources
+      # A checkout has none of the native inputs a release stages (npm run build:bundle): the
+      # installers, the input method, the MCP launcher. Tauri's build script only needs them
+      # to exist, so the checks below get empty test-only stand-ins.
+      - name: Prepare Tauri test-only bundle inputs
         shell: pwsh
         run: |
           $resourceDir = "src-tauri/resources/windows-office"
           New-Item -ItemType Directory -Force $resourceDir | Out-Null
-          foreach ($platform in @("x64", "x86")) {
-            $msiName = "VisualTeX-WindowsOffice-VSTO-$platform.msi"
-            New-Item -ItemType File -Force (Join-Path $resourceDir $msiName) | Out-Null
+          foreach ($name in @("VisualTeX-WindowsOffice-VSTO-x64.msi", "VisualTeX-WindowsOffice-VSTO-x86.msi", "VisualTeX-NativeRender-x64.msi")) {
+            $path = Join-Path $resourceDir $name
+            if (-not (Test-Path $path)) { New-Item -ItemType File $path | Out-Null }
             $metadata = @{
-              fileName = $msiName
+              fileName = $name
               sha256 = ""
               size = 0
               testOnly = $true
             } | ConvertTo-Json -Compress
-            Set-Content -NoNewline -Path (Join-Path $resourceDir "VisualTeX-WindowsOffice-VSTO-$platform.sha256.json") -Value $metadata
+            Set-Content -NoNewline -Path (Join-Path $resourceDir "$([IO.Path]::GetFileNameWithoutExtension($name)).sha256.json") -Value $metadata
           }
+          New-Item -ItemType Directory -Force "input-method/build/VisualTeX Input" | Out-Null
+          New-Item -ItemType File -Force "input-method/build/VisualTeX Input/test-only.txt" | Out-Null
+          New-Item -ItemType Directory -Force "src-tauri/binaries" | Out-Null
+          New-Item -ItemType File -Force "src-tauri/binaries/visualtex-mcp-x86_64-pc-windows-msvc.exe" | Out-Null
       # The Windows Tauri test executable is known to exit in the loader before
       # the Rust harness starts (STATUS_ENTRYPOINT_NOT_FOUND). Keep both source
       # checking and full test-binary linking as explicit gates without claiming

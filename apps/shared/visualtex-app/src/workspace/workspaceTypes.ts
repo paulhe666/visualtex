@@ -5,6 +5,7 @@ import type {
   MathEditorInsertionTarget,
 } from "../editor/MathEditor";
 import type { ReplaceDocumentEntry } from "../history/historyTypes";
+import type { MathMlFormula } from "../export/mathMlClipboard";
 import type { DocumentSnapshot } from "../history/historyTypes";
 
 export type WorkspaceMode =
@@ -51,6 +52,8 @@ export interface EditorWorkspaceProps {
     target: MathEditorInsertionTarget,
   ) => Promise<void>;
   onCopyPng?: () => Promise<void>;
+  /** Formulas copied as MathML from the rows' right-click menu (the app copies them and says so). */
+  onCopyMathMl?: (formulas: MathMlFormula[]) => Promise<void>;
   onCopy: () => Promise<void>;
   onReplaceDocument: (
     snapshot: DocumentSnapshot,

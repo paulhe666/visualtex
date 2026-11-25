@@ -259,6 +259,41 @@ internal static class WordVisualTeXHostWriter
         }
     }
 
+    /// <summary>
+    /// An older object Word holds no cached metadata for is indexed as inline (the cache is where the index reads
+    /// the display mode). When its paragraph holds no other text, the only place a display formula stands, the
+    /// display mode is read from the object's own payload.
+    /// </summary>
+    internal static void ResolveUncachedDisplayMode(Document document, WordFormulaHostDescriptor host)
+    {
+        if (host.Kind != WordFormulaHostKind.VisualTeX || host.Metadata is not null || host.Display)
+            return;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        Range? paragraph = null;
+        try
+        {
+            (shape, shapeRange) = FindOwnShape(document, host);
+            paragraph = shapeRange.Duplicate;
+            paragraph.Expand(WdUnits.wdParagraph);
+            if (WordFormulaHostSetup.ContainsVisibleBodyText(paragraph.Text))
+                return;
+            var payload = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape);
+            if (string.Equals(payload?.DisplayMode, "block", StringComparison.OrdinalIgnoreCase))
+                host.DisplayMode = "block";
+        }
+        catch (Exception error) when (error is COMException or InvalidDataException or InvalidOperationException)
+        {
+            IgnoredErrors.Ignore(error);
+        }
+        finally
+        {
+            Release(paragraph);
+            Release(shapeRange);
+            Release(shape);
+        }
+    }
+
     // The object by Word's cached metadata, when that cache is this formula's
     // and describes the object as it is (null otherwise: the caller then reads
     // the payload, UpdateFontSize). Nothing is written: a size write before the

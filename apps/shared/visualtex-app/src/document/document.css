@@ -257,9 +257,37 @@
   vertical-align: bottom;
 }
 /* lines (the source editor's line model, as Obsidian draws them): a bullet's "-" drawn as a bullet, a task's box, a
-   quote's border (its first ">" kept as room, a deeper one a border of its own), code lines, a rule, a callout */
+   quote's borders, code lines, a rule, a callout. A list item's and a quote's text starts one step in per level (the
+   line's padding, sourceMarkdown.ts lineDecorations: --vtx-step, Markdown's 2em: where a Chinese body's first line
+   starts), the space before it in the line (--vtx-space, its width, taken off the first line's start); the marks hang
+   out of the line: the marker just before the text, ending a space before it (the browsers' list markers, as GitHub,
+   Typora and Obsidian draw a list, and LaTeX's labels: a "10." ends where a "9." does), the indentation nowhere, the
+   ">"s just before the text or the list's step */
 .vtx-document .md-transparent {
   color: transparent;
+}
+/* (p: over .md-bullet's own position, on the same span) */
+.vtx-document p .md-list-marker,
+.vtx-document p .md-list-indent,
+.vtx-document p .md-quote-prefix {
+  position: absolute;
+  white-space: pre;
+  text-indent: 0;
+}
+/* (its static place is the first line's start, --md-sp spaces before the text: its end a space before the text) */
+.vtx-document p .md-list-marker {
+  margin-left: calc((var(--md-sp, 0) - 1) * var(--vtx-space, 0.25em));
+  transform: translateX(-100%);
+}
+.vtx-document p .md-quote-prefix {
+  margin-left: calc(-1 * min(var(--md-l1, 0), 1) * (var(--vtx-step, 2em) - var(--md-sp, 0) * var(--vtx-space, 0.25em)));
+  transform: translateX(-100%);
+}
+/* a bullet item's task box in the bullet's place (a numbered one's where the text starts, after its number) */
+.vtx-document p.md-listline:not(.md-ordered) .md-task {
+  position: absolute;
+  margin-left: calc((var(--md-sp, 0) - 1) * var(--vtx-space, 0.25em));
+  transform: translateX(-100%);
 }
 .vtx-document .md-bullet {
   position: relative;
@@ -288,23 +316,18 @@
   color: var(--vtx-ink-muted);
   text-decoration: line-through;
 }
+/* a quote's borders: one at the start of each of its levels' steps */
 .vtx-document p.md-quoteline {
-  border-left: 3px solid var(--vtx-line-soft);
-  padding-left: 0.6em;
+  background-image: repeating-linear-gradient(to right, var(--md-quote-rule, var(--vtx-line-soft)) 0 3px, transparent 3px var(--vtx-step, 2em));
+  background-size: calc(var(--md-q, 1) * var(--vtx-step, 2em)) 100%;
+  background-position: calc(var(--vtx-indent, 0) * 2em) 0;
+  background-repeat: no-repeat;
   color: var(--vtx-ink-quote);
-}
-.vtx-document .md-quote-border {
-  display: inline-block;
-  width: 0;
-  margin: 0 0.7em 0 0.1em;
-  border-left: 3px solid var(--vtx-line-soft);
-  color: transparent;
-  text-indent: 0;
 }
 .vtx-document p.md-calloutline {
   --vtx-callout: #0969da;
-  background: color-mix(in srgb, var(--vtx-callout) 5%, var(--vtx-paper));
-  border-left-color: var(--vtx-callout);
+  --md-quote-rule: var(--vtx-callout);
+  background-color: color-mix(in srgb, var(--vtx-callout) 5%, var(--vtx-paper));
 }
 .vtx-document p.md-callout-tip,
 .vtx-document p.md-callout-success {
@@ -326,7 +349,7 @@
 }
 :root[data-theme-mode="dark"] .vtx-document p.md-calloutline {
   --vtx-callout: #4493f8;
-  background: color-mix(in srgb, var(--vtx-callout) 11%, var(--vtx-paper));
+  background-color: color-mix(in srgb, var(--vtx-callout) 11%, var(--vtx-paper));
 }
 :root[data-theme-mode="dark"] .vtx-document :is(p.md-callout-tip, p.md-callout-success) {
   --vtx-callout: #3fb950;
@@ -343,8 +366,9 @@
 .vtx-document .md-callout-title {
   font-weight: 600;
 }
+/* code lines: their text a step in (where a Chinese body's first line starts), the box from the margin */
 .vtx-document p.md-codeline {
-  padding: 0 0.8em;
+  padding: 0 0.8em 0 calc(var(--vtx-step, 2em) + var(--vtx-indent, 0) * 2 * var(--vtx-size, 1em));
   background: var(--vtx-wash);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.88em;
@@ -385,7 +409,7 @@
 .vtx-sheet[data-class] .vtx-document > p:is(.md-quoteline, .md-codeline, .md-ruleline) {
   text-indent: 0;
 }
-.vtx-sheet[data-class] .vtx-document > p.md-listline {
+.vtx-sheet[data-class] .vtx-document > p:is(.md-listline, .md-codeline, .md-frontmatter) {
   text-align: left;
 }
 /* a tab before a line's text: one \parindent more than a plain line's (the tab stops are that far apart, so the
@@ -1159,9 +1183,15 @@
 }
 /* Mathcha's model: near the screen a formula is its live editor (is-live), resting until it is opened; the picture
    stands in only before the editor has drawn (or far from the screen). The editor is drawn out of the flow and
-   unseen (is-pending) until it takes the picture's place, in one frame. */
-.vtx-math-inline.is-live .vtx-formula-static,
-.vtx-math-display.is-live .vtx-formula-static {
+   unseen (is-pending) until it takes the picture's place, in one frame. An empty formula at rest shows its dashed box,
+   also once it has been opened: its resting editor shows nothing (an empty formula looked gone once it was left,
+   2026-11-24). */
+.vtx-math-inline.is-live:is(:not(.is-blank), .is-open, .is-partial) .vtx-formula-static,
+.vtx-math-display.is-live:is(:not(.is-blank), .is-open, .is-partial) .vtx-formula-static {
+  display: none;
+}
+.vtx-math-inline.is-live.is-blank:not(.is-open, .is-partial) .vtx-formula-editor,
+.vtx-math-display.is-live.is-blank:not(.is-open, .is-partial) .vtx-formula-editor {
   display: none;
 }
 .vtx-math-inline {

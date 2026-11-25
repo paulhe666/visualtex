@@ -82,6 +82,14 @@ const BOTH_ON = [
   ["frac<Space>alpha<Space><Backspace><Tab>b", String.raw`\frac{alpha}{b}`],
   ["sqrt<Space>mu<Space><Backspace>", String.raw`\sqrt{mu}`],
   ["pi<Space>+<Backspace>", String.raw`\pi`],
+  // Backspace right after a function name was set upright puts back the plain letters (no command around them;
+  // it used to leave \mathit{sin}), and the formula keeps that word as typed: leaving the field converts nothing,
+  // other words are still set upright.
+  ["sin<Space><Backspace>", "sin"],
+  ["sin<Space><Backspace>+cos<Space>x", String.raw`sin+\cos x`],
+  // "_" ("^") finished the word and opened the script: Backspace in it, still empty, gives the letters back with it open.
+  ["ln_<Backspace>l", "ln_{l}"],
+  ["ln^<Backspace>2", "ln^2"],
   // The differential d, units and constants (the upright rule).
   ["dx", String.raw`\mathrm{d}x`],
   ["km/h", String.raw`\mathrm{km}/\mathrm{h}`],

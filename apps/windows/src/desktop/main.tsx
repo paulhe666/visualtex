@@ -10,8 +10,10 @@ import { DesktopApp } from "./DesktopApp";
 import { applyDocumentTheme, readSynchronizedTheme } from "../../../shared/visualtex-app/src/themeSync";
 import { VisualTexErrorBoundary } from "../../../shared/visualtex-app/src/runtime/VisualTexErrorBoundary";
 import { EditorSessionProvider } from "../../../shared/visualtex-app/src/history/EditorSession";
+import { startSettingsSnapshot } from "./settingsSnapshot";
 
 configureOcrTransport(desktopOcrTransport);
+startSettingsSnapshot();
 applyDocumentTheme(readSynchronizedTheme());
 
 const root = document.getElementById("root");

@@ -315,6 +315,16 @@ function lineNode(context: ReadContext, row: string): Node {
       continue;
     }
     if (ch === "$") {
+      // a joiner and "$$": an empty inline formula, as the writer keeps one (markdown.ts: inlineFormulaSource; "$$"
+      // alone stays text)
+      if (row[i - 1] === FORMULA_JOINER && row[i + 1] === "$" && row[i + 2] !== "$") {
+        if (text.endsWith(FORMULA_JOINER)) text = text.slice(0, -1);
+        flush();
+        children.push(schema.nodes.math_inline.create({ latex: "" }));
+        i += 2;
+        if (row[i] === FORMULA_JOINER && /[\d$]/.test(row[i + 1] ?? "")) i++;
+        continue;
+      }
       const next = row[i + 1];
       const opens = next !== undefined && !/\s/.test(next) && next !== "$" && next !== FORMULA_JOINER && row[i - 1] !== "$";
       let close = -1;

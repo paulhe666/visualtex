@@ -59,13 +59,6 @@ if (process.platform === "win32") {
     ], powershellEnvironment);
     run(npm, ["run", "build:office:windows-native"]);
   } else {
-    run(powershell, [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      "scripts/prepare_windows_vsto_runtime.ps1",
-    ], powershellEnvironment);
     // MathType native preview is a required Windows bundle resource. Reuse a
     // previously staged, validated 7.9.1 runtime or rebuild it only when the
     // caller explicitly supplies VISUALTEX_MATHTYPE_INSTALLER. Never silently

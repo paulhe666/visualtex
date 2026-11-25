@@ -730,11 +730,12 @@ fn text_or<'a>(arguments: &'a Map<String, Value>, name: &str, fallback: &'a str)
     text(arguments, name).unwrap_or(fallback)
 }
 
-const WORD_ONLY: [&str; 4] = [
+const WORD_ONLY: [&str; 5] = [
     "insert_equation_reference",
     "number_display_formulas",
     "update_equation_numbers",
     "set_equation_number_format",
+    "repair_display_formulas",
 ];
 
 /// One write tool on a document of a running Word or PowerPoint (`key` is the add-in's document key).
@@ -783,7 +784,11 @@ pub async fn run(host: &HostInfo, tool: &str, key: String, arguments: Map<String
             }
             Ok(result)
         }
-        "number_display_formulas" | "update_equation_numbers" | "set_equation_number_format" | "insert_equation_reference" => {
+        "number_display_formulas"
+        | "update_equation_numbers"
+        | "set_equation_number_format"
+        | "insert_equation_reference"
+        | "repair_display_formulas" => {
             if tool == "insert_equation_reference" {
                 required(&arguments, "number")?;
                 format_of(&arguments, "source")?;

@@ -164,6 +164,28 @@ export function alignShift(markers: number[], x: number, markerIndex?: number): 
 
 const plus = (base: string, extra: string | null | undefined) => (extra ? `calc(${base} + ${extra})` : base);
 
+/**
+ * How the two ends of a caret's underline move on a formula the editor shifts at explicit alignment markers: each end by the
+ * alignShift of its own x (a line under the whole row starts before a marker and ends after it).
+ */
+export interface CaretLineShift {
+  start: string | null;
+  end: string | null;
+}
+
+/** `base` moved by `add` and back by `sub` (CSS lengths; null: nothing). */
+const moved = (base: string, add: string | null, sub: string | null) =>
+  add || sub ? `calc(${base}${add ? ` + (${add})` : ""}${sub ? ` - (${sub})` : ""})` : base;
+
+/** The alignShifts of a caret's bar and of its underline's ends (null without markers). */
+export function caretShifts(markers: number[], c: CaretBar): { shift: string | null; lineShift: CaretLineShift | null } {
+  if (!markers.length) return { shift: null, lineShift: null };
+  return {
+    shift: alignShift(markers, c.x),
+    lineShift: c.line ? { start: alignShift(markers, c.line.x0), end: alignShift(markers, c.line.x1) } : null,
+  };
+}
+
 export interface PaintOptions {
   /** CSS font-family for a TeX font (e.g. "VTX Roman 10") */
   fontFamily(f: TeXFont): string;
@@ -211,18 +233,30 @@ const STRUT = 2;
  * The bar is centred on the boundary, or stands left of it against an empty
  * slot's marker.
  */
-export function caretBarHtml(c: CaretBar, ox: number, oy: number, shift: string | null = null): string {
+export function caretBarHtml(c: CaretBar, ox: number, oy: number, shift: string | null = null, lineShift: CaretLineShift | null = null): string {
   const cls =
     (c.mode === "text" ? "ML__text-caret" : c.mode === "latex" ? "ML__latex-caret" : "ML__caret") +
     (c.side === "left" ? " ML__vtx-caret--before" : "") +
     (c.line ? " ML__vtx-caret--line" : "");
   const s = c.scale;
-  // the line: from its left end (relative to the bar) over its width, in em of the caret's font size
-  const line = c.line ? `--vtx-line-left:${fix(em(c.line.x0 - c.x) / s)}em;--vtx-line-width:${fix(em(c.line.x1 - c.line.x0) / s)}em;` : "";
+  // the line: from its left end (relative to the bar) over its width, in em of the caret's font size; on a formula shifted
+  // at alignment markers each end moves with the material above it (the bar itself moves by `shift`)
+  const left = c.line ? `${fix(em(c.line.x0 - c.x) / s)}em` : "";
+  const width = c.line ? `${fix(em(c.line.x1 - c.line.x0) / s)}em` : "";
+  const line = c.line
+    ? `--vtx-line-left:${lineShift ? moved(left, lineShift.start, shift) : left};` +
+      `--vtx-line-width:${lineShift ? moved(width, lineShift.end, lineShift.start) : width};`
+    : "";
   return (
     `<span class="${cls}" style="position:absolute;width:0;font-size:${fix(s)}em;${line}` +
     `left:${plus(`${fix(em(c.x - ox) / s)}em`, shift)};top:${fix(em(c.top - oy) / s)}em;height:${fix(em(c.bottom - c.top) / s)}em"></span>`
   );
+}
+
+/** A caret drawn in the formula's own box (no element of its slot), shifted with the material at alignment markers. */
+function rootCaretHtml(c: CaretBar, top: number, markers: number[]): string {
+  const { shift, lineShift } = caretShifts(markers, c);
+  return caretBarHtml(c, 0, top, shift, lineShift);
 }
 
 /** An empty-slot marker (the editor's box in an empty slot), placed like a rule. */
@@ -383,7 +417,7 @@ export function formulaHtml(box: BoxNode, ship: ShipResult, opts: PaintOptions):
     svg +
     glyphs.join("") +
     elements +
-    (opts.caret ? caretBarHtml(opts.caret, 0, top, markers.length ? alignShift(markers, opts.caret.x) : null) : "") +
+    (opts.caret ? rootCaretHtml(opts.caret, top, markers) : "") +
     `</span>`
   );
 }

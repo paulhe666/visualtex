@@ -5,7 +5,8 @@ using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
 
-// One size for every inline or every display formula of the document (Ribbon 行内 / 行间, as on the Mac):
+// One size for every inline or every display formula of the document (Ribbon 行内 / 行间, as on the Mac), or
+// 「跟随正文 / Follow text」: every formula of the kind takes the text size at its place (WordFormulaTextSize).
 // VisualTeX objects and Word equations in one Undo step, then MathType objects one by one (a MathType
 // rewrite exports the object's XML first, which Word does not allow inside an open Undo record).
 // A VisualTeX object is resized in Word by its cached metadata, without reading its payload
@@ -21,9 +22,10 @@ internal sealed partial class WordFormulaService
         internal string? MetricDetail { get; set; }
     }
 
-    internal FormulaFontSizeBatchResult ApplyFontSizeToDocumentFormulas(bool display, double requestedFontSizePt)
+    /// <paramref name="requestedFontSizePt"/> null: every formula of the kind follows the text at its place.
+    internal FormulaFontSizeBatchResult ApplyFontSizeToDocumentFormulas(bool display, double? requestedFontSizePt)
     {
-        var size = FormulaFontSize.Normalize(requestedFontSizePt);
+        float? fixedSize = requestedFontSizePt is { } requested ? FormulaFontSize.Normalize(requested) : null;
         var result = new FormulaFontSizeBatchResult();
         Document? document = null;
         Selection? selection = null;
@@ -53,6 +55,8 @@ internal sealed partial class WordFormulaService
             {
                 try
                 {
+                    // (an older VisualTeX object without Word's cached metadata: its display mode from its payload)
+                    WordVisualTeXHostWriter.ResolveUncachedDisplayMode(target, host);
                     if (host.Display)
                     {
                         if (!display) continue;
@@ -70,6 +74,27 @@ internal sealed partial class WordFormulaService
                 }
             }
             hosts.Sort((left, right) => right.Range.Start.CompareTo(left.Range.Start));
+
+            // The MathType objects of this kind (read where each stands, not its equation: the single-formula
+            // command below reads the ones it changes); only when the index met an inline OLE object that is not
+            // VisualTeX's (as GetEquationReferenceTargets does).
+            var allMathType = index.HasForeignOle
+                ? WordMathTypeHostAdapter.CaptureLayoutIndex(target)
+                : Array.Empty<WordFormulaHostDescriptor>();
+            var mathType = allMathType
+                .Where(host => (host.Display || host.Numbering.Numbered) == display)
+                .OrderByDescending(host => host.Range.Start)
+                .ToList();
+
+            // Each formula's size, read before anything changes: the size asked for, or the text size at it.
+            Dictionary<WordFormulaHostDescriptor, float>? follow = null;
+            if (!fixedSize.HasValue)
+                using (WordOperationMetrics.Measure("FontSize.FollowText"))
+                    follow = WordFormulaTextSize.FollowSizes(
+                        target,
+                        hosts.Concat(mathType).ToList(),
+                        index.Omml.Concat(index.VisualTeX).Concat(allMathType).ToList());
+            float SizeOf(WordFormulaHostDescriptor host) => fixedSize ?? follow![host];
             using (WordOperationMetrics.Measure("FontSize.Ole.Prepare"))
                 foreach (var host in hosts.Where(item => item.Kind == WordFormulaHostKind.VisualTeX))
                 {
@@ -91,7 +116,7 @@ internal sealed partial class WordFormulaService
                             foreach (var pair in cached)
                                 ApplyNumberSize(
                                     target,
-                                    WordVisualTeXHostWriter.PositionCached(target, pair.Key, pair.Value, size));
+                                    WordVisualTeXHostWriter.PositionCached(target, pair.Key, pair.Value, SizeOf(pair.Key)));
                         using (WordOperationMetrics.Measure("FontSize.Ole.Resize"))
                             foreach (var prepared in cached.Values)
                                 WordVisualTeXHostWriter.ResizeCached(prepared);
@@ -99,21 +124,11 @@ internal sealed partial class WordFormulaService
                             foreach (var prepared in cached.Values)
                                 WordVisualTeXHostWriter.CacheResized(prepared);
                         foreach (var host in hosts.Where(item => !cached.ContainsKey(item)))
-                            ResizeHostInTransaction(target, host, size);
+                            ResizeHostInTransaction(target, host, SizeOf(host));
                         return hosts.Count;
                     });
             }
 
-            // The MathType pass runs only when the index met an inline OLE object that is not
-            // VisualTeX's (as GetEquationReferenceTargets does); it reads where each object stands,
-            // not its equation (the single-formula command below reads the ones it changes).
-            var mathType = new List<WordFormulaHostDescriptor>();
-            if (index.HasForeignOle)
-                using (WordOperationMetrics.Measure("FontSize.MathType.Index"))
-                    mathType = WordMathTypeHostAdapter.CaptureLayoutIndex(target)
-                        .Where(host => (host.Display || host.Numbering.Numbered) == display)
-                        .OrderByDescending(host => host.Range.Start)
-                        .ToList();
             if (mathType.Count > 0)
             {
                 // The single-formula command resizes the selected MathType object; the user's
@@ -129,7 +144,7 @@ internal sealed partial class WordFormulaService
                         range = WordFormulaHostSemanticReader.CreateRange(target, host.Range);
                         range.Select();
                         using (WordOperationMetrics.Measure("FontSize.MathType.Each"))
-                            SetSelectedFormulaFontSizeCore(size);
+                            SetSelectedFormulaFontSizeCore(SizeOf(host));
                         result.Resized++;
                     }
                     catch (Exception error) when (MathTypeOleInterop.IsBlankEquationError(error))

@@ -53,9 +53,11 @@ import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customS
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
-import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatexAsWritten, normalizeFieldLatex } from "../editor/normalizeChineseLatex";
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
+import { copyFormulasAsMathMl, type MathMlFormula } from "../export/mathMlClipboard";
+import { openDocumentFormula } from "./openDocumentFormula";
 import { useDocumentEditorStore } from "../stores/documentEditorStore";
 import { useDocumentFormatStore } from "../stores/documentFormatStore";
 import { CommandMenu } from "./CommandMenu";
@@ -116,6 +118,48 @@ interface Props {
   /** An image pasted into an open formula (a screenshot of a formula): the app recognises it (OCR) and puts it in
    *  the formula. In the text an image is inserted as an image (DESIGN.md §11). */
   onImage?: (file: File) => void;
+  /** A short message for the user (a copy done). */
+  onNotice?: (message: string) => void;
+}
+
+/** A formula node for MathML (its LaTeX as stored; the annotation's as it leaves the app). */
+function nodeMathMl(node: Node): MathMlFormula {
+  const latex = String(node.attrs.latex ?? "");
+  return { latex, display: node.type.name === "math_display", tex: portableFormulaLatex(latex) };
+}
+
+/**
+ * The document's formulas for MathML: all of them; the line's (the block the caret or selection starts in; a display
+ * formula selected, that one); the selection's (an open formula's own selection: that part; a formula selected; the
+ * formulas in a selection through the text).
+ */
+export function documentMathMlFormulas(state: EditorState, scope: "all" | "line" | "selection"): MathMlFormula[] {
+  const out: MathMlFormula[] = [];
+  const collect = (from: number, to: number) =>
+    state.doc.nodesBetween(from, to, (node) => {
+      if (node.type.name !== "math_inline" && node.type.name !== "math_display") return true;
+      if (String(node.attrs.latex ?? "").trim()) out.push(nodeMathMl(node));
+      return false;
+    });
+  const sel = state.selection;
+  const selected = sel instanceof NodeSelection && sel.node.type.name.startsWith("math_") ? sel.node : null;
+  if (scope === "all") collect(0, state.doc.content.size);
+  else if (scope === "selection") {
+    const open = openDocumentFormula();
+    if (open && openFormulaId(state) && !open.field.selectionIsCollapsed) {
+      const ranges = open.field.selection.ranges.flat();
+      const part = normalizeFieldLatex(open.field, open.field.getValue(Math.min(...ranges), Math.max(...ranges), "latex"));
+      if (part.trim()) return [{ latex: part, display: open.display, tex: portableFormulaLatex(part) }];
+    }
+    if (selected) return String(selected.attrs.latex ?? "").trim() ? [nodeMathMl(selected)] : [];
+    if (!sel.empty) collect(sel.from, sel.to);
+  } else {
+    if (selected?.isBlock) return String(selected.attrs.latex ?? "").trim() ? [nodeMathMl(selected)] : [];
+    const $from = sel.$from;
+    if ($from.depth >= 1) collect($from.before(1), $from.after(1));
+    else if (selected) collect(sel.from, sel.to);
+  }
+  return out;
 }
 
 /** The images a paste or drop carries, unless it also carries text (then the text is pasted). */
@@ -261,6 +305,7 @@ function createFormulaHost(mathSize: () => number, onImage: () => ((file: File) 
         flush() {
           apiRef.current?.flush();
         },
+        holdsInput: () => apiRef.current?.holdsInput() ?? false,
         destroy() {
           liveFormulaResizers.delete(resize);
           // Outside ProseMirror's update cycle: an edit not yet reported is stored, then the field unmounts.
@@ -290,7 +335,7 @@ function emptyDoc(): Node {
   return documentSchema.nodes.doc.create(null, documentSchema.nodes.paragraph.create());
 }
 
-export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function DocumentEditor({ initialJson, onChange, onImage }, ref) {
+export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function DocumentEditor({ initialJson, onChange, onImage, onNotice }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
@@ -687,6 +732,26 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     if (view && settings) refreshPagination(view);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom, settings, layoutKey]);
+  // the width of a space in the body's font at the page's size: a list item's or quote's text follows one, whose room
+  // its line's start gives back (document.css, sourceMarkdown.ts lineDecorations); measured again when fonts load
+  const [spaceWidth, setSpaceWidth] = useState<number | null>(null);
+  const fontKey = settings ? `${bodyFontFamily(settings)}|${layout?.fontSize}|${zoom}` : "";
+  useLayoutEffect(() => {
+    if (!sheet || !fontKey) return;
+    const measure = () => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;left:0;top:0;visibility:hidden;white-space:pre;font-family:var(--vtx-body-font);font-size:inherit;line-height:1";
+      probe.textContent = " ";
+      sheet.appendChild(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      if (width > 0) setSpaceWidth((current) => (current !== null && Math.abs(current - width) < 0.01 ? current : width));
+    };
+    measure();
+    const fonts = document.fonts;
+    fonts?.addEventListener?.("loadingdone", measure);
+    return () => fonts?.removeEventListener?.("loadingdone", measure);
+  }, [sheet, fontKey]);
   const sheetStyle = useMemo<CSSProperties>(() => {
     if (!settings || !layout) return { fontSize: DOCUMENT_TEXT_SIZE * zoom };
     const mm = PX_PER_MM * zoom;
@@ -715,13 +780,18 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
       ["--vtx-size" as string]: `${layout.fontSize * (96 / 72) * zoom}px`,
       ["--vtx-baseline" as string]: `${layout.lineHeight * layout.fontSize * (96 / 72) * zoom}px`,
       ["--vtx-parindent" as string]: `${layout.parindent}em`,
+      // a list's, a quote's and code's indent per level: Markdown's (the browsers' 2em that GitHub, Typora and
+      // Obsidian keep; two characters in a Chinese document, where the body's first line starts too), as a length
+      // (a code line's smaller text keeps the body's), and the width of a space before a list item's text
+      ["--vtx-step" as string]: `${2 * layout.fontSize * (96 / 72) * zoom}px`,
+      ...(spaceWidth !== null ? { ["--vtx-space" as string]: `${spaceWidth}px` } : {}),
       // \linewidth (a table's p{} column of blocks takes its share)
       ["--vtx-linewidth" as string]: `${(paper.width - settings.marginLeft - settings.marginRight) * mm}px`,
       ["--vtx-math-scale" as string]: LARGE_BODY_FONTS.test(settings.latinFont) ? String(17 / 15) : "1.04",
       ["--vtx-bibliography-title" as string]: lang === "en" ? '"References"' : '"参考文献"',
     } as CSSProperties;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, layoutKey, zoom, lang, canvasWidth]);
+  }, [settings, layoutKey, zoom, lang, canvasWidth, spaceWidth]);
 
   const view = viewRef.current;
   const writeText = (text: string) => void navigator.clipboard.writeText(text);
@@ -733,6 +803,21 @@ export const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(function D
     },
     remove: () => {
       if (view) view.dispatch(view.state.tr.deleteSelection().scrollIntoView());
+    },
+    mathMlCount: (state: EditorState, scope: "all" | "line" | "selection") => documentMathMlFormulas(state, scope).length,
+    copyMathMl: (scope: "all" | "line" | "selection") => {
+      if (!view) return;
+      const formulas = documentMathMlFormulas(view.state, scope);
+      if (!formulas.length) return;
+      copyFormulasAsMathMl(formulas).then(
+        (count) =>
+          count &&
+          onNotice?.(lang === "en" ? (count > 1 ? `MathML of ${count} formulas copied` : "MathML copied") : count > 1 ? `已复制 ${count} 个公式的 MathML` : "MathML 已复制"),
+        (error) => {
+          console.error("MathML not copied", error);
+          onNotice?.(lang === "en" ? "Unable to copy MathML" : "复制 MathML 失败");
+        },
+      );
     },
   };
 

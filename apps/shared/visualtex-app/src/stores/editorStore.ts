@@ -28,7 +28,7 @@ import {
   legacyCodeFormatToProfile,
   normalizeLatexFormatProfile,
 } from "../clipboard/latexFormatProfile";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
 import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
 import { setExamZhSymbolsEnabled } from "../math/examZhSymbols";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
@@ -287,10 +287,14 @@ function normalizeFormulaDisplayStyle(value: unknown): FormulaDisplayStyle {
     : "default";
 }
 
+// The rows' LaTeX as written: the upright judgment happens where it is typed (the field, which leaves the words its
+// user turned back to letters as they are) and where LaTeX comes in from outside (paste, OCR), not again here. (The
+// store judged every row it took, so a word turned back to letters was set upright again as soon as it was stored,
+// and on every start.)
 function normalizeFormulaLineLatex(latex: string) {
   const normalized = latex.replace(/\r\n?/g, "\n");
   const trimmed = normalized.trim();
-  return normalizeChineseLatex(
+  return normalizeChineseLatexAsWritten(
     isSingleCompleteLatexEnvironment(trimmed)
       ? trimmed
       : normalizeFormulaLinePhysicalWhitespace(normalized),

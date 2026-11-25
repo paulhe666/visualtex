@@ -271,6 +271,7 @@ const RIBBON_ICON_FILES = {
     VisualTeXWordOpenApp: { svg: "open-visualtex.svg" },
     VisualTeXWordRedrawSelection: { svg: "redraw-selection.svg" },
     VisualTeXWordRedrawDocument: { svg: "redraw-document.svg" },
+    VisualTeXWordRepairDisplay: { svg: "repair-display.svg" },
   },
   PowerPoint: {
     VisualTeXIcon05: "icon_05_same_subject.png",

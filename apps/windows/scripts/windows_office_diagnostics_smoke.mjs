@@ -57,7 +57,6 @@ const preflightMarkers = [
   "Assert-NoOfficeProcesses",
   "Resolve-OfficePlatform",
   "Assert-OfficeApplicationsInstalled",
-  "Assert-VstoRuntimeInstalled",
   "Assert-NetFramework472Installed",
   "Assert-CurrentUserCertificateTrusted",
   "Assert-SharedCompanionConfiguration",

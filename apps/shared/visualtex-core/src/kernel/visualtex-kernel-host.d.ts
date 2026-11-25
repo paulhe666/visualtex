@@ -28,5 +28,7 @@ declare module 'virtual:visualtex-kernel-host' {
   export const visualTexNativePreviewsData: Record<string, string>;
   export const VISUALTEX_SYMBOL_SEQUENCES: Record<string, any>;
   export function applyInputJudgment(before: string, judgment: any): any;
+  /** The words a judgment converts (its revert form marks them): Backspace keeps them as typed */
+  export function revertedWords(before: string, revertForm: string): string[];
   export function escapeWordAtEnd(letters: string, afterNumber?: boolean): { length: number; latex: string } | null;
 }

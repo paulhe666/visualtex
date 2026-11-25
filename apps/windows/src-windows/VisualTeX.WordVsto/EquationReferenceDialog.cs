@@ -9,9 +9,13 @@ internal sealed class EquationReferenceDialog : Form
     private static string T(string chinese, string english) =>
         OfficePluginLanguage.Text(chinese, english);
 
-    private readonly IReadOnlyList<EquationReferenceTarget> _visualTexTargets;
-    private readonly IReadOnlyList<EquationReferenceTarget> _wordOmmlTargets;
-    private readonly IReadOnlyList<EquationReferenceTarget> _mathTypeTargets;
+    private IReadOnlyList<EquationReferenceTarget> _visualTexTargets;
+    private IReadOnlyList<EquationReferenceTarget> _wordOmmlTargets;
+    private IReadOnlyList<EquationReferenceTarget> _mathTypeTargets;
+    // Set when the dialog reads the targets itself, right after it has been drawn (a long document
+    // takes seconds to list): until then it shows "reading" and Insert is off.
+    private readonly Func<IReadOnlyList<EquationReferenceTarget>>? _loadTargets;
+    private readonly Button _insertButton = new();
     private readonly ComboBox _sourceBox = new();
     private readonly TextBox _searchBox = new();
     private readonly TargetListBox _listBox = new();
@@ -86,15 +90,44 @@ internal sealed class EquationReferenceDialog : Form
                 _ => EquationReferenceStyle.Parenthesized,
             };
 
+    /// The targets were being read when the dialog closed with an error (rethrown by the caller).
+    public Exception? LoadError { get; private set; }
+
+    /// Reading the targets began (the dialog has been shown).
+    public bool LoadStarted { get; private set; }
+
+    /// The document has no numbered equation to reference (the dialog closed after reading).
+    public bool NoTargets { get; private set; }
+
     public EquationReferenceSource CurrentSource =>
         (_sourceBox.SelectedItem as SourceOption)?.Source
         ?? EquationReferenceSource.VisualTeX;
+
+    /// The picker that reads its targets itself once it has been drawn.
+    public EquationReferenceDialog(Func<IReadOnlyList<EquationReferenceTarget>> loadTargets)
+        : this(
+            Array.Empty<EquationReferenceTarget>(),
+            Array.Empty<EquationReferenceTarget>(),
+            Array.Empty<EquationReferenceTarget>(),
+            loadTargets ?? throw new ArgumentNullException(nameof(loadTargets)))
+    {
+    }
 
     public EquationReferenceDialog(
         IReadOnlyList<EquationReferenceTarget> visualTexTargets,
         IReadOnlyList<EquationReferenceTarget> wordOmmlTargets,
         IReadOnlyList<EquationReferenceTarget> mathTypeTargets)
+        : this(visualTexTargets, wordOmmlTargets, mathTypeTargets, null)
     {
+    }
+
+    private EquationReferenceDialog(
+        IReadOnlyList<EquationReferenceTarget> visualTexTargets,
+        IReadOnlyList<EquationReferenceTarget> wordOmmlTargets,
+        IReadOnlyList<EquationReferenceTarget> mathTypeTargets,
+        Func<IReadOnlyList<EquationReferenceTarget>>? loadTargets)
+    {
+        _loadTargets = loadTargets;
         _visualTexTargets = visualTexTargets ?? Array.Empty<EquationReferenceTarget>();
         _wordOmmlTargets = wordOmmlTargets ?? Array.Empty<EquationReferenceTarget>();
         _mathTypeTargets = mathTypeTargets ?? Array.Empty<EquationReferenceTarget>();
@@ -121,22 +154,12 @@ internal sealed class EquationReferenceDialog : Form
         };
         _sourceBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _sourceBox.SetBounds(92, 15, 300, 28);
-        if (_visualTexTargets.Count > 0)
-            _sourceBox.Items.Add(new SourceOption(
-                EquationReferenceSource.VisualTeX,
-                T("VisualTeX 编号公式", "Numbered VisualTeX equations"),
-                _visualTexTargets.Count));
-        if (_wordOmmlTargets.Count > 0)
-            _sourceBox.Items.Add(new SourceOption(
-                EquationReferenceSource.WordOmml,
-                T("Word OMML 编号公式", "Numbered Word OMML equations"),
-                _wordOmmlTargets.Count));
-        if (_mathTypeTargets.Count > 0)
-            _sourceBox.Items.Add(new SourceOption(
-                EquationReferenceSource.MathType,
-                T("MathType 编号公式", "Numbered MathType equations"),
-                _mathTypeTargets.Count));
-        if (_sourceBox.Items.Count > 0) _sourceBox.SelectedIndex = 0;
+        if (_loadTargets is null) AddSources();
+        else
+        {
+            _sourceBox.Items.Add(T("正在读取…", "Reading…"));
+            _sourceBox.SelectedIndex = 0;
+        }
         _sourceBox.SelectedIndexChanged += (_, _) =>
         {
             ConfigureStyleForSource();
@@ -162,13 +185,11 @@ internal sealed class EquationReferenceDialog : Form
         _styleBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _styleBox.SetBounds(92, 380, 260, 28);
 
-        var insertButton = new Button
-        {
-            Text = T("插入引用", "Insert Reference"),
-            DialogResult = DialogResult.OK,
-            Location = new Point(434, 424),
-            Size = new Size(90, 32),
-        };
+        var insertButton = _insertButton;
+        insertButton.Text = T("插入引用", "Insert Reference");
+        insertButton.DialogResult = DialogResult.OK;
+        insertButton.Location = new Point(434, 424);
+        insertButton.Size = new Size(90, 32);
         insertButton.Click += (_, _) =>
         {
             if (SelectedTarget is not null) return;
@@ -205,11 +226,96 @@ internal sealed class EquationReferenceDialog : Form
         CancelButton = cancelButton;
         ConfigureStyleForSource();
         RefreshTargets();
+        if (_loadTargets is not null) SetLoading(true);
         _previewTimer.Tick += (_, _) => FillPreviews();
-        Shown += (_, _) => _previewTimer.Start();
+        Shown += (_, _) =>
+        {
+            WordDoubleClickHook.TraceMessage("reference-dialog-shown");
+            if (_loadTargets is null) _previewTimer.Start();
+            // (after the first paint: the targets are read on Word's thread and that blocks the dialog)
+            else BeginInvoke(new Action(LoadTargets));
+        };
         FormClosed += (_, _) => _previewTimer.Stop();
         ResumeLayout(false);
         PerformLayout();
+    }
+
+    private void AddSources()
+    {
+        if (_visualTexTargets.Count > 0)
+            _sourceBox.Items.Add(new SourceOption(
+                EquationReferenceSource.VisualTeX,
+                T("VisualTeX 编号公式", "Numbered VisualTeX equations"),
+                _visualTexTargets.Count));
+        if (_wordOmmlTargets.Count > 0)
+            _sourceBox.Items.Add(new SourceOption(
+                EquationReferenceSource.WordOmml,
+                T("Word OMML 编号公式", "Numbered Word OMML equations"),
+                _wordOmmlTargets.Count));
+        if (_mathTypeTargets.Count > 0)
+            _sourceBox.Items.Add(new SourceOption(
+                EquationReferenceSource.MathType,
+                T("MathType 编号公式", "Numbered MathType equations"),
+                _mathTypeTargets.Count));
+        if (_sourceBox.Items.Count > 0) _sourceBox.SelectedIndex = 0;
+    }
+
+    private void SetLoading(bool loading)
+    {
+        UseWaitCursor = loading;
+        _sourceBox.Enabled = !loading;
+        _searchBox.Enabled = !loading;
+        _listBox.Enabled = !loading;
+        _insertButton.Enabled = !loading;
+        if (loading)
+        {
+            _styleBox.Enabled = false;
+            _styleLabel.Enabled = false;
+        }
+    }
+
+    private void LoadTargets()
+    {
+        if (IsDisposed || LoadStarted || _loadTargets is null) return;
+        LoadStarted = true;
+        IReadOnlyList<EquationReferenceTarget> targets;
+        try
+        {
+            // the dialog is on screen, drawn, before Word is read
+            Refresh();
+            Cursor.Current = Cursors.WaitCursor;
+            targets = _loadTargets();
+        }
+        catch (Exception error)
+        {
+            LoadError = error;
+            DialogResult = DialogResult.Cancel;
+            Close();
+            return;
+        }
+        _visualTexTargets = targets.Where(target => target.Source == EquationReferenceSource.VisualTeX).ToArray();
+        _wordOmmlTargets = targets.Where(target => target.Source == EquationReferenceSource.WordOmml).ToArray();
+        _mathTypeTargets = targets.Where(target => target.Source == EquationReferenceSource.MathType).ToArray();
+        if (_visualTexTargets.Count + _wordOmmlTargets.Count + _mathTypeTargets.Count == 0)
+        {
+            NoTargets = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+            return;
+        }
+        _sourceBox.BeginUpdate();
+        try
+        {
+            _sourceBox.Items.Clear();
+            AddSources();
+        }
+        finally { _sourceBox.EndUpdate(); }
+        SetLoading(false);
+        ConfigureStyleForSource();
+        RefreshTargets();
+        _listBox.Focus();
+        _previewTimer.Start();
+        WordDoubleClickHook.TraceMessage($"reference-dialog-filled targets={targets.Count}");
     }
 
     protected override void OnLoad(EventArgs e)

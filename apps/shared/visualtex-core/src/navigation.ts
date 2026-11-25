@@ -222,6 +222,30 @@ export function enterSlot(model: CoreModel, slot: Slot, direction: Direction): b
 }
 
 /**
+ * The innermost big operator's operand (DESIGN §4) the caret is in, in the operand's own row (in a structure inside the
+ * operand, that structure is the caret's first), at the operand's end only while the caret stands inside it (its level);
+ * with the level just outside it at its end.
+ */
+function caretOperand(model: CoreModel, from: number): { end: number; level: number } | null {
+  const operands = model.mathfield.visualTexGeometry?.operands ?? [];
+  if (!operands.length) return null;
+  const atom = model.at(from);
+  if (!atom) return null;
+  const level = caretLevel(model);
+  // the operands that also end at an operand's end and lie inside it: the caret's levels there, innermost first
+  const innerAtEnd = (o: { start: number; end: number }) => operands.filter((p) => p !== o && p.end === o.end && p.start > o.start).length;
+  let found: { start: number; end: number } | null = null;
+  for (const o of operands) {
+    if (from < o.start || from > o.end) continue;
+    const operator = model.at(o.start);
+    if (!operator || atom.parent !== operator.parent || !sameKey(atom.parentBranch, operator.parentBranch)) continue;
+    if (from === o.end && level > innerAtEnd(o)) continue;
+    if (!found || o.start > found.start) found = o;
+  }
+  return found ? { end: found.end, level: innerAtEnd(found) + 1 } : null;
+}
+
+/**
  * Rows that are lines of a formula rather than rows of a table: the multi-line environments, and an array of one
  * column (what a pasted \begin{array}{r} of lines is).
  */
@@ -253,13 +277,17 @@ export function tab(model: CoreModel, direction: Direction, context: NavigationC
   const slot = slotOf(atom);
   if (!slot) return plonk(model);
   const structure = logicalStructure(slot);
+  // A big operator's operand is a slot of its own (DESIGN §4, AxMath): Tab looks for empty slots in it only, then leaves it
+  // at its end, outside it - out of the integral, not out of the row or the formula.
+  const operand = direction > 0 ? caretOperand(model, from) : null;
   // 1. An empty slot still ahead (behind) in the current slot.
   const items = slotItems(slot);
   const index = atom.type === "first" ? -1 : items.indexOf(atom);
   const ahead = direction > 0 ? items.slice(index + 1) : items.slice(0, index + 1);
-  const empties = emptySlotStops(model, ahead).filter((s) => s !== from);
+  const empties = emptySlotStops(model, ahead).filter((s) => s !== from && (!operand || s <= operand.end));
   const near = direction > 0 ? empties[0] : empties[empties.length - 1];
   if (near !== undefined) return goTo(model, near);
+  if (operand) return goTo(model, operand.end, operand.level);
   // 2. The next (previous) slot of the same structure.
   const slots = structure.type === "root" ? [] : logicalSlots(structure, context.fractionOrder);
   const current = slots.findIndex((s) => s.owner === slot.owner && sameKey(s.key, slot.key));

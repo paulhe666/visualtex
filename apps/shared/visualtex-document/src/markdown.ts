@@ -46,6 +46,17 @@ function mathInline(state: StateInline, silent: boolean): boolean {
     state.pos = end + 2;
     return true;
   }
+  // a joiner and "$$": an empty inline formula, as a file keeps one (inlineFormulaSource; "$$" alone stays text)
+  if (src[start - 1] === FORMULA_JOINER && src.startsWith("$$", start) && src[start + 2] !== "$") {
+    if (!silent) {
+      if (state.pending.endsWith(FORMULA_JOINER)) state.pending = state.pending.slice(0, -1);
+      const token = state.push("math_inline", "", 0);
+      token.content = "";
+      token.markup = "$";
+    }
+    state.pos = start + 2;
+    return true;
+  }
   if (src[start] !== "$" || src[start + 1] === "$") return false;
   if (/\s/.test(src[start + 1] ?? " ")) return false;
   let end = start + 1;
@@ -1187,13 +1198,15 @@ export interface MarkdownExportOptions {
 export const FORMULA_JOINER = "\u2060";
 
 /**
- * An inline formula as a file writes it between `before` and `after` (the characters next to it): "" when empty,
- * LaTeX of several lines on one, a closing backslash kept from the dollar, and joiners where its dollars would
- * read as something else.
+ * An inline formula as a file writes it between `before` and `after` (the characters next to it): a joiner and "$$"
+ * when empty, LaTeX of several lines on one, a closing backslash kept from the dollar, and joiners where its dollars
+ * would read as something else.
  */
 export function inlineFormulaSource(latex: string, before: string, after: string): string {
   let body = latex.replace(/\s*\n\s*/g, " ").trim();
-  if (!body) return "";
+  // An empty formula keeps the dollars that were typed (it was left out, so it was gone once the file was read again,
+  // 2026-11-24), a joiner before them: "$$" alone is text, and at a row's start a display formula.
+  if (!body) return `${FORMULA_JOINER}$$${/[\d$]/.test(after) ? FORMULA_JOINER : ""}`;
   // "x\ " trimmed ends in a backslash, which would escape the closing dollar: the control space and an empty group
   if (/(?:^|[^\\])(?:\\\\)*\\$/.test(body)) body += " {}";
   return `${before === "$" ? FORMULA_JOINER : ""}$${body}$${/[\d$]/.test(after) ? FORMULA_JOINER : ""}`;
@@ -1309,7 +1322,7 @@ function serializerFor(
     const neighbour = index + side >= 0 && index + side < parent.childCount ? parent.child(index + side) : null;
     if (!neighbour) return "";
     if (neighbour.isText) return side < 0 ? neighbour.text!.slice(-1) : neighbour.text!.slice(0, 1);
-    // (a formula before this one has put the joiner after itself)
+    // (a formula before this one has put the joiner after itself; an empty one begins with its joiner)
     return side > 0 && neighbour.type.name === "math_inline" && String(neighbour.attrs.latex).trim() ? "$" : "";
   };
   const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {
@@ -1771,8 +1784,29 @@ function backticks(text: string, side: -1 | 1): string {
   return side < 0 ? ticks + pad : pad + ticks;
 }
 
+/**
+ * The source editor's text of a document (documentToMarkdown with `sourceText`) and where each top-level block of the
+ * document is written in it: the lines [from, to) of `lines` (a wrapped figure shares its paragraph's line). The blank
+ * lines around objects belong to no block; `trailer`: the line the footnotes' definitions start on (lines.length: none).
+ */
+export interface SourceTextLayout {
+  text: string;
+  lines: string[];
+  blocks: Array<[number, number]>;
+  trailer: number;
+}
+
+/** The document as the source editor shows it, with the lines each block is written on. */
+export function sourceTextLayout(doc: Node, options: MarkdownExportOptions = {}): SourceTextLayout {
+  const text = documentToMarkdown(doc, { ...options, sourceText: true, layout: true });
+  return lastLayout!.text === text ? lastLayout! : { text, lines: text.split("\n"), blocks: [], trailer: 0 };
+}
+
+// (documentToMarkdown's layout of its last source text, read by sourceTextLayout)
+let lastLayout: SourceTextLayout | null = null;
+
 /** The document as Markdown. */
-export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {}): string {
+export function documentToMarkdown(doc: Node, options: MarkdownExportOptions & { layout?: boolean } = {}): string {
   doc = withoutMarkdownSyntax(doc);
   if (!options.imagePath) {
     const paths = imageFiles(doc, "assets").paths;
@@ -1788,30 +1822,45 @@ export function documentToMarkdown(doc: Node, options: MarkdownExportOptions = {
   // the source editor's document: its lines as they are, one per line; an object (a formula, a table, a picture)
   // with a blank line on each side
   if (options.sourceText) {
+    // (one entry per line: a block written on several lines pushes each)
     const out: string[] = [];
-    const blankLast = () => !out.length || out[out.length - 1] === "";
+    const blocks: Array<[number, number]> = [];
+    const push = (text: string) => out.push(...text.split("\n"));
+    // the file's spacing (markdownFile.ts): a blank line between an object and the block next to it, none between lines
+    let previous: Node | null = null;
     doc.forEach((node, _offset, index) => {
-      if (node.isTextblock && (node.type.name === "paragraph" || node.type.name === "heading")) {
+      // a wrapped figure is written with the block after it when that is an object; before a line of text it is not
+      // written (no lines)
+      if (wrappedFigure(node) && index + 1 < doc.childCount) {
+        blocks[index] = [out.length, out.length];
+        return;
+      }
+      const prior = index > 0 ? doc.child(index - 1) : null;
+      const together = !!prior && wrappedFigure(prior) && !(node.isTextblock && (node.type.name === "paragraph" || node.type.name === "heading"));
+      if (previous && (isSourceObject(previous) || isSourceObject(node) || together)) out.push("");
+      const start = out.length;
+      if (node.isTextblock && (node.type.name === "paragraph" || node.type.name === "heading") && !isImageLine(node)) {
         // a line of text: as it is (objects in it written as Markdown: formulas, footnotes)
         let plain = true;
         node.forEach((child) => {
           if (!child.isText) plain = false;
         });
-        out.push(plain ? node.textContent : serializer.serialize(doc.type.create(null, [doc.type.schema.nodes.paragraph.create(null, node.content)]), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
-        return;
+        push(plain ? node.textContent : serializer.serialize(doc.type.create(null, [doc.type.schema.nodes.paragraph.create(null, node.content)]), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
+      } else {
+        // (an empty caption above a table after a table whose caption is below: said, as the serializer says it)
+        if (emptyCaptionSaid(prior, node)) out.push("Table:", "");
+        push(serializer.serialize(doc.type.create(null, together ? [prior!, node] : [node]), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
       }
-      const previous = index > 0 ? doc.child(index - 1) : null;
-      if (wrappedFigure(node) && index + 1 < doc.childCount) return;
-      const nodes = previous && wrappedFigure(previous) ? [previous, node] : [node];
-      if (!blankLast()) out.push("");
-      // (an empty caption above a table after a table whose caption is below: said, as the serializer says it)
-      if (emptyCaptionSaid(previous, node)) out.push("Table:", "");
-      out.push(serializer.serialize(doc.type.create(null, nodes), { tightLists: true }).replace(/^\n+|\n+$/g, ""));
-      const next = index + 1 < doc.childCount ? doc.child(index + 1) : null;
-      if (next && next.content.size) out.push("");
+      blocks[index] = [start, out.length];
+      if (together) blocks[index - 1] = [start, out.length];
+      previous = node;
     });
-    const text = out.join("\n").replace(/\n+$/, "");
-    return `${text}\n${definitions ? `\n${definitions}\n` : ""}`;
+    // (the text ends at its last line that is not blank)
+    let end = out.length;
+    while (end > 0 && out[end - 1] === "") end--;
+    const text = `${out.slice(0, end).join("\n")}\n${definitions ? `\n${definitions}\n` : ""}`;
+    if (options.layout) lastLayout = { text, lines: text.split("\n"), blocks, trailer: definitions ? end + 1 : text.split("\n").length };
+    return text;
   }
   if (!source) return `${serializer.serialize(doc, { tightLists: true }).trim()}\n${definitions ? `\n${definitions}\n` : ""}`;
   const text = withSource(doc, source, numbers, (node, index) => {
@@ -1916,6 +1965,13 @@ function emptyCaptionSaid(previous: Node | null | undefined, node: Node): boolea
 }
 
 /** A figure that text wraps (figures.ts): written on the line of the paragraph after it. */
+/** A block that stands apart from the lines around it in the source text, as in the file (markdownFile.ts): not a line
+ *  of text, or a line of pictures. */
+const SOURCE_LINE_TYPES = new Set(["paragraph", "heading", "title", "author", "date", "page_command", "toc"]);
+export function isSourceObject(node: Node): boolean {
+  return !SOURCE_LINE_TYPES.has(node.type.name) || isImageLine(node);
+}
+
 function wrappedFigure(node: Node): boolean {
   return isFigure(node) && !!figureWrap(node);
 }

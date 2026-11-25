@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$LogPath,
+    # A file that receives the reason when the uninstall fails (the VisualTeX uninstaller shows it).
+    [string]$ReasonPath,
     [switch]$Elevated,
     [switch]$ArchitectureRelaunched
 )
@@ -8,6 +10,9 @@ param(
 $ErrorActionPreference = "Stop"
 $wpsCompanionScript = Join-Path $PSScriptRoot "windows_wps_companion.ps1"
 if (Test-Path -LiteralPath $wpsCompanionScript -PathType Leaf) { . $wpsCompanionScript }
+# Precise causes for failures (Windows Installer's own error, a stuck service).
+$diagnosisScript = Join-Path $PSScriptRoot "windows_office_diagnosis.ps1"
+if (Test-Path -LiteralPath $diagnosisScript -PathType Leaf) { . $diagnosisScript }
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -41,6 +46,30 @@ function Resolve-PowerShellExecutable([ValidateSet("x86", "x64")][string]$Target
     return Join-Path $windowsRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 }
 
+# The reason this run failed, as one line: written to -ReasonPath for the installer, and printed as a
+# "REASON: " line for VisualTeX. The output of a copy started elevated reaches nobody, so the process
+# that started it prints the reason again (Invoke-SelfProcess).
+function Write-FailureReason([string]$Reason) {
+    $line = ($Reason -replace '[\r\n]+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($ReasonPath)) {
+        try { [IO.File]::WriteAllText($ReasonPath, $line, [Text.Encoding]::Default) } catch { }
+    }
+    return $line
+}
+
+function Stop-WithReason([string]$Reason, [int]$ExitCode = 1) {
+    Write-Output ("REASON: " + (Write-FailureReason $Reason))
+    exit $ExitCode
+}
+
+# Windows reports the declined administrator prompt as ERROR_CANCELLED (1223).
+function Test-ElevationDeclined([Exception]$Exception) {
+    for ($current = $Exception; $null -ne $current; $current = $current.InnerException) {
+        if ($current -is [ComponentModel.Win32Exception] -and $current.NativeErrorCode -eq 1223) { return $true }
+    }
+    return $false
+}
+
 function Invoke-SelfProcess {
     param(
         [ValidateSet("x86", "x64")][string]$TargetPlatform,
@@ -48,6 +77,10 @@ function Invoke-SelfProcess {
         [bool]$MarkArchitectureRelaunched
     )
 
+    $reasonFile = $ReasonPath
+    if ([string]::IsNullOrWhiteSpace($reasonFile)) {
+        $reasonFile = Join-Path ([IO.Path]::GetTempPath()) ("visualtex-office-uninstall-" + [Guid]::NewGuid().ToString("N") + ".txt")
+    }
     $arguments = New-Object System.Collections.Generic.List[string]
     foreach ($value in @(
         "-NoProfile",
@@ -65,15 +98,22 @@ function Invoke-SelfProcess {
         [void]$arguments.Add("-LogPath")
         [void]$arguments.Add((Quote-ProcessArgument (Resolve-ForwardedPath $LogPath)))
     }
+    [void]$arguments.Add("-ReasonPath")
+    [void]$arguments.Add((Quote-ProcessArgument (Resolve-ForwardedPath $reasonFile)))
 
-    $startParameters = @{
-        FilePath = Resolve-PowerShellExecutable $TargetPlatform
-        ArgumentList = ($arguments -join " ")
-        PassThru = $true
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = Resolve-PowerShellExecutable $TargetPlatform
+    $startInfo.Arguments = $arguments -join " "
+    $startInfo.UseShellExecute = $true
+    if ($RunAsAdministrator) { $startInfo.Verb = "runas" }
+    try {
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+    } catch {
+        if (Test-ElevationDeclined $_.Exception) {
+            Stop-WithReason "Windows did not grant administrator permission: the User Account Control prompt was declined." 4
+        }
+        Stop-WithReason ("Unable to start PowerShell: " + $_.Exception.Message)
     }
-    if ($RunAsAdministrator) { $startParameters.Verb = "RunAs" }
-
-    $process = Start-Process @startParameters
     try {
         # Wait only for the direct PowerShell child. Do not wait for descendant
         # processes such as Windows Installer service helpers.
@@ -82,12 +122,22 @@ function Invoke-SelfProcess {
     } finally {
         $process.Dispose()
     }
+    if ($exitCode -ne 0) {
+        $reason = ""
+        try { $reason = [IO.File]::ReadAllText($reasonFile, [Text.Encoding]::Default).Trim() } catch { }
+        if ([string]::IsNullOrWhiteSpace($reason)) {
+            $reason = "VisualTeX Office integration uninstall failed with exit code $exitCode."
+            [void](Write-FailureReason $reason)
+        }
+        Write-Output ("REASON: " + $reason)
+    }
+    if ($reasonFile -ne $ReasonPath) { Remove-Item -LiteralPath $reasonFile -Force -ErrorAction SilentlyContinue }
     exit $exitCode
 }
 
 if (-not (Test-IsAdministrator)) {
     if ($Elevated) {
-        throw "VisualTeX Office integration uninstall requires administrator privileges."
+        Stop-WithReason "VisualTeX Office integration uninstall requires administrator privileges."
     }
     $currentPlatform = if ([Environment]::Is64BitProcess) { "x64" } else { "x86" }
     Invoke-SelfProcess $currentPlatform $true $false
@@ -95,7 +145,7 @@ if (-not (Test-IsAdministrator)) {
 
 if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
     if ($ArchitectureRelaunched) {
-        throw "Unable to relaunch VisualTeX Office uninstall in 64-bit PowerShell."
+        Stop-WithReason "Unable to relaunch VisualTeX Office uninstall in 64-bit PowerShell."
     }
     Invoke-SelfProcess "x64" $false $true
 }
@@ -128,6 +178,62 @@ function Wait-DirectProcess {
     } finally {
         $process.Dispose()
     }
+}
+
+# The ProductCode of an MSI file; empty when it cannot be read.
+function Get-MsiProductCode([string]$Path) {
+    $installer = $null
+    $database = $null
+    $view = $null
+    $record = $null
+    try {
+        $installer = New-Object -ComObject WindowsInstaller.Installer
+        $database = $installer.GetType().InvokeMember("OpenDatabase", [Reflection.BindingFlags]::InvokeMethod, $null, $installer, @($Path, 0))
+        $view = $database.GetType().InvokeMember("OpenView", [Reflection.BindingFlags]::InvokeMethod, $null, $database, @("SELECT Value FROM Property WHERE Property = 'ProductCode'"))
+        [void]$view.GetType().InvokeMember("Execute", [Reflection.BindingFlags]::InvokeMethod, $null, $view, $null)
+        $record = $view.GetType().InvokeMember("Fetch", [Reflection.BindingFlags]::InvokeMethod, $null, $view, $null)
+        if ($null -eq $record) { return "" }
+        return [string]$record.GetType().InvokeMember("StringData", [Reflection.BindingFlags]::GetProperty, $null, $record, @(1))
+    } catch {
+        return ""
+    } finally {
+        foreach ($comObject in @($record, $view, $database, $installer)) {
+            if ($null -ne $comObject -and [Runtime.InteropServices.Marshal]::IsComObject($comObject)) {
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($comObject)
+            }
+        }
+    }
+}
+
+# Windows Installer removes a product with the copy of its package it kept at installation, and refuses
+# (1612) when a cleaner has deleted that copy. The Office packages this installation carries have the
+# same ProductCode, so one of them is cached again first by a small reinstall from it.
+function Restore-CachedOfficePackage([string]$ProductCode) {
+    $localPackage = ""
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    try {
+        try { $localPackage = [string]$installer.ProductInfo($ProductCode, "LocalPackage") } catch { }
+    } finally {
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($localPackage) -and (Test-Path -LiteralPath $localPackage -PathType Leaf)) { return }
+    $packageDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) "windows-office"
+    foreach ($package in @(Get-ChildItem -LiteralPath $packageDirectory -Filter "VisualTeX-WindowsOffice-VSTO-*.msi" -ErrorAction SilentlyContinue)) {
+        if ((Get-MsiProductCode $package.FullName) -ine $ProductCode) { continue }
+        $recacheLog = Join-Path $logRoot ("vsto-recache-{0}-{1}.log" -f $ProductCode.Trim('{}'), $stamp)
+        Write-UninstallLog "Windows Installer no longer has the package of $ProductCode ('$localPackage'); caching $($package.Name) again. MSI log: $recacheLog"
+        $exitCode = Wait-DirectProcess "msiexec.exe" @(
+            "/i", (Quote-ProcessArgument $package.FullName),
+            "REINSTALL=ALL",
+            "REINSTALLMODE=vomus",
+            "/qn",
+            "/norestart",
+            "/L*v", (Quote-ProcessArgument $recacheLog)
+        )
+        Write-UninstallLog "MSI recache exit code for ${ProductCode}: $exitCode"
+        return
+    }
+    Write-UninstallLog "Windows Installer no longer has the package of $ProductCode ('$localPackage') and $packageDirectory has no package with that ProductCode."
 }
 
 function Test-ProductInstalled([string]$ProductCode) {
@@ -201,6 +307,7 @@ try {
     }
 
     foreach ($productCode in @($productCodes)) {
+        Restore-CachedOfficePackage $productCode
         $msiLog = Join-Path $logRoot ("vsto-uninstall-{0}-{1}.log" -f $productCode.Trim('{}'), $stamp)
         Write-UninstallLog "Uninstalling Office MSI $productCode. MSI log: $msiLog"
         $exitCode = Wait-DirectProcess "msiexec.exe" @(
@@ -211,7 +318,8 @@ try {
         )
         Write-UninstallLog "MSI uninstall exit code for ${productCode}: $exitCode"
         if ($exitCode -notin @(0, 1605, 3010)) {
-            throw "VisualTeX Office MSI uninstall failed for $productCode with exit code $exitCode."
+            $cause = if (Get-Command Get-MsiFailureCause -ErrorAction SilentlyContinue) { Get-MsiFailureCause $exitCode $msiLog } else { "exit code $exitCode" }
+            throw "Removing the VisualTeX Office add-in package $productCode failed: $cause. MSI log: $msiLog"
         }
         if (Test-ProductInstalled $productCode) {
             throw "VisualTeX Office MSI $productCode is still registered after uninstall."
@@ -299,7 +407,12 @@ try {
         )
         Write-UninstallLog "Certificate cleanup exit code: $certificateExitCode"
         if ($certificateExitCode -ne 0) {
-            throw "VisualTeX Office certificate cleanup failed with exit code $certificateExitCode."
+            $detail = ""
+            if (Test-Path -LiteralPath $certificateLog -PathType Leaf) {
+                $detail = [string](@(Get-Content -LiteralPath $certificateLog -ErrorAction SilentlyContinue |
+                    Where-Object { $_ -match 'FAILED|error|denied|timed out|timeout' }) | Select-Object -Last 1)
+            }
+            throw ("Removing the VisualTeX HTTPS certificate failed (exit code $certificateExitCode)" + $(if ($detail) { ": " + $detail.Trim() } else { "." }) + " Log: $certificateLog")
         }
     }
 
@@ -328,6 +441,7 @@ try {
     exit 0
 } catch {
     Write-UninstallLog ("FAILED: " + $_.Exception.ToString())
+    Write-Output ("REASON: " + (Write-FailureReason $_.Exception.Message))
     exit 1
 } finally {
     if ($transcriptStarted) {

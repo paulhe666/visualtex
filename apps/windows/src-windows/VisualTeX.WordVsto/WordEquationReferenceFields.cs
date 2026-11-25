@@ -338,7 +338,14 @@ internal static partial class WordEquationReferenceFields
 
             goToResult = goToField.Result;
             phase = "restore insertion point after reference";
-            var after = Math.Max(goToResult.End + 1, goToCode.End + 2);
+            // The caret goes right after the field's end mark. Word's GOTOBUTTON has no separator: its
+            // code ends at the end mark, and Word reports an empty result just AFTER that mark (so
+            // Result.End + 1, like Code.End + 2, put the caret one character past the reference: after
+            // the next letter, or past the paragraph mark at the end of a line). With a separator the
+            // result ends at the end mark.
+            var after = EndMarkFollowsCode(document, goToCode)
+                ? goToCode.End + 1
+                : goToResult.End + 1;
             after = Math.Max(
                 document.Content.Start,
                 Math.Min(after, Math.Max(document.Content.Start, document.Content.End - 1)));
@@ -1259,6 +1266,25 @@ internal static partial class WordEquationReferenceFields
             Release(target);
             Release(bookmark);
             Release(bookmarks);
+        }
+    }
+
+    /// Whether the character at the end of a field's code is the field's end mark (no separator).
+    private static bool EndMarkFollowsCode(Document document, Range code)
+    {
+        Range? mark = null;
+        TextRetrievalMode? retrieval = null;
+        try
+        {
+            mark = document.Range(code.End, code.End + 1);
+            retrieval = mark.TextRetrievalMode;
+            retrieval.IncludeFieldCodes = true;
+            return string.Equals(mark.Text, "\u0015", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Release(retrieval);
+            Release(mark);
         }
     }
 

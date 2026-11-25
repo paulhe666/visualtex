@@ -10,8 +10,6 @@ $x64 = Join-Path $officeRoot "VisualTeX-WindowsOffice-VSTO-x64.msi"
 $x86 = Join-Path $officeRoot "VisualTeX-WindowsOffice-VSTO-x86.msi"
 $x64Manifest = Join-Path $officeRoot "VisualTeX-WindowsOffice-VSTO-x64.sha256.json"
 $x86Manifest = Join-Path $officeRoot "VisualTeX-WindowsOffice-VSTO-x86.sha256.json"
-$vsto = Join-Path $officeRoot "vstor_redist.exe"
-$vstoManifest = Join-Path $officeRoot "vstor_redist.sha256.json"
 $privateRuntimeManifest = Join-Path $root "src-tauri\target\private-mathtype-runtime\visualtex-runtime-manifest.json"
 $fontRoot = Join-Path $root "src-windows\artifacts\office-fonts"
 $font = Join-Path $fontRoot "latinmodern-math.otf"
@@ -24,7 +22,6 @@ $stixFont = Join-Path $root "src-windows\office-fonts\STIXTwoMath-Regular.ttf"
 $expected = @{
     $x64 = "756C1AA9622234ED91BC789157ADBE97605D646DAD9173600A0A91C0732EF625"
     $x86 = "C49F6C092A8E6E1D14C8BF0FB9A72A7B8DBC3B73B79600AC16A2F7DB9234910F"
-    $vsto = "CFE1A40BBE4A50022DB2164ABDB0154984E2CECB761A23CDC81CB5754F6E0A18"
     $privateRuntimeManifest = "F634A36CF0EA361D9A13156DB8409551E50CC7AF9CD60EC9E6977E57B34766DF"
     $font = "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F"
     $fontLicense = "2BD69AFFC3DA00715116F713F57EAB9707E96DAF3562AD0215987B15B9C16F73"
@@ -43,7 +40,7 @@ function Assert-Hash([string]$Path, [string]$ExpectedHash, [string]$Label) {
 }
 
 foreach ($entry in $expected.GetEnumerator()) { Assert-Hash $entry.Key $entry.Value (Split-Path -Leaf $entry.Key) }
-foreach ($manifestPath in @($x64Manifest,$x86Manifest,$vstoManifest)) {
+foreach ($manifestPath in @($x64Manifest,$x86Manifest)) {
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Fixed-input manifest is missing: $manifestPath" }
 }
 
@@ -82,8 +79,6 @@ foreach ($entry in @(@{data=$x64Data; arch="x64"}, @{data=$x86Data; arch="x86"})
         if ($pinned.Count -ne 1 -or -not [string]::Equals([string]$pinned[0].sha256, $expected[$bundled.path], [StringComparison]::OrdinalIgnoreCase)) { throw "Office MSI manifest does not pin the accepted $($bundled.file)." }
     }
 }
-$vstoData = Get-Content -LiteralPath $vstoManifest -Raw | ConvertFrom-Json
-if (-not [string]::Equals([string]$vstoData.package.sha256, $expected[$vsto], [StringComparison]::OrdinalIgnoreCase)) { throw "VSTO Runtime manifest does not pin the accepted executable." }
 
 $runtime = Get-Content -LiteralPath $privateRuntimeManifest -Raw | ConvertFrom-Json
 if ([string]$runtime.product -ne "MathType" -or [string]$runtime.validatedVersion -ne "7.9.1" -or [int]$runtime.fileCount -ne 69 -or [int64]$runtime.bytes -ne 90095921) {
@@ -138,7 +133,6 @@ Write-Output ([pscustomobject]@{
     officeMsiVersion = $ExpectedOfficeMsiVersion
     x64MsiSha256 = $expected[$x64]
     x86MsiSha256 = $expected[$x86]
-    vstoRuntimeSha256 = $expected[$vsto]
     privateMathTypeVersion = [string]$runtime.validatedVersion
     privateMathTypeFiles = [int]$runtime.fileCount
     latinModernMathSha256 = $expected[$font]

@@ -55,7 +55,9 @@ assert(!windowsBundleSource.includes('"../office/windows/ole/manifests/"'));
 assert(windowsBundleSource.includes('"../scripts/test_windows_office_runtime.ps1"'));
 assert(installVstoSource.includes("Assert-NoOfficeProcesses"));
 assert(installVstoSource.includes("MSIRESTARTMANAGERCONTROL=Disable"));
-assert(installVstoSource.includes("Assert-VstoRuntimeInstalled"));
+// the add-ins are .NET COM add-ins: Office loads them without Microsoft's VSTO Runtime, which is not shipped
+assert(!installVstoSource.includes("Assert-VstoRuntimeInstalled"));
+assert(!windowsBundleSource.includes("vstor_redist"));
 assert(installVstoSource.includes("Assert-NetFramework472Installed"));
 assert(installVstoSource.includes("$minimumRelease = 461808"));
 assert(installVstoSource.includes("Resolve-MachineOfficeInstallRoot"));
@@ -65,7 +67,21 @@ assert(installVstoSource.includes("ArchitectureRelaunched"));
 assert(installVstoSource.includes("Remove-LegacyPerUserOfficeRegistration"));
 assert(installVstoSource.includes("Assert-ManagedComActivation"));
 assert(installVstoSource.includes("Stop-VisualTeXProcessesForRepair"));
-assert(installVstoSource.includes('$startParameters.Verb = "RunAs"'));
+assert(installVstoSource.includes('$startInfo.Verb = "runas"'));
+// a declined administrator prompt, and every failure, reach the caller as one "REASON: " line
+assert(installVstoSource.includes("Test-ElevationDeclined"));
+assert(installVstoSource.includes('Write-Output ("REASON: " + $reason)'));
+// neither Microsoft Office nor WPS Office: exit 5 before any administrator prompt
+assert(installVstoSource.includes("[switch]$DetectOnly"));
+assert(/Stop-WithReason "Neither Microsoft Office nor WPS Office[^"]*" 5/.test(installVstoSource));
+// a cleaner that deleted Windows Installer's copy of an add-in package must not block its removal
+assert(installVstoSource.includes("Restore-CachedOfficePackage"));
+// WPS's own lists of add-ins it stopped loading (by ProgID or CLSID) are cleared by an installation or Repair
+assert(installVstoSource.includes("Remove-VisualTeXWpsLoadRecords"));
+assert(uninstallVstoSource.includes("Restore-CachedOfficePackage"));
+assert(uninstallVstoSource.includes('$startInfo.Verb = "runas"'));
+assert(uninstallVstoSource.includes("[string]$ReasonPath"));
+assert(windowsBundleSource.includes('"../scripts/windows_office_diagnosis.ps1"'));
 assert(installVstoSource.includes("Static files and registry installation verified successfully"));
 assert(installVstoSource.includes("Static Office integration installed and verified"));
 assert(installVstoSource.includes("deferred to the non-elevated installer stage"));
@@ -101,6 +117,19 @@ assert(hooksSource.includes("${NSD_Check} $VisualTeXMsOfficeCheckbox"));
 assert(hooksSource.includes("VisualTeXRepairMainUninstallRegistration"));
 assert(hooksSource.includes('$INSTDIR == "$PROFILE\\AppData\\VisualTeX"'));
 assert(hooksSource.includes("vsto-uninstall-bootstrap"));
+// a failed Office removal never keeps VisualTeX installed: retry, ignore or abort with the cause; a newer
+// installer running this uninstaller (VISUALTEX_REINSTALL) goes on without asking
+const preUninstallHookSource = hooksSource.slice(
+  hooksSource.indexOf("!macro NSIS_HOOK_PREUNINSTALL"),
+  hooksSource.indexOf("!macro NSIS_HOOK_POSTUNINSTALL"),
+);
+assert(preUninstallHookSource.includes("MB_ABORTRETRYIGNORE"));
+assert(preUninstallHookSource.includes("ReadEnvStr $2 VISUALTEX_REINSTALL"));
+assert(preUninstallHookSource.includes('-ReasonPath "$PLUGINSDIR\\visualtex-office-uninstall-reason.txt"'));
+assert(hooksSource.includes("Call VisualTeXEnsureInstallFolderWritable"));
+assert(hooksSource.includes("-DiagnosisMode InstallFolder"));
+assert(hooksSource.includes("-DiagnosisMode PreviousUninstall"));
+assert(hooksSource.includes('StrCmp $0 "5" visualtex_office_no_host'));
 assert(hooksSource.includes("NSIS_HOOK_POSTUNINSTALL"));
 assert(hooksSource.includes('DeleteRegKey HKCU "Software\\visualtex\\VisualTeX"'));
 assert(hooksSource.includes('RMDir /r "$INSTDIR"'));

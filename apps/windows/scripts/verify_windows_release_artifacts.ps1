@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ExpectedAppVersion = "1.3.0",
+    [string]$ExpectedAppVersion = "1.3.1",
     [string]$ExpectedOfficeMsiVersion = "1.0.43.0",
     [string]$TargetRoot = ""
 )
@@ -18,8 +18,6 @@ $resourceX64 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-Win
 $resourceX86 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi"
 $manifestX64 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x64.sha256.json"
 $manifestX86 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x86.sha256.json"
-$vstoRuntime = Join-Path $root "src-tauri\resources\windows-office\vstor_redist.exe"
-$vstoRuntimeManifest = Join-Path $root "src-tauri\resources\windows-office\vstor_redist.sha256.json"
 $buildX64 = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Installer\bin\x64\Release\VisualTeX-WindowsOffice-VSTO-x64.msi"
 $buildX86 = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Installer\bin\x86\Release\VisualTeX-WindowsOffice-VSTO-x86.msi"
 $wordBuildX64 = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\x64\Release\net472\VisualTeX.WordVsto.dll"
@@ -40,8 +38,6 @@ $paths = @(
     $resourceX86,
     $manifestX64,
     $manifestX86,
-    $vstoRuntime,
-    $vstoRuntimeManifest,
     $buildX64,
     $buildX86,
     $wordBuildX64,
@@ -320,26 +316,6 @@ if ((Get-FileHash $resourceX86 -Algorithm SHA256).Hash -ne (Get-FileHash $buildX
     throw "The x86 Office MSI bundled by Tauri is not the current x86 build."
 }
 
-$runtimeManifest = Get-Content -LiteralPath $vstoRuntimeManifest -Raw | ConvertFrom-Json
-$runtimeHash = (Get-FileHash -LiteralPath $vstoRuntime -Algorithm SHA256).Hash
-if ([string]$runtimeManifest.package.sha256 -ne $runtimeHash) {
-    throw "The bundled Microsoft VSTO Runtime hash manifest does not match $vstoRuntime."
-}
-if ($runtimeHash -ne "CFE1A40BBE4A50022DB2164ABDB0154984E2CECB761A23CDC81CB5754F6E0A18") {
-    throw "The bundled Microsoft VSTO Runtime is not the pinned 10.0.60917.00 package."
-}
-$runtimeSignature = Get-AuthenticodeSignature -FilePath $vstoRuntime
-if ($runtimeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-    $null -eq $runtimeSignature.SignerCertificate -or
-    $runtimeSignature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
-    throw "The bundled Microsoft VSTO Runtime has an invalid or unexpected Authenticode signature."
-}
-$runtimeVersion = (Get-Item -LiteralPath $vstoRuntime).VersionInfo
-if ([string]$runtimeVersion.ProductVersion -ne "10.0.60917.00" -or
-    [string]$runtimeVersion.CompanyName -ne "Microsoft Corporation") {
-    throw "Unexpected bundled Microsoft VSTO Runtime metadata: Version=$($runtimeVersion.ProductVersion); Company=$($runtimeVersion.CompanyName)."
-}
-
 foreach ($entry in @(
     @{
         Msi = $resourceX64
@@ -526,9 +502,7 @@ foreach ($requiredResource in @(
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi" },
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json" },
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi" },
-    @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.sha256.json"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x86.sha256.json" },
-    @{ Source = "resources/windows-office/vstor_redist.exe"; Destination = "windows-office/vstor_redist.exe" },
-    @{ Source = "resources/windows-office/vstor_redist.sha256.json"; Destination = "windows-office/vstor_redist.sha256.json" }
+    @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.sha256.json"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x86.sha256.json" }
 )) {
     $record = @($windowsResources | Where-Object { $_.Name -eq $requiredResource.Source })
     if ($record.Count -ne 1 -or [string]$record[0].Value -ne [string]$requiredResource.Destination) {

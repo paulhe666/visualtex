@@ -4,6 +4,7 @@ import { INPUT_SHORTCUT_GROUPS, type InputShortcutGroup } from "./inputDictionar
 import {
   VISUALTEX_SYMBOL_SEQUENCES,
   applyInputJudgment,
+  revertedWords,
   type InputJudgmentOptions,
 } from "./inputJudgment.ts";
 
@@ -78,9 +79,54 @@ export const normalizeMathLiveCanonicalUprightCommands =
  */
 export function normalizeContextualUprightSymbols(
   source: string,
-  options: Pick<InputJudgmentOptions, "deferLetterRuns" | "upright"> = {},
+  options: Pick<InputJudgmentOptions, "deferLetterRuns" | "upright" | "keep"> = {},
 ): string {
   return applyInputJudgment(source, options);
+}
+
+interface KeepingField {
+  value: string;
+}
+
+/**
+ * The words a formula field leaves as typed (the kernel's visualTexKeptWords): the ones its user turned back to
+ * letters with Backspace right after they were set upright, and the plain words the formula had when it was opened.
+ */
+export function keptWordsOf(field: KeepingField | null | undefined): ReadonlySet<string> | undefined {
+  return (field as { _mathfield?: { visualTexKeptWords?: Set<string> } } | null | undefined)?._mathfield?.visualTexKeptWords;
+}
+
+/**
+ * normalizeChineseLatex for a formula field's own LaTeX (all of it, or `source`, a part of it): the words the field
+ * keeps stay as typed. (Its value judged without them set a word turned back to letters upright again when stored.)
+ */
+export function normalizeFieldLatex(field: KeepingField, source: string = field.value): string {
+  return normalizeLatexSource(source, true, keptWordsOf(field));
+}
+
+/** normalizeChineseLatex keeping these words as typed (two rows joined keep the words each of them kept). */
+export function normalizeChineseLatexKeeping(source: string, keep: ReadonlySet<string> | undefined): string {
+  return normalizeLatexSource(source, true, keep);
+}
+
+/** The field keeps these words too (a row that takes in another row's formula takes in what that one kept). */
+export function addKeptWords(field: KeepingField | null | undefined, words: Iterable<string> | undefined): void {
+  const internal = (field as { _mathfield?: { visualTexKeptWords?: Set<string> } } | null | undefined)?._mathfield;
+  if (!internal || !words) return;
+  const all = new Set([...(internal.visualTexKeptWords ?? []), ...words]);
+  if (all.size) internal.visualTexKeptWords = all;
+}
+
+/**
+ * A formula opened for editing keeps the plain words it has (a word turned back to letters before it was saved, or
+ * written so): the judgment converts the words typed from now on, not the ones already there.
+ */
+export function keepPresentWords(field: KeepingField | null | undefined): void {
+  const internal = (field as { _mathfield?: { visualTexKeptWords?: Set<string> } } | null | undefined)?._mathfield;
+  if (!internal || !field) return;
+  const value = field.value;
+  const words = revertedWords(value, applyInputJudgment(value, { revert: true }));
+  internal.visualTexKeptWords = words.length ? new Set([...(internal.visualTexKeptWords ?? []), ...words]) : internal.visualTexKeptWords;
 }
 
 function readBracedCommand(source: string, start: number): number {
@@ -112,12 +158,12 @@ export function normalizeChineseLatexAsWritten(source: string): string {
   return normalizeLatexSource(source, false);
 }
 
-function normalizeLatexSource(source: string, judge: boolean): string {
+function normalizeLatexSource(source: string, judge: boolean, keep?: ReadonlySet<string>): string {
   const canonical = normalizeCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(source),
   );
   const normalizedTextCommands = (
-    judge ? normalizeContextualUprightSymbols(canonical) : canonical
+    judge ? normalizeContextualUprightSymbols(canonical, { keep }) : canonical
   ).replace(
     /\\(mathrm|textrm)\s*\{([\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+)\}/g,
     // spaces inside \mathrm are math mode's (not drawn); inside \textrm they are text

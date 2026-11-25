@@ -69,7 +69,10 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
     const fields = [...document.querySelectorAll('math-field')];
     const down = () => {
       fields[0].focus(); fields[0].position = 0;
-      fields[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, composed: true }));
+      // the editing core takes keys where the field receives them, its keyboard sink (not the math-field element)
+      fields[0].shadowRoot.querySelector('[part="keyboard-sink"]').dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowDown', code: 'ArrowDown', bubbles: true, composed: true, cancelable: true,
+      }));
       return document.activeElement === fields[1];
     };
     const moved = down();

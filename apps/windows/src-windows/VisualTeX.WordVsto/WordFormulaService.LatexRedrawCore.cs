@@ -126,6 +126,7 @@ internal sealed partial class WordFormulaService
             var fontFallbackCount = 0L;
             var fontFallbackMilliseconds = 0L;
             var fontTargetsCompleted = 0;
+            IReadOnlyList<(int Start, int End)>? sourceSpans = null;
             ReportOperationProgress(ReadFontSizesStage, 0, plan.Targets.Count);
             foreach (var target in plan.Targets
                          .OrderBy(item => item.RelativeStart))
@@ -208,6 +209,22 @@ internal sealed partial class WordFormulaService
                         fontFallbackMilliseconds += fallbackWatch.ElapsedMilliseconds;
                         Release(exact);
                     }
+                }
+                // A display formula alone on its line right below a heading follows the body text, not the
+                // heading (as 「跟随正文」 sizes an existing display formula).
+                if (display
+                    && target.DedicatedDisplayParagraph
+                    && !uniformScopeFontSize.HasValue
+                    && WordFormulaFontSizeSetting.Get(display: true) is null)
+                {
+                    sourceSpans ??= WordFormulaTextSize.Spans(
+                        plan.Targets.Select(item => (item.AbsoluteStart, item.AbsoluteEnd)));
+                    if (WordFormulaTextSize.TrySizeBelowHeading(
+                            document,
+                            target.AbsoluteStart,
+                            sourceSpans,
+                            out var belowHeading))
+                        target.FontSizePt = belowHeading;
                 }
                 // the Ribbon's inline/display size, when one is set, instead of the text's
                 target.FontSizePt = WordFormulaFontSizeSetting.Resolve(display, target.FontSizePt);
@@ -661,6 +678,7 @@ internal sealed partial class WordFormulaService
         Range? validation = null;
         WordViewState? viewState = null;
         NativeOmmlScreenUpdatingScope? screenUpdatingScope = null;
+        MinimizedWindowScope? minimizedWindow = null;
         try
         {
             document = _application.ActiveDocument
@@ -705,10 +723,14 @@ internal sealed partial class WordFormulaService
                     $"{missing.Length} formula(s) have no render result, so the redraw did not start (first: {WordFormulaRenderException.Excerpt(missing[0].Latex, 80)})."));
 
             // MathType's native materialization can temporarily activate helper
-            // documents, so retain its existing screen-update guard. VisualTeX
-            // and OMML mutate only the target document; freezing their visible
-            // window provided little benefit once mutations run in document order
-            // and can leave older Word builds without a rebuilt document surface.
+            // documents, so it keeps its screen-update guard at any size. A Word
+            // equations batch also suspends screen updating and minimizes the
+            // window, as format conversion and numbering do: in a visible Print
+            // Layout window, clearing each LaTeX source lays the page out on
+            // screen again (200 formulas on 8 pages: 6.4 s of 20 s; a minimized
+            // window lays out nothing, and restoring it rebuilds the whole
+            // document surface). VisualTeX OLE and MathType batches measured 1-3 s
+            // slower minimized, so they keep the window. WPS keeps its window.
             var usesMathType = streamed is null
                 ? plan.Targets.Any(target =>
                     ObjectModeToHostKind(
@@ -716,7 +738,18 @@ internal sealed partial class WordFormulaService
                     == WordFormulaHostKind.MathType)
                 : ObjectModeToHostKind(streamed.ObjectMode)
                     == WordFormulaHostKind.MathType;
-            if (usesMathType)
+            var writesWordEquations = streamed is null
+                ? plan.Targets.Count > 0
+                  && plan.Targets.All(target =>
+                      ObjectModeToHostKind(
+                          prepared[target.Id].Session.ObjectMode)
+                      == WordFormulaHostKind.Omml)
+                : ObjectModeToHostKind(streamed.ObjectMode)
+                    == WordFormulaHostKind.Omml;
+            var suspendWindow = !OfficeHostEnvironment.IsWps
+                && writesWordEquations
+                && plan.Targets.Count >= MinimizeWindowFormulaThreshold;
+            if (usesMathType || suspendWindow)
                 screenUpdatingScope =
                     NativeOmmlScreenUpdatingScope.Suspend(
                         _application);
@@ -740,6 +773,12 @@ internal sealed partial class WordFormulaService
                 applyWatch.ElapsedMilliseconds - applyStageStart;
 
             applyStageStart = applyWatch.ElapsedMilliseconds;
+            if (suspendWindow)
+                minimizedWindow = MinimizedWindowScope.Enter(document, OperationWindowMinimized);
+            batchTimings["minimizeWindow"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
+
+            applyStageStart = applyWatch.ElapsedMilliseconds;
             var result =
                 ApplyLatexRedrawWithIndependentTransactions(
                     document,
@@ -750,6 +789,13 @@ internal sealed partial class WordFormulaService
                 applyWatch.ElapsedMilliseconds - applyStageStart;
             if (streamed is not null)
                 batchTimings["renderWait"] = streamed.WaitMilliseconds;
+
+            // The window comes back before the view is restored in it.
+            applyStageStart = applyWatch.ElapsedMilliseconds;
+            minimizedWindow?.Dispose();
+            minimizedWindow = null;
+            batchTimings["restoreWindow"] =
+                applyWatch.ElapsedMilliseconds - applyStageStart;
 
             applyStageStart = applyWatch.ElapsedMilliseconds;
             try
@@ -779,6 +825,7 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            minimizedWindow?.Dispose();
             screenUpdatingScope?.Dispose();
             Release(validation);
             Release(document);
@@ -1396,9 +1443,11 @@ internal sealed partial class WordFormulaService
 
                 // The LaTeX source line is the user's paragraph; the display
                 // writer's own layout must not replace it (WordParagraphSnapshot).
-                var sourceParagraph = display
-                    ? WordParagraphSnapshot.TryCapture(insertion)
-                    : null;
+                WordParagraphSnapshot? sourceParagraph;
+                using (WordOperationMetrics.Measure("Redraw.ParagraphSnapshot.Capture"))
+                    sourceParagraph = display
+                        ? WordParagraphSnapshot.TryCapture(insertion)
+                        : null;
                 var inserted =
                     WordFormulaHostMutationKernel
                         .InsertInActiveTransaction(
@@ -1411,8 +1460,11 @@ internal sealed partial class WordFormulaService
                     Range? written = null;
                     try
                     {
-                        written = WordFormulaHostSemanticReader.CreateRange(document, inserted.Range);
-                        sourceParagraph.Restore(written);
+                        using (WordOperationMetrics.Measure("Redraw.ParagraphSnapshot.Restore"))
+                        {
+                            written = WordFormulaHostSemanticReader.CreateRange(document, inserted.Range);
+                            sourceParagraph.Restore(written);
+                        }
                     }
                     finally { Release(written); }
                 }
@@ -1436,9 +1488,11 @@ internal sealed partial class WordFormulaService
                         RangeReference(insertion);
                     var native =
                         formula.MathTypeNativePreview;
-                    var sourceParagraph = display
-                        ? WordParagraphSnapshot.TryCapture(insertion)
-                        : null;
+                    WordParagraphSnapshot? sourceParagraph;
+                    using (WordOperationMetrics.Measure("Redraw.ParagraphSnapshot.Capture"))
+                        sourceParagraph = display
+                            ? WordParagraphSnapshot.TryCapture(insertion)
+                            : null;
                     _ = InsertMathTypeOle(
                         session,
                         mathMl,
@@ -1481,10 +1535,11 @@ internal sealed partial class WordFormulaService
                             preparedMathTypeSection,
                         sourceParagraph:
                             sourceParagraph);
-                    RestoreSourceParagraphAtMathType(
-                        document,
-                        session.FormulaId,
-                        sourceParagraph);
+                    using (WordOperationMetrics.Measure("Redraw.ParagraphSnapshot.Restore"))
+                        RestoreSourceParagraphAtMathType(
+                            document,
+                            session.FormulaId,
+                            sourceParagraph);
                     formulaId = session.FormulaId;
                     preparedMathTypeNativeStyles = display;
                 }

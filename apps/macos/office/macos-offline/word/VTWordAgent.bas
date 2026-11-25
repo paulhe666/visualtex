@@ -769,6 +769,13 @@ Public Function VTAgentSetNumberFormat() As String
     VTAgentSetNumberFormat = VTAgentDone("")
 End Function
 
+' The Ribbon's Repair Display Formulas; its message is the answer's.
+Public Function VTAgentRepairDisplayFormulas() As String
+    Call VTAgentWritableDocument
+    VisualTeX_RepairDisplayFormulas
+    VTAgentRepairDisplayFormulas = VTAgentDone("")
+End Function
+
 ' The Ribbon's Equation-reference menu with the equation named by its number instead of picked.
 Public Function VTAgentInsertReference() As String
     Dim documentObject As Document

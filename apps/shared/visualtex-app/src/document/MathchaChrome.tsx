@@ -26,11 +26,17 @@ export interface ContextMenuState {
   y: number;
 }
 
+export type MathMlScope = "all" | "line" | "selection";
+
 export interface ContextMenuActions {
   copy(): void;
   copyPlainText(): void;
   cut(): void;
   remove(): void;
+  /** how many formulas a MathML copy of `scope` takes */
+  mathMlCount(state: EditorState, scope: MathMlScope): number;
+  /** the formulas of `scope` copied as MathML */
+  copyMathMl(scope: MathMlScope): void;
 }
 
 /** Mathcha's right-click menu: copy variants, cut, delete; in a table, rows and columns, and its caption's place. */
@@ -69,7 +75,8 @@ export function ContextMenu(props: {
   );
   const command = (cmd: Command) => () => run(view, cmd);
   const caption = (side: CaptionSide, label: string) => item(label, command(setTableCaption(side)), { checked: captionSide === side });
-  const height = 230 + (inTable ? 240 : 0) + (captionSide ? 110 : 0);
+  const mathMl = { selection: actions.mathMlCount(state, "selection"), line: actions.mathMlCount(state, "line"), all: actions.mathMlCount(state, "all") };
+  const height = 230 + (mathMl.all ? 150 : 0) + (inTable ? 240 : 0) + (captionSide ? 110 : 0);
   const style = { left: Math.min(at.x, window.innerWidth - 240), top: Math.min(at.y, window.innerHeight - height) };
   return (
     <>
@@ -79,6 +86,14 @@ export function ContextMenu(props: {
         {item(t(lang, "Copy Plain Text", "复制纯文本"), actions.copyPlainText, { disabled: empty })}
         {item(t(lang, "Cut", "剪切"), actions.cut, { disabled: empty, hint: "Ctrl+X" })}
         {item(t(lang, "Delete", "删除"), actions.remove, { disabled: empty })}
+        {mathMl.all > 0 && (
+          <>
+            <div className="mc-menu-sep" />
+            {mathMl.selection > 0 && item(t(lang, "Copy Selection as MathML", "复制所选 MathML"), () => actions.copyMathMl("selection"))}
+            {item(t(lang, "Copy Line as MathML", "复制本行 MathML"), () => actions.copyMathMl("line"), { disabled: !mathMl.line })}
+            {item(t(lang, "Copy All as MathML", "复制全部 MathML"), () => actions.copyMathMl("all"))}
+          </>
+        )}
         {inTable && (
           <>
             <div className="mc-menu-sep" />

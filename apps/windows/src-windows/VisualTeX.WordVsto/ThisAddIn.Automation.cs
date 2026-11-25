@@ -22,7 +22,7 @@ public sealed partial class ThisAddIn
         "insert_formula", "update_formula", "delete_formula", "select_formula", "set_formula_font_size",
         "convert_formulas", "latex_text_to_formulas", "formulas_to_latex_text", "insert_rich_text",
         "insert_equation_reference", "number_display_formulas", "update_equation_numbers",
-        "set_equation_number_format",
+        "set_equation_number_format", "repair_display_formulas",
     };
 
     internal Task<object?>? ExecuteAutomationWrite(string operation, JsonElement arguments) =>
@@ -145,39 +145,45 @@ public sealed partial class ThisAddIn
 
             case "set_formula_font_size":
             {
-                var size = OfficeAutomationText.Number(arguments, "font_size_pt")
-                    ?? throw new OfficeAutomationException("invalid_arguments", "font_size_pt is required.");
+                var size = OfficeAutomationText.Number(arguments, "font_size_pt");
+                var followText = OfficeAutomationText.Bool(arguments, "follow_text") == true;
                 if (OfficeAutomationText.String(arguments, "kind") is { Length: > 0 } kind)
                 {
-                    // every inline or every display formula of the document, as the Ribbon's 行内 / 行间 do
+                    // every inline or every display formula of the document, as the Ribbon's 行内 / 行间 do: the
+                    // choice is kept for the formulas of that kind written later
                     var display = kind switch
                     {
                         "inline" => false,
                         "display" => true,
                         _ => throw new OfficeAutomationException("invalid_arguments", $"Unknown kind {kind}: use inline or display."),
                     };
+                    if (size.HasValue == followText)
+                        throw new OfficeAutomationException("invalid_arguments", "Give font_size_pt or follow_text: true (with kind), not both.");
+                    float? chosen = size.HasValue ? FormulaFontSize.Normalize(size.Value) : null;
+                    WordFormulaFontSizeSetting.Save(display, chosen);
+                    InvalidateFormulaKindFontSizeControls();
                     BeginFormulaFormatMutation();
                     try
                     {
                         var batch = await dispatcher.InvokeAsync(() =>
                         {
                             service.AutomationActivate(key);
-                            return service.ApplyFontSizeToDocumentFormulas(display, size);
+                            return service.ApplyFontSizeToDocumentFormulas(display, chosen);
                         }).ConfigureAwait(false);
-                        run.Status(T(
-                            $"已把 {batch.Resized} 个{(display ? "行间" : "行内")}公式改为 {FormulaFontSize.Describe(size)}。",
-                            $"{batch.Resized} {(display ? "display" : "inline")} formula(s) set to {FormulaFontSize.Describe(size, english: true)}."));
+                        run.Status(DescribeKindFontSizeResult(display, chosen, batch.Resized));
                         foreach (var failure in batch.Failures) run.Warn(failure);
                         WriteRedrawAcceptanceLog(
-                            $"formula-kind-font-size display={display} size={size} resized={batch.Resized} failed={batch.Failures.Count} {batch.MetricDetail}");
+                            $"formula-kind-font-size display={display} size={(chosen.HasValue ? chosen.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "follow")} resized={batch.Resized} failed={batch.Failures.Count} {batch.MetricDetail}");
                     }
                     finally { EndFormulaFormatMutation(); }
                     return run.Finish();
                 }
+                if (!size.HasValue)
+                    throw new OfficeAutomationException("invalid_arguments", "font_size_pt is required.");
                 await dispatcher.InvokeAsync(() =>
                 {
                     service.AutomationSelectFormula(Key(), OfficeAutomationText.RequiredString(arguments, "formula_id"));
-                    ApplyFormulaFontSize(size);
+                    ApplyFormulaFontSize(size.Value);
                     return true;
                 }).ConfigureAwait(false);
                 return run.Finish();
@@ -246,6 +252,11 @@ public sealed partial class ThisAddIn
             case "update_equation_numbers":
                 await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
                 await UpdateEquationNumbersAsync().ConfigureAwait(false);
+                return run.Finish();
+
+            case "repair_display_formulas":
+                await dispatcher.InvokeAsync(() => { service.AutomationActivate(key); return true; }).ConfigureAwait(false);
+                await RepairDisplayFormulasAsync().ConfigureAwait(false);
                 return run.Finish();
 
             case "set_equation_number_format":
@@ -329,10 +340,12 @@ public sealed partial class ThisAddIn
             }
             var chosen = matches[0];
             selection.SetRange(start, end);
-            if (chosen.Source == EquationReferenceSource.MathType)
-                MathTypeEquationReferences.InsertReference(document, selection, chosen, color);
-            else
-                service.InsertEquationReference(document, selection, chosen, EquationReferenceStyle.Parenthesized, color);
+            // (the dialog's own path, undo record included: a MathType reference keeps MathType's number format)
+            service.InsertEquationReference(document, selection, chosen,
+                chosen.Source == EquationReferenceSource.MathType
+                    ? EquationReferenceStyle.NumberOnly
+                    : EquationReferenceStyle.Parenthesized,
+                color);
             TraceReferenceMetrics(metrics, "inserted");
             return $"Inserted a reference to equation ({number}).";
         }

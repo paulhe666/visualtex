@@ -50,7 +50,8 @@ internal static class WpsXmlInsertion
         using var guard = TableBoundaryGuard.Open(range);
         if (!OfficeHostEnvironment.IsWps)
         {
-            range.InsertXML(flatOpc);
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Xml.InsertXML"))
+                range.InsertXML(flatOpc);
             return;
         }
         InsertInWps(range, flatOpc, deleteFirst: false);
@@ -84,6 +85,7 @@ internal static class WpsXmlInsertion
 
         internal static TableBoundaryGuard? Open(Range range)
         {
+            using var metric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Xml.TableGuard.Open");
             Paragraphs? paragraphs = null;
             Paragraph? paragraph = null;
             Range? owner = null;
@@ -182,9 +184,37 @@ internal static class WpsXmlInsertion
                 // with the affinity of either neighbour.
                 probe = anchor.Duplicate;
                 probe.SetRange(position, position + 1);
-                return probe.get_Information(WdInformation.wdWithInTable) is true;
+                // Word answers Information(wdWithInTable) from its page layout: after
+                // every import of a batch it lays the document out up to the probe
+                // (hundreds of ms per formula, growing with the equations already
+                // written). The table that holds the character is structure.
+                return OfficeHostEnvironment.IsWps
+                    ? probe.get_Information(WdInformation.wdWithInTable) is true
+                    : InTableStructure(probe);
             }
             finally { Release(probe); }
+        }
+
+        // A table of the probe's story whose range holds the whole probe.
+        private static bool InTableStructure(Range probe)
+        {
+            Tables? tables = null;
+            Table? table = null;
+            Range? bounds = null;
+            try
+            {
+                tables = probe.Tables;
+                for (var index = 1; index <= tables.Count; index++)
+                {
+                    Release(bounds); bounds = null;
+                    Release(table); table = tables[index];
+                    bounds = table.Range;
+                    if (probe.InStory(bounds) && bounds.Start <= probe.Start && bounds.End >= probe.End)
+                        return true;
+                }
+                return false;
+            }
+            finally { Release(bounds); Release(table); Release(tables); }
         }
     }
 

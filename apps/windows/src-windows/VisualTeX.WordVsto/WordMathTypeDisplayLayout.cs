@@ -48,12 +48,11 @@ internal static class WordMathTypeDisplayLayout
                     // Match MathType's own behavior: create the style only when the
                     // document does not already have it. Never overwrite an existing
                     // native MathType style, because its tab geometry may have been
-                    // adapted by MathType for the current document/template.
+                    // adapted by MathType for the current document/template. Like
+                    // MathType's, the style adds only the centre and right tabs: line
+                    // spacing and the space before/after are the body text's (Normal).
                     displayFormat = displayStyle.ParagraphFormat;
                     displayFormat.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
-                    displayFormat.SpaceBefore = 0;
-                    displayFormat.SpaceAfter = 0;
-                    displayFormat.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
                     displayTabs = displayFormat.TabStops;
                     displayTabs.ClearAll();
                     pageSetup = document.PageSetup;
@@ -244,12 +243,7 @@ internal static class WordMathTypeDisplayLayout
             else if (preservedLayout is null)
             {
                 format.Alignment = WdParagraphAlignment.wdAlignParagraphJustify;
-                format.LeftIndent = 0;
-                format.RightIndent = 0;
-                format.FirstLineIndent = 0;
-                format.SpaceBefore = 0;
-                format.SpaceAfter = 0;
-                format.LineSpacingRule = WdLineSpacing.wdLineSpaceSingle;
+                WordEquationParagraphLayout.ZeroIndents(format);
                 // MTDisplayEquation owns spacing and the first line; the
                 // user's own left/right indent of the paragraph stays.
                 sourceParagraph?.Restore(paragraphRange, keepStyle: false);

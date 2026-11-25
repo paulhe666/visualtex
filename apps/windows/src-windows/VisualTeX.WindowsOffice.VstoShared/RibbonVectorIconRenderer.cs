@@ -29,6 +29,7 @@ internal static class RibbonVectorIconRenderer
             "convertToOle",
             "batchImport",
             "repairBaseline",
+            "repairDisplay",
         },
         StringComparer.OrdinalIgnoreCase);
 
@@ -81,6 +82,9 @@ internal static class RibbonVectorIconRenderer
                 break;
             case "repairbaseline":
                 DrawRepairBaseline(graphics);
+                break;
+            case "repairdisplay":
+                DrawRepairDisplay(graphics);
                 break;
         }
 
@@ -251,6 +255,26 @@ internal static class RibbonVectorIconRenderer
         using var reference = Pen(Accent, 2.2f);
         reference.DashStyle = DashStyle.Dash;
         graphics.DrawLine(reference, 8, 31, 38, 31);
+    }
+
+    // A page with a display formula pushed back to the centre between its text lines (arrows from both sides) and
+    // its number at the right.
+    private static void DrawRepairDisplay(Graphics graphics)
+    {
+        DrawDocument(graphics, new RectangleF(6, 6, 52, 52), Ink);
+        using var line = Pen(Ink, 2.4f);
+        graphics.DrawLine(line, 13, 17, 51, 17);
+        graphics.DrawLine(line, 13, 48, 51, 48);
+        using var boxPen = Pen(Warm, 3f);
+        graphics.DrawRoundedRectangle(boxPen, new RectangleF(23, 24, 18, 16), 3.5f);
+        DrawFormulaText(graphics, new RectangleF(23, 22, 18, 20), Warm, 8.5f);
+        using var arrow = Pen(Accent, 3f);
+        graphics.DrawLine(arrow, 11, 32, 19, 32);
+        graphics.DrawLine(arrow, 19, 32, 15, 28);
+        graphics.DrawLine(arrow, 19, 32, 15, 36);
+        graphics.DrawLine(arrow, 53, 32, 45, 32);
+        graphics.DrawLine(arrow, 45, 32, 49, 28);
+        graphics.DrawLine(arrow, 45, 32, 49, 36);
     }
 
     private static void DrawBatchImport(Graphics graphics)

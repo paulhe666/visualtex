@@ -11,6 +11,10 @@ $officeNames = @(
     'WINWORD', 'POWERPNT', 'EXCEL', 'OUTLOOK', 'ONENOTE',
     'MSACCESS', 'MSPUB', 'VISIO', 'MSPROJECT'
 )
+# The installer extracts the diagnosis next to this script: it names the other programs (WPS Office above
+# all) that have VisualTeX's add-ins loaded, whose files the add-in packages replace.
+$diagnosisScript = Join-Path $PSScriptRoot 'windows_office_diagnosis.ps1'
+if (Test-Path -LiteralPath $diagnosisScript -PathType Leaf) { . $diagnosisScript }
 
 function Get-VisualTeXOfficeProcesses {
     # The installer only needs to know whether a blocking Office process exists
@@ -32,6 +36,17 @@ function Get-VisualTeXOfficeProcesses {
             ProcessName = $process.ProcessName.ToUpperInvariant() + '.EXE'
             ProcessId = [int]$process.Id
             Kind = $kind
+        }
+    }
+    if (Get-Command Get-OfficeAddinUsers -ErrorAction SilentlyContinue) {
+        foreach ($user in @(Get-OfficeAddinUsers)) {
+            if (@($result | Where-Object { $_.ProcessId -eq $user.Id }).Count -gt 0) { continue }
+            $name = if ($user.Name) { $user.Name.ToUpperInvariant() } else { 'PROCESS' }
+            $result += [pscustomobject]@{
+                ProcessName = $name
+                ProcessId = [int]$user.Id
+                Kind = 'has the VisualTeX add-ins loaded' + $(if ($user.Title) { " ($($user.Title))" } else { '' })
+            }
         }
     }
     return @($result | Sort-Object ProcessName, ProcessId)

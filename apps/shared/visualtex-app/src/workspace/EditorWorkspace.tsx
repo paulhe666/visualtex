@@ -253,6 +253,7 @@ export function EditorWorkspace({
   onSidebarOpenChange,
   onPasteImage,
   onCopyPng,
+  onCopyMathMl,
   onCopy,
   onReplaceDocument,
   ocrRecognizer,
@@ -1226,6 +1227,7 @@ export function EditorWorkspace({
           previewLines ? undefined : showOcrActions ? onPasteImage : undefined
         }
         onCopyPng={previewLines ? undefined : onCopyPng}
+        onCopyMathMl={previewLines ? undefined : onCopyMathMl}
         overlay={previewLines ? undefined : ocrOverlay}
       />
     );

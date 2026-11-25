@@ -471,6 +471,14 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 9px;
 }
 
+.office-status-card-wide {
+  grid-column: 1 / -1;
+}
+
+.office-status-unchecked {
+  color: var(--text-faint);
+}
+
 .office-diagnostic-meta {
   display: flex;
   flex-wrap: wrap;
@@ -910,4 +918,13 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* The repair prompt for a WPS Office the add-ins do not reach. */
+.wps-repair-prompt {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.wps-repair-prompt .office-settings-warning {
+  font-size: 12px;
 }

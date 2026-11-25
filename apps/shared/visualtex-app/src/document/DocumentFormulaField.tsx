@@ -13,7 +13,7 @@ import {
   type FormulaSessionCallbacks,
 } from "../../../visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatex, normalizeFieldLatex } from "../editor/normalizeChineseLatex";
 import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
 import { topLevelStop } from "../editor/rowPointer";
@@ -40,6 +40,8 @@ export interface DocumentFormulaFieldApi {
   update(latex: string, selection: FormulaSelection | null): void;
   /** Report the field's LaTeX if the document does not have it yet. */
   flush(): void;
+  /** The field holds something (a formula left with it is not empty, whatever the document has been told yet). */
+  holdsInput(): boolean;
   typeKey(key: FormulaKey): void;
   focus(): void;
   /** The formula opened: the field takes the focus, the caret where `entry` says. */
@@ -86,6 +88,34 @@ function captureSelection(field: MathfieldElement): FormulaSelection {
 
 function hasRawLatexInput(field: MathfieldElement) {
   return Boolean(field.shadowRoot?.querySelector(".ML__raw-latex"));
+}
+
+/** The LaTeX command being typed (raw input, "\alpha" before Space takes it), as typed; "" when none. */
+function rawLatexInput(field: MathfieldElement) {
+  return Array.from(field.shadowRoot?.querySelectorAll<HTMLElement>(".ML__raw-latex") ?? [])
+    .filter((node) => !node.classList.contains("ML__suggestion"))
+    .map((node) => node.textContent ?? "")
+    .join("");
+}
+
+/** A command name is being typed: raw input with more than its backslash. */
+function typingCommand(field: MathfieldElement) {
+  return field.mode === "latex" && /^\\[^\s]/.test(rawLatexInput(field));
+}
+
+/**
+ * The command being typed is finished as typed, as moving the caret out of it finishes it: the formula holds it from
+ * then on (until then it is not part of the formula's LaTeX). A lone backslash is dropped. Returns whether there was one.
+ */
+function finishRawLatex(field: MathfieldElement): boolean {
+  if (field.mode !== "latex") return false;
+  field.executeCommand(["complete", typingCommand(field) ? "accept" : "reject"]);
+  return true;
+}
+
+/** The field holds something: what is in its formula, or a command being typed (which the formula gets once finished). */
+function holdsInput(field: MathfieldElement) {
+  return !!field.getValue("latex-without-placeholders").trim() || typingCommand(field);
 }
 
 type KernelField = Parameters<typeof visualTexEditingCore.caretRect>[0];
@@ -214,11 +244,15 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
   const leftRef = useRef(false);
   // The LaTeX the document has (the field's edits are reported on the kernel's input events).
   const reportedRef = useRef(latex);
-  /** Report the field's LaTeX if the document does not have it yet (an edit whose input event is still due). */
+  /**
+   * Report the field's LaTeX if the document does not have it yet (an edit whose input event is still due, a command
+   * still being typed: finished first).
+   */
   const flush = () => {
     const field = fieldRef.current;
     if (!field || incomingRef.current !== null) return;
-    const value = normalizeChineseLatex(field.value);
+    finishRawLatex(field);
+    const value = normalizeFieldLatex(field);
     if (value === reportedRef.current) return;
     reportedRef.current = value;
     callbacksRef.current.edit(value, null, captureSelection(field));
@@ -289,7 +323,9 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       greekPrefixRef.current = false;
       const field = fieldRef.current;
       if (!field) return;
-      flush();
+      // (reported after the document's update that closed the formula: a change dispatched from inside it would
+      // interleave with it; the formula stayed because the field holds something, formulas.ts)
+      queueMicrotask(flush);
       setOpenDocumentFormula(null, field);
       if (field.shadowRoot?.activeElement) field.blur();
       showPart(field, null);
@@ -322,7 +358,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     latexOf(range) {
       const field = fieldRef.current;
       if (!field) return "";
-      return normalizeChineseLatex(field.getValue(Math.min(...range), Math.max(...range), "latex"));
+      return normalizeFieldLatex(field, field.getValue(Math.min(...range), Math.max(...range), "latex"));
     },
     withoutRange(range) {
       const result = fieldRef.current?.visualTexDropResult({ remove: range });
@@ -341,6 +377,10 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       return mutate(field, () => toggleMathLiveSelectionStyle(field, "bold", field.selection));
     },
     flush,
+    holdsInput() {
+      const field = fieldRef.current;
+      return !!field && holdsInput(field);
+    },
     typeKey(key) {
       const field = fieldRef.current;
       // a field at rest (a formula just made again, not yet entered) keeps the keys for when it is entered
@@ -365,10 +405,10 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
 
   /** Run a kernel mutation as one formula edit. */
   const mutate = useCallback((field: MathfieldElement, change: () => boolean) => {
-    const beforeLatex = normalizeChineseLatex(field.value);
+    const beforeLatex = normalizeFieldLatex(field);
     const before = captureSelection(field);
     if (!change()) return false;
-    const afterLatex = normalizeChineseLatex(field.value);
+    const afterLatex = normalizeFieldLatex(field);
     field.resetUndo();
     if (afterLatex !== beforeLatex) {
       reportedRef.current = afterLatex;
@@ -400,8 +440,8 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       : [Math.min(...field.selection.ranges.flat()), Math.max(...field.selection.ranges.flat())];
     const last = field.lastOffset;
     const atTop = topLevelStop(field, start, "start") === start && topLevelStop(field, end, "end") === end;
-    const before = normalizeChineseLatex(field.getValue(0, start, "latex")).trim();
-    const after = normalizeChineseLatex(field.getValue(end, last, "latex")).trim();
+    const before = normalizeFieldLatex(field, field.getValue(0, start, "latex")).trim();
+    const after = normalizeFieldLatex(field, field.getValue(end, last, "latex")).trim();
     if (!atTop || start <= 0 || end >= last || !before || !after || !callbacksRef.current.split) {
       leaveFormula("new-paragraph");
       return;
@@ -489,6 +529,14 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
             mutate(field, () => insertMathLiveRowBreak(field, /^\s*\\begin\{gathered\}/.test(field.value) ? "gathered" : "aligned"));
         } else if (action === "case-row") mutate(field, () => field.executeCommand("addRowAfter"));
         else splitAtCaret(field);
+        return;
+      }
+      // "$" while a command is typed ("$$\alpha$$"): the command finished, then the closing dollar ("\$" alone is
+      // the dollar sign, the field's own)
+      if (event.key === "$" && !mod && !event.altKey && typingCommand(field)) {
+        stop();
+        finishRawLatex(field);
+        typedDollar(field);
         return;
       }
       if (rawLatex || field.mode === "latex") return;
@@ -586,9 +634,11 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
         if (input.data) heldDollarRef.current = false;
         return;
       }
-      if (field.mode !== "math" || hasRawLatexInput(field)) return;
+      const command = typingCommand(field);
+      if (!command && (field.mode !== "math" || hasRawLatexInput(field))) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (command) finishRawLatex(field);
       typedDollarRef.current(field);
     };
     field.addEventListener("beforeinput", onBeforeInput, true);
@@ -616,7 +666,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     if (!displayRef.current) field.defaultMode = "inline-math";
     installDocumentFieldStyle(field);
     // the formula as the field reads it: only an edit is reported back (not the field's own form of the same LaTeX)
-    if (normalizeChineseLatex(field.value) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeChineseLatex(field.value);
+    if (normalizeFieldLatex(field) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeFieldLatex(field);
     if (passiveRef.current) {
       // only shown: the part a selection through the text takes, once the engine has drawn it
       readyRef.current = true;
@@ -675,6 +725,13 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       }}
       selectionDrag={selectionDrag}
       onPasteImage={onPasteImage ? (file) => onPasteImage(file) : undefined}
+      // a right click in the formula: the document's menu (copy what is selected in it as MathML, …), from the
+      // formula's own box (outside the field, which takes a right click as its own)
+      onContextMenu={(clientX, clientY) =>
+        fieldRef.current
+          ?.closest(".vtx-formula-editor")
+          ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX, clientY }))
+      }
     />
   );
 }
