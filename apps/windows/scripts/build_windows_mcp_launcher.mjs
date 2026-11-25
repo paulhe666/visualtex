@@ -17,7 +17,10 @@ const result = spawnSync(
 );
 if (result.error) throw result.error;
 if (result.status !== 0) throw new Error(`visualtex-mcp build failed with ${result.status}`);
-const built = resolve("mcp-launcher", "target", "release", "visualtex-mcp.exe");
+// (the build goes where CARGO_TARGET_DIR says: the no-OCR build sets it, and the launcher was then taken from
+// mcp-launcher/target, missing in a fresh checkout, an older build's copy otherwise)
+const targetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : resolve("mcp-launcher", "target");
+const built = resolve(targetDir, "release", "visualtex-mcp.exe");
 const binaries = resolve("src-tauri", "binaries");
 mkdirSync(binaries, { recursive: true });
 const staged = resolve(binaries, "visualtex-mcp-x86_64-pc-windows-msvc.exe");
