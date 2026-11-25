@@ -77,8 +77,13 @@ import {
   isGreekLetterHotkeyPrefix,
 } from "../shortcuts/greekLetterHotkeys";
 import {
+  addKeptWords,
+  keepPresentWords,
+  keptWordsOf,
   normalizeChineseLatex,
+  normalizeChineseLatexKeeping,
   normalizeContextualUprightSymbols,
+  normalizeFieldLatex,
   normalizeMathLiveCanonicalUprightCommands,
   resolveVisualTexInlineShortcuts,
   type VisualTexInlineShortcutDefinitions,
@@ -743,7 +748,7 @@ function selectionHasContent(selection: MathSelectionSnapshot) {
 
 function captureFieldSnapshot(field: MathfieldElement) {
   return {
-    latex: normalizeChineseLatex(field.value),
+    latex: normalizeFieldLatex(field),
     selection: captureSelection(field),
   };
 }
@@ -1165,6 +1170,8 @@ function normalizeCompletedUprightDisplay(
   // off "common math input auto-convert".
   const contextualValue = normalizeContextualUprightSymbols(portableValue, {
     deferLetterRuns: !finished && caretFollowsLetter(field),
+    // (the words the user turned back to letters, and those the formula had when it was opened, stay as typed)
+    keep: keptWordsOf(field),
   });
   if (contextualValue === originalValue) return false;
 
@@ -1616,7 +1623,7 @@ export function attemptLatexCommandInsertion(
   field.selection = insertionSelection;
   const inserted = mutate(() => {
     const hasPlaceholder = insertionTemplate.includes("\\placeholder{}");
-    const valueBefore = normalizeChineseLatex(field.value);
+    const valueBefore = normalizeFieldLatex(field);
     const done = field.visualTexInsertToolbarTemplate(insertionTemplate, {
       mode: "math",
       format: "latex",
@@ -1629,7 +1636,7 @@ export function attemptLatexCommandInsertion(
       focus: true,
       scrollIntoView: false,
     });
-    return done && normalizeChineseLatex(field.value) !== valueBefore;
+    return done && normalizeFieldLatex(field) !== valueBefore;
   });
   if (!inserted) field.selection = originalSelection;
   return inserted;
@@ -2065,7 +2072,7 @@ export function FormulaField(props: FormulaFieldProps) {
       // MathLive emits selection-change after mutating the model but before
       // input. Keep the pre-edit selection paired with the pre-edit LaTeX;
       // otherwise Undo restores a post-edit offset (outside an empty cell).
-      if (normalizeChineseLatex(field.value) !== lastSnapshotRef.current.latex) {
+      if (normalizeFieldLatex(field) !== lastSnapshotRef.current.latex) {
         return;
       }
       lastSnapshotRef.current = {
@@ -2276,6 +2283,8 @@ export function FormulaField(props: FormulaFieldProps) {
       propsRef.current.persistentTypingStyle,
     );
     field.resetUndo();
+    // the plain words the formula has as it opens stay as they are (one turned back to letters, or written so)
+    keepPresentWords(field);
     lastSnapshotRef.current = captureFieldSnapshot(field);
     fieldRef.current = field;
     propsRef.current.register(initialLineId, field);
@@ -2503,7 +2512,7 @@ export function FormulaField(props: FormulaFieldProps) {
 
     // 本地输入仅因中文规范化而与 store 等值时，不重建 MathLive 模型；
     // 只更新事务基准，保留当前光标、选区和删除键内部状态。
-    if (normalizeChineseLatex(field.value) === props.latex) {
+    if (normalizeFieldLatex(field) === props.latex) {
       lastSnapshotRef.current = {
         latex: props.latex,
         selection: captureSelection(field),
@@ -3092,7 +3101,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
       if (
         expectedLatex !== null &&
-        normalizeChineseLatex(field.value) !== expectedLatex
+        normalizeFieldLatex(field) !== expectedLatex
       ) {
         field.setValue(expectedLatex, {
           mode: "math",
@@ -3203,7 +3212,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               rawLatexInput(currentField) ||
               !selectionStillMatchesRepair() ||
               (expectedLatex !== null &&
-                normalizeChineseLatex(currentField.value) !== expectedLatex)
+                normalizeFieldLatex(currentField) !== expectedLatex)
             ) {
               return;
             }
@@ -3683,7 +3692,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       before.lines = before.lines.map((line) => {
         const currentField = fieldRefs.current.get(line.id);
         return currentField?.isConnected
-          ? { ...line, latex: normalizeChineseLatex(currentField.value) }
+          ? { ...line, latex: normalizeFieldLatex(currentField) }
           : line;
       });
       const nextLines = nextLinesOf(before.lines);
@@ -3791,10 +3800,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const endField = endLine ? fieldRefs.current.get(endLine.id) : null;
       if (!target || !startLine || !endLine || !startField?.isConnected || !endField?.isConnected) return;
       const part = (field: MathfieldElement, from: number, to: number) =>
-        normalizeChineseLatex(field.getValue(from, to, "latex"));
+        normalizeFieldLatex(field, field.getValue(from, to, "latex"));
       const whole = (lineIndex: number) => {
         const field = fieldRefs.current.get(lines[lineIndex]?.id ?? "");
-        return field?.isConnected ? normalizeChineseLatex(field.value) : lines[lineIndex]?.latex ?? "";
+        return field?.isConnected ? normalizeFieldLatex(field) : lines[lineIndex]?.latex ?? "";
       };
       // what moves: the first row's end, the rows between, the last row's start
       const parts = [part(startField, range.start.offset, startField.lastOffset)];
@@ -3950,7 +3959,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const selection = captureSelection(field);
       const after: ReplaceDocumentEntry["after"] = {
         ...before,
-        lines: [{ ...line, latex: normalizeChineseLatex(field.value) }],
+        lines: [{ ...line, latex: normalizeFieldLatex(field) }],
         activeLineId: lineId,
         selectionByLineId: { [lineId]: selection },
       };
@@ -4004,7 +4013,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         : last.getValue(Math.max(...last.selection.ranges.flat()), last.lastOffset, "latex");
       field.visualTexInsertDocumentEdges(prefix, suffix);
       const caret = captureSelection(field);
-      const latex = normalizeChineseLatex(field.value);
+      const latex = normalizeFieldLatex(field);
       const lines = [...before.lines];
       lines.splice(startIndex, endIndex - startIndex + 1, {
         ...line,
@@ -4175,7 +4184,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!changed) return false;
 
       normalizeCompletedUprightDisplay(field);
-      const afterLatex = normalizeChineseLatex(field.value);
+      const afterLatex = normalizeFieldLatex(field);
       const afterSelection = captureSelection(field);
       field.resetUndo();
 
@@ -4258,7 +4267,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         );
 
       const finishInsertion = () => {
-        const normalizedValue = normalizeChineseLatex(field.value);
+        const normalizedValue = normalizeFieldLatex(field);
         suppressedSuggestionRef.current = {
           lineId: targetLineId,
           value: normalizedValue,
@@ -4444,12 +4453,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      const originalLatex = normalizeChineseLatex(field.value);
-      const leftLatex = normalizeChineseLatex(
-        field.getValue(0, splitStart, "latex"),
+      const originalLatex = normalizeFieldLatex(field);
+      const leftLatex = normalizeFieldLatex(
+        field, field.getValue(0, splitStart, "latex"),
       );
-      const rightLatex = normalizeChineseLatex(
-        field.getValue(splitEnd, field.lastOffset, "latex"),
+      const rightLatex = normalizeFieldLatex(
+        field, field.getValue(splitEnd, field.lastOffset, "latex"),
       );
       const comparable = (value: string) =>
         value
@@ -4568,10 +4577,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
 
       historyManager.commitPendingTransaction();
       const previousField = fieldRefs.current.get(previousLine.id);
-      const previousLatex = normalizeChineseLatex(
-        previousField?.value ?? previousLine.latex,
-      );
-      const currentLatex = normalizeChineseLatex(field.value);
+      const previousLatex = previousField
+        ? normalizeFieldLatex(previousField)
+        : normalizeChineseLatex(previousLine.latex);
+      const currentLatex = normalizeFieldLatex(field);
       const joinOffset = previousField?.lastOffset ?? 0;
       const verifier = new MathfieldElement();
       const commandSeparator =
@@ -4585,7 +4594,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         selectionMode: "after",
         silenceNotifications: true,
       });
-      const mergedLatex = normalizeChineseLatex(verifier.value);
+      // the joined row keeps the words each row kept
+      const keptInBoth = new Set([...(keptWordsOf(previousField) ?? []), ...(keptWordsOf(field) ?? [])]);
+      const mergedLatex = normalizeChineseLatexKeeping(verifier.value, keptInBoth);
+      addKeptWords(previousField, keptInBoth);
 
       const selectionByLineId = Object.fromEntries(
         linesRef.current.flatMap((line) => {
@@ -4976,7 +4988,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           queryRef.current = "";
           setQuery("");
           focusLine(lineId, {
-            latex: normalizeChineseLatex(field.value),
+            latex: normalizeFieldLatex(field),
             selection: captureSelection(field),
           });
         }
@@ -5012,7 +5024,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           queryRef.current = "";
           setQuery("");
           focusLine(lineId, {
-            latex: normalizeChineseLatex(field.value),
+            latex: normalizeFieldLatex(field),
             selection: captureSelection(field),
           });
           return;
@@ -5041,7 +5053,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           queryRef.current = "";
           setQuery("");
           focusLine(lineId, {
-            latex: normalizeChineseLatex(field.value),
+            latex: normalizeFieldLatex(field),
             selection: captureSelection(field),
           });
         }
@@ -5067,7 +5079,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           queryRef.current = "";
           setQuery("");
           focusLine(lineId, {
-            latex: normalizeChineseLatex(field.value),
+            latex: normalizeFieldLatex(field),
             selection: captureSelection(field),
           });
           return;
@@ -5093,7 +5105,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           currentLine &&
             visibleLatex.length === 0 &&
             rawCommandInput.length === 0 &&
-            normalizeChineseLatex(field.value).trim().length === 0 &&
+            normalizeFieldLatex(field).trim().length === 0 &&
             currentLine.latex.trim().length === 0,
         );
 
@@ -5454,11 +5466,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       field.position = field.lastOffset;
       const lastSelection = captureSelection(field);
       field.visualTexInsertDocumentEdges("", suffix);
-      const lastLatex = normalizeChineseLatex(field.value);
+      const lastLatex = normalizeFieldLatex(field);
       field.setValue(values[0], { ...insertOptions });
       field.position = field.lastOffset;
       field.visualTexInsertDocumentEdges(prefix, "");
-      const firstLatex = normalizeChineseLatex(field.value);
+      const firstLatex = normalizeFieldLatex(field);
       const template = before.lines[start.lineIndex];
       const inserted = [
         { ...template, id: target.lineId, latex: firstLatex },
@@ -5541,7 +5553,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!inserted) return;
       setQuery("");
       focusLine(lineId, {
-        latex: normalizeChineseLatex(field.value),
+        latex: normalizeFieldLatex(field),
         selection: captureSelection(field),
       });
     };
@@ -5600,7 +5612,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (!inserted) return false;
       setQuery("");
       focusLine(target.lineId, {
-        latex: normalizeChineseLatex(field.value),
+        latex: normalizeFieldLatex(field),
         selection: captureSelection(field),
       });
       return true;
@@ -6248,15 +6260,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                         refreshSuggestionQuery(
                           lineId,
                           field,
-                          normalizeChineseLatex(field.value),
+                          normalizeFieldLatex(field),
                         )
                       }
                       onSelectionChange={rememberSelectionTarget}
                       onCommitPending={commitPendingVisualTransaction}
                       onFocus={(_lineIndex, field) => {
                         setActiveLine(lineId);
-                        const normalizedValue = normalizeChineseLatex(
-                          field.value,
+                        const normalizedValue = normalizeFieldLatex(
+                          field,
                         );
                         suppressedSuggestionRef.current = {
                           lineId,

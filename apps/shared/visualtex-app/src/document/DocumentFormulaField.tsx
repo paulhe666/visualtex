@@ -13,7 +13,7 @@ import {
   type FormulaSessionCallbacks,
 } from "../../../visualtex-document/src/index.ts";
 import { FormulaField, type FormulaFieldEdit, type FormulaFieldProps } from "../editor/MathEditor";
-import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatex, normalizeFieldLatex } from "../editor/normalizeChineseLatex";
 import { configureMathLiveCompletion } from "../editor/mathLiveKernelCommands";
 import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
 import { topLevelStop } from "../editor/rowPointer";
@@ -252,7 +252,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     const field = fieldRef.current;
     if (!field || incomingRef.current !== null) return;
     finishRawLatex(field);
-    const value = normalizeChineseLatex(field.value);
+    const value = normalizeFieldLatex(field);
     if (value === reportedRef.current) return;
     reportedRef.current = value;
     callbacksRef.current.edit(value, null, captureSelection(field));
@@ -358,7 +358,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     latexOf(range) {
       const field = fieldRef.current;
       if (!field) return "";
-      return normalizeChineseLatex(field.getValue(Math.min(...range), Math.max(...range), "latex"));
+      return normalizeFieldLatex(field, field.getValue(Math.min(...range), Math.max(...range), "latex"));
     },
     withoutRange(range) {
       const result = fieldRef.current?.visualTexDropResult({ remove: range });
@@ -405,10 +405,10 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
 
   /** Run a kernel mutation as one formula edit. */
   const mutate = useCallback((field: MathfieldElement, change: () => boolean) => {
-    const beforeLatex = normalizeChineseLatex(field.value);
+    const beforeLatex = normalizeFieldLatex(field);
     const before = captureSelection(field);
     if (!change()) return false;
-    const afterLatex = normalizeChineseLatex(field.value);
+    const afterLatex = normalizeFieldLatex(field);
     field.resetUndo();
     if (afterLatex !== beforeLatex) {
       reportedRef.current = afterLatex;
@@ -440,8 +440,8 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
       : [Math.min(...field.selection.ranges.flat()), Math.max(...field.selection.ranges.flat())];
     const last = field.lastOffset;
     const atTop = topLevelStop(field, start, "start") === start && topLevelStop(field, end, "end") === end;
-    const before = normalizeChineseLatex(field.getValue(0, start, "latex")).trim();
-    const after = normalizeChineseLatex(field.getValue(end, last, "latex")).trim();
+    const before = normalizeFieldLatex(field, field.getValue(0, start, "latex")).trim();
+    const after = normalizeFieldLatex(field, field.getValue(end, last, "latex")).trim();
     if (!atTop || start <= 0 || end >= last || !before || !after || !callbacksRef.current.split) {
       leaveFormula("new-paragraph");
       return;
@@ -666,7 +666,7 @@ export function DocumentFormulaField({ id, latex, display, entry, fontSize, call
     if (!displayRef.current) field.defaultMode = "inline-math";
     installDocumentFieldStyle(field);
     // the formula as the field reads it: only an edit is reported back (not the field's own form of the same LaTeX)
-    if (normalizeChineseLatex(field.value) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeChineseLatex(field.value);
+    if (normalizeFieldLatex(field) !== reportedRef.current && reportedRef.current === latex) reportedRef.current = normalizeFieldLatex(field);
     if (passiveRef.current) {
       // only shown: the part a selection through the text takes, once the engine has drawn it
       readyRef.current = true;

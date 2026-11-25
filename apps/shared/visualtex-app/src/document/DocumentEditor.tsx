@@ -53,7 +53,7 @@ import { getCustomSymbolRevision, subscribeCustomSymbols } from "../math/customS
 import { DocumentFormulaField, type DocumentFormulaFieldApi } from "./DocumentFormulaField";
 import { stripVisualTexAlignmentMarkers } from "../editor/alignmentMarkers";
 import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
-import { normalizeChineseLatex, normalizeChineseLatexAsWritten } from "../editor/normalizeChineseLatex";
+import { normalizeChineseLatexAsWritten, normalizeFieldLatex } from "../editor/normalizeChineseLatex";
 import { useEditorStore } from "../stores/editorStore";
 import { ContextMenu, type ContextMenuState } from "./MathchaChrome";
 import { copyFormulasAsMathMl, type MathMlFormula } from "../export/mathMlClipboard";
@@ -148,7 +148,7 @@ export function documentMathMlFormulas(state: EditorState, scope: "all" | "line"
     const open = openDocumentFormula();
     if (open && openFormulaId(state) && !open.field.selectionIsCollapsed) {
       const ranges = open.field.selection.ranges.flat();
-      const part = normalizeChineseLatex(open.field.getValue(Math.min(...ranges), Math.max(...ranges), "latex"));
+      const part = normalizeFieldLatex(open.field, open.field.getValue(Math.min(...ranges), Math.max(...ranges), "latex"));
       if (part.trim()) return [{ latex: part, display: open.display, tex: portableFormulaLatex(part) }];
     }
     if (selected) return String(selected.attrs.latex ?? "").trim() ? [nodeMathMl(selected)] : [];

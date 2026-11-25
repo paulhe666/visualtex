@@ -65,7 +65,7 @@ import {
   getDefaultKeyboardLayout,
 } from '../editor/keyboard-layout';
 
-import { onInput, onKeystroke } from './keyboard-input';
+import { onInput, onKeystroke, visualTexForgetGoneWords } from './keyboard-input';
 import { complete } from './autocomplete';
 import {
   requestUpdate,
@@ -157,7 +157,10 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
   visualTexPersistentTypingStyle?: VisualTexPersistentTypingStyle;
 
   /** VisualTeX: the last input judgment, undone by an immediate Backspace */
-  visualTexLastJudgment?: { after: string; revert: string; position: number };
+  /** `script`, `atom`: the key that finished the word was "_" or "^", which opens that script on the converted word `atom` */
+  visualTexLastJudgment?: { after: string; before: string; revert: string; position: number; script?: "_" | "^"; atom?: Atom };
+  /** Words the input judgment leaves as typed in this formula (normalizeChineseLatex keepPresentWords, Backspace after a conversion) */
+  visualTexKeptWords?: Set<string>;
   // VisualTeX kernel: the formula as it was set (opened, loaded or judged). The
   // input judgment leaves it as it is until it is edited: opening a formula or
   // moving the caret in it changes nothing.
@@ -885,8 +888,11 @@ If you are using Vue, this may be because you are using the runtime-only build o
       ) {
         this.model.mode = options.mode;
       }
-      if (options.insertionMode === 'replaceAll')
+      if (options.insertionMode === 'replaceAll') {
         this.visualTexUnjudged = this.model.getValue();
+        // a word kept as typed that the new formula no longer has is forgotten
+        visualTexForgetGoneWords(this, this.visualTexUnjudged);
+      }
       requestUpdate(this);
       // If this is the first insertion, drop the previous (empty) snapshot
       if (!couldUndo) this.undoManager.reset();
