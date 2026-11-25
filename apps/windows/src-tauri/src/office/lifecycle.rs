@@ -952,16 +952,21 @@ pub async fn get_wps_integration_status() -> Result<serde_json::Value, String> {
 /// Why each WPS Office does or does not show VisualTeX (windows_office_diagnosis.ps1 -DiagnosisMode Wps): the
 /// registration in WPS's own registry view, the whitelist, WPS processes older than the registration, and the
 /// add-in created as WPS creates it. Settings > Office and the WPS repair prompt show it under the problem.
+/// `ask_wps` (Settings > Office > Check WPS) also asks a hidden WPS whether it lists and connects the add-ins
+/// and searches WPS's settings for them; that takes several seconds.
 #[tauri::command]
-pub async fn diagnose_wps_integration(app: AppHandle) -> Result<serde_json::Value, String> {
+pub async fn diagnose_wps_integration(
+    app: AppHandle,
+    ask_wps: Option<bool>,
+) -> Result<serde_json::Value, String> {
     #[cfg(target_os = "windows")]
     {
+        let mut arguments = vec!["-DiagnosisMode".to_string(), "Wps".to_string()];
+        if ask_wps.unwrap_or(false) {
+            arguments.push("-AskWps".to_string());
+        }
         let output = tauri::async_runtime::spawn_blocking(move || {
-            run_windows_script(
-                &app,
-                "windows_office_diagnosis.ps1",
-                &["-DiagnosisMode".to_string(), "Wps".to_string()],
-            )
+            run_windows_script(&app, "windows_office_diagnosis.ps1", &arguments)
         })
         .await
         .map_err(|error| format!("Unable to diagnose WPS Office: {error}"))??;
@@ -976,7 +981,7 @@ pub async fn diagnose_wps_integration(app: AppHandle) -> Result<serde_json::Valu
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = app;
+        let _ = (app, ask_wps);
         Err("WPS Office diagnosis is available only on Windows".to_string())
     }
 }

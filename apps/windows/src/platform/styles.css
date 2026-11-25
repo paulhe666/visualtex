@@ -471,6 +471,14 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 9px;
 }
 
+.office-status-card-wide {
+  grid-column: 1 / -1;
+}
+
+.office-status-unchecked {
+  color: var(--text-faint);
+}
+
 .office-diagnostic-meta {
   display: flex;
   flex-wrap: wrap;

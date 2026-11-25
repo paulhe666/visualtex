@@ -5,11 +5,13 @@ import {
   ChevronDown,
   CircleAlert,
   CircleHelp,
+  Copy,
   Download,
   ExternalLink,
   FolderOpen,
   Play,
   RefreshCw,
+  Search,
   Settings2,
   ShieldAlert,
   Square,
@@ -30,7 +32,6 @@ import {
   type OfficeCompanionStatus,
   type OfficePlatformStatus,
   type WindowsOfficeMode,
-  type WpsHostLoad,
   type WpsIntegrationStatus,
 } from "./windowsOfficeStatusValidation";
 import { wpsProblem } from "./wpsProblem";
@@ -38,8 +39,10 @@ import {
   decodeWpsDiagnosis,
   wpsDiagnosisAllFine,
   wpsDiagnosisLines,
+  wpsReportItems,
   type WpsDiagnosis,
 } from "./wpsDiagnosis";
+import { hostLoadText, officeDiagnosticReport } from "./officeDiagnosticReport";
 import { officeScriptReason } from "./officeScriptReason";
 
 export type { WindowsOfficeMode } from "./windowsOfficeStatusValidation";
@@ -63,14 +66,6 @@ function StatusLine({ ok, children }: { ok: boolean; children: React.ReactNode }
   );
 }
 
-function hostLoadText(load: WpsHostLoad | null, host: string, isEn: boolean) {
-  if (!load) return isEn ? `${host} has not loaded VisualTeX` : `${host}尚未加载 VisualTeX`;
-  const off = load.enabled ? "" : isEn ? " (turned off)" : "（未启用）";
-  return isEn
-    ? `${host} loaded VisualTeX${off} · ${load.at}`
-    : `${host}已加载 VisualTeX${off} · ${load.at}`;
-}
-
 export function WindowsOfficeIntegrationSettings() {
   const isEn = useEditorStore((state) => state.language) === "en";
   const [status, setStatus] = useState<OfficePlatformStatus | null>(null);
@@ -78,6 +73,9 @@ export function WindowsOfficeIntegrationSettings() {
   const [wps, setWps] = useState<WpsIntegrationStatus | null>(null);
   // why WPS does not show VisualTeX, looked up when the WPS card reports a problem
   const [wpsDiagnosis, setWpsDiagnosis] = useState<WpsDiagnosis | null>(null);
+  // the full WPS diagnosis with WPS's own answer (Advanced diagnostics > Check WPS)
+  const [wpsCheck, setWpsCheck] = useState<WpsDiagnosis | null>(null);
+  const [reportCopied, setReportCopied] = useState(false);
   const [renderer, setRenderer] = useState<NativeRenderStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -154,6 +152,8 @@ export function WindowsOfficeIntegrationSettings() {
           command !== "open_powerpoint" &&
           command !== "open_windows_office_logs"
         ) {
+          // a repair or another change makes the last WPS check out of date
+          setWpsCheck(null);
           await refresh();
         }
         return true;
@@ -283,18 +283,64 @@ export function WindowsOfficeIntegrationSettings() {
   }, [wps, wpsNeedsDiagnosis]);
   // the precise causes replace the summary; with none found, the summary says what is wrong and that the
   // registration, the whitelist and the load test are fine
+  // Check WPS loads the add-in to hear WPS's answer, which renews its load record: the card then shows what
+  // the check found instead of "Ready"
+  const wpsCheckCauses = wpsCheck ? wpsDiagnosisLines(wpsCheck, isEn) : [];
   const wpsLines = (() => {
-    if (!wpsIssue) return [];
-    if (!wpsDiagnosis) return [wpsIssue.text];
-    const causes = wpsDiagnosisLines(wpsDiagnosis, isEn);
+    if (!wpsIssue) return wpsCheckCauses;
+    const diagnosis = wpsCheck ?? wpsDiagnosis;
+    if (!diagnosis) return [wpsIssue.text];
+    const causes = wpsDiagnosisLines(diagnosis, isEn);
     return causes.length > 0 ? causes : [wpsIssue.text, wpsDiagnosisAllFine(isEn)];
   })();
+  const wpsCheckItems = wpsCheck ? wpsReportItems(wpsCheck, isEn) : [];
+  const wpsCheckOk = wpsCheckItems.every((item) => item.ok);
 
   const diagnosticMessage =
     message ||
     (!verificationPending ? status?.lastError : null) ||
     (status && !status.mathtypeFontsHealthy ? status.mathtypeFontsProblem : null) ||
     companion?.lastError;
+
+  // asks a hidden WPS too (several seconds); the add-ins' load records it updates are read again afterwards
+  const checkWps = async () => {
+    setBusy("wps-check");
+    setMessage("");
+    try {
+      setWpsCheck(decodeWpsDiagnosis(await invoke<unknown>("diagnose_wps_integration", { askWps: true })));
+    } catch (error) {
+      setMessage(errorMessage(error, isEn ? "Unable to check WPS." : "无法检查 WPS。"));
+    } finally {
+      setBusy(null);
+    }
+    void refresh();
+  };
+
+  const copyReport = async () => {
+    const text = officeDiagnosticReport({
+      isEn,
+      title: statusCopy.title,
+      installHealthy,
+      runtimeHealthy,
+      status,
+      companion,
+      renderer,
+      wps,
+      wpsLines,
+      wpsCheck,
+      message: diagnosticMessage ?? "",
+    });
+    try {
+      // Windows' clipboard directly: the page's clipboard refuses while the window is not focused
+      await invoke("write_windows_ocr_clipboard_text", { text }).catch(() =>
+        navigator.clipboard.writeText(text),
+      );
+      setReportCopied(true);
+      window.setTimeout(() => setReportCopied(false), 1600);
+    } catch (error) {
+      setMessage(errorMessage(error, isEn ? "Unable to copy the report." : "无法复制报告。"));
+    }
+  };
 
   const openRuntimeVerification = () => {
     setMessage("");
@@ -526,8 +572,8 @@ export function WindowsOfficeIntegrationSettings() {
           <header>
             <strong>WPS Office</strong>
             {wps.installations.length > 0 && (
-              <StatusLine ok={wpsIssue === null}>
-                {wpsIssue === null
+              <StatusLine ok={wpsLines.length === 0}>
+                {wpsLines.length === 0
                   ? isEn
                     ? "Ready"
                     : "正常"
@@ -661,7 +707,7 @@ export function WindowsOfficeIntegrationSettings() {
               </details>
             </>
           )}
-          {wpsIssue && (
+          {wpsLines.length > 0 && (
             <div className="office-settings-warning" role="alert">
               <ShieldAlert size={15} />
               <span className="office-settings-diagnostic">
@@ -779,6 +825,34 @@ export function WindowsOfficeIntegrationSettings() {
                 {isEn ? "MathType renderer service" : "MathType 渲染服务"}
               </StatusLine>
             </article>
+
+            {wps && wps.installations.length > 0 && (
+              <article className="office-status-card office-status-card-wide">
+                <header>
+                  <strong>WPS</strong>
+                  {wpsCheck ? (
+                    <StatusLine ok={wpsCheckOk}>
+                      {wpsCheckOk
+                        ? isEn
+                          ? "Ready"
+                          : "正常"
+                        : isEn
+                          ? "Needs attention"
+                          : "需要处理"}
+                    </StatusLine>
+                  ) : (
+                    <span className="office-status-unchecked">
+                      {isEn ? "Not checked" : "未检查"}
+                    </span>
+                  )}
+                </header>
+                {wpsCheckItems.map((item, index) => (
+                  <StatusLine key={index} ok={item.ok}>
+                    {item.text}
+                  </StatusLine>
+                ))}
+              </article>
+            )}
           </div>
 
           <div className="office-diagnostic-meta">
@@ -823,6 +897,38 @@ export function WindowsOfficeIntegrationSettings() {
             >
               <FolderOpen size={15} />
               {isEn ? "Open logs" : "打开诊断日志"}
+            </button>
+            {wps && wps.installations.length > 0 && (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busy !== null}
+                onClick={() => void checkWps()}
+              >
+                <Search size={15} />
+                {busy === "wps-check"
+                  ? isEn
+                    ? "Checking WPS…"
+                    : "正在检查 WPS…"
+                  : isEn
+                    ? "Check WPS"
+                    : "检查 WPS"}
+              </button>
+            )}
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy === "wps-check"}
+              onClick={() => void copyReport()}
+            >
+              <Copy size={15} />
+              {reportCopied
+                ? isEn
+                  ? "Copied"
+                  : "已复制"
+                : isEn
+                  ? "Copy report"
+                  : "复制报告"}
             </button>
             <button
               type="button"

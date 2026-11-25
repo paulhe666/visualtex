@@ -28,10 +28,30 @@ export interface WpsInstallationDiagnosis {
   staleProcesses: { id: number; name: string; started: string }[];
 }
 
+/** What a WPS started for the question (hidden) says about one add-in: Settings > Office > Check WPS. */
+export interface WpsAnswer {
+  host: "writer" | "presentation";
+  /** WPS's COM add-in list has the add-in */
+  listed: boolean;
+  /** WPS connected it by itself */
+  connected: boolean;
+  /** when it had not: whether it connected when asked; null when not asked */
+  askedConnected: boolean | null;
+  /** WPS's error when asked to connect it */
+  answer: string;
+  /** the question failed: WPS did not start or did not answer in time */
+  error: string;
+}
+
 export interface WpsDiagnosis {
   installations: WpsInstallationDiagnosis[];
   /** WPS's own lists of add-ins it stopped loading that name VisualTeX ("WPS\\AddinsLF: {CLSID}") */
   wpsRecords: string[];
+  /** only after Check WPS */
+  wpsAnswers?: WpsAnswer[];
+  /** other registry values and settings files of WPS that name the add-ins; only after Check WPS */
+  wpsSettings?: string[];
+  checkedAt?: string;
   error?: string;
 }
 
@@ -48,8 +68,23 @@ function text(value: unknown) {
 export function decodeWpsDiagnosis(value: unknown): WpsDiagnosis {
   const record = (value ?? {}) as Record<string, unknown>;
   return {
-    error: text(record.error) || undefined,
+    error: text(record.error) || text(record.wpsAnswersError) || undefined,
     wpsRecords: asArray(record.wpsRecords).map(text).filter(Boolean),
+    wpsAnswers: "wpsAnswers" in record
+      ? asArray(record.wpsAnswers).map((entry) => {
+          const answer = (entry ?? {}) as Record<string, unknown>;
+          return {
+            host: answer.host === "presentation" ? "presentation" : "writer",
+            listed: answer.listed === true,
+            connected: answer.connected === true,
+            askedConnected: typeof answer.askedConnected === "boolean" ? answer.askedConnected : null,
+            answer: text(answer.answer),
+            error: text(answer.error),
+          } satisfies WpsAnswer;
+        })
+      : undefined,
+    wpsSettings: "wpsSettings" in record ? asArray(record.wpsSettings).map(text).filter(Boolean) : undefined,
+    checkedAt: text(record.checkedAt) || undefined,
     installations: asArray(record.installations).map((entry) => {
       const installation = (entry ?? {}) as Record<string, unknown>;
       return {
@@ -155,7 +190,95 @@ export function wpsDiagnosisLines(diagnosis: WpsDiagnosis, isEn: boolean): strin
         : `WPS${wpsZh} 从 ${since} 起一直在运行，早于 VisualTeX 为它注册加载项（${installation.registeredAt}）。完全退出 WPS（包括通知区域中的 WPS）后重新打开。`);
     }
   }
+  for (const answer of diagnosis.wpsAnswers ?? []) {
+    if (answer.listed && answer.connected) continue;
+    lines.push(`${wpsAnswerLabel(answer.host, isEn)}${isEn ? ": " : "："}${wpsAnswerText(answer, isEn)}`);
+  }
   return lines;
+}
+
+function wpsAnswerLabel(host: WpsAnswer["host"], isEn: boolean) {
+  return host === "writer"
+    ? isEn ? "WPS Writer COM add-in" : "WPS 文字 COM 加载项"
+    : isEn ? "WPS Presentation COM add-in" : "WPS 演示 COM 加载项";
+}
+
+function wpsAnswerText(answer: WpsAnswer, isEn: boolean) {
+  if (answer.error) return isEn ? `WPS could not be asked: ${answer.error}` : `无法询问 WPS：${answer.error}`;
+  if (!answer.listed) return isEn ? "not listed" : "未列出";
+  if (answer.connected) return isEn ? "connected" : "已连接";
+  if (answer.askedConnected) return isEn ? "not connected; connects when asked" : "未连接；请求时可以连接";
+  return isEn
+    ? `not connected; WPS answered: ${answer.answer || "no reason"}`
+    : `未连接；WPS 回答：${answer.answer || "无说明"}`;
+}
+
+export interface WpsReportItem {
+  ok: boolean;
+  text: string;
+}
+
+/**
+ * Every check of the WPS diagnosis, passed or not, for the WPS card under Settings > Office > Advanced
+ * diagnostics and the copied report: registration, whitelist and load test per host, WPS processes older
+ * than the registration, what WPS itself answers, its stop-loading lists and other entries naming VisualTeX.
+ */
+export function wpsReportItems(diagnosis: WpsDiagnosis, isEn: boolean): WpsReportItem[] {
+  const items: WpsReportItem[] = [];
+  const colon = isEn ? ": " : "：";
+  if (diagnosis.error) items.push({ ok: false, text: (isEn ? "Diagnosis failed: " : "诊断失败：") + diagnosis.error });
+  const several = diagnosis.installations.length > 1;
+  for (const installation of diagnosis.installations) {
+    const wps = several ? ` ${bits(installation.architecture)}-bit ${installation.version}` : "";
+    const wpsZh = several ? ` ${bits(installation.architecture)} 位 ${installation.version}` : "";
+    for (const host of installation.hosts) {
+      const name = isEn
+        ? `${host.host === "writer" ? "WPS Writer" : "WPS Presentation"}${wps}`
+        : `${host.host === "writer" ? "WPS 文字" : "WPS 演示"}${wpsZh}`;
+      if (host.state !== "ok") {
+        const single: WpsDiagnosis = {
+          installations: [{ ...installation, hosts: [host], staleProcesses: [] }],
+          wpsRecords: [],
+        };
+        for (const line of wpsDiagnosisLines(single, isEn)) items.push({ ok: false, text: line });
+        continue;
+      }
+      items.push({ ok: true, text: isEn ? `${name} registration` : `${name}注册信息` });
+      items.push({ ok: host.whitelisted, text: isEn ? `${name} in the WPS add-in whitelist` : `${name}加载项白名单` });
+      const loadTest = isEn ? `${name} load test` : `${name}加载测试`;
+      items.push(host.activation === "ok"
+        ? { ok: true, text: loadTest }
+        : { ok: false, text: `${loadTest}${colon}${host.activation || (isEn ? "not run" : "未运行")}` });
+    }
+    if (installation.staleProcesses.length > 0) {
+      const since = installation.staleProcesses.map((process) => process.started).sort()[0];
+      items.push({
+        ok: false,
+        text: isEn
+          ? `WPS${wps} running since ${since}, before the add-ins were registered (${installation.registeredAt})`
+          : `WPS${wpsZh} 自 ${since} 起运行，早于加载项注册（${installation.registeredAt}）`,
+      });
+    }
+  }
+  for (const answer of diagnosis.wpsAnswers ?? []) {
+    items.push({
+      ok: answer.listed && answer.connected && !answer.error,
+      text: `${wpsAnswerLabel(answer.host, isEn)}${colon}${wpsAnswerText(answer, isEn)}`,
+    });
+  }
+  const records = isEn ? "WPS stop-loading lists" : "WPS 停止加载记录";
+  items.push({
+    ok: diagnosis.wpsRecords.length === 0,
+    text: `${records}${colon}${diagnosis.wpsRecords.length === 0 ? (isEn ? "none" : "无") : diagnosis.wpsRecords.join(isEn ? "; " : "；")}`,
+  });
+  if (diagnosis.wpsSettings) {
+    const other = isEn ? "Other WPS entries naming VisualTeX" : "WPS 其他记录";
+    items.push({
+      ok: diagnosis.wpsSettings.length === 0,
+      text: `${other}${colon}${diagnosis.wpsSettings.length === 0 ? (isEn ? "none" : "无") : diagnosis.wpsSettings.join(isEn ? "; " : "；")}`,
+    });
+  }
+  return items;
 }
 
 /**

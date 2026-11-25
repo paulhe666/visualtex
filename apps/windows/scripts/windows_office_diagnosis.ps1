@@ -7,7 +7,9 @@ param(
     [ValidateSet('', 'InstallFolder', 'PreviousUninstall', 'Wps')][string]$DiagnosisMode = '',
     [string]$DiagnosisPath = '',
     # The result, for the installer: written in the system code page, which NSIS reads.
-    [string]$DiagnosisResultPath = ''
+    [string]$DiagnosisResultPath = '',
+    # With -DiagnosisMode Wps (Settings > Office > Check WPS): also ask WPS itself and search its settings.
+    [switch]$AskWps
 )
 
 # The processes that have one of the files open or loaded (Windows' Restart Manager): Id, Name (the
@@ -500,6 +502,171 @@ function Get-WpsDiagnosis {
     return [ordered]@{ installations = $installations; wpsRecords = $records }
 }
 
+# The user's own on/off setting of an add-in (HKCU LoadBehavior, which WPS's COM add-ins dialog writes), to put
+# back after asking WPS to connect it: the check must not switch an add-in on that the user switched off.
+function Get-UserAddinSetting([string]$Office, [string]$ProgId) {
+    $path = "Software\Microsoft\Office\$Office\Addins\$ProgId"
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $key = $base.OpenSubKey($path, $false)
+        if ($null -eq $key) { return @{ Path = $path; Exists = $false; LoadBehavior = $null } }
+        try { return @{ Path = $path; Exists = $true; LoadBehavior = $key.GetValue('LoadBehavior', $null) } } finally { $key.Dispose() }
+    } finally { $base.Dispose() }
+}
+
+function Restore-UserAddinSetting($Setting) {
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        if (-not $Setting.Exists) { $base.DeleteSubKeyTree($Setting.Path, $false); return }
+        $key = $base.CreateSubKey($Setting.Path)
+        try {
+            if ($null -eq $Setting.LoadBehavior) { $key.DeleteValue('LoadBehavior', $false) }
+            else { $key.SetValue('LoadBehavior', [int]$Setting.LoadBehavior, [Microsoft.Win32.RegistryValueKind]::DWord) }
+        } finally { $key.Dispose() }
+    } finally { $base.Dispose() }
+}
+
+# What WPS itself says about VisualTeX's add-ins: a WPS started for the question (hidden; WPS windows the user
+# has open are separate instances and stay untouched) lists the add-in or not, has connected it or not, and when
+# it has not, what it answers when asked to connect it. Asking changes nothing: the user's on/off setting is put
+# back afterwards. Each question runs in its own PowerShell with a time limit, so a WPS dialog cannot hang the
+# diagnosis; hidden WPS processes the question leaves behind are closed.
+function Get-WpsAnswers($Installations) {
+    $installations = @($Installations)
+    if ($installations.Count -eq 0) { return @() }
+    $architecture = if (@($installations | Where-Object { $_.architecture -ne 'x86' }).Count -gt 0) { 'x64' } else { 'x86' }
+    $query = @'
+param([string]$ApplicationId, [string]$ProgId, [string]$ResultPath)
+$result = [ordered]@{ listed = $false; connected = $false; askedConnected = $null; answer = ''; error = '' }
+$app = $null
+try {
+    $app = New-Object -ComObject $ApplicationId
+    $item = $null
+    try { $item = $app.COMAddIns.Item($ProgId) } catch { }
+    if ($null -ne $item) {
+        $result.listed = $true
+        $result.connected = [bool]$item.Connect
+        if (-not $result.connected) {
+            try { $item.Connect = $true; $result.askedConnected = [bool]$item.Connect }
+            catch { $result.askedConnected = $false; $result.answer = $_.Exception.Message }
+        }
+    }
+} catch {
+    $result.error = $_.Exception.Message
+} finally {
+    if ($null -ne $app) { try { $app.Quit() } catch { } }
+}
+[IO.File]::WriteAllText($ResultPath, (ConvertTo-Json $result -Compress), (New-Object Text.UTF8Encoding($false)))
+'@
+    $queryFile = Join-Path ([IO.Path]::GetTempPath()) ('visualtex-wps-question-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+    [IO.File]::WriteAllText($queryFile, $query, [Text.Encoding]::ASCII)
+    $answers = @()
+    try {
+        foreach ($entry in @(
+            @{ Host = 'writer'; App = 'KWPS.Application'; Office = 'Word'; ProgId = 'VisualTeX.WordVsto' },
+            @{ Host = 'presentation'; App = 'KWpp.Application'; Office = 'PowerPoint'; ProgId = 'VisualTeX.PowerPointVsto' }
+        )) {
+            $answer = [ordered]@{ host = $entry.Host; listed = $false; connected = $false; askedConnected = $null; answer = ''; error = '' }
+            $setting = Get-UserAddinSetting $entry.Office $entry.ProgId
+            $existing = @(Get-Process -Name wps, wpp, et -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+            $resultPath = $queryFile + '.' + $entry.Host + '.json'
+            try {
+                $child = Start-Process -FilePath (Get-PowerShellOfBitness $architecture) -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $queryFile + '"'), $entry.App, $entry.ProgId, ('"' + $resultPath + '"')) -WindowStyle Hidden -PassThru
+                if (-not $child.WaitForExit(90000)) {
+                    try { $child.Kill() } catch { }
+                    $answer.error = 'WPS did not answer within 90 seconds'
+                } elseif (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+                    $parsed = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    foreach ($name in 'listed', 'connected', 'askedConnected', 'answer', 'error') { $answer[$name] = $parsed.$name }
+                } else {
+                    $answer.error = "PowerShell exited with $($child.ExitCode)"
+                }
+            } catch {
+                $answer.error = $_.Exception.Message
+            } finally {
+                Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds 800
+                # only windowless WPS processes started during the question: never a WPS the user opened
+                foreach ($left in @(Get-Process -Name wps, wpp, et -ErrorAction SilentlyContinue | Where-Object { $existing -notcontains $_.Id -and $_.MainWindowHandle -eq [IntPtr]::Zero })) {
+                    try { Stop-Process -Id $left.Id -Force -ErrorAction Stop } catch { }
+                }
+                $now = Get-UserAddinSetting $entry.Office $entry.ProgId
+                if ($now.Exists -ne $setting.Exists -or "$($now.LoadBehavior)" -ne "$($setting.LoadBehavior)") {
+                    try { Restore-UserAddinSetting $setting } catch { $answer.error = 'WPS changed the add-in setting and it could not be put back: ' + $_.Exception.Message }
+                }
+            }
+            $answers += $answer
+        }
+    } finally {
+        Remove-Item -LiteralPath $queryFile -Force -ErrorAction SilentlyContinue
+    }
+    return $answers
+}
+
+# Places in WPS's own settings, other than its add-in whitelist and the stop-loading lists above, that name
+# VisualTeX's add-ins by ProgID or CLSID: registry values under HKCU\Software\Kingsoft and WPS's settings files
+# (WPS keeps its settings database open, so files are read shared). Caches, cloud files and fonts are skipped.
+function Get-WpsSettingsMentions {
+    $pattern = 'F1B68342-F9C6-4E7D-A9C6-A2F64C3558A1|7E586D2D-57B0-4D14-AB24-EBA9021A5E6D|VisualTeX\.WordVsto|VisualTeX\.PowerPointVsto'
+    $covered = '\\(AddinsWL|AddinsBL|AddinsCL|AddinsLF|DiagDisabledAddins)$'
+    $mentions = @()
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $stack = New-Object System.Collections.Stack
+        $stack.Push('Software\Kingsoft')
+        $visited = 0
+        while ($stack.Count -gt 0 -and $visited -lt 60000) {
+            $path = [string]$stack.Pop(); $visited++
+            if ($path -match 'RecentFiles|openfilelist|hookdns|PathMemory') { continue }
+            $key = $null
+            try { $key = $base.OpenSubKey($path, $false) } catch { }
+            if ($null -eq $key) { continue }
+            try {
+                if ($path -notmatch $covered) {
+                    foreach ($name in $key.GetValueNames()) {
+                        $value = $key.GetValue($name)
+                        $text = if ($value -is [byte[]]) { [Text.Encoding]::Unicode.GetString($value) + ' ' + [Text.Encoding]::ASCII.GetString($value) } else { [string]$value }
+                        if ($name -match $pattern -or $text -match $pattern) { $mentions += ('HKCU\' + $path + ': ' + $(if ($name) { $name } else { '(default)' })) }
+                    }
+                }
+                foreach ($sub in $key.GetSubKeyNames()) { $stack.Push($path + '\' + $sub) }
+            } finally { $key.Dispose() }
+        }
+    } finally { $base.Dispose() }
+    $skip = '^(WPS Office\\[0-9.]+|office6\\cache|WPS Cloud Files|personalofflinecache|hiddenfonts|wpsphoto\+|PDF|log|.*\\addons\\pool|.*\\log)$'
+    foreach ($root in @((Join-Path $env:APPDATA 'kingsoft'), (Join-Path $env:LOCALAPPDATA 'Kingsoft'))) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $folders = New-Object System.Collections.Stack
+        $folders.Push($root)
+        while ($folders.Count -gt 0) {
+            $folder = [string]$folders.Pop()
+            try {
+                foreach ($sub in [IO.Directory]::GetDirectories($folder)) {
+                    $relative = $sub.Substring($root.Length).TrimStart('\')
+                    if ($relative -notmatch $skip -and -not ([IO.File]::GetAttributes($sub) -band [IO.FileAttributes]::ReparsePoint)) { $folders.Push($sub) }
+                }
+                foreach ($path in [IO.Directory]::GetFiles($folder)) {
+                    $file = New-Object IO.FileInfo($path)
+                    $wanted = $file.Length -gt 0 -and (($file.Length -lt 32MB -and $file.Extension -match '^\.(dat|db|data|json|ini|xml|cfg|conf|kcfg|txt|mdb)$') -or $file.Length -lt 1MB)
+                    if (-not $wanted) { continue }
+                    $bytes = $null
+                    try {
+                        $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+                        try { $bytes = New-Object byte[] $stream.Length; [void]$stream.Read($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+                    } catch { continue }
+                    $text = [Text.Encoding]::ASCII.GetString($bytes) + ' ' + [Text.Encoding]::Unicode.GetString($bytes)
+                    if ($text -match $pattern) {
+                        $what = @([regex]::Matches($text, $pattern + '|user_remove|user_enable') | ForEach-Object { $_.Value } | Select-Object -Unique) -join ', '
+                        $shown = if ($env:USERPROFILE) { $path.Replace($env:USERPROFILE, '%USERPROFILE%') } else { $path }
+                        $mentions += ('{0} ({1:yyyy-MM-dd HH:mm}): {2}' -f $shown, $file.LastWriteTime, $what)
+                    }
+                }
+            } catch { }
+        }
+    }
+    return $mentions
+}
+
 function Write-DiagnosisResult([string[]]$Lines) {
     if ([string]::IsNullOrWhiteSpace($DiagnosisResultPath)) {
         foreach ($line in $Lines) { Write-Output $line }
@@ -521,9 +688,15 @@ if ($DiagnosisMode -eq 'InstallFolder') {
     exit 10
 }
 if ($DiagnosisMode -eq 'Wps') {
-    # JSON on stdout for VisualTeX (Settings > Office, the WPS repair prompt).
+    # JSON on stdout for VisualTeX (Settings > Office, the WPS repair prompt). -AskWps (Settings > Office > Check
+    # WPS) adds what WPS itself answers and the other places in WPS's settings that name the add-ins.
     $diagnosis = [ordered]@{ installations = @() }
     try { $diagnosis = Get-WpsDiagnosis } catch { $diagnosis.error = $_.Exception.Message }
+    if ($AskWps) {
+        try { $diagnosis.wpsAnswers = @(Get-WpsAnswers $diagnosis.installations) } catch { $diagnosis.wpsAnswersError = $_.Exception.Message }
+        try { $diagnosis.wpsSettings = @(Get-WpsSettingsMentions) } catch { $diagnosis.wpsSettings = @() }
+        $diagnosis.checkedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    }
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
     Write-Output (ConvertTo-Json $diagnosis -Depth 6 -Compress)
     exit 0

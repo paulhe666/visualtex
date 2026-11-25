@@ -110,6 +110,7 @@
     "test:windows-office-diagnostics": "node scripts/windows_office_diagnostics_smoke.mjs",
     "test:windows-office-paths": "node scripts/run_windows_powershell.mjs scripts/test_windows_office_path_resolution.ps1",
     "test:windows-office-status-safety": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/windows_office_status_payload_safety_regression.mts",
+    "test:wps-diagnosis-report": "tsx --import ../shared/visualtex-app/testing/node-loader.mjs scripts/wps_diagnosis_report_regression.mts",
     "test:windows-resource-ownership": "powershell.exe -NoProfile -File scripts/test_clipboard_ownership.ps1",
     "verify:embedded-frontend": "node scripts/verify_embedded_frontend_assets.mjs",
     "verify:frontend-dist": "node scripts/verify_frontend_dist.mjs",
