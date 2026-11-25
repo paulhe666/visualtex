@@ -492,6 +492,11 @@ Get-VerifiedDownload $PythonArchiveUrl $PythonArchive $PythonArchiveSha256
 Get-VerifiedDownload $PipWheelUrl $PipWheel $PipWheelSha256
 $Vcomp140Source = Resolve-Vcomp140Dll
 
+# Work folders earlier runs could not remove are removed here; ones younger than 12 hours are left alone because
+# another checkout may be building right now.
+Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter "visualtex-ocr-python-build-*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CreationTime -lt (Get-Date).AddHours(-12) } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 $workRoot = Join-Path $env:TEMP ("visualtex-ocr-python-build-" + [guid]::NewGuid().ToString("N"))
 $runtimeRoot = Join-Path $workRoot "runtime"
 $validationRoot = Join-Path $workRoot "validation"
@@ -597,5 +602,10 @@ try {
     Write-Host "Wheelhouse bytes: $((Get-ChildItem -LiteralPath $OutputWheelhouse -File | Measure-Object Length -Sum).Sum)"
     Write-Host "Offline validation: Python $PythonVersion x64, app-local Microsoft OpenMP, PaddlePaddle $PaddleVersion, PaddleOCR $PaddleOcrVersion, tokenizers $TokenizersVersion, FormulaRecognition available"
 } finally {
-    Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+    # The validation Python can keep paddle\libs\phi.dll open for a moment after it exits: retry before giving up.
+    for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $workRoot); $attempt++) {
+        Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $workRoot) { Start-Sleep -Milliseconds 500 }
+    }
+    if (Test-Path -LiteralPath $workRoot) { Write-Warning "Could not remove the OCR build folder $workRoot" }
 }
