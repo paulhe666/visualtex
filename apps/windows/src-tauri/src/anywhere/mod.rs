@@ -12,6 +12,7 @@
 //! the formula ends, however it ends, the TIP gives the field the input method it had back.
 
 mod deliver;
+mod english_input;
 mod hotkey;
 mod ime;
 mod panel;
@@ -1600,6 +1601,35 @@ pub(crate) fn anywhere_formula_shortcuts(shortcuts: Vec<hotkey::FormulaShortcut>
 #[tauri::command]
 pub(crate) fn anywhere_status() -> AnywhereStatus {
     AnywhereStatus { accessibility_trusted: true, shortcut: hotkey::shortcut_label(), input_method: ime::is_installed() }
+}
+
+/// Settings > Keyboard shortcuts > Formula input method: whether a formula the shortcut opens is typed in English
+/// (english_input.rs).
+#[tauri::command]
+pub(crate) fn anywhere_english_input(app: AppHandle) -> bool {
+    english_input::enabled(&app)
+}
+
+#[tauri::command]
+pub(crate) fn anywhere_set_english_input(app: AppHandle, enabled: bool) -> Result<(), String> {
+    english_input::set_enabled(&app, enabled)
+}
+
+/// A formula the shortcut opened in the main window's document (document/documentFormulaShortcut.ts): `english`, the
+/// input method to English while it is open when the setting says so (true: it is English now, and was not before);
+/// else the mode it had, back.
+#[tauri::command]
+pub(crate) async fn anywhere_own_formula_input(app: AppHandle, english: bool) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if english {
+            english_input::select(&app)
+        } else {
+            english_input::restore();
+            false
+        }
+    })
+    .await
+    .map_err(|error| format!("Input method task failed: {error}"))
 }
 
 #[cfg(test)]

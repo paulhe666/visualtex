@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, RotateCcw, Sigma, Trash2 } from "lucide-react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Languages, Pencil, Plus, RotateCcw, Sigma, Trash2 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import { configureAnywhereGlobalHotkey, useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
 import { useOfficeHotkeyOwner } from "@platform/officeHotkeyOwner";
@@ -23,7 +24,8 @@ import {
  * Settings > Keyboard shortcuts > Formula input method (VisualTeX Anywhere):
  * the system-wide shortcut that opens and closes a formula in any
  * application, and the shortcuts used while a formula is open (output
- * format, screenshot OCR). Click the pencil and press the keys (Esc cancels).
+ * format, screenshot OCR). Click the pencil and press the keys (Esc cancels). Last, whether a formula the shortcut
+ * opens is typed in English (the backend keeps it: anywhere/english_input.rs; the desktop app only).
  */
 export function AnywhereHotkeySettingsSection() {
   const language = useEditorStore((state) => state.language);
@@ -33,6 +35,17 @@ export function AnywhereHotkeySettingsSection() {
   const officeHotkeyOwner = useOfficeHotkeyOwner();
   const [capturing, setCapturing] = useState<AnywhereHotkeyAction | null>(null);
   const [message, setMessage] = useState("");
+  const [englishInput, setEnglishInput] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (isTauri()) void invoke<boolean>("anywhere_english_input").then(setEnglishInput, () => undefined);
+  }, []);
+  const changeEnglishInput = (on: boolean) => {
+    setEnglishInput(on);
+    void invoke("anywhere_set_english_input", { enabled: on }).catch((error) => {
+      setEnglishInput(!on);
+      setMessage(error instanceof Error ? error.message : String(error));
+    });
+  };
   const labelOf = (id: AnywhereHotkeyAction) => {
     const action = anywhereHotkeyDefinition(id);
     return isEn ? action.labelEn : action.labelZh;
@@ -202,6 +215,18 @@ export function AnywhereHotkeySettingsSection() {
             </article>
           );
         })}
+        {englishInput !== null && (
+          <label className="office-hotkey-action-row anywhere-english-input-row" data-anywhere-english-input>
+            <div className="office-hotkey-action-icon" aria-hidden="true">
+              <Languages size={18} />
+            </div>
+            <div className="formula-hotkey-binding-copy">
+              <strong>{isEn ? "Switch to English input in formulas" : "进入公式时切换到英文输入"}</strong>
+            </div>
+            <input type="checkbox" checked={englishInput} onChange={(event) => changeEnglishInput(event.target.checked)} />
+            <span className="switch-control" />
+          </label>
+        )}
       </div>
     </section>
   );

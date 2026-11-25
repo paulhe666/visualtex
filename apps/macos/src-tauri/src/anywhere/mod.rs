@@ -14,6 +14,8 @@ mod ax;
 #[cfg(target_os = "macos")]
 mod deliver;
 #[cfg(target_os = "macos")]
+mod english_input;
+#[cfg(target_os = "macos")]
 mod hotkey;
 #[cfg(target_os = "macos")]
 mod ime;
@@ -572,8 +574,9 @@ fn activate(app: &AppHandle, display: bool, reopen_app: Option<String>) {
         log(&format!("card colour gen={generation} background={} (screen)", colors.background));
     }
     // Without the input method to take its keys, the strip's formula is typed in English: the
-    // input source an ASCII-capable layout while it is up (the one it had, back when it ends).
-    let strip_source = if grabbed { None } else { ime::select_ascii(app) };
+    // input source an ASCII-capable layout while it is up (the one it had, back when it ends),
+    // unless the setting is off (english_input.rs).
+    let strip_source = if grabbed || !english_input::enabled(app) { None } else { ime::select_ascii(app) };
     let (activation, ready) = {
         let Ok(mut session) = session() else { return };
         if !current(&*session) {
@@ -1870,6 +1873,59 @@ pub(crate) fn anywhere_status() -> AnywhereStatus {
             accessibility_trusted: false,
             shortcut: String::new(),
         }
+    }
+}
+
+/// Settings > Keyboard shortcuts > Formula input method: whether a formula the shortcut opens is typed in English
+/// (english_input.rs).
+#[tauri::command]
+pub(crate) fn anywhere_english_input(app: AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        english_input::enabled(&app)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[tauri::command]
+pub(crate) fn anywhere_set_english_input(app: AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        english_input::set_enabled(&app, enabled)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled);
+        Ok(())
+    }
+}
+
+/// A formula the shortcut opened in the main window's document (document/documentFormulaShortcut.ts): `english`, the
+/// input source an ASCII-capable layout while it is open when the setting says so (true: it is English now, and was
+/// not before); else the input source it had, back.
+#[tauri::command]
+pub(crate) async fn anywhere_own_formula_input(app: AppHandle, english: bool) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            if english {
+                english_input::select_for_document(&app)
+            } else {
+                english_input::restore_for_document(&app);
+                false
+            }
+        })
+        .await
+        .map_err(|error| format!("Input source task failed: {error}"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, english);
+        Ok(false)
     }
 }
 

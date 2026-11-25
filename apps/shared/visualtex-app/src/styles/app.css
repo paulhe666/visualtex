@@ -6873,6 +6873,34 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   justify-content: flex-end;
 }
 
+/* Formula input method: the English-input switch, a row like the shortcuts' (the switch where their keys are) */
+.anywhere-english-input-row {
+  cursor: pointer;
+}
+
+.anywhere-english-input-row > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.anywhere-english-input-row > .switch-control {
+  justify-self: center;
+}
+
+.anywhere-english-input-row > input:checked + .switch-control {
+  background: var(--accent);
+}
+
+.anywhere-english-input-row > input:checked + .switch-control::after {
+  transform: translateX(16px);
+}
+
+.anywhere-english-input-row > input:focus-visible + .switch-control {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .office-hotkey-target-card .formula-hotkey-target-preview {
   color: var(--accent);
 }
