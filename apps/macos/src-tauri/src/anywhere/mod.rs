@@ -54,6 +54,10 @@ const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
 /// Where the panel stands on the screen, each time its frame is set (panel.rs): the page cannot read it from its window.
 #[cfg(target_os = "macos")]
 const FRAME_EVENT: &str = "visualtex-anywhere-frame";
+/// A formula shortcut pressed while VisualTeX itself is the frontmost application, for the main window (its document
+/// makes the formula: document/documentFormulaShortcut.ts); payload { display }.
+#[cfg(target_os = "macos")]
+const OWN_FORMULA_SHORTCUT_EVENT: &str = "visualtex-formula-shortcut";
 /// The most pieces a formula is cut into for the field (a longer formula's
 /// last piece holds the rest).
 const MAX_PIECES: usize = 512;
@@ -442,6 +446,13 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
 fn toggle(app: &AppHandle, display: bool) {
     if session().map(|session| session.phase != Phase::Hidden).unwrap_or(false) {
         hide(app, true, "shortcut");
+        return;
+    }
+    // VisualTeX itself is in front: no input method over its own page. The main window's document makes the formula
+    // itself (an inline or a display formula at its caret, opened for typing), as "$$" or "$$$$" typed there would.
+    if ax::frontmost_pid() == std::process::id() as i32 {
+        log(&format!("shortcut display={display}: VisualTeX's own window"));
+        let _ = app.emit_to("main", OWN_FORMULA_SHORTCUT_EVENT, serde_json::json!({ "display": display }));
         return;
     }
     log(&format!("shortcut display={display}"));

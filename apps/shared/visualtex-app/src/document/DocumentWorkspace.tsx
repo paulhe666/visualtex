@@ -14,6 +14,7 @@ import {
   documentSchema,
   findMarkdownFile,
   hasMathDelimiters,
+  insertDisplayFormula,
   insertDisplayLatex,
   insertInlineFormula,
   insertInlineLatex,
@@ -54,6 +55,8 @@ import { DOCUMENT_OPEN_FILES_EVENT, takeOpenRequests } from "./documentOpenReque
 import { DocumentFileDialog } from "./DocumentFileDialog";
 import { insertCommandIntoFormula, insertLatexIntoFormula, waitForOpenFormula } from "./formulaInsert";
 import { openDocumentFormula } from "./openDocumentFormula";
+import { typingOutside, watchFormulaShortcut } from "./documentFormulaShortcut";
+import { useDocumentModeStore } from "../stores/documentModeStore";
 import { documentToPdf, printDocumentInBrowser } from "./documentPdf";
 import {
   DOCUMENT_COPY_MARKDOWN_EVENT,
@@ -336,6 +339,20 @@ export function DocumentWorkspace({ editorRef, onPasteImage }: Props) {
       if (editorRef.current === adapter) editorRef.current = null;
     };
   }, [editorRef]);
+
+  // The formula input method's shortcut, pressed while this window has the keyboard (documentFormulaShortcut.ts): an
+  // inline or a display formula at the caret, opened for typing. An open formula keeps the keyboard, and so does
+  // another text field of the window that has it (the source panel, a search box).
+  useEffect(
+    () =>
+      watchFormulaShortcut((display) => {
+        const editor = documentRef.current;
+        if (!editor || !window.document.hasFocus() || useDocumentModeStore.getState().content !== "document") return;
+        if (openDocumentFormula() || typingOutside(editor.view()?.dom)) return;
+        editor.run(display ? insertDisplayFormula : insertInlineFormula);
+      }),
+    [],
+  );
 
   const flash = (message: string) => {
     setNotice(message);

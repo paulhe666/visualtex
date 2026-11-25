@@ -34,6 +34,9 @@ const STYLE_EVENT: &str = "visualtex-anywhere-style";
 const SHORTCUT_EVENT: &str = "visualtex-anywhere-shortcut";
 /// Where the field put the formula's pieces (it holds them in its text and wraps them as its own).
 const PIECES_EVENT: &str = "visualtex-anywhere-pieces";
+/// A formula shortcut pressed while VisualTeX itself has the keyboard, for the main window (its document makes the
+/// formula: document/documentFormulaShortcut.ts); payload { display }.
+const OWN_FORMULA_SHORTCUT_EVENT: &str = "visualtex-formula-shortcut";
 /// The most pieces a formula is cut into for the field.
 const MAX_PIECES: usize = 512;
 /// The shortcut asked the field's thread for a formula; a field that has not reported its caret
@@ -322,11 +325,31 @@ pub(super) fn toggle(app: &AppHandle, display: bool) {
         hide(app, true, "shortcut");
         return;
     }
+    // VisualTeX's own window has the keyboard: no input method over its own page. The main window's document makes
+    // the formula itself (an inline or a display formula at its caret, opened for typing), as "$$" or "$$$$" typed
+    // there would.
+    if own_window_has_keyboard() {
+        log(&format!("shortcut display={display}: VisualTeX's own window"));
+        let _ = app.emit_to("main", OWN_FORMULA_SHORTCUT_EVENT, serde_json::json!({ "display": display }));
+        return;
+    }
     log(&format!("shortcut display={display}"));
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("visualtex-anywhere-activate".to_string())
         .spawn(move || begin_input_method(&app, display));
+}
+
+/// Whether the window that has the keyboard is one of VisualTeX's own.
+fn own_window_has_keyboard() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    let window = unsafe { GetForegroundWindow() };
+    if window.0 as isize == 0 {
+        return false;
+    }
+    let mut process = 0u32;
+    unsafe { GetWindowThreadProcessId(window, Some(&mut process)) };
+    process == std::process::id()
 }
 
 fn begin_input_method(app: &AppHandle, display: bool) {
