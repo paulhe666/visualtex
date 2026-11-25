@@ -46,6 +46,17 @@ function mathInline(state: StateInline, silent: boolean): boolean {
     state.pos = end + 2;
     return true;
   }
+  // a joiner and "$$": an empty inline formula, as a file keeps one (inlineFormulaSource; "$$" alone stays text)
+  if (src[start - 1] === FORMULA_JOINER && src.startsWith("$$", start) && src[start + 2] !== "$") {
+    if (!silent) {
+      if (state.pending.endsWith(FORMULA_JOINER)) state.pending = state.pending.slice(0, -1);
+      const token = state.push("math_inline", "", 0);
+      token.content = "";
+      token.markup = "$";
+    }
+    state.pos = start + 2;
+    return true;
+  }
   if (src[start] !== "$" || src[start + 1] === "$") return false;
   if (/\s/.test(src[start + 1] ?? " ")) return false;
   let end = start + 1;
@@ -1187,13 +1198,15 @@ export interface MarkdownExportOptions {
 export const FORMULA_JOINER = "\u2060";
 
 /**
- * An inline formula as a file writes it between `before` and `after` (the characters next to it): "" when empty,
- * LaTeX of several lines on one, a closing backslash kept from the dollar, and joiners where its dollars would
- * read as something else.
+ * An inline formula as a file writes it between `before` and `after` (the characters next to it): a joiner and "$$"
+ * when empty, LaTeX of several lines on one, a closing backslash kept from the dollar, and joiners where its dollars
+ * would read as something else.
  */
 export function inlineFormulaSource(latex: string, before: string, after: string): string {
   let body = latex.replace(/\s*\n\s*/g, " ").trim();
-  if (!body) return "";
+  // An empty formula keeps the dollars that were typed (it was left out, so it was gone once the file was read again,
+  // 2026-11-24), a joiner before them: "$$" alone is text, and at a row's start a display formula.
+  if (!body) return `${FORMULA_JOINER}$$${/[\d$]/.test(after) ? FORMULA_JOINER : ""}`;
   // "x\ " trimmed ends in a backslash, which would escape the closing dollar: the control space and an empty group
   if (/(?:^|[^\\])(?:\\\\)*\\$/.test(body)) body += " {}";
   return `${before === "$" ? FORMULA_JOINER : ""}$${body}$${/[\d$]/.test(after) ? FORMULA_JOINER : ""}`;
@@ -1309,7 +1322,7 @@ function serializerFor(
     const neighbour = index + side >= 0 && index + side < parent.childCount ? parent.child(index + side) : null;
     if (!neighbour) return "";
     if (neighbour.isText) return side < 0 ? neighbour.text!.slice(-1) : neighbour.text!.slice(0, 1);
-    // (a formula before this one has put the joiner after itself)
+    // (a formula before this one has put the joiner after itself; an empty one begins with its joiner)
     return side > 0 && neighbour.type.name === "math_inline" && String(neighbour.attrs.latex).trim() ? "$" : "";
   };
   const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {

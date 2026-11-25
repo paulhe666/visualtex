@@ -1183,9 +1183,15 @@
 }
 /* Mathcha's model: near the screen a formula is its live editor (is-live), resting until it is opened; the picture
    stands in only before the editor has drawn (or far from the screen). The editor is drawn out of the flow and
-   unseen (is-pending) until it takes the picture's place, in one frame. */
-.vtx-math-inline.is-live .vtx-formula-static,
-.vtx-math-display.is-live .vtx-formula-static {
+   unseen (is-pending) until it takes the picture's place, in one frame. An empty formula at rest shows its dashed box,
+   also once it has been opened: its resting editor shows nothing (an empty formula looked gone once it was left,
+   2026-11-24). */
+.vtx-math-inline.is-live:is(:not(.is-blank), .is-open, .is-partial) .vtx-formula-static,
+.vtx-math-display.is-live:is(:not(.is-blank), .is-open, .is-partial) .vtx-formula-static {
+  display: none;
+}
+.vtx-math-inline.is-live.is-blank:not(.is-open, .is-partial) .vtx-formula-editor,
+.vtx-math-display.is-live.is-blank:not(.is-open, .is-partial) .vtx-formula-editor {
   display: none;
 }
 .vtx-math-inline {

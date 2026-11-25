@@ -698,6 +698,7 @@ export class FormulaView implements NodeView {
     this.registeredId = node.attrs.id ?? null;
     if (this.registeredId) formulaViewsOf(view).set(this.registeredId, this);
     this.renderStatic();
+    this.dom.classList.toggle("is-blank", !this.hasContent());
     this.applyDecorations(decorations);
     // near the screen it keeps a live editor (Residency)
     queueMicrotask(() => !this.destroyed && residencyOf(view).watch(this));
@@ -944,6 +945,9 @@ export class FormulaView implements NodeView {
     this.dom.classList.remove("is-open");
     this.dom.classList.toggle("is-partial", !!part);
     if (this.editorBox) this.editorBox.inert = true;
+    // An empty formula at rest shows its dashed box (document.css: is-blank), drawn for what it holds now (it may have
+    // been emptied while open).
+    if (!this.hasContent()) this.renderStatic();
     if (!this.passive) {
       this.passive = true;
       session.rest?.();
@@ -1137,6 +1141,7 @@ export class FormulaView implements NodeView {
     }
     // (a live formula's picture is drawn again when its editor goes)
     if (!this.session) this.renderStatic();
+    this.dom.classList.toggle("is-blank", !this.hasContent());
     this.applyDecorations(decorations);
     return true;
   }
@@ -1374,18 +1379,8 @@ function leaveFormula(view: EditorView, pos: number, node: Node, how: FormulaExi
 
 /** The formula plugin: open/close state, node views, the open formula's decoration. */
 export function formulaPlugin(host: FormulaHost, commands: FormulaCommands): Plugin<FormulaPluginState> {
-  // the editor view (an empty formula's editor is asked whether it is still empty)
-  let editorView: EditorView | null = null;
   return new Plugin<FormulaPluginState>({
     key: formulaKey,
-    view(view) {
-      editorView = view;
-      return {
-        destroy() {
-          if (editorView === view) editorView = null;
-        },
-      };
-    },
     state: {
       init: () => ({ openId: null, entry: { kind: "end" }, generation: 0, parts: [] }),
       apply(tr, value) {
@@ -1414,18 +1409,9 @@ export function formulaPlugin(host: FormulaHost, commands: FormulaCommands): Plu
         return value;
       },
     },
-    // An inline formula left empty goes away, however it was left (Backspace in it does the same). Outside the
-    // history: undo does not bring an empty formula back. Empty is what its editor holds, not only what it has
-    // reported: a command still being typed ("$$\alpha", then a click elsewhere) is the formula's once finished, and
-    // an edit's report may still be due (the formula, with what was typed in it, went, 2026-11-22).
-    appendTransaction(_transactions, oldState, newState) {
-      const closed = formulaKey.getState(oldState)?.openId;
-      if (!closed || formulaKey.getState(newState)?.openId === closed) return null;
-      const found = findNodeById(newState.doc, closed);
-      if (!found || found.node.type.name !== "math_inline" || String(found.node.attrs.latex).trim()) return null;
-      if (editorView && formulaViewOf(editorView, closed)?.holdsInput()) return null;
-      return newState.tr.delete(found.pos, found.pos + found.node.nodeSize).setMeta("addToHistory", false);
-    },
+    // A formula left empty stays, however it was left, as its source keeps the dollars that were typed ("$$" for an
+    // inline formula, "$$" "$$" around an empty line for a display one): only Backspace in it removes it. (An inline
+    // formula left empty went away: what was typed vanished, 2026-11-24.)
     props: {
       // With formulas partly selected the text caret is not shown (the selection is a range, drawn in them).
       attributes(state): Record<string, string> {
