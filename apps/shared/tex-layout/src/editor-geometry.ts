@@ -149,6 +149,17 @@ export interface EditorGeometry {
   alignMarkers: number[];
   /** the formula's pieces and their places, when it is set on several lines (LayoutOptions.lineLayout) */
   lines?: import("./lines.ts").FormulaLines;
+  /** the big operators' operands, where the caret has regions (the editing core's Tab leaves one at its end) */
+  operands?: OperandExtent[];
+}
+
+/**
+ * A big operator's operand (docs/editing-core/DESIGN.md §4) as kernel offsets: `start` the stop right after the operator
+ * and its limits (the operand's start), `end` the stop at the operand's end (where the caret's levels are).
+ */
+export interface OperandExtent {
+  start: number;
+  end: number;
 }
 
 export interface GeometryModel {
@@ -419,10 +430,21 @@ export function buildEditorGeometry(
   // the stops inside it (and the one right after the operator, its start) are in the operand; at its end the caret
   // can stand inside the operand or outside it (and outside every operand that ends there), at one place: one more
   // way to stand for each, innermost first, a little further right each (the stops' separation at a structure's end).
+  const operands: OperandExtent[] = [];
   if (withRegions) {
     const groups = operandGroups(model, (a) => !isPlaceholder(a) && regions.has(a));
     const holders = new Map<GeometryAtom, OperandGroup[]>();
     for (const g of groups) for (const a of [g.op, ...g.items]) (holders.get(a) ?? holders.set(a, []).get(a)!).push(g);
+    const offsetOf = new Map<GeometryAtom, number>();
+    for (let offset = 0; offset <= model.lastOffset; offset++) {
+      const a = model.at(offset);
+      if (a && !offsetOf.has(a)) offsetOf.set(a, offset);
+    }
+    for (const g of groups) {
+      const start = offsetOf.get(g.op);
+      const end = offsetOf.get(g.items[g.items.length - 1]);
+      if (regionOfGroup(g) && start !== undefined && end !== undefined) operands.push({ start, end });
+    }
     for (let offset = 0; offset <= model.lastOffset; offset++) {
       const a = model.at(offset);
       const base = stops[offset];
@@ -467,7 +489,7 @@ export function buildEditorGeometry(
       right = Math.max(right, Math.ceil(c.x + BAR_HALF * c.scale - box.width));
     }
   }
-  return { width: box.width, height, depth, right, stops, markers, regions, alignMarkers };
+  return { width: box.width, height, depth, right, stops, markers, regions, alignMarkers, operands };
 }
 
 /**

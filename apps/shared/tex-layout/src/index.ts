@@ -9,7 +9,7 @@ import { FACE_GROUP_FAMS, FAM, LatexAdapter, PACKAGE_FAMILIES, type AtomLike, ty
 import { MathTypesetter, TEXT_STYLE } from "./mlist.ts";
 import { MATH_NODE, type BoxNode, type Node, type Tag } from "./nodes.ts";
 import { hpack } from "./pack.ts";
-import { alignShift, caretBarHtml, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
+import { alignShift, caretBarHtml, caretShifts, computeRegions, formulaHtml, type CaretBar, type FormulaElement, type Region } from "./painter.ts";
 import { buildEditorGeometry, caretMetrics, stopAt, type CaretGeometry, type GeometryAtom } from "./editor-geometry.ts";
 import { shipOut, type ShipResult } from "./shipout.ts";
 import { formulaPieces, placePieces, type FormulaLines, type PiecePlacer } from "./lines.ts";
@@ -534,9 +534,9 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       band && Number.isFinite(band.up) && Number.isFinite(band.down) && band.up > 0 && band.down >= 0
         ? { ...caret, up: band.up * 10 * 65536, down: band.down * 10 * 65536 }
         : caret;
-    // (a formula set on several lines, or one the editor shifts piece by piece on alignment markers, keeps the short bar:
-    // a line along its regions would not meet the shifted material)
-    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret, (lines?.pieces.length ?? 0) <= 1 && alignMarkers.length === 0);
+    // (a formula set on several lines keeps the short bar: a line along its regions would not meet the pieces moved to other
+    // lines; on alignment markers each end of the line moves with the material above it, as the bar does: caretShifts)
+    const geometry = buildEditorGeometry(model, regions, ship, box, alignMarkers, scales, fieldCaret, (lines?.pieces.length ?? 0) <= 1);
     if (lines) geometry.lines = lines;
     mathfield.visualTexGeometry = geometry;
     const state: CaretState = options.caretState?.(mathfield) ?? { kind: "none" };
@@ -571,8 +571,9 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
       }
       const container = anchor ? containerOf(elements, anchor) : null;
       if (container) {
-        const shift = (container === rootEl || container === body) && alignMarkers.length > 0 ? alignShift(alignMarkers, bar.x) : null;
-        container.inner = (container.inner ?? "") + caretBarHtml(bar, container.x0, container.y0, shift);
+        // (a slot inside a structure moves as a whole with its structure: only the top level's caret shifts by itself)
+        const { shift, lineShift } = container === rootEl || container === body ? caretShifts(alignMarkers, bar) : { shift: null, lineShift: null };
+        container.inner = (container.inner ?? "") + caretBarHtml(bar, container.x0, container.y0, shift, lineShift);
       } else rootCaret = bar;
     }
     const markers = [...geometry.markers].map(([tag, r]) => ({ ...r, selected: state.kind === "empty" && state.placeholder === tag }));

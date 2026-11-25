@@ -127,8 +127,9 @@ The engine already places every glyph in TeX's layout. It additionally returns a
   - `region` — the box of the content of the slot the stop is in: x from the first item's left edge to the last item's
     right edge, y from the top of the tallest item (a nested structure, an accent, scripts included) to the foot of the
     deepest, a line's strut (0.75em up, 0.25em down, at the slot's size) as the least. None for an empty slot (its
-    marker is its box) and for a formula set on several lines. `underline` — the stop is after an item of its slot,
-    not at its start;
+    marker is its box) and for a formula set on several lines. On formula rows aligned at explicit alignment markers
+    each end of the line moves with the material above it, as the bar does (painter `caretShifts`). `underline` — the
+    stop is after an item of its slot, not at its start;
   - the baseline used is the item's own line (a script's caret on the script, the caret after `\int_0^1` on the
     main baseline);
 - `marker(slot)` — empty-slot marker rectangle (0.40em of the slot's size wide, the caret bar's band high, centred on
@@ -184,7 +185,10 @@ Start/end of the current slot; pressed again, of the top level.
 
 ### 6.3 Tab / Shift+Tab
 Within the structure holding the caret: next empty slot ahead in the current slot's subtree, else the next slot of the
-structure, else out of the structure (after it). Atomic structures are left in one press. In the last cell of an
+structure, else out of the structure (after it). Atomic structures are left in one press. In a big operator's operand
+(§4) Tab looks for empty slots in the operand only, then leaves it at its end, outside it (the caret's next level
+there): out of the integral or sum, one operand per press, before the row's own rules (the host leaves the formula only
+from outside every operand). Test: `caret_operand_regression.mjs`. In the last cell of an
 array, Tab adds a row. While a command is being typed, Tab accepts the suggestion (handled by the completion, which
 reports back to the core). Tab never moves focus out of the field; Esc-then-Tab leaves the formula as today.
 
